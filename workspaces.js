@@ -271,7 +271,7 @@ window.createWorkspaces = function createWorkspaces(api) {
   // 'failed' or 'stale'.
   let recordAsk=0;
   function showRecord(familyId,recordId){
-    const a=area(familyId);if(!a)return Promise.resolve('missing');
+    const a=area(familyId);if(!a){toast('이 기록은 여기서 바로 열 수 없습니다. 해당 작업 공간 목록에서 찾아 주세요.');return Promise.resolve('missing');}
     const r=recordById(familyId,recordId);
     if(r){recordAsk++;renderRecord(a,familyId,r);return Promise.resolve('shown');}
     const ask=++recordAsk,view=()=>{const d=document.getElementById('detail');return [d?.open?d.querySelector('h2')?.textContent??'':null,location.hash,Boolean(document.querySelector('#modal[open]'))];},before=view();
