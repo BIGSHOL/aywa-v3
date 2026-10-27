@@ -2,6 +2,8 @@ import { openFullDatabase, tenantId } from './full-db.mjs';
 import { fullDbRoot, activeBackup } from './full-db-paths.mjs';
 import { readFile } from 'node:fs/promises';
 import { snapshotTables } from './snapshot-tables.mjs';
+import { loadWorkspaces } from './domain-snapshot.mjs';
+import { loadKnownContacts, maskBaseModel } from './domain-snapshot-mask.mjs';
 
 const date = value => value ? (value instanceof Date ? new Date(value.getTime() + 9 * 3600000).toISOString() : String(value)).slice(0, 10) : '';
 const num = value => Number(value || 0);
@@ -33,11 +35,15 @@ export async function loadSnapshot() {
       const info={tenant,asOf,importedAt:manifest.capturedAt,tables:manifest.tables.map(t=>({table:`${t.schema}.${t.name}`,rows:Number(t.rows)}))};
       const raw = {};
       for (const table of Object.keys(snapshotTables)) raw[table] = await sql`select * from ${sql(`public.${table}`)} where tenant_id=${tenantId}`;
-      const model=buildReadModel(raw, info);
+      // Contacts typed into free text (일정 제목·학부모 글 …) are masked value-only for this local view.
+      await loadKnownContacts(sql,tenantId);
+      const model=maskBaseModel(buildReadModel(raw, info));
       const [connection]=await sql`select status, dnd_enabled, dnd_start, dnd_end, digest_at from public.slack_connections where tenant_id=${tenantId}`;
       const [rules]=await sql`select count(*) filter (where enabled)::int as enabled from public.slack_rules where tenant_id=${tenantId}`;
       const deliveries=await sql`select status,count(*)::int as count from public.slack_outbox where tenant_id=${tenantId} group by status`;
       model.channels={slack:{configured:connection?.status==='active',quiet:connection?.dnd_enabled?`${String(connection.dnd_start).slice(0,5)}–${String(connection.dnd_end).slice(0,5)}`:'',digest:String(connection?.digest_at||'').slice(0,5),enabledRules:rules.enabled,deliveries}};
+      // Extended read model per 2.0 feature family (DOMAIN-DATA.md); base fields above stay as they were.
+      model.workspaces=await loadWorkspaces(sql,{tenantId,asOf,capturedAt:manifest.capturedAt});
       return model;
     });
   } finally { await db.end(); }

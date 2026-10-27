@@ -1,0 +1,119 @@
+// Contract helpers for model.workspaces (DOMAIN-DATA.md). Pure functions only:
+// the domain loaders run read-only SQL and hand plain values here.
+export const DATA_STATES = Object.freeze(['available', 'empty', 'not-applicable', 'unavailable']);
+export const PRIORITY = Object.freeze({ check: '확인 필요', decide: '결정 필요', progress: '진행 확인' });
+export const RECORD_LIMIT = 12;
+// The full evidence list rides on a symbol key: JSON.stringify (snapshot.js) never
+// sees it; loadWorkspaces moves it into the server-side record store.
+export const EVIDENCE = Symbol('evidence');
+
+const finite = v => v === null || v === undefined || v === '' ? null : (Number.isFinite(Number(v)) ? Number(v) : null);
+// Free-text business fields (일정 제목, 상담 과목 칸, 학부모 글 …) sometimes carry typed contacts.
+// Value-only masking: e-mail addresses, narrowly shaped Korean phone numbers, and any digit run whose
+// digits equal a known contact/account value of this branch (setKnownContacts). Amounts, dates, ids and
+// ordinary reference numbers are left alone (verify-domain-core.mjs locks this).
+export const MASK = '연락처 가림';
+const EMAIL = /[\w.+-]+@[\w-]+(?:\.[\w-]+)+/g;
+// Landlines only with separators (053-123-4567); mobiles (01X) with or without them.
+const PHONE = /(?<!\d)(?:\+82[-. ]?)?0\d{1,2}[-. )]\d{3,4}[-. ]\d{4}(?!\d)|(?<!\d)(?:\+82[-. ]?|0)1[016789][-. ]?\d{3,4}[-. ]?\d{4}(?!\d)/g;
+const RUN = /\d[\d\-. ]*\d/g;
+let knownDigits = new Set();
+export function setKnownContacts(values) {
+  knownDigits = new Set(values.filter(v => typeof v === 'string').map(v => v.replace(/\D/g, '')).filter(d => d.length >= 8));
+  return knownDigits.size;
+}
+// A digit run is split at its separators; any consecutive groups whose digits equal a known value are
+// masked, so "10-27-010-1234-5678" keeps the date part and hides only the contact.
+function maskKnown(run) {
+  if (run.replace(/\D/g, '').length < 8) return run;
+  const groups = run.split(/[-. ]+/), seps = run.match(/[-. ]+/g) || [];
+  let out = '', i = 0;
+  while (i < groups.length) {
+    // A contact may be glued to a preceding number ("중3" + "010-…"), so the first group may start mid-way.
+    let hit = 0, cut = 0;
+    for (let k = 0; k < groups[i].length && !hit; k += 1) for (let j = Math.min(groups.length, i + 5); j > i && !hit; j -= 1) {
+      const d = groups[i].slice(k) + groups.slice(i + 1, j).join('');
+      if (d.length >= 8 && knownDigits.has(d)) { hit = j; cut = k; }
+    }
+    out += hit ? groups[i].slice(0, cut) + MASK : groups[i]; i = hit || i + 1;
+    if (i < groups.length) out += seps[i - 1];
+  }
+  return out;
+}
+export function scrub(text) {
+  if (text === null || text === undefined) return text;
+  const s = String(text).replace(EMAIL, MASK).replace(PHONE, MASK);
+  return knownDigits.size ? s.replace(RUN, maskKnown) : s;
+}
+export const metric = (label, value, unit, detail = '') => ({ label, value: finite(value), unit, detail });
+export const field = (label, value) => ({ label, value: value === null || value === undefined || value === '' ? '—' : scrub(value) });
+export const record = ({ id, label, detail = '', date = '', status = '', fields = [], facets = [] }) => ({ id: String(id), label: scrub(label) || '—', detail: scrub(detail) || '', date: date || '', status: scrub(status) || '', fields: fields.map(f => ({ label: f.label, value: scrub(f.value) })), facetIds: facets.filter(Boolean).map(String) });
+export const signal = ({ id, title, summary, priority, source, recordIds = [], draft }) => ({ id, title, summary, priority, source, recordIds: recordIds.map(String), draft });
+export const sumOf = rows => rows.reduce((n, r) => n + (Number(r.count) || 0), 0);
+export const countOf = (rows, key) => rows.find(r => r.key === key)?.count || 0;
+
+export function monthsBack(asOf, n) {
+  return Array.from({ length: n }, (_, i) => {
+    const d = new Date(`${asOf.slice(0, 7)}-01T12:00:00Z`); d.setUTCMonth(d.getUTCMonth() - (n - 1) + i); return d.toISOString().slice(0, 7);
+  });
+}
+export const addDays = (date, days) => { const d = new Date(`${date}T12:00:00Z`); d.setUTCDate(d.getUTCDate() + days); return d.toISOString().slice(0, 10); };
+
+// Real months only: starts at the first month (within the window) that has rows;
+// months after that with no rows are genuine zeros; nothing past asOf.
+export function monthlyTrend(label, unit, rows, asOf, maxMonths = 12) {
+  const values = new Map(rows.map(r => [r.month, Number(r.value) || 0]));
+  const window = monthsBack(asOf, maxMonths);
+  const first = window.findIndex(m => values.get(m) > 0);
+  if (first < 0) return null;
+  return { label, unit, granularity: 'month', points: window.slice(first).map(m => ({ date: m, value: values.get(m) || 0 })) };
+}
+export function dailyTrend(label, unit, rows, asOf) {
+  const points = rows.filter(r => r.date <= asOf).map(r => ({ date: r.date, value: Number(r.value) || 0 })).sort((a, b) => a.date.localeCompare(b.date));
+  return points.length ? { label, unit, granularity: 'day', points } : null;
+}
+
+// evidence = every applicable record (server store); records = the first 12 or a
+// curated summary; facets are counted from evidence so chips match the endpoint.
+export function family(id, title, part) {
+  const evidence = part.evidence || [];
+  const counts = new Map();
+  for (const r of evidence) for (const f of new Set(r.facetIds)) counts.set(f, (counts.get(f) || 0) + 1);
+  const order = part.facetOrder || [...counts.keys()].sort((a, b) => counts.get(b) - counts.get(a));
+  const out = {
+    id, title, summary: part.summary || '', metrics: part.metrics || [], trend: part.trend || null, signals: part.signals || [],
+    facets: order.filter(k => counts.get(k)).map(k => ({ id: k, label: scrub(part.facetLabels?.[k] || k), count: counts.get(k) })),
+    records: (part.summaryRecords || evidence).slice(0, RECORD_LIMIT), totalRecords: evidence.length, sourceLabel: part.sourceLabel || '',
+    dataState: part.dataState || (evidence.length ? 'available' : 'empty'), coverageNote: part.coverageNote || '', sources: part.sources || [], recordSource: evidence.length ? part.recordSource || null : null,
+  };
+  Object.defineProperty(out, EVIDENCE, { value: Object.freeze(evidence), enumerable: false });
+  return out;
+}
+export const notApplicable = (id, title, coverageNote, summary = '지점 원장 업무 공간 밖의 영역입니다.') => family(id, title, { summary, dataState: 'not-applicable', sourceLabel: '해당 없음', coverageNote });
+
+const DATE = /^\d{4}-\d{2}(-\d{2})?$/;
+// Throws on the first contract violation so a bad loader cannot ship silently.
+export function assertWorkspaces(ws, ids) {
+  const fail = (id, why) => { throw new Error(`workspaces.${id}: ${why}`); };
+  if (!ws || !DATE.test(ws.asOf || '')) fail('asOf', 'missing');
+  for (const id of ids) if (!ws.families[id]) fail(id, 'family missing');
+  for (const id of Object.keys(ws.families)) if (!ids.includes(id)) fail(id, 'unmapped family id');
+  for (const [id, f] of Object.entries(ws.families)) {
+    if (f.id !== id || !f.title || !DATA_STATES.includes(f.dataState) || !f.summary || !f.coverageNote) fail(id, 'id/title/summary/dataState/coverageNote');
+    for (const m of f.metrics) if (typeof m.label !== 'string' || !(m.value === null || Number.isFinite(m.value)) || typeof m.unit !== 'string') fail(id, `metric ${m.label}`);
+    if (f.trend) {
+      if (!['month', 'day'].includes(f.trend.granularity) || !f.trend.points.length) fail(id, 'trend shape');
+      for (const p of f.trend.points) if (!DATE.test(p.date) || p.date > ws.asOf.slice(0, p.date.length) || !Number.isFinite(p.value)) fail(id, `trend point ${p.date}`);
+    }
+    for (const s of f.signals) if (!s.id || !s.title || !Object.values(PRIORITY).includes(s.priority) || !s.draft?.title || !s.draft?.body) fail(id, `signal ${s.id}`);
+    const ids = new Set(f.records.map(r => r.id));
+    for (const s of f.signals) for (const r of s.recordIds) if (!ids.has(r) && !(f[EVIDENCE] || []).some(e => e.id === r)) fail(id, `signal ${s.id} points outside evidence`);
+    for (const x of f.facets) if (!x.id || !x.label || !Number.isInteger(x.count) || x.count < 1) fail(id, 'facet');
+    if (f.records.length > RECORD_LIMIT || f.records.length > f.totalRecords) fail(id, 'records exceed window/total');
+    for (const r of f.records) if (!r.id || !Array.isArray(r.fields) || !Array.isArray(r.facetIds) || (r.date && !DATE.test(r.date))) fail(id, `record ${r.id}`);
+    if (f.totalRecords && !f.recordSource) fail(id, 'recordSource required with records');
+    if (f.dataState !== 'available' && (f.totalRecords || f.signals.length)) fail(id, 'records/signals on a non-available family');
+    if (f.dataState === 'available' && !f.totalRecords) fail(id, 'available without evidence');
+  }
+  return true;
+}

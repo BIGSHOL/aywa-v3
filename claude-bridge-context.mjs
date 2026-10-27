@@ -132,11 +132,27 @@ export function buildAssistantContext(db) {
     `확인할 이슈: ${ASSISTANT_ISSUE_IDS.map(id => `${id}=${parts[id].title}`).join(' · ')}.`,
   ];
   const issues = Object.fromEntries(ASSISTANT_ISSUE_IDS.map(id => [id, Object.freeze({ title: parts[id].title, text: [`[${id}] ${parts[id].title}`, ...parts[id].lines.map(l => `- ${l}`)].join('\n') })]));
-  return Object.freeze({ asOf: s.asOf, month: s.month, overview: overview.join('\n'), issues: Object.freeze(issues) });
+  return Object.freeze({ asOf: s.asOf, month: s.month, overview: overview.join('\n'), issues: Object.freeze(issues), domain: domainContext(db.workspaces) });
+}
+
+// 업무 영역 집계(model.workspaces) — 지표 이름·숫자만. 근거 기록·세부 문구·이름은 싣지 않는다.
+export const ISSUE_FAMILY = Object.freeze({ billing: 'billing', admissions: 'enrollment', attendance: 'attendance', approval: 'approvals', tasks: 'tasks-notifications', books: 'textbook-requests', enrollment: 'students' });
+const STATE_NOTE = { empty: '기록 없음', unavailable: '데이터 연결 전' };
+// Short title (before the parenthesis): "학원 설정(18면)·관리자 도구" → "학원 설정".
+const shortTitle = f => f.title.split('(')[0].trim();
+const domainLine = f => STATE_NOTE[f.dataState] ? `- ${shortTitle(f)}: ${STATE_NOTE[f.dataState]}` : `- ${shortTitle(f)}: ${f.metrics.slice(0, 6).map(m => `${m.label} ${m.value === null ? '—' : Number.isInteger(m.value) ? n(m.value) : m.value.toFixed(1)}${m.unit}`).join(', ')}`;
+function domainContext(ws) {
+  if (!ws?.families) return null;
+  const header = `[업무 영역 집계] ${ws.asOf} 기준 2.0 기능 영역별 지표(서버 계산).`;
+  return Object.freeze({
+    all: [header, ...Object.values(ws.families).filter(f => f.dataState !== 'not-applicable').map(domainLine)].join('\n'),
+    byIssue: Object.freeze(Object.fromEntries(Object.entries(ISSUE_FAMILY).filter(([, id]) => ws.families[id]).map(([issue, id]) => [issue, `${header}\n${domainLine(ws.families[id])}`]))),
+  });
 }
 
 // A focused issue gets its full section; without one every aggregate section is relevant.
 export function contextText(context, issueId) {
   const ids = issueId ? [issueId] : ASSISTANT_ISSUE_IDS;
-  return [context.overview, ...ids.map(id => context.issues[id].text)].join('\n\n');
+  const domain = context.domain ? (issueId ? context.domain.byIssue[issueId] : context.domain.all) : null;
+  return [context.overview, ...ids.map(id => context.issues[id].text), domain].filter(Boolean).join('\n\n');
 }

@@ -6,6 +6,7 @@ import { loadSnapshot } from './snapshot.mjs';
 import { fullDbRoot } from './full-db-paths.mjs';
 import { openFullDatabase, tenantId } from './full-db.mjs';
 import { createAssistantFromEnv } from './claude-bridge-http.mjs';
+import { handleWorkspaceRecords } from './domain-http.mjs';
 
 const port=Number(process.env.OWNER_CONCEPT_PORT||4310);
 if(!Number.isInteger(port)||port<1024||port>65535)throw new Error('Invalid local dev port');
@@ -51,6 +52,7 @@ const server=createServer(async(req,res)=>{
  if(!['GET','HEAD'].includes(req.method)){reject(405,'Read-only preview');return;}
  if(req.headers['sec-fetch-site']==='cross-site'&&path!=='/'){reject(403,'Local access only');return;}
  try{
+  if(handleWorkspaceRecords(req,res,headers))return;
   if(path==='/snapshot.js'){res.writeHead(200,{'Content-Type':'text/javascript; charset=utf-8','Content-Length':snapshotScript.length,...headers});res.end(req.method==='HEAD'?undefined:snapshotScript);return;}
   const documentMatch=path.match(/^\/files\/document\/([0-9a-f]{8}-[0-9a-f-]{27})$/i);
   if(documentMatch){
