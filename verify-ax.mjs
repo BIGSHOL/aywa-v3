@@ -54,7 +54,7 @@ try{
   const signals=await page.locator('.ax-signals .ax-signal').evaluateAll(nodes=>nodes.map(n=>n.dataset.id));
   assert.deepEqual(signals,['approval','billing','tasks'],'Pending decision, remaining payments and overdue follow-ups lead');
   assert.match(await page.locator('.ax-signal[data-id="billing"]').innerText(),/329,000원/);
-  assert.equal(await page.locator('.ax-change > button').count(),3);
+  assert.equal(await page.locator('.ax-change > .ax-change-cell').count(),3);
   assert.equal(await page.locator('.ax-domain-grid button').count(),12);
   // Desktop: the summary fills one viewport and the detail starts at the fold — no cut, no large hole.
   for(const [width,height] of [[1440,768],[1440,900],[1440,1080],[1024,768]]){

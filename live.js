@@ -30,23 +30,120 @@
   const subtitle=(title,note='',extra='')=>`<div class="live-subtitle"><div><h2>${title}</h2>${note?`<p>${note}</p>`:''}</div>${extra}</div>`;
   const heading=(title,note,extra='')=>`<div class="page-heading"><div><h1>${title}</h1><p>${note}</p></div><div class="heading-actions">${extra}</div></div>`;
   const metrics=items=>`<div class="kpi-strip">${items.map(([label,value,note])=>`<div class="kpi"><div class="kpi-label">${label}</div><div class="kpi-value number">${value}</div><div class="kpi-foot">${note}</div></div>`).join('')}</div>`;
-  const bars=(items,unit='명',maxItems=8)=>{const shown=items.slice(0,maxItems),max=Math.max(...shown.map(x=>x.count),1);return shown.length?`<div class="live-bars">${shown.map(x=>`<div class="live-bar"><span title="${h(x.label)}">${h(x.label)}</span><span class="live-bar-track"><i style="width:${x.count/max*100}%"></i></span><strong>${fmt(x.count)}${unit}</strong></div>`).join('')}</div>`:empty('표시할 기록이 없습니다.');};
+  const barMeasure={명:'인원',건:'건수',개:'개수',만원:'금액'};
+  const bars=(items,unit='명',maxItems=8)=>{const shown=items.slice(0,maxItems),max=Math.max(...shown.map(x=>x.count),1),all=items.reduce((n,x)=>n+Number(x.count||0),0);return shown.length?`<div class="live-bars" data-chart data-axis="y" tabindex="0" role="group" aria-label="항목별 ${barMeasure[unit]||'수치'} — 화살표 키로 항목을 옮기며 수치를 확인합니다">${shown.map(x=>`<div class="live-bar" data-point data-tip="${tipData(x.label,[{label:barMeasure[unit]||'수치',value:`${fmt(x.count)}${unit}`,tone:'primary'}],[all?`전체 ${fmt(all)}${unit} 중 ${fmt(x.count/all*100)}%`:''])}"><span>${h(x.label)}</span><span class="live-bar-track"><i data-anchor style="width:${x.count/max*100}%"></i></span><strong>${fmt(x.count)}${unit}</strong></div>`).join('')}</div>`:empty('표시할 기록이 없습니다.');};
   const filters=(key,items,value)=>`<div class="live-filter" role="group" aria-label="보기 선택">${items.map(([id,label])=>`<button class="tab ${id===value?'active':''}" data-filter="${h(id)}" data-key="${key}" aria-pressed="${id===value}">${h(label)}</button>`).join('')}</div>`;
+  // Every trend/comparison chart shows one point's exact value in the app's own popover (hover, touch, arrow keys).
+  // Points carry data-tip = {title, rows:[{label,value,tone}], meta:[...]}; the popover below renders it. No native title tooltips.
+  const exact=(v,unit)=>v==null?'기록 없음':unit==='만원'||unit==='원'?won(v):`${fmt(v)}${unit}`;
+  const isMonth=d=>/^\d{4}-\d{2}$/.test(String(d||''));
+  const periodTitle=x=>{const d=String(x.month||x.date||'');if(isMonth(d))return `${d.slice(0,4)}년 ${mlabel(d)}`;if(/^\d{4}-\d{2}-\d{2}$/.test(d))return `${d.slice(0,4)}년 ${Number(d.slice(5,7))}월 ${Number(d.slice(8,10))}일`;return String(x.label||d);};
+  const tipData=(title,rows,meta=[])=>h(JSON.stringify({title,rows,meta:meta.filter(Boolean)}));
+  const deltaText=(v,prev,unit,monthly)=>v==null||prev==null?'':`${monthly?'전월':'이전'} 대비 ${v>prev?'+':v<prev?'−':'±'}${exact(Math.abs(v-prev),unit)}`;
   function chart(items,key,unit='',options={}){
     if(!items.some(x=>x[key]!==null&&x[key]!==undefined))return empty('이 기간의 기록이 없습니다.','없는 기간을 추정값으로 채우지 않았습니다.');
     const W=620,H=216,L=42,R=20,T=25,B=32,inner=W-L-R,secondary=options.secondary;
     const values=items.flatMap(x=>[x[key],...(secondary?[x[secondary]]:[])]).filter(x=>x!==null&&x!==undefined).map(Number);
     const max=Math.max(...values,1)*1.15,step=inner/Math.max(items.length,1),y=v=>T+(H-T-B)*(1-v/max);
     const label=v=>unit==='만원'?fmt(v/10000):fmt(Math.round(v));
+    const name=x=>x.label||(x.month?mlabel(x.month):shortDate(x.date));
+    const monthly=items.every(x=>isMonth(x.month));
     const grid=Array.from({length:4},(_,i)=>{const val=max*i/3;return `<line class="grid-line" x1="${L}" x2="${W-R}" y1="${y(val)}" y2="${y(val)}"/><text x="${L-9}" y="${y(val)+4}" text-anchor="end">${label(val)}</text>`;}).join('');
-    const cols=items.map((x,i)=>{const cx=L+step*(i+.5),v=x[key],sv=secondary?x[secondary]:null,width=Math.min(36,step*.48);return `<g><title>${h(x.label||(x.month?mlabel(x.month):shortDate(x.date)))} · ${options.label||''} ${v==null?'기록 없음':label(v)+unit}${secondary?` · ${options.secondaryLabel||''} ${label(sv)}${unit}`:''}</title>${v==null?`<text x="${cx}" y="${H-B-5}" text-anchor="middle">—</text>`:`<rect x="${cx-width/2-(secondary?width*.32:0)}" y="${y(v)}" width="${secondary?width*.65:width}" height="${H-B-y(v)}" rx="4" fill="${i===items.length-1?'#6078c8':'#a8b6df'}"/>${!secondary&&items.length<=7?`<text class="point-value" x="${cx}" y="${y(v)-9}" text-anchor="middle">${label(v)}</text>`:''}`}${secondary&&sv!=null?`<rect x="${cx+width*.04}" y="${y(sv)}" width="${width*.65}" height="${H-B-y(sv)}" rx="4" fill="#a7cbbb"/>`:''}<text x="${cx}" y="${H-8}" text-anchor="middle">${h(x.label||(x.month?mlabel(x.month):shortDate(x.date)))}</text></g>`;}).join('');
-    return `<svg class="live-chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="${h(options.label||key)} 추이 · ${items.map(x=>`${x.label||x.month||x.date} ${x[key]==null?'기록 없음':label(x[key])+unit}`).join(', ')}">${grid}${cols}</svg>${secondary?`<div class="live-legend"><span><i></i>${options.label}</span><span><i class="alt"></i>${options.secondaryLabel}</span></div>`:''}`;
+    const cols=items.map((x,i)=>{
+      const cx=L+step*(i+.5),v=x[key],sv=secondary?x[secondary]:null,width=Math.min(36,step*.48),prev=i?items[i-1][key]:null;
+      const rows=[{label:options.label||'',value:exact(v,unit),tone:'primary'},...(secondary?[{label:options.secondaryLabel||'',value:exact(sv,unit),tone:'secondary'}]:[])];
+      const tip=tipData(x.month||x.date?periodTitle(x):name(x),rows,[deltaText(v,prev,unit,monthly),options.basis||'']);
+      return `<g class="chart-col" data-point data-tip="${tip}"><rect class="chart-hit" x="${L+step*i}" y="${T-10}" width="${step}" height="${H-B-T+10}"/>${v==null?`<text data-anchor x="${cx}" y="${H-B-5}" text-anchor="middle">—</text>`:`<rect class="chart-bar" data-anchor x="${cx-width/2-(secondary?width*.32:0)}" y="${y(v)}" width="${secondary?width*.65:width}" height="${H-B-y(v)}" rx="4" fill="${i===items.length-1?'#6078c8':'#a8b6df'}"/>${!secondary&&items.length<=7?`<text class="point-value" x="${cx}" y="${y(v)-9}" text-anchor="middle">${label(v)}</text>`:''}`}${secondary&&sv!=null?`<rect class="chart-bar" x="${cx+width*.04}" y="${y(sv)}" width="${width*.65}" height="${H-B-y(sv)}" rx="4" fill="#a7cbbb"/>`:''}<text x="${cx}" y="${H-8}" text-anchor="middle">${h(name(x))}</text></g>`;
+    }).join('');
+    return `<div class="chart-box" data-chart tabindex="0" role="group" aria-label="${h(options.label||key)} — 화살표 키로 기간을 옮기며 수치를 확인합니다"><svg class="live-chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="${h(options.label||key)} 추이 · ${items.map(x=>`${x.label||x.month||x.date} ${x[key]==null?'기록 없음':label(x[key])+unit}`).join(', ')}">${grid}${cols}</svg></div>${secondary?`<div class="live-legend"><span><i></i>${options.label}</span><span><i class="alt"></i>${options.secondaryLabel}</span></div>`:''}`;
   }
+  // Stretchable trend line: HTML hit zones over an SVG line so markers stay round when the chart grows.
+  // Missing periods break the line (no interpolation). Range ≥10% of the mean so small changes never read as cliffs.
+  function lineChart(rows,{key='value',label='',unit='',value,basis=''}={}){
+    const values=rows.map(r=>r[key]==null?null:Number(r[key])),known=values.filter(v=>v!==null);
+    if(!known.length)return '';
+    const lo=Math.min(...known),hi=Math.max(...known),mean=known.reduce((n,v)=>n+v,0)/known.length,span=Math.max(hi-lo,Math.abs(mean)*.1,1),min=(lo+hi)/2-span/2;
+    const n=rows.length,x=i=>2+i*(96/Math.max(n-1,1)),yv=v=>36-(v-min)/span*32,text=v=>v==null?'기록 없음':value?value(v):exact(v,unit);
+    const runs=[];values.forEach((v,i)=>{if(v===null)return;if(i&&values[i-1]!==null)runs.at(-1).push(i);else runs.push([i]);});
+    const solo=new Set(runs.filter(r=>r.length===1).map(r=>r[0]));
+    const zone=96/Math.max(n-1,1),edges=i=>{const left=i?Math.max(0,x(i)-zone/2):0,right=i===n-1?100:Math.min(100,x(i)+zone/2);return {left,width:right-left,at:(x(i)-left)/(right-left)*100};};
+    const monthly=rows.every(r=>isMonth(r.month));
+    const point=(r,i)=>{const e=edges(i),v=values[i],prev=i?values[i-1]:null,delta=v===null||prev===null?'':`${monthly?'전월':'이전'} 대비 ${v>prev?'+':v<prev?'−':'±'}${text(Math.abs(v-prev))}`;
+      return `<span class="chart-pt${solo.has(i)?' solo':''}" data-point data-tip="${tipData(periodTitle(r),[{label,value:text(v),tone:'primary'}],[delta,basis])}" style="left:${e.left}%;width:${e.width}%;--x:${e.at}%;--y:${v===null?100:yv(v)/40*100}%"><i data-anchor></i></span>`;};
+    return `<span class="chart-line" data-chart tabindex="0" role="group" aria-label="${h(label)} — 화살표 키로 기간을 옮기며 수치를 확인합니다"><svg viewBox="0 0 100 40" preserveAspectRatio="none" role="img" aria-label="${h(label)} ${rows.map((r,i)=>`${periodTitle(r)} ${text(values[i])}`).join(', ')}"><line x1="0" x2="100" y1="39" y2="39" vector-effect="non-scaling-stroke"/>${runs.filter(r=>r.length>1).map(r=>`<polyline points="${r.map(i=>`${x(i)},${yv(values[i])}`).join(' ')}" vector-effect="non-scaling-stroke"/>`).join('')}</svg>${rows.map(point).join('')}</span>`;
+  }
+  // Shared chart popover: one per document, moved into an open dialog so it renders above it. Never takes pointer events.
+  // The same point is never re-rendered on pointermove; keyboard moves are announced once through a polite live region.
+  const tip=document.createElement('div');tip.id='chart-tip';tip.className='chart-pop';tip.setAttribute('role','tooltip');tip.hidden=true;document.body.append(tip);
+  const chartLive=document.createElement('div');chartLive.className='chart-live';chartLive.setAttribute('aria-live','polite');document.body.append(chartLive);
+  const chartState={box:null,index:-1,sticky:false};
+  const chartPoints=box=>[...box.querySelectorAll('[data-point]')];
+  const tipCache=new WeakMap();
+  function tipOf(point){if(!tipCache.has(point)){let d={};try{d=JSON.parse(point.dataset.tip||'{}');}catch{d={};}tipCache.set(point,{title:String(d.title||''),rows:Array.isArray(d.rows)?d.rows:[],meta:Array.isArray(d.meta)?d.meta:[]});}return tipCache.get(point);}
+  function fillTip(d){
+    const el=(cls,text,tag='div')=>{const node=document.createElement(tag);node.className=cls;node.textContent=text;return node;};
+    tip.replaceChildren(el('chart-pop-head',d.title));
+    d.rows.forEach(r=>{const row=el('chart-pop-row','');row.append(el(`chart-pop-label ${r.tone==='secondary'?'secondary':''}`,String(r.label||''),'span'),el('chart-pop-value',String(r.value||''),'strong'));tip.append(row);});
+    d.meta.forEach(m=>tip.append(el('chart-pop-meta',String(m))));
+  }
+  function placeTip(){
+    const {box,index}=chartState;if(!box?.isConnected||!box.getClientRects().length){hideTip();return;}
+    const point=chartPoints(box)[index];if(!point){hideTip();return;}
+    const a=(point.querySelector('[data-anchor]')||point).getBoundingClientRect();
+    if(a.bottom<0||a.top>innerHeight||a.right<0||a.left>innerWidth){hideTip();return;}
+    const w=tip.offsetWidth,ht=tip.offsetHeight,m=8,gap=12,cx=a.left+a.width/2;
+    // Above the point by default, flipped below when there is no room; leans away from the nearer horizontal edge.
+    let left=cx>innerWidth*.66?cx-w+16:cx<innerWidth*.33?cx-16:cx-w/2,top=a.top-ht-gap;
+    if(top<m)top=a.bottom+gap;
+    left=Math.max(m,Math.min(left,innerWidth-w-m));top=Math.max(m,Math.min(top,innerHeight-ht-m));
+    tip.style.transform=`translate(${Math.round(left)}px,${Math.round(top)}px)`;
+  }
+  function releasePoint(){const {box,index}=chartState;if(box){chartPoints(box)[index]?.classList.remove('active');box.removeAttribute('aria-describedby');}}
+  function showPoint(box,index,{sticky=false,announce=false}={}){
+    const points=chartPoints(box);if(!points.length)return;
+    index=Math.max(0,Math.min(points.length-1,index));
+    if(chartState.box===box&&chartState.index===index&&!tip.hidden){if(sticky)chartState.sticky=true;return;}
+    releasePoint();
+    points[index].classList.add('active');box.setAttribute('aria-describedby','chart-tip');
+    Object.assign(chartState,{box,index,sticky});
+    const host=box.closest('dialog[open]')||document.body;if(tip.parentElement!==host)host.append(tip);
+    const d=tipOf(points[index]);fillTip(d);tip.hidden=false;placeTip();
+    if(announce)chartLive.textContent=[d.title,...d.rows.map(r=>`${r.label} ${r.value}`),...d.meta].filter(Boolean).join(', ');
+  }
+  function hideTip(){releasePoint();Object.assign(chartState,{box:null,index:-1,sticky:false});tip.hidden=true;}
+  function nearestPoint(box,clientX,clientY){
+    const vertical=box.dataset.axis==='y';let best=0,dist=Infinity;
+    chartPoints(box).forEach((p,i)=>{const r=p.getBoundingClientRect(),lo=vertical?r.top:r.left,hi=vertical?r.bottom:r.right,c=vertical?clientY:clientX,d=c<lo?lo-c:c>hi?c-hi:0;if(d<dist){dist=d;best=i;}});
+    return best;
+  }
+  document.addEventListener('pointermove',event=>{
+    if(event.pointerType!=='mouse')return;
+    const box=event.target.closest?.('[data-chart]');
+    if(box)showPoint(box,nearestPoint(box,event.clientX,event.clientY));else if(chartState.box&&!chartState.sticky&&document.activeElement!==chartState.box)hideTip();
+  },{passive:true});
+  document.addEventListener('pointerleave',event=>{if(event.target===chartState.box&&!chartState.sticky&&document.activeElement!==chartState.box)hideTip();},true);
+  document.addEventListener('pointerdown',event=>{
+    const box=event.target.closest?.('[data-chart]');
+    if(box&&event.pointerType!=='mouse')showPoint(box,nearestPoint(box,event.clientX,event.clientY),{sticky:true});
+    else if(chartState.sticky&&!box)hideTip();
+  },{passive:true});
+  document.addEventListener('focusin',event=>{const box=event.target;if(box.matches?.('[data-chart]'))showPoint(box,chartState.box===box?chartState.index:chartPoints(box).length-1,{announce:true});});
+  document.addEventListener('focusout',event=>{if(event.target===chartState.box&&!chartState.box.contains(event.relatedTarget))hideTip();});
+  document.addEventListener('keydown',event=>{
+    const box=event.target;if(!box.matches?.('[data-chart]'))return;
+    const last=chartPoints(box).length-1,i=chartState.box===box?chartState.index:last;
+    const next={ArrowLeft:i-1,ArrowUp:i-1,ArrowRight:i+1,ArrowDown:i+1,Home:0,End:last}[event.key];
+    if(next!==undefined){event.preventDefault();showPoint(box,next,{announce:true});}
+    else if(event.key==='Escape'&&chartState.box===box&&!tip.hidden){event.preventDefault();event.stopPropagation();hideTip();}
+  },true);
+  document.addEventListener('close',event=>{if(chartState.box&&event.target.contains?.(chartState.box))hideTip();},true);
+  addEventListener('scroll',()=>{if(chartState.box)placeTip();},{passive:true,capture:true});
+  addEventListener('resize',()=>{if(chartState.box)placeTip();});
   const pages=[['home','경영 흐름','home','원장실'],['students','학생 · 재원 관리','people','학원 운영'],['admissions','입학 · 상담','message'],['classes','수업 · 시간표','calendar'],['learning','학습 · 성과','book'],['finance','수납 · 재무','wallet','경영 관리'],['staff','직원 · 급여','staff'],['parents','학부모 소통','message'],['shuttle','차량 · 안전','bus'],['approvals','업무 · 결재','check','운영 지원'],['resources','교재 · 자산 · 문서','box'],['calendar','학원 일정','calendar'],['settings','학원 설정','settings']];
   const state={page:'home',month:db.meta.month,homeRange:'recent',studentFilter:'enrolled',studentQuery:'',studentPage:0,admissionFilter:'all',classSubject:'all',classView:'flow',classPage:0,resourceView:'textbooks',taskFilter:'open',vehicle:db.vehicles[0]?.id,season:'term',selectedDate:db.meta.asOf,calendarMonth:db.meta.month,calendarOffset:0,financeMonth:db.meta.month,financePage:0,studentId:'',noteContext:'',search:'',localNotes:[]};
   let toastTimer;
   const toast=text=>{const node=$('#toast');node.textContent=text;node.classList.add('show');clearTimeout(toastTimer);toastTimer=setTimeout(()=>node.classList.remove('show'),3000);};
-  const ax=window.createOwnerWorkspace({db,h,fmt,won,icon,chart,dialog,navigate,render,attachScroll,toast,showStudent,showBill,showApproval,showTask,getPage:()=>state.page,hasView:id=>Boolean(id&&views[id]),closeMenu});
+  const ax=window.createOwnerWorkspace({db,h,fmt,won,icon,chart,lineChart,exact,dialog,navigate,render,attachScroll,toast,showStudent,showBill,showApproval,showTask,getPage:()=>state.page,hasView:id=>Boolean(id&&views[id]),closeMenu});
   const mobileNav=matchMedia('(max-width: 760px)');
   const scrollObserver=new ResizeObserver(entries=>entries.forEach(e=>fade(e.target)));
   function fade(node){const top=Math.max(0,node.scrollTop),bottom=Math.max(0,node.scrollHeight-node.clientHeight-top);node.style.setProperty('--fade-top',`${Math.min(26,top)}px`);node.style.setProperty('--fade-bottom',`${Math.min(26,bottom>1?bottom:0)}px`);}
@@ -110,7 +207,7 @@
     const categories=Object.entries(expenses.reduce((o,e)=>(o[e.category||'기타']=(o[e.category||'기타']||0)+e.amount,o),{})).map(([label,count])=>({label,count:Math.round(count/10000)})).sort((a,b)=>b.count-a.count);
     return heading('돈의 흐름을 분명하게','청구, 누적 수납, 남은 금액을 구분해서 봅니다.',periodSelect('financeMonth',state.financeMonth,db.invoices.map(i=>i.period))+button(`${icon('book')} 월간 검토`,'report'))+
       metrics([['청구 금액',`${money(billed)}<small>원</small>`,`${rows.length}건 · 할인 반영, 취소·환불 제외`],['누적 수납',`${money(paid)}<small>원</small>`,`${rate(paid,billed)} 수납 완료`],['남은 수납',`${money(remaining)}<small>원</small>`,`${debts.length}건 확인 필요`],['기록된 지출',`${money(sum(expenses,'amount'))}<small>원</small>`,`${expenses.length}건 · 지출일 기준`]])+
-      `<div class="live-grid equal">${panel(`${mlabel(state.financeMonth)} 수납의 진행`,state.financeMonth>db.meta.month?'다음 달 예정 청구 · 복사 시점까지의 수납':'해당 청구월에 연결된 누적 수납',`<div class="live-big">${rate(paid,billed)}<small>수납 완료</small></div><div class="live-amount" role="img" aria-label="수납 ${won(paid)}, 남은 금액 ${won(remaining)}"><i style="width:${billed?Math.min(100,paid/billed*100):0}%"></i><i style="flex:1"></i></div><div class="between"><span class="muted">수납 ${won(paid)}</span><span class="muted">남은 금액 ${won(remaining)}</span></div><p class="live-note">입금 발생일 기준 현금 흐름이 아닙니다. 과거 월도 복사 시점까지 추가 수납된 금액을 포함합니다.</p>`)}${panel('청구와 수납의 변화','청구월 기준 · 만원',chart(recentTrend(),'billed','만원',{secondary:'paid',label:'청구액',secondaryLabel:'수납액'}))}</div>`+
+      `<div class="live-grid equal">${panel(`${mlabel(state.financeMonth)} 수납의 진행`,state.financeMonth>db.meta.month?'다음 달 예정 청구 · 복사 시점까지의 수납':'해당 청구월에 연결된 누적 수납',`<div class="live-big">${rate(paid,billed)}<small>수납 완료</small></div><div class="live-amount" data-chart tabindex="0" role="group" aria-label="수납 ${won(paid)}, 남은 금액 ${won(remaining)} — 화살표 키로 확인합니다"><i data-point data-tip="${tipData(`${mlabel(state.financeMonth)} 청구분`,[{label:'수납',value:won(paid),tone:'primary'}],[billed?`청구액의 ${fmt(paid/billed*100)}%`:''])}" style="width:${billed?Math.min(100,paid/billed*100):0}%"></i><i data-point data-tip="${tipData(`${mlabel(state.financeMonth)} 청구분`,[{label:'남은 금액',value:won(remaining),tone:'secondary'}],[billed?`청구액의 ${fmt(remaining/billed*100)}%`:''])}" style="flex:1"></i></div><div class="between"><span class="muted">수납 ${won(paid)}</span><span class="muted">남은 금액 ${won(remaining)}</span></div><p class="live-note">입금 발생일 기준 현금 흐름이 아닙니다. 과거 월도 복사 시점까지 추가 수납된 금액을 포함합니다.</p>`)}${panel('청구와 수납의 변화','청구월 기준 · 만원',chart(recentTrend(),'billed','만원',{secondary:'paid',label:'청구액',secondaryLabel:'수납액'}))}</div>`+
       `<div class="live-grid equal">${panel('지출의 구성',`${mlabel(state.financeMonth)} 지출일에 해당하는 기록`,categories.length?bars(categories,'만원',7):empty('이 기간의 지출 기록이 없습니다.','미입력 비용을 포함한 전체 지출을 의미하지 않습니다.'))}${panel('재무 검토의 기준','확인된 기록의 범위에서 판단합니다.',`<div class="live-signal blue"><span>급여명세서</span><strong>${db.finance.payslips.filter(p=>p.period===state.financeMonth&&p.status==='issued').length}건 발급</strong><p>발급 명세서와 실제 지급 내역을 구분해 확인하세요.</p></div><p class="live-note">청구월별 누적 수납과 지출일별 비용은 기준이 다릅니다. 이를 단순 차감한 값을 순이익으로 표시하지 않습니다.</p>${go('직원 · 급여 살펴보기','staff')}`)}</div>`+
       subtitle('수납을 마무리할 연결','남은 금액이 큰 순서입니다. 학생의 상황을 먼저 확인하세요.')+
       (debts.length?`<div class="live-cards">${debts.slice(state.financePage*12,(state.financePage+1)*12).map(i=>`<button class="live-card" data-bill="${h(i.id)}"><header>${avatar(i.name)}<div><h3>${h(i.name)}</h3><p>${mlabel(i.period)} 청구</p></div>${badge(status(i.status),'amber')}</header><span class="live-card-label">남은 금액</span><div class="live-card-number">${money(i.remaining)}<small>원</small></div><p>${won(i.paid)} / ${won(i.total)} 수납</p><footer><span>납기 ${shortDate(i.due)}</span>${icon('chevron')}</footer></button>`).join('')}</div>${pager('financePage',state.financePage,debts.length,12)}`:empty('이 기간의 남은 수납이 없습니다.','취소·환불을 제외한 청구 기록 기준입니다.'));
@@ -248,7 +345,7 @@
     const focused=document.activeElement,focusId=focused?.id,selection=typeof focused?.selectionStart==='number'?focused.selectionStart:null;
     const navHref=focused?.closest('#sidebar')&&focused.getAttribute('href');
     const scrollPositions=new Map([...document.querySelectorAll('[data-scroll-key]')].map(n=>[n.dataset.scrollKey,n.scrollTop]));
-    scrollObserver.disconnect();shell();ax.decorateShell();$('#main').innerHTML=state.page==='home'?ax.home():(views[state.page]||home)();ax.decorateView();
+    hideTip();scrollObserver.disconnect();shell();ax.decorateShell();$('#main').innerHTML=state.page==='home'?ax.home():(views[state.page]||home)();ax.decorateView();
     document.querySelectorAll('[data-scroll-key]').forEach(n=>{if(scrollPositions.has(n.dataset.scrollKey))n.scrollTop=scrollPositions.get(n.dataset.scrollKey);});attachScroll();
     if(focusId){const next=document.getElementById(focusId);next?.focus({preventScroll:true});if(selection!==null&&next?.setSelectionRange)next.setSelectionRange(selection,selection);}
     if(navHref)document.querySelector(`#sidebar a[href="${CSS.escape(navHref)}"]`)?.focus({preventScroll:true});

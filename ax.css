@@ -96,16 +96,16 @@
 .ax-signal-go{display:inline-flex;align-items:center;gap:4px;margin-top:auto;padding-top:4px;font-size:var(--ax-xs);color:var(--ax-primary)}
 .ax-signal-go .icon{width:1em;height:1em}
 .ax-change{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));border:1px solid var(--ax-line);border-radius:8px;overflow:hidden}
-.ax-change>button{display:flex;flex-direction:column;align-items:stretch;gap:2px;min-width:0;padding:12px 18px;text-align:left}
-.ax-change>button+button{border-left:1px solid var(--ax-line)}
-.ax-change>button:hover{background:var(--ax-soft)}
-.ax-change>button>span:first-child{font-size:var(--ax-xs)}
+.ax-change-cell{display:flex;flex-direction:column;min-width:0;padding:12px 18px}
+.ax-change-cell+.ax-change-cell{border-left:1px solid var(--ax-line)}
+.ax-change-link{display:flex;flex:1 1 auto;flex-direction:column;align-items:stretch;gap:2px;min-width:0;min-height:0;margin:-6px -8px 0;padding:6px 8px;border-radius:6px;text-align:left}
+.ax-change-cell:has(.ax-trend) .ax-change-link{flex:0 0 auto}
+.ax-change-link:hover{background:var(--ax-soft)}
+.ax-change-link>span:first-child{font-size:var(--ax-xs)}
 .ax-change strong{font-size:var(--ax-lg);font-weight:700;line-height:1.35;font-variant-numeric:tabular-nums}
 .ax-change small{font-size:var(--ax-xs);overflow-wrap:anywhere}
 .ax-trend{display:flex;flex:1 1 auto;flex-direction:column;gap:4px;min-height:52px;margin-top:8px}
-.ax-trend svg{display:block;flex:1 1 0;width:100%;height:auto;min-height:28px}
-.ax-trend svg line{stroke:var(--ax-line);stroke-width:1}
-.ax-trend svg polyline{stroke:var(--ax-primary);stroke-width:2;fill:none}
+.ax-trend .chart-line{flex:1 1 0;min-height:28px}
 .ax-trend-months{display:flex;justify-content:space-between;font-size:var(--ax-xs)}
 .ax-stages{display:flex;flex-wrap:wrap;gap:6px 16px;padding-top:6px;font-size:var(--ax-xs)}
 .ax-recent{display:flex;flex:1 1 0;flex-direction:column;gap:8px;min-height:0;margin-top:10px;padding-top:10px;border-top:1px solid var(--ax-line);overflow:hidden}
@@ -130,7 +130,7 @@
  .ax-first{flex:1 1 auto;gap:clamp(16px,2.4vh,28px)}
  .ax-signal-value{font-size:clamp(28px,3.2vh,36px)}
  .ax-change{flex:1 1 auto;min-height:112px;max-height:min(34vh,300px)}
- .ax-change>button{min-height:0}
+ .ax-change-cell{min-height:0}
  .ax-command{padding:clamp(16px,2vh,22px) 18px}
  .ax-scroll-cue{margin-top:auto}
 }
@@ -304,14 +304,14 @@
 .ax-enabled .live-filter .tab.active{background:var(--ax-primary);color:#fff;border-color:var(--ax-primary)}
 .ax-enabled .live-chart text{font-size:var(--ax-xs);fill:var(--ax-ink)}
 .ax-enabled .live-chart .point-value{font-size:var(--ax-sm);fill:var(--ax-primary)}
-.ax-enabled .live-chart rect:not([fill="#a7cbbb"]){fill:#557aaa}
+.ax-enabled .live-chart rect.chart-bar:not([fill="#a7cbbb"]){fill:#557aaa}
 .ax-enabled .live-card{transform:none;border-radius:8px}
 .ax-enabled .live-card:hover{transform:none;border-color:var(--ax-primary)}
 .ax-enabled .live-panel{border-radius:8px}
 .ax-enabled .kpi-value{font-size:32px}
 .ax-enabled .live-filter input{min-width:0}
 
-@media(max-width:1250px){.ax-issue{padding:20px}.ax-change>button{padding:12px 14px}}
+@media(max-width:1250px){.ax-issue{padding:20px}.ax-change-cell{padding:12px 14px}}
 @media(max-width:1050px){.ax-domain-grid{grid-template-columns:repeat(3,minmax(0,1fr))}.ax-workflow{grid-template-columns:1fr}.ax-issue-body{grid-template-columns:minmax(0,1fr)}}
 @media(max-width:760px){
  .ax-enabled .topbar{display:flex;align-items:center;justify-content:flex-start;gap:12px;height:56px;padding:0 16px;border-bottom:1px solid var(--ax-line);background:#fff}
@@ -327,13 +327,11 @@
  .ax-signal{padding:14px}
  .ax-signal-value{font-size:var(--ax-xl)}
  .ax-change{grid-template-columns:1fr}
- .ax-change>button+button{border-left:0;border-top:1px solid var(--ax-line)}
+ .ax-change-cell+.ax-change-cell{border-left:0;border-top:1px solid var(--ax-line)}
  .ax-signal:last-child:nth-child(odd){grid-column:1/-1}
- .ax-change>button{display:grid;grid-template-columns:minmax(0,1fr) 96px;column-gap:12px;align-items:center;padding:10px 14px}
- .ax-change>button>:not(.ax-trend):not(.ax-stages){grid-column:1}
- .ax-trend{grid-column:2;grid-row:1/4;min-height:0;height:40px;margin:0}
+ .ax-change-cell{display:grid;grid-template-columns:minmax(0,1fr) 112px;column-gap:12px;align-items:center;padding:10px 14px}
+ .ax-trend{min-height:0;height:44px;margin:0}
  .ax-trend-months{display:none}
- .ax-stages{grid-column:1/-1}
  .ax-recent{display:none}
  .ax-command{padding:14px}
  .ax-issue{padding:18px 16px;gap:16px}
@@ -358,3 +356,33 @@
 }
 @media(max-width:380px){.ax-signals{grid-template-columns:1fr}}
 @media(prefers-reduced-motion:reduce){.ax-enabled *{scroll-behavior:auto!important;transition:none!important}.ax-spinner{animation:none}}
+
+/* Shared charts: hover, touch and keyboard open the app popover with one point's exact value. It never takes pointer events. */
+.chart-box{position:relative;border-radius:6px}
+:is(.chart-box,.chart-line,.live-bars[data-chart],.live-amount[data-chart]):focus-visible{outline:2px solid var(--ax-primary);outline-offset:3px}
+.chart-hit{fill:transparent}
+.chart-col.active .chart-hit{fill:rgba(21,62,117,.07)}
+.chart-col.active .chart-bar{stroke:var(--ax-ink);stroke-width:1.5}
+.live-bar[data-point]{border-radius:4px}
+.live-bar.active{background:var(--ax-soft)}
+.live-amount i.active{box-shadow:inset 0 0 0 2px var(--ax-ink)}
+.chart-line{position:relative;display:block;width:100%;min-height:28px;touch-action:pan-y}
+.chart-line svg{position:absolute;inset:0;display:block;width:100%;height:100%}
+.chart-line svg line{stroke:var(--ax-line);stroke-width:1}
+.chart-line svg polyline{stroke:var(--ax-primary);stroke-width:2;fill:none}
+.chart-pt{position:absolute;top:0;bottom:0}
+.chart-pt::before{content:'';position:absolute;top:0;bottom:0;left:var(--x);width:1px;background:var(--ax-line);opacity:0}
+.chart-pt i{position:absolute;left:var(--x);top:var(--y);width:9px;height:9px;margin:-4.5px 0 0 -4.5px;border:2px solid #fff;border-radius:50%;background:var(--ax-primary);box-shadow:0 0 0 1px var(--ax-primary);opacity:0}
+.chart-pt.solo i,.chart-pt.active::before,.chart-pt.active i{opacity:1}
+.chart-pop{position:fixed;left:0;top:0;z-index:300;display:flex;flex-direction:column;min-width:160px;max-width:min(300px,calc(100vw - 16px));padding:10px 12px;border:1px solid var(--ax-line);border-radius:8px;background:#fff;color:var(--ax-ink);box-shadow:0 8px 24px rgba(18,18,18,.14);font-size:var(--ax-xs);line-height:1.45;pointer-events:none}
+.chart-pop[hidden]{display:none}
+.chart-pop-head{margin-bottom:6px;padding-bottom:6px;border-bottom:1px solid var(--ax-line);font-weight:600}
+.chart-pop-row{display:flex;align-items:baseline;justify-content:space-between;gap:16px}
+.chart-pop-row+.chart-pop-row{margin-top:4px}
+.chart-pop-label{display:inline-flex;align-items:center;gap:6px;min-width:0}
+.chart-pop-label::before{content:'';flex-shrink:0;width:8px;height:8px;border-radius:2px;background:var(--ax-primary)}
+.chart-pop-label.secondary::before{background:#a7cbbb}
+.chart-pop-value{font-size:var(--ax-base);font-weight:700;color:var(--ax-primary);font-variant-numeric:tabular-nums;white-space:nowrap}
+.chart-pop-meta{margin-top:6px}
+.chart-pop-meta+.chart-pop-meta{margin-top:2px}
+.chart-live{position:fixed;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
