@@ -23,6 +23,11 @@ const routes=new Map([
  ['/live.js',['live.js','text/javascript; charset=utf-8']],
  ['/ax.js',['ax.js','text/javascript; charset=utf-8']],
  ['/ax.css',['ax.css','text/css; charset=utf-8']],
+ ['/workspace-catalog.js',['workspace-catalog.js','text/javascript; charset=utf-8']],
+ ['/workspaces.js',['workspaces.js','text/javascript; charset=utf-8']],
+ ['/workspaces.css',['workspaces.css','text/css; charset=utf-8']],
+ ['/flow-ui.js',['flow-ui.js','text/javascript; charset=utf-8']],
+ ['/flow-ui.css',['flow-ui.css','text/css; charset=utf-8']],
  ['/fonts/PretendardVariable.woff2',['../../public/fonts/PretendardVariable.woff2','font/woff2']],
 ]);
 const headers={

@@ -1,6 +1,6 @@
 {
  "schemaVersion": 1,
- "sourceCommit": "ab808b647676b59e37d34c85d45807ac93092e80",
+ "sourceCommit": "2c5be8b7b4d4d8c2a30a33a40656d7cec967a005",
  "scope": "2.0 Next 앱(src/) 전체 — 페이지·API·크론·서버 액션·기능 모듈·내비·탭·권한 키·DB 엔티티",
  "method": {
   "scan": "experiments/owner-concept/catalog/scan-source.mjs (TS AST + 정규식, 읽기 전용)",
@@ -110,11 +110,17 @@
    "screen": 72,
    "stats": 6
   },
-  "familyUncertainties": 6,
+  "familyUncertainties": 8,
+  "ownerVisibleFamilies": 41,
+  "auditOnlyFamilies": 6,
+  "ownerVisibleKeyOperations": 177,
+  "apiVerification": {
+   "source-read": 92
+  },
+  "apiPartialReads": 1,
   "autoDetectedUncertainties": 1,
   "verification": {
-   "reviewed": 34,
-   "source-read": 13
+   "source-read": 47
   },
   "gateStatus": {
    "custom-gate": 24,
@@ -124,7 +130,7 @@
    "session-only": 1,
    "verified-in-loader": 5
   },
-  "resolvedUncertainties": 4
+  "resolvedUncertainties": 9
  },
  "prototype": {
   "legacyViews": [
@@ -237,22 +243,22 @@
    {
     "id": "home",
     "label": "브리핑",
-    "source": "experiments/owner-concept/ax.js:120"
+    "source": "experiments/owner-concept/ax.js:425"
    },
    {
     "id": "inbox",
     "label": "알림",
-    "source": "experiments/owner-concept/ax.js:120"
+    "source": "experiments/owner-concept/ax.js:425"
    },
    {
     "id": "requests",
     "label": "요청한 업무",
-    "source": "experiments/owner-concept/ax.js:120"
+    "source": "experiments/owner-concept/ax.js:425"
    },
    {
     "id": "automation",
     "label": "자동화",
-    "source": "experiments/owner-concept/ax.js:120"
+    "source": "experiments/owner-concept/ax.js:425"
    }
   ],
   "axIssues": [
@@ -260,43 +266,43 @@
     "id": "billing",
     "category": "수납",
     "titlePrefix": "수납 확인",
-    "source": "experiments/owner-concept/ax.js:23"
+    "source": "experiments/owner-concept/ax.js:39"
    },
    {
     "id": "admissions",
     "category": "상담",
     "titlePrefix": "상담 후속 확인",
-    "source": "experiments/owner-concept/ax.js:24"
+    "source": "experiments/owner-concept/ax.js:40"
    },
    {
     "id": "attendance",
     "category": "출결",
     "titlePrefix": "출결 특이사항",
-    "source": "experiments/owner-concept/ax.js:25"
+    "source": "experiments/owner-concept/ax.js:41"
    },
    {
     "id": "approval",
     "category": "결재",
     "titlePrefix": "결재 대기",
-    "source": "experiments/owner-concept/ax.js:26"
+    "source": "experiments/owner-concept/ax.js:42"
    },
    {
     "id": "tasks",
     "category": "업무",
     "titlePrefix": "기한 지난 업무",
-    "source": "experiments/owner-concept/ax.js:27"
+    "source": "experiments/owner-concept/ax.js:43"
    },
    {
     "id": "books",
     "category": "교재",
     "titlePrefix": "교재 진행 확인",
-    "source": "experiments/owner-concept/ax.js:28"
+    "source": "experiments/owner-concept/ax.js:44"
    },
    {
     "id": "enrollment",
     "category": "경영",
     "titlePrefix": "청구 대상",
-    "source": "experiments/owner-concept/ax.js:29"
+    "source": "experiments/owner-concept/ax.js:45"
    }
   ],
   "sessionOnlyActions": [
@@ -323,10 +329,17 @@
   "axActions": [
    "ax:archive",
    "ax:ask",
-   "ax:bell",
    "ax:chat",
+   "ax:chat-cancel",
+   "ax:chat-context-clear",
+   "ax:chat-retry",
+   "ax:chat-task",
    "ax:digest",
+   "ax:draft-reset",
+   "ax:expand",
    "ax:filter",
+   "ax:focus-issue",
+   "ax:focus-list",
    "ax:form:chat",
    "ax:form:request",
    "ax:form:result",
@@ -338,13 +351,22 @@
    "ax:read",
    "ax:read-all",
    "ax:record",
+   "ax:report-slack",
    "ax:request",
    "ax:request-detail",
    "ax:request-reopen",
    "ax:request-slack",
    "ax:request-start",
-   "ax:select",
    "ax:slack"
+  ],
+  "assistantIssueIds": [
+   "billing",
+   "admissions",
+   "attendance",
+   "approval",
+   "tasks",
+   "books",
+   "enrollment"
   ],
   "snapshotTables": [
    "academy_documents",
@@ -410,6 +432,8 @@
    "id": "dashboard",
    "label": "대시보드(운영실)",
    "domain": "홈",
+   "ownerVisible": true,
+   "auditOnlyReason": null,
    "ownerScope": "owner",
    "audience": [
     "master",
@@ -482,6 +506,7 @@
    "operations": {
     "key": [
      {
+      "id": "dashboard.refreshOverview",
       "op": "지표 재집계(전체·과목별)",
       "fns": [
        "refreshOverview",
@@ -489,6 +514,7 @@
       ]
      },
      {
+      "id": "dashboard.createAnnouncement",
       "op": "학원 공지 작성·수정·고정·삭제",
       "fns": [
        "createAnnouncement",
@@ -498,24 +524,28 @@
       ]
      },
      {
+      "id": "dashboard.regenerateDailyBriefing",
       "op": "AI 일일 브리핑 다시 생성",
       "fns": [
        "regenerateDailyBriefing"
       ]
      },
      {
+      "id": "dashboard.saveDashboardChartKind",
       "op": "차트 형태 계정 저장",
       "fns": [
        "saveDashboardChartKind"
       ]
      },
      {
+      "id": "dashboard.refreshClassroomPreview",
       "op": "강의실 미리보기 갱신",
       "fns": [
        "refreshClassroomPreview"
       ]
      },
      {
+      "id": "dashboard.setOnboardingDismissed",
       "op": "온보딩 안내 닫기",
       "fns": [
        "setOnboardingDismissed"
@@ -653,25 +683,60 @@
     "writePath": "reuse-2.0-actions",
     "sessionOps": [
      "report-note",
-     "ax:select",
      "ax:filter",
-     "ax:open-issue"
+     "ax:open-issue",
+     "ax:focus-issue",
+     "ax:focus-list",
+     "ax:expand"
     ]
    },
    "verification": "source-read",
+   "readScope": [
+    "key-actions",
+    "page"
+   ],
+   "semantics": {
+    "behavior": "지표 재집계·학원 공지 CRUD·차트 형태 저장. 일일 브리핑 재생성은 DAILY_BRIEFING_ENABLED가 꺼져 있으면 즉시 거절한다.",
+    "authorization": "공지·브리핑은 직원 관리 역할 + 대시보드 쓰기 권한(canManageStaff && canWriteTenant). 화면은 레이아웃의 requireAccess(\"dashboard\").",
+    "integration": "없음(브리핑 AI는 꺼짐).",
+    "evidence": [
+     {
+      "file": "src/features/dashboard/server/actions.ts",
+      "line": 43,
+      "has": "canWriteTenant(user.systemRole, \"dashboard\")"
+     },
+     {
+      "file": "src/features/dashboard/server/actions.ts",
+      "line": 161,
+      "has": "DAILY_BRIEFING_ENABLED"
+     },
+     {
+      "file": "src/app/(shell)/dashboard/layout.tsx",
+      "line": 19,
+      "has": "requireAccess(\"dashboard\")"
+     }
+    ],
+    "findings": [
+     "일일 브리핑은 액션(dashboard/server/actions.ts:161)과 크론(/api/cron/daily-briefing → 410) 양쪽에서 꺼져 있다 — 일정 없음은 의도된 중지다."
+    ]
+   },
    "sourceRead": [
+    "src/app/(shell)/dashboard/layout.tsx",
+    "src/app/(shell)/menu/page.tsx",
     "src/features/dashboard/layout/registry.ts",
-    "src/app/(shell)/menu/page.tsx"
+    "src/features/dashboard/server/actions.ts"
    ],
-   "uncertainties": [
-    "daily-briefing 크론 핸들러는 있으나 vercel.json 일정이 없다 — 의도적 중지인지 미확인"
-   ],
-   "resolved": []
+   "uncertainties": [],
+   "resolved": [
+    "daily-briefing 일정 없음은 의도된 중지 — 크론 핸들러는 410(DAILY_BRIEFING_DISABLED_MESSAGE)을 돌려주고 재생성 액션도 DAILY_BRIEFING_ENABLED로 막는다(원문 확인)"
+   ]
   },
   {
    "id": "calendar",
    "label": "캘린더",
    "domain": "홈",
+   "ownerVisible": true,
+   "auditOnlyReason": null,
    "ownerScope": "owner",
    "audience": [
     "master",
@@ -737,6 +802,7 @@
    "operations": {
     "key": [
      {
+      "id": "calendar.saveCalendarEvent",
       "op": "일정 저장·삭제·불러오기",
       "fns": [
        "saveCalendarEvent",
@@ -745,6 +811,7 @@
       ]
      },
      {
+      "id": "calendar.saveCalendarTag",
       "op": "일정 태그 저장·삭제",
       "fns": [
        "saveCalendarTag",
@@ -819,10 +886,34 @@
      "event-note"
     ]
    },
-   "verification": "reviewed",
-   "sourceRead": [],
+   "verification": "source-read",
+   "readScope": [
+    "key-actions"
+   ],
+   "semantics": {
+    "behavior": "일정·태그 저장/삭제(제목 길이·날짜 순서·최대 1년 검증). 구글 캘린더 → aywa 한 방향 가져오기.",
+    "authorization": "requireCalendarWriter() 게이트.",
+    "integration": "Google Calendar 푸시 웹훅 + 하루 1회 크론(단일 지점 전제 — 지점이 둘 이상이면 GOOGLE_CALENDAR_TENANT_ID 필요).",
+    "evidence": [
+     {
+      "file": "src/features/calendar/server/actions.ts",
+      "line": 120,
+      "has": "requireCalendarWriter()"
+     },
+     {
+      "file": "src/features/calendar/server/actions.ts",
+      "line": 134,
+      "has": "최대 1년"
+     }
+    ],
+    "findings": []
+   },
+   "sourceRead": [
+    "src/features/calendar/server/actions.ts"
+   ],
    "uncertainties": [
-    "CLAUDE.md 결정 로그는 구글 → aywa 전체 동기화를 \"하루 2회 안전망\"이라 적지만 vercel.json에는 google-calendar-import 일정이 하루 1회뿐 — 다른 트리거가 있는지 미확인"
+    "CLAUDE.md 결정 로그는 구글 → aywa 전체 동기화를 \"하루 2회 안전망\"이라 적지만 vercel.json에는 google-calendar-import 일정이 하루 1회뿐 — 다른 트리거가 있는지 미확인",
+    "실행 확인 필요: 결정 로그의 \"하루 2회 전체 동기화\"를 만드는 두 번째 트리거가 무엇인지(크론은 하루 1회, ?full 강제 옵션만 있음)"
    ],
    "resolved": []
   },
@@ -830,6 +921,8 @@
    "id": "tasks-notifications",
    "label": "할 일·알림(벨·푸시)",
    "domain": "홈",
+   "ownerVisible": true,
+   "auditOnlyReason": null,
    "ownerScope": "owner",
    "audience": [
     "master",
@@ -909,6 +1002,7 @@
    "operations": {
     "key": [
      {
+      "id": "tasks-notifications.markNotificationsRead",
       "op": "알림 읽음·보관·보관 해제·삭제",
       "fns": [
        "markNotificationsRead",
@@ -919,6 +1013,7 @@
       ]
      },
      {
+      "id": "tasks-notifications.api-staff-tasks",
       "op": "내 할 일·알림 조회(GET 라우트)",
       "fns": [],
       "api": [
@@ -1049,23 +1144,58 @@
      "ax:archive",
      "ax:read-all",
      "ax:inbox-tab",
-     "ax:bell"
+     "ax:draft-reset",
+     "ax:report-slack"
     ]
    },
    "verification": "source-read",
+   "readScope": [
+    "key-actions",
+    "page"
+   ],
+   "semantics": {
+    "behavior": "알림 읽음·보관·삭제. 할 일은 staff_tasks_sync RPC가 30분마다 사실 기준으로 열고 닫는다(사람의 완료 버튼 없음).",
+    "authorization": "알림은 본인(getCurrentUser), 전체 할 일 목록은 canMonitor(업무 처리 현황 권한).",
+    "integration": "웹 푸시(push_subscriptions, 출결 알림 수신 동의 필요).",
+    "evidence": [
+     {
+      "file": "src/features/notifications/server/actions.ts",
+      "line": 30,
+      "has": "getCurrentUser"
+     },
+     {
+      "file": "src/app/api/cron/staff-tasks/route.ts",
+      "line": 24,
+      "has": "staff_tasks_sync"
+     },
+     {
+      "file": "src/app/api/staff-tasks/route.ts",
+      "line": 21,
+      "has": "viewer.canMonitor"
+     }
+    ],
+    "findings": [
+     "원장 → 담당자 요청을 저장할 표가 없다(AX 요청한 업무는 세션 전용)."
+    ]
+   },
    "sourceRead": [
-    "src/features/staff-tasks/kinds.ts",
-    "src/features/slack/events.ts"
+    "src/app/api/cron/staff-tasks/route.ts",
+    "src/app/api/staff-tasks/route.ts",
+    "src/features/notifications/server/actions.ts",
+    "src/features/slack/events.ts",
+    "src/features/staff-tasks/kinds.ts"
    ],
-   "uncertainties": [
-    "AX \"요청한 업무\"(원장→담당자 지시·완료 보고)를 저장할 2.0 테이블이 없다 — staff/notion 연동 할 일(createStaffTask)이 가장 가까우나 Notion 매핑 전용"
-   ],
-   "resolved": []
+   "uncertainties": [],
+   "resolved": [
+    "확인된 부재: AX \"요청한 업무\"(원장→담당자 지시·완료 보고)를 저장할 2.0 테이블이 없다 — staff/notion 연동 할 일(createStaffTask)이 가장 가깝지만 Notion 매핑 전용이다"
+   ]
   },
   {
    "id": "slack",
    "label": "슬랙 연동",
    "domain": "홈",
+   "ownerVisible": true,
+   "auditOnlyReason": null,
    "ownerScope": "owner",
    "audience": [
     "master",
@@ -1099,6 +1229,7 @@
    "operations": {
     "key": [
      {
+      "id": "slack.saveSlackToken",
       "op": "워크스페이스 토큰 저장·연결 해제·채널 목록",
       "fns": [
        "saveSlackToken",
@@ -1107,6 +1238,7 @@
       ]
      },
      {
+      "id": "slack.saveSlackRule",
       "op": "규칙 저장·삭제·샘플 발송",
       "fns": [
        "saveSlackRule",
@@ -1115,6 +1247,7 @@
       ]
      },
      {
+      "id": "slack.saveSlackSchedule",
       "op": "요약 일정 저장·실패 재발송",
       "fns": [
        "saveSlackSchedule",
@@ -1122,6 +1255,7 @@
       ]
      },
      {
+      "id": "slack.linkSlackByEmail",
       "op": "직원 ↔ 슬랙 사용자 연결(이메일·본인 확인)",
       "fns": [
        "linkSlackByEmail",
@@ -1247,8 +1381,38 @@
      "ax:request-slack"
     ]
    },
-   "verification": "reviewed",
-   "sourceRead": [],
+   "verification": "source-read",
+   "readScope": [
+    "key-actions"
+   ],
+   "semantics": {
+    "behavior": "봇 토큰 연결·규칙(대상 1개 이상·알림 1개 이상·최대 30개)·요약 일정·사람 연결. 실제 발송은 매분 크론의 아웃박스 비우기.",
+    "authorization": "slackGate() 게이트(학원 설정 연동 권한).",
+    "integration": "Slack Web API.",
+    "evidence": [
+     {
+      "file": "src/features/slack/server/connection-actions.ts",
+      "line": 21,
+      "has": "slackGate()"
+     },
+     {
+      "file": "src/features/slack/server/rule-actions.ts",
+      "line": 40,
+      "has": "SLACK_MAX_RULES"
+     },
+     {
+      "file": "src/app/api/cron/slack-dispatch/route.ts",
+      "line": 21,
+      "has": "drainAll"
+     }
+    ],
+    "findings": []
+   },
+   "sourceRead": [
+    "src/app/api/cron/slack-dispatch/route.ts",
+    "src/features/slack/server/connection-actions.ts",
+    "src/features/slack/server/rule-actions.ts"
+   ],
    "uncertainties": [],
    "resolved": []
   },
@@ -1256,6 +1420,8 @@
    "id": "onescreen",
    "label": "선생님 원스크린(수업 마감)",
    "domain": "수업",
+   "ownerVisible": true,
+   "auditOnlyReason": null,
    "ownerScope": "owner-linked",
    "audience": [
     "teacher",
@@ -1320,6 +1486,7 @@
    "operations": {
     "key": [
      {
+      "id": "onescreen.saveLessonReport",
       "op": "보고서 저장·ClassNote 발송 대기열 등록",
       "fns": [
        "saveLessonReport",
@@ -1328,6 +1495,7 @@
       ]
      },
      {
+      "id": "onescreen.generateReportComment",
       "op": "AI 멘트 자동작성(수학·영어)",
       "fns": [
        "generateReportComment",
@@ -1335,6 +1503,7 @@
       ]
      },
      {
+      "id": "onescreen.sendOnescreenNotice",
       "op": "학부모 공지 발송·수정·취소",
       "fns": [
        "sendOnescreenNotice",
@@ -1345,6 +1514,7 @@
       ]
      },
      {
+      "id": "onescreen.registerMakeupEntries",
       "op": "보강 학생 등록·제거·반 지정",
       "fns": [
        "registerMakeupEntries",
@@ -1353,6 +1523,7 @@
       ]
      },
      {
+      "id": "onescreen.reissueShareLink",
       "op": "공유 링크 재발급·회수",
       "fns": [
        "reissueShareLink",
@@ -1360,6 +1531,7 @@
       ]
      },
      {
+      "id": "onescreen.issueReportAttachmentUploadTicket",
       "op": "첨부 업로드·등록",
       "fns": [
        "issueReportAttachmentUploadTicket",
@@ -1368,6 +1540,7 @@
       ]
      },
      {
+      "id": "onescreen.saveMyReportTemplate",
       "op": "보고서 템플릿 저장·삭제",
       "fns": [
        "saveMyReportTemplate",
@@ -1375,6 +1548,7 @@
       ]
      },
      {
+      "id": "onescreen.savePrompt",
       "op": "AI 멘트 프롬프트 편집·시험·초기화",
       "fns": [
        "savePrompt",
@@ -1548,8 +1722,44 @@
     "writePath": "reuse-2.0-actions",
     "sessionOps": []
    },
-   "verification": "reviewed",
-   "sourceRead": [],
+   "verification": "source-read",
+   "readScope": [
+    "key-actions",
+    "page"
+   ],
+   "semantics": {
+    "behavior": "보고서 저장·ClassNote 대기열·AI 멘트·공지 발송/수정/취소·보강 등록·공유 링크·첨부·템플릿·AI 멘트 프롬프트 편집.",
+    "authorization": "강사뷰 세션(getCurrentUser({ teacherView: true })) + 기능별 쓰기 판정(공지는 담당 강사 또는 lesson_reports 쓰기, 보강 등록은 attendance 쓰기, 프롬프트는 requireAiMentAccess).",
+    "integration": "ClassNote(연동 PC 경유 발송), AI(generateJSON), Storage 첨부.",
+    "evidence": [
+     {
+      "file": "src/features/onescreen/server/actions.ts",
+      "line": 234,
+      "has": "getCurrentUser({ teacherView: true })"
+     },
+     {
+      "file": "src/features/onescreen/server/actions.ts",
+      "line": 1745,
+      "has": "generateJSON"
+     },
+     {
+      "file": "src/features/onescreen/server/notice-actions.ts",
+      "line": 121,
+      "has": "canWriteTenant(user.systemRole, \"lesson_reports\")"
+     },
+     {
+      "file": "src/features/onescreen/server/prompt-actions.ts",
+      "line": 107,
+      "has": "save_ai_prompt_setting"
+     }
+    ],
+    "findings": []
+   },
+   "sourceRead": [
+    "src/features/onescreen/server/actions.ts",
+    "src/features/onescreen/server/notice-actions.ts",
+    "src/features/onescreen/server/prompt-actions.ts"
+   ],
    "uncertainties": [],
    "resolved": []
   },
@@ -1557,6 +1767,8 @@
    "id": "video-homework",
    "label": "영상 숙제(제출 사이트·장부·AI 검토)",
    "domain": "수업",
+   "ownerVisible": true,
+   "auditOnlyReason": null,
    "ownerScope": "owner",
    "audience": [
     "teacher",
@@ -1749,6 +1961,7 @@
    "operations": {
     "key": [
      {
+      "id": "video-homework.setVideoHomeworkMark",
       "op": "제출 확인 체크·일괄 체크·회차 지정",
       "fns": [
        "setVideoHomeworkMark",
@@ -1757,6 +1970,7 @@
       ]
      },
      {
+      "id": "video-homework.assignHomeworkVideo",
       "op": "영상 배정·반려·숙제 취소·추가 출제",
       "fns": [
        "assignHomeworkVideo",
@@ -1766,12 +1980,14 @@
       ]
      },
      {
+      "id": "video-homework.rerunVideoReview",
       "op": "AI 영상 검토 다시 실행",
       "fns": [
        "rerunVideoReview"
       ]
      },
      {
+      "id": "video-homework.revokeVideoSubmitLinks",
       "op": "제출 링크 회수·드라이브 계정 설정",
       "fns": [
        "revokeVideoSubmitLinks",
@@ -1779,6 +1995,7 @@
       ]
      },
      {
+      "id": "video-homework.api-video-submit-start",
       "op": "공개 업로드 시작·완료(학생)",
       "fns": [],
       "api": [
@@ -1912,8 +2129,39 @@
     "writePath": "reuse-2.0-actions",
     "sessionOps": []
    },
-   "verification": "reviewed",
-   "sourceRead": [],
+   "verification": "source-read",
+   "readScope": [
+    "key-actions",
+    "page"
+   ],
+   "semantics": {
+    "behavior": "제출 확인 표시·영상 배정(RPC, 사유 300자 이내)·반려·취소·추가 출제·AI 메모 재실행·제출 링크 회수.",
+    "authorization": "세션 + 기능별 게이트(reviewAccess, video-submit gate).",
+    "integration": "Google Drive(업로드·재생), AI 검토(지점 스위치 video_review).",
+    "evidence": [
+     {
+      "file": "src/features/video-homework/server/video-assignment.ts",
+      "line": 172,
+      "has": "set_homework_video_assignment"
+     },
+     {
+      "file": "src/features/video-review/server/actions.ts",
+      "line": 13,
+      "has": "reviewAccess(videoId)"
+     },
+     {
+      "file": "src/features/video-submit/server/actions.ts",
+      "line": 39,
+      "has": "gate(studentId, classId)"
+     }
+    ],
+    "findings": []
+   },
+   "sourceRead": [
+    "src/features/video-homework/server/video-assignment.ts",
+    "src/features/video-review/server/actions.ts",
+    "src/features/video-submit/server/actions.ts"
+   ],
    "uncertainties": [],
    "resolved": []
   },
@@ -1921,6 +2169,8 @@
    "id": "timetable",
    "label": "시간표(배치·가져오기·편집기·메모)",
    "domain": "수업",
+   "ownerVisible": true,
+   "auditOnlyReason": null,
    "ownerScope": "owner",
    "audience": [
     "master",
@@ -2058,6 +2308,7 @@
    "operations": {
     "key": [
      {
+      "id": "timetable.moveClassSlots",
       "op": "반 배치 이동·학생 일괄 반 이동",
       "fns": [
        "moveClassSlots",
@@ -2065,6 +2316,7 @@
       ]
      },
      {
+      "id": "timetable.previewSheetImport",
       "op": "시트 가져오기 미리보기·적용·예약 취소",
       "fns": [
        "previewSheetImport",
@@ -2075,6 +2327,7 @@
       ]
      },
      {
+      "id": "timetable.previewMathSheetBundle",
       "op": "수학 격자·구조 가져오기·되돌리기",
       "fns": [
        "previewMathSheetBundle",
@@ -2085,6 +2338,7 @@
       ]
      },
      {
+      "id": "timetable.previewMasterSheet",
       "op": "영어 마스터 시트 반영",
       "fns": [
        "previewMasterSheet",
@@ -2092,6 +2346,7 @@
       ]
      },
      {
+      "id": "timetable.previewTimetableLabApply",
       "op": "편집기 연습본 반영 예약·취소",
       "fns": [
        "previewTimetableLabApply",
@@ -2100,6 +2355,7 @@
       ]
      },
      {
+      "id": "timetable.saveMemoSheet",
       "op": "메모 시트·칸 메모 저장",
       "fns": [
        "saveMemoSheet",
@@ -2108,6 +2364,7 @@
       ]
      },
      {
+      "id": "timetable.createClassSplit",
       "op": "수업 나누기(현재 꺼짐)",
       "fns": [
        "createClassSplit",
@@ -2269,21 +2526,61 @@
     "sessionOps": []
    },
    "verification": "source-read",
+   "readScope": [
+    "key-actions",
+    "page"
+   ],
+   "semantics": {
+    "behavior": "반 배치 이동·시트 가져오기(미리보기 → 적용)·연습본 반영 예약·메모 시트(버전 비교)·수업 나누기(꺼짐).",
+    "authorization": "배치 이동 = canManageTenant(classes), 시트 가져오기 = canManageSheetSync, 메모 시트 = memoSheetAccess.canEdit, 나누기 = canSplitClassNow.",
+    "integration": "Google Sheets(가져오기·매일 내보내기).",
+    "evidence": [
+     {
+      "file": "src/features/timetable/server/move-actions.ts",
+      "line": 79,
+      "has": "canManageTenant(user.systemRole, \"classes\")"
+     },
+     {
+      "file": "src/features/timetable/server/import-actions.ts",
+      "line": 204,
+      "has": "canManageSheetSync"
+     },
+     {
+      "file": "src/features/timetable-memo/server/actions.ts",
+      "line": 35,
+      "has": "canEdit"
+     },
+     {
+      "file": "src/features/class-splits/server/actions.ts",
+      "line": 126,
+      "has": "canSplitClassNow"
+     }
+    ],
+    "findings": [
+     "편집기 머리 주석의 \"운영 반영 경로 없음\"은 낡았다 — previewTimetableLabApply/queueTimetableLabApply와 매시 크론이 실제로 반영한다."
+    ]
+   },
    "sourceRead": [
-    "src/app/api/cron/apply-timetable-lab/route.ts",
     "src/app/(shell)/timetable/english-sheet/page.tsx",
-    "src/features/class-splits/access.ts"
+    "src/app/api/cron/apply-timetable-lab/route.ts",
+    "src/features/class-splits/access.ts",
+    "src/features/class-splits/server/actions.ts",
+    "src/features/timetable-memo/server/actions.ts",
+    "src/features/timetable/server/import-actions.ts",
+    "src/features/timetable/server/move-actions.ts"
    ],
-   "uncertainties": [
-    "/timetable/editor 머리 주석은 \"운영 반영 경로 없음\"이라 적었지만 queueTimetableLabApply와 매시 apply-timetable-lab 크론이 존재 — 주석이 낡았는지 확인 필요",
-    "/timetable/english-sheet 는 침산 tenant id를 코드에 직접 적는다(page.tsx)"
-   ],
-   "resolved": []
+   "uncertainties": [],
+   "resolved": [
+    "편집기 머리 주석의 \"운영 반영 경로 없음\"은 낡았다 — queueTimetableLabApply와 매시 apply-timetable-lab 크론(runApplyJob)이 실제로 반영한다(원문 확인)",
+    "사실 확인: /timetable/english-sheet page.tsx는 침산 tenant id를 직접 비교해 그 지점에만 원본 시트 링크를 보인다"
+   ]
   },
   {
    "id": "class-sheets",
    "label": "강사 시트(영어 ECS·수학 MCS)",
    "domain": "수업",
+   "ownerVisible": true,
+   "auditOnlyReason": null,
    "ownerScope": "owner",
    "audience": [
     "teacher",
@@ -2422,6 +2719,7 @@
    "operations": {
     "key": [
      {
+      "id": "class-sheets.upsertGoal",
       "op": "목표·수업계획 줄 작성·이동·삭제",
       "fns": [
        "upsertGoal",
@@ -2431,6 +2729,7 @@
       ]
      },
      {
+      "id": "class-sheets.upsertStudentMark",
       "op": "학생 표시·시트 변경분 저장",
       "fns": [
        "upsertStudentMark",
@@ -2439,6 +2738,7 @@
       ]
      },
      {
+      "id": "class-sheets.copyWeekFromPrevious",
       "op": "지난주·지난 칸 복사",
       "fns": [
        "copyWeekFromPrevious",
@@ -2446,6 +2746,7 @@
       ]
      },
      {
+      "id": "class-sheets.saveMonthPlanCells",
       "op": "월간 계획·월 메모 저장",
       "fns": [
        "saveMonthPlanCells",
@@ -2453,12 +2754,14 @@
       ]
      },
      {
+      "id": "class-sheets.pullEcsMemorizedWords",
       "op": "외운 단어 가져오기(IJW)",
       "fns": [
        "pullEcsMemorizedWords"
       ]
      },
      {
+      "id": "class-sheets.saveMathLearningGoals",
       "op": "수학 학습 목표 저장·개정·트랙 지정",
       "fns": [
        "saveMathLearningGoals",
@@ -2621,10 +2924,39 @@
     "sessionOps": []
    },
    "verification": "source-read",
+   "readScope": [
+    "key-actions",
+    "page"
+   ],
+   "semantics": {
+    "behavior": "목표·수업계획 줄·학생 표시·지난주 복사(RPC ecs_copy_week)·월간 계획·외운 단어 가져오기, 수학 학습 목표.",
+    "authorization": "requireEcsClassAccess / requireMcsClassAccess(write) — 조회와 같은 게이트(#77).",
+    "integration": "인재원(IJW) 외운 단어.",
+    "evidence": [
+     {
+      "file": "src/features/class-sheets/server/actions.ts",
+      "line": 219,
+      "has": "requireEcsClassAccess(input.classId, { write: true })"
+     },
+     {
+      "file": "src/features/class-sheets/server/actions.ts",
+      "line": 149,
+      "has": "ecs_copy_week"
+     },
+     {
+      "file": "src/features/math-sheets/server/learning-actions.ts",
+      "line": 55,
+      "has": "requireMcsClassAccess"
+     }
+    ],
+    "findings": []
+   },
    "sourceRead": [
-    "src/app/(shell)/mcs/[classId]/month/page.tsx",
+    "src/app/(print)/ecs/[classId]/month-plan/print/page.tsx",
     "src/app/(shell)/ecs/[classId]/month/page.tsx",
-    "src/app/(print)/ecs/[classId]/month-plan/print/page.tsx"
+    "src/app/(shell)/mcs/[classId]/month/page.tsx",
+    "src/features/class-sheets/server/actions.ts",
+    "src/features/math-sheets/server/learning-actions.ts"
    ],
    "uncertainties": [],
    "resolved": [
@@ -2635,6 +2967,8 @@
    "id": "attendance",
    "label": "출석부(월별·오늘·출결 모드·자리·키오스크)",
    "domain": "수업",
+   "ownerVisible": true,
+   "auditOnlyReason": null,
    "ownerScope": "owner",
    "audience": [
     "master",
@@ -2841,6 +3175,7 @@
    "operations": {
     "key": [
      {
+      "id": "attendance.setAttendanceCell",
       "op": "출결 칸 기록·일괄·구간 적용",
       "fns": [
        "setAttendanceCell",
@@ -2850,6 +3185,7 @@
       ]
      },
      {
+      "id": "attendance.requestDeskConfirm",
       "op": "데스크 확인 요청·입력 요청·후속 기록",
       "fns": [
        "requestDeskConfirm",
@@ -2858,6 +3194,7 @@
       ]
      },
      {
+      "id": "attendance.previewAbsenceIntake",
       "op": "결석 사전 접수",
       "fns": [
        "previewAbsenceIntake",
@@ -2865,6 +3202,7 @@
       ]
      },
      {
+      "id": "attendance.reserveMakeup",
       "op": "보강 예약·취소·결석 연결",
       "fns": [
        "reserveMakeup",
@@ -2874,12 +3212,14 @@
       ]
      },
      {
+      "id": "attendance.generateRecapSummary",
       "op": "AI 출결 요약 생성",
       "fns": [
        "generateRecapSummary"
       ]
      },
      {
+      "id": "attendance.setSeatCell",
       "op": "자리 출석부 기록·교시 이동·PIN 입장",
       "fns": [
        "setSeatCell",
@@ -2889,6 +3229,7 @@
       ]
      },
      {
+      "id": "attendance.registerKioskDevice",
       "op": "키오스크 기기 등록·해지·코드 배정·알림톡",
       "fns": [
        "registerKioskDevice",
@@ -2899,6 +3240,7 @@
       ]
      },
      {
+      "id": "attendance.saveAttendanceSalaryRates",
       "op": "실급여 비율·표시 저장",
       "fns": [
        "saveAttendanceSalaryRates",
@@ -2906,6 +3248,7 @@
       ]
      },
      {
+      "id": "attendance.api-attendance-checkin",
       "op": "키오스크 체크인(공개 POST)",
       "fns": [],
       "api": [
@@ -3112,8 +3455,44 @@
     "sessionOps": []
    },
    "verification": "source-read",
+   "readScope": [
+    "key-actions",
+    "page"
+   ],
+   "semantics": {
+    "behavior": "출결 칸 기록(본문 800줄 — 보강·정정·시수 처리 포함)·데스크 확인 요청·결석 사전 접수·보강 예약·AI 출결 요약·자리 출석부·키오스크 기기·실급여 비율.",
+    "authorization": "대부분 canWriteTenant(attendance), 데스크 확인은 full/scoped, 사전 접수는 canManageTenant(attendance), 실급여는 관리자용 출석부만.",
+    "integration": "키오스크(카카오 알림톡), AI 요약.",
+    "evidence": [
+     {
+      "file": "src/features/attendance/server/actions.ts",
+      "line": 603,
+      "has": "canWriteTenant(user.systemRole, \"attendance\")"
+     },
+     {
+      "file": "src/features/attendance/intake/server/actions.ts",
+      "line": 195,
+      "has": "canManageTenant(user.systemRole, \"attendance\")"
+     },
+     {
+      "file": "src/features/attendance/server/makeup-reservation-actions.ts",
+      "line": 275,
+      "has": "canWriteTenant"
+     },
+     {
+      "file": "src/features/attendance/server/salary-rates-actions.ts",
+      "line": 69,
+      "has": "관리자용 출석부에서만"
+     }
+    ],
+    "findings": []
+   },
    "sourceRead": [
     "src/app/(shell)/attendance/units-master/page.tsx",
+    "src/features/attendance/intake/server/actions.ts",
+    "src/features/attendance/server/actions.ts",
+    "src/features/attendance/server/makeup-reservation-actions.ts",
+    "src/features/attendance/server/salary-rates-actions.ts",
     "src/features/attendance/server/units-master.ts"
    ],
    "uncertainties": [],
@@ -3125,6 +3504,8 @@
    "id": "classes",
    "label": "수업목록(반·수강·인수인계)",
    "domain": "수업",
+   "ownerVisible": true,
+   "auditOnlyReason": null,
    "ownerScope": "owner",
    "audience": [
     "master",
@@ -3225,6 +3606,7 @@
    "operations": {
     "key": [
      {
+      "id": "classes.createClass",
       "op": "반 만들기·수정·보관",
       "fns": [
        "createClass",
@@ -3233,6 +3615,7 @@
       ]
      },
      {
+      "id": "classes.endClassTerm",
       "op": "운영 기간 종료·재개",
       "fns": [
        "endClassTerm",
@@ -3240,6 +3623,7 @@
       ]
      },
      {
+      "id": "classes.scheduleHandover",
       "op": "담임 인수인계 예약·적용·취소",
       "fns": [
        "scheduleHandover",
@@ -3248,6 +3632,7 @@
       ]
      },
      {
+      "id": "classes.createClassDelegation",
       "op": "결근 대체 위임·해제",
       "fns": [
        "createClassDelegation",
@@ -3255,6 +3640,7 @@
       ]
      },
      {
+      "id": "classes.createEnrollment",
       "op": "수강 배정·삭제·기간 수정·일괄 배정",
       "fns": [
        "createEnrollment",
@@ -3264,6 +3650,7 @@
       ]
      },
      {
+      "id": "classes.rescheduleEnrollment",
       "op": "예약 수강 일정 변경·취소",
       "fns": [
        "rescheduleEnrollment",
@@ -3396,8 +3783,37 @@
     "writePath": "reuse-2.0-actions",
     "sessionOps": []
    },
-   "verification": "reviewed",
-   "sourceRead": [],
+   "verification": "source-read",
+   "readScope": [
+    "key-actions"
+   ],
+   "semantics": {
+    "behavior": "반 생성(수업 시간 저장 실패 시 안내)·운영 기간 종료·인수인계 예약(현재 담임과 같으면 거절)·결근 대체 위임·수강 배정(종료일은 상태 권한 필요)·예약 수강 변경.",
+    "authorization": "requireClassManage / requireClassWrite / requireDelegationWrite, 수강 배정은 classes 또는 students 관리 권한(강사는 열람 전용).",
+    "integration": "없음.",
+    "evidence": [
+     {
+      "file": "src/features/classes/server/actions.ts",
+      "line": 254,
+      "has": "requireClassManage()"
+     },
+     {
+      "file": "src/features/classes/server/actions.ts",
+      "line": 917,
+      "has": "현재 담임과 동일한 강사입니다"
+     },
+     {
+      "file": "src/features/enrollments/server/actions.ts",
+      "line": 72,
+      "has": "강사 계정은 열람 전용입니다"
+     }
+    ],
+    "findings": []
+   },
+   "sourceRead": [
+    "src/features/classes/server/actions.ts",
+    "src/features/enrollments/server/actions.ts"
+   ],
    "uncertainties": [],
    "resolved": []
   },
@@ -3405,6 +3821,8 @@
    "id": "makeups",
    "label": "보강관리",
    "domain": "수업",
+   "ownerVisible": true,
+   "auditOnlyReason": null,
    "ownerScope": "owner",
    "audience": [
     "master",
@@ -3488,12 +3906,14 @@
    "operations": {
     "key": [
      {
+      "id": "makeups.executeMakeupCommand",
       "op": "보강 명령 실행(접수·배정·병합·종결)",
       "fns": [
        "executeMakeupCommand"
       ]
      },
      {
+      "id": "makeups.searchMakeupOptions",
       "op": "보강 대상·배정 후보·병합 후보 검색",
       "fns": [
        "searchMakeupOptions",
@@ -3502,6 +3922,7 @@
       ]
      },
      {
+      "id": "makeups.loadMakeupEvents",
       "op": "보강 이력·상세 다시 읽기",
       "fns": [
        "loadMakeupEvents",
@@ -3583,15 +4004,48 @@
     "writePath": "reuse-2.0-actions",
     "sessionOps": []
    },
-   "verification": "reviewed",
-   "sourceRead": [],
-   "uncertainties": [],
+   "verification": "source-read",
+   "readScope": [
+    "key-actions",
+    "page"
+   ],
+   "semantics": {
+    "behavior": "모든 변경이 명령 하나(makeup_command RPC)로 들어간다 — 접수·배정·병합·종결. 검색은 학생·반·직원·강의실·정책·출결·보고서·세션.",
+    "authorization": "강사뷰 세션 + canWriteTenant(makeups).",
+    "integration": "없음.",
+    "evidence": [
+     {
+      "file": "src/features/makeups/server/actions.ts",
+      "line": 37,
+      "has": "canWriteTenant(actor.systemRole, \"makeups\")"
+     },
+     {
+      "file": "src/features/makeups/server/actions.ts",
+      "line": 44,
+      "has": "makeup_command"
+     },
+     {
+      "file": "src/features/makeups/server/actions.ts",
+      "line": 90,
+      "has": "\"students\", \"classes\", \"staff\""
+     }
+    ],
+    "findings": []
+   },
+   "sourceRead": [
+    "src/features/makeups/server/actions.ts"
+   ],
+   "uncertainties": [
+    "실행 확인 필요: 침산 복사본의 makeup_cases가 0행이다 — 이 지점에서 새 보강관리 운영 모드가 아직 꺼져 있는지(학원 설정 > 보강 운영) 실행 상태 확인 필요"
+   ],
    "resolved": []
   },
   {
    "id": "textbooks",
    "label": "교재목록(커리큘럼·반 배정)",
    "domain": "수업",
+   "ownerVisible": true,
+   "auditOnlyReason": null,
    "ownerScope": "owner",
    "audience": [
     "master",
@@ -3652,6 +4106,7 @@
    "operations": {
     "key": [
      {
+      "id": "textbooks.saveTextbook",
       "op": "교재 저장·차수 저장·삭제",
       "fns": [
        "saveTextbook",
@@ -3660,6 +4115,7 @@
       ]
      },
      {
+      "id": "textbooks.registerTextbookCover",
       "op": "표지 등록·삭제",
       "fns": [
        "registerTextbookCover",
@@ -3667,6 +4123,7 @@
       ]
      },
      {
+      "id": "textbooks.previewTextbookFill",
       "op": "반 배정 채우기·미리보기·되돌리기",
       "fns": [
        "previewTextbookFill",
@@ -3676,6 +4133,7 @@
       ]
      },
      {
+      "id": "textbooks.setLessonShift",
       "op": "수업 회차 미룸·당김",
       "fns": [
        "setLessonShift",
@@ -3683,6 +4141,7 @@
       ]
      },
      {
+      "id": "textbooks.saveMathTextbookAssignment",
       "op": "수학 교재 배정·목표·학교 시험 기간",
       "fns": [
        "saveMathTextbookAssignment",
@@ -3807,8 +4266,38 @@
     "writePath": "read-only",
     "sessionOps": []
    },
-   "verification": "reviewed",
-   "sourceRead": [],
+   "verification": "source-read",
+   "readScope": [
+    "key-actions"
+   ],
+   "semantics": {
+    "behavior": "교재·차수 저장, 표지, 반 배정 채우기(미리보기·되돌리기), 회차 미룸·당김, 수학 교재 배정.",
+    "authorization": "requireTextbookWrite, 반 단위는 requireEcsClassAccess/requireMcsClassAccess(write).",
+    "integration": "없음.",
+    "evidence": [
+     {
+      "file": "src/features/textbooks/server/actions.ts",
+      "line": 47,
+      "has": "requireTextbookWrite()"
+     },
+     {
+      "file": "src/features/textbooks/server/plan-actions.ts",
+      "line": 1168,
+      "has": "requireEcsClassAccess(input.classId, { write: true })"
+     },
+     {
+      "file": "src/features/textbooks/server/math-assignment-actions.ts",
+      "line": 39,
+      "has": "requireMcsClassAccess"
+     }
+    ],
+    "findings": []
+   },
+   "sourceRead": [
+    "src/features/textbooks/server/actions.ts",
+    "src/features/textbooks/server/math-assignment-actions.ts",
+    "src/features/textbooks/server/plan-actions.ts"
+   ],
    "uncertainties": [],
    "resolved": []
   },
@@ -3816,6 +4305,8 @@
    "id": "lesson-reports",
    "label": "수업보고서·ClassNote 발송",
    "domain": "수업",
+   "ownerVisible": true,
+   "auditOnlyReason": null,
    "ownerScope": "owner",
    "audience": [
     "master",
@@ -4028,6 +4519,7 @@
    "operations": {
     "key": [
      {
+      "id": "lesson-reports.refreshClassnoteQueue",
       "op": "ClassNote 대기열 새로고침·재시도·막힘 해제·미발송 일괄 발송",
       "fns": [
        "refreshClassnoteQueue",
@@ -4037,6 +4529,7 @@
       ]
      },
      {
+      "id": "lesson-reports.saveAdminReport",
       "op": "관리자 직접 작성·발송·일괄 발송",
       "fns": [
        "saveAdminReport",
@@ -4045,6 +4538,7 @@
       ]
      },
      {
+      "id": "lesson-reports.previewClassNotice",
       "op": "반 공지·전체 반 공지 발송",
       "fns": [
        "previewClassNotice",
@@ -4053,6 +4547,7 @@
       ]
      },
      {
+      "id": "lesson-reports.requestReportRecall",
       "op": "보고서 회수 요청",
       "fns": [
        "requestReportRecall",
@@ -4060,6 +4555,7 @@
       ]
      },
      {
+      "id": "lesson-reports.linkClassnoteChild",
       "op": "반 보드 원아 연결·해제·동기화 요청",
       "fns": [
        "linkClassnoteChild",
@@ -4069,6 +4565,7 @@
       ]
      },
      {
+      "id": "lesson-reports.requestParentReply",
       "op": "학부모 글 답글·수정·삭제·공감",
       "fns": [
        "requestParentReply",
@@ -4079,6 +4576,7 @@
       ]
      },
      {
+      "id": "lesson-reports.listReports",
       "op": "보고서 목록 조회",
       "fns": [
        "listReports"
@@ -4246,8 +4744,44 @@
      "reply-draft"
     ]
    },
-   "verification": "reviewed",
-   "sourceRead": [],
+   "verification": "source-read",
+   "readScope": [
+    "key-actions",
+    "page"
+   ],
+   "semantics": {
+    "behavior": "ClassNote 대기열·관리자 직접 작성/발송·반 공지 미리보기/발송·회수 요청·반 보드 원아 연결·학부모 답글/공감·목록(평점은 쓰기 권한자만).",
+    "authorization": "조회 canAccessTenant(lesson_reports), 쓰기 canWriteTenant(lesson_reports), 답글은 replyGate + canReply.",
+    "integration": "ClassNote(연동 PC), AI 평점.",
+    "evidence": [
+     {
+      "file": "src/features/report-admin/server/actions.ts",
+      "line": 479,
+      "has": "canAccessTenant(user.systemRole, \"lesson_reports\")"
+     },
+     {
+      "file": "src/features/report-admin/server/compose-actions.ts",
+      "line": 337,
+      "has": "canWriteTenant(user.systemRole, \"lesson_reports\")"
+     },
+     {
+      "file": "src/features/classnote-reply/server/reply-actions.ts",
+      "line": 168,
+      "has": "perm.canReply"
+     },
+     {
+      "file": "src/features/report-admin/server/actions.ts",
+      "line": 511,
+      "has": "REPORT_RATING_VISIBLE"
+     }
+    ],
+    "findings": []
+   },
+   "sourceRead": [
+    "src/features/classnote-reply/server/reply-actions.ts",
+    "src/features/report-admin/server/actions.ts",
+    "src/features/report-admin/server/compose-actions.ts"
+   ],
    "uncertainties": [],
    "resolved": []
   },
@@ -4255,6 +4789,8 @@
    "id": "class-review",
    "label": "직원 평가·직원 포트폴리오",
    "domain": "수업",
+   "ownerVisible": true,
+   "auditOnlyReason": null,
    "ownerScope": "owner",
    "audience": [
     "master",
@@ -4362,6 +4898,7 @@
    "operations": {
     "key": [
      {
+      "id": "class-review.createClassReview",
       "op": "참관 평가 개설·채점·최종 의견",
       "fns": [
        "createClassReview",
@@ -4370,6 +4907,7 @@
       ]
      },
      {
+      "id": "class-review.saveChecklistTemplate",
       "op": "문항 세트 저장·삭제",
       "fns": [
        "saveChecklistTemplate",
@@ -4377,6 +4915,7 @@
       ]
      },
      {
+      "id": "class-review.refreshTeacherPortfolioNow",
       "op": "포트폴리오 재계산·월 입력 저장",
       "fns": [
        "refreshTeacherPortfolioNow",
@@ -4384,6 +4923,7 @@
       ]
      },
      {
+      "id": "class-review.decideJudgment",
       "op": "만족도 판정·이의",
       "fns": [
        "decideJudgment",
@@ -4392,6 +4932,7 @@
       ]
      },
      {
+      "id": "class-review.saveEvaluationSettings",
       "op": "평가 기준·구성 저장",
       "fns": [
        "saveEvaluationSettings",
@@ -4521,8 +5062,38 @@
     "writePath": "read-only",
     "sessionOps": []
    },
-   "verification": "reviewed",
-   "sourceRead": [],
+   "verification": "source-read",
+   "readScope": [
+    "key-actions",
+    "page"
+   ],
+   "semantics": {
+    "behavior": "참관 평가 개설(강사 직급은 본인 평가만)·문항 세트(원장·지정 인원)·포트폴리오 재계산·만족도 판정·평가 기준 저장.",
+    "authorization": "requireWrite + 개설은 사무실, 문항 편집은 priv.editTemplate, 포트폴리오는 getPortfolioGate + canWriteTenant(class_review).",
+    "integration": "없음(만족도 판정 AI는 학부모 글 분류에서).",
+    "evidence": [
+     {
+      "file": "src/features/class-review/server/actions.ts",
+      "line": 64,
+      "has": "평가 건 개설은 사무실에서 합니다"
+     },
+     {
+      "file": "src/features/class-review/server/actions.ts",
+      "line": 405,
+      "has": "priv.editTemplate"
+     },
+     {
+      "file": "src/features/teacher-portfolio/server/actions.ts",
+      "line": 23,
+      "has": "canWriteTenant(user.systemRole, \"class_review\")"
+     }
+    ],
+    "findings": []
+   },
+   "sourceRead": [
+    "src/features/class-review/server/actions.ts",
+    "src/features/teacher-portfolio/server/actions.ts"
+   ],
    "uncertainties": [],
    "resolved": []
   },
@@ -4530,6 +5101,8 @@
    "id": "students",
    "label": "원생목록·원생 상세·원생 통계",
    "domain": "원생",
+   "ownerVisible": true,
+   "auditOnlyReason": null,
    "ownerScope": "owner",
    "audience": [
     "master",
@@ -4736,6 +5309,7 @@
    "operations": {
     "key": [
      {
+      "id": "students.createStudent",
       "op": "원생 등록·수정·삭제",
       "fns": [
        "createStudent",
@@ -4744,6 +5318,7 @@
       ]
      },
      {
+      "id": "students.changeStudentStatus",
       "op": "상태 전환·퇴원 예약 취소",
       "fns": [
        "changeStudentStatus",
@@ -4751,6 +5326,7 @@
       ]
      },
      {
+      "id": "students.endStudentEnrollments",
       "op": "수강 종료·휴원",
       "fns": [
        "endStudentEnrollments",
@@ -4760,6 +5336,7 @@
       ]
      },
      {
+      "id": "students.createStudentMemo",
       "op": "특이사항 메모 작성·고정",
       "fns": [
        "createStudentMemo",
@@ -4769,6 +5346,7 @@
       ]
      },
      {
+      "id": "students.createStudentGrade",
       "op": "성적·레벨테스트·목표 기록",
       "fns": [
        "createStudentGrade",
@@ -4777,6 +5355,7 @@
       ]
      },
      {
+      "id": "students.updateStudentEnglishName",
       "op": "영어 이름 수정·형제 후보",
       "fns": [
        "updateStudentEnglishName",
@@ -4784,6 +5363,7 @@
       ]
      },
      {
+      "id": "students.setProgressAnomalyResolved",
       "op": "진도 이상 처리",
       "fns": [
        "setProgressAnomalyResolved"
@@ -4961,8 +5541,37 @@
      "student-task"
     ]
    },
-   "verification": "reviewed",
-   "sourceRead": [],
+   "verification": "source-read",
+   "readScope": [
+    "key-actions",
+    "page"
+   ],
+   "semantics": {
+    "behavior": "원생 등록·상태 전환(퇴원으로의 전환은 거절 — 퇴원보고서로만)·수강 종료(사유 필수)·특이사항·성적·영어 이름·진도 이상 처리.",
+    "authorization": "등록 canManageStudentRecords, 상태·종료 canManageStudentStatusNow, 메모·성적 canWriteTenant(students), 영어 이름 ecs 권한.",
+    "integration": "없음.",
+    "evidence": [
+     {
+      "file": "src/features/students/server/actions.ts",
+      "line": 175,
+      "has": "canManageStudentRecords"
+     },
+     {
+      "file": "src/features/students/server/actions.ts",
+      "line": 582,
+      "has": "WITHDRAWAL_VIA_REPORT"
+     },
+     {
+      "file": "src/features/students/server/actions.ts",
+      "line": 1041,
+      "has": "canWriteTenant(user.systemRole, \"students\")"
+     }
+    ],
+    "findings": []
+   },
+   "sourceRead": [
+    "src/features/students/server/actions.ts"
+   ],
    "uncertainties": [],
    "resolved": []
   },
@@ -4970,6 +5579,8 @@
    "id": "student-contribution",
    "label": "원생 기여도(온톨로지·소개)",
    "domain": "원생",
+   "ownerVisible": true,
+   "auditOnlyReason": null,
    "ownerScope": "owner",
    "audience": [
     "master",
@@ -5049,6 +5660,7 @@
    "operations": {
     "key": [
      {
+      "id": "student-contribution.refreshContribution",
       "op": "기여도 재계산·긍정 신호 변경",
       "fns": [
        "refreshContribution",
@@ -5056,6 +5668,7 @@
       ]
      },
      {
+      "id": "student-contribution.searchReviewedReferrers",
       "op": "소개자 확인 연결",
       "fns": [
        "searchReviewedReferrers",
@@ -5063,12 +5676,14 @@
       ]
      },
      {
+      "id": "student-contribution.generateStudentRecordSummary",
       "op": "AI 기록 요약(명시 버튼)",
       "fns": [
        "generateStudentRecordSummary"
       ]
      },
      {
+      "id": "student-contribution.saveContributionSettings",
       "op": "배점 설정 저장",
       "fns": [
        "saveContributionSettings"
@@ -5200,9 +5815,33 @@
     "sessionOps": []
    },
    "verification": "source-read",
+   "readScope": [
+    "key-actions",
+    "page"
+   ],
+   "semantics": {
+    "behavior": "기여도 재계산·긍정 신호 변경·소개자 연결·AI 기록 요약(명시 버튼, ai_analysis 라이선스)·배점 저장.",
+    "authorization": "requireContributionWrite, 페이지는 재-export 뷰의 게이트.",
+    "integration": "AI(요약).",
+    "evidence": [
+     {
+      "file": "src/features/student-contribution/server/actions.ts",
+      "line": 42,
+      "has": "requireContributionWrite()"
+     },
+     {
+      "file": "src/features/student-contribution/server/summary-actions.ts",
+      "line": 27,
+      "has": "ai_analysis"
+     }
+    ],
+    "findings": []
+   },
    "sourceRead": [
     "src/app/(shell)/student-contribution/page.tsx",
-    "src/features/student-contribution/components/settings-view.tsx"
+    "src/features/student-contribution/components/settings-view.tsx",
+    "src/features/student-contribution/server/actions.ts",
+    "src/features/student-contribution/server/summary-actions.ts"
    ],
    "uncertainties": [],
    "resolved": [
@@ -5213,6 +5852,8 @@
    "id": "exams",
    "label": "성적관리(통합·입력·확인·JJ실)",
    "domain": "원생",
+   "ownerVisible": true,
+   "auditOnlyReason": null,
    "ownerScope": "owner",
    "audience": [
     "master",
@@ -5350,6 +5991,7 @@
    "operations": {
     "key": [
      {
+      "id": "exams.saveGradeScores",
       "op": "점수 저장·통합 성적 생성",
       "fns": [
        "saveGradeScores",
@@ -5358,6 +6000,7 @@
       ]
      },
      {
+      "id": "exams.importGradesExcel",
       "op": "엑셀 가져오기·내보내기",
       "fns": [
        "importGradesExcel"
@@ -5368,6 +6011,7 @@
       ]
      },
      {
+      "id": "exams.linkIjwStudent",
       "op": "IJW 학생 연결·프로필 보내기",
       "fns": [
        "linkIjwStudent",
@@ -5463,8 +6107,39 @@
     "writePath": "read-only",
     "sessionOps": []
    },
-   "verification": "reviewed",
-   "sourceRead": [],
+   "verification": "source-read",
+   "readScope": [
+    "key-actions",
+    "page"
+   ],
+   "semantics": {
+    "behavior": "학기 격자 점수 저장(명단 밖 학생·음수 거절)·엑셀 가져오기(서식 검증)·IJW 학생 연결.",
+    "authorization": "gradeWriteError 게이트, IJW 연결은 manager().",
+    "integration": "인재원(IJW).",
+    "evidence": [
+     {
+      "file": "src/features/grades/server/actions.ts",
+      "line": 124,
+      "has": "이 학기 명단에 없는 학생이 있습니다"
+     },
+     {
+      "file": "src/features/grades/server/excel-actions.ts",
+      "line": 148,
+      "has": "gradeWriteError()"
+     },
+     {
+      "file": "src/features/ijw/server/link-actions.ts",
+      "line": 67,
+      "has": "manager()"
+     }
+    ],
+    "findings": []
+   },
+   "sourceRead": [
+    "src/features/grades/server/actions.ts",
+    "src/features/grades/server/excel-actions.ts",
+    "src/features/ijw/server/link-actions.ts"
+   ],
    "uncertainties": [],
    "resolved": []
   },
@@ -5472,6 +6147,8 @@
    "id": "consultations",
    "label": "원생상담(재원생 상담·AI 분석)",
    "domain": "원생",
+   "ownerVisible": true,
+   "auditOnlyReason": null,
    "ownerScope": "owner",
    "audience": [
     "master",
@@ -5559,6 +6236,7 @@
    "operations": {
     "key": [
      {
+      "id": "consultations.createStudentConsultation",
       "op": "상담 작성·수정·삭제",
       "fns": [
        "createStudentConsultation",
@@ -5567,12 +6245,14 @@
       ]
      },
      {
+      "id": "consultations.toggleConsultationFollowUp",
       "op": "후속조치 완료 표시",
       "fns": [
        "toggleConsultationFollowUp"
       ]
      },
      {
+      "id": "consultations.startStudentConsultationFromAudio",
       "op": "녹음으로 시작·AI 분석",
       "fns": [
        "startStudentConsultationFromAudio",
@@ -5657,8 +6337,38 @@
     "writePath": "reuse-2.0-actions",
     "sessionOps": []
    },
-   "verification": "reviewed",
-   "sourceRead": [],
+   "verification": "source-read",
+   "readScope": [
+    "key-actions",
+    "page"
+   ],
+   "semantics": {
+    "behavior": "상담 작성(담당 범위 밖 학생 거절)·후속조치 토글·녹음으로 시작(라이선스·경로 검증) → 전사 → AI 분석.",
+    "authorization": "canWriteTenant(consultations) + canConsultStudent 범위, 후속조치는 full/scoped.",
+    "integration": "AssemblyAI + AI 분석.",
+    "evidence": [
+     {
+      "file": "src/features/consultations/server/actions.ts",
+      "line": 313,
+      "has": "canWriteTenant(user.systemRole, \"consultations\")"
+     },
+     {
+      "file": "src/features/consultations/server/actions.ts",
+      "line": 323,
+      "has": "canConsultStudent"
+     },
+     {
+      "file": "src/features/consultations/server/audio-actions.ts",
+      "line": 66,
+      "has": "isTenantAudioPath"
+     }
+    ],
+    "findings": []
+   },
+   "sourceRead": [
+    "src/features/consultations/server/actions.ts",
+    "src/features/consultations/server/audio-actions.ts"
+   ],
    "uncertainties": [],
    "resolved": []
   },
@@ -5666,6 +6376,8 @@
    "id": "enrollment",
    "label": "신규 콜&상담(QR 접수·브리프·인수인계)",
    "domain": "원생",
+   "ownerVisible": true,
+   "auditOnlyReason": null,
    "ownerScope": "owner",
    "audience": [
     "master",
@@ -5757,6 +6469,7 @@
    "operations": {
     "key": [
      {
+      "id": "enrollment.createEnrollmentConsultation",
       "op": "상담 작성·수정·삭제·칸 편집",
       "fns": [
        "createEnrollmentConsultation",
@@ -5766,12 +6479,14 @@
       ]
      },
      {
+      "id": "enrollment.setEnrollmentOutcome",
       "op": "결과(후속 조치) 지정",
       "fns": [
        "setEnrollmentOutcome"
       ]
      },
      {
+      "id": "enrollment.convertConsultationToStudent",
       "op": "원생으로 전환·상담 병합",
       "fns": [
        "convertConsultationToStudent",
@@ -5780,6 +6495,7 @@
       ]
      },
      {
+      "id": "enrollment.regenerateConsultationAnalysis",
       "op": "AI 분석 재생성·상담 준비 브리프",
       "fns": [
        "regenerateConsultationAnalysis",
@@ -5788,6 +6504,7 @@
       ]
      },
      {
+      "id": "enrollment.createIntakeToken",
       "op": "QR 접수 토큰 발급·끄기·공개 제출",
       "fns": [
        "createIntakeToken",
@@ -5796,6 +6513,7 @@
       ]
      },
      {
+      "id": "enrollment.enqueueConsultationPush",
       "op": "makeedu로 상담 보내기",
       "fns": [
        "enqueueConsultationPush"
@@ -5922,8 +6640,38 @@
      "lead-note"
     ]
    },
-   "verification": "reviewed",
-   "sourceRead": [],
+   "verification": "source-read",
+   "readScope": [
+    "key-actions",
+    "page"
+   ],
+   "semantics": {
+    "behavior": "상담 작성(경로 필수·후속 조치·소개자)·결과 지정(배정된 반이 있으면 등록 외 거절)·원생 전환(반 1개 이상)·AI 재분석(전사 필요)·QR 토큰·makeedu 전송(연동 PC 필요).",
+    "authorization": "canWriteTenant(enrollment), QR은 requireIntakeAdmin, makeedu 전송은 canPushToMakeedu.",
+    "integration": "makeedu(연동 PC), AI, QR 공개 접수.",
+    "evidence": [
+     {
+      "file": "src/features/enrollment/server/actions.ts",
+      "line": 82,
+      "has": "canWriteTenant(user.systemRole, \"enrollment\")"
+     },
+     {
+      "file": "src/features/enrollment/server/actions.ts",
+      "line": 574,
+      "has": "ASSIGNED_DRAG_BLOCKED"
+     },
+     {
+      "file": "src/features/integrations/server/actions.ts",
+      "line": 498,
+      "has": "hasMakeeduWorker"
+     }
+    ],
+    "findings": []
+   },
+   "sourceRead": [
+    "src/features/enrollment/server/actions.ts",
+    "src/features/integrations/server/actions.ts"
+   ],
    "uncertainties": [],
    "resolved": []
   },
@@ -5931,6 +6679,8 @@
    "id": "retention",
    "label": "이탈 방어",
    "domain": "원생",
+   "ownerVisible": true,
+   "auditOnlyReason": null,
    "ownerScope": "owner",
    "audience": [
     "master",
@@ -6022,6 +6772,7 @@
    "operations": {
     "key": [
      {
+      "id": "retention.campaignAdd",
       "op": "재등록 캠페인 추가·제거·상태 변경",
       "fns": [
        "campaignAdd",
@@ -6030,6 +6781,7 @@
       ]
      },
      {
+      "id": "retention.logRetentionAction",
       "op": "학부모 메시지 조치 기록",
       "fns": [
        "logRetentionAction"
@@ -6104,15 +6856,42 @@
     "writePath": "reuse-2.0-actions",
     "sessionOps": []
    },
-   "verification": "reviewed",
-   "sourceRead": [],
-   "uncertainties": [],
+   "verification": "source-read",
+   "readScope": [
+    "key-actions"
+   ],
+   "semantics": {
+    "behavior": "재등록 캠페인 추가·제거·상태, 학부모 메시지 조치 기록(2자 이상).",
+    "authorization": "canWriteTenant(retention).",
+    "integration": "없음.",
+    "evidence": [
+     {
+      "file": "src/features/retention/server/actions.ts",
+      "line": 74,
+      "has": "canWriteTenant(user.systemRole, \"retention\")"
+     },
+     {
+      "file": "src/features/retention/server/actions.ts",
+      "line": 29,
+      "has": "조치 내용을 입력해주세요"
+     }
+    ],
+    "findings": []
+   },
+   "sourceRead": [
+    "src/features/retention/server/actions.ts"
+   ],
+   "uncertainties": [
+    "실행 확인 필요: reenrollment_campaign_targets가 침산 복사본에서 0행 — 캠페인 기능을 실제로 쓰는지"
+   ],
    "resolved": []
   },
   {
    "id": "newcomers",
    "label": "신규생 관리(90일 체크리스트)",
    "domain": "원생",
+   "ownerVisible": true,
+   "auditOnlyReason": null,
    "ownerScope": "owner",
    "audience": [
     "master",
@@ -6165,6 +6944,7 @@
    "operations": {
     "key": [
      {
+      "id": "newcomers.setOnboardingCheck",
       "op": "체크리스트 항목 완료",
       "fns": [
        "setOnboardingCheck"
@@ -6223,8 +7003,26 @@
     "writePath": "reuse-2.0-actions",
     "sessionOps": []
    },
-   "verification": "reviewed",
-   "sourceRead": [],
+   "verification": "source-read",
+   "readScope": [
+    "key-actions"
+   ],
+   "semantics": {
+    "behavior": "신입 체크리스트 항목 완료/취소(과목별).",
+    "authorization": "canWriteTenant(newcomers).",
+    "integration": "없음.",
+    "evidence": [
+     {
+      "file": "src/features/newcomers/server/actions.ts",
+      "line": 46,
+      "has": "canWriteTenant(user.systemRole, \"newcomers\")"
+     }
+    ],
+    "findings": []
+   },
+   "sourceRead": [
+    "src/features/newcomers/server/actions.ts"
+   ],
    "uncertainties": [],
    "resolved": []
   },
@@ -6232,6 +7030,8 @@
    "id": "withdrawals",
    "label": "퇴원관리",
    "domain": "원생",
+   "ownerVisible": true,
+   "auditOnlyReason": null,
    "ownerScope": "owner",
    "audience": [
     "master",
@@ -6294,12 +7094,14 @@
    "operations": {
     "key": [
      {
+      "id": "withdrawals.reactivateStudent",
       "op": "재원 복귀",
       "fns": [
        "reactivateStudent"
       ]
      },
      {
+      "id": "withdrawals.updateWithdrawalReason",
       "op": "퇴원 사유 수정·상담 단계 체크",
       "fns": [
        "updateWithdrawalReason",
@@ -6378,8 +7180,31 @@
     "writePath": "read-only",
     "sessionOps": []
    },
-   "verification": "reviewed",
-   "sourceRead": [],
+   "verification": "source-read",
+   "readScope": [
+    "key-actions"
+   ],
+   "semantics": {
+    "behavior": "재원 복귀(퇴원 권한 + 상태 권한 + 원생 관리 권한)·퇴원 사유 수정(대분류 검증)·상담 단계 체크.",
+    "authorization": "canWriteTenant(withdrawals) + canManageStudentStatusNow + canManageTenant(students).",
+    "integration": "없음.",
+    "evidence": [
+     {
+      "file": "src/features/withdrawals/server/actions.ts",
+      "line": 190,
+      "has": "canWriteTenant(user.systemRole, \"withdrawals\")"
+     },
+     {
+      "file": "src/features/withdrawals/server/actions.ts",
+      "line": 195,
+      "has": "재원 복구 권한이 없습니다"
+     }
+    ],
+    "findings": []
+   },
+   "sourceRead": [
+    "src/features/withdrawals/server/actions.ts"
+   ],
    "uncertainties": [],
    "resolved": []
   },
@@ -6387,6 +7212,8 @@
    "id": "withdrawal-reports",
    "label": "퇴원보고서(작성·순차 승인·옛 시트)",
    "domain": "원생",
+   "ownerVisible": true,
+   "auditOnlyReason": null,
    "ownerScope": "owner",
    "audience": [
     "master",
@@ -6458,6 +7285,7 @@
    "operations": {
     "key": [
      {
+      "id": "withdrawal-reports.requestWithdrawalReport",
       "op": "작성 요청·바로 처리(관리자)",
       "fns": [
        "requestWithdrawalReport",
@@ -6465,12 +7293,14 @@
       ]
      },
      {
+      "id": "withdrawal-reports.changeWithdrawalReport",
       "op": "작성·승인·반려 등 단계 변경",
       "fns": [
        "changeWithdrawalReport"
       ]
      },
      {
+      "id": "withdrawal-reports.mapArchive",
       "op": "옛 시트 기록 원생 연결",
       "fns": [
        "mapArchive"
@@ -6563,8 +7393,31 @@
     "writePath": "reuse-2.0-actions",
     "sessionOps": []
    },
-   "verification": "reviewed",
-   "sourceRead": [],
+   "verification": "source-read",
+   "readScope": [
+    "key-actions"
+   ],
+   "semantics": {
+    "behavior": "작성 요청(RPC request_withdrawal_report_group, 담당 과목만)·단계 변경 save/submit/approve/reject/cancel(revision 비교)·옛 시트 연결.",
+    "authorization": "reportViewer().request / .writable.",
+    "integration": "없음.",
+    "evidence": [
+     {
+      "file": "src/features/withdrawal-reports/server/actions.ts",
+      "line": 41,
+      "has": "request_withdrawal_report_group"
+     },
+     {
+      "file": "src/features/withdrawal-reports/server/actions.ts",
+      "line": 82,
+      "has": "\"save\", \"submit\", \"approve\", \"reject\", \"cancel\""
+     }
+    ],
+    "findings": []
+   },
+   "sourceRead": [
+    "src/features/withdrawal-reports/server/actions.ts"
+   ],
    "uncertainties": [],
    "resolved": []
   },
@@ -6572,6 +7425,8 @@
    "id": "staff",
    "label": "직원관리(명부·계약·이력서·휴가·연차)",
    "domain": "운영",
+   "ownerVisible": true,
+   "auditOnlyReason": null,
    "ownerScope": "owner",
    "audience": [
     "master",
@@ -6697,6 +7552,7 @@
    "operations": {
     "key": [
      {
+      "id": "staff.createStaff",
       "op": "직원 등록·수정·역할 변경·비활성·인계 후 비활성",
       "fns": [
        "createStaff",
@@ -6707,6 +7563,7 @@
       ]
      },
      {
+      "id": "staff.changeStaffEmail",
       "op": "계정 이메일·비밀번호 재설정·삭제",
       "fns": [
        "changeStaffEmail",
@@ -6715,6 +7572,7 @@
       ]
      },
      {
+      "id": "staff.updateStaffContract",
       "op": "계약 수정·연장·PDF 추출(OCR)",
       "fns": [
        "updateStaffContract",
@@ -6723,6 +7581,7 @@
       ]
      },
      {
+      "id": "staff.saveStaffResume",
       "op": "이력서 저장·사진",
       "fns": [
        "saveStaffResume",
@@ -6730,6 +7589,7 @@
       ]
      },
      {
+      "id": "staff.ensureStaffIntakeToken",
       "op": "QR 직원 등록 토큰·공개 제출",
       "fns": [
        "ensureStaffIntakeToken",
@@ -6737,6 +7597,7 @@
       ]
      },
      {
+      "id": "staff.requestLeave",
       "op": "휴가 신청·승인·삭제",
       "fns": [
        "requestLeave",
@@ -6745,6 +7606,7 @@
       ]
      },
      {
+      "id": "staff.addLeaveAdjustment",
       "op": "연차 조정",
       "fns": [
        "addLeaveAdjustment",
@@ -6752,6 +7614,7 @@
       ]
      },
      {
+      "id": "staff.createStaffTask",
       "op": "Notion 할 일 생성·완료·기한 이동",
       "fns": [
        "createStaffTask",
@@ -6913,8 +7776,40 @@
     "writePath": "read-only",
     "sessionOps": []
    },
-   "verification": "reviewed",
-   "sourceRead": [],
+   "verification": "source-read",
+   "readScope": [
+    "key-actions"
+   ],
+   "semantics": {
+    "behavior": "직원 등록(Auth 계정 생성, 본인보다 높은 역할 부여 불가)·계약 수정·이력서·QR 직원 등록·휴가 신청(유형 5종)·연차 조정·Notion 할 일.",
+    "authorization": "canWriteTenant(staff) + canSeeStaffMember 범위, 휴가는 직원 관리 역할, 연차 조정은 requireAdjuster.",
+    "integration": "Supabase Auth, Notion, 계약 PDF OCR(Claude, 원장 승인 예외).",
+    "evidence": [
+     {
+      "file": "src/features/staff/server/actions.ts",
+      "line": 109,
+      "has": "canWriteTenant(actor.systemRole, \"staff\")"
+     },
+     {
+      "file": "src/features/payroll/server/actions.ts",
+      "line": 198,
+      "has": "LEAVE_TYPES"
+     },
+     {
+      "file": "src/features/leave/server/actions.ts",
+      "line": 122,
+      "has": "requireAdjuster()"
+     }
+    ],
+    "findings": [
+     "2.0 오류 문구가 원시 역할 키를 노출한다: payroll/server/actions.ts:207 \"(master / admin / manager)\", staff/server/actions.ts:123 \"${newRole} 역할은…\" — 3.0 카탈로그에는 옮기지 않았다."
+    ]
+   },
+   "sourceRead": [
+    "src/features/leave/server/actions.ts",
+    "src/features/payroll/server/actions.ts",
+    "src/features/staff/server/actions.ts"
+   ],
    "uncertainties": [],
    "resolved": []
   },
@@ -6922,6 +7817,8 @@
    "id": "payroll",
    "label": "급여·명세서·강사 정산",
    "domain": "운영",
+   "ownerVisible": true,
+   "auditOnlyReason": null,
    "ownerScope": "owner",
    "audience": [
     "master"
@@ -6950,6 +7847,7 @@
    "operations": {
     "key": [
      {
+      "id": "payroll.issuePayslip",
       "op": "명세서 발급·발급 취소·조정 저장",
       "fns": [
        "issuePayslip",
@@ -6958,6 +7856,7 @@
       ]
      },
      {
+      "id": "payroll.autoComputePayroll",
       "op": "급여 자동 계산·저장·지급 표시",
       "fns": [
        "autoComputePayroll",
@@ -6966,6 +7865,7 @@
       ]
      },
      {
+      "id": "payroll.saveClassSalary",
       "op": "반별 급여·강사 보수 저장",
       "fns": [
        "saveClassSalary",
@@ -7068,15 +7968,49 @@
     "writePath": "read-only",
     "sessionOps": []
    },
-   "verification": "reviewed",
-   "sourceRead": [],
-   "uncertainties": [],
+   "verification": "source-read",
+   "readScope": [
+    "key-actions",
+    "page"
+   ],
+   "semantics": {
+    "behavior": "명세서 발행(정산 불가·실수령 음수면 거절)·급여 자동 계산·반별 급여 배분율(0~100).",
+    "authorization": "canManagePayslipNow(원장 + 지정), 급여 계산은 직원 관리 역할 + staff 쓰기, 반별 급여는 canManageSalary.",
+    "integration": "없음(급여는 외부 AI 전송 금지 필드).",
+    "evidence": [
+     {
+      "file": "src/features/payroll/server/payslip-actions.ts",
+      "line": 155,
+      "has": "canManagePayslipNow"
+     },
+     {
+      "file": "src/features/payroll/server/payslip-actions.ts",
+      "line": 171,
+      "has": "실수령액이 음수입니다"
+     },
+     {
+      "file": "src/features/payroll/server/class-salary-actions.ts",
+      "line": 38,
+      "has": "배분율은 0~100 사이여야 합니다"
+     }
+    ],
+    "findings": []
+   },
+   "sourceRead": [
+    "src/features/payroll/server/class-salary-actions.ts",
+    "src/features/payroll/server/payslip-actions.ts"
+   ],
+   "uncertainties": [
+    "실행 확인 필요: payroll_records가 침산 복사본에서 0행 — 급여 기능이 genericFeatureDisabled(\"payroll\")로 꺼져 있는지(명세서 7건은 payslips 표)"
+   ],
    "resolved": []
   },
   {
    "id": "billing",
    "label": "수납관리(청구·교재·지출·계산기·회차 확정·환불·정산)",
    "domain": "운영",
+   "ownerVisible": true,
+   "auditOnlyReason": null,
    "ownerScope": "owner",
    "audience": [
     "master",
@@ -7347,6 +8281,7 @@
    "operations": {
     "key": [
      {
+      "id": "billing.createInvoice",
       "op": "수기 청구 만들기·납부 표시·무효",
       "fns": [
        "createInvoice",
@@ -7355,6 +8290,7 @@
       ]
      },
      {
+      "id": "billing.createTextbookOrder",
       "op": "교재 주문 생성·수정·체크·삭제",
       "fns": [
        "createTextbookOrder",
@@ -7364,6 +8300,7 @@
       ]
      },
      {
+      "id": "billing.createExpense",
       "op": "지출 작성·수정·결재 토글·영수증",
       "fns": [
        "createExpense",
@@ -7373,6 +8310,7 @@
       ]
      },
      {
+      "id": "billing.createTuitionItem",
       "op": "수강료 단가·교재 단가표 관리",
       "fns": [
        "createTuitionItem",
@@ -7383,6 +8321,7 @@
       ]
      },
      {
+      "id": "billing.saveTuitionQuote",
       "op": "견적(계산기) 저장",
       "fns": [
        "saveTuitionQuote",
@@ -7390,6 +8329,7 @@
       ]
      },
      {
+      "id": "billing.confirmSessionTerm",
       "op": "회차 확정·해제·이월·배분",
       "fns": [
        "confirmSessionTerm",
@@ -7402,6 +8342,7 @@
       ]
      },
      {
+      "id": "billing.saveRefundRequest",
       "op": "환불 요청서 저장·삭제",
       "fns": [
        "saveRefundRequest",
@@ -7409,6 +8350,7 @@
       ]
      },
      {
+      "id": "billing.saveSeatShareAdjust",
       "op": "자리 몫 조정",
       "fns": [
        "saveSeatShareAdjust"
@@ -7619,8 +8561,44 @@
      "report-note"
     ]
    },
-   "verification": "reviewed",
-   "sourceRead": [],
+   "verification": "source-read",
+   "readScope": [
+    "key-actions"
+   ],
+   "semantics": {
+    "behavior": "수기 청구(같은 달 중복 거절)·교재 주문·지출 결의·수강료 단가·견적·회차 확정(시수 0~99)·환불 요청서(academy_documents)·자리 몫 조정.",
+    "authorization": "canWriteTenant(billing), 지출은 expenseWriteScope, 단가·견적은 canWrite, 회차는 회차 정산 모듈이 켜져야.",
+    "integration": "makeedu(청구 동기화).",
+    "evidence": [
+     {
+      "file": "src/features/billing/server/actions.ts",
+      "line": 46,
+      "has": "canWriteTenant(user.systemRole, \"billing\")"
+     },
+     {
+      "file": "src/features/billing/server/expense-actions.ts",
+      "line": 167,
+      "has": "expenseWriteScope"
+     },
+     {
+      "file": "src/features/billing/session-terms/server/actions.ts",
+      "line": 442,
+      "has": "sessionBillingOff"
+     },
+     {
+      "file": "src/features/billing/server/refund-actions.ts",
+      "line": 65,
+      "has": "requireBillingWrite()"
+     }
+    ],
+    "findings": []
+   },
+   "sourceRead": [
+    "src/features/billing/server/actions.ts",
+    "src/features/billing/server/expense-actions.ts",
+    "src/features/billing/server/refund-actions.ts",
+    "src/features/billing/session-terms/server/actions.ts"
+   ],
    "uncertainties": [],
    "resolved": []
   },
@@ -7628,6 +8606,8 @@
    "id": "textbook-requests",
    "label": "교재 요청(강사)",
    "domain": "운영",
+   "ownerVisible": true,
+   "auditOnlyReason": null,
    "ownerScope": "owner-linked",
    "audience": [
     "teacher",
@@ -7678,6 +8658,7 @@
    "operations": {
     "key": [
      {
+      "id": "textbook-requests.requestTextbook",
       "op": "교재 요청·수정·삭제",
       "fns": [
        "requestTextbook",
@@ -7686,12 +8667,14 @@
       ]
      },
      {
+      "id": "textbook-requests.registerTextbookAttachment",
       "op": "첨부 등록",
       "fns": [
        "registerTextbookAttachment"
       ]
      },
      {
+      "id": "textbook-requests.prepareTextbookNotice",
       "op": "교재 안내 공지 준비·발송",
       "fns": [
        "prepareTextbookNotice",
@@ -7740,8 +8723,38 @@
     "writePath": "read-only",
     "sessionOps": []
    },
-   "verification": "reviewed",
-   "sourceRead": [],
+   "verification": "source-read",
+   "readScope": [
+    "key-actions",
+    "page"
+   ],
+   "semantics": {
+    "behavior": "강사 교재 요청(담당 학생만)·첨부·교재 안내 공지 준비/발송(연동 PC 게이트).",
+    "authorization": "canWriteTenant(textbook_requests).",
+    "integration": "ClassNote 공지(연동 PC).",
+    "evidence": [
+     {
+      "file": "src/features/billing/server/textbook-actions.ts",
+      "line": 159,
+      "has": "canWriteTenant(user.systemRole, \"textbook_requests\")"
+     },
+     {
+      "file": "src/features/billing/server/textbook-actions.ts",
+      "line": 170,
+      "has": "담당 학생만 교재를 요청할 수 있습니다"
+     },
+     {
+      "file": "src/features/billing/server/textbook-notice-actions.ts",
+      "line": 116,
+      "has": "getNoticeAttachmentWorkerGate"
+     }
+    ],
+    "findings": []
+   },
+   "sourceRead": [
+    "src/features/billing/server/textbook-actions.ts",
+    "src/features/billing/server/textbook-notice-actions.ts"
+   ],
    "uncertainties": [],
    "resolved": []
   },
@@ -7749,6 +8762,8 @@
    "id": "expense-requests",
    "label": "지출결의서(강사 제출)",
    "domain": "운영",
+   "ownerVisible": true,
+   "auditOnlyReason": null,
    "ownerScope": "owner-linked",
    "audience": [
     "teacher"
@@ -7796,6 +8811,7 @@
    "operations": {
     "key": [
      {
+      "id": "expense-requests.deleteExpense",
       "op": "본인 결의서 삭제",
       "fns": [
        "deleteExpense"
@@ -7838,17 +8854,45 @@
     "writePath": "read-only",
     "sessionOps": []
    },
-   "verification": "reviewed",
-   "sourceRead": [],
-   "uncertainties": [
-    "/expense-requests 페이지에서 도달하는 작성 액션이 deleteExpense뿐 — 작성 경로(전자결재 submitExpenseDraft 또는 billing 컴포넌트) 확인 필요"
+   "verification": "source-read",
+   "readScope": [
+    "key-actions",
+    "page"
    ],
-   "resolved": []
+   "semantics": {
+    "behavior": "강사 본인 지출결의서 조회·삭제·상세. 작성은 같은 billing createExpense(expenseWriteScope)가 맡고 /billing과 /expense-requests를 함께 갱신한다.",
+    "authorization": "expenseWriteScope + 본인 작성분.",
+    "integration": "없음.",
+    "evidence": [
+     {
+      "file": "src/features/billing/server/expense-actions.ts",
+      "line": 294,
+      "has": "지출 관리 권한이 없습니다"
+     },
+     {
+      "file": "src/features/billing/server/expense-actions.ts",
+      "line": 218,
+      "has": "revalidatePath(\"/expense-requests\")"
+     }
+    ],
+    "findings": [
+     "감사 1차의 \"작성 경로 미확인\"은 해소: createExpense(expense-actions.ts:164)가 강사 범위(expenseWriteScope)로 작성하고 /expense-requests를 갱신한다."
+    ]
+   },
+   "sourceRead": [
+    "src/features/billing/server/expense-actions.ts"
+   ],
+   "uncertainties": [],
+   "resolved": [
+    "작성 경로 확인: billing createExpense(expense-actions.ts:164, expenseWriteScope)가 강사 작성분을 저장하고 /expense-requests를 갱신한다"
+   ]
   },
   {
    "id": "shuttle",
    "label": "셔틀(노선 편성·주간·오늘·학부모 등하원·운행 현황·위치)",
    "domain": "운영",
+   "ownerVisible": true,
+   "auditOnlyReason": null,
    "ownerScope": "owner",
    "audience": [
     "master",
@@ -8057,6 +9101,7 @@
    "operations": {
     "key": [
      {
+      "id": "shuttle.createRun",
       "op": "회차·정류장·순서 편성",
       "fns": [
        "createRun",
@@ -8069,6 +9114,7 @@
       ]
      },
      {
+      "id": "shuttle.createStop",
       "op": "정류장 마스터·위치",
       "fns": [
        "createStop",
@@ -8078,6 +9124,7 @@
       ]
      },
      {
+      "id": "shuttle.assignRider",
       "op": "학생 배정·이동·요일",
       "fns": [
        "assignRider",
@@ -8087,6 +9134,7 @@
       ]
      },
      {
+      "id": "shuttle.recordBoarding",
       "op": "탑승 기록·운행 시작/종료·예외",
       "fns": [
        "recordBoarding",
@@ -8098,6 +9146,7 @@
       ]
      },
      {
+      "id": "shuttle.staffChangeRideStop",
       "op": "직원 측 승하차 변경·결석",
       "fns": [
        "staffChangeRideStop",
@@ -8107,6 +9156,7 @@
       ]
      },
      {
+      "id": "shuttle.saveVehicle",
       "op": "차량 저장·위치 보고",
       "fns": [
        "saveVehicle",
@@ -8114,6 +9164,7 @@
       ]
      },
      {
+      "id": "shuttle.createParentAccount",
       "op": "학부모 계정 생성·삭제",
       "fns": [
        "createParentAccount",
@@ -8282,15 +9333,49 @@
     "writePath": "read-only",
     "sessionOps": []
    },
-   "verification": "reviewed",
-   "sourceRead": [],
-   "uncertainties": [],
+   "verification": "source-read",
+   "readScope": [
+    "key-actions",
+    "page"
+   ],
+   "semantics": {
+    "behavior": "회차(30개까지)·정류장·학생 배정(요일 1개 이상, 학원 칸 배정 금지)·탑승 기록(출발 후에만)·차량·학부모 계정 발급(원장·관리자).",
+    "authorization": "gate()/recordGate(), 학부모 계정은 원장·관리자.",
+    "integration": "지도(키 미정, 자리만).",
+    "evidence": [
+     {
+      "file": "src/features/shuttle/server/actions.ts",
+      "line": 229,
+      "has": "회차는 30개까지입니다"
+     },
+     {
+      "file": "src/features/shuttle/server/actions.ts",
+      "line": 639,
+      "has": "먼저 이 회차의 [출발]을 누르세요"
+     },
+     {
+      "file": "src/features/shuttle/parent-accounts/server/parent-actions.ts",
+      "line": 23,
+      "has": "원장·관리자만"
+     }
+    ],
+    "findings": []
+   },
+   "sourceRead": [
+    "src/features/shuttle/parent-accounts/server/parent-actions.ts",
+    "src/features/shuttle/server/actions.ts"
+   ],
+   "uncertainties": [
+    "실행 확인 필요: parent_accounts가 침산 복사본에서 0행 — 학부모 포털을 실제로 발급해 쓰는지"
+   ],
    "resolved": []
   },
   {
    "id": "inventory",
    "label": "재고관리(자산·대여·실사·소모품·업체)",
    "domain": "운영",
+   "ownerVisible": true,
+   "auditOnlyReason": null,
    "ownerScope": "owner",
    "audience": [
     "master",
@@ -8408,6 +9493,7 @@
    "operations": {
     "key": [
      {
+      "id": "inventory.createAsset",
       "op": "자산 등록·수정·상태·보유자",
       "fns": [
        "createAsset",
@@ -8418,6 +9504,7 @@
       ]
      },
      {
+      "id": "inventory.startLoan",
       "op": "대여 시작·반납",
       "fns": [
        "startLoan",
@@ -8426,6 +9513,7 @@
       ]
      },
      {
+      "id": "inventory.recordAudit",
       "op": "실사 기록",
       "fns": [
        "recordAudit",
@@ -8433,6 +9521,7 @@
       ]
      },
      {
+      "id": "inventory.createSupply",
       "op": "소모품 등록·수량",
       "fns": [
        "createSupply",
@@ -8440,6 +9529,7 @@
       ]
      },
      {
+      "id": "inventory.createVendor",
       "op": "업체 관리",
       "fns": [
        "createVendor",
@@ -8448,6 +9538,7 @@
       ]
      },
      {
+      "id": "inventory.importInventoryExcel",
       "op": "엑셀 가져오기",
       "fns": [
        "importInventoryExcel"
@@ -8569,8 +9660,38 @@
     "writePath": "read-only",
     "sessionOps": []
    },
-   "verification": "reviewed",
-   "sourceRead": [],
+   "verification": "source-read",
+   "readScope": [
+    "key-actions"
+   ],
+   "semantics": {
+    "behavior": "자산 등록(대여중은 대여 시작으로만, 폐기는 폐기일 필수, 자산ID 규칙)·대여·실사(미래일 금지)·소모품·업체·엑셀.",
+    "authorization": "requireInventoryWrite, 업체는 requireVendorWrite.",
+    "integration": "없음.",
+    "evidence": [
+     {
+      "file": "src/features/inventory/server/asset-actions.ts",
+      "line": 82,
+      "has": "대여중은"
+     },
+     {
+      "file": "src/features/inventory/server/audit-actions.ts",
+      "line": 30,
+      "has": "실사일은 오늘 이후일 수 없습니다"
+     },
+     {
+      "file": "src/features/inventory/server/vendor-actions.ts",
+      "line": 78,
+      "has": "requireVendorWrite()"
+     }
+    ],
+    "findings": []
+   },
+   "sourceRead": [
+    "src/features/inventory/server/asset-actions.ts",
+    "src/features/inventory/server/audit-actions.ts",
+    "src/features/inventory/server/vendor-actions.ts"
+   ],
    "uncertainties": [],
    "resolved": []
   },
@@ -8578,6 +9699,8 @@
    "id": "meetings",
    "label": "회의록(녹음·AI 분석)",
    "domain": "운영",
+   "ownerVisible": true,
+   "auditOnlyReason": null,
    "ownerScope": "owner",
    "audience": [
     "master",
@@ -8641,6 +9764,7 @@
    "operations": {
     "key": [
      {
+      "id": "meetings.createTextMeeting",
       "op": "회의 만들기(텍스트·녹음)",
       "fns": [
        "createTextMeeting",
@@ -8648,6 +9772,7 @@
       ]
      },
      {
+      "id": "meetings.regenerateMeetingAnalysis",
       "op": "분석 다시 생성·처리 재시도",
       "fns": [
        "regenerateMeetingAnalysis",
@@ -8655,6 +9780,7 @@
       ]
      },
      {
+      "id": "meetings.updateMeetingNotepad",
       "op": "메모·보고서 구획·화자·제목 수정",
       "fns": [
        "updateMeetingNotepad",
@@ -8664,6 +9790,7 @@
       ]
      },
      {
+      "id": "meetings.deleteMeeting",
       "op": "회의 삭제",
       "fns": [
        "deleteMeeting"
@@ -8729,8 +9856,32 @@
     "writePath": "reuse+new-storage",
     "sessionOps": []
    },
-   "verification": "reviewed",
-   "sourceRead": [],
+   "verification": "source-read",
+   "readScope": [
+    "key-actions",
+    "page"
+   ],
+   "semantics": {
+    "behavior": "텍스트 회의 만들기·녹음 회의·AI 분석 재생성(전사 필요)·메모·삭제.",
+    "authorization": "canWriteTenant(meetings).",
+    "integration": "AssemblyAI + AI.",
+    "evidence": [
+     {
+      "file": "src/features/meetings/server/actions.ts",
+      "line": 367,
+      "has": "canWriteTenant(user.systemRole, \"meetings\")"
+     },
+     {
+      "file": "src/features/meetings/server/actions.ts",
+      "line": 590,
+      "has": "녹음 전사가 있어야 AI로 정리할 수 있습니다"
+     }
+    ],
+    "findings": []
+   },
+   "sourceRead": [
+    "src/features/meetings/server/actions.ts"
+   ],
    "uncertainties": [],
    "resolved": []
   },
@@ -8738,6 +9889,8 @@
    "id": "approvals",
    "label": "전자결재(기안·결재함)",
    "domain": "운영",
+   "ownerVisible": true,
+   "auditOnlyReason": null,
    "ownerScope": "owner",
    "audience": [
     "master",
@@ -8859,6 +10012,7 @@
    "operations": {
     "key": [
      {
+      "id": "approvals.submitLeaveDraft",
       "op": "기안(휴가·기본·지출·수입)",
       "fns": [
        "submitLeaveDraft",
@@ -8868,6 +10022,7 @@
       ]
      },
      {
+      "id": "approvals.decideDocument",
       "op": "결재 승인·반려·회수·보류 단계 확인",
       "fns": [
        "decideDocument",
@@ -8876,6 +10031,7 @@
       ]
      },
      {
+      "id": "approvals.addApprovalComment",
       "op": "댓글",
       "fns": [
        "addApprovalComment",
@@ -8883,6 +10039,7 @@
       ]
      },
      {
+      "id": "approvals.saveLineTemplate",
       "op": "결재선 템플릿 저장·삭제",
       "fns": [
        "saveLineTemplate",
@@ -8977,9 +10134,37 @@
     ]
    },
    "verification": "source-read",
+   "readScope": [
+    "key-actions",
+    "page"
+   ],
+   "semantics": {
+    "behavior": "기안 4종(휴가·품의·지출·수입)·결재(승인·반려·전결)·댓글·결재선 템플릿.",
+    "authorization": "기안은 requireApprovalWriter, 결재·댓글은 requireSignedIn + 결재선 차례.",
+    "integration": "없음.",
+    "evidence": [
+     {
+      "file": "src/features/approvals/server/actions.ts",
+      "line": 310,
+      "has": "requireApprovalWriter()"
+     },
+     {
+      "file": "src/features/approvals/server/actions.ts",
+      "line": 598,
+      "has": "승인·반려·전결"
+     },
+     {
+      "file": "src/features/approvals/types.ts",
+      "line": 11,
+      "has": "업무연락 폐기"
+     }
+    ],
+    "findings": []
+   },
    "sourceRead": [
-    "src/features/approvals/types.ts",
-    "src/app/(shell)/approvals/new/page.tsx"
+    "src/app/(shell)/approvals/new/page.tsx",
+    "src/features/approvals/server/actions.ts",
+    "src/features/approvals/types.ts"
    ],
    "uncertainties": [],
    "resolved": [
@@ -8990,6 +10175,8 @@
    "id": "documents",
    "label": "데이터베이스(서식·문서 저장소)",
    "domain": "운영",
+   "ownerVisible": true,
+   "auditOnlyReason": null,
    "ownerScope": "owner",
    "audience": [
     "master",
@@ -9064,6 +10251,7 @@
    "operations": {
     "key": [
      {
+      "id": "documents.registerUploadedDocument",
       "op": "문서 업로드·링크·텍스트 만들기",
       "fns": [
        "registerUploadedDocument",
@@ -9072,6 +10260,7 @@
       ]
      },
      {
+      "id": "documents.updateDocument",
       "op": "수정·삭제·고정",
       "fns": [
        "updateDocument",
@@ -9080,6 +10269,7 @@
       ]
      },
      {
+      "id": "documents.createDocumentCategory",
       "op": "폴더 만들기·이름·이동",
       "fns": [
        "createDocumentCategory",
@@ -9089,6 +10279,7 @@
       ]
      },
      {
+      "id": "documents.moveDocumentFile",
       "op": "파일 이동·이름·즐겨찾기",
       "fns": [
        "moveDocumentFile",
@@ -9175,8 +10366,32 @@
     "writePath": "read-only",
     "sessionOps": []
    },
-   "verification": "reviewed",
-   "sourceRead": [],
+   "verification": "source-read",
+   "readScope": [
+    "key-actions"
+   ],
+   "semantics": {
+    "behavior": "업로드 등록(지점 경로 검증)·수정·폴더 만들기·파일 이동(동시 변경 감지).",
+    "authorization": "requireDocumentWrite, 이동은 canWriteTenant(documents).",
+    "integration": "Supabase Storage.",
+    "evidence": [
+     {
+      "file": "src/features/documents/server/actions.ts",
+      "line": 87,
+      "has": "isTenantDocumentPath"
+     },
+     {
+      "file": "src/features/documents/server/file-actions.ts",
+      "line": 28,
+      "has": "파일 위치가 변경되었습니다"
+     }
+    ],
+    "findings": []
+   },
+   "sourceRead": [
+    "src/features/documents/server/actions.ts",
+    "src/features/documents/server/file-actions.ts"
+   ],
    "uncertainties": [],
    "resolved": []
   },
@@ -9184,6 +10399,8 @@
    "id": "support",
    "label": "고객센터(공지·개선요청)",
    "domain": "지원",
+   "ownerVisible": true,
+   "auditOnlyReason": null,
    "ownerScope": "owner",
    "audience": [
     "master",
@@ -9298,6 +10515,7 @@
    "operations": {
     "key": [
      {
+      "id": "support.createSupportRequest",
       "op": "개선요청 작성·수정",
       "fns": [
        "createSupportRequest",
@@ -9305,6 +10523,7 @@
       ]
      },
      {
+      "id": "support.answerSupportRequest",
       "op": "운영자 답변·공지 저장·삭제",
       "fns": [
        "answerSupportRequest",
@@ -9369,14 +10588,39 @@
     "missing": "고객센터 전부",
     "proposed": {
      "kind": "request",
-     "text": "원장 화면 밖 — 개선요청 답변 도착(알림 support_answer)만 알림함에"
+     "text": "개선요청 초안을 작성하는 미리보기와 답변 도착(알림 support_answer)을 알림함에"
     },
-    "priority": "P3",
+    "priority": "P2",
     "writePath": "read-only",
     "sessionOps": []
    },
-   "verification": "reviewed",
-   "sourceRead": [],
+   "verification": "source-read",
+   "readScope": [
+    "key-actions",
+    "page"
+   ],
+   "semantics": {
+    "behavior": "지점 개선요청 작성. 운영자가 처리상태·예정일·답변(완료는 답변 필수)과 전 지점 공지를 관리.",
+    "authorization": "지점 = canWriteSupportRequest, 운영자 = 운영 콘솔 게이트.",
+    "integration": "없음.",
+    "evidence": [
+     {
+      "file": "src/features/support/server/actions.ts",
+      "line": 36,
+      "has": "canWriteSupportRequest"
+     },
+     {
+      "file": "src/features/support/server/admin-actions.ts",
+      "line": 29,
+      "has": "완료로 바꾸려면 답변을 적어 주세요"
+     }
+    ],
+    "findings": []
+   },
+   "sourceRead": [
+    "src/features/support/server/actions.ts",
+    "src/features/support/server/admin-actions.ts"
+   ],
    "uncertainties": [],
    "resolved": []
   },
@@ -9384,6 +10628,8 @@
    "id": "owner-settings",
    "label": "학원 설정(18면)·관리자 도구",
    "domain": "지원",
+   "ownerVisible": true,
+   "auditOnlyReason": null,
    "ownerScope": "owner",
    "audience": [
     "master",
@@ -9656,12 +10902,14 @@
    "operations": {
     "key": [
      {
+      "id": "owner-settings.saveOwnerSection",
       "op": "설정 섹션 저장(프로필·운영·과목·청구·알림·상담 양식·권한·메뉴·기능·대시보드)",
       "fns": [
        "saveOwnerSection"
       ]
      },
      {
+      "id": "owner-settings.createClassroom",
       "op": "강의실 관리",
       "fns": [
        "createClassroom",
@@ -9671,6 +10919,7 @@
       ]
      },
      {
+      "id": "owner-settings.absorbSubject",
       "op": "과목 흡수·미사용 과목 제거",
       "fns": [
        "absorbSubject",
@@ -9678,12 +10927,14 @@
       ]
      },
      {
+      "id": "owner-settings.savePeriodsForSubject",
       "op": "세션 기간 저장",
       "fns": [
        "savePeriodsForSubject"
       ]
      },
      {
+      "id": "owner-settings.createNoticePopup",
       "op": "팝업 공지 관리·번역",
       "fns": [
        "createNoticePopup",
@@ -9693,6 +10944,7 @@
       ]
      },
      {
+      "id": "owner-settings.mergeStudents",
       "op": "데이터 정리(병합·일괄 퇴원·고아 수강 종료)",
       "fns": [
        "mergeStudents",
@@ -9702,6 +10954,7 @@
       ]
      },
      {
+      "id": "owner-settings.saveSettingRoles",
       "op": "설정별 역할 권한 저장",
       "fns": [
        "saveSettingRoles"
@@ -9877,11 +11130,41 @@
     ]
    },
    "verification": "source-read",
+   "readScope": [
+    "key-actions",
+    "page"
+   ],
+   "semantics": {
+    "behavior": "섹션 단위 설정 저장(스키마 검증)·강의실·과목 흡수·세션 기간(RPC)·팝업 공지·데이터 정리(병합 등)·설정별 역할 권한(원장만).",
+    "authorization": "saveOwnerSection 섹션 스키마 + 권한, 데이터 정리는 행정 상태 권한 + admin 쓰기, 설정 역할은 원장.",
+    "integration": "연동 하위 면(슬랙·makeedu·시트·드라이브·연동 PC·오늘 수학).",
+    "evidence": [
+     {
+      "file": "src/features/owner/server/actions.ts",
+      "line": 105,
+      "has": "SECTION_SCHEMAS"
+     },
+     {
+      "file": "src/features/periods/server/actions.ts",
+      "line": 120,
+      "has": "save_operating_periods"
+     },
+     {
+      "file": "src/features/admin/server/actions.ts",
+      "line": 53,
+      "has": "canWriteTenant(user.systemRole, \"admin\")"
+     }
+    ],
+    "findings": []
+   },
    "sourceRead": [
-    "src/features/owner/tabs.ts",
-    "src/app/(shell)/owner/page.tsx",
     "src/app/(shell)/owner/_components/integrations-face.tsx",
-    "src/app/admin/page.tsx"
+    "src/app/(shell)/owner/page.tsx",
+    "src/app/admin/page.tsx",
+    "src/features/admin/server/actions.ts",
+    "src/features/owner/server/actions.ts",
+    "src/features/owner/tabs.ts",
+    "src/features/periods/server/actions.ts"
    ],
    "uncertainties": [],
    "resolved": []
@@ -9890,6 +11173,8 @@
    "id": "help",
    "label": "도움말(설명서·질문 게시판)",
    "domain": "지원",
+   "ownerVisible": true,
+   "auditOnlyReason": null,
    "ownerScope": "owner",
    "audience": [
     "master",
@@ -9977,6 +11262,7 @@
    "operations": {
     "key": [
      {
+      "id": "help.createHelpPost",
       "op": "질문 작성·수정·답변·닫기·삭제",
       "fns": [
        "createHelpPost",
@@ -10041,21 +11327,43 @@
     "missing": "도움말 전부",
     "proposed": {
      "kind": "command",
-     "text": "AI 업무 지원 입력창에서 도움말 문서를 근거로 답"
+     "text": "도움말 문서를 근거로 답하고, 질문 게시판 초안을 작성하는 미리보기"
     },
-    "priority": "P3",
+    "priority": "P2",
     "writePath": "read-only",
     "sessionOps": []
    },
-   "verification": "reviewed",
-   "sourceRead": [],
-   "uncertainties": [],
+   "verification": "source-read",
+   "readScope": [
+    "key-actions"
+   ],
+   "semantics": {
+    "behavior": "도움말 질문 작성(게시판 표가 없으면 안내).",
+    "authorization": "canAskHelpBoard.",
+    "integration": "없음.",
+    "evidence": [
+     {
+      "file": "src/features/help/board/server/actions.ts",
+      "line": 21,
+      "has": "canAskHelpBoard"
+     }
+    ],
+    "findings": []
+   },
+   "sourceRead": [
+    "src/features/help/board/server/actions.ts"
+   ],
+   "uncertainties": [
+    "실행 확인 필요: help_posts가 침산 복사본에서 0행 — 질문 게시판 사용 여부"
+   ],
    "resolved": []
   },
   {
    "id": "teacher-workspace",
    "label": "강사 작업 공간(미니셸·내 정보·뷰 전환)",
    "domain": "역할 셸",
+   "ownerVisible": true,
+   "auditOnlyReason": null,
    "ownerScope": "owner-linked",
    "audience": [
     "teacher",
@@ -10086,6 +11394,7 @@
    "operations": {
     "key": [
      {
+      "id": "teacher-workspace.updateMyEmail",
       "op": "내 이메일·비밀번호·보고서 이름",
       "fns": [
        "updateMyEmail",
@@ -10094,12 +11403,14 @@
       ]
      },
      {
+      "id": "teacher-workspace.setMyTeacherLang",
       "op": "강사뷰 언어",
       "fns": [
        "setMyTeacherLang"
       ]
      },
      {
+      "id": "teacher-workspace.switchToTeacherView",
       "op": "강사뷰·관리자뷰·다른 강사 뷰 전환",
       "fns": [
        "switchToTeacherView",
@@ -10162,7 +11473,31 @@
     "sessionOps": []
    },
    "verification": "source-read",
+   "readScope": [
+    "key-actions",
+    "page"
+   ],
+   "semantics": {
+    "behavior": "내 이메일(중복 검사)·비밀번호·보고서 이름, 강사뷰 언어, 강사뷰·관리자뷰·다른 강사 뷰 전환(담당 반·위임이 있을 때만).",
+    "authorization": "본인 세션, 뷰 전환은 isFullShellRole + canUseTeacherView.",
+    "integration": "없음.",
+    "evidence": [
+     {
+      "file": "src/features/staff/server/me-actions.ts",
+      "line": 46,
+      "has": "이미 다른 직원이 쓰고 있는 이메일입니다"
+     },
+     {
+      "file": "src/features/shell/view-actions.ts",
+      "line": 64,
+      "has": "canUseTeacherView"
+     }
+    ],
+    "findings": []
+   },
    "sourceRead": [
+    "src/features/shell/view-actions.ts",
+    "src/features/staff/server/me-actions.ts",
     "src/lib/teacher-menu-links.ts"
    ],
    "uncertainties": [],
@@ -10172,6 +11507,8 @@
    "id": "student-portal",
    "label": "학생 내 학습",
    "domain": "역할 셸",
+   "ownerVisible": true,
+   "auditOnlyReason": null,
    "ownerScope": "owner-linked",
    "audience": [
     "student"
@@ -10206,6 +11543,7 @@
    "operations": {
     "key": [
      {
+      "id": "student-portal.page-my-learning",
       "op": "누적 현황·데일리 리포트 열람(읽기 전용)",
       "fns": [],
       "pages": [
@@ -10232,17 +11570,37 @@
     "axIssues": [],
     "level": "absent",
     "shows": "",
-    "missing": "해당 없음(원장 작업 공간 밖)",
+    "missing": "학생 화면 미리보기(현재 데모 데이터)",
     "proposed": {
      "kind": "evidence",
-     "text": "원장 범위 밖 — 제외 유지"
+     "text": "학생 화면 미리보기 — 2.0이 데모 데이터로 그린다는 사실을 함께 표시"
     },
-    "priority": "P3",
+    "priority": "P2",
     "writePath": "read-only",
     "sessionOps": []
    },
-   "verification": "reviewed",
-   "sourceRead": [],
+   "verification": "source-read",
+   "readScope": [
+    "page"
+   ],
+   "semantics": {
+    "behavior": "누적 학습 현황·데일리 리포트 — 정적 데모 데이터(DEMO_STUDENT), DB·AI 미연동.",
+    "authorization": "requireAccess(\"my_learning\").",
+    "integration": "없음.",
+    "evidence": [
+     {
+      "file": "src/app/(shell)/my-learning/page.tsx",
+      "line": 15,
+      "has": "DEMO_STUDENT"
+     }
+    ],
+    "findings": [
+     "학생 화면은 실제 학생 데이터가 아니라 데모 데이터다."
+    ]
+   },
+   "sourceRead": [
+    "src/app/(shell)/my-learning/page.tsx"
+   ],
    "uncertainties": [],
    "resolved": []
   },
@@ -10250,6 +11608,8 @@
    "id": "parent-portal",
    "label": "학부모 포털(셔틀·시간표)",
    "domain": "역할 셸",
+   "ownerVisible": true,
+   "auditOnlyReason": null,
    "ownerScope": "owner-linked",
    "audience": [
     "parent"
@@ -10292,6 +11652,7 @@
    "operations": {
     "key": [
      {
+      "id": "parent-portal.absentParentRide",
       "op": "등하원 결석·정류장 변경·건너뛰기·되돌리기",
       "fns": [
        "absentParentRide",
@@ -10301,12 +11662,14 @@
       ]
      },
      {
+      "id": "parent-portal.changeRegularRide",
       "op": "정기 승하차 변경",
       "fns": [
        "changeRegularRide"
       ]
      },
      {
+      "id": "parent-portal.ackShuttleHistory",
       "op": "변경 이력 확인",
       "fns": [
        "ackShuttleHistory"
@@ -10370,15 +11733,39 @@
     "missing": "해당 없음(원장 작업 공간 밖)",
     "proposed": {
      "kind": "issue",
-     "text": "학부모 변경 요청을 셔틀 담당 확인 이슈로"
+     "text": "학부모 변경 요청 확인 대기를 이슈로, 학부모 화면 3개 탭 미리보기"
     },
-    "priority": "P3",
+    "priority": "P2",
     "writePath": "read-only",
     "sessionOps": []
    },
    "verification": "source-read",
+   "readScope": [
+    "key-actions",
+    "page"
+   ],
+   "semantics": {
+    "behavior": "학부모 등하원 결석·정류장 변경·건너뛰기·정기 승하차 변경(월~금). 직원은 변경 내역 확인.",
+    "authorization": "parentDayGate/parentGate(연결된 아이), 확인은 canRecordBoarding.",
+    "integration": "지도(키 없으면 안내).",
+    "evidence": [
+     {
+      "file": "src/features/shuttle/ride-change/server/parent-ride-actions.ts",
+      "line": 77,
+      "has": "parentDayGate"
+     },
+     {
+      "file": "src/features/shuttle/ride-change/server/parent-regular-ride-actions.ts",
+      "line": 43,
+      "has": "월~금 중에서 골라 주세요"
+     }
+    ],
+    "findings": []
+   },
    "sourceRead": [
-    "src/app/(parent)/parent/_components/parent-tabs.tsx"
+    "src/app/(parent)/parent/_components/parent-tabs.tsx",
+    "src/features/shuttle/ride-change/server/parent-regular-ride-actions.ts",
+    "src/features/shuttle/ride-change/server/parent-ride-actions.ts"
    ],
    "uncertainties": [],
    "resolved": []
@@ -10387,7 +11774,9 @@
    "id": "public-sites",
    "label": "공개 랜딩(제품·학원)",
    "domain": "공개",
-   "ownerScope": "audit-only",
+   "ownerVisible": true,
+   "auditOnlyReason": null,
+   "ownerScope": "owner-linked",
    "audience": [
     "public"
    ],
@@ -10417,6 +11806,7 @@
    "operations": {
     "key": [
      {
+      "id": "public-sites.page-root",
       "op": "열람만",
       "fns": [],
       "pages": [
@@ -10443,17 +11833,35 @@
     "axIssues": [],
     "level": "absent",
     "shows": "",
-    "missing": "해당 없음",
+    "missing": "학원 공개 페이지 미리보기",
     "proposed": {
      "kind": "evidence",
-     "text": "원장 범위 밖 — 제외"
+     "text": "학원 공개 페이지(/academy) 미리보기 — 제품 랜딩(/)은 감사 전용"
     },
-    "priority": "P3",
-    "writePath": "n/a",
+    "priority": "P2",
+    "writePath": "read-only",
     "sessionOps": []
    },
-   "verification": "reviewed",
-   "sourceRead": [],
+   "verification": "source-read",
+   "readScope": [
+    "page"
+   ],
+   "semantics": {
+    "behavior": "/ = 제품 랜딩, /academy = 학원 공개 랜딩(학원명은 공개 브랜딩에서).",
+    "authorization": "공개.",
+    "integration": "없음.",
+    "evidence": [
+     {
+      "file": "src/app/(academy)/academy/page.tsx",
+      "line": 2,
+      "has": "getPublicBranding"
+     }
+    ],
+    "findings": []
+   },
+   "sourceRead": [
+    "src/app/(academy)/academy/page.tsx"
+   ],
    "uncertainties": [],
    "resolved": []
   },
@@ -10461,6 +11869,8 @@
    "id": "auth-session",
    "label": "로그인·세션·링크 만료·지점 보기 안내",
    "domain": "공개",
+   "ownerVisible": false,
+   "auditOnlyReason": "로그인·세션·지점 보기 안내 — 화면이 아니라 인증 기반",
    "ownerScope": "audit-only",
    "audience": [
     "public",
@@ -10542,6 +11952,7 @@
    "operations": {
     "key": [
      {
+      "id": "auth-session.api-home",
       "op": "로그인·홈 판정·보기 해제",
       "fns": [],
       "api": [
@@ -10589,6 +12000,27 @@
     "sessionOps": []
    },
    "verification": "source-read",
+   "readScope": [
+    "page"
+   ],
+   "semantics": {
+    "behavior": "역할·과목 홈 판정, 퇴사 계정 로그아웃, 학부모 → /parent, 지점 보기 정리.",
+    "authorization": "세션.",
+    "integration": "없음.",
+    "evidence": [
+     {
+      "file": "src/app/home/route.ts",
+      "line": 107,
+      "has": "landingPath"
+     },
+     {
+      "file": "src/app/home/route.ts",
+      "line": 84,
+      "has": "signOut"
+     }
+    ],
+    "findings": []
+   },
    "sourceRead": [
     "src/app/home/route.ts",
     "src/app/tenant-view/unconfirmed/page.tsx",
@@ -10601,6 +12033,8 @@
    "id": "platform-console",
    "label": "운영 콘솔(슈퍼관리자)",
    "domain": "플랫폼",
+   "ownerVisible": false,
+   "auditOnlyReason": "운영 콘솔 — 지점 화면에 운영자 설정을 노출하지 않는다",
    "ownerScope": "audit-only",
    "audience": [
     "platform"
@@ -10706,6 +12140,7 @@
    "operations": {
     "key": [
      {
+      "id": "platform-console.createTenantWithMaster",
       "op": "지점 발급·수정·라이선스",
       "fns": [
        "createTenantWithMaster",
@@ -10715,6 +12150,7 @@
       ]
      },
      {
+      "id": "platform-console.setTenantAiModel",
       "op": "지점별 AI 모델·창 모드",
       "fns": [
        "setTenantAiModel",
@@ -10722,6 +12158,7 @@
       ]
      },
      {
+      "id": "platform-console.startTenantView",
       "op": "읽기 전용 지점 보기",
       "fns": [
        "startTenantView",
@@ -10729,6 +12166,7 @@
       ]
      },
      {
+      "id": "platform-console.changeUserRole",
       "op": "계정 역할·활성·비밀번호",
       "fns": [
        "changeUserRole",
@@ -10737,6 +12175,7 @@
       ]
      },
      {
+      "id": "platform-console.toggleLaboratoryMenu",
       "op": "실험실 메뉴 배정",
       "fns": [
        "toggleLaboratoryMenu"
@@ -10841,8 +12280,32 @@
     "sessionOps": []
    },
    "verification": "source-read",
+   "readScope": [
+    "key-actions",
+    "page"
+   ],
+   "semantics": {
+    "behavior": "지점 발급(지점·설정·원장 계정)·AI 모델·지점 보기·계정 역할·실험실 메뉴.",
+    "authorization": "requireSuperAdmin(운영 콘솔 레이아웃 + 액션).",
+    "integration": "Supabase Auth.",
+    "evidence": [
+     {
+      "file": "src/features/super-admin/server/actions.ts",
+      "line": 39,
+      "has": "requireSuperAdmin()"
+     },
+     {
+      "file": "src/features/super-admin/server/laboratory-actions.ts",
+      "line": 16,
+      "has": "LAB_ELIGIBLE_KEYS"
+     }
+    ],
+    "findings": []
+   },
    "sourceRead": [
-    "src/components/super-admin/nav.ts"
+    "src/components/super-admin/nav.ts",
+    "src/features/super-admin/server/actions.ts",
+    "src/features/super-admin/server/laboratory-actions.ts"
    ],
    "uncertainties": [],
    "resolved": []
@@ -10851,6 +12314,8 @@
    "id": "integrations",
    "label": "외부 연동(makeedu·구글 시트·오늘 수학·IJW)",
    "domain": "연동",
+   "ownerVisible": true,
+   "auditOnlyReason": null,
    "ownerScope": "owner",
    "audience": [
     "master",
@@ -11046,6 +12511,7 @@
    "operations": {
     "key": [
      {
+      "id": "integrations.setMakeeduSyncEnabled",
       "op": "makeedu 동기화 켜기·지금 실행·워커 점검",
       "fns": [
        "setMakeeduSyncEnabled",
@@ -11054,6 +12520,7 @@
       ]
      },
      {
+      "id": "integrations.setSheetsExportEnabled",
       "op": "구글 시트 내보내기 켜기·과목 시트 지정·지금 동기화",
       "fns": [
        "setSheetsExportEnabled",
@@ -11062,6 +12529,7 @@
       ]
      },
      {
+      "id": "integrations.issueAgentCode",
       "op": "연동 PC 코드 발급·해지·설정",
       "fns": [
        "issueAgentCode",
@@ -11070,6 +12538,7 @@
       ]
      },
      {
+      "id": "integrations.loadTodaysMathMenus",
       "op": "오늘 수학 사용 메뉴 저장",
       "fns": [
        "loadTodaysMathMenus",
@@ -11077,6 +12546,7 @@
       ]
      },
      {
+      "id": "integrations.linkIjwUniqueMatches",
       "op": "IJW 학생 연결·자동 매칭",
       "fns": [
        "linkIjwUniqueMatches",
@@ -11203,8 +12673,32 @@
     "writePath": "reuse-2.0-actions",
     "sessionOps": []
    },
-   "verification": "reviewed",
-   "sourceRead": [],
+   "verification": "source-read",
+   "readScope": [
+    "key-actions"
+   ],
+   "semantics": {
+    "behavior": "makeedu 동기화 켜기·시트 내보내기 켜기·연동 PC 코드 발급(속도 제한 5)·오늘 수학 메뉴·IJW 자동 매칭.",
+    "authorization": "canWriteTenant(integration_settings) + 모듈 켜짐, 연동 PC는 requireManager.",
+    "integration": "makeedu·Google Sheets·오늘 수학·IJW.",
+    "evidence": [
+     {
+      "file": "src/features/integrations/server/actions.ts",
+      "line": 253,
+      "has": "canWriteTenant(user.systemRole, \"integration_settings\")"
+     },
+     {
+      "file": "src/features/sync-agent/server/actions.ts",
+      "line": 50,
+      "has": "rateLimit"
+     }
+    ],
+    "findings": []
+   },
+   "sourceRead": [
+    "src/features/integrations/server/actions.ts",
+    "src/features/sync-agent/server/actions.ts"
+   ],
    "uncertainties": [],
    "resolved": []
   },
@@ -11212,6 +12706,8 @@
    "id": "recording-transcription",
    "label": "녹음·전사 파이프라인",
    "domain": "연동",
+   "ownerVisible": false,
+   "auditOnlyReason": "녹음 전사 파이프라인 — 회의록·원생상담·신규 콜&상담 영역의 처리 상태로 노출",
    "ownerScope": "audit-only",
    "audience": [
     "master",
@@ -11261,6 +12757,7 @@
    "operations": {
     "key": [
      {
+      "id": "recording-transcription.issueAudioUploadTicket",
       "op": "오디오 업로드 티켓 발급",
       "fns": [
        "issueAudioUploadTicket"
@@ -11323,15 +12820,44 @@
     "writePath": "n/a",
     "sessionOps": []
    },
-   "verification": "reviewed",
-   "sourceRead": [],
-   "uncertainties": [],
+   "verification": "source-read",
+   "readScope": [
+    "key-actions",
+    "page"
+   ],
+   "semantics": {
+    "behavior": "오디오 업로드 티켓(종류별 메뉴 권한·확장자·형식 검증) → AssemblyAI 웹훅 → 분석. 멈춘 처리 회수·보존 기간 삭제 크론.",
+    "authorization": "업로드는 해당 메뉴 full/scoped.",
+    "integration": "AssemblyAI, Storage.",
+    "evidence": [
+     {
+      "file": "src/features/media/server/upload-actions.ts",
+      "line": 36,
+      "has": "lvl !== \"full\" && lvl !== \"scoped\""
+     },
+     {
+      "file": "src/app/api/webhooks/assemblyai/route.ts",
+      "line": 148,
+      "has": "ASSEMBLYAI_WEBHOOK_SECRET"
+     }
+    ],
+    "findings": []
+   },
+   "sourceRead": [
+    "src/app/api/webhooks/assemblyai/route.ts",
+    "src/features/media/server/upload-actions.ts"
+   ],
+   "uncertainties": [
+    "실행 확인 필요: 웹훅 분석 도우미 본문(약 600줄)은 읽지 않았다"
+   ],
    "resolved": []
   },
   {
    "id": "shell-infrastructure",
    "label": "공용 기반(검색·동시편집·메뉴 기록·최대화·내보내기·통계·학교명)",
    "domain": "기반",
+   "ownerVisible": false,
+   "auditOnlyReason": "검색·동시편집·메뉴 기록 등 공용 기반 — AX 검색·명령 입력에 흡수",
    "ownerScope": "audit-only",
    "audience": [
     "master",
@@ -11381,6 +12907,7 @@
    "operations": {
     "key": [
      {
+      "id": "shell-infrastructure.recordMenuVisit",
       "op": "메뉴 방문 기록·검색 숨김",
       "fns": [
        "recordMenuVisit",
@@ -11388,12 +12915,14 @@
       ]
      },
      {
+      "id": "shell-infrastructure.setMyPageMaximized",
       "op": "화면 최대화 저장",
       "fns": [
        "setMyPageMaximized"
       ]
      },
      {
+      "id": "shell-infrastructure.api-search-palette",
       "op": "검색 팰릿 조회",
       "fns": [],
       "api": [
@@ -11466,11 +12995,42 @@
      "ax:chat",
      "ax:prompt",
      "ax:ask",
-     "ax:form:chat"
+     "ax:form:chat",
+     "ax:chat-task",
+     "ax:chat-retry",
+     "ax:chat-cancel",
+     "ax:chat-context-clear"
     ]
    },
-   "verification": "reviewed",
-   "sourceRead": [],
+   "verification": "source-read",
+   "readScope": [
+    "key-actions",
+    "page"
+   ],
+   "semantics": {
+    "behavior": "메뉴 방문 기록(알려진 메뉴 키만)·화면 최대화 저장·검색 팰릿·수정중 표시·내보내기·통계 공용.",
+    "authorization": "세션.",
+    "integration": "없음.",
+    "evidence": [
+     {
+      "file": "src/features/nav/server/visit-actions.ts",
+      "line": 18,
+      "has": "MENU_KEYS"
+     },
+     {
+      "file": "src/app/api/search/palette/route.ts",
+      "line": 18,
+      "has": "searchPalette"
+     }
+    ],
+    "findings": [
+     "src/features/english-assessment는 모듈 밖 import 0건(고아)."
+    ]
+   },
+   "sourceRead": [
+    "src/app/api/search/palette/route.ts",
+    "src/features/nav/server/visit-actions.ts"
+   ],
    "uncertainties": [],
    "resolved": []
   },
@@ -11478,6 +13038,8 @@
    "id": "demo-tenant",
    "label": "데모 지점 갱신",
    "domain": "기반",
+   "ownerVisible": false,
+   "auditOnlyReason": "가상 데모 지점 갱신 — 운영 지점의 업무가 아님",
    "ownerScope": "audit-only",
    "audience": [
     "platform"
@@ -11509,6 +13071,7 @@
    "operations": {
     "key": [
      {
+      "id": "demo-tenant.switchDemoRoster",
       "op": "데모 명단 전환",
       "fns": [
        "switchDemoRoster"
@@ -11553,8 +13116,26 @@
     "writePath": "n/a",
     "sessionOps": []
    },
-   "verification": "reviewed",
-   "sourceRead": [],
+   "verification": "source-read",
+   "readScope": [
+    "key-actions"
+   ],
+   "semantics": {
+    "behavior": "데모 명단 시나리오 전환(원장만)·매일 데모 갱신 크론.",
+    "authorization": "원장 역할.",
+    "integration": "없음.",
+    "evidence": [
+     {
+      "file": "src/features/demo-roster/server/actions.ts",
+      "line": 16,
+      "has": "원장만 데모 데이터를 바꿀 수 있습니다"
+     }
+    ],
+    "findings": []
+   },
+   "sourceRead": [
+    "src/features/demo-roster/server/actions.ts"
+   ],
    "uncertainties": [],
    "resolved": []
   },
@@ -11562,6 +13143,8 @@
    "id": "dev-tools",
    "label": "개발용 화면",
    "domain": "기반",
+   "ownerVisible": false,
+   "auditOnlyReason": "개발 환경 전용 하네스",
    "ownerScope": "audit-only",
    "audience": [
     "developer"
@@ -11592,6 +13175,7 @@
    "operations": {
     "key": [
      {
+      "id": "dev-tools.page-dev-dashboard-harness",
       "op": "미리보기",
       "fns": [],
       "pages": [
@@ -11628,6 +13212,22 @@
     "sessionOps": []
    },
    "verification": "source-read",
+   "readScope": [
+    "page"
+   ],
+   "semantics": {
+    "behavior": "개발 환경에서만 proxy가 통과시키는 하네스.",
+    "authorization": "NODE_ENV development.",
+    "integration": "없음.",
+    "evidence": [
+     {
+      "file": "src/proxy.ts",
+      "line": 7,
+      "has": "process.env.NODE_ENV === \"development\""
+     }
+    ],
+    "findings": []
+   },
    "sourceRead": [
     "src/proxy.ts"
    ],
@@ -12474,7 +14074,7 @@
    "domain": "지원",
    "ownerScope": "owner",
    "writePath": "read-only",
-   "priority": "P3",
+   "priority": "P2",
    "v2Status": "implemented",
    "axLevel": "absent",
    "legacyViews": [],
@@ -12487,7 +14087,7 @@
    "keyOpCount": 2,
    "proposed": {
     "kind": "request",
-    "text": "원장 화면 밖 — 개선요청 답변 도착(알림 support_answer)만 알림함에"
+    "text": "개선요청 초안을 작성하는 미리보기와 답변 도착(알림 support_answer)을 알림함에"
    }
   },
   {
@@ -12522,7 +14122,7 @@
    "domain": "지원",
    "ownerScope": "owner",
    "writePath": "read-only",
-   "priority": "P3",
+   "priority": "P2",
    "v2Status": "implemented",
    "axLevel": "absent",
    "legacyViews": [],
@@ -12535,7 +14135,7 @@
    "keyOpCount": 1,
    "proposed": {
     "kind": "command",
-    "text": "AI 업무 지원 입력창에서 도움말 문서를 근거로 답"
+    "text": "도움말 문서를 근거로 답하고, 질문 게시판 초안을 작성하는 미리보기"
    }
   },
   {
@@ -12566,7 +14166,7 @@
    "domain": "역할 셸",
    "ownerScope": "owner-linked",
    "writePath": "read-only",
-   "priority": "P3",
+   "priority": "P2",
    "v2Status": "partial",
    "axLevel": "absent",
    "legacyViews": [],
@@ -12579,7 +14179,7 @@
    "keyOpCount": 1,
    "proposed": {
     "kind": "evidence",
-    "text": "원장 범위 밖 — 제외 유지"
+    "text": "학생 화면 미리보기 — 2.0이 데모 데이터로 그린다는 사실을 함께 표시"
    }
   },
   {
@@ -12588,7 +14188,7 @@
    "domain": "역할 셸",
    "ownerScope": "owner-linked",
    "writePath": "read-only",
-   "priority": "P3",
+   "priority": "P2",
    "v2Status": "partial",
    "axLevel": "absent",
    "legacyViews": [],
@@ -12601,16 +14201,16 @@
    "keyOpCount": 3,
    "proposed": {
     "kind": "issue",
-    "text": "학부모 변경 요청을 셔틀 담당 확인 이슈로"
+    "text": "학부모 변경 요청 확인 대기를 이슈로, 학부모 화면 3개 탭 미리보기"
    }
   },
   {
    "family": "public-sites",
    "label": "공개 랜딩(제품·학원)",
    "domain": "공개",
-   "ownerScope": "audit-only",
-   "writePath": "n/a",
-   "priority": "P3",
+   "ownerScope": "owner-linked",
+   "writePath": "read-only",
+   "priority": "P2",
    "v2Status": "implemented",
    "axLevel": "absent",
    "legacyViews": [],
@@ -12623,7 +14223,7 @@
    "keyOpCount": 1,
    "proposed": {
     "kind": "evidence",
-    "text": "원장 범위 밖 — 제외"
+    "text": "학원 공개 페이지(/academy) 미리보기 — 제품 랜딩(/)은 감사 전용"
    }
   },
   {
@@ -18711,7 +20311,46 @@
     "attendance",
     "owner"
    ],
-   "verification": "auto"
+   "verification": "source-read",
+   "semantics": {
+    "auth": "device-cookie",
+    "authDetail": "키오스크 기기 쿠키 토큰(sha256)이 활성 kiosk_devices 행과 맞아야 하고, 키오스크 모듈·메뉴가 켜져 있어야 한다. 기기당 분당 20회 제한(메모리).",
+    "behavior": "출석 코드를 받아 기기 마지막 접속을 갱신하고 processKioskCheckin으로 등·하원 체크인을 처리한다.",
+    "writes": [
+     "kiosk_devices.last_seen_at",
+     "processKioskCheckin(체크인 기록)"
+    ],
+    "external": [],
+    "readDepth": "full-handler",
+    "note": null,
+    "evidence": [
+     {
+      "file": "src/app/api/attendance/checkin/route.ts",
+      "line": 30,
+      "has": "KIOSK_COOKIE"
+     },
+     {
+      "file": "src/app/api/attendance/checkin/route.ts",
+      "line": 39,
+      "has": "hashToken(token)"
+     },
+     {
+      "file": "src/app/api/attendance/checkin/route.ts",
+      "line": 54,
+      "has": "MAX_PER_WINDOW"
+     },
+     {
+      "file": "src/app/api/attendance/checkin/route.ts",
+      "line": 75,
+      "has": "last_seen_at"
+     },
+     {
+      "file": "src/app/api/attendance/checkin/route.ts",
+      "line": 78,
+      "has": "processKioskCheckin"
+     }
+    ]
+   }
   },
   {
    "url": "/api/calendar/google-push",
@@ -18728,7 +20367,37 @@
     "calendar",
     "owner"
    ],
-   "verification": "auto"
+   "verification": "source-read",
+   "semantics": {
+    "auth": "webhook-channel",
+    "authDetail": "구글 푸시 헤더(channel id·token·resource)를 저장된 동기화 상태와 대조(verifyPushHeaders). 항상 200으로 답한다.",
+    "behavior": "변경 알림이면 응답 뒤(after) 캘린더 모듈이 켜진 지점만 증분 가져오기를 실행한다.",
+    "writes": [
+     "calendar_events(증분 가져오기)"
+    ],
+    "external": [
+     "Google Calendar"
+    ],
+    "readDepth": "full-handler",
+    "note": null,
+    "evidence": [
+     {
+      "file": "src/app/api/calendar/google-push/route.ts",
+      "line": 27,
+      "has": "x-goog-channel-id"
+     },
+     {
+      "file": "src/app/api/calendar/google-push/route.ts",
+      "line": 40,
+      "has": "verifyPushHeaders"
+     },
+     {
+      "file": "src/app/api/calendar/google-push/route.ts",
+      "line": 47,
+      "has": "runGoogleCalendarIncremental"
+     }
+    ]
+   }
   },
   {
    "url": "/api/classnote/reply-videos",
@@ -18746,7 +20415,28 @@
    "featureImports": [
     "classnote-reply"
    ],
-   "verification": "auto"
+   "verification": "source-read",
+   "semantics": {
+    "auth": "session+permission",
+    "authDetail": "핸들러는 messageId 형식만 보고, 권한은 getThreadVideoStates 안의 replyGate()와 답글 권한(canReply)이 판정한다 — 없으면 빈 결과.",
+    "behavior": "학부모 글 스레드에 달린 영상의 재생 가능 상태를 돌려준다(읽기 전용).",
+    "writes": [],
+    "external": [],
+    "readDepth": "full-handler",
+    "note": null,
+    "evidence": [
+     {
+      "file": "src/app/api/classnote/reply-videos/route.ts",
+      "line": 17,
+      "has": "getThreadVideoStates(messageId)"
+     },
+     {
+      "file": "src/features/classnote-reply/server/video-poll.ts",
+      "line": 15,
+      "has": "replyGate()"
+     }
+    ]
+   }
   },
   {
    "url": "/api/connected-apps/todays-math/authorize",
@@ -18764,7 +20454,37 @@
    "featureImports": [
     "integrations"
    ],
-   "verification": "auto"
+   "verification": "source-read",
+   "semantics": {
+    "auth": "session+permission",
+    "authDetail": "바인딩·출처 확인 후 로그인 사용자가 같은 지점이고 학생이 아니며, 오늘 수학 쪽 제어 상태에서 연결 가능한 사용자여야 한다.",
+    "behavior": "PKCE 인가 코드를 발급(tm_sync_issue_code)하고 오늘 수학 콜백으로 보낸다.",
+    "writes": [
+     "tm_sync_issue_code(인가 코드)"
+    ],
+    "external": [
+     "오늘 수학"
+    ],
+    "readDepth": "full-handler",
+    "note": null,
+    "evidence": [
+     {
+      "file": "src/app/api/connected-apps/todays-math/authorize/route.ts",
+      "line": 10,
+      "has": "code_challenge"
+     },
+     {
+      "file": "src/app/api/connected-apps/todays-math/authorize/route.ts",
+      "line": 25,
+      "has": "account_not_eligible"
+     },
+     {
+      "file": "src/app/api/connected-apps/todays-math/authorize/route.ts",
+      "line": 32,
+      "has": "tm_sync_issue_code"
+     }
+    ]
+   }
   },
   {
    "url": "/api/connected-apps/todays-math/launch",
@@ -18783,7 +20503,35 @@
     "connected-apps",
     "integrations"
    ],
-   "verification": "auto"
+   "verification": "source-read",
+   "semantics": {
+    "auth": "session",
+    "authDetail": "로그인 사용자와 연결 앱 사용 가능 여부(getMyConnectedApps).",
+    "behavior": "오늘 수학으로 이동 — 활성 바인딩이면 v2 SSO 시작, 아니면 서명 토큰(EYWA_SSO_SECRET)으로 자동 로그인 링크.",
+    "writes": [],
+    "external": [
+     "오늘 수학"
+    ],
+    "readDepth": "full-handler",
+    "note": null,
+    "evidence": [
+     {
+      "file": "src/app/api/connected-apps/todays-math/launch/route.ts",
+      "line": 30,
+      "has": "getMyConnectedApps"
+     },
+     {
+      "file": "src/app/api/connected-apps/todays-math/launch/route.ts",
+      "line": 43,
+      "has": "/api/sso/eywa/v2/start"
+     },
+     {
+      "file": "src/app/api/connected-apps/todays-math/launch/route.ts",
+      "line": 54,
+      "has": "signSsoToken"
+     }
+    ]
+   }
   },
   {
    "url": "/api/cron/apply-due-class-updates",
@@ -18808,7 +20556,43 @@
     "owner",
     "timetable"
    ],
-   "verification": "auto"
+   "verification": "source-read",
+   "semantics": {
+    "auth": "cron-secret",
+    "authDetail": "Bearer CRON_SECRET",
+    "behavior": "기한이 된 시간표 예약(담임·강의실·반 이름·통합뷰 그룹)을 반에 적용하고 감사로그·가져오기 이력을 남긴다. 예약된 반 이름이 막히면 건너뛰고 기록한다.",
+    "writes": [
+     "classes",
+     "audit_logs",
+     "timetable_import_logs",
+     "tenant_settings(그룹 배치)"
+    ],
+    "external": [],
+    "readDepth": "full-handler",
+    "note": null,
+    "evidence": [
+     {
+      "file": "src/app/api/cron/apply-due-class-updates/route.ts",
+      "line": 44,
+      "has": "bearerMatches(auth, secret)"
+     },
+     {
+      "file": "src/app/api/cron/apply-due-class-updates/route.ts",
+      "line": 53,
+      "has": "timetable_snapshots"
+     },
+     {
+      "file": "src/app/api/cron/apply-due-class-updates/route.ts",
+      "line": 160,
+      "has": ".from(\"classes\")"
+     },
+     {
+      "file": "src/app/api/cron/apply-due-class-updates/route.ts",
+      "line": 176,
+      "has": "시스템(시간표 예약 적용)"
+     }
+    ]
+   }
   },
   {
    "url": "/api/cron/apply-due-withdrawals",
@@ -18831,7 +20615,50 @@
     "withdrawal-reports",
     "withdrawals"
    ],
-   "verification": "auto"
+   "verification": "source-read",
+   "semantics": {
+    "auth": "cron-secret",
+    "authDetail": "Bearer CRON_SECRET",
+    "behavior": "퇴원일이 된 학생을 퇴원 처리하고 열린 수강을 그날로 닫는다(실패 시 상태 되돌림). 수학 시트에 퇴원을 적고, 기한 된 퇴원보고서도 처리한다.",
+    "writes": [
+     "students.status",
+     "enrollments",
+     "audit_logs",
+     "구글 시트(수학 퇴원)"
+    ],
+    "external": [
+     "Google Sheets"
+    ],
+    "readDepth": "full-handler",
+    "note": null,
+    "evidence": [
+     {
+      "file": "src/app/api/cron/apply-due-withdrawals/route.ts",
+      "line": 42,
+      "has": "bearerMatches(auth, secret)"
+     },
+     {
+      "file": "src/app/api/cron/apply-due-withdrawals/route.ts",
+      "line": 72,
+      "has": "update({ status: \"withdrawn\" })"
+     },
+     {
+      "file": "src/app/api/cron/apply-due-withdrawals/route.ts",
+      "line": 98,
+      "has": "student_withdraw"
+     },
+     {
+      "file": "src/app/api/cron/apply-due-withdrawals/route.ts",
+      "line": 112,
+      "has": "recordMathWithdrawalToSheet"
+     },
+     {
+      "file": "src/app/api/cron/apply-due-withdrawals/route.ts",
+      "line": 119,
+      "has": "applyDueWithdrawalReports"
+     }
+    ]
+   }
   },
   {
    "url": "/api/cron/apply-timetable-lab",
@@ -18850,7 +20677,36 @@
     "timetable",
     "timetable-lab"
    ],
-   "verification": "auto"
+   "verification": "source-read",
+   "semantics": {
+    "auth": "cron-secret",
+    "authDetail": "Bearer CRON_SECRET",
+    "behavior": "반영 시각이 된 시간표 연습본 반영 작업(최대 50건, 45초 예산)을 실행하고 관련 화면을 다시 읽게 한다.",
+    "writes": [
+     "timetable_lab_apply_jobs",
+     "운영 시간표(runApplyJob)"
+    ],
+    "external": [],
+    "readDepth": "full-handler",
+    "note": null,
+    "evidence": [
+     {
+      "file": "src/app/api/cron/apply-timetable-lab/route.ts",
+      "line": 10,
+      "has": "CRON_SECRET"
+     },
+     {
+      "file": "src/app/api/cron/apply-timetable-lab/route.ts",
+      "line": 13,
+      "has": "timetable_lab_apply_jobs"
+     },
+     {
+      "file": "src/app/api/cron/apply-timetable-lab/route.ts",
+      "line": 19,
+      "has": "runApplyJob"
+     }
+    ]
+   }
   },
   {
    "url": "/api/cron/close-ended-class-periods",
@@ -18869,7 +20725,37 @@
     "audit",
     "classes"
    ],
-   "verification": "auto"
+   "verification": "source-read",
+   "semantics": {
+    "auth": "cron-secret",
+    "authDetail": "Bearer CRON_SECRET",
+    "behavior": "운영 기간이 끝난 반의 열린 수강을 RPC로 닫고 감사로그를 남긴 뒤 종강 반 이름을 정리한다.",
+    "writes": [
+     "enrollments(RPC)",
+     "audit_logs",
+     "classes.class_name"
+    ],
+    "external": [],
+    "readDepth": "full-handler",
+    "note": null,
+    "evidence": [
+     {
+      "file": "src/app/api/cron/close-ended-class-periods/route.ts",
+      "line": 33,
+      "has": "close_ended_class_period_enrollments"
+     },
+     {
+      "file": "src/app/api/cron/close-ended-class-periods/route.ts",
+      "line": 51,
+      "has": "class_period_enrollments"
+     },
+     {
+      "file": "src/app/api/cron/close-ended-class-periods/route.ts",
+      "line": 60,
+      "has": "finishEndedClassNames"
+     }
+    ]
+   }
   },
   {
    "url": "/api/cron/daily-briefing",
@@ -18887,7 +20773,23 @@
    "featureImports": [
     "dashboard"
    ],
-   "verification": "auto"
+   "verification": "source-read",
+   "semantics": {
+    "auth": "cron-secret",
+    "authDetail": "Bearer CRON_SECRET",
+    "behavior": "항상 410(꺼짐)을 돌려준다 — 일일 브리핑 생성은 의도적으로 중지됐다.",
+    "writes": [],
+    "external": [],
+    "readDepth": "full-handler",
+    "note": null,
+    "evidence": [
+     {
+      "file": "src/app/api/cron/daily-briefing/route.ts",
+      "line": 13,
+      "has": "DAILY_BRIEFING_DISABLED_MESSAGE"
+     }
+    ]
+   }
   },
   {
    "url": "/api/cron/demo-refresh",
@@ -18905,7 +20807,30 @@
    "featureImports": [
     "demo-history"
    ],
-   "verification": "auto"
+   "verification": "source-read",
+   "semantics": {
+    "auth": "cron-secret",
+    "authDetail": "Bearer CRON_SECRET",
+    "behavior": "가상 데모 지점의 이력과 수학 데이터를 갱신한다.",
+    "writes": [
+     "데모 지점 데이터"
+    ],
+    "external": [],
+    "readDepth": "full-handler",
+    "note": null,
+    "evidence": [
+     {
+      "file": "src/app/api/cron/demo-refresh/route.ts",
+      "line": 19,
+      "has": "runDemoHistory"
+     },
+     {
+      "file": "src/app/api/cron/demo-refresh/route.ts",
+      "line": 20,
+      "has": "refreshDemoMath"
+     }
+    ]
+   }
   },
   {
    "url": "/api/cron/google-calendar-import",
@@ -18926,7 +20851,32 @@
     "calendar",
     "owner"
    ],
-   "verification": "auto"
+   "verification": "source-read",
+   "semantics": {
+    "auth": "cron-secret",
+    "authDetail": "Bearer CRON_SECRET",
+    "behavior": "GOOGLE_CALENDAR_TENANT_ID(없으면 유일한 지점)의 캘린더를 가져온다. 지점이 둘 이상인데 env가 없으면 실패한다. ?full 강제 전체 옵션 있음.",
+    "writes": [
+     "calendar_events"
+    ],
+    "external": [
+     "Google Calendar"
+    ],
+    "readDepth": "full-handler",
+    "note": null,
+    "evidence": [
+     {
+      "file": "src/app/api/cron/google-calendar-import/route.ts",
+      "line": 49,
+      "has": "GOOGLE_CALENDAR_TENANT_ID"
+     },
+     {
+      "file": "src/app/api/cron/google-calendar-import/route.ts",
+      "line": 83,
+      "has": "runCalendarCronLight"
+     }
+    ]
+   }
   },
   {
    "url": "/api/cron/ijw-memorized-words",
@@ -18945,7 +20895,32 @@
     "attendance",
     "ijw"
    ],
-   "verification": "auto"
+   "verification": "source-read",
+   "semantics": {
+    "auth": "cron-secret",
+    "authDetail": "Bearer CRON_SECRET",
+    "behavior": "IJW_TENANT_ID 지점의 오늘 JJ실 명단으로 인재원에서 외운 단어 수를 가져와 시트에 채운다.",
+    "writes": [
+     "자리 출석부·영어 시트 표시"
+    ],
+    "external": [
+     "인재원(IJW)"
+    ],
+    "readDepth": "full-handler",
+    "note": null,
+    "evidence": [
+     {
+      "file": "src/app/api/cron/ijw-memorized-words/route.ts",
+      "line": 35,
+      "has": "IJW_TENANT_ID"
+     },
+     {
+      "file": "src/app/api/cron/ijw-memorized-words/route.ts",
+      "line": 48,
+      "has": "fillMemorizedWords"
+     }
+    ]
+   }
   },
   {
    "url": "/api/cron/ijw-profile-sync",
@@ -18963,7 +20938,25 @@
    "featureImports": [
     "ijw"
    ],
-   "verification": "auto"
+   "verification": "source-read",
+   "semantics": {
+    "auth": "cron-secret",
+    "authDetail": "Bearer CRON_SECRET",
+    "behavior": "학생 프로필을 인재원으로 보낸다.",
+    "writes": [],
+    "external": [
+     "인재원(IJW)"
+    ],
+    "readDepth": "full-handler",
+    "note": null,
+    "evidence": [
+     {
+      "file": "src/app/api/cron/ijw-profile-sync/route.ts",
+      "line": 21,
+      "has": "pushIjwProfiles"
+     }
+    ]
+   }
   },
   {
    "url": "/api/cron/ment-style-rebuild",
@@ -18984,7 +20977,38 @@
     "audit",
     "onescreen"
    ],
-   "verification": "auto"
+   "verification": "source-read",
+   "semantics": {
+    "auth": "cron-secret",
+    "authDetail": "Bearer CRON_SECRET",
+    "behavior": "활성 원장이 있는 지점마다 강사 멘트 말투 프로파일을 AI로 다시 만들고(100초 예산) 감사로그를 남긴다.",
+    "writes": [
+     "멘트 말투 프로파일",
+     "audit_logs"
+    ],
+    "external": [
+     "AI(generateJSON)"
+    ],
+    "readDepth": "full-handler",
+    "note": null,
+    "evidence": [
+     {
+      "file": "src/app/api/cron/ment-style-rebuild/route.ts",
+      "line": 37,
+      "has": ".eq(\"system_role\", \"master\")"
+     },
+     {
+      "file": "src/app/api/cron/ment-style-rebuild/route.ts",
+      "line": 49,
+      "has": "rebuildTenantMentStyles"
+     },
+     {
+      "file": "src/app/api/cron/ment-style-rebuild/route.ts",
+      "line": 61,
+      "has": "ment_style_rebuild"
+     }
+    ]
+   }
   },
   {
    "url": "/api/cron/notification-maintenance",
@@ -19007,7 +21031,52 @@
     "super-admin",
     "video-homework"
    ],
-   "verification": "auto"
+   "verification": "source-read",
+   "semantics": {
+    "auth": "cron-secret",
+    "authDetail": "Bearer CRON_SECRET",
+    "behavior": "보호 계정 무결성 점검, 지점별 영상 숙제 대조·이벤트 감지 알림(결석·후속·콜상담 후속·성적·미수)·발송 실패 알림 보정·늦은 할 일 아침 요약, 오래된 알림 정리.",
+    "writes": [
+     "notifications",
+     "notification_events",
+     "video homework 상태"
+    ],
+    "external": [],
+    "readDepth": "full-handler",
+    "note": null,
+    "evidence": [
+     {
+      "file": "src/app/api/cron/notification-maintenance/route.ts",
+      "line": 29,
+      "has": "checkProtectedAccountIntegrity"
+     },
+     {
+      "file": "src/app/api/cron/notification-maintenance/route.ts",
+      "line": 57,
+      "has": "reconcileVideoHomework"
+     },
+     {
+      "file": "src/app/api/cron/notification-maintenance/route.ts",
+      "line": 65,
+      "has": "detectAndNotifyEvents"
+     },
+     {
+      "file": "src/app/api/cron/notification-maintenance/route.ts",
+      "line": 74,
+      "has": "sweepFailedReportNotifications"
+     },
+     {
+      "file": "src/app/api/cron/notification-maintenance/route.ts",
+      "line": 82,
+      "has": "sendStaffTaskDigest"
+     },
+     {
+      "file": "src/app/api/cron/notification-maintenance/route.ts",
+      "line": 93,
+      "has": "pruneNotificationData"
+     }
+    ]
+   }
   },
   {
    "url": "/api/cron/reconcile-transcriptions",
@@ -19023,7 +21092,33 @@
    ],
    "tables": [],
    "featureImports": [],
-   "verification": "auto"
+   "verification": "source-read",
+   "semantics": {
+    "auth": "cron-secret",
+    "authDetail": "Bearer CRON_SECRET",
+    "behavior": "30분 넘게 전사·분석 중으로 멈춘 회의록·상담 행을 실패로 돌려 다시 실행할 수 있게 한다.",
+    "writes": [
+     "meeting_minutes",
+     "enrollment_consultations",
+     "student_consultations",
+     "consultation_recordings"
+    ],
+    "external": [],
+    "readDepth": "full-handler",
+    "note": null,
+    "evidence": [
+     {
+      "file": "src/app/api/cron/reconcile-transcriptions/route.ts",
+      "line": 31,
+      "has": "STUCK_MINUTES"
+     },
+     {
+      "file": "src/app/api/cron/reconcile-transcriptions/route.ts",
+      "line": 58,
+      "has": "processing_status: \"failed\""
+     }
+    ]
+   }
   },
   {
    "url": "/api/cron/recordings-retention",
@@ -19039,7 +21134,36 @@
    ],
    "tables": [],
    "featureImports": [],
-   "verification": "auto"
+   "verification": "source-read",
+   "semantics": {
+    "auth": "cron-secret",
+    "authDetail": "Bearer CRON_SECRET",
+    "behavior": "보존 기간이 지난 녹음 원본을 저장소에서 지우고 audio_path를 비운다(테이블당 하루 100건).",
+    "writes": [
+     "Storage 녹음 파일 삭제",
+     "audio_path=null"
+    ],
+    "external": [],
+    "readDepth": "full-handler",
+    "note": null,
+    "evidence": [
+     {
+      "file": "src/app/api/cron/recordings-retention/route.ts",
+      "line": 34,
+      "has": "retentionCutoffISO"
+     },
+     {
+      "file": "src/app/api/cron/recordings-retention/route.ts",
+      "line": 60,
+      "has": ".remove(paths)"
+     },
+     {
+      "file": "src/app/api/cron/recordings-retention/route.ts",
+      "line": 71,
+      "has": "audio_path: null"
+     }
+    ]
+   }
   },
   {
    "url": "/api/cron/report-ratings",
@@ -19059,7 +21183,27 @@
    "featureImports": [
     "report-rating"
    ],
-   "verification": "auto"
+   "verification": "source-read",
+   "semantics": {
+    "auth": "cron-secret",
+    "authDetail": "Bearer CRON_SECRET",
+    "behavior": "활성 원장이 있는 지점마다 수업보고서 평점(참고용) 정기 처리를 돌린다.",
+    "writes": [
+     "lesson_report_ratings"
+    ],
+    "external": [
+     "AI(generateJSON)"
+    ],
+    "readDepth": "full-handler",
+    "note": null,
+    "evidence": [
+     {
+      "file": "src/app/api/cron/report-ratings/route.ts",
+      "line": 27,
+      "has": "runReportRatingCycle"
+     }
+    ]
+   }
   },
   {
    "url": "/api/cron/sheets-sync",
@@ -19082,7 +21226,48 @@
     "owner",
     "timetable"
    ],
-   "verification": "auto"
+   "verification": "source-read",
+   "semantics": {
+    "auth": "cron-secret",
+    "authDetail": "Bearer CRON_SECRET",
+    "behavior": "구글 시트 연동이 켜진 지점·과목 시트에 시간표를 덮어쓴다 — 라이선스·모듈·첫 수동 반영·리스·사람 편집 감지·빈 시간표 가드를 모두 통과해야 한다.",
+    "writes": [
+     "Google Sheets",
+     "user_integrations.last_synced_at/last_error"
+    ],
+    "external": [
+     "Google Sheets"
+    ],
+    "readDepth": "full-handler",
+    "note": null,
+    "evidence": [
+     {
+      "file": "src/app/api/cron/sheets-sync/route.ts",
+      "line": 81,
+      "has": "google_sheets%"
+     },
+     {
+      "file": "src/app/api/cron/sheets-sync/route.ts",
+      "line": 95,
+      "has": "isFeatureLicensed"
+     },
+     {
+      "file": "src/app/api/cron/sheets-sync/route.ts",
+      "line": 111,
+      "has": "claimSheetSyncLease"
+     },
+     {
+      "file": "src/app/api/cron/sheets-sync/route.ts",
+      "line": 123,
+      "has": "humanEditedSince"
+     },
+     {
+      "file": "src/app/api/cron/sheets-sync/route.ts",
+      "line": 150,
+      "has": "overwriteTimetableSheet"
+     }
+    ]
+   }
   },
   {
    "url": "/api/cron/slack-dispatch",
@@ -19100,7 +21285,27 @@
    "featureImports": [
     "slack"
    ],
-   "verification": "auto"
+   "verification": "source-read",
+   "semantics": {
+    "auth": "cron-secret",
+    "authDetail": "Bearer CRON_SECRET",
+    "behavior": "슬랙 아웃박스를 비운다(drainAll) — 실제 슬랙 발송.",
+    "writes": [
+     "slack_outbox"
+    ],
+    "external": [
+     "Slack"
+    ],
+    "readDepth": "full-handler",
+    "note": null,
+    "evidence": [
+     {
+      "file": "src/app/api/cron/slack-dispatch/route.ts",
+      "line": 21,
+      "has": "drainAll"
+     }
+    ]
+   }
   },
   {
    "url": "/api/cron/staff-tasks",
@@ -19118,7 +21323,25 @@
     "users"
    ],
    "featureImports": [],
-   "verification": "auto"
+   "verification": "source-read",
+   "semantics": {
+    "auth": "cron-secret",
+    "authDetail": "Bearer CRON_SECRET",
+    "behavior": "지점마다 staff_tasks_sync RPC로 할 일을 사실 기준으로 열고 닫는다.",
+    "writes": [
+     "staff_tasks(RPC)"
+    ],
+    "external": [],
+    "readDepth": "full-handler",
+    "note": null,
+    "evidence": [
+     {
+      "file": "src/app/api/cron/staff-tasks/route.ts",
+      "line": 24,
+      "has": "staff_tasks_sync"
+     }
+    ]
+   }
   },
   {
    "url": "/api/cron/student-contribution",
@@ -19137,7 +21360,31 @@
     "audit",
     "student-contribution"
    ],
-   "verification": "auto"
+   "verification": "source-read",
+   "semantics": {
+    "auth": "cron-secret",
+    "authDetail": "Bearer CRON_SECRET",
+    "behavior": "시범 지점(CONTRIBUTION_PILOT_TENANT) 한 곳만, 실험실 메뉴가 열렸을 때 원생 기여도를 밤마다 집계한다.",
+    "writes": [
+     "student_contribution_months",
+     "audit_logs"
+    ],
+    "external": [],
+    "readDepth": "full-handler",
+    "note": null,
+    "evidence": [
+     {
+      "file": "src/app/api/cron/student-contribution/route.ts",
+      "line": 15,
+      "has": "CONTRIBUTION_PILOT_TENANT"
+     },
+     {
+      "file": "src/app/api/cron/student-contribution/route.ts",
+      "line": 18,
+      "has": "refreshStudentContribution"
+     }
+    ]
+   }
   },
   {
    "url": "/api/cron/student-daily-stats",
@@ -19155,7 +21402,26 @@
    "featureImports": [
     "students"
    ],
-   "verification": "auto"
+   "verification": "source-read",
+   "semantics": {
+    "auth": "cron-secret",
+    "authDetail": "Bearer CRON_SECRET",
+    "behavior": "오늘 날짜로 지점별 원생 매일 기록을 남긴다.",
+    "writes": [
+     "student_daily_stats",
+     "student_history_monthly"
+    ],
+    "external": [],
+    "readDepth": "full-handler",
+    "note": null,
+    "evidence": [
+     {
+      "file": "src/app/api/cron/student-daily-stats/route.ts",
+      "line": 24,
+      "has": "recordStudentDailyStats"
+     }
+    ]
+   }
   },
   {
    "url": "/api/cron/teacher-portfolio",
@@ -19177,7 +21443,31 @@
     "owner",
     "teacher-portfolio"
    ],
-   "verification": "auto"
+   "verification": "source-read",
+   "semantics": {
+    "auth": "cron-secret",
+    "authDetail": "Bearer CRON_SECRET",
+    "behavior": "직원 평가 모듈·실험실이 열린 지점만 직원 포트폴리오를 재집계하고 마감 달이 생기면 감사로그를 남긴다.",
+    "writes": [
+     "teacher_portfolio_months",
+     "audit_logs"
+    ],
+    "external": [],
+    "readDepth": "full-handler",
+    "note": null,
+    "evidence": [
+     {
+      "file": "src/app/api/cron/teacher-portfolio/route.ts",
+      "line": 61,
+      "has": "\"class_review\""
+     },
+     {
+      "file": "src/app/api/cron/teacher-portfolio/route.ts",
+      "line": 69,
+      "has": "refreshTenantPortfolio"
+     }
+    ]
+   }
   },
   {
    "url": "/api/cron/todays-math-results",
@@ -19195,7 +21485,27 @@
    "featureImports": [
     "integrations"
    ],
-   "verification": "auto"
+   "verification": "source-read",
+   "semantics": {
+    "auth": "cron-secret",
+    "authDetail": "Bearer CRON_SECRET",
+    "behavior": "오늘 수학 결과를 가져와 반영한다.",
+    "writes": [
+     "오늘 수학 결과 표"
+    ],
+    "external": [
+     "오늘 수학"
+    ],
+    "readDepth": "full-handler",
+    "note": null,
+    "evidence": [
+     {
+      "file": "src/app/api/cron/todays-math-results/route.ts",
+      "line": 14,
+      "has": "syncTodaysMathResults"
+     }
+    ]
+   }
   },
   {
    "url": "/api/cron/todays-math-sync",
@@ -19214,7 +21524,32 @@
    "featureImports": [
     "integrations"
    ],
-   "verification": "auto"
+   "verification": "source-read",
+   "semantics": {
+    "auth": "cron-secret",
+    "authDetail": "GET = Bearer CRON_SECRET, POST = TODAYS_MATH_SYNC_WAKE_SECRET",
+    "behavior": "오늘 수학 동기화 이벤트를 보낸다(diagnostics=1이면 설정 진단만).",
+    "writes": [
+     "동기화 이벤트"
+    ],
+    "external": [
+     "오늘 수학"
+    ],
+    "readDepth": "full-handler",
+    "note": null,
+    "evidence": [
+     {
+      "file": "src/app/api/cron/todays-math-sync/route.ts",
+      "line": 10,
+      "has": "dispatchSyncEvents"
+     },
+     {
+      "file": "src/app/api/cron/todays-math-sync/route.ts",
+      "line": 15,
+      "has": "TODAYS_MATH_SYNC_WAKE_SECRET"
+     }
+    ]
+   }
   },
   {
    "url": "/api/cron/video-homework",
@@ -19234,7 +21569,26 @@
    "featureImports": [
     "video-homework"
    ],
-   "verification": "auto"
+   "verification": "source-read",
+   "semantics": {
+    "auth": "cron-secret",
+    "authDetail": "Bearer CRON_SECRET",
+    "behavior": "지점마다 영상 숙제 제출 상태를 대조하고 연결 안 된 영상 알림을 보낸다.",
+    "writes": [
+     "영상 숙제 표",
+     "notifications"
+    ],
+    "external": [],
+    "readDepth": "full-handler",
+    "note": null,
+    "evidence": [
+     {
+      "file": "src/app/api/cron/video-homework/route.ts",
+      "line": 21,
+      "has": "reconcileVideoHomework"
+     }
+    ]
+   }
   },
   {
    "url": "/api/cron/video-review",
@@ -19254,7 +21608,27 @@
    "featureImports": [
     "video-review"
    ],
-   "verification": "auto"
+   "verification": "source-read",
+   "semantics": {
+    "auth": "cron-secret",
+    "authDetail": "Bearer CRON_SECRET",
+    "behavior": "지점마다 영상 AI 참고 메모 처리를 한 차례 돌린다.",
+    "writes": [
+     "homework_video_reviews"
+    ],
+    "external": [
+     "AI(generateJSON)"
+    ],
+    "readDepth": "full-handler",
+    "note": null,
+    "evidence": [
+     {
+      "file": "src/app/api/cron/video-review/route.ts",
+      "line": 26,
+      "has": "runVideoReviewCycle"
+     }
+    ]
+   }
   },
   {
    "url": "/api/documents/[id]/file",
@@ -19270,7 +21644,35 @@
    "featureImports": [
     "documents"
    ],
-   "verification": "auto"
+   "verification": "source-read",
+   "semantics": {
+    "auth": "menu-gate",
+    "authDetail": "apiAccess(\"documents\")",
+    "behavior": "서명 URL로 문서 파일을 가져와 그대로 흘려 보낸다(PDF·이미지는 미리보기, 그 밖은 내려받기).",
+    "writes": [],
+    "external": [
+     "Supabase Storage"
+    ],
+    "readDepth": "full-handler",
+    "note": null,
+    "evidence": [
+     {
+      "file": "src/app/api/documents/[id]/file/route.ts",
+      "line": 7,
+      "has": "apiAccess(\"documents\")"
+     },
+     {
+      "file": "src/app/api/documents/[id]/file/route.ts",
+      "line": 11,
+      "has": "signDocumentUrl"
+     },
+     {
+      "file": "src/app/api/documents/[id]/file/route.ts",
+      "line": 16,
+      "has": "fetch(signed.url"
+     }
+    ]
+   }
   },
   {
    "url": "/api/enrollment/prior-consults",
@@ -19291,7 +21693,28 @@
     "owner",
     "schools"
    ],
-   "verification": "auto"
+   "verification": "source-read",
+   "semantics": {
+    "auth": "session+permission",
+    "authDetail": "로그인 + canAccessTenant(enrollment)",
+    "behavior": "이름·휴대폰·학교·학년으로 같은 사람의 이전 상담을 찾아 10건까지 돌려준다.",
+    "writes": [],
+    "external": [],
+    "readDepth": "full-handler",
+    "note": null,
+    "evidence": [
+     {
+      "file": "src/app/api/enrollment/prior-consults/route.ts",
+      "line": 19,
+      "has": "canAccessTenant(user.systemRole, \"enrollment\")"
+     },
+     {
+      "file": "src/app/api/enrollment/prior-consults/route.ts",
+      "line": 26,
+      "has": "findSamePersonConsultations"
+     }
+    ]
+   }
   },
   {
    "url": "/api/exams/excel",
@@ -19311,7 +21734,28 @@
     "grades",
     "owner"
    ],
-   "verification": "auto"
+   "verification": "source-read",
+   "semantics": {
+    "auth": "menu-gate",
+    "authDetail": "requireAccess(\"exams\")",
+    "behavior": "선택한 학기·과목·반·시험의 성적 격자를 엑셀로 만든다.",
+    "writes": [],
+    "external": [],
+    "readDepth": "full-handler",
+    "note": null,
+    "evidence": [
+     {
+      "file": "src/app/api/exams/excel/route.ts",
+      "line": 21,
+      "has": "requireAccess(\"exams\")"
+     },
+     {
+      "file": "src/app/api/exams/excel/route.ts",
+      "line": 53,
+      "has": "buildGradesWorkbook"
+     }
+    ]
+   }
   },
   {
    "url": "/api/exams/unified-export",
@@ -19330,7 +21774,28 @@
     "grades",
     "owner"
    ],
-   "verification": "auto"
+   "verification": "source-read",
+   "semantics": {
+    "auth": "menu-gate",
+    "authDetail": "requireAccess(\"exams\")",
+    "behavior": "기간·종류·과목으로 거른 통합 성적 원장을 엑셀로 만든다.",
+    "writes": [],
+    "external": [],
+    "readDepth": "full-handler",
+    "note": null,
+    "evidence": [
+     {
+      "file": "src/app/api/exams/unified-export/route.ts",
+      "line": 21,
+      "has": "requireAccess(\"exams\")"
+     },
+     {
+      "file": "src/app/api/exams/unified-export/route.ts",
+      "line": 30,
+      "has": "getUnifiedGrades"
+     }
+    ]
+   }
   },
   {
    "url": "/api/excel-import/[kind]",
@@ -19347,7 +21812,35 @@
    "featureImports": [
     "excel-import"
    ],
-   "verification": "auto"
+   "verification": "source-read",
+   "semantics": {
+    "auth": "session+permission",
+    "authDetail": "GET은 핸들러가 gateImport, POST는 runImport 안에서 같은 gateImport를 부른다.",
+    "behavior": "GET = 가져오기 서식 엑셀 내려받기, POST = 엑셀 올려 반영(5MB, 결과 파일 또는 JSON).",
+    "writes": [
+     "가져오기 종류별 표"
+    ],
+    "external": [],
+    "readDepth": "full-handler",
+    "note": null,
+    "evidence": [
+     {
+      "file": "src/app/api/excel-import/[kind]/route.ts",
+      "line": 18,
+      "has": "gateImport(def)"
+     },
+     {
+      "file": "src/app/api/excel-import/[kind]/route.ts",
+      "line": 37,
+      "has": "runImport(def, fd)"
+     },
+     {
+      "file": "src/features/excel-import/server/run.ts",
+      "line": 31,
+      "has": "gateImport(def)"
+     }
+    ]
+   }
   },
   {
    "url": "/api/exports/billing",
@@ -19367,7 +21860,35 @@
     "exports",
     "integrations"
    ],
-   "verification": "auto"
+   "verification": "source-read",
+   "semantics": {
+    "auth": "menu-gate",
+    "authDetail": "requireAccess(\"billing\")",
+    "behavior": "청구월 수납 목록(연체만·makeedu 누락만 거르기 가능)을 엑셀로 만들고 내려받기를 기록한다.",
+    "writes": [
+     "내려받기 감사 기록"
+    ],
+    "external": [],
+    "readDepth": "full-handler",
+    "note": null,
+    "evidence": [
+     {
+      "file": "src/app/api/exports/billing/route.ts",
+      "line": 12,
+      "has": "requireAccess(\"billing\")"
+     },
+     {
+      "file": "src/app/api/exports/billing/route.ts",
+      "line": 23,
+      "has": "getInvoicesForPeriod"
+     },
+     {
+      "file": "src/app/api/exports/billing/route.ts",
+      "line": 44,
+      "has": "logExportDownload"
+     }
+    ]
+   }
   },
   {
    "url": "/api/exports/classes",
@@ -19387,7 +21908,35 @@
     "exports",
     "owner"
    ],
-   "verification": "auto"
+   "verification": "source-read",
+   "semantics": {
+    "auth": "menu-gate",
+    "authDetail": "requireAccess(\"classes\")",
+    "behavior": "필터 그대로 수업목록을 엑셀로 만들고 내려받기를 기록한다.",
+    "writes": [
+     "내려받기 감사 기록"
+    ],
+    "external": [],
+    "readDepth": "full-handler",
+    "note": null,
+    "evidence": [
+     {
+      "file": "src/app/api/exports/classes/route.ts",
+      "line": 21,
+      "has": "requireAccess(\"classes\")"
+     },
+     {
+      "file": "src/app/api/exports/classes/route.ts",
+      "line": 36,
+      "has": "getClassesPage"
+     },
+     {
+      "file": "src/app/api/exports/classes/route.ts",
+      "line": 42,
+      "has": "logExportDownload"
+     }
+    ]
+   }
   },
   {
    "url": "/api/exports/consultations",
@@ -19410,7 +21959,37 @@
     "consultations",
     "exports"
    ],
-   "verification": "auto"
+   "verification": "source-read",
+   "semantics": {
+    "auth": "shared-secret",
+    "authDetail": "Bearer CONSULT_EXPORT_TOKEN(없으면 503). 세션이 아니다. 지점은 CONSULT_EXPORT_TENANT_ID 또는 유일한 지점.",
+    "behavior": "외부 반출 API — 원생상담·신규 콜&상담을 이름 가림(maskName·maskText)·가명(pseudonym)으로 내보내고 반출을 기록한다. 전사본은 include=transcript일 때만.",
+    "writes": [
+     "반출 감사 기록"
+    ],
+    "external": [
+     "외부 소비자(토큰 보유자)"
+    ],
+    "readDepth": "full-handler",
+    "note": null,
+    "evidence": [
+     {
+      "file": "src/app/api/exports/consultations/route.ts",
+      "line": 43,
+      "has": "CONSULT_EXPORT_TOKEN"
+     },
+     {
+      "file": "src/app/api/exports/consultations/route.ts",
+      "line": 109,
+      "has": "pseudonym(r.student_id)"
+     },
+     {
+      "file": "src/app/api/exports/consultations/route.ts",
+      "line": 114,
+      "has": "maskText"
+     }
+    ]
+   }
   },
   {
    "url": "/api/exports/expenses",
@@ -19429,7 +22008,30 @@
     "billing",
     "exports"
    ],
-   "verification": "auto"
+   "verification": "source-read",
+   "semantics": {
+    "auth": "menu-gate",
+    "authDetail": "requireAccess(\"billing\")",
+    "behavior": "월 지출 목록을 엑셀로 만들고 내려받기를 기록한다.",
+    "writes": [
+     "내려받기 감사 기록"
+    ],
+    "external": [],
+    "readDepth": "full-handler",
+    "note": null,
+    "evidence": [
+     {
+      "file": "src/app/api/exports/expenses/route.ts",
+      "line": 14,
+      "has": "requireAccess(\"billing\")"
+     },
+     {
+      "file": "src/app/api/exports/expenses/route.ts",
+      "line": 25,
+      "has": "logExportDownload"
+     }
+    ]
+   }
   },
   {
    "url": "/api/exports/session-terms",
@@ -19450,7 +22052,35 @@
     "exports",
     "owner"
    ],
-   "verification": "auto"
+   "verification": "source-read",
+   "semantics": {
+    "auth": "menu-gate",
+    "authDetail": "requireAccess(\"billing\") + 회차 정산 모듈이 꺼지면 404",
+    "behavior": "회차 확정 표를 필터대로 엑셀로 만든다(자리 몫 조정 포함 가능).",
+    "writes": [
+     "내려받기 감사 기록"
+    ],
+    "external": [],
+    "readDepth": "full-handler",
+    "note": null,
+    "evidence": [
+     {
+      "file": "src/app/api/exports/session-terms/route.ts",
+      "line": 20,
+      "has": "requireAccess(\"billing\")"
+     },
+     {
+      "file": "src/app/api/exports/session-terms/route.ts",
+      "line": 21,
+      "has": "sessionBillingOff"
+     },
+     {
+      "file": "src/app/api/exports/session-terms/route.ts",
+      "line": 61,
+      "has": "logExportDownload"
+     }
+    ]
+   }
   },
   {
    "url": "/api/exports/students",
@@ -19470,7 +22100,35 @@
     "owner",
     "students"
    ],
-   "verification": "auto"
+   "verification": "source-read",
+   "semantics": {
+    "auth": "menu-gate",
+    "authDetail": "requireAccess(\"students\") + 강사 범위(applyTeacherScope)",
+    "behavior": "원생목록을 필터·정렬 그대로 엑셀로 만든다.",
+    "writes": [
+     "내려받기 감사 기록"
+    ],
+    "external": [],
+    "readDepth": "full-handler",
+    "note": null,
+    "evidence": [
+     {
+      "file": "src/app/api/exports/students/route.ts",
+      "line": 21,
+      "has": "requireAccess(\"students\")"
+     },
+     {
+      "file": "src/app/api/exports/students/route.ts",
+      "line": 64,
+      "has": "applyTeacherScope: true"
+     },
+     {
+      "file": "src/app/api/exports/students/route.ts",
+      "line": 75,
+      "has": "logExportDownload"
+     }
+    ]
+   }
   },
   {
    "url": "/api/exports/timetable",
@@ -19489,7 +22147,35 @@
     "exports",
     "timetable"
    ],
-   "verification": "auto"
+   "verification": "source-read",
+   "semantics": {
+    "auth": "menu-gate",
+    "authDetail": "requireAccess(\"timetable\") + 강사 범위(effectiveTeacherId), 편집 시트는 canManageTimetableImport일 때만",
+    "behavior": "수학·영어·통합 시간표를 엑셀로 만든다.",
+    "writes": [
+     "내려받기 감사 기록"
+    ],
+    "external": [],
+    "readDepth": "full-handler",
+    "note": null,
+    "evidence": [
+     {
+      "file": "src/app/api/exports/timetable/route.ts",
+      "line": 15,
+      "has": "requireAccess(\"timetable\")"
+     },
+     {
+      "file": "src/app/api/exports/timetable/route.ts",
+      "line": 20,
+      "has": "effectiveTeacherId"
+     },
+     {
+      "file": "src/app/api/exports/timetable/route.ts",
+      "line": 23,
+      "has": "canManageTimetableImport"
+     }
+    ]
+   }
   },
   {
    "url": "/api/homework-videos/[id]/review",
@@ -19505,7 +22191,28 @@
    "featureImports": [
     "video-review"
    ],
-   "verification": "auto"
+   "verification": "source-read",
+   "semantics": {
+    "auth": "session+permission",
+    "authDetail": "reviewAccess(videoId)",
+    "behavior": "영상의 AI 참고 메모 보기를 돌려준다.",
+    "writes": [],
+    "external": [],
+    "readDepth": "full-handler",
+    "note": null,
+    "evidence": [
+     {
+      "file": "src/app/api/homework-videos/[id]/review/route.ts",
+      "line": 14,
+      "has": "reviewAccess(videoId)"
+     },
+     {
+      "file": "src/app/api/homework-videos/[id]/review/route.ts",
+      "line": 16,
+      "has": "reviewViewFor"
+     }
+    ]
+   }
   },
   {
    "url": "/api/homework-videos/[id]/stream",
@@ -19521,7 +22228,30 @@
    "featureImports": [
     "students"
    ],
-   "verification": "auto"
+   "verification": "source-read",
+   "semantics": {
+    "auth": "session+permission",
+    "authDetail": "핸들러는 위임만 — streamHomeworkVideo 안에서 canViewLinkedHomeworkVideo·Range·드라이브 자격을 확인한다.",
+    "behavior": "숙제 영상을 드라이브에서 범위 요청으로 흘려 보낸다.",
+    "writes": [],
+    "external": [
+     "Google Drive"
+    ],
+    "readDepth": "full-handler",
+    "note": null,
+    "evidence": [
+     {
+      "file": "src/app/api/homework-videos/[id]/stream/route.ts",
+      "line": 7,
+      "has": "streamHomeworkVideo"
+     },
+     {
+      "file": "src/features/students/server/homework-video-stream.ts",
+      "line": 84,
+      "has": "canViewLinkedHomeworkVideo"
+     }
+    ]
+   }
   },
   {
    "url": "/api/integrations/homework-video-drive/callback",
@@ -19540,7 +22270,37 @@
     "owner",
     "video-submit"
    ],
-   "verification": "auto"
+   "verification": "source-read",
+   "semantics": {
+    "auth": "oauth-state",
+    "authDetail": "호스트·state·PKCE 쿠키 + 로그인 + canWriteTenant(integration_settings) + ClassNote 모듈",
+    "behavior": "구글 OAuth 콜백 — 시도 기록을 소비하고 지점 숙제 영상 드라이브 연결을 완료한다.",
+    "writes": [
+     "homework_video_drive_connections(RPC)"
+    ],
+    "external": [
+     "Google OAuth"
+    ],
+    "readDepth": "full-handler",
+    "note": null,
+    "evidence": [
+     {
+      "file": "src/app/api/integrations/homework-video-drive/callback/route.ts",
+      "line": 49,
+      "has": "canWriteTenant(user.systemRole, \"integration_settings\")"
+     },
+     {
+      "file": "src/app/api/integrations/homework-video-drive/callback/route.ts",
+      "line": 56,
+      "has": "consume_homework_video_drive_oauth_attempt"
+     },
+     {
+      "file": "src/app/api/integrations/homework-video-drive/callback/route.ts",
+      "line": 70,
+      "has": "completeVideoDriveConnection"
+     }
+    ]
+   }
   },
   {
    "url": "/api/integrations/homework-video-drive/done",
@@ -19556,7 +22316,23 @@
    "featureImports": [
     "video-submit"
    ],
-   "verification": "auto"
+   "verification": "source-read",
+   "semantics": {
+    "auth": "none",
+    "authDetail": "상태 안내 페이지만 그린다(데이터 없음).",
+    "behavior": "OAuth 결과 안내 페이지.",
+    "writes": [],
+    "external": [],
+    "readDepth": "full-handler",
+    "note": null,
+    "evidence": [
+     {
+      "file": "src/app/api/integrations/homework-video-drive/done/route.ts",
+      "line": 12,
+      "has": "renderVideoOAuthDonePage"
+     }
+    ]
+   }
   },
   {
    "url": "/api/integrations/homework-video-drive/start",
@@ -19575,7 +22351,37 @@
     "owner",
     "video-submit"
    ],
-   "verification": "auto"
+   "verification": "source-read",
+   "semantics": {
+    "auth": "session+permission",
+    "authDetail": "같은 출처(origin·host·sec-fetch-site) + 로그인 + canWriteTenant(integration_settings) + ClassNote 모듈",
+    "behavior": "OAuth 시도를 만들고 구글 인증 화면으로 보낸다(검증자 쿠키 10분).",
+    "writes": [
+     "homework_video_drive_oauth_attempts(RPC)"
+    ],
+    "external": [
+     "Google OAuth"
+    ],
+    "readDepth": "full-handler",
+    "note": null,
+    "evidence": [
+     {
+      "file": "src/app/api/integrations/homework-video-drive/start/route.ts",
+      "line": 31,
+      "has": "config.origin"
+     },
+     {
+      "file": "src/app/api/integrations/homework-video-drive/start/route.ts",
+      "line": 50,
+      "has": "create_homework_video_drive_oauth_attempt"
+     },
+     {
+      "file": "src/app/api/integrations/homework-video-drive/start/route.ts",
+      "line": 67,
+      "has": "buildGoogleAuthUrl"
+     }
+    ]
+   }
   },
   {
    "url": "/api/integrations/todays-math/progress",
@@ -19591,7 +22397,35 @@
    "featureImports": [
     "integrations"
    ],
-   "verification": "auto"
+   "verification": "source-read",
+   "semantics": {
+    "auth": "shared-secret",
+    "authDetail": "Authorization = TODAYS_MATH_API_KEY, 지점 = TODAYS_MATH_TENANT_ID, 지점 기능 사용 동의(isFeatureOptedIn)",
+    "behavior": "오늘 수학이 가져가는 진도 페이지(커서)를 돌려준다.",
+    "writes": [],
+    "external": [
+     "오늘 수학(소비자)"
+    ],
+    "readDepth": "full-handler",
+    "note": null,
+    "evidence": [
+     {
+      "file": "src/app/api/integrations/todays-math/progress/route.ts",
+      "line": 31,
+      "has": "TODAYS_MATH_API_KEY"
+     },
+     {
+      "file": "src/app/api/integrations/todays-math/progress/route.ts",
+      "line": 46,
+      "has": "isFeatureOptedIn"
+     },
+     {
+      "file": "src/app/api/integrations/todays-math/progress/route.ts",
+      "line": 56,
+      "has": "fetchProgressPage"
+     }
+    ]
+   }
   },
   {
    "url": "/api/integrations/todays-math/roster",
@@ -19607,7 +22441,30 @@
    "featureImports": [
     "integrations"
    ],
-   "verification": "auto"
+   "verification": "source-read",
+   "semantics": {
+    "auth": "shared-secret",
+    "authDetail": "Authorization = TODAYS_MATH_API_KEY, 지점 = TODAYS_MATH_TENANT_ID, 기능 동의",
+    "behavior": "오늘 수학이 가져가는 명단을 돌려준다.",
+    "writes": [],
+    "external": [
+     "오늘 수학(소비자)"
+    ],
+    "readDepth": "full-handler",
+    "note": null,
+    "evidence": [
+     {
+      "file": "src/app/api/integrations/todays-math/roster/route.ts",
+      "line": 22,
+      "has": "TODAYS_MATH_API_KEY"
+     },
+     {
+      "file": "src/app/api/integrations/todays-math/roster/route.ts",
+      "line": 44,
+      "has": "fetchRoster"
+     }
+    ]
+   }
   },
   {
    "url": "/api/integrations/todays-math/v2/control",
@@ -19623,7 +22480,30 @@
    "featureImports": [
     "integrations"
    ],
-   "verification": "auto"
+   "verification": "source-read",
+   "semantics": {
+    "auth": "signed-sync",
+    "authDetail": "authenticateSyncRequest(control) + 바인딩 일치",
+    "behavior": "연동 제어 상태(사용자 연결 가능 여부 등)를 돌려준다.",
+    "writes": [],
+    "external": [
+     "오늘 수학"
+    ],
+    "readDepth": "full-handler",
+    "note": null,
+    "evidence": [
+     {
+      "file": "src/app/api/integrations/todays-math/v2/control/route.ts",
+      "line": 9,
+      "has": "authenticateSyncRequest(request, \"control\")"
+     },
+     {
+      "file": "src/app/api/integrations/todays-math/v2/control/route.ts",
+      "line": 12,
+      "has": "sourceControl"
+     }
+    ]
+   }
   },
   {
    "url": "/api/integrations/todays-math/v2/menus-changed",
@@ -19642,7 +22522,32 @@
     "audit",
     "integrations"
    ],
-   "verification": "auto"
+   "verification": "source-read",
+   "semantics": {
+    "auth": "signed-sync",
+    "authDetail": "authenticateSyncRequest(control) + 바인딩 + 기능 동의",
+    "behavior": "오늘 수학 쪽 사용 메뉴 변경을 받아 감사로그로 남긴다(eventId로 중복 제거).",
+    "writes": [
+     "audit_logs"
+    ],
+    "external": [
+     "오늘 수학"
+    ],
+    "readDepth": "full-handler",
+    "note": null,
+    "evidence": [
+     {
+      "file": "src/app/api/integrations/todays-math/v2/menus-changed/route.ts",
+      "line": 29,
+      "has": "authenticateSyncRequest(request, \"control\", true)"
+     },
+     {
+      "file": "src/app/api/integrations/todays-math/v2/menus-changed/route.ts",
+      "line": 37,
+      "has": "todays_math_menus_update"
+     }
+    ]
+   }
   },
   {
    "url": "/api/integrations/todays-math/v2/results-wake",
@@ -19658,7 +22563,32 @@
    "featureImports": [
     "integrations"
    ],
-   "verification": "auto"
+   "verification": "source-read",
+   "semantics": {
+    "auth": "signed-sync",
+    "authDetail": "authenticateSyncRequest(control) + 바인딩 + 기능 동의",
+    "behavior": "결과 동기화 신호를 받으면 응답 뒤 결과·보고서 첨부 동기화를 돌린다.",
+    "writes": [
+     "오늘 수학 결과 표"
+    ],
+    "external": [
+     "오늘 수학"
+    ],
+    "readDepth": "full-handler",
+    "note": null,
+    "evidence": [
+     {
+      "file": "src/app/api/integrations/todays-math/v2/results-wake/route.ts",
+      "line": 18,
+      "has": "authenticateSyncRequest(request, \"control\")"
+     },
+     {
+      "file": "src/app/api/integrations/todays-math/v2/results-wake/route.ts",
+      "line": 22,
+      "has": "syncTenantWithReports"
+     }
+    ]
+   }
   },
   {
    "url": "/api/integrations/todays-math/v2/snapshots",
@@ -19674,7 +22604,27 @@
    "featureImports": [
     "integrations"
    ],
-   "verification": "auto"
+   "verification": "source-read",
+   "semantics": {
+    "auth": "signed-sync",
+    "authDetail": "authenticateSyncRequest(control) + 바인딩",
+    "behavior": "원본 스냅샷을 새로 만든다.",
+    "writes": [
+     "스냅샷"
+    ],
+    "external": [
+     "오늘 수학"
+    ],
+    "readDepth": "full-handler",
+    "note": null,
+    "evidence": [
+     {
+      "file": "src/app/api/integrations/todays-math/v2/snapshots/route.ts",
+      "line": 12,
+      "has": "createSourceSnapshot"
+     }
+    ]
+   }
   },
   {
    "url": "/api/integrations/todays-math/v2/snapshots/[snapshotId]",
@@ -19690,7 +22640,25 @@
    "featureImports": [
     "integrations"
    ],
-   "verification": "auto"
+   "verification": "source-read",
+   "semantics": {
+    "auth": "signed-sync",
+    "authDetail": "authenticateSyncRequest(control) + 바인딩",
+    "behavior": "원본 스냅샷의 한 페이지를 돌려준다.",
+    "writes": [],
+    "external": [
+     "오늘 수학"
+    ],
+    "readDepth": "full-handler",
+    "note": null,
+    "evidence": [
+     {
+      "file": "src/app/api/integrations/todays-math/v2/snapshots/[snapshotId]/route.ts",
+      "line": 16,
+      "has": "sourceSnapshotPage"
+     }
+    ]
+   }
   },
   {
    "url": "/api/integrations/todays-math/v2/token",
@@ -19706,7 +22674,32 @@
    "featureImports": [
     "integrations"
    ],
-   "verification": "auto"
+   "verification": "source-read",
+   "semantics": {
+    "auth": "signed-sync",
+    "authDetail": "authenticateSyncRequest(sso) + 인가 코드·PKCE 교환 + 연결 가능 사용자",
+    "behavior": "인가 코드를 교환해 오늘 수학용 서명 어서션(이메일·이름 포함)을 돌려준다.",
+    "writes": [
+     "tm_sync_exchange_code(코드 소비)"
+    ],
+    "external": [
+     "오늘 수학"
+    ],
+    "readDepth": "full-handler",
+    "note": null,
+    "evidence": [
+     {
+      "file": "src/app/api/integrations/todays-math/v2/token/route.ts",
+      "line": 15,
+      "has": "tm_sync_exchange_code"
+     },
+     {
+      "file": "src/app/api/integrations/todays-math/v2/token/route.ts",
+      "line": 24,
+      "has": "signAssertion"
+     }
+    ]
+   }
   },
   {
    "url": "/api/internal/class-notice-attachments/[noticeId]",
@@ -19725,7 +22718,30 @@
     "report-admin",
     "sync-agent"
    ],
-   "verification": "auto"
+   "verification": "source-read",
+   "semantics": {
+    "auth": "internal-worker",
+    "authDetail": "x-eywa-internal 헤더(authorizeInternalWorker) + 지점 일치",
+    "behavior": "연동 PC가 반 공지 첨부 이미지의 서명 URL을 받아 간다.",
+    "writes": [],
+    "external": [
+     "연동 PC(소비자)"
+    ],
+    "readDepth": "full-handler",
+    "note": null,
+    "evidence": [
+     {
+      "file": "src/app/api/internal/class-notice-attachments/[noticeId]/route.ts",
+      "line": 20,
+      "has": "authorizeInternalWorker"
+     },
+     {
+      "file": "src/app/api/internal/class-notice-attachments/[noticeId]/route.ts",
+      "line": 38,
+      "has": "resolveTenantReadUrls"
+     }
+    ]
+   }
   },
   {
    "url": "/api/internal/notice-attachments/[noticeId]",
@@ -19744,7 +22760,30 @@
     "onescreen",
     "sync-agent"
    ],
-   "verification": "auto"
+   "verification": "source-read",
+   "semantics": {
+    "auth": "internal-worker",
+    "authDetail": "x-eywa-internal 헤더 + 지점 일치",
+    "behavior": "연동 PC가 공지(공통·대상별) 첨부 서명 URL을 받아 간다.",
+    "writes": [],
+    "external": [
+     "연동 PC(소비자)"
+    ],
+    "readDepth": "full-handler",
+    "note": null,
+    "evidence": [
+     {
+      "file": "src/app/api/internal/notice-attachments/[noticeId]/route.ts",
+      "line": 89,
+      "has": "authorizeInternalWorker"
+     },
+     {
+      "file": "src/app/api/internal/notice-attachments/[noticeId]/route.ts",
+      "line": 116,
+      "has": "resolveTenantReadUrls"
+     }
+    ]
+   }
   },
   {
    "url": "/api/internal/parent-messages/classify",
@@ -19762,7 +22801,33 @@
     "sync-agent",
     "teacher-portfolio"
    ],
-   "verification": "auto"
+   "verification": "source-read",
+   "semantics": {
+    "auth": "internal-worker",
+    "authDetail": "x-eywa-internal 헤더",
+    "behavior": "대기 중인 학부모 글을 AI로 분류하고 만족도 판정을 돌린다.",
+    "writes": [
+     "classnote_parent_messages 분류",
+     "만족도 판정"
+    ],
+    "external": [
+     "AI(generateJSON)"
+    ],
+    "readDepth": "full-handler",
+    "note": null,
+    "evidence": [
+     {
+      "file": "src/app/api/internal/parent-messages/classify/route.ts",
+      "line": 32,
+      "has": "classifyPendingParentMessages"
+     },
+     {
+      "file": "src/app/api/internal/parent-messages/classify/route.ts",
+      "line": 34,
+      "has": "judgeParentSatisfaction"
+     }
+    ]
+   }
   },
   {
    "url": "/api/internal/parent-messages/jev-shadow",
@@ -19778,7 +22843,30 @@
    "featureImports": [
     "attendance"
    ],
-   "verification": "auto"
+   "verification": "source-read",
+   "semantics": {
+    "auth": "shared-secret",
+    "authDetail": "x-eywa-internal = CLASSNOTE_INTERNAL_SECRET",
+    "behavior": "TypeSafe Jev와 기존 출결 판정을 비교만 한다(기존 판정은 바꾸지 않음).",
+    "writes": [],
+    "external": [
+     "TypeSafe Jev"
+    ],
+    "readDepth": "full-handler",
+    "note": null,
+    "evidence": [
+     {
+      "file": "src/app/api/internal/parent-messages/jev-shadow/route.ts",
+      "line": 11,
+      "has": "CLASSNOTE_INTERNAL_SECRET"
+     },
+     {
+      "file": "src/app/api/internal/parent-messages/jev-shadow/route.ts",
+      "line": 19,
+      "has": "compareParentMessageWithJev"
+     }
+    ]
+   }
   },
   {
    "url": "/api/internal/report-attachments/[reportId]",
@@ -19797,7 +22885,30 @@
     "onescreen",
     "sync-agent"
    ],
-   "verification": "auto"
+   "verification": "source-read",
+   "semantics": {
+    "auth": "internal-worker",
+    "authDetail": "x-eywa-internal 헤더 + 지점 일치",
+    "behavior": "연동 PC가 보고서의 이미지가 아닌 첨부 파일 서명 URL을 받아 간다.",
+    "writes": [],
+    "external": [
+     "연동 PC(소비자)"
+    ],
+    "readDepth": "full-handler",
+    "note": null,
+    "evidence": [
+     {
+      "file": "src/app/api/internal/report-attachments/[reportId]/route.ts",
+      "line": 23,
+      "has": "authorizeInternalWorker"
+     },
+     {
+      "file": "src/app/api/internal/report-attachments/[reportId]/route.ts",
+      "line": 52,
+      "has": "resolveTenantReadUrls"
+     }
+    ]
+   }
   },
   {
    "url": "/api/internal/video-drive-token",
@@ -19817,7 +22928,35 @@
     "sync-agent",
     "video-submit"
    ],
-   "verification": "auto"
+   "verification": "source-read",
+   "semantics": {
+    "auth": "internal-worker",
+    "authDetail": "x-eywa-internal 헤더 + ClassNote 모듈 + 3분 안에 살아 있는 연동 PC(postMode·기능 플래그)",
+    "behavior": "지점 숙제 영상 드라이브 OAuth 액세스 토큰을 짧게 발급한다.",
+    "writes": [],
+    "external": [
+     "Google Drive"
+    ],
+    "readDepth": "full-handler",
+    "note": null,
+    "evidence": [
+     {
+      "file": "src/app/api/internal/video-drive-token/route.ts",
+      "line": 38,
+      "has": "authorizeInternalWorker"
+     },
+     {
+      "file": "src/app/api/internal/video-drive-token/route.ts",
+      "line": 50,
+      "has": "classnote_workers"
+     },
+     {
+      "file": "src/app/api/internal/video-drive-token/route.ts",
+      "line": 63,
+      "has": "credential.mint"
+     }
+    ]
+   }
   },
   {
    "url": "/api/internal/video-review/upload",
@@ -19836,7 +22975,30 @@
     "sync-agent",
     "video-review"
    ],
-   "verification": "auto"
+   "verification": "source-read",
+   "semantics": {
+    "auth": "internal-worker",
+    "authDetail": "x-eywa-internal 헤더 + video_review 기능 동의 + 작업 잠금(10분)",
+    "behavior": "영상 검토 추출 산출물의 서명 업로드 URL을 만든다.",
+    "writes": [
+     "Storage 업로드 URL"
+    ],
+    "external": [],
+    "readDepth": "full-handler",
+    "note": null,
+    "evidence": [
+     {
+      "file": "src/app/api/internal/video-review/upload/route.ts",
+      "line": 40,
+      "has": "isFeatureOptedIn(tenantId, \"video_review\")"
+     },
+     {
+      "file": "src/app/api/internal/video-review/upload/route.ts",
+      "line": 52,
+      "has": "createSignedUploadUrl"
+     }
+    ]
+   }
   },
   {
    "url": "/api/internal/video-submit-link",
@@ -19855,7 +23017,28 @@
     "sync-agent",
     "video-submit"
    ],
-   "verification": "auto"
+   "verification": "source-read",
+   "semantics": {
+    "auth": "internal-worker",
+    "authDetail": "x-eywa-internal 헤더 + 보고서 지점 일치",
+    "behavior": "보고서 글에 붙일 영상 올리기 사이트 줄을 돌려준다(학생별 토큰은 없음).",
+    "writes": [],
+    "external": [],
+    "readDepth": "full-handler",
+    "note": null,
+    "evidence": [
+     {
+      "file": "src/app/api/internal/video-submit-link/route.ts",
+      "line": 16,
+      "has": "authorizeInternalWorker"
+     },
+     {
+      "file": "src/app/api/internal/video-submit-link/route.ts",
+      "line": 26,
+      "has": "reportSiteLine"
+     }
+    ]
+   }
   },
   {
    "url": "/api/inventory/excel",
@@ -19873,7 +23056,28 @@
    "featureImports": [
     "inventory"
    ],
-   "verification": "auto"
+   "verification": "source-read",
+   "semantics": {
+    "auth": "menu-gate",
+    "authDetail": "requireAccess(\"inventory\")",
+    "behavior": "자산·소모품·분류를 엑셀로 만든다.",
+    "writes": [],
+    "external": [],
+    "readDepth": "full-handler",
+    "note": null,
+    "evidence": [
+     {
+      "file": "src/app/api/inventory/excel/route.ts",
+      "line": 15,
+      "has": "requireAccess(\"inventory\")"
+     },
+     {
+      "file": "src/app/api/inventory/excel/route.ts",
+      "line": 19,
+      "has": "buildInventoryWorkbook"
+     }
+    ]
+   }
   },
   {
    "url": "/api/inventory/qr/[code]",
@@ -19891,7 +23095,28 @@
    "featureImports": [
     "inventory"
    ],
-   "verification": "auto"
+   "verification": "source-read",
+   "semantics": {
+    "auth": "menu-gate",
+    "authDetail": "requireAccess(\"inventory\")",
+    "behavior": "자산 공개 페이지로 가는 QR SVG를 만든다.",
+    "writes": [],
+    "external": [],
+    "readDepth": "full-handler",
+    "note": null,
+    "evidence": [
+     {
+      "file": "src/app/api/inventory/qr/[code]/route.ts",
+      "line": 12,
+      "has": "requireAccess(\"inventory\")"
+     },
+     {
+      "file": "src/app/api/inventory/qr/[code]/route.ts",
+      "line": 17,
+      "has": "QRCode.toString"
+     }
+    ]
+   }
   },
   {
    "url": "/api/notice-popups",
@@ -19909,7 +23134,28 @@
    "featureImports": [
     "notices"
    ],
-   "verification": "auto"
+   "verification": "source-read",
+   "semantics": {
+    "auth": "session",
+    "authDetail": "로그인 사용자",
+    "behavior": "지금 보여야 할 팝업 공지를 역할·지점 기준으로 돌려준다.",
+    "writes": [],
+    "external": [],
+    "readDepth": "full-handler",
+    "note": null,
+    "evidence": [
+     {
+      "file": "src/app/api/notice-popups/route.ts",
+      "line": 25,
+      "has": "getCurrentUser"
+     },
+     {
+      "file": "src/app/api/notice-popups/route.ts",
+      "line": 27,
+      "has": "getActivePopupsOrThrow"
+     }
+    ]
+   }
   },
   {
    "url": "/api/notifications",
@@ -19927,7 +23173,28 @@
    "featureImports": [
     "notifications"
    ],
-   "verification": "auto"
+   "verification": "source-read",
+   "semantics": {
+    "auth": "session",
+    "authDetail": "핸들러는 위임 — getMyNotifications가 로그인·지점 보기 상태를 확인한다(없으면 빈 목록).",
+    "behavior": "내 알림(활성·보관)을 돌려준다.",
+    "writes": [],
+    "external": [],
+    "readDepth": "full-handler",
+    "note": null,
+    "evidence": [
+     {
+      "file": "src/app/api/notifications/route.ts",
+      "line": 29,
+      "has": "getMyNotifications"
+     },
+     {
+      "file": "src/features/notifications/server/queries.ts",
+      "line": 27,
+      "has": "getCurrentUser"
+     }
+    ]
+   }
   },
   {
    "url": "/api/push",
@@ -19948,7 +23215,37 @@
     "users"
    ],
    "featureImports": [],
-   "verification": "auto"
+   "verification": "source-read",
+   "semantics": {
+    "auth": "session",
+    "authDetail": "로그인 + 출결 알림 수신 동의(attendance_alert_optin)",
+    "behavior": "GET 구독 상태, POST 웹 푸시 구독 저장(다른 사용자 것이면 같은 지점일 때만 옮김), DELETE 구독 해제.",
+    "writes": [
+     "push_subscriptions"
+    ],
+    "external": [
+     "Web Push"
+    ],
+    "readDepth": "full-handler",
+    "note": null,
+    "evidence": [
+     {
+      "file": "src/app/api/push/route.ts",
+      "line": 36,
+      "has": "attendance_alert_optin"
+     },
+     {
+      "file": "src/app/api/push/route.ts",
+      "line": 114,
+      "has": ".upsert("
+     },
+     {
+      "file": "src/app/api/push/route.ts",
+      "line": 146,
+      "has": ".delete()"
+     }
+    ]
+   }
   },
   {
    "url": "/api/search/palette",
@@ -19966,7 +23263,28 @@
    "featureImports": [
     "search"
    ],
-   "verification": "auto"
+   "verification": "source-read",
+   "semantics": {
+    "auth": "session",
+    "authDetail": "로그인 사용자(역할로 결과 범위)",
+    "behavior": "검색 팰릿 결과(두 글자 이상).",
+    "writes": [],
+    "external": [],
+    "readDepth": "full-handler",
+    "note": null,
+    "evidence": [
+     {
+      "file": "src/app/api/search/palette/route.ts",
+      "line": 14,
+      "has": "getCurrentUser"
+     },
+     {
+      "file": "src/app/api/search/palette/route.ts",
+      "line": 18,
+      "has": "searchPalette"
+     }
+    ]
+   }
   },
   {
    "url": "/api/staff-tasks",
@@ -19982,7 +23300,28 @@
    "featureImports": [
     "staff-tasks"
    ],
-   "verification": "auto"
+   "verification": "source-read",
+   "semantics": {
+    "auth": "session+permission",
+    "authDetail": "getStaffTaskViewer, scope=all은 canMonitor만",
+    "behavior": "내 할 일 또는 전체 할 일 목록(필터·종류·페이지).",
+    "writes": [],
+    "external": [],
+    "readDepth": "full-handler",
+    "note": null,
+    "evidence": [
+     {
+      "file": "src/app/api/staff-tasks/route.ts",
+      "line": 21,
+      "has": "viewer.canMonitor"
+     },
+     {
+      "file": "src/app/api/staff-tasks/route.ts",
+      "line": 25,
+      "has": "listTasks"
+     }
+    ]
+   }
   },
   {
    "url": "/api/staff-tasks/[id]",
@@ -19998,7 +23337,28 @@
    "featureImports": [
     "staff-tasks"
    ],
-   "verification": "auto"
+   "verification": "source-read",
+   "semantics": {
+    "auth": "session+permission",
+    "authDetail": "getStaffTaskViewer + 본인 또는 업무 처리 현황 권한(canMonitor)",
+    "behavior": "할 일 상세.",
+    "writes": [],
+    "external": [],
+    "readDepth": "full-handler",
+    "note": null,
+    "evidence": [
+     {
+      "file": "src/app/api/staff-tasks/[id]/route.ts",
+      "line": 14,
+      "has": "getStaffTaskViewer"
+     },
+     {
+      "file": "src/app/api/staff-tasks/[id]/route.ts",
+      "line": 16,
+      "has": "taskDetail"
+     }
+    ]
+   }
   },
   {
    "url": "/api/students/[id]/summary",
@@ -20016,7 +23376,28 @@
    "featureImports": [
     "students"
    ],
-   "verification": "auto"
+   "verification": "source-read",
+   "semantics": {
+    "auth": "menu-gate",
+    "authDetail": "apiAccess(\"students\")",
+    "behavior": "학생 요약(호버 카드 등).",
+    "writes": [],
+    "external": [],
+    "readDepth": "full-handler",
+    "note": null,
+    "evidence": [
+     {
+      "file": "src/app/api/students/[id]/summary/route.ts",
+      "line": 15,
+      "has": "apiAccess(\"students\")"
+     },
+     {
+      "file": "src/app/api/students/[id]/summary/route.ts",
+      "line": 20,
+      "has": "getStudentSummary"
+     }
+    ]
+   }
   },
   {
    "url": "/api/sync-agent/[action]",
@@ -20032,7 +23413,32 @@
    "featureImports": [
     "sync-agent"
    ],
-   "verification": "auto"
+   "verification": "source-read",
+   "semantics": {
+    "auth": "sync-agent-device",
+    "authDetail": "연동 PC 기기 인증(authenticate)",
+    "behavior": "연동 PC 동작: configuration·acquire·heartbeat·release·events·cutover·schedule·unlock·module-start·module-stop.",
+    "writes": [
+     "sync_agent_* 표"
+    ],
+    "external": [
+     "연동 PC(AywaSync)"
+    ],
+    "readDepth": "full-handler",
+    "note": null,
+    "evidence": [
+     {
+      "file": "src/app/api/sync-agent/[action]/route.ts",
+      "line": 7,
+      "has": "authenticate(request)"
+     },
+     {
+      "file": "src/app/api/sync-agent/[action]/route.ts",
+      "line": 9,
+      "has": "switch (action)"
+     }
+    ]
+   }
   },
   {
    "url": "/api/sync-agent/latest",
@@ -20048,7 +23454,25 @@
    "featureImports": [
     "sync-agent"
    ],
-   "verification": "auto"
+   "verification": "source-read",
+   "semantics": {
+    "auth": "sync-agent-device",
+    "authDetail": "연동 PC 기기 인증",
+    "behavior": "폐기되지 않은 최신 서명 배포본 정보를 돌려준다.",
+    "writes": [],
+    "external": [
+     "연동 PC(AywaSync)"
+    ],
+    "readDepth": "full-handler",
+    "note": null,
+    "evidence": [
+     {
+      "file": "src/app/api/sync-agent/latest/route.ts",
+      "line": 7,
+      "has": "sync_agent_releases"
+     }
+    ]
+   }
   },
   {
    "url": "/api/sync-agent/operation",
@@ -20064,7 +23488,27 @@
    "featureImports": [
     "sync-agent"
    ],
-   "verification": "auto"
+   "verification": "source-read",
+   "semantics": {
+    "auth": "sync-agent-device",
+    "authDetail": "연동 PC 기기 인증",
+    "behavior": "연동 PC가 보낸 작업(2MB까지)을 실행한다.",
+    "writes": [
+     "makeedu 동기화 결과"
+    ],
+    "external": [
+     "makeedu(연동 PC 경유)"
+    ],
+    "readDepth": "full-handler",
+    "note": null,
+    "evidence": [
+     {
+      "file": "src/app/api/sync-agent/operation/route.ts",
+      "line": 6,
+      "has": "runAgentOperation"
+     }
+    ]
+   }
   },
   {
    "url": "/api/sync-agent/pair",
@@ -20080,7 +23524,27 @@
    "featureImports": [
     "sync-agent"
    ],
-   "verification": "auto"
+   "verification": "source-read",
+   "semantics": {
+    "auth": "public-token",
+    "authDetail": "기기 인증 전 단계 — 본문의 일회용 연결 코드로 짝짓는다(IP 기록).",
+    "behavior": "연동 PC를 지점에 연결한다.",
+    "writes": [
+     "sync_agent_devices"
+    ],
+    "external": [
+     "연동 PC(AywaSync)"
+    ],
+    "readDepth": "full-handler",
+    "note": null,
+    "evidence": [
+     {
+      "file": "src/app/api/sync-agent/pair/route.ts",
+      "line": 5,
+      "has": "pairDevice"
+     }
+    ]
+   }
   },
   {
    "url": "/api/sync-agent/query",
@@ -20096,7 +23560,25 @@
    "featureImports": [
     "sync-agent"
    ],
-   "verification": "auto"
+   "verification": "source-read",
+   "semantics": {
+    "auth": "sync-agent-device",
+    "authDetail": "연동 PC 기기 인증",
+    "behavior": "연동 PC가 보낸 조회(2MB까지)를 실행한다.",
+    "writes": [],
+    "external": [
+     "연동 PC(AywaSync)"
+    ],
+    "readDepth": "full-handler",
+    "note": null,
+    "evidence": [
+     {
+      "file": "src/app/api/sync-agent/query/route.ts",
+      "line": 6,
+      "has": "runAgentQuery"
+     }
+    ]
+   }
   },
   {
    "url": "/api/timetable/cell-memos",
@@ -20115,7 +23597,28 @@
     "timetable-cell-memo",
     "timetable-memo"
    ],
-   "verification": "auto"
+   "verification": "source-read",
+   "semantics": {
+    "auth": "session+permission",
+    "authDetail": "로그인 + memoSheetAccess.canView",
+    "behavior": "주간 영어 강사뷰 칸 메모를 돌려준다.",
+    "writes": [],
+    "external": [],
+    "readDepth": "full-handler",
+    "note": null,
+    "evidence": [
+     {
+      "file": "src/app/api/timetable/cell-memos/route.ts",
+      "line": 31,
+      "has": "memoSheetAccess"
+     },
+     {
+      "file": "src/app/api/timetable/cell-memos/route.ts",
+      "line": 34,
+      "has": "loadWeekCellMemos"
+     }
+    ]
+   }
   },
   {
    "url": "/api/timetable/end-scope",
@@ -20134,7 +23637,28 @@
     "students",
     "timetable"
    ],
-   "verification": "auto"
+   "verification": "source-read",
+   "semantics": {
+    "auth": "session+permission",
+    "authDetail": "로그인 + canManageStudentStatusNow(아니면 null)",
+    "behavior": "수강 종료 범위(같은 과목 다른 반 등)를 계산해 돌려준다.",
+    "writes": [],
+    "external": [],
+    "readDepth": "full-handler",
+    "note": null,
+    "evidence": [
+     {
+      "file": "src/app/api/timetable/end-scope/route.ts",
+      "line": 18,
+      "has": "canManageStudentStatusNow"
+     },
+     {
+      "file": "src/app/api/timetable/end-scope/route.ts",
+      "line": 21,
+      "has": "loadEndScope"
+     }
+    ]
+   }
   },
   {
    "url": "/api/timetable/lab/drafts",
@@ -20152,7 +23676,36 @@
     "audit",
     "timetable-lab"
    ],
-   "verification": "auto"
+   "verification": "source-read",
+   "semantics": {
+    "auth": "session+permission",
+    "authDetail": "draftUser()",
+    "behavior": "GET 연습본 목록, POST 연습본 저장(같은 지점 원본만) + 감사로그.",
+    "writes": [
+     "timetable_lab_drafts",
+     "audit_logs"
+    ],
+    "external": [],
+    "readDepth": "full-handler",
+    "note": null,
+    "evidence": [
+     {
+      "file": "src/app/api/timetable/lab/drafts/route.ts",
+      "line": 13,
+      "has": "listDrafts"
+     },
+     {
+      "file": "src/app/api/timetable/lab/drafts/route.ts",
+      "line": 21,
+      "has": "createDraft"
+     },
+     {
+      "file": "src/app/api/timetable/lab/drafts/route.ts",
+      "line": 24,
+      "has": "timetable_lab_draft_save"
+     }
+    ]
+   }
   },
   {
    "url": "/api/timetable/lab/drafts/[id]",
@@ -20168,7 +23721,28 @@
    "featureImports": [
     "timetable-lab"
    ],
-   "verification": "auto"
+   "verification": "source-read",
+   "semantics": {
+    "auth": "session+permission",
+    "authDetail": "draftUser()",
+    "behavior": "시간표 연습본 하나를 읽는다.",
+    "writes": [],
+    "external": [],
+    "readDepth": "full-handler",
+    "note": null,
+    "evidence": [
+     {
+      "file": "src/app/api/timetable/lab/drafts/[id]/route.ts",
+      "line": 7,
+      "has": "draftUser()"
+     },
+     {
+      "file": "src/app/api/timetable/lab/drafts/[id]/route.ts",
+      "line": 11,
+      "has": "readDraft"
+     }
+    ]
+   }
   },
   {
    "url": "/api/timetable/lab/source",
@@ -20187,7 +23761,28 @@
     "timetable",
     "timetable-lab"
    ],
-   "verification": "auto"
+   "verification": "source-read",
+   "semantics": {
+    "auth": "session+permission",
+    "authDetail": "로그인 + canUseTimetableEditor",
+    "behavior": "편집기가 불러올 기준일 주의 운영 시간표를 읽는다.",
+    "writes": [],
+    "external": [],
+    "readDepth": "full-handler",
+    "note": null,
+    "evidence": [
+     {
+      "file": "src/app/api/timetable/lab/source/route.ts",
+      "line": 12,
+      "has": "canUseTimetableEditor"
+     },
+     {
+      "file": "src/app/api/timetable/lab/source/route.ts",
+      "line": 18,
+      "has": "readLabSource"
+     }
+    ]
+   }
   },
   {
    "url": "/api/timetable/student-busy",
@@ -20205,7 +23800,28 @@
    "featureImports": [
     "timetable"
    ],
-   "verification": "auto"
+   "verification": "source-read",
+   "semantics": {
+    "auth": "session+permission",
+    "authDetail": "로그인 + canManageTenant(classes)(아니면 빈 결과)",
+    "behavior": "학생의 주간 다른 수업 시간(드래그 막기 표시용).",
+    "writes": [],
+    "external": [],
+    "readDepth": "full-handler",
+    "note": null,
+    "evidence": [
+     {
+      "file": "src/app/api/timetable/student-busy/route.ts",
+      "line": 22,
+      "has": "canManageTenant(user.systemRole, \"classes\")"
+     },
+     {
+      "file": "src/app/api/timetable/student-busy/route.ts",
+      "line": 28,
+      "has": "loadStudentBusyWindows"
+     }
+    ]
+   }
   },
   {
    "url": "/api/usage",
@@ -20223,7 +23839,30 @@
    "featureImports": [
     "usage"
    ],
-   "verification": "auto"
+   "verification": "source-read",
+   "semantics": {
+    "auth": "session",
+    "authDetail": "로그인 사용자(없으면 204), 읽기 전용 지점 보기는 기록 안 함",
+    "behavior": "화면 이용 시간 비콘을 기록한다.",
+    "writes": [
+     "이용 기록"
+    ],
+    "external": [],
+    "readDepth": "full-handler",
+    "note": null,
+    "evidence": [
+     {
+      "file": "src/app/api/usage/route.ts",
+      "line": 18,
+      "has": "MAX_BEACON_BYTES"
+     },
+     {
+      "file": "src/app/api/usage/route.ts",
+      "line": 33,
+      "has": "recordPageUsage"
+     }
+    ]
+   }
   },
   {
    "url": "/api/video-submit/complete",
@@ -20239,7 +23878,33 @@
    "featureImports": [
     "video-submit"
    ],
-   "verification": "auto"
+   "verification": "source-read",
+   "semantics": {
+    "auth": "public-token",
+    "authDetail": "제출 링크 토큰 + 업로드 id",
+    "behavior": "업로드 완료를 확정하고 응답 뒤 후속 처리(afterLinkUpload)를 한다.",
+    "writes": [
+     "student_homework_videos",
+     "homework_video_link_uploads"
+    ],
+    "external": [
+     "Google Drive"
+    ],
+    "readDepth": "full-handler",
+    "note": null,
+    "evidence": [
+     {
+      "file": "src/app/api/video-submit/complete/route.ts",
+      "line": 13,
+      "has": "completeLinkUpload"
+     },
+     {
+      "file": "src/app/api/video-submit/complete/route.ts",
+      "line": 16,
+      "has": "afterLinkUpload"
+     }
+    ]
+   }
   },
   {
    "url": "/api/video-submit/event",
@@ -20255,7 +23920,30 @@
    "featureImports": [
     "video-submit"
    ],
-   "verification": "auto"
+   "verification": "source-read",
+   "semantics": {
+    "auth": "public-token",
+    "authDetail": "같은 출처(uploadOrigin) + 4KB 상한 + 토큰",
+    "behavior": "업로드 진행 이벤트를 기록한다.",
+    "writes": [
+     "업로드 이벤트"
+    ],
+    "external": [],
+    "readDepth": "full-handler",
+    "note": null,
+    "evidence": [
+     {
+      "file": "src/app/api/video-submit/event/route.ts",
+      "line": 8,
+      "has": "uploadOrigin"
+     },
+     {
+      "file": "src/app/api/video-submit/event/route.ts",
+      "line": 21,
+      "has": "recordUploadEvent"
+     }
+    ]
+   }
   },
   {
    "url": "/api/video-submit/site",
@@ -20272,7 +23960,36 @@
     "audit",
     "video-submit"
    ],
-   "verification": "auto"
+   "verification": "source-read",
+   "semantics": {
+    "auth": "public-rate-limited",
+    "authDetail": "휴대폰 뒷 4자리 + 이름, IP 기준 횟수 제한(초과 429)",
+    "behavior": "/v 올리기 사이트 — 숙제 찾기(lookupSite)와 제출 링크 열기(openSiteLink).",
+    "writes": [
+     "homework_video_site_attempts",
+     "homework_video_links"
+    ],
+    "external": [],
+    "readDepth": "full-handler",
+    "note": null,
+    "evidence": [
+     {
+      "file": "src/app/api/video-submit/site/route.ts",
+      "line": 18,
+      "has": "pickClientIp"
+     },
+     {
+      "file": "src/app/api/video-submit/site/route.ts",
+      "line": 20,
+      "has": "openSiteLink"
+     },
+     {
+      "file": "src/app/api/video-submit/site/route.ts",
+      "line": 21,
+      "has": "lookupSite"
+     }
+    ]
+   }
   },
   {
    "url": "/api/video-submit/start",
@@ -20288,7 +24005,27 @@
    "featureImports": [
     "video-submit"
    ],
-   "verification": "auto"
+   "verification": "source-read",
+   "semantics": {
+    "auth": "public-token",
+    "authDetail": "제출 링크 토큰 + 출처·호스트(startLinkUpload 안)",
+    "behavior": "업로드를 시작하고 응답 뒤 후속 처리.",
+    "writes": [
+     "homework_video_link_uploads"
+    ],
+    "external": [
+     "Google Drive"
+    ],
+    "readDepth": "full-handler",
+    "note": null,
+    "evidence": [
+     {
+      "file": "src/app/api/video-submit/start/route.ts",
+      "line": 16,
+      "has": "startLinkUpload"
+     }
+    ]
+   }
   },
   {
    "url": "/api/webhooks/assemblyai",
@@ -20318,7 +24055,46 @@
     "schools",
     "video-review"
    ],
-   "verification": "auto"
+   "verification": "source-read",
+   "semantics": {
+    "auth": "shared-secret",
+    "authDetail": "x-eywa-webhook-secret = ASSEMBLYAI_WEBHOOK_SECRET(timingSafeEqual)",
+    "behavior": "transcript_id로 회의록·상담 녹음·신규 콜&상담(·원생상담)을 찾아 완료/진행 중이면 건너뛰고, 아니면 응답 뒤 270초 예산으로 분석한다(실패 시 행을 실패로).",
+    "writes": [
+     "meeting_minutes",
+     "consultation_recordings",
+     "enrollment_consultations",
+     "student_consultations"
+    ],
+    "external": [
+     "AssemblyAI",
+     "AI(generateJSON)"
+    ],
+    "readDepth": "partial",
+    "note": "1,013줄 중 인증·라우팅·백그라운드 처리 골격(코드 약 250줄)만 읽었다. 분석 도우미(handleMeeting·handleConsultationRecording·recoverConsultationAnalysis 등) 본문은 읽지 않았다.",
+    "evidence": [
+     {
+      "file": "src/app/api/webhooks/assemblyai/route.ts",
+      "line": 75,
+      "has": "BACKGROUND_DEADLINE_MS"
+     },
+     {
+      "file": "src/app/api/webhooks/assemblyai/route.ts",
+      "line": 148,
+      "has": "ASSEMBLYAI_WEBHOOK_SECRET"
+     },
+     {
+      "file": "src/app/api/webhooks/assemblyai/route.ts",
+      "line": 150,
+      "has": "secretMatches(provided, expected)"
+     },
+     {
+      "file": "src/app/api/webhooks/assemblyai/route.ts",
+      "line": 176,
+      "has": "assemblyai_transcript_id"
+     }
+    ]
+   }
   },
   {
    "url": "/home",
@@ -20341,7 +24117,40 @@
     "audit",
     "shuttle"
    ],
-   "verification": "auto"
+   "verification": "source-read",
+   "semantics": {
+    "auth": "session",
+    "authDetail": "세션이 없으면 학부모 → /parent, 퇴사 계정 → 로그아웃, 운영 계정 → 운영 콘솔, 그 밖은 /login",
+    "behavior": "역할·과목에 맞는 홈으로 보내는 서버 리다이렉터. 방금 로그인했으면 로그인 기록을 남긴다.",
+    "writes": [
+     "로그인 기록"
+    ],
+    "external": [],
+    "readDepth": "full-handler",
+    "note": null,
+    "evidence": [
+     {
+      "file": "src/app/home/route.ts",
+      "line": 81,
+      "has": "getParentViewer"
+     },
+     {
+      "file": "src/app/home/route.ts",
+      "line": 84,
+      "has": "signOut"
+     },
+     {
+      "file": "src/app/home/route.ts",
+      "line": 101,
+      "has": "recordLoginEvent"
+     },
+     {
+      "file": "src/app/home/route.ts",
+      "line": 107,
+      "has": "landingPath"
+     }
+    ]
+   }
   },
   {
    "url": "/tenant-view/exit",
@@ -20355,7 +24164,25 @@
    "authHints": [],
    "tables": [],
    "featureImports": [],
-   "verification": "auto"
+   "verification": "source-read",
+   "semantics": {
+    "auth": "session",
+    "authDetail": "읽기 전용 지점 보기 쿠키",
+    "behavior": "지점 보기를 끝내고 운영 콘솔의 학원 상세로 돌아간다.",
+    "writes": [
+     "보기 상태 쿠키"
+    ],
+    "external": [],
+    "readDepth": "full-handler",
+    "note": null,
+    "evidence": [
+     {
+      "file": "src/app/tenant-view/exit/route.ts",
+      "line": 41,
+      "has": "closeTenantView"
+     }
+    ]
+   }
   },
   {
    "url": "/tenant-view/sync",
@@ -20369,7 +24196,25 @@
    "authHints": [],
    "tables": [],
    "featureImports": [],
-   "verification": "auto"
+   "verification": "source-read",
+   "semantics": {
+    "auth": "session",
+    "authDetail": "읽기 전용 지점 보기 상태",
+    "behavior": "보기 상태를 맞춘다 — 살아 있으면 /home, 아니면 보기를 닫는다.",
+    "writes": [
+     "보기 상태 쿠키"
+    ],
+    "external": [],
+    "readDepth": "full-handler",
+    "note": null,
+    "evidence": [
+     {
+      "file": "src/app/tenant-view/sync/route.ts",
+      "line": 22,
+      "has": "tenantViewState"
+     }
+    ]
+   }
   },
   {
    "url": "/view-reset",
@@ -20383,7 +24228,25 @@
    "authHints": [],
    "tables": [],
    "featureImports": [],
-   "verification": "auto"
+   "verification": "source-read",
+   "semantics": {
+    "auth": "none",
+    "authDetail": "세션·권한을 보지 않는 비상 출구(쿠키만 지운다)",
+    "behavior": "강사뷰·다른 강사 보기 쿠키를 지우고 /home으로.",
+    "writes": [
+     "보기 쿠키 삭제"
+    ],
+    "external": [],
+    "readDepth": "full-handler",
+    "note": null,
+    "evidence": [
+     {
+      "file": "src/app/view-reset/route.ts",
+      "line": 9,
+      "has": "VIEW_MODE_COOKIE"
+     }
+    ]
+   }
   }
  ],
  "crons": [
@@ -36478,31 +40341,55 @@
  "uncertainties": {
   "family": [
    {
-    "family": "dashboard",
-    "issue": "daily-briefing 크론 핸들러는 있으나 vercel.json 일정이 없다 — 의도적 중지인지 미확인"
-   },
-   {
     "family": "calendar",
     "issue": "CLAUDE.md 결정 로그는 구글 → aywa 전체 동기화를 \"하루 2회 안전망\"이라 적지만 vercel.json에는 google-calendar-import 일정이 하루 1회뿐 — 다른 트리거가 있는지 미확인"
    },
    {
-    "family": "tasks-notifications",
-    "issue": "AX \"요청한 업무\"(원장→담당자 지시·완료 보고)를 저장할 2.0 테이블이 없다 — staff/notion 연동 할 일(createStaffTask)이 가장 가까우나 Notion 매핑 전용"
+    "family": "calendar",
+    "issue": "실행 확인 필요: 결정 로그의 \"하루 2회 전체 동기화\"를 만드는 두 번째 트리거가 무엇인지(크론은 하루 1회, ?full 강제 옵션만 있음)"
    },
    {
-    "family": "timetable",
-    "issue": "/timetable/editor 머리 주석은 \"운영 반영 경로 없음\"이라 적었지만 queueTimetableLabApply와 매시 apply-timetable-lab 크론이 존재 — 주석이 낡았는지 확인 필요"
+    "family": "makeups",
+    "issue": "실행 확인 필요: 침산 복사본의 makeup_cases가 0행이다 — 이 지점에서 새 보강관리 운영 모드가 아직 꺼져 있는지(학원 설정 > 보강 운영) 실행 상태 확인 필요"
    },
    {
-    "family": "timetable",
-    "issue": "/timetable/english-sheet 는 침산 tenant id를 코드에 직접 적는다(page.tsx)"
+    "family": "retention",
+    "issue": "실행 확인 필요: reenrollment_campaign_targets가 침산 복사본에서 0행 — 캠페인 기능을 실제로 쓰는지"
    },
    {
-    "family": "expense-requests",
-    "issue": "/expense-requests 페이지에서 도달하는 작성 액션이 deleteExpense뿐 — 작성 경로(전자결재 submitExpenseDraft 또는 billing 컴포넌트) 확인 필요"
+    "family": "payroll",
+    "issue": "실행 확인 필요: payroll_records가 침산 복사본에서 0행 — 급여 기능이 genericFeatureDisabled(\"payroll\")로 꺼져 있는지(명세서 7건은 payslips 표)"
+   },
+   {
+    "family": "shuttle",
+    "issue": "실행 확인 필요: parent_accounts가 침산 복사본에서 0행 — 학부모 포털을 실제로 발급해 쓰는지"
+   },
+   {
+    "family": "help",
+    "issue": "실행 확인 필요: help_posts가 침산 복사본에서 0행 — 질문 게시판 사용 여부"
+   },
+   {
+    "family": "recording-transcription",
+    "issue": "실행 확인 필요: 웹훅 분석 도우미 본문(약 600줄)은 읽지 않았다"
    }
   ],
   "resolvedBySourceRead": [
+   {
+    "family": "dashboard",
+    "issue": "daily-briefing 일정 없음은 의도된 중지 — 크론 핸들러는 410(DAILY_BRIEFING_DISABLED_MESSAGE)을 돌려주고 재생성 액션도 DAILY_BRIEFING_ENABLED로 막는다(원문 확인)"
+   },
+   {
+    "family": "tasks-notifications",
+    "issue": "확인된 부재: AX \"요청한 업무\"(원장→담당자 지시·완료 보고)를 저장할 2.0 테이블이 없다 — staff/notion 연동 할 일(createStaffTask)이 가장 가깝지만 Notion 매핑 전용이다"
+   },
+   {
+    "family": "timetable",
+    "issue": "편집기 머리 주석의 \"운영 반영 경로 없음\"은 낡았다 — queueTimetableLabApply와 매시 apply-timetable-lab 크론(runApplyJob)이 실제로 반영한다(원문 확인)"
+   },
+   {
+    "family": "timetable",
+    "issue": "사실 확인: /timetable/english-sheet page.tsx는 침산 tenant id를 직접 비교해 그 지점에만 원본 시트 링크를 보인다"
+   },
    {
     "family": "class-sheets",
     "issue": "/ecs/[classId]/month · /mcs/[classId]/month · /ecs/[classId]/month-plan/print 의 게이트는 조회 함수 안(requireEcsClassAccess · requireMcsClassAccess · getMonthPlanPrint) — 원문 확인"
@@ -36516,8 +40403,19 @@
     "issue": "/student-contribution 하위 페이지는 기능 모듈 뷰를 재-export하고 뷰가 게이트를 건다(settings-view.tsx:6 gate.canConfigure, referral-view getContributionGate, list/ontology 데이터 없음 → redirect) — 원문 확인"
    },
    {
+    "family": "expense-requests",
+    "issue": "작성 경로 확인: billing createExpense(expense-actions.ts:164, expenseWriteScope)가 강사 작성분을 저장하고 /expense-requests를 갱신한다"
+   },
+   {
     "family": "approvals",
     "issue": "기안 화면 머리 주석(approvals/new/page.tsx:18)의 \"업무연락\"은 낡았다 — 원장 확정 양식은 types.ts:11의 휴가·품의·지출·수입 4종"
+   }
+  ],
+  "apiPartialReads": [
+   {
+    "api": "/api/webhooks/assemblyai",
+    "family": "recording-transcription",
+    "issue": "1,013줄 중 인증·라우팅·백그라운드 처리 골격(코드 약 250줄)만 읽었다. 분석 도우미(handleMeeting·handleConsultationRecording·recoverConsultationAnalysis 등) 본문은 읽지 않았다."
    }
   ],
   "autoDetected": [

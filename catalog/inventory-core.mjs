@@ -35,20 +35,28 @@ export async function readPrototype() {
   const axLines = ax.split('\n');
   const labelsLine = axLines.findIndex(l => l.includes('const labels={'));
   const axLabels = Object.fromEntries([...axLines[labelsLine].matchAll(/([a-z]+):'([^']+)'/g)].map(m => [m[1], m[2]]));
-  const navLine = axLines.findIndex(l => l.includes("[['home','브리핑','home']"));
-  const axViews = [...axLines[navLine].matchAll(/\['([a-z]+)','([^']+)','[a-z]+'\]/g)].map(m => ({ id: m[1], label: m[2], source: `experiments/owner-concept/ax.js:${navLine + 1}` }));
+  // AX 화면 = createOwnerWorkspace가 돌려주는 뷰 함수(decorate* 제외), 라벨 = 사이드바 link('id','라벨').
+  const retLine = axLines.findIndex(l => /^\s*return \{[a-zA-Z,]+\};\s*$/.test(l) && l.includes('decorateShell'));
+  const viewIds = axLines[retLine].match(/\{([^}]+)\}/)[1].split(',').map(s => s.trim()).filter(s => s && !s.startsWith('decorate'));
+  const navLine = axLines.findIndex(l => l.includes("link('home',"));
+  const navLabels = Object.fromEntries([...axLines[navLine].matchAll(/link\('([a-z]+)','([^']+)'/g)].map(m => [m[1], m[2]]));
+  const axViews = viewIds.map(id => ({ id, label: navLabels[id] || axLabels[id] || id, source: `experiments/owner-concept/ax.js:${retLine + 1}` }));
   const axIssues = [];
   axLines.forEach((l, i) => { const m = l.match(/\{id:'([a-z]+)',category:'([^']+)',title:`([^`$]*)/); if (m) axIssues.push({ id: m[1], category: m[2], titlePrefix: m[3].trim(), source: `experiments/owner-concept/ax.js:${i + 1}` }); });
   // 시안의 동작 맵: `'new-lead':()=>`(하이픈 키)와 `approve:()=>`(한 단어 키) 둘 다.
   const liveActions = [...new Set([...live.matchAll(/'([a-z]+(?:-[a-z]+)+)':\(\)=>|[{,]\s*([a-z]+):\(\)=>/g)].map(m => m[1] || m[2]))].sort();
   const { snapshotTables } = await import(pathToFileURL(join(conceptDir, 'snapshot-tables.mjs')).href);
-  // ax.js의 클릭 동작(action==='…')과 폼 제출(kind==='…') — 'ax:' 접두사로 구분한다.
-  const axActions = [...new Set([...ax.matchAll(/action==='([a-z-]+)'/g)].map(m => `ax:${m[1]}`)), ...new Set([...ax.matchAll(/kind==='([a-z-]+)'/g)].map(m => `ax:form:${m[1]}`))].sort();
+  // ax.js의 클릭 동작(action==='…')과 폼(data-ax-form="…") — 'ax:' 접두사로 구분한다.
+  const axActions = [...new Set([...ax.matchAll(/action==='([a-z-]+)'/g)].map(m => `ax:${m[1]}`)), ...new Set([...ax.matchAll(/data-ax-form="([a-z-]+)"/g)].map(m => `ax:form:${m[1]}`))].sort();
+  // 로컬 dev 비서(/api/assistant) — 허용 이슈 id 목록을 그대로 읽는다(claude-bridge-context.mjs).
+  const bridgePath = join(conceptDir, 'claude-bridge-context.mjs');
+  const assistantIssueIds = existsSync(bridgePath) ? ((readFileSync(bridgePath, 'utf8').match(/ASSISTANT_ISSUE_IDS = Object\.freeze\(\[([^\]]+)\]/) || [])[1] || '').split(',').map(s => s.trim().replace(/'/g, '')).filter(Boolean) : [];
   return {
     legacyViews: legacyViews.map(v => ({ ...v, axLabel: axLabels[v.id] || null })),
     axViews, axIssues,
     sessionOnlyActions: liveActions,
     axActions,
+    assistantIssueIds,
     snapshotTables: Object.keys(snapshotTables).sort(),
   };
 }

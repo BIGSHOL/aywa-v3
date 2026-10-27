@@ -18,6 +18,10 @@ if (problems.length) {
 
 const json = JSON.stringify(inventory, null, 1) + '\n';
 writeFileSync(join(catalogDir, 'feature-inventory.json'), json);
+// 같은 인벤토리로 3.0 카탈로그를 계산만 해서 AUDIT에 요약을 싣는다(파일은 build-workspace-catalog.mjs가 쓴다).
+const { buildWorkspaceCatalog } = await import('./build-workspace-catalog.mjs');
+const wsBuilt = buildWorkspaceCatalog({ inventoryText: json });
+const wsCatalog = wsBuilt.problems.length ? null : wsBuilt.catalog;
 // 해시는 줄바꿈을 LF로 맞춘 뒤 계산한다(Windows 체크아웃의 CRLF 변환에도 같은 값).
 const digest = createHash('sha256').update(json.replace(/\r\n/g, '\n')).digest('hex');
 
@@ -43,7 +47,9 @@ L.push(`- 현재 AX(시안 13 + AX 4)는 **실제 쓰기를 하나도 하지 않
 const absent = fams.filter(f => f.ax.level === 'absent');
 L.push(`- AX에 전혀 없는 패밀리 ${absent.length}개: ${absent.map(f => f.label).join(', ')}.`);
 L.push(`- 불확실성은 0으로 꾸미지 않았다: 남은 패밀리 기록 ${c.familyUncertainties}건 + 자동 감지 ${c.autoDetectedUncertainties}건 + 메모 ${inventory.uncertainties.notes.length}건(§11). 원문을 읽어 해소한 것 ${c.resolvedUncertainties}건은 따로 적었다.`);
-L.push(`- 검증 수준: ${Object.entries(c.verification).map(([k, v]) => `${k} ${v}`).join(' · ')} 패밀리. API 라우트 ${c.apiRoutes}개는 메서드·크론·테이블을 기계 추출한 \`auto\` 수준이다.`);
+L.push(`- 검증 수준(원문 검토이며 실행 시험이 아니다): 패밀리 ${Object.entries(c.verification).map(([k, v]) => `${k} ${v}`).join(' · ')} — 패밀리마다 핵심 동작 대표 서버 액션의 본문 머리와 권한·쓰기·감사·외부 호출 줄을 줄 번호로 읽고 근거 앵커를 남겼다(본문 전체 정독이 아닌 곳은 readScope에 적음). API ${c.apiRoutes}개: ${Object.entries(c.apiVerification).map(([k, v]) => `${k} ${v}`).join(' · ')}(핸들러 본문 전체를 읽음, 부분 읽기 ${c.apiPartialReads}건은 §11).`);
+L.push(`- 근거 앵커는 검증기가 줄 단위로 확인한다(파일·줄·포함 문자열). 실제 실행·외부 연동·원본 DB 접근은 하지 않았다 — 실행이 필요한 질문은 '실행 확인 필요'로 남겼다.`);
+L.push(`- 원장 표시: ${c.ownerVisibleFamilies}개 패밀리(핵심 동작 ${c.ownerVisibleKeyOperations}개) · 감사 전용 ${c.auditOnlyFamilies}개(인증·운영 콘솔·개발·데모·공용 기반·녹음 파이프라인). 원장 표시 패밀리는 3.0 카탈로그(§13)에서 모든 핵심 동작에 목적지를 가진다.`);
 L.push('');
 L.push('## 2. 방법');
 L.push('');
@@ -72,8 +78,8 @@ L.push('## 4. 패밀리 목록');
 L.push('');
 L.push('원장 범위(ownerScope): `owner` = 원장 AX에 표시 · `owner-linked` = 다른 역할의 화면이지만 원장 업무와 연결(관리·미리보기·요청 목적지) · `audit-only` = 감사 기록용(숨긴 것이 아니라 원장 화면 대상이 아님). 쓰기 경로(writePath): `reuse-2.0-actions` · `reuse+new-storage`(2.0에 없는 저장소 필요) · `read-only`(근거·미리보기) · `n/a`. 시안 동작은 모두 세션 전용이므로 운영 백엔드 이관은 별도 작업이다.');
 L.push('');
-L.push(table(['패밀리', '영역', '원장 범위', '2.0 상태', '페이지', 'API', '핵심 동작', 'AX', '쓰기 경로', '우선', '검증'], fams.map(f => [
-  `\`${f.id}\` ${f.label}`, f.domain, f.ownerScope, f.implementation.status, f.routes.length, f.apiRoutes.length, f.operations.key.length, f.ax.level, f.ax.writePath, f.ax.priority, f.verification,
+L.push(table(['패밀리', '영역', '원장 표시', '원장 범위', '2.0 상태', '페이지', 'API', '핵심 동작', 'AX', '쓰기 경로', '우선', '검증'], fams.map(f => [
+  `\`${f.id}\` ${f.label}`, f.domain, f.ownerVisible ? '표시' : `감사 전용 — ${f.auditOnlyReason}`, f.ownerScope, f.implementation.status, f.routes.length, f.apiRoutes.length, f.operations.key.length, f.ax.level, f.ax.writePath, f.ax.priority, f.verification,
 ])));
 L.push('');
 L.push(`범위별 수: ${Object.entries(fams.reduce((o, f) => (o[f.ownerScope] = (o[f.ownerScope] || 0) + 1, o), {})).map(([k, v]) => `${k} ${v}`).join(' · ')}.`);
@@ -116,6 +122,14 @@ for (const f of fams) {
   if (f.ax.sessionOps.length) L.push(`  - 시안 흉내 동작(세션 전용, 근거 live.js·ax.js): ${f.ax.sessionOps.map(o => `\`${o}\``).join(' ')}`);
   L.push(`  - 빠진 것: ${f.ax.missing}`);
   L.push(`  - 제안(${f.ax.proposed.kind}): ${f.ax.proposed.text}`);
+  if (f.semantics) {
+    L.push(`- 원문 검토(읽은 범위: ${f.readScope.join(', ')}):`);
+    L.push(`  - 동작: ${f.semantics.behavior}`);
+    L.push(`  - 권한: ${f.semantics.authorization}`);
+    L.push(`  - 연동: ${f.semantics.integration}`);
+    L.push(`  - 근거: ${f.semantics.evidence.map(ev => `\`${ev.file}:${ev.line}\``).join(' · ')}`);
+    for (const x of f.semantics.findings) L.push(`  - 발견: ${x}`);
+  }
   for (const u of f.uncertainties) L.push(`- ⚠️ 불확실: ${u}`);
   for (const u of f.resolved) L.push(`- ✅ 원문으로 해소: ${u}`);
 }
@@ -126,7 +140,13 @@ L.push(table(['URL', '클래스', '패밀리', '제목(metadata)', '게이트 �
 L.push('');
 L.push('## 8. API·크론 전수표');
 L.push('');
-L.push(table(['URL', '클래스', '패밀리', '메서드', 'vercel 일정', '인증 단서'], inventory.apiRoutes.map(a => [a.url, a.class, a.family, a.methods.join(','), a.cronSchedule || '—', a.authHints.join(',') || '—'])));
+L.push('각 핸들러 본문을 읽고 인증 방식·동작·쓰는 곳·외부 연동을 적었다(근거 줄은 feature-inventory.json의 apiRoutes[].semantics.evidence). 실행 시험은 하지 않았다.');
+L.push('');
+L.push(table(['URL', '클래스', '패밀리', '메서드', 'vercel 일정', '인증', '동작', '외부', '읽은 범위'], inventory.apiRoutes.map(a => [
+  a.url, a.class, a.family, a.methods.join(','), a.cronSchedule || '—',
+  a.semantics ? `${a.semantics.auth} — ${a.semantics.authDetail}` : '—', a.semantics?.behavior || '—', (a.semantics?.external || []).join(', ') || '—',
+  a.semantics ? (a.semantics.readDepth === 'partial' ? `부분: ${a.semantics.note}` : '핸들러 전체') : 'auto',
+])));
 L.push('');
 L.push(`일정 없는 크론 핸들러: ${inventory.crons.filter(x => !x.scheduled).map(x => `\`${x.path}\``).join(', ') || '없음'}.`);
 L.push('');
@@ -178,6 +198,9 @@ L.push('');
 L.push('불확실성 — 자동 감지(원문 확인 전):');
 for (const u of inventory.uncertainties.autoDetected) L.push(`- ${u.route ? `\`${u.route}\`` : `\`${u.module}\``} (${u.family}) — ${u.issue}`);
 L.push('');
+L.push('불확실성 — 일부만 읽은 API 본문:');
+for (const u of inventory.uncertainties.apiPartialReads) L.push(`- \`${u.api}\` (${u.family}) — ${u.issue}`);
+L.push('');
 L.push('메모:');
 for (const n of inventory.uncertainties.notes) L.push(`- ${n}`);
 L.push('');
@@ -187,12 +210,50 @@ L.push('```');
 L.push('node experiments/owner-concept/catalog/scan-source.mjs        # 소스 스캔(읽기 전용)');
 L.push('node experiments/owner-concept/catalog/db-availability.mjs    # 로컬 복사본 행 수(읽기 전용 트랜잭션)');
 L.push('node experiments/owner-concept/catalog/build-inventory.mjs    # 인벤토리·이 문서 생성(문제 1건이라도 있으면 실패)');
-L.push('node experiments/owner-concept/catalog/verify-catalog.mjs     # 소스 ↔ 인벤토리 집합 대조 + 문서 해시');
+L.push('node experiments/owner-concept/catalog/verify-catalog.mjs     # 소스 ↔ 인벤토리 집합 대조 + 근거 앵커 + 문서 해시');
+L.push('node experiments/owner-concept/catalog/build-workspace-catalog.mjs   # 3.0 카탈로그 생성(문제 1건이라도 있으면 실패)');
+L.push('node experiments/owner-concept/verify-workspace-catalog.mjs          # 카탈로그 재생성 일치·스키마·커버리지·선택지·문구·정적 서빙');
 L.push('```');
 L.push('');
 L.push('검증기가 실패하는 조건: 새 페이지·API·크론·모듈·액션 파일·메뉴 키·내비 항목이 인벤토리에 없거나, 인벤토리에만 있는 낡은 항목이 있거나, 핵심 동작의 함수가 사라졌거나, 시안 화면·AX 화면이 어느 패밀리와도 이어지지 않았거나, 이 문서가 인벤토리와 다른 해시를 들고 있을 때. 결과는 `coverage-report.json`.');
 L.push('');
-L.push('## 13. 다음 구현 권고');
+L.push('## 13. 3.0 원장 작업 공간 카탈로그(window.AxCatalog)');
+L.push('');
+if (wsCatalog) {
+  const cv = wsCatalog.coverage;
+  L.push('생성물 `experiments/owner-concept/workspace-catalog.js`(같은 데이터 `catalog/workspace-catalog.json`) · 생성기 `catalog/build-workspace-catalog.mjs` · 검증기 `verify-workspace-catalog.mjs`.');
+  L.push('');
+  L.push(`- 영역 ${cv.areas}(= 원장 표시 패밀리) · facet ${cv.facets} · 동작 ${cv.actions}(${Object.entries(cv.actionsByMode).map(([k, v]) => `${k} ${v}`).join(' · ')}) · 원장 표시 핵심 동작 ${cv.operationsWithDestination}/${cv.ownerVisibleOperations}에 목적지 · 실제 쓰기 연결 ${cv.productionLinkedWrites}.`);
+  L.push(`- 수치 구분: 원문 검토(source-audited) = 패밀리 ${c.families}·API ${c.apiRoutes} / 런타임 미리보기(runtime-previews) = 동작 ${cv.actions}(전부 로컬, liveWrite:false) / 실제 운영 연결(production-linked) = ${cv.productionLinkedWrites}.`);
+  L.push('- facet은 2.0 화면의 실제 탭·면·결재함·단계를 원문 근거(라우트 또는 파일 안 문자열)로 확인했고, 필드 선택지는 2.0 열거값을 TS AST로 그대로 읽는다(catalog/option-sources.mjs).');
+  L.push('');
+  L.push(table(['영역', '그룹', '보기', 'facet', '동작(이동/미리보기/요청)'], wsCatalog.areas.map(a => [`${a.id} ${a.label}`, a.group, a.viewKind, a.facets.map(x => x.label).join(' · '), ['navigate', 'preview', 'request'].map(m => a.actions.filter(x => x.mode === m).length).join('/')])));
+} else L.push('카탈로그를 계산하지 못했다 — build-workspace-catalog.mjs의 문제를 먼저 해결할 것.');
+L.push('');
+L.push('### 13.1 워크플로·쓰기 공백 — 목적지가 있다고 완성이 아니다');
+L.push('');
+{
+  const levelLabel = { simulated: '세션 흉내(저장 안 됨)', 'read-only': '읽기 전용', absent: '없음' };
+  const writeExports = id => inventory.serverActions.filter(s => s.family === id && s.writes).flatMap(s => s.exports.filter(e => e.verb !== '조회'));
+  const writeFiles = id => inventory.serverActions.filter(s => s.family === id && s.writes).length;
+  const visibleFams = inventory.families.filter(f => f.ownerVisible);
+  const totalWrites = visibleFams.reduce((n, f) => n + writeExports(f.id).length, 0);
+  const allWrites = inventory.families.reduce((n, f) => n + writeExports(f.id).length, 0);
+  const lv = {};
+  for (const f of visibleFams) lv[f.ax.level] = (lv[f.ax.level] || 0) + 1;
+  L.push(`- 카탈로그 ${wsCatalog ? wsCatalog.coverage.operationsWithDestination : '?'}/${wsCatalog ? wsCatalog.coverage.ownerVisibleOperations : '?'}은 "원장이 그 일로 갈 곳이 있다"는 뜻이지 "3.0에서 그 일을 할 수 있다"는 뜻이 아니다. 미리보기(preview)는 입력 모양·2.0 선택지·근거를 보여 주는 로컬 화면이고, 요청(request)은 사람에게 보내는 원장 요청 초안이다. 둘 다 2.0의 상태 전이(결재 순서, 퇴원 처리 트랜잭션, 청구·배분 재확정, 발송 큐, 사실 기반 할 일 종료)를 실행하지 않는다.`);
+  L.push(`- 2.0 쓰기 동작(쓰기가 있는 액션 파일의 조회 아닌 export): 전체 ${allWrites}개 · 원장 표시 패밀리 ${totalWrites}개. 이 중 3.0 시안에서 2.0 기록(원본·복사본 DB)까지 가는 것 **0개**(로컬 오버레이 저장은 별개이며 2.0 쓰기를 대신하지 않는다).`);
+  L.push(`- 원장 표시 패밀리 ${visibleFams.length}개의 지금 시안 수준: ${Object.entries(lv).map(([k, v]) => `${levelLabel[k] || k} ${v}`).join(' · ')}. 카탈로그는 이 수준을 올리지 않는다(화면 목적지를 줄 뿐).`);
+  L.push('- 3.0의 다음 층(이벤트 → 규칙 → 케이스·단계 → 역할 수신함 → 근거 보고 → 다음 이벤트)이 메워야 할 것은 아래 "남은 워크플로" 열이다. 사실 기반으로 닫히는 2.0 할 일은 3.0이 대신 닫지 않는다.');
+  L.push('');
+  L.push(table(['패밀리', '2.0 쓰기 동작(파일)', '알림·AI·감사', '지금 시안', '3.0 목적지(이동/미리보기/요청)', '3.0 실제 쓰기', '남은 워크플로'], visibleFams.map(f => {
+    const area = wsCatalog?.areas.find(a => a.id === f.id);
+    const flags = [f.operations.sendsNotifications && '알림', f.operations.usesAI && 'AI', f.operations.writesAuditLog && '감사'].filter(Boolean).join('·') || '—';
+    return [`${f.id} ${f.label}`, `${writeExports(f.id).length}(${writeFiles(f.id)})`, flags, levelLabel[f.ax.level] || f.ax.level, area ? ['navigate', 'preview', 'request'].map(m => area.actions.filter(x => x.mode === m).length).join('/') : '—', '0', f.ax.missing || '—'];
+  })));
+}
+L.push('');
+L.push('## 14. 다음 구현 권고');
 L.push('');
 L.push('1. **요청 저장소부터** — AX "요청한 업무"(원장 → 담당자, 기한·우선순위·알림 채널, 확인·완료 보고)를 저장할 테이블이 2.0에 없다. `staff_tasks`는 기록의 사실로 자동 생성·자동 종료되는 할 일이라 사람이 보낸 요청과 섞으면 종료 규칙이 깨진다. 새 테이블(tenant_id + RLS) + 감사로그 + 강사 미니셸 수신함(teacher-workspace)이 한 묶음이다.');
 L.push('2. **P0 이슈 원천을 실제 판정으로 교체** — 시안 이슈 7종은 복사본 집계다. 2.0이 이미 판정하는 원천을 그대로 읽는다: 할 일 11종(`staff_tasks.kind`), 알림 38종(`notifications.type`), 대시보드 위젯 36종의 판정 함수(`src/features/dashboard/*`). 같은 숫자를 두 번 계산하지 않는다(같은 데이터는 같은 원본).');
@@ -200,7 +261,8 @@ L.push('3. **근거 패널 = 2.0 상세 화면 딥링크** — 원생 상세(탭
 L.push('4. **결정 이슈는 실제 경로로** — 결재(`decideDocument`), 퇴원보고서(`changeWithdrawalReport`), 학부모 답글(`requestParentReply`)처럼 원장이 결정하는 동작은 시안의 세션 흉내를 걷고 2.0 서버 액션을 그대로 부른다.');
 L.push('5. **자동화 = 2.0 슬랙 규칙 구조** — 범주 12·프리셋 4·전달 이벤트 38·요약 일정·방해금지. AX 자동화 토글은 새 저장소를 만들지 말고 `slack_rules`/`tenant_settings` 위에 얹는다.');
 L.push('6. **데이터는 있으나 화면이 없는 것부터 채운다** — 신규생 체크(`student_onboarding_checks`), 영상 숙제 장부, 강사 시트 작성 현황, 연동 실패 이력.');
-L.push('7. **P2·P3는 의도적 제외로 명시** — 플랫폼 콘솔·학부모/학생 포털·공개 랜딩·데모·개발 화면은 원장 AX 범위 밖이다(지점 화면에 운영자 설정 노출 금지 규칙).');
+L.push('7. **감사 전용은 6개뿐** — 인증·운영 콘솔·개발·데모·공용 기반·녹음 파이프라인. 학부모·학생·강사·공개 페이지는 원장이 관리·미리보기하는 영역으로 카탈로그에 있다(지점 화면에 운영자 설정 노출 금지 규칙은 유지).');
+L.push('8. **이벤트·케이스 층의 입력** — 할 일 11종(사실 기반 자동 종료)·알림 39종·DB 트리거 9개가 이미 있는 이벤트 원천이다. 원장 요청(사람이 확인·보고)과 사실 기반 자동 종료를 같은 상태 기계로 합치지 말 것. AI가 고르는 다음 행동은 핵심 동작 ID 공간(AxCatalog.coverage.operationDestinations)에서만 고르게 하면 없는 동작을 지어낼 수 없다.');
 L.push('');
 writeFileSync(join(catalogDir, 'AUDIT.md'), L.join('\n'));
 console.log(JSON.stringify({ wrote: ['feature-inventory.json', 'AUDIT.md'], sha256: digest, counts: c }));

@@ -4,8 +4,23 @@ import {
   families, routeClassRules, verifiedGates, familyByPrefix, patternMatches, familyOfFile,
   NAV_CONSTANTS, DERIVED_NAV, OWNER_SHEETS_SUBS,
 } from './inventory-core.mjs';
+import { readFileSync, existsSync } from 'node:fs';
+import { join } from 'node:path';
+import { familySemantics } from './family-semantics.mjs';
+import { apiSemantics } from './api-semantics.mjs';
+import { repoRoot } from './scan-source.mjs';
 
 const byId = Object.fromEntries(families.map(f => [f.id, f]));
+
+/** 근거 앵커 확인 — 그 파일 그 줄에 has 문자열이 있어야 한다. */
+const fileLines = new Map();
+function anchorOk(file, line, has) {
+  if (!has) return false;
+  const p = join(repoRoot, file);
+  if (!fileLines.has(p)) fileLines.set(p, existsSync(p) ? readFileSync(p, 'utf8').split(/\r?\n/) : null);
+  const L = fileLines.get(p);
+  return !!L && (L[line - 1] || '').includes(has);
+}
 const EXEMPT_CLASSES = ['redirect', 'public-share', 'device', 'auth', 'dev', 'portal', 'platform'];
 
 /** 화면 게이트 상태 — 메뉴 게이트 > 레이아웃 게이트 > 원문 확인 게이트 > 화면 안 판정 > 세션만 > 공개 설계 > 감지 안 됨. */
@@ -90,8 +105,17 @@ export function assemble(scan, proto, db) {
       ? (families.find(f => f.crons.includes(a.url))?.id || null)
       : familyByPrefix(a.url, 'api');
     if (!family) problems.push(`API 라우트 미배정: ${a.url} (${a.file})`);
-    return { url: a.url, file: a.file, family, class: apiClass(a), methods: a.methods, cronSchedule: a.cronSchedule, authHints: a.authHints, tables: a.tables, featureImports: a.featureImports, verification: 'auto' };
+    // 핸들러 본문 원문 검토 기록(api-semantics.mjs). 없으면 기계 추출(auto)로 남고 문제로 센다.
+    const sem = apiSemantics.find(x => x.url === a.url);
+    if (!sem) problems.push(`API 원문 검토 기록 없음: ${a.url}`);
+    for (const ev of sem?.evidence || []) if (!anchorOk(ev.file || a.file, ev.line, ev.has)) problems.push(`API 근거 앵커 불일치: ${a.url} ${(ev.file || a.file)}:${ev.line} "${ev.has}"`);
+    return {
+      url: a.url, file: a.file, family, class: apiClass(a), methods: a.methods, cronSchedule: a.cronSchedule, authHints: a.authHints, tables: a.tables, featureImports: a.featureImports,
+      verification: sem ? 'source-read' : 'auto',
+      semantics: sem ? { auth: sem.auth, authDetail: sem.authDetail, behavior: sem.behavior, writes: sem.writes, external: sem.external, readDepth: sem.readDepth, note: sem.note || null, evidence: sem.evidence.map(ev => ({ file: ev.file || a.file, line: ev.line, has: ev.has })) } : null,
+    };
   });
+  for (const s of apiSemantics) if (!scan.apiRoutes.some(a => a.url === s.url)) problems.push(`api-semantics.mjs에 없는 API: ${s.url}`);
 
   for (const v of verifiedGates) if (!scan.pages.some(p => p.url === v.route)) problems.push(`verifiedGates에 없는 라우트: ${v.route}`);
 
@@ -206,6 +230,14 @@ export function assemble(scan, proto, db) {
     for (const op of f.ax.sessionOps) if (!(op.startsWith('ax:') ? proto.axActions : proto.sessionOnlyActions).includes(op)) problems.push(`${f.id}.ax.sessionOps에 시안에 없는 동작: ${op}`);
     if (f.ax.sessionOps.length && f.ax.level !== 'simulated') problems.push(`${f.id}: 시안 동작이 있는데 ax.level이 ${f.ax.level}`);
     if (!f.ax.sessionOps.length && f.ax.level === 'simulated') problems.push(`${f.id}: ax.level이 simulated인데 근거 동작이 없음`);
+    if (typeof f.ownerVisible !== 'boolean') problems.push(`${f.id}.ownerVisible 미분류`);
+    if (f.ownerVisible === false && !f.auditOnlyReason) problems.push(`${f.id}: 감사 전용인데 이유가 없음`);
+    if (f.ownerVisible && f.ownerScope === 'audit-only') problems.push(`${f.id}: 원장 표시인데 ownerScope가 audit-only`);
+    if (f.ownerVisible && f.ax.priority === 'P3') problems.push(`${f.id}: 원장 표시 패밀리를 P3(범위 밖)로 둘 수 없음`);
+    for (const op of f.keyOps) if (!op.id || !op.id.startsWith(`${f.id}.`)) problems.push(`${f.id}: keyOp 안정 ID 없음·형식 오류 "${op.op}"`);
+    const sem = familySemantics[f.id];
+    if (!sem) problems.push(`패밀리 원문 검토 기록 없음: ${f.id}`);
+    for (const ev of sem?.evidence || []) if (!anchorOk(ev.file, ev.line, ev.has)) problems.push(`패밀리 근거 앵커 불일치: ${f.id} ${ev.file}:${ev.line} "${ev.has}"`);
     const entityAvailability = f.primaryEntities.map(t => {
       const row = dbIndex.get(t);
       if (db && !row) problems.push(`${f.id}.primaryEntities의 테이블이 DB에 없음: ${t}`);
@@ -218,7 +250,7 @@ export function assemble(scan, proto, db) {
     for (const a of fActions) for (const e of a.exports) (verbs[e.verb] ||= []).push(e.name);
     const surfaces = navigation.filter(n => n.family === f.id && n.resolution !== 'derived').map(n => ({ label: n.label, href: n.href, key: n.key, source: n.source, resolution: n.resolution }));
     return {
-      id: f.id, label: f.label, domain: f.domain, ownerScope: f.ownerScope, audience: f.audience, menuKeys: f.menuKeys,
+      id: f.id, label: f.label, domain: f.domain, ownerVisible: f.ownerVisible, auditOnlyReason: f.auditOnlyReason || null, ownerScope: f.ownerScope, audience: f.audience, menuKeys: f.menuKeys,
       implementation: f.implementation,
       routes: fRoutes.map(r => ({ url: r.url, class: r.class, title: r.title, file: r.file })),
       apiRoutes: fApis.map(a => ({ url: a.url, class: a.class, methods: a.methods, cronSchedule: a.cronSchedule })),
@@ -233,7 +265,13 @@ export function assemble(scan, proto, db) {
       entities: { primary: entityAvailability, referencedInCode: [...famTables[f.id]].sort(), prototypeReads: [...famTables[f.id]].filter(t => proto.snapshotTables.includes(t)).sort() },
       catalogs: (f.catalogs || []).map(c => ({ name: c, count: (catalogs[c] || []).length })),
       ax: f.ax,
-      verification: f.verification, sourceRead: f.sourceRead || [], uncertainties: f.uncertainties || [], resolved: f.resolved || [],
+      // 원문 검토 기록이 근거 앵커와 함께 있으면 source-read(읽은 범위는 readScope). 실행 시험이 아니다.
+      verification: sem && sem.evidence.length ? 'source-read' : f.verification,
+      readScope: sem ? sem.readScope : [],
+      semantics: sem ? { behavior: sem.behavior, authorization: sem.authorization, integration: sem.integration, evidence: sem.evidence, findings: sem.findings } : null,
+      sourceRead: [...new Set([...(f.sourceRead || []), ...(sem ? sem.evidence.map(ev => ev.file) : [])])].sort(),
+      uncertainties: [...(f.uncertainties || []), ...(sem ? sem.runtimeQuestions.map(q => `실행 확인 필요: ${q}`) : [])],
+      resolved: f.resolved || [],
     };
   });
 
@@ -275,6 +313,10 @@ export function assemble(scan, proto, db) {
     dbTablesNotReferencedInCode: entities.filter(e => !e.referencedInCode).length,
     routeClasses: Object.fromEntries(Object.entries(routes.reduce((o, r) => (o[r.class] = (o[r.class] || 0) + 1, o), {})).sort()),
     familyUncertainties: familyDocs.reduce((n, f) => n + f.uncertainties.length, 0),
+    ownerVisibleFamilies: familyDocs.filter(f => f.ownerVisible).length, auditOnlyFamilies: familyDocs.filter(f => !f.ownerVisible).length,
+    ownerVisibleKeyOperations: familyDocs.filter(f => f.ownerVisible).reduce((n, f) => n + f.operations.key.length, 0),
+    apiVerification: Object.fromEntries(Object.entries(apis.reduce((o, x) => (o[x.verification] = (o[x.verification] || 0) + 1, o), {})).sort()),
+    apiPartialReads: apis.filter(x => x.semantics?.readDepth === 'partial').length,
     autoDetectedUncertainties: autoUncertain.length,
     verification: Object.fromEntries(Object.entries(familyDocs.reduce((o, f) => (o[f.verification] = (o[f.verification] || 0) + 1, o), {})).sort()),
     gateStatus: Object.fromEntries(Object.entries(routes.reduce((o, r) => (o[r.gateStatus] = (o[r.gateStatus] || 0) + 1, o), {})).sort()),
@@ -308,6 +350,7 @@ export function assemble(scan, proto, db) {
       uncertainties: {
         family: familyDocs.flatMap(f => f.uncertainties.map(u => ({ family: f.id, issue: u }))),
         resolvedBySourceRead: familyDocs.flatMap(f => f.resolved.map(u => ({ family: f.id, issue: u }))),
+        apiPartialReads: apis.filter(x => x.semantics?.readDepth === 'partial').map(x => ({ api: x.url, family: x.family, issue: x.semantics.note })),
         autoDetected: autoUncertain,
         notes,
       },
