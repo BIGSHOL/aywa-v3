@@ -9,12 +9,17 @@ export const SOURCES = Object.freeze({ parent_message: 'message from a parent', 
 // (teacher/staff) are accepted as lower-priority fallbacks; see AI-DECISIONS.md for the mapping.
 export const ROLES = Object.freeze(['homeroom_teacher', 'subject_teacher', 'teacher', 'desk', 'billing', 'staff', 'manager', 'owner']);
 export const WORK_AREAS = Object.freeze(AREAS.filter(a => a !== 'none' && a !== 'unclear'));
-const LIMITS = Object.freeze({ text: 1500, threadText: 500, thread: 5, facts: 12, factKey: 40, factValue: 120, candidates: 20, id: 64, openWork: 5 });
+const LIMITS = Object.freeze({ text: 1500, threadText: 500, thread: 5, facts: 12, factKey: 40, factValue: 120, candidates: 20, id: 64, openWork: 5, actionDateDays: 366 });
 // Unredacted contact/identity numbers must never leave the server.
 const SENSITIVE = [/01[016789][-\s.]?\d{3,4}[-\s.]?\d{4}/, /\d{6}[-\s]?[1-4]\d{6}/, /\d{2,6}-\d{2,6}-\d{4,8}/, /\d{11,}/, /[\w.+-]+@[\w-]+\.[\w.]+/];
 
-const isDate = v => typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v) && new Date(`${v}T00:00:00Z`).toISOString().slice(0, 10) === v;
-const daysBetween = (from, to) => Math.round((Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / 86_400_000);
+// Impossible dates (2026-02-30, month 13) are rejected, never normalized and never thrown.
+const isDate = v => {
+  if (typeof v !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(v)) return false;
+  const t = Date.parse(`${v}T00:00:00Z`);
+  return Number.isFinite(t) && new Date(t).toISOString().slice(0, 10) === v;
+};
+export const daysBetween = (from, to) => Math.round((Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / 86_400_000);
 const isPlain = v => typeof v === 'object' && v !== null && !Array.isArray(v);
 const str = (v, max, min = 0) => typeof v === 'string' && v.trim().length >= min && v.length <= max;
 
@@ -39,6 +44,10 @@ export function validateContext(raw) {
   const candidates = raw.candidates ?? [];
   if (!Array.isArray(candidates) || candidates.length > LIMITS.candidates || !candidates.every(c => isPlain(c) && str(c.staffId, LIMITS.id, 1)
     && Array.isArray(c.roles) && c.roles.length > 0 && c.roles.every(r => ROLES.includes(r)))) issues.push('candidates');
+  // Trusted source/form date only (never parsed from free text); see decision-deadline.mjs.
+  const actionDate = raw.requestedActionDate ?? null;
+  if (actionDate !== null && !isDate(actionDate)) issues.push('requested_action_date');
+  if (!issues.length && actionDate && Math.abs(daysBetween(raw.today, actionDate)) > LIMITS.actionDateDays) issues.push('requested_action_date');
   if (!issues.length && raw.recordDate > raw.today) issues.push('record_date_in_future');
   if (!issues.length && thread.some(m => m.date > raw.recordDate)) issues.push('thread_after_record');
   if (issues.length) return { ok: false, issues };
@@ -46,7 +55,7 @@ export function validateContext(raw) {
   if (texts.some(t => SENSITIVE.some(re => re.test(t)))) return { ok: false, issues: ['unredacted_content'] };
   return { ok: true, value: { recordId: raw.recordId, source: raw.source, today: raw.today, recordDate: raw.recordDate, text: (raw.text ?? '').trim(),
     thread: thread.map(m => ({ date: m.date, text: m.text.trim() })), facts: { ...facts }, links: { ...links },
-    knownOpenWork: openWork.map(w => ({ area: w.area, code: w.code })),
+    knownOpenWork: openWork.map(w => ({ area: w.area, code: w.code })), requestedActionDate: actionDate,
     candidates: candidates.map(c => ({ staffId: c.staffId, roles: [...new Set(c.roles)], relation: typeof c.relation === 'string' ? c.relation.slice(0, 40) : null })) } };
 }
 

@@ -93,6 +93,7 @@ test('context: rejects bad dates, future records, unknown roles, unredacted cont
   assert.ok(validateContext(baseContext()).ok);
   const issues = patch => validateContext({ ...baseContext(), ...patch }).issues ?? [];
   assert.deepEqual(issues({ today: '2026-02-30' }), ['today']);
+  assert.deepEqual(issues({ today: '2026-13-01', recordDate: '2026-00-10' }), ['today', 'record_date']); // must not throw
   assert.deepEqual(issues({ recordDate: '2026-10-28' }), ['record_date_in_future']);
   assert.deepEqual(issues({ recordDate: '2026-10-26', thread: [{ date: '2026-10-27', text: '나중 글' }] }), ['thread_after_record']);
   assert.deepEqual(issues({ candidates: [{ staffId: 's1', roles: ['admin'] }] }), ['candidates']);

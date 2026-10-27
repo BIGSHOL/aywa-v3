@@ -7,6 +7,7 @@ import { createHash } from 'node:crypto';
 import { callSystemOne, DEFAULT_JEV_MODEL, JEV_MODELS, estimateJevCostUsd, PRICE_SOURCE } from './decision-jev.mjs';
 import { QUESTIONS, QUESTIONS_VERSION, validateContext, buildState, hasNoContent } from './decision-questions.mjs';
 import { RULES_VERSION, THRESHOLDS, applyPolicy } from './decision-policy.mjs';
+import { DEADLINE_RULES_VERSION, deriveDeadline } from './decision-deadline.mjs';
 
 export const CONTRACT_VERSION = 'owner-decision/1';
 const FAILURE_REASON = { timeout: 'jev_timeout', rate_limited: 'jev_rate_limited', overloaded: 'jev_overloaded', auth: 'jev_auth_failed', no_key: 'jev_not_configured',
@@ -32,7 +33,7 @@ export function createDecisionEngine({ apiKey, keyProvider, model = process.env.
   const cache = new Map(), inflight = new Map(), waiting = [];
   let active = 0, failures = 0, openUntil = 0;
   const totals = { evaluations: 0, jevCalls: 0, cacheHits: 0, failures: 0, inputTokens: 0, estimatedUsd: 0 };
-  const versions = Object.freeze({ contract: CONTRACT_VERSION, questions: QUESTIONS_VERSION, rules: RULES_VERSION });
+  const versions = Object.freeze({ contract: CONTRACT_VERSION, questions: QUESTIONS_VERSION, rules: RULES_VERSION, deadline: DEADLINE_RULES_VERSION });
 
   const acquire = signal => new Promise((resolve, reject) => {
     if (active < concurrency) { active++; return resolve(); }
@@ -83,7 +84,7 @@ export function createDecisionEngine({ apiKey, keyProvider, model = process.env.
     totals.evaluations++;
     const recordId = typeof context?.recordId === 'string' && context.recordId.length <= 64 ? context.recordId : null;
     const base = { contract: CONTRACT_VERSION, recordId, provider: 'typesafe', model: null, versions, cache: { hit: false, shared: false, key: null },
-      area: null, signals: null, assignees: [], usage: null, jevElapsedMs: null,
+      area: null, signals: null, deadline: null, assignees: [], usage: null, jevElapsedMs: null,
       cost: { estimatedUsd: 0, basis: `${PRICE_SOURCE}; estimate, not an invoice`, billedThisCall: false }, claude: { status: 'not_requested' } };
     const finish = fields => ({ ...base, ...fields, elapsedMs: Math.round(now() - started) });
     const review = (code, origin = 'adapter', route = 'human_review', claudeRecommended = true) =>
@@ -93,6 +94,8 @@ export function createDecisionEngine({ apiKey, keyProvider, model = process.env.
     // Invalid or unredacted input must not be forwarded to any AI, including Claude.
     if (!checked.ok) return finish({ status: 'review_needed', route: 'human_review', claudeRecommended: false, reasons: checked.issues.map(c => ({ code: `invalid_context:${c}`, origin: 'adapter' })) });
     const ctx = checked.value;
+    // Code-derived from a trusted date; present on every later result (also Jev failures), never changes the route.
+    base.deadline = deriveDeadline(ctx);
     if (hasNoContent(ctx)) return review('no_content', 'rule', 'insufficient_context', false);
     const state = buildState(ctx);
     const key = createHash('sha256').update(JSON.stringify({ versions, model, questions, state })).digest('hex');
