@@ -303,12 +303,16 @@ window.createFlowUI = function createFlowUI(api) {
   function picker(config,fallback){try{return window.ContextPicker?window.ContextPicker.html(config()):fallback;}catch{return fallback;}}
   function scenarioPanel(){
     if(!ready()||!['owner','manager'].includes(role()))return '';
-    const offered=k=>(Array.isArray(flow().scenarioCandidates?.[k])?flow().scenarioCandidates[k]:[]).filter(x=>x&&x.id&&x.label).slice(0,30);
-    const absent=offered('absence'),billItems=offered('billing').length?offered('billing'):db.invoices.filter(i=>i.period===db.meta.month&&i.remaining>0).slice(0,30),bills=billItems.map(i=>({id:i.id,label:i.label||`${i.name} · ${api.won(i.remaining)}`}));
+    // The server's candidates are the records event.simulate accepts (FK fields, up to its limit) with the full count in
+    // totals; the picker shows them all and says when more exist. Without the server list, this month's records here.
+    const sc=flow().scenarioCandidates||{},served=k=>(Array.isArray(sc[k])?sc[k]:[]).filter(x=>x&&x.id),total=k=>num(sc.totals?.[k]);
+    const studentName=id=>db.students.find(s=>s.id===id)?.name||'';
+    const absent=served('absence'),billRows=served('billing'),billItems=billRows.length?billRows:db.invoices.filter(i=>i.period===db.meta.month&&i.remaining>0).slice(0,30);
+    const absentOpts=absent.map(x=>({id:x.id,label:x.label||[x.date,studentName(x.studentId)].filter(Boolean).join(' · ')||'결석 기록'})),bills=billItems.map(i=>({id:i.id,label:i.label||[i.name||studentName(i.studentId),i.period,Number.isFinite(Number(i.remaining))?api.won(i.remaining):''].filter(Boolean).join(' · ')||'청구'}));
     const options=list=>`<option value="">${list.length?'자동 선택 · 이번 달 실제 기록':'자동 선택 · 이번 달 실제 기록(서버가 고름)'}</option>${list.map(x=>`<option value="${h(x.id)}">${h(x.label)}</option>`).join('')}`;
     const CP=window.ContextPicker,auto='자동 선택 · 이번 달 실제 기록(서버가 고름)';
-    const absentField=picker(()=>({id:'fl-scn-absence',name:'record',label:'결석 기록',empty:auto,...(absent.length?CP.lists.absences({db,items:absent}):CP.lists.absencesFromFlow({db,flow:flow()}))}),`<label>결석 기록<select name="record">${options(absent)}</select></label>`);
-    const billField=picker(()=>({id:'fl-scn-billing',name:'record',label:'청구',empty:auto,...CP.lists.invoices({db,items:billItems})}),`<label>청구<select name="record">${options(bills)}</select></label>`);
+    const absentField=picker(()=>({id:'fl-scn-absence',name:'record',label:'결석 기록',empty:auto,...(absent.length?CP.lists.absences({db,items:absent,cases:cases(),total:total('absence')}):CP.lists.absencesFromFlow({db,flow:flow()}))}),`<label>결석 기록<select name="record">${options(absentOpts)}</select></label>`);
+    const billField=picker(()=>({id:'fl-scn-billing',name:'record',label:'청구',empty:auto,...CP.lists.invoices({db,items:billItems,cases:cases(),total:billRows.length?total('billing'):null})}),`<label>청구<select name="record">${options(bills)}</select></label>`);
     return `<section class="fl-scenarios" aria-labelledby="fl-scn-title"><h2 id="fl-scn-title">로컬 시나리오 미리보기</h2><p class="ax-note">복사본의 실제 기록에 연결하지만 그 기록은 바꾸지 않습니다. 여기서 만든 일은 '로컬 미리보기'로 표시되고 기존 기록의 집계에 들어가지 않습니다.</p><div class="fl-scn-grid"><form class="fl-scn" data-fl-form="simulate" data-scenario="absence" novalidate><h3>결석 학생 연락</h3><p>보호자 연락 → (필요하면) 관리자 검토 → 담임 후속으로 넘어갑니다.</p>${absentField}<button class="button primary" type="submit" data-fl-key="event.simulate:absence">시나리오 시작</button></form><form class="fl-scn" data-fl-form="simulate" data-scenario="billing" novalidate><h3>수납 확인</h3><p>납부 내역 대조 → 관리자·원장 결정으로 넘어갑니다.</p>${billField}<button class="button primary" type="submit" data-fl-key="event.simulate:billing">시나리오 시작</button></form><div class="fl-scn"><h3>여러 담당자에게 요청</h3><p>담당자를 여러 명 고르고 기한을 정해 보냅니다. 받은 사람의 화면에 바로 보입니다.</p>${btn('요청 작성','request')}</div></div></section>`;
   }
 
@@ -483,7 +487,7 @@ window.createFlowUI = function createFlowUI(api) {
     const row=`<div class="fl-node-row"><button type="button" class="fl-node-btn" data-fl="${leaf?'pick':'node'}" data-node="${h(n.id)}" aria-expanded="${open}" aria-controls="${dom}"><span class="fl-chev" aria-hidden="true">${icon('chevron')}</span><span class="fl-node-name">${h(label)}${detail?`<small>${h(detail)}</small>`:''}${mineNode(n)?'<small class="fl-mine">내 반</small>':''}${same>1?'<small>같은 이름 있음</small>':''}</span><span class="fl-node-count">${h(countText(n.counts,lv,q.word))}</span></button>${tags?`<span class="fl-node-tags">${tags}</span>`:''}</div>`;
     if(leaf)return `<li class="fl-node" data-level="${h(lv||'')}">${row}<div class="fl-pane" id="${dom}" ${open?'':'hidden'}>${open?paneHtml(c,e,n):''}</div></li>`;
     const facts=factsText(n.facts),note=`${byStateLine(n)}${n.ai&&n.ai.status!=='not_started'||facts?aiBlock(n.ai,{facts,e,self:n.id}):''}`;
-    return `<li class="fl-node" data-level="${h(lv||'')}">${row}<div class="fl-node-kids" id="${dom}" ${open?'':'hidden'}>${note?`<div class="fl-node-note">${note}</div>`:''}${lv==='teacher'?stepLines(c,n):''}<ul class="fl-tree-list">${kids.map(k=>nodeHtml(c,e,k,q,kids)).join('')}</ul></div></li>`;
+    return `<li class="fl-node" data-level="${h(lv||'')}">${row}<div class="fl-node-kids" id="${dom}" ${open?'':'hidden'}>${lv==='class'&&n.entityRef?.id&&!n.unassigned?`<div class="ax-actions fl-node-links">${btn('반 기록 열기','entity',`data-family="classes" data-record="${h(n.entityRef.id)}"`)}</div>`:''}${note?`<div class="fl-node-note">${note}</div>`:''}${lv==='teacher'?stepLines(c,n):''}<ul class="fl-tree-list">${kids.map(k=>nodeHtml(c,e,k,q,kids)).join('')}</ul></div></li>`;
   }
   function bodyHtml(c,e){
     const q={...searchSets(e),word:recordWord(e.data)},top=orderKids(e.data.root);

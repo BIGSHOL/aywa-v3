@@ -140,3 +140,5 @@
 .fl-tree-more{margin-top:-4px;font-size:var(--ax-xs)}
 .fl-tree-more summary{cursor:pointer;width:max-content;max-width:100%}
 .fl-tree-more p{margin-top:4px}
+.fl-node-kids>.fl-node-links{margin-left:34px}
+@media(max-width:760px){.fl-node-kids>.fl-node-links{margin-left:10px}}
