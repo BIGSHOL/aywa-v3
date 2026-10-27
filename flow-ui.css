@@ -69,3 +69,71 @@
 [data-fl-case-root]{display:flex;flex-direction:column;gap:14px}
 [data-fl-case-root]>section h3{margin-bottom:8px;font-size:var(--ax-base)}
 [data-fl-case-root]>.fl-why{margin-top:-6px}
+/* Relationship tree (teacher → class → student → records): hairline connectors carry the structure; rows stay borderless. */
+.fl-case{scroll-margin-top:16px}
+.fl-tree{display:flex;flex-direction:column;gap:12px;min-width:0}
+.fl-tree .fl-tree-head{display:flex;flex-wrap:wrap;align-items:baseline;justify-content:space-between;gap:2px 12px}
+.fl-tree .fl-tree-head h3{margin:0;font-size:var(--ax-base)}
+.fl-tree .fl-tree-head p{font-size:var(--ax-xs)}
+.fl-tree .fl-tree-counts{display:grid;grid-template-columns:repeat(auto-fit,minmax(92px,1fr));gap:1px;margin:0;border:1px solid var(--ax-line);border-radius:8px;overflow:hidden;background:var(--ax-line);font-size:var(--ax-xs)}
+.fl-tree .fl-tree-counts div{display:flex;flex-direction:column;gap:2px;min-width:0;padding:10px 12px;background:#fff}
+#detail .fl-tree .fl-tree-counts dt{color:var(--ax-ink);font-size:var(--ax-xs)}
+#detail .fl-tree .fl-tree-counts dd{margin:0;color:var(--ax-primary);font-size:var(--ax-xl);font-weight:650;line-height:1.2;font-variant-numeric:tabular-nums;white-space:nowrap}
+#detail .fl-tree .fl-tree-counts dd small{margin-left:2px;color:var(--ax-ink);font-size:var(--ax-xs);font-weight:500}
+.fl-tree-warn{padding:10px 12px;border:1px solid #e1cbaa;border-radius:8px;background:#fffaf3;font-size:var(--ax-sm)}
+.fl-tree-warn .button{margin-left:6px}
+.fl-tree-progress,.fl-ai-wait{font-size:var(--ax-xs)}
+.fl-synth{display:flex;flex-direction:column;gap:8px;padding:14px 16px;border-radius:8px;background:var(--ax-soft)}
+.fl-tree .fl-synth h4{font-size:var(--ax-sm)}
+.fl-ai{display:flex;flex-direction:column;gap:6px;padding:10px 12px;border:1px solid #bccce0;border-radius:8px;background:#fff;font-size:var(--ax-sm)}
+.fl-ai-head{display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px;font-size:var(--ax-xs)}
+.fl-ai ul{margin:0;padding-left:18px}
+.fl-fact{font-size:var(--ax-sm)}
+.fl-fact strong{margin-right:6px}
+.fl-tree-find{display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px}
+.fl-tree-find label{font-size:var(--ax-sm);font-weight:500}
+.fl-tree-find input{flex:1 1 200px;min-width:0;height:var(--ax-control-h-sm);padding:0 10px;border:1px solid var(--ax-line);border-radius:8px;background:#fff;color:var(--ax-ink);font:inherit;font-size:var(--ax-control-sm)}
+.fl-tree-find input:focus-visible{outline:2px solid var(--ax-primary);outline-offset:1px}
+.fl-tree-hits{font-size:var(--ax-xs)}
+.fl-tree-list{display:flex;flex-direction:column;gap:2px;margin:0;padding:0;list-style:none}
+.fl-tree-top>.fl-node+.fl-node{padding-top:2px;border-top:1px solid var(--ax-line)}
+.fl-tree-list .fl-tree-list{margin:0 0 4px 17px;padding-left:15px;border-left:1px solid var(--ax-line)}
+.fl-tree-list .fl-tree-list>.fl-node{position:relative}
+.fl-tree-list .fl-tree-list>.fl-node::before{content:'';position:absolute;left:-15px;top:20px;width:11px;border-top:1px solid var(--ax-line)}
+.fl-node-row{display:flex;flex-wrap:wrap;align-items:flex-start;gap:4px 8px}
+.fl-node-btn{flex:1 1 240px;display:grid;grid-template-columns:20px minmax(0,1fr) auto;align-items:baseline;column-gap:6px;min-width:0;padding:7px 8px;border:0;border-radius:6px;background:transparent;color:var(--ax-ink);font:inherit;text-align:left}
+.fl-node-btn:hover{background:var(--ax-soft)}
+.fl-node-btn:focus-visible{outline:2px solid var(--ax-primary);outline-offset:1px}
+.fl-chev{display:inline-flex;align-self:center}
+.fl-chev .icon{width:16px;height:16px;transition:transform .15s}
+.fl-node-btn[aria-expanded=true] .fl-chev .icon{transform:rotate(90deg)}
+.fl-node-name{min-width:0;font-size:var(--ax-sm);overflow-wrap:anywhere}
+.fl-node[data-level=teacher]>.fl-node-row .fl-node-name{font-weight:650}
+.fl-node[data-level=class]>.fl-node-row .fl-node-name{font-weight:550}
+.fl-node-name small{margin-left:8px;font-size:var(--ax-xs);font-weight:500;white-space:nowrap}
+.fl-node-count{font-size:var(--ax-xs);font-variant-numeric:tabular-nums;white-space:nowrap}
+.fl-node-tags{display:flex;flex-wrap:wrap;gap:4px;padding-top:6px}
+.fl-node-kids{display:flex;flex-direction:column;gap:6px;padding-bottom:4px}
+.fl-node-kids>.fl-node-note,.fl-node-kids>.fl-node-step{margin-left:34px}
+.fl-node-step,.fl-node-other{display:flex;flex-direction:column;gap:6px;font-size:var(--ax-sm)}
+.fl-node-step strong,.fl-node-other strong{margin-right:6px}
+.fl-tree .button{font-size:var(--ax-control-sm);height:var(--ax-control-h-sm);min-height:var(--ax-control-h-sm)}
+.fl-tree .ax-actions{flex-wrap:wrap}
+.fl-pane{display:flex;flex-direction:column;gap:10px;margin:2px 0 8px 34px;padding:12px 14px;border-radius:8px;background:var(--ax-soft)}
+.fl-pane[hidden],.fl-node-kids[hidden]{display:none}
+.fl-records{display:flex;flex-direction:column;margin:0;padding:0;list-style:none}
+.fl-records li{display:flex;flex-wrap:wrap;align-items:center;gap:4px 10px;padding:6px 0;font-size:var(--ax-sm)}
+.fl-records li+li{border-top:1px solid var(--ax-line)}
+.fl-rec-date{min-width:96px;font-variant-numeric:tabular-nums}
+.fl-rec-open{margin-left:auto;padding:2px 0;border:0;background:none;color:var(--ax-primary);font:inherit;font-size:var(--ax-xs);text-decoration:underline;text-underline-offset:3px}
+.fl-rec-open:disabled{color:var(--ax-ink);text-decoration:none}
+@media(max-width:760px){.fl-node-btn{grid-template-columns:20px minmax(0,1fr)}.fl-node-count{grid-column:2}.fl-tree-list .fl-tree-list{margin-left:9px;padding-left:10px}.fl-tree-list .fl-tree-list>.fl-node::before{left:-10px;width:7px}.fl-pane{margin-left:10px;padding:10px 12px}.fl-node-kids>.fl-node-note,.fl-node-kids>.fl-node-step{margin-left:10px}}
+.fl-tree-note{margin-top:-4px;font-size:var(--ax-xs)}
+.fl-node-name .fl-mine{color:var(--ax-primary);font-weight:650}
+.fl-node-step small{font-size:var(--ax-xs)}
+.fl-ai-ev{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 10px;font-size:var(--ax-xs)}
+.fl-ev-link{padding:0;border:0;background:none;color:var(--ax-primary);font:inherit;text-decoration:underline;text-underline-offset:3px}
+.fl-report-scope{display:flex;flex-direction:column;gap:6px;padding:10px 12px;border-radius:8px;background:var(--ax-soft);font-size:var(--ax-sm)}
+.fl-report-scope strong{margin-right:6px}
+.fl-report-scope summary{cursor:pointer;font-size:var(--ax-xs)}
+.fl-report-scope ul{margin:6px 0 0;padding-left:18px;font-size:var(--ax-xs);font-variant-numeric:tabular-nums}
