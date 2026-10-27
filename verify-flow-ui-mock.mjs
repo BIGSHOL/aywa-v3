@@ -74,8 +74,19 @@ export function createFlowMock(db){
   });
   const pools={absence:db.students.filter(s=>s.status==='enrolled'&&s.attendance.absent>0).map(s=>s.id),billing:db.invoices.filter(i=>i.period===db.meta.month&&i.remaining>0).map(i=>i.id)};
 
-  const flow=()=>({schemaVersion:1,asOf:db.meta.asOf,revision:state.revision,mode:'local-preview',actors,entities:[],relations:[],cases:state.cases,casesTotal:state.cases.length,casePage:1,casePageSize:500,casePageCount:1,events:state.events.slice(-200),eventsTotal:state.events.length,
-    metrics:{cases:{total:state.cases.length},bottlenecks:[]},aiStatus:{providers:[{id:'jev',label:'Jev 판정',status:'unavailable',reason:'판정 키가 설정되지 않음'},{id:'claude-cli',label:'Claude 초안',status:'unavailable',reason:'초안 모듈 연결 전'}]}});
+  // Same paging as the backend: 500 cases per page (?casePage=N), the newest 200 events (?eventsBefore=<event number>).
+  const flow=(query={})=>{const size=500,page=Math.max(1,Number(query.casePage)||1),older=Number(query.eventsBefore)||0,events=older?state.events.filter(e=>Number(e.id.slice(4))<older):state.events;
+    return {schemaVersion:1,asOf:db.meta.asOf,revision:state.revision,mode:'local-preview',actors,entities:[],relations:[],cases:state.cases.slice((page-1)*size,page*size),casesTotal:state.cases.length,casePage:page,casePageSize:size,casePageCount:Math.max(1,Math.ceil(state.cases.length/size)),events:events.slice(-200),eventsTotal:state.events.length,
+    metrics:{cases:{total:state.cases.length},bottlenecks:[]},aiStatus:{providers:[{id:'jev',label:'Jev 판정',status:'unavailable',reason:'판정 키가 설정되지 않음'},{id:'claude-cli',label:'Claude 초안',status:'unavailable',reason:'초안 모듈 연결 전'}]}};};
+  // Test-only bulk: n open fact cases (one event each) assigned to one person, so a store passes one case page and the
+  // first cases' history falls outside the newest 200 events.
+  function seedBulk(n,assigneeId){
+    let last='';
+    for(let i=0;i<n;i++){const id=`src-bulk-${i}`,c=base(id,{kind:'source',scenario:null,familyId:'tasks-notifications',title:`시험 자동 할 일 ${i+1}`,summary:'페이지 시험용 원본 할 일',closure:'fact',origin:'snapshot',sourceStatus:'open',sourceStatusLabel:'처리 전',factClosed:false,closedReason:null,doneRule:'원본 기록이 2.0에서 처리되면 닫힙니다.'});
+      c.steps=[{...step(id,1,{key:'source_task',label:'시험 자동 할 일',role:'source',evidenceRequired:true},{assigneeIds:[assigneeId],queue:null,rule:'2.0 할 일 담당'},1),status:'ready'}];
+      state.cases.push(c);const e=evt(c,'source.task_opened','시험 자동 할 일',null,{origin:'snapshot',targetActorIds:[assigneeId]});c.trigger={eventId:e.id,type:'source.task_opened',label:'시험 자동 할 일',actorId:null,at:e.at};refresh(c);last=id;}
+    state.revision+=1;return last;
+  }
   const fail=(status,error,message,extra={})=>({status,body:{error,message,...extra}});
   const pick=(c,p,pred,actor)=>{const list=c.steps.filter(s=>(!p.stepId||s.id===p.stepId)&&pred(s));const mine=list.filter(s=>s.assigneeIds.includes(actor.id)||s.queue==='manager'&&!s.assigneeIds.length&&['owner','manager'].includes(actor.role));return !list.length?fail(409,'step_not_ready','지금 처리할 단계가 없습니다.'):!mine.length?fail(403,'not_assignee','이 단계의 담당자가 아닙니다.'):mine[0];};
   const okAssignees=ids=>Array.isArray(ids)&&ids.length>0&&ids.length<=10&&new Set(ids).size===ids.length&&ids.every(id=>byId.get(id)&&!byId.get(id).preview);
@@ -169,7 +180,7 @@ export function createFlowMock(db){
     state.commands.set(body.commandId,result);
     return {status:200,body:result};
   }
-  return {state,actors,flow,handle,owner,manager,desk,cashier};
+  return {state,actors,flow,handle,seedBulk,owner,manager,desk,cashier};
 }
 
 // Route the flow endpoints to the stand-in only when the server under test does not provide them.
@@ -178,7 +189,8 @@ export async function installFlowRoutes(page,{base,db}){
   let served=false;if(probe?.ok){try{const json=await probe.json();served=Array.isArray(json.cases);}catch{served=false;}}
   if(served)return {served:true,mock:null};
   const mock=createFlowMock(db);
-  await page.route(`${base}/api/flow`,route=>route.fulfill({status:200,contentType:'application/json',body:JSON.stringify(mock.flow())}));
+  const origin=new URL(base).origin;
+  await page.route(url=>url.origin===origin&&url.pathname==='/api/flow',route=>{const q=Object.fromEntries(new URL(route.request().url()).searchParams);return route.fulfill({status:200,contentType:'application/json',body:JSON.stringify(mock.flow(q))});});
   await page.route(`${base}/api/flow/actions`,async route=>{const r=mock.handle(route.request().postDataJSON());await route.fulfill({status:r.status,contentType:'application/json',body:JSON.stringify(r.body)});});
   return {served:false,mock};
 }

@@ -68,7 +68,7 @@
     const solo=new Set(runs.filter(r=>r.length===1).map(r=>r[0]));
     const zone=96/Math.max(n-1,1),edges=i=>{const left=i?Math.max(0,x(i)-zone/2):0,right=i===n-1?100:Math.min(100,x(i)+zone/2);return {left,width:right-left,at:(x(i)-left)/(right-left)*100};};
     const monthly=rows.every(r=>isMonth(r.month));
-    const point=(r,i)=>{const e=edges(i),v=values[i],prev=i?values[i-1]:null,delta=v===null||prev===null?'':`${monthly?'전월':'이전'} 대비 ${v>prev?'+':v<prev?'−':'±'}${text(Math.abs(v-prev))}`;
+    const point=(r,i)=>{const e=edges(i),v=values[i],prev=i?values[i-1]:null,delta=v===null||prev===null?'':`${monthly?`전월(${mlabel(rows[i-1].month)})`:'이전'} 대비 ${v>prev?'+':v<prev?'−':'±'}${text(Math.abs(v-prev))}`;
       return `<span class="chart-pt${solo.has(i)?' solo':''}" data-point data-tip="${tipData(periodTitle(r),[{label,value:text(v),tone:'primary'}],[delta,basis])}" style="left:${e.left}%;width:${e.width}%;--x:${e.at}%;--y:${v===null?100:yv(v)/40*100}%"><i data-anchor></i></span>`;};
     return `<span class="chart-line" data-chart tabindex="0" role="group" aria-label="${h(label)} — 화살표 키로 기간을 옮기며 수치를 확인합니다"><svg viewBox="0 0 100 40" preserveAspectRatio="none" role="img" aria-label="${h(label)} ${rows.map((r,i)=>`${periodTitle(r)} ${text(values[i])}`).join(', ')}"><line x1="0" x2="100" y1="39" y2="39" vector-effect="non-scaling-stroke"/>${runs.filter(r=>r.length>1).map(r=>`<polyline points="${r.map(i=>`${x(i)},${yv(values[i])}`).join(' ')}" vector-effect="non-scaling-stroke"/>`).join('')}</svg>${rows.map(point).join('')}</span>`;
   }

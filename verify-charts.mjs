@@ -29,7 +29,7 @@ try{
   assert.equal(await page.locator(students).getAttribute('aria-describedby'),'chart-tip');
   await hoverPoint(page,students,1);tip=await tipState(page);
   const d=trend[1].payingStudents-trend[0].payingStudents;
-  assert.equal(tip.rows[0][1],`${trend[1].payingStudents}명`);assert(tip.meta.includes(`전월 대비 ${d>0?'+':d<0?'−':'±'}${Math.abs(d)}명`),JSON.stringify(tip.meta));
+  assert.equal(tip.rows[0][1],`${trend[1].payingStudents}명`);assert(tip.meta.includes(`전월(${Number(trend[0].month.slice(5))}월) 대비 ${d>0?'+':d<0?'−':'±'}${Math.abs(d)}명`),JSON.stringify(tip.meta));
   await page.evaluate(()=>{document.querySelector('#chart-tip .chart-pop-head').dataset.probe='kept';});
   const bb=await page.locator(students).locator('[data-point]').nth(1).boundingBox();
   await page.mouse.move(bb.x+bb.width/2-3,bb.y+bb.height/2);await page.mouse.move(bb.x+bb.width/2+3,bb.y+bb.height/2-4);

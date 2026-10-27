@@ -26,7 +26,7 @@ window.createFlowUI = function createFlowUI(api) {
   const ORIGIN={snapshot:'복사본 기록',dev:'로컬 미리보기'};
   const CLOSURE={fact:'원본 기록이 처리되면 닫힙니다',manual:'사람이 확인하고 보고해 닫습니다'};
   const ROLE_ORDER=['owner','manager','teacher','staff'],ROLE_GROUP={owner:'원장',manager:'관리자',teacher:'선생님',staff:'직원'};
-  const store={status:'idle',flow:null,error:'',controller:null,pending:new Set(),actorId:'',filter:'',all:'',deferred:false,retry:0,etag:''};
+  const store={status:'idle',flow:null,error:'',controller:null,pending:new Set(),actorId:'',filter:'',all:'',deferred:false,retry:0,etag:'',older:new Map(),partial:false};
   try{store.actorId=localStorage.getItem(ACTOR_KEY)||'';}catch{/* storage unavailable: first owner actor is used */}
   const pill=(text,tone='')=>`<span class="ax-chip ${tone}">${h(text)}</span>`;
   const btn=(text,action,attrs='',primary=false)=>`<button type="button" class="button ${primary?'primary':''}" data-fl="${action}" ${attrs}>${h(text)}</button>`;
@@ -43,7 +43,7 @@ window.createFlowUI = function createFlowUI(api) {
   const cases=()=>Array.isArray(flow().cases)?flow().cases:[];
   const caseById=id=>cases().find(c=>c.id===id);
   const events=()=>Array.isArray(flow().events)?flow().events:[];
-  const eventById=id=>events().find(e=>e.id===id);
+  const eventById=id=>events().find(e=>e.id===id)||store.older.get(id);
   const lead=()=>['owner','manager'].includes(role());
   const isReview=s=>Boolean(s&&(s.review===true||s.status==='review'));
   const activeSteps=c=>c.state==='done'?[]:(c.steps||[]).filter(s=>!s.skipped&&['ready','working','review'].includes(s.status));
@@ -68,13 +68,14 @@ window.createFlowUI = function createFlowUI(api) {
     store.controller?.abort();const controller=new AbortController();store.controller=controller;
     if(!store.flow)store.status='loading';
     try{
-      const response=await fetch(ENDPOINT,{headers:{Accept:'application/json',...(store.etag&&store.flow?{'If-None-Match':store.etag}:{})},signal:controller.signal});
+      const response=await fetch(ENDPOINT,{headers:{Accept:'application/json',...(store.etag&&store.flow&&!store.partial?{'If-None-Match':store.etag}:{})},signal:controller.signal});
       if(response.status===304&&store.flow)return;
       let json=null;try{json=await response.json();}catch{/* not JSON: no flow endpoint on this server */}
       if(response.ok)store.etag=response.headers.get('ETag')||'';
       if(response.ok&&json&&Array.isArray(json.cases)){
         const prev=store.flow,wasReady=store.status==='ready';
-        if(wasReady&&prev&&prev.revision===json.revision&&prev.eventsTotal===json.eventsTotal&&prev.asOf===json.asOf)return;
+        if(wasReady&&!store.partial&&prev&&prev.revision===json.revision&&prev.eventsTotal===json.eventsTotal&&prev.asOf===json.asOf)return;
+        json=await allPages(json,controller.signal);if(!json)return;
         const before=prev?new Set(cases().filter(c=>mine(c)).map(c=>c.id)):null;
         store.flow=json;store.status='ready';store.error='';store.retry=0;
         if(before&&!quiet)announce(before);
@@ -84,6 +85,31 @@ window.createFlowUI = function createFlowUI(api) {
       else{store.status='error';store.error=message(json,response.status);}
     }catch{if(controller.signal.aborted)return;store.status=store.flow?'ready':'error';store.error='업무 흐름 서버에 연결하지 못했습니다.';}
     paint();
+  }
+  // Cases come in pages of casePageSize; later pages are read at the same revision (a change in between restarts the
+  // read, up to three times). If they never line up the first page is shown with a note instead of a silent zero.
+  async function allPages(first,signal){
+    const count=Math.min(Number(first.casePageCount)||1,40);if(count<=1){store.partial=false;return first;}
+    for(let attempt=0;attempt<3;attempt++){
+      const head=attempt?await (await fetch(ENDPOINT,{headers:{Accept:'application/json'},signal})).json():first;
+      const pages=[head];
+      for(let p=2;p<=count;p++){const r=await fetch(`${ENDPOINT}?casePage=${p}`,{headers:{Accept:'application/json'},signal});const j=await r.json().catch(()=>null);if(!r.ok||!j||!Array.isArray(j.cases)||j.revision!==head.revision)break;pages.push(j);}
+      if(pages.length===count){store.partial=false;const seen=new Set();return {...head,cases:pages.flatMap(x=>x.cases).filter(c=>!seen.has(c.id)&&seen.add(c.id))};}
+    }
+    store.partial=true;return first;
+  }
+  // Reads older event pages until this case's whole history is present (or nothing older is left), at most 10 reads.
+  async function loadOlder(id){
+    const wanted=()=>(caseById(id)?.history||[]).filter(e=>!eventById(e)).length;
+    try{
+      for(let i=0;i<10&&wanted();i++){
+        const nums=[...events(),...store.older.values()].map(e=>Number(String(e.id).replace(/^\D+/,''))).filter(Number.isFinite);if(!nums.length)break;
+        const r=await fetch(`${ENDPOINT}?eventsBefore=${Math.min(...nums)}`,{headers:{Accept:'application/json'}});const j=await r.json(),list=Array.isArray(j?.events)?j.events:[];
+        if(!r.ok||!list.length)break;
+        list.forEach(e=>{if(e&&e.id&&!events().some(x=>x.id===e.id))store.older.set(e.id,e);});
+      }
+    }catch{toast('이전 사건을 불러오지 못했습니다.');}
+    if(caseById(id))showCase(id);
   }
   // New work for the previewed person arrives without them looking around.
   function announce(before){
@@ -185,6 +211,7 @@ window.createFlowUI = function createFlowUI(api) {
   const stageCounts=list=>Object.keys(STATE).map(k=>[k,list.filter(c=>c.state===k).length]);
   function stateNote(){
     if(store.status==='loading'||store.status==='idle')return '<p class="ax-note" role="status">업무 흐름을 불러오는 중입니다.</p>';
+    if(store.status==='ready'&&store.partial)return `<p class="ax-note" role="status">업무가 많아 앞쪽 ${fmt(cases().length)}건만 불러왔습니다(전체 ${fmt(Number(flow().casesTotal)||cases().length)}건). 잠시 뒤 다시 불러옵니다.</p>`;
     if(store.status==='starting')return `<p class="ax-note" role="status">${h(store.error||'업무 흐름 서버가 준비 중입니다.')} 잠시 뒤 다시 불러옵니다.</p>`;
     if(store.status==='unavailable')return '<p class="ax-note">업무 흐름 서버가 이 화면에 연결되지 않았습니다. 요청은 이 탭에서만 유지되고 새로고침하면 사라집니다.</p>';
     if(store.status==='error')return `<p class="ax-note" role="alert">${h(store.error)} ${btn('다시 불러오기','reload')}</p>`;
@@ -300,7 +327,7 @@ window.createFlowUI = function createFlowUI(api) {
     const fact=c.closure==='fact'?`<section class="ax-evidence"><h3>원본 할 일</h3><p>${h(c.sourceStatusLabel?`2.0 상태: ${c.sourceStatusLabel}`:'2.0 기록')}${c.factClosed?` · 2.0에서 닫힘${c.closedReason?`(${h(c.closedReason)})`:''}`:''}</p>${c.doneRule?`<p class="live-pre">${h(c.doneRule)}</p>`:'<p>원본 기록이 처리되면 닫힙니다.</p>'}<p class="ax-note">이 화면에서 닫을 수 없습니다. 보고는 따로 남는 후속 기록이 됩니다.</p></section>`:'';
     const linkList=links.length?`<section class="ax-evidence"><h3>연결된 업무 ${links.length}건</h3><div class="ax-actions">${links.map(x=>btn(x.title,'open',`data-id="${h(x.id)}"`)).join('')}</div></section>`:'';
     const steps=(c.steps||[]).map(s=>`<li class="${s.id===c.currentStepId||activeSteps(c).includes(s)?'current':''} ${h(s.status)}"><strong>${h(s.label)}</strong><span>${h(s.skipped?'필요 없어 건너뜀':isReview(s)&&s.status==='ready'?STEP.review:STEP[s.status]||'상태 미확인')} · ${h(whoOf(s))}${s.roleLabel?` · ${h(s.roleLabel)}`:''}${s.evidenceRequired?' · 근거 필요':''}</span>${ruleText(s.rule)?`<small>배정 근거: ${h(ruleText(s.rule))}</small>`:''}${s.unassignedReason&&/[가-힣]/.test(s.unassignedReason)?`<small>담당을 못 정한 이유: ${h(s.unassignedReason)}</small>`:''}</li>`).join('');
-    dialog('detail',c.title,`${ORIGIN[c.origin]||''} · ${CLOSURE[c.closure]||''}`,`<div data-fl-case-root="${h(c.id)}"><div class="ax-issue-meta">${chips(c)}</div>${c.summary?`<p class="live-pre">${h(c.summary)}</p>`:''}${why(c)}${entityLinks(c)}${fact}<section class="fl-chain" aria-label="흐름"><h3>흐름</h3><ol>${steps}</ol></section>${decisionView(c)}<section class="ax-evidence"><h3>근거 ${(c.evidence||[]).length}건</h3>${(c.evidence||[]).map(e=>`<p><strong>${h(nameOf(e.actorId))}</strong> · ${h(when(e.at))}${OUTCOME[e.outcome]?` · ${h(OUTCOME[e.outcome])}`:e.outcome==='returned'?' · 보완 요청':e.outcome==='accepted'?' · 승인':''}<br><span class="live-pre">${h(e.note||'')}</span>${(e.recordRefs||[]).length?`<br><small>연결 기록 ${(e.recordRefs||[]).map(r=>h(r.label||'기록')).join(', ')}</small>`:''}</p>`).join('')||'<p>아직 남긴 근거가 없습니다.</p>'}</section>${linkList}<section class="ax-request-timeline"><h3>사건 기록</h3><ol>${timeline.map(e=>`<li><strong>${h(e.label||'기록')}</strong><p>${h(e.actorId?nameOf(e.actorId):'2.0 기록')} · ${h(when(e.at))}${e.origin==='dev'?' · 로컬 미리보기':e.origin==='snapshot'?' · 복사본 기록':''}</p></li>`).join('')||'<li><p>사건 기록이 없습니다.</p></li>'}</ol>${missing>0?`<p class="ax-note">이전 사건 ${fmt(missing)}건은 이 화면에 불러오지 않았습니다.</p>`:''}</section>${actionBar(c)}</div>`);
+    dialog('detail',c.title,`${ORIGIN[c.origin]||''} · ${CLOSURE[c.closure]||''}`,`<div data-fl-case-root="${h(c.id)}"><div class="ax-issue-meta">${chips(c)}</div>${c.summary?`<p class="live-pre">${h(c.summary)}</p>`:''}${why(c)}${entityLinks(c)}${fact}<section class="fl-chain" aria-label="흐름"><h3>흐름</h3><ol>${steps}</ol></section>${decisionView(c)}<section class="ax-evidence"><h3>근거 ${(c.evidence||[]).length}건</h3>${(c.evidence||[]).map(e=>`<p><strong>${h(nameOf(e.actorId))}</strong> · ${h(when(e.at))}${OUTCOME[e.outcome]?` · ${h(OUTCOME[e.outcome])}`:e.outcome==='returned'?' · 보완 요청':e.outcome==='accepted'?' · 승인':''}<br><span class="live-pre">${h(e.note||'')}</span>${(e.recordRefs||[]).length?`<br><small>연결 기록 ${(e.recordRefs||[]).map(r=>h(r.label||'기록')).join(', ')}</small>`:''}</p>`).join('')||'<p>아직 남긴 근거가 없습니다.</p>'}</section>${linkList}<section class="ax-request-timeline"><h3>사건 기록</h3><ol>${timeline.map(e=>`<li><strong>${h(e.label||'기록')}</strong><p>${h(e.actorId?nameOf(e.actorId):'2.0 기록')} · ${h(when(e.at))}${e.origin==='dev'?' · 로컬 미리보기':e.origin==='snapshot'?' · 복사본 기록':''}</p></li>`).join('')||'<li><p>사건 기록이 없습니다.</p></li>'}</ol>${missing>0?`<p class="ax-note">이전 사건 ${fmt(missing)}건은 아직 불러오지 않았습니다.</p><div class="ax-actions">${btn('이전 사건 더 불러오기','older',`data-id="${h(c.id)}"`)}</div>`:''}</section>${actionBar(c)}</div>`);
   }
   const pickerHtml=(selected=[])=>`<div class="fl-assignees live-scroll" role="group" aria-label="담당자">${actors().filter(a=>assignable(a)&&a.role!=='owner').map(a=>`<label><input type="checkbox" name="assignee" value="${h(a.id)}" ${selected.includes(a.id)?'checked':''}> ${h(a.name)} · ${h(a.roleLabel||ROLE_GROUP[a.role])}</label>`).join('')}</div>`;
   function openForm(kind,id,step=''){
@@ -325,7 +352,7 @@ window.createFlowUI = function createFlowUI(api) {
   // Owner requests are cases with kind 'request'; ax renders them through the same rows/detail it used before.
   const statusOf=c=>c.state==='done'?'done':(c.steps||[]).some(s=>!isReview(s)&&(s.status==='working'||s.status==='done'))?'working':'requested';
   function asRequests(){
-    return cases().filter(c=>(c.kind==='request'||c.origin==='dev'&&c.closure==='manual'&&!c.kind)&&!(c.linkedCaseIds||[]).length).map(c=>({id:c.id,flow:true,title:c.title,body:c.summary||'',owners:[...new Set((c.steps||[]).filter(s=>!isReview(s)).flatMap(s=>s.assigneeIds||[]))],due:String(c.dueAt||'').slice(0,10),priority:PRIORITY[c.priority]||'보통',status:statusOf(c),channels:Array.isArray(c.channels)?c.channels:['app'],issues:Array.isArray(c.source?.issueIds)?c.source.issueIds:[],context:c.familyId?{family:c.familyId,familyLabel:api.familyLabel?.(c.familyId)||'',records:(c.entityRefs||[]).map(r=>({id:String(r.recordId||r.id),label:r.label}))}:null,source:c.source?.kind||'direct',result:(c.evidence||[]).slice(-1)[0]?.note||'',events:(c.history||[]).map(eventById).filter(Boolean).map(e=>({label:e.label||e.type,text:`${nameOf(e.actorId)} · ${when(e.at)}`}))}));
+    return cases().filter(c=>(c.kind==='request'||c.origin==='dev'&&c.closure==='manual'&&!c.kind)&&!(c.linkedCaseIds||[]).length).map(c=>({id:c.id,flow:true,title:c.title,body:c.summary||'',owners:[...new Set((c.steps||[]).filter(s=>!isReview(s)).flatMap(s=>s.assigneeIds||[]))],due:String(c.dueAt||'').slice(0,10),priority:PRIORITY[c.priority]||'보통',status:statusOf(c),channels:Array.isArray(c.channels)?c.channels:['app'],issues:Array.isArray((c.requestSource||c.source)?.issueIds)?(c.requestSource||c.source).issueIds:[],context:c.familyId?{family:c.familyId,familyLabel:api.familyLabel?.(c.familyId)||'',records:(c.entityRefs||[]).map(r=>({id:String(r.recordId||r.id),label:r.label}))}:null,source:(c.requestSource||c.source)?.kind||'direct',result:(c.evidence||[]).slice(-1)[0]?.note||'',events:(c.history||[]).map(eventById).filter(Boolean).map(e=>({label:e.label||e.type,text:`${nameOf(e.actorId)} · ${when(e.at)}`}))}));
   }
   // Workspace family → record type the flow server knows. Only references it can resolve are attached; the record
   // names stay in the request body either way, so nothing is lost when a reference cannot be attached.
@@ -352,6 +379,7 @@ window.createFlowUI = function createFlowUI(api) {
     const {fl:action,id}=el.dataset;
     if(el.closest('#sidebar'))api.closeMenu?.(false);
     if(action==='reload'){load();return;}
+    if(action==='older'){el.disabled=true;loadOlder(id);return;}
     if(action==='more'){store.all=id;api.render();requestAnimationFrame(()=>document.querySelector(`.fl-list[data-list="${CSS.escape(id)}"] .fl-case:nth-child(21) [data-fl="open"]`)?.focus());return;}
     if(action==='filter'){store.filter=id;store.all='';if(api.getPage()!=='home'&&api.getPage()!=='flow')navigate('home');else api.render();requestAnimationFrame(()=>{$('#fl-detail')?.scrollIntoView({block:'start'});$('#fl-detail-title,#fl-detail h2')?.focus?.({preventScroll:true});});return;}
     if(action==='open'){showCase(id);return;}

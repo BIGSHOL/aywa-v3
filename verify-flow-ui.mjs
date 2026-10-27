@@ -32,7 +32,7 @@ const commands=[],results=[];
 page.on('request',r=>{if(r.url().endsWith('/api/flow/actions'))commands.push(r.postDataJSON());});
 page.on('response',async r=>{if(r.url().endsWith('/api/flow/actions'))results.push({status:r.status(),body:await r.json().catch(()=>null)});});
 
-const flow=()=>page.evaluate(()=>fetch('/api/flow').then(r=>r.json()));
+const flow=()=>page.evaluate(async()=>{const get=p=>fetch(`/api/flow${p>1?`?casePage=${p}`:''}`).then(r=>r.json());const first=await get(1),rest=[];for(let p=2;p<=(first.casePageCount||1);p++)rest.push(await get(p));return {...first,cases:[first,...rest].flatMap(x=>x.cases)};});
 const caseOf=async id=>(await flow()).cases.find(c=>c.id===id);
 const active=c=>c.state==='done'?[]:c.steps.filter(s=>!s.skipped&&(s.status==='ready'||s.status==='working'));
 const queued=s=>s.queue==='manager'&&!s.assigneeIds.length;
@@ -227,6 +227,20 @@ try{
     assert.equal(commands.length-m,1,'No retry when the case itself changed');
   }
 
+  // 10b. (stand-in) More than one case page: work on page 2 is counted and reachable; older history loads on request.
+  if(flowRoutes.mock){
+    const person=people[1],lastId=flowRoutes.mock.seedBulk(520,person.id);
+    const raw=await page.evaluate(()=>fetch('/api/flow').then(r=>r.json()));assert(raw.casePageCount>=2&&!raw.cases.some(x=>x.id===lastId),'The new case is on a later page');
+    await page.reload();await page.waitForFunction(()=>Boolean(document.querySelector('#fl-actor')));await asActor(person.id);
+    const ready=flowRoutes.mock.state.cases.filter(x=>x.state!=='done'&&x.steps.some(s=>s.status==='ready'&&!s.review&&s.assigneeIds.includes(person.id))).length;
+    await expectText('.ax-signals .fl-count .ax-signal-value',new RegExp(`^${ready.toLocaleString('ko-KR')}건$`));
+    assert(await showCard(lastId),'Later-page work is reachable');
+    await asActor(owner.id);await page.locator('[data-fl="filter"][data-id="done"]').first().click();
+    await (await showCard(absenceId)).locator('[data-fl="open"]').first().click();
+    await expectText('#detail .ax-request-timeline',/아직 불러오지 않았습니다/);
+    await page.locator('#detail [data-fl="older"]').click();await expectText('#detail .ax-request-timeline',/결석 보고/);await close();
+  }
+
   // 11. New work reaches a person who is just looking at their screen (≤ ~10 s, no reload), and an unchanged revision
   //     leaves the screen untouched.
   await asActor(people[0].id);await page.waitForTimeout(500);
@@ -246,5 +260,5 @@ try{
   await asActor(people[0].id);assert(!await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth+1),'Staff inbox fits the phone');
   await shot('staff-390');
   assert.deepEqual(errors,[]);assert.deepEqual(external,[]);assert.deepEqual(mutations,[]);
-  console.log(`PASS: owner/manager/staff flow views, absence scenario (report → return → resend → accept → homeroom follow-up → done), billing check to decision, owner multi-assignee request (picker, double-submit guard, one step per recipient, review close), reload persistence, duplicate scenario answered with the same case, fact source → linked follow-up, 409 + wrong-person rejection, passive arrival of new work with no re-render on unchanged revision, ${areas.length} workspaces reachable, phone layout. flow=${flowRoutes.served?`server (${base}, run ${runId})`:'test stand-in'}, catalog=${wsRoutes.catalogSource}, workspace data=${wsRoutes.fixtureData?'test projection':'server'}, commands=${commands.length}.`);
+  console.log(`PASS: owner/manager/staff flow views, absence scenario (report → return → resend → accept → homeroom follow-up → done), billing check to decision, owner multi-assignee request (picker, double-submit guard, one step per recipient, review close), reload persistence, duplicate scenario answered with the same case, fact source → linked follow-up, 409 + wrong-person rejection, passive arrival of new work with no re-render on unchanged revision,${flowRoutes.mock?' multi-page cases + older events (stand-in),':''} ${areas.length} workspaces reachable, phone layout. flow=${flowRoutes.served?`server (${base}, run ${runId})`:'test stand-in'}, catalog=${wsRoutes.catalogSource}, workspace data=${wsRoutes.fixtureData?'test projection':'server'}, commands=${commands.length}.`);
 }finally{await browser.close();}
