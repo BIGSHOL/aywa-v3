@@ -386,3 +386,8 @@
 .chart-pop-meta{margin-top:6px}
 .chart-pop-meta+.chart-pop-meta{margin-top:2px}
 .chart-live{position:fixed;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
+.ax-detail{font-size:var(--ax-xs)}
+.ax-detail summary{cursor:pointer;color:var(--ax-primary)}
+.ax-detail p{margin-top:4px;overflow-wrap:anywhere}
+.ax-unlinked{flex-direction:column;align-items:flex-start;opacity:.7;cursor:default}
+.ax-unlinked small{font-size:var(--ax-xs)}

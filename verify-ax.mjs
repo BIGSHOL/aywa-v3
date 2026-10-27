@@ -196,7 +196,8 @@ try{
   assistant.queue.push({status:503,json:{error:'auth_required',message:'Claude 로그인이 필요합니다. 로컬 터미널에서 로그인한 뒤 다시 시도해 주세요.'}});
   await page.locator('[data-ax="chat-retry"]').click();
   await page.waitForFunction(()=>/Claude 로그인이 필요합니다/.test(document.querySelector('.ax-chat-answer.error')?.innerText||''));
-  assert.equal(await page.locator('.ax-chat-answer.error').getAttribute('title'),'HTTP 503 · auth_required');
+  assert.equal(await page.locator('.ax-chat-answer.error [title]').count(),0,'No native tooltip on errors');await page.locator('.ax-chat-answer.error summary').click();
+  assert.match(await page.locator('.ax-chat-answer.error details').innerText(),/HTTP 503 · auth_required/);
   assistant.queue.push({status:429,headers:{'Retry-After':'12'},json:{error:'busy',message:'다른 질문을 처리하고 있습니다.'}});
   await page.locator('[data-ax="chat-retry"]').click();
   await page.waitForFunction(()=>/약 12초 뒤/.test(document.querySelector('.ax-chat-answer.error')?.innerText||''));

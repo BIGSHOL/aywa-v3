@@ -144,10 +144,13 @@
   let toastTimer;
   const toast=text=>{const node=$('#toast');node.textContent=text;node.classList.add('show');clearTimeout(toastTimer);toastTimer=setTimeout(()=>node.classList.remove('show'),3000);};
   // Factories: ax (briefing/requests/assistant) first, then workspaces (catalog-driven family screens) which uses ax.
-  const api={db,h,fmt,won,icon,chart,lineChart,exact,dialog,navigate,render,attachScroll,toast,showStudent,showBill,showApproval,showTask,openRecord,canOpenRecord,getPage:()=>state.page,hasView:id=>Boolean(viewFor(id)),closeMenu};
+  const api={db,h,fmt,won,icon,chart,lineChart,exact,dialog,navigate,render,attachScroll,toast,subjectLabel:subject,showStudent,showBill,showApproval,showTask,openRecord,canOpenRecord,getPage:()=>state.page,hasView:id=>Boolean(viewFor(id)),closeMenu};
   const ax=window.createOwnerWorkspace(api);
   const ws=typeof window.createWorkspaces==='function'?window.createWorkspaces({...api,ax}):null;
   ax.useWorkspaces?.(ws);
+  // Durable work flow (GET /api/flow): preview selector, role views, request store. Absent → session-only requests.
+  const flowUI=typeof window.createFlowUI==='function'?window.createFlowUI({...api,ax,familyLabel:id=>ws?.area(id)?.label||'',showWorkspaceRecord:(family,record)=>ws?.showRecord(family,record)}):null;
+  ax.useFlow?.(flowUI);
   const viewFor=page=>{if(!page)return null;if(views[page])return views[page];const id=ws?.familyOf(page);return id&&ws.has(id)?()=>ws.view(id):null;};
   const mobileNav=matchMedia('(max-width: 760px)');
   const scrollObserver=new ResizeObserver(entries=>entries.forEach(e=>fade(e.target)));
@@ -351,7 +354,7 @@
   }
   function showSearch(){state.search='';const node=$('#modal');node.innerHTML=`<header class="live-dialog-header"><h2 id="modal-title">맥락으로 바로 가기</h2><button class="icon-button" data-close="modal" aria-label="닫기">${icon('close')}</button></header><div class="live-form"><input id="global-search" aria-label="통합 검색" placeholder="학생, 학교, 수업, 선생님 검색" autocomplete="off"></div><div class="live-search-results live-scroll" id="search-results">${searchResults()}</div>`;if(!node.open)node.showModal();$('#global-search').focus();attachScroll();}
 
-  const views={home,students,admissions,classes,learning,finance,staff,parents,shuttle,approvals,resources,calendar,settings,inbox:ax.inbox,requests:ax.requests,automation:ax.automation};
+  const views={home,students,admissions,classes,learning,finance,staff,parents,shuttle,approvals,resources,calendar,settings,inbox:ax.inbox,requests:ax.requests,automation:ax.automation,...(flowUI?{flow:()=>flowUI.fullView()}:{})};
   function render(){
     const focused=document.activeElement,focusId=focused?.id,selection=typeof focused?.selectionStart==='number'?focused.selectionStart:null;
     const navHref=focused?.closest('#sidebar')&&focused.getAttribute('href');

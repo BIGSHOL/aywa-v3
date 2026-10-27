@@ -146,3 +146,10 @@
 .ws-inbox-item header small{font-size:var(--ax-xs)}
 .ws-inbox-item>.button{align-self:flex-start}
 .ws-auto h3{margin-bottom:4px}
+.ws-screens{display:flex;align-items:center;flex-wrap:wrap;gap:6px;font-size:var(--ax-xs)}
+.ws-screens>span:first-child{font-weight:600;margin-right:4px}
+.ws-screens button,.ws-screen{padding:3px 10px;border:1px dashed var(--ax-line);border-radius:999px;font-size:var(--ax-xs);line-height:1.45}
+.ws-screens button{border-style:solid;color:var(--ax-primary)}
+.ws-screens button[aria-pressed=true]{background:var(--ax-primary);border-color:var(--ax-primary);color:#fff}
+.ws-action-group.focus h3{color:var(--ax-primary)}
+.ws-records-title{margin-top:8px;font-size:var(--ax-sm)}

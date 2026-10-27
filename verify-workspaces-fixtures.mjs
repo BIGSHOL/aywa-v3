@@ -4,8 +4,11 @@
 // · Workspace data: projections of the real local copy already in window.AcademySnapshot (no invented values), used only
 //   while the server does not yet emit AcademySnapshot.workspaces. Source labels say "테스트 투영" so screenshots stay honest.
 import { readFile } from 'node:fs/promises';
+import { fileURLToPath } from 'node:url';
 
-export const INVENTORY=process.env.AX_INVENTORY||'C:/Users/user/orca/workspaces/eywa_refactoring/ax-v2-audit/experiments/owner-concept/catalog/feature-inventory.json';
+export const INVENTORY=process.env.AX_INVENTORY||fileURLToPath(new URL('./catalog/feature-inventory.json',import.meta.url));
+// The committed catalog next to this file (served by serve-live; read from disk when an older server lacks the route).
+export const CATALOG_FILE=process.env.AX_CATALOG_FILE||fileURLToPath(new URL('./workspace-catalog.js',import.meta.url));
 const VIEW={flow:['enrollment','retention','newcomers','withdrawal-reports','approvals','makeups','textbook-requests','expense-requests','video-homework'],sheet:['class-sheets','timetable','attendance','payroll','classes'],report:['lesson-reports','onescreen','student-portal','parent-portal','class-review','dashboard'],settings:['owner-settings','slack','integrations','teacher-workspace'],timeline:['consultations','meetings','calendar','tasks-notifications','help','support','withdrawals']};
 const LEGACY={students:'students',billing:'finance',staff:'staff',approvals:'approvals',calendar:'calendar',shuttle:'shuttle',documents:'resources',enrollment:'admissions',classes:'classes','lesson-reports':'learning',exams:'learning','textbook-requests':'resources',dashboard:'home',payroll:'staff',inventory:'resources'};
 // Explicit facets where the fixture data needs stable ids (labels are the 2.0 tab/state names).
@@ -92,11 +95,15 @@ window.__wsFull=(id,q,facet,page,pageSize)=>{const all=full[id]||[];const terms=
 // Serve the new UI files and test fixtures only where this server does not provide them yet.
 export async function installWorkspaceRoutes(page,{base,dir,catalog}){
   const served={};
-  for(const path of ['/workspace-catalog.js','/workspaces.js','/workspaces.css']){const r=await fetch(base+path,{method:'HEAD'});served[path]=r.ok;}
+  for(const path of ['/workspace-catalog.js','/workspaces.js','/workspaces.css','/flow-ui.js','/flow-ui.css']){const r=await fetch(base+path,{method:'HEAD'});served[path]=r.ok;}
   const local=async(route,file,type)=>route.fulfill({status:200,contentType:type,body:await readFile(new URL(file,dir),'utf8')});
   if(!served['/workspaces.js'])await page.route(`${base}/workspaces.js`,r=>local(r,'workspaces.js','text/javascript; charset=utf-8'));
   if(!served['/workspaces.css'])await page.route(`${base}/workspaces.css`,r=>local(r,'workspaces.css','text/css; charset=utf-8'));
-  if(!served['/workspace-catalog.js'])await page.route(`${base}/workspace-catalog.js`,r=>r.fulfill({status:200,contentType:'text/javascript; charset=utf-8',body:`window.AxCatalog=${JSON.stringify(catalog).replaceAll('<','\\u003c')};`}));
+  if(!served['/flow-ui.js'])await page.route(`${base}/flow-ui.js`,r=>local(r,'flow-ui.js','text/javascript; charset=utf-8'));
+  if(!served['/flow-ui.css'])await page.route(`${base}/flow-ui.css`,r=>local(r,'flow-ui.css','text/css; charset=utf-8'));
+  let catalogSource=served['/workspace-catalog.js']?'served':'fixture',draft='';
+  if(!served['/workspace-catalog.js']){try{draft=await readFile(CATALOG_FILE,'utf8');catalogSource='catalog-file';}catch{draft='';}}
+  if(!served['/workspace-catalog.js'])await page.route(`${base}/workspace-catalog.js`,r=>r.fulfill({status:200,contentType:'text/javascript; charset=utf-8',body:draft||`window.AxCatalog=${JSON.stringify(catalog).replaceAll('<','\\u003c')};`}));
   const snapshot=await (await fetch(base+'/snapshot.js')).text();
   const hasWorkspaces=/"workspaces":\{"asOf"/.test(snapshot);
   if(!hasWorkspaces)await page.route(`${base}/snapshot.js`,r=>r.fulfill({status:200,contentType:'text/javascript; charset=utf-8',body:`${snapshot}\n${projectionScript}`}));
@@ -106,5 +113,5 @@ export async function installWorkspaceRoutes(page,{base,dir,catalog}){
     const body=await page.evaluate(({id,q,facet,p,size})=>window.__wsFull(id,q,facet,p,size),{id,q:url.searchParams.get('q')||'',facet:url.searchParams.get('facet')||'',p:Number(url.searchParams.get('page')||1),size:Number(url.searchParams.get('pageSize')||20)});
     await route.fulfill({status:200,contentType:'application/json',body:JSON.stringify(body)});
   });
-  return {served,fixtureCatalog:!served['/workspace-catalog.js'],fixtureData:!hasWorkspaces,recordsMock};
+  return {served,catalogSource,fixtureCatalog:catalogSource==='fixture',fixtureData:!hasWorkspaces,recordsMock};
 }

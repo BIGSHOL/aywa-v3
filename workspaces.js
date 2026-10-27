@@ -12,7 +12,7 @@ window.createWorkspaces = function createWorkspaces(api) {
   const FACET_INTENT={flow:'이 단계에 있는 기록만 봅니다',sheet:'이 구분의 줄만 시트에 표시합니다',records:'이 구분의 기록만 봅니다',report:'이 구분의 문서만 목록에 표시합니다',settings:'이 설정 면의 현재 값과 미리보기 양식을 엽니다',timeline:'이 구분의 기록만 시간순으로 봅니다'};
   const MODE={preview:{label:'로컬 미리보기',destination:'local-preview',status:'session-only'},request:{label:'요청 초안',destination:'owner-request-draft',status:'draft-only'},navigate:{label:'화면 이동',destination:'navigate',status:'navigation'}};
   const PAGE_SIZE=20;
-  const state={query:'',active:-1,open:new Set(),closed:new Set(),recent:[],facet:{},q:{},page:{},sel:{},remote:{},local:{},edits:{},recipient:''};
+  const state={screen:{},face:{},query:'',active:-1,open:new Set(),closed:new Set(),recent:[],facet:{},q:{},page:{},sel:{},remote:{},local:{},edits:{},recipient:''};
   const pill=(text,tone='')=>`<span class="ax-chip ${tone}">${h(text)}</span>`;
   const btn=(text,action,attrs='',primary=false)=>`<button type="button" class="button ${primary?'primary':''}" data-ws="${action}" ${attrs}>${h(text)}</button>`;
   const norm=t=>String(t??'').toLowerCase().replace(/\s+/g,'');
@@ -34,12 +34,14 @@ window.createWorkspaces = function createWorkspaces(api) {
     const key=STATE_LABEL[d.dataState]?d.dataState:'unavailable';
     return {key,note:d.coverageNote||(key==='empty'?'복사본에 이 영역의 기록이 없습니다.':key==='not-applicable'?'이 지점의 운영에 해당하지 않는 영역입니다.':key==='unavailable'?'이 영역의 기록을 읽지 못했습니다.':'')};
   }
-  function facetsOf(a){
-    const counts=new Map((data(a.id)?.facets||[]).map(f=>[f.id,f]));
-    const list=(Array.isArray(a.facets)?a.facets:[]).map(f=>({id:f.id,label:f.label,count:counts.get(f.id)?.count??null}));
-    (data(a.id)?.facets||[]).forEach(f=>{if(!list.some(x=>x.id===f.id))list.push({id:f.id,label:f.label,count:f.count});});
-    return list;
-  }
+  // Record filters come only from the data facets (ids the records endpoint accepts). Catalog facets are the 2.0
+  // screen's tabs/boxes/stages/faces: entry points to related actions, never sent to the records endpoint.
+  function facetsOf(a){const d=data(a.id);return Array.isArray(d?.facets)?d.facets.filter(f=>f&&f.id).map(f=>({id:String(f.id),label:String(f.label||f.id),count:Number.isFinite(Number(f.count))?Number(f.count):null})):[];}
+  const screensOf=a=>(Array.isArray(a.facets)?a.facets:[]).filter(f=>f&&f.id&&f.label);
+  const dimension=id=>String(id).includes(':')?String(id).split(':')[0]:'';
+  // Flow columns use one dimension of the data facets (status first) so a record never appears in two columns.
+  function stagesOf(a){const list=facetsOf(a),dims=[...new Set(list.map(f=>dimension(f.id)).filter(Boolean))],dim=dims.includes('status')?'status':dims[0];return dim?list.filter(f=>dimension(f.id)===dim):list;}
+  const screenActions=(a,screenId)=>actionsOf(a).filter(x=>targetOf(x).facet===screenId);
   const previews=id=>Array.isArray(data(id)?.records)?data(id).records:[];
   const recordById=(id,rid)=>[...previews(id),...(state.remote[id]?.data?.items||[])].find(r=>String(r.id)===String(rid));
 
@@ -96,16 +98,17 @@ window.createWorkspaces = function createWorkspaces(api) {
   function mainHtml(a){
     const id=a.id,kind=viewKind(a),facets=facetsOf(a),rec=visibleRecords(id),slot=state.remote[id];
     const st=dataState(id),facet=state.facet[id]||'';
-    const tabs=facets.length&&kind!=='settings'?`<div class="ws-facets" role="group" aria-label="구분">${[{id:'',label:'전체',count:Number(data(id)?.totalRecords)||null},...facets].map(f=>`<button type="button" data-ws="facet" data-id="${h(id)}" data-facet="${h(f.id)}" aria-pressed="${facet===f.id}" title="${h(f.id?FACET_INTENT[kind]:'구분 없이 전체 기록을 봅니다')}">${h(f.label)}${f.count!==null&&f.count!==undefined?` <b>${fmt(f.count)}</b>`:''}</button>`).join('')}</div>`:'';
+    const screens=screensOf(a),screen=state.screen[id]||'';
+    const screenRow=screens.length&&kind!=='settings'?`<div class="ws-screens" role="group" aria-label="2.0 화면 구성"><span>2.0 화면</span>${screens.map(sc=>screenActions(a,sc.id).length?`<button type="button" data-ws="screen" data-id="${h(id)}" data-screen="${h(sc.id)}" aria-pressed="${screen===sc.id}">${h(sc.label)}</button>`:`<span class="ws-screen">${h(sc.label)}</span>`).join('')}</div>`:'';
+    const tabs=facets.length?`<div class="ws-facets" role="group" aria-label="기록 구분">${[{id:'',label:'전체',count:Number(data(id)?.totalRecords)||null},...facets].map(f=>`<button type="button" data-ws="facet" data-id="${h(id)}" data-facet="${h(f.id)}" aria-pressed="${facet===f.id}">${h(f.label)}${f.count!==null&&f.count!==undefined?` <b>${fmt(f.count)}</b>`:''}</button>`).join('')}</div>`:'';
     const search=data(id)&&kind!=='settings'?`<div class="ws-search"><input type="search" id="ws-q-${h(id)}" data-ws-q="${h(id)}" value="${h(state.q[id]||'')}" maxlength="100" aria-label="${h(a.label)} 기록 검색" placeholder="이름·내용·상태 검색" autocomplete="off"><span>${rec.source==='full'?`${fmt(rec.filtered)}건 · 전체 ${fmt(rec.total)}건`:`${fmt(rec.items.length)}건 표시 · 전체 ${fmt(rec.total)}건`}</span></div>`:'';
     const note=rec.source==='preview'&&rec.total>previews(id).length?`<p class="ax-note">${slot?.status==='loading'?'전체 기록을 불러오는 중입니다.':slot?.status==='error'?h(slot.message):'전체 기록 조회가 아직 이 서버에 연결되지 않아 최근 기록만 표시합니다.'}${slot?.status==='error'?` ${btn('다시 시도','reload',`data-id="${h(id)}"`)}`:''}</p>`:'';
     let body;
-    if(kind==='settings')body=settingsView(a,previews(id),facets);
-    else if(!data(id))body=`<div class="live-empty"><strong>기록 집계 연결 전</strong><p>이 작업 공간의 기록은 아직 불러오지 않았습니다. 오른쪽 작업으로 미리보기를 만들거나 담당자에게 요청할 수 있습니다.</p></div>`;
+    if(!data(id))body=`<div class="live-empty"><strong>기록 집계 연결 전</strong><p>이 작업 공간의 기록은 아직 불러오지 않았습니다. 오른쪽 작업으로 미리보기를 만들거나 담당자에게 요청할 수 있습니다.</p></div>`;
     else if(!rec.items.length)body=`<div class="live-empty"><strong>${st.key==='empty'?'복사본에 기록이 없습니다':'이 조건의 기록이 없습니다'}</strong><p>${st.key==='empty'?'없는 기록을 채워 보이지 않습니다. 오른쪽 작업으로 첫 기록을 미리 작성하거나 요청할 수 있습니다.':'구분이나 검색어를 바꿔 보세요.'}</p></div>`;
-    else body={flow:flowView,sheet:sheetView,records:recordsView,report:reportView,settings:settingsView,timeline:timelineView}[kind](a,rec.items,facets);
+    else body={flow:flowView,sheet:sheetView,records:recordsView,report:reportView,settings:recordsView,timeline:timelineView}[kind](a,rec.items,facets);
     const pager=rec.source==='full'&&rec.pageCount>1?`<div class="live-pager">${btn('이전','page',`data-id="${h(id)}" data-page="${(state.page[id]||1)-1}" ${(state.page[id]||1)<=1?'disabled':''}`)}<span>${state.page[id]||1} / ${rec.pageCount}</span>${btn('다음','page',`data-id="${h(id)}" data-page="${(state.page[id]||1)+1}" ${(state.page[id]||1)>=rec.pageCount?'disabled':''}`)}</div>`:'';
-    return `${id==='teacher-workspace'?recipientPreview():''}${tabs}${kind==='settings'?'':search}${note}${body}${pager}`;
+    return `${id==='teacher-workspace'?recipientPreview():''}${kind==='settings'?settingsView(a):screenRow}${kind==='settings'&&data(id)?`<h3 class="ws-records-title">복사본에서 읽은 설정 기록</h3>`:''}${tabs}${search}${note}${body}${pager}`;
   }
   // Teacher workspace: what a selected staff member receives. Owner requests can be acknowledged and completion-reported
   // here (session only); automatic 2.0 tasks are listed separately and only open their source record.
@@ -125,8 +128,8 @@ window.createWorkspaces = function createWorkspaces(api) {
     const sorted=[...items].sort((x,y)=>String(y.date).localeCompare(String(x.date)));const months=[...new Set(sorted.map(r=>String(r.date).slice(0,7)||'날짜 없음'))];
     return `<ol class="ws-timeline">${months.map(m=>`<li><h3>${m.length===7?`${m.slice(0,4)}년 ${Number(m.slice(5))}월`:'날짜 없음'}</h3>${sorted.filter(r=>(String(r.date).slice(0,7)||'날짜 없음')===m).map(r=>recordButton(a.id,r)).join('')}</li>`).join('')}</ol>`;
   }
-  function flowView(a,items,facets){
-    const stages=facets.length?facets:[{id:'',label:'전체'}];
+  function flowView(a,items){
+    const facets=stagesOf(a),stages=facets.length?facets:[{id:'',label:'전체'}];
     const inStage=(r,f)=>f.id?(r.facetIds||[]).includes(f.id):true;
     const loose=facets.length?items.filter(r=>!facets.some(f=>inStage(r,f))):[];
     return `<div class="ws-flow live-scroll" data-scroll-key="flow-${h(a.id)}" tabindex="0" aria-label="단계별 흐름">${stages.map((f,i)=>`<section class="ws-stage"><header><span>${i+1}</span><h3>${h(f.label)}</h3>${f.count!==null&&f.count!==undefined?`<b>${fmt(f.count)}</b>`:''}</header>${items.filter(r=>inStage(r,f)).slice(0,8).map(r=>recordButton(a.id,r)).join('')||'<p>이 단계의 기록이 없습니다.</p>'}</section>`).join('')}${loose.length?`<section class="ws-stage"><header><span>·</span><h3>단계 미지정</h3><b>${loose.length}</b></header>${loose.slice(0,8).map(r=>recordButton(a.id,r)).join('')}</section>`:''}</div>`;
@@ -143,41 +146,46 @@ window.createWorkspaces = function createWorkspaces(api) {
     const sel=items.find(r=>String(r.id)===String(state.sel[a.id]))||items[0];
     return `<div class="ws-report"><div class="ws-report-list live-scroll" data-scroll-key="report-${h(a.id)}" tabindex="0" aria-label="문서 목록">${items.map(r=>`<button type="button" data-ws="select" data-id="${h(a.id)}" data-record="${h(r.id)}" aria-pressed="${r===sel}"><strong>${h(r.label)}</strong><small>${[r.date,r.status].filter(Boolean).map(h).join(' · ')}</small></button>`).join('')}</div>${documentHtml(a,sel)}</div>`;
   }
-  function settingsView(a,items,facets){
-    const faces=facets.length?facets:[{id:'',label:'설정'}],face=faces.find(f=>f.id===state.facet[a.id])||faces[0];
-    const current=items.filter(r=>!face.id||(r.facetIds||[]).includes(face.id));
-    const forms=actionsOf(a).filter(x=>x.mode==='preview'&&(!targetOf(x).facet&&!targetOf(x).page||targetOf(x).facet===face.id||targetOf(x).page===face.id));
-    return `<div class="ws-settings"><nav class="ws-faces live-scroll" data-scroll-key="faces-${h(a.id)}" aria-label="설정 면">${faces.map(f=>`<button type="button" data-ws="facet" data-id="${h(a.id)}" data-facet="${h(f.id)}" aria-pressed="${f===face}">${h(f.label)}</button>`).join('')}</nav><div class="ws-face"><h3>${h(face.label)}</h3>${current.length?`<section><h4>현재 값</h4>${current.map(r=>`<dl class="ws-current"><dt>${h(r.label)}</dt><dd>${(r.fields||[]).map(f=>`${h(f.label)}: ${h(f.value)}`).join(' · ')||h(r.detail||r.status||'—')}</dd></dl>`).join('')}</section>`:'<p class="ax-note">이 면의 현재 값은 복사본에서 읽은 항목이 없습니다.</p>'}${forms.length?forms.map(x=>`<section class="ws-inline-form"><h4>${h(x.label)}</h4>${previewForm(a,x,'',true)}</section>`).join(''):'<p class="ax-note">이 면을 바꾸는 작업은 오른쪽 목록에서 요청으로 보낼 수 있습니다.</p>'}</div></div>`;
+  // Settings faces are the catalog's faces (2.0 setting surfaces); their forms are the actions that target the face.
+  function settingsView(a){
+    const faces=screensOf(a).length?screensOf(a):[{id:'',label:'설정'}],face=faces.find(f=>f.id===state.face[a.id])||faces[0];
+    const forms=actionsOf(a).filter(x=>x.mode==='preview'&&(face.id?targetOf(x).facet===face.id:!targetOf(x).facet));
+    const related=actionsOf(a).filter(x=>x.mode!=='preview'&&face.id&&targetOf(x).facet===face.id);
+    return `<div class="ws-settings"><nav class="ws-faces live-scroll" data-scroll-key="faces-${h(a.id)}" aria-label="설정 면">${faces.map(f=>`<button type="button" data-ws="face" data-id="${h(a.id)}" data-face="${h(f.id)}" aria-pressed="${f===face}">${h(f.label)}</button>`).join('')}</nav><div class="ws-face"><h3>${h(face.label)}</h3>${related.length?`<div class="ax-actions">${related.map(x=>`<button type="button" class="button" data-ws="action" data-id="${h(a.id)}" data-action="${h(x.id)}">${h(x.label)}</button>`).join('')}</div>`:''}${forms.length?forms.map(x=>`<section class="ws-inline-form"><h4>${h(x.label)}</h4>${previewForm(a,x,'',true)}</section>`).join(''):'<p class="ax-note">이 면을 바꾸는 작업은 오른쪽 목록에서 요청으로 보낼 수 있습니다.</p>'}</div></div>`;
   }
 
   /* ---------- actions: preview forms, owner request drafts, navigation ---------- */
   const actionIntent=x=>x.mode==='preview'?`2.0의 ‘${x.label}’ 입력을 이 화면에서 미리 작성합니다. 세션에만 남고 반영되지 않습니다.`:x.mode==='navigate'?'관련 화면으로 이동합니다.':`담당자에게 ‘${x.label}’을 요청하는 초안을 엽니다. 등록 전까지 전달되지 않습니다.`;
   function actionPanel(a){
-    const list=actionsOf(a),groups=['preview','request','navigate'].map(m=>[m,list.filter(x=>(MODE[x.mode]?x.mode:'request')===m)]).filter(([,xs])=>xs.length);
-    return `<section class="ws-actions" aria-label="이 화면에서 할 수 있는 일"><h2>할 수 있는 일 ${list.length}가지</h2>${groups.map(([m,xs])=>`<div class="ws-action-group"><h3>${MODE[m].label}</h3>${xs.map(x=>`<button type="button" class="ws-action" data-ws="action" data-id="${h(a.id)}" data-action="${h(x.id)}"><strong>${h(x.label)}</strong><small>${h(actionIntent(x))}</small></button>`).join('')}</div>`).join('')||'<p class="ax-note">이 영역에 정의된 작업이 없습니다.</p>'}</section>`;
+    const list=actionsOf(a),screen=screensOf(a).find(sc=>sc.id===state.screen[a.id]),focus=screen?screenActions(a,screen.id):[];
+    const groups=['preview','request','navigate'].map(m=>[m,list.filter(x=>!focus.includes(x)&&(MODE[x.mode]?x.mode:'request')===m)]).filter(([,xs])=>xs.length);
+    const item=x=>`<button type="button" class="ws-action" data-ws="action" data-id="${h(a.id)}" data-action="${h(x.id)}"><strong>${h(x.label)}</strong><small>${h(actionIntent(x))}</small></button>`;
+    return `<section class="ws-actions" aria-label="이 화면에서 할 수 있는 일"><h2>할 수 있는 일 ${list.length}가지</h2>${focus.length?`<div class="ws-action-group focus"><h3>‘${h(screen.label)}’ 화면의 작업</h3>${focus.map(item).join('')}</div>`:''}${groups.map(([m,xs])=>`<div class="ws-action-group"><h3>${MODE[m].label}</h3>${xs.map(x=>`<button type="button" class="ws-action" data-ws="action" data-id="${h(a.id)}" data-action="${h(x.id)}"><strong>${h(x.label)}</strong><small>${h(actionIntent(x))}</small></button>`).join('')}</div>`).join('')||'<p class="ax-note">이 영역에 정의된 작업이 없습니다.</p>'}</section>`;
   }
   function fieldHtml(a,x,f,recordId,scope){
     const id=`ws-f-${scope}-${a.id}-${x.id}-${f.id}`.replace(/[^\w-]/g,'_'),req=f.required?'required':'',label=`<span>${h(f.label)}${f.required?' <em aria-hidden="true">*</em>':''}</span>`;
-    const options=type=>type==='record'?visibleRecords(a.id).items.map(r=>({value:String(r.id),label:r.label})):type==='staff'?db.staff.map(s=>({value:s.id,label:`${s.name} · ${s.title}`})):type==='class'?db.classes.map(c=>({value:c.id,label:`${c.name} · ${c.teacher}`})):(f.options||[]).map(o=>typeof o==='object'?{value:String(o.value??o.id??o.label),label:String(o.label??o.value)}:{value:String(o),label:String(o)});
+    const options=type=>type==='record'?visibleRecords(a.id).items.map(r=>({value:String(r.id),label:r.label})):type==='staff'?db.staff.map(s=>({value:s.id,label:`${s.name} · ${s.title}`})):type==='class'?db.classes.map(c=>({value:c.id,label:`${c.name} · ${c.teacher}`})):type==='subject'?[...new Set(db.classes.map(c=>c.subject).filter(Boolean))].map(v=>({value:v,label:api.subjectLabel?.(v)||v})):(f.options||[]).map(o=>typeof o==='object'?{value:String(o.value??o.id??o.label),label:String(o.label??o.value)}:{value:String(o),label:String(o)});
     const t=f.type||'text';
     if(t==='textarea')return `<label for="${id}">${label}<textarea id="${id}" name="${h(f.id)}" rows="3" maxlength="2000" ${req}></textarea></label>`;
     if(t==='checkbox'||t==='boolean')return `<label class="ws-check" for="${id}"><input type="checkbox" id="${id}" name="${h(f.id)}" value="예"> ${h(f.label)}</label>`;
     if(t==='student')return `<label for="${id}">${label}<input id="${id}" name="${h(f.id)}" list="ws-students" autocomplete="off" maxlength="60" placeholder="이름 입력 후 목록에서 선택" ${req}><small>재원생 목록에서 고릅니다.</small></label>`;
-    if(['select','record','staff','class'].includes(t)){const opts=options(t);return `<label for="${id}">${label}<select id="${id}" name="${h(f.id)}" ${req}><option value="">선택</option>${opts.map(o=>`<option value="${h(o.value)}" ${t==='record'&&String(recordId)===o.value?'selected':''}>${h(o.label)}</option>`).join('')}</select>${t==='record'&&!opts.length?'<small>선택할 기록이 없습니다.</small>':''}</label>`;}
+    if(['select','record','staff','class','subject'].includes(t)){const opts=options(t);return `<label for="${id}">${label}<select id="${id}" name="${h(f.id)}" ${req}><option value="">선택</option>${opts.map(o=>`<option value="${h(o.value)}" ${t==='record'&&String(recordId)===o.value?'selected':''}>${h(o.label)}</option>`).join('')}</select>${t==='record'&&!opts.length?'<small>선택할 기록이 없습니다.</small>':''}</label>`;}
     if(t==='multiselect'){const opts=options('select');return `<fieldset class="ws-multi"><legend>${label}</legend>${opts.map(o=>`<label><input type="checkbox" name="${h(f.id)}" value="${h(o.value)}"> ${h(o.label)}</label>`).join('')}</fieldset>`;}
     const html={number:'number',money:'number',amount:'number',date:'date',time:'time',month:'month'}[t]||'text';
-    return `<label for="${id}">${label}<input id="${id}" name="${h(f.id)}" type="${html}" ${html==='number'?'step="any" min="0"':''} ${html==='text'?'maxlength="200"':''} ${req}>${t==='money'||t==='amount'?'<small>원 단위</small>':''}</label>`;
+    const lo=Number.isFinite(Number(f.min))?Number(f.min):0,hi=Number.isFinite(Number(f.max))?Number(f.max):null;
+    return `<label for="${id}">${label}<input id="${id}" name="${h(f.id)}" type="${html}" ${html==='number'?`step="any" min="${lo}" ${hi!==null?`max="${hi}"`:''}`:''} ${html==='text'?'maxlength="200"':''} ${req}>${t==='money'||t==='amount'?'<small>원 단위</small>':hi!==null?`<small>${lo}~${hi}</small>`:''}</label>`;
   }
-  function previewForm(a,x,recordId='',inline=false){
+  function previewForm(a,x,recordId='',inline=false,kind='preview'){
     const fields=Array.isArray(x.fields)?x.fields.filter(f=>f&&f.id&&f.label):[];
     if(fields.some(f=>f.type==='student')&&!document.getElementById('ws-students'))document.body.insertAdjacentHTML('beforeend',`<datalist id="ws-students">${db.students.filter(s=>s.status==='enrolled').map(s=>`<option value="${h(`${s.name} · ${s.school} ${s.grade}`)}"></option>`).join('')}</datalist>`);
-    return `<form class="ws-form" data-ws-form="preview" data-id="${h(a.id)}" data-action="${h(x.id)}" ${inline?'data-inline="1"':''} novalidate>${fields.map(f=>fieldHtml(a,x,f,recordId,inline?'i':'m')).join('')||'<p class="ax-note">입력할 항목이 없는 작업입니다. 실행 내용을 메모로 남겨 미리보기를 기록합니다.</p><label>메모<textarea name="__note" rows="2" maxlength="500"></textarea></label>'}<p class="ax-form-error" role="alert"></p><div class="ws-form-foot"><span class="ax-note">로컬 미리보기 · 2.0에는 반영되지 않습니다.</span><button class="button primary" type="submit">미리보기로 기록</button></div></form>`;
+    return `<form class="ws-form" data-ws-form="${kind}" data-id="${h(a.id)}" data-action="${h(x.id)}" ${inline?'data-inline="1"':''} novalidate>${fields.map(f=>fieldHtml(a,x,f,recordId,inline?'i':'m')).join('')||'<p class="ax-note">입력할 항목이 없는 작업입니다. 실행 내용을 메모로 남겨 미리보기를 기록합니다.</p><label>메모<textarea name="__note" rows="2" maxlength="500"></textarea></label>'}<p class="ax-form-error" role="alert"></p><div class="ws-form-foot"><span class="ax-note">${kind==='request'?'담당자와 기한은 다음 단계에서 고릅니다. 등록 전까지 전달되지 않습니다.':'로컬 미리보기 · 2.0에는 반영되지 않습니다.'}</span><button class="button primary" type="submit">${kind==='request'?'요청서로 이어 쓰기':'미리보기로 기록'}</button></div></form>`;
   }
   function openAction(familyId,actionId,recordId=''){
     const a=area(familyId),x=a&&actionsOf(a).find(y=>y.id===actionId);if(!x)return;
-    if(x.mode==='navigate'){const {page,facet}=targetOf(x),dest=resolvePage(page);if(!dest){toast('이동할 화면을 찾지 못했습니다.');return;}const fam=familyOf(dest);if(fam&&facet){state.facet[fam]=facet;state.page[fam]=1;}navigate(dest);return;}
+    if(x.mode==='navigate'){const {page,facet}=targetOf(x),dest=resolvePage(page);if(!dest){toast('이동할 화면을 찾지 못했습니다.');return;}const fam=familyOf(dest),tgt=fam&&area(fam);if(tgt&&facet){if(facetsOf(tgt).some(f=>f.id===facet)){state.facet[fam]=facet;state.page[fam]=1;}else if(screensOf(tgt).some(f=>f.id===facet)){if(viewKind(tgt)==='settings')state.face[fam]=facet;else state.screen[fam]=facet;}}navigate(dest);return;}
     if(x.mode==='preview'){dialog('modal',x.label,`${a.label} · 로컬 미리보기`,`${recordId?`<p class="ws-context">기록: ${h(recordById(familyId,recordId)?.label||'')}</p>`:''}<p class="ax-note">${h(actionIntent(x))}</p>${previewForm(a,x,recordId)}`);$('#modal .ws-form :is(input,select,textarea)')?.focus();return;}
     const r=recordId?recordById(familyId,recordId):null;
+    if((x.fields||[]).some(f=>f&&f.id&&f.label)){dialog('modal',x.label,`${a.label} · 요청에 담을 내용`,`${r?`<p class="ws-context">기록: ${h(r.label)}</p>`:''}<p class="ax-note">${h(actionIntent(x))}</p>${previewForm(a,x,recordId,false,'request')}`);$('#modal .ws-form :is(input,select,textarea)')?.focus();return;}
     requestFrom(a,{title:x.draft?.title||x.label,body:x.draft?.body||`${a.label}에서 ‘${x.label}’을 처리하고 결과를 보고해 주세요.`,action:x.id,records:r?[r]:[]});
   }
   function requestFrom(a,{title,body,action='',signal='',records=[]}){
@@ -190,19 +198,21 @@ window.createWorkspaces = function createWorkspaces(api) {
     fields.forEach(f=>{
       const values=new FormData(form).getAll(f.id).map(String).filter(v=>v.trim()),v=values[0]||'';
       if(f.required&&!values.length)errors.push(`${f.label}을(를) 입력해 주세요.`);
-      if(v&&['number','money','amount'].includes(f.type)&&!(Number.isFinite(Number(v))&&Number(v)>=0))errors.push(`${f.label}은(는) 0 이상의 숫자로 입력해 주세요.`);
+      const lo=Number.isFinite(Number(f.min))?Number(f.min):0,hi=Number.isFinite(Number(f.max))?Number(f.max):null;
+      if(v&&['number','money','amount'].includes(f.type)&&!(Number.isFinite(Number(v))&&Number(v)>=lo&&(hi===null||Number(v)<=hi)))errors.push(hi===null?`${f.label}은(는) ${lo} 이상의 숫자로 입력해 주세요.`:`${f.label}은(는) ${lo}~${hi} 사이의 숫자로 입력해 주세요.`);
       if(v&&f.type==='date'&&!/^\d{4}-\d{2}-\d{2}$/.test(v))errors.push(`${f.label} 날짜 형식을 확인해 주세요.`);
       if(v&&f.type==='student'&&!studentFor(v))errors.push(`${f.label}은(는) 재원생 목록에서 골라 주세요.`);
       if(v&&['select'].includes(f.type)&&Array.isArray(f.options)&&f.options.length&&!f.options.some(o=>String(typeof o==='object'?o.value??o.id??o.label:o)===v))errors.push(`${f.label} 선택지를 다시 골라 주세요.`);
     });
     return errors;
   }
-  function submitPreview(form){
+  function submitPreview(form,kind='preview'){
     const a=area(form.dataset.id),x=a&&actionsOf(a).find(y=>y.id===form.dataset.action);if(!x)return;
     const fields=Array.isArray(x.fields)?x.fields.filter(f=>f&&f.id&&f.label):[],errors=validate(form,fields),out=form.querySelector('.ax-form-error');
     if(errors.length){out.textContent=errors[0];const first=fields.find(f=>f.required&&!new FormData(form).getAll(f.id).some(v=>String(v).trim()));(first?form.querySelector(`[name="${CSS.escape(first.id)}"]`):form.querySelector('input,select,textarea'))?.focus();return;}
-    const values=new FormData(form),display=(f,v)=>f.type==='record'?recordById(a.id,v)?.label||v:f.type==='staff'?db.staff.find(s=>s.id===v)?.name||v:f.type==='class'?db.classes.find(c=>c.id===v)?.name||v:f.type==='multiselect'||f.type==='select'?(f.options||[]).map(o=>typeof o==='object'?o:{value:o,label:o}).find(o=>String(o.value??o.id??o.label)===v)?.label||v:v;
+    const values=new FormData(form),display=(f,v)=>f.type==='subject'?api.subjectLabel?.(v)||v:f.type==='record'?recordById(a.id,v)?.label||v:f.type==='staff'?db.staff.find(s=>s.id===v)?.name||v:f.type==='class'?db.classes.find(c=>c.id===v)?.name||v:f.type==='multiselect'||f.type==='select'?(f.options||[]).map(o=>typeof o==='object'?o:{value:o,label:o}).find(o=>String(o.value??o.id??o.label)===v)?.label||v:v;
     const entry={id:crypto.randomUUID(),actionId:x.id,label:x.label,result:resultLabel(x),at:new Date().toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit'}),recordId:String(fields.filter(f=>f.type==='record').map(f=>values.get(f.id)).find(Boolean)||''),values:fields.length?fields.map(f=>({label:f.label,value:values.getAll(f.id).map(v=>display(f,String(v))).join(', ')||(f.type==='checkbox'?'아니요':'—')})):[{label:'메모',value:String(values.get('__note')||'—')}]};
+    if(kind==='request'){const r=entry.recordId?recordById(a.id,entry.recordId):null;form.closest('dialog')?.close();requestFrom(a,{title:x.draft?.title||x.label,body:`${x.draft?.body||`${a.label}에서 ‘${x.label}’을 처리하고 결과를 보고해 주세요.`}\n${entry.values.map(v=>`· ${v.label}: ${v.value}`).join('\n')}`,action:x.id,records:r?[r]:[]});return;}
     (state.local[a.id]||(state.local[a.id]=[])).unshift(entry);
     if(!form.dataset.inline)form.closest('dialog')?.close();else form.reset();
     refreshSide(a.id);refreshMain(a.id);toast(`${resultLabel(x)}를 이 화면에 기록했습니다. 2.0에는 반영되지 않았습니다.`);
@@ -276,7 +286,7 @@ window.createWorkspaces = function createWorkspaces(api) {
         const reachable=mode!=='navigate'||Boolean(resolvePage(target));
         byDestination[dest]=(byDestination[dest]||0)+1;operations++;
         return {id:x.id,label:x.label,mode,destination:dest,target:mode==='navigate'?target:mode==='preview'?'local-session-log':'request-form',status:reachable?MODE[mode].status:'broken-target',fields:Array.isArray(x.fields)?x.fields.length:0,result:mode==='preview'?resultLabel(x):'',sourceOperationIds:Array.isArray(x.sourceOperationIds)?x.sourceOperationIds:[],intent:actionIntent(x),production:'not-linked'};});
-      families[a.id]={page:`workspace-${a.id}`,reachable:api.hasView(`workspace-${a.id}`),label:a.label,group:a.group||'',viewKind:kind,renderer:`${kind}View`,dataState:dataState(a.id).key,facets:facetData.map(f=>({id:f.id,label:f.label,intent:FACET_INTENT[kind],status:recs.some(r=>(r.facetIds||[]).includes(f.id))?'filter':data(a.id)?'count-only':'label-only'})),operations:ops};
+      families[a.id]={page:`workspace-${a.id}`,reachable:api.hasView(`workspace-${a.id}`),label:a.label,group:a.group||'',viewKind:kind,renderer:`${kind}View`,dataState:dataState(a.id).key,facets:[...facetData.map(f=>({id:f.id,label:f.label,kind:'record-filter',intent:FACET_INTENT[kind],status:recs.some(r=>(r.facetIds||[]).includes(f.id))?'filter':'count-only'})),...screensOf(a).map(sc=>({id:sc.id,label:sc.label,kind:sc.kind||'screen',intent:screenActions(a,sc.id).length?`2.0의 ‘${sc.label}’ 화면 — 관련 작업 ${screenActions(a,sc.id).length}가지로 이어집니다`:`2.0의 ‘${sc.label}’ 화면 이름을 보여 줍니다`,status:kind==='settings'?'face':screenActions(a,sc.id).length?'screen':'label-only'}))],operations:ops};
     }
     return {schemaVersion:1,local:true,families,totals:{families:Object.keys(families).length,operations,byDestination,sourceOperationIds:[...new Set(Object.values(families).flatMap(f=>f.operations.flatMap(o=>o.sourceOperationIds)))].length}};
   }
@@ -289,6 +299,8 @@ window.createWorkspaces = function createWorkspaces(api) {
     if(el.closest('#sidebar'))api.closeMenu?.(false);
     if(action==='open'){state.query='';state.active=-1;navigate(`workspace-${id}`);return;}
     if(action==='facet'){state.facet[id]=state.facet[id]===el.dataset.facet&&el.dataset.facet?'':el.dataset.facet;state.page[id]=1;if(needsRemote(id))loadRecords(id);refreshMain(id);return;}
+    if(action==='screen'){state.screen[id]=state.screen[id]===el.dataset.screen?'':el.dataset.screen;refreshMain(id);const side=$('.ws-side .ws-actions');if(side){side.outerHTML=actionPanel(area(id));}return;}
+    if(action==='face'){state.face[id]=el.dataset.face;refreshMain(id);return;}
     if(action==='page'){state.page[id]=Math.max(1,Number(el.dataset.page));loadRecords(id);return;}
     if(action==='reload'){if(state.remote[id])state.remote[id].key='';loadRecords(id);return;}
     if(action==='record'){showRecord(id,record);return;}
@@ -306,7 +318,7 @@ window.createWorkspaces = function createWorkspaces(api) {
       return;
     }
     if(action==='cell'){editCell(el);return;}
-    if(action==='recipient-ack'){const person=db.staff.find(s=>s.id===(state.recipient||ax.recipient?.owners()[0]));ax.recipient?.acknowledge(el.dataset.request,person?.name||'담당자');return;}
+    if(action==='recipient-ack'){const person=db.staff.find(s=>s.id===(state.recipient||ax.recipient?.owners()[0]));ax.recipient?.acknowledge(el.dataset.request,person?.name||'담당자',person?.id||'');return;}
     if(action==='sheet-reset'){delete state.edits[id];refreshMain(id);return;}
     if(action==='sheet-save'){
       const rows=state.edits[id]||{},values=Object.entries(rows).flatMap(([rid,cols])=>Object.entries(cols).map(([c,v])=>({label:`${recordById(id,rid)?.label||rid} · ${c}`,value:v})));if(!values.length)return;
@@ -318,8 +330,8 @@ window.createWorkspaces = function createWorkspaces(api) {
   },true);
   document.addEventListener('submit',event=>{
     const form=event.target;
-    if(form.dataset.wsForm==='recipient-report'){event.preventDefault();event.stopImmediatePropagation();const text=String(new FormData(form).get('result')||'').trim();if(!text){form.querySelector('.ax-form-error').textContent='완료 보고 내용을 입력해 주세요.';form.querySelector('textarea').focus();return;}const person=db.staff.find(s=>s.id===(state.recipient||ax.recipient?.owners()[0]));ax.recipient?.complete(form.dataset.request,person?.name||'담당자',text);return;}
-    if(form.dataset.wsForm!=='preview')return;event.preventDefault();event.stopImmediatePropagation();submitPreview(form);
+    if(form.dataset.wsForm==='recipient-report'){event.preventDefault();event.stopImmediatePropagation();const text=String(new FormData(form).get('result')||'').trim();if(!text){form.querySelector('.ax-form-error').textContent='완료 보고 내용을 입력해 주세요.';form.querySelector('textarea').focus();return;}const person=db.staff.find(s=>s.id===(state.recipient||ax.recipient?.owners()[0]));ax.recipient?.complete(form.dataset.request,person?.name||'담당자',text,person?.id||'');return;}
+    if(form.dataset.wsForm!=='preview'&&form.dataset.wsForm!=='request')return;event.preventDefault();event.stopImmediatePropagation();submitPreview(form,form.dataset.wsForm);
   },true);
   document.addEventListener('change',event=>{if(event.target.dataset?.wsRecipient!==undefined){state.recipient=event.target.value;const id=familyOf(api.getPage());if(id)refreshMain(id);}});
   document.addEventListener('input',event=>{
@@ -343,5 +355,5 @@ window.createWorkspaces = function createWorkspaces(api) {
   document.addEventListener('click',event=>{const summary=event.target.closest?.('[data-ws-group]>summary');if(!summary)return;const d=summary.parentElement,g=d.dataset.wsGroup;if(d.open){state.open.delete(g);state.closed.add(g);}else{state.open.add(g);state.closed.delete(g);}},true);
   window.addEventListener('ax-catalog',()=>api.render());
 
-  return {has,familyOf,view,sidebar,homeSignals,searchItems,coverage,area,areas};
+  return {has,familyOf,view,sidebar,homeSignals,searchItems,coverage,area,areas,showRecord};
 };
