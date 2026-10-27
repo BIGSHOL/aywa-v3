@@ -137,3 +137,6 @@
 .fl-report-scope strong{margin-right:6px}
 .fl-report-scope summary{cursor:pointer;font-size:var(--ax-xs)}
 .fl-report-scope ul{margin:6px 0 0;padding-left:18px;font-size:var(--ax-xs);font-variant-numeric:tabular-nums}
+.fl-tree-more{margin-top:-4px;font-size:var(--ax-xs)}
+.fl-tree-more summary{cursor:pointer;width:max-content;max-width:100%}
+.fl-tree-more p{margin-top:4px}
