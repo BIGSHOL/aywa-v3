@@ -1,0 +1,2374 @@
+{
+ "readAt": "2026-10-27T07:54:13.759Z",
+ "database": "aywa_full_snapshot (local Docker copy, read-only transaction)",
+ "tenant": {
+  "slug": "cs",
+  "id": "becaa316-e636-42e9-9d09-08b133e0b094"
+ },
+ "totals": {
+  "tables": 337,
+  "rows": 623432,
+  "schemas": 10
+ },
+ "tables": [
+  {
+   "schema": "archive",
+   "table": "invoices_pre_line_items_20260708",
+   "rows": 2002,
+   "tenantScoped": true,
+   "csRows": 2002
+  },
+  {
+   "schema": "auth",
+   "table": "audit_log_entries",
+   "rows": 0,
+   "tenantScoped": false,
+   "csRows": null
+  },
+  {
+   "schema": "auth",
+   "table": "custom_oauth_providers",
+   "rows": 0,
+   "tenantScoped": false,
+   "csRows": null
+  },
+  {
+   "schema": "auth",
+   "table": "flow_state",
+   "rows": 0,
+   "tenantScoped": false,
+   "csRows": null
+  },
+  {
+   "schema": "auth",
+   "table": "identities",
+   "rows": 71,
+   "tenantScoped": false,
+   "csRows": null
+  },
+  {
+   "schema": "auth",
+   "table": "instances",
+   "rows": 0,
+   "tenantScoped": false,
+   "csRows": null
+  },
+  {
+   "schema": "auth",
+   "table": "mfa_amr_claims",
+   "rows": 340,
+   "tenantScoped": false,
+   "csRows": null
+  },
+  {
+   "schema": "auth",
+   "table": "mfa_challenges",
+   "rows": 0,
+   "tenantScoped": false,
+   "csRows": null
+  },
+  {
+   "schema": "auth",
+   "table": "mfa_factors",
+   "rows": 0,
+   "tenantScoped": false,
+   "csRows": null
+  },
+  {
+   "schema": "auth",
+   "table": "mfa_recovery_code_sets",
+   "rows": 0,
+   "tenantScoped": false,
+   "csRows": null
+  },
+  {
+   "schema": "auth",
+   "table": "mfa_recovery_codes",
+   "rows": 0,
+   "tenantScoped": false,
+   "csRows": null
+  },
+  {
+   "schema": "auth",
+   "table": "oauth_authorizations",
+   "rows": 0,
+   "tenantScoped": false,
+   "csRows": null
+  },
+  {
+   "schema": "auth",
+   "table": "oauth_client_states",
+   "rows": 0,
+   "tenantScoped": false,
+   "csRows": null
+  },
+  {
+   "schema": "auth",
+   "table": "oauth_clients",
+   "rows": 0,
+   "tenantScoped": false,
+   "csRows": null
+  },
+  {
+   "schema": "auth",
+   "table": "oauth_consents",
+   "rows": 0,
+   "tenantScoped": false,
+   "csRows": null
+  },
+  {
+   "schema": "auth",
+   "table": "one_time_tokens",
+   "rows": 0,
+   "tenantScoped": false,
+   "csRows": null
+  },
+  {
+   "schema": "auth",
+   "table": "refresh_tokens",
+   "rows": 4738,
+   "tenantScoped": false,
+   "csRows": null
+  },
+  {
+   "schema": "auth",
+   "table": "saml_providers",
+   "rows": 0,
+   "tenantScoped": false,
+   "csRows": null
+  },
+  {
+   "schema": "auth",
+   "table": "saml_relay_states",
+   "rows": 0,
+   "tenantScoped": false,
+   "csRows": null
+  },
+  {
+   "schema": "auth",
+   "table": "schema_migrations",
+   "rows": 82,
+   "tenantScoped": false,
+   "csRows": null
+  },
+  {
+   "schema": "auth",
+   "table": "scim_tokens",
+   "rows": 0,
+   "tenantScoped": false,
+   "csRows": null
+  },
+  {
+   "schema": "auth",
+   "table": "scim_users",
+   "rows": 0,
+   "tenantScoped": false,
+   "csRows": null
+  },
+  {
+   "schema": "auth",
+   "table": "sessions",
+   "rows": 340,
+   "tenantScoped": false,
+   "csRows": null
+  },
+  {
+   "schema": "auth",
+   "table": "sso_domains",
+   "rows": 0,
+   "tenantScoped": false,
+   "csRows": null
+  },
+  {
+   "schema": "auth",
+   "table": "sso_providers",
+   "rows": 0,
+   "tenantScoped": false,
+   "csRows": null
+  },
+  {
+   "schema": "auth",
+   "table": "users",
+   "rows": 71,
+   "tenantScoped": false,
+   "csRows": null
+  },
+  {
+   "schema": "auth",
+   "table": "webauthn_challenges",
+   "rows": 0,
+   "tenantScoped": false,
+   "csRows": null
+  },
+  {
+   "schema": "auth",
+   "table": "webauthn_credentials",
+   "rows": 0,
+   "tenantScoped": false,
+   "csRows": null
+  },
+  {
+   "schema": "drizzle",
+   "table": "__drizzle_migrations",
+   "rows": 28,
+   "tenantScoped": false,
+   "csRows": null
+  },
+  {
+   "schema": "net",
+   "table": "_http_response",
+   "rows": 0,
+   "tenantScoped": false,
+   "csRows": null
+  },
+  {
+   "schema": "net",
+   "table": "http_request_queue",
+   "rows": 0,
+   "tenantScoped": false,
+   "csRows": null
+  },
+  {
+   "schema": "public",
+   "table": "academy_documents",
+   "rows": 191,
+   "tenantScoped": true,
+   "csRows": 188
+  },
+  {
+   "schema": "public",
+   "table": "activity_log",
+   "rows": 149035,
+   "tenantScoped": true,
+   "csRows": 115160
+  },
+  {
+   "schema": "public",
+   "table": "ai_prompt_overrides",
+   "rows": 0,
+   "tenantScoped": true,
+   "csRows": 0
+  },
+  {
+   "schema": "public",
+   "table": "ai_usage_logs",
+   "rows": 11721,
+   "tenantScoped": true,
+   "csRows": 11713
+  },
+  {
+   "schema": "public",
+   "table": "announcements",
+   "rows": 10,
+   "tenantScoped": true,
+   "csRows": 0
+  },
+  {
+   "schema": "public",
+   "table": "approval_basic_forms",
+   "rows": 0,
+   "tenantScoped": true,
+   "csRows": 0
+  },
+  {
+   "schema": "public",
+   "table": "approval_comments",
+   "rows": 0,
+   "tenantScoped": true,
+   "csRows": 0
+  },
+  {
+   "schema": "public",
+   "table": "approval_documents",
+   "rows": 3,
+   "tenantScoped": true,
+   "csRows": 3
+  },
+  {
+   "schema": "public",
+   "table": "approval_expense_forms",
+   "rows": 0,
+   "tenantScoped": true,
+   "csRows": 0
+  },
+  {
+   "schema": "public",
+   "table": "approval_income_forms",
+   "rows": 0,
+   "tenantScoped": true,
+   "csRows": 0
+  },
+  {
+   "schema": "public",
+   "table": "approval_line_templates",
+   "rows": 1,
+   "tenantScoped": true,
+   "csRows": 1
+  },
+  {
+   "schema": "public",
+   "table": "approval_refs",
+   "rows": 0,
+   "tenantScoped": true,
+   "csRows": 0
+  },
+  {
+   "schema": "public",
+   "table": "approval_steps",
+   "rows": 5,
+   "tenantScoped": true,
+   "csRows": 5
+  },
+  {
+   "schema": "public",
+   "table": "assistant_conversations",
+   "rows": 9,
+   "tenantScoped": true,
+   "csRows": 9
+  },
+  {
+   "schema": "public",
+   "table": "attendance_checkins",
+   "rows": 0,
+   "tenantScoped": true,
+   "csRows": 0
+  },
+  {
+   "schema": "public",
+   "table": "attendance_day_recaps",
+   "rows": 1,
+   "tenantScoped": true,
+   "csRows": 1
+  },
+  {
+   "schema": "public",
+   "table": "attendance_followups",
+   "rows": 72,
+   "tenantScoped": true,
+   "csRows": 72
+  },
+  {
+   "schema": "public",
+   "table": "attendance_notifications",
+   "rows": 0,
+   "tenantScoped": true,
+   "csRows": 0
+  },
+  {
+   "schema": "public",
+   "table": "attendance_records",
+   "rows": 36991,
+   "tenantScoped": true,
+   "csRows": 28174
+  },
+  {
+   "schema": "public",
+   "table": "attendance_salary_rates",
+   "rows": 2,
+   "tenantScoped": true,
+   "csRows": 2
+  },
+  {
+   "schema": "public",
+   "table": "attendance_salary_teacher_view",
+   "rows": 6,
+   "tenantScoped": true,
+   "csRows": 6
+  },
+  {
+   "schema": "public",
+   "table": "attendance_seat_share_adjust",
+   "rows": 3,
+   "tenantScoped": true,
+   "csRows": 3
+  },
+  {
+   "schema": "public",
+   "table": "audit_logs",
+   "rows": 36771,
+   "tenantScoped": true,
+   "csRows": 36619
+  },
+  {
+   "schema": "public",
+   "table": "calendar_events",
+   "rows": 7975,
+   "tenantScoped": true,
+   "csRows": 7968
+  },
+  {
+   "schema": "public",
+   "table": "calendar_sync_state",
+   "rows": 6,
+   "tenantScoped": true,
+   "csRows": 6
+  },
+  {
+   "schema": "public",
+   "table": "calendar_tags",
+   "rows": 13,
+   "tenantScoped": true,
+   "csRows": 13
+  },
+  {
+   "schema": "public",
+   "table": "class_delegations",
+   "rows": 2,
+   "tenantScoped": true,
+   "csRows": 2
+  },
+  {
+   "schema": "public",
+   "table": "class_lesson_shifts",
+   "rows": 14,
+   "tenantScoped": true,
+   "csRows": 14
+  },
+  {
+   "schema": "public",
+   "table": "class_month_plan_cells",
+   "rows": 844,
+   "tenantScoped": true,
+   "csRows": 653
+  },
+  {
+   "schema": "public",
+   "table": "class_plan_import_batches",
+   "rows": 39,
+   "tenantScoped": true,
+   "csRows": 39
+  },
+  {
+   "schema": "public",
+   "table": "class_salary_settings",
+   "rows": 14,
+   "tenantScoped": true,
+   "csRows": 14
+  },
+  {
+   "schema": "public",
+   "table": "class_schedules",
+   "rows": 1718,
+   "tenantScoped": true,
+   "csRows": 1605
+  },
+  {
+   "schema": "public",
+   "table": "class_sheet_goals",
+   "rows": 558,
+   "tenantScoped": true,
+   "csRows": 463
+  },
+  {
+   "schema": "public",
+   "table": "class_sheet_memos",
+   "rows": 14,
+   "tenantScoped": true,
+   "csRows": 14
+  },
+  {
+   "schema": "public",
+   "table": "class_sheet_month_memos",
+   "rows": 117,
+   "tenantScoped": true,
+   "csRows": 22
+  },
+  {
+   "schema": "public",
+   "table": "class_sheet_plan_lines",
+   "rows": 5385,
+   "tenantScoped": true,
+   "csRows": 3761
+  },
+  {
+   "schema": "public",
+   "table": "class_sheet_slot_flags",
+   "rows": 197,
+   "tenantScoped": true,
+   "csRows": 197
+  },
+  {
+   "schema": "public",
+   "table": "class_sheet_student_marks",
+   "rows": 15226,
+   "tenantScoped": true,
+   "csRows": 6100
+  },
+  {
+   "schema": "public",
+   "table": "class_splits",
+   "rows": 0,
+   "tenantScoped": true,
+   "csRows": 0
+  },
+  {
+   "schema": "public",
+   "table": "class_textbook_plans",
+   "rows": 42,
+   "tenantScoped": true,
+   "csRows": 42
+  },
+  {
+   "schema": "public",
+   "table": "classes",
+   "rows": 208,
+   "tenantScoped": true,
+   "csRows": 179
+  },
+  {
+   "schema": "public",
+   "table": "classnote_board_members",
+   "rows": 929,
+   "tenantScoped": true,
+   "csRows": 929
+  },
+  {
+   "schema": "public",
+   "table": "classnote_board_sync_runs",
+   "rows": 51,
+   "tenantScoped": true,
+   "csRows": 51
+  },
+  {
+   "schema": "public",
+   "table": "classnote_boards",
+   "rows": 124,
+   "tenantScoped": true,
+   "csRows": 124
+  },
+  {
+   "schema": "public",
+   "table": "classnote_child_links",
+   "rows": 489,
+   "tenantScoped": true,
+   "csRows": 489
+  },
+  {
+   "schema": "public",
+   "table": "classnote_class_board_members",
+   "rows": 299,
+   "tenantScoped": true,
+   "csRows": 299
+  },
+  {
+   "schema": "public",
+   "table": "classnote_class_boards",
+   "rows": 71,
+   "tenantScoped": true,
+   "csRows": 71
+  },
+  {
+   "schema": "public",
+   "table": "classnote_class_notices",
+   "rows": 11,
+   "tenantScoped": true,
+   "csRows": 11
+  },
+  {
+   "schema": "public",
+   "table": "classnote_class_posts",
+   "rows": 2187,
+   "tenantScoped": true,
+   "csRows": 2187
+  },
+  {
+   "schema": "public",
+   "table": "classnote_feed_state",
+   "rows": 3,
+   "tenantScoped": true,
+   "csRows": 3
+  },
+  {
+   "schema": "public",
+   "table": "classnote_notices",
+   "rows": 197,
+   "tenantScoped": true,
+   "csRows": 197
+  },
+  {
+   "schema": "public",
+   "table": "classnote_parent_message_attachments",
+   "rows": 27,
+   "tenantScoped": true,
+   "csRows": 27
+  },
+  {
+   "schema": "public",
+   "table": "classnote_parent_messages",
+   "rows": 1167,
+   "tenantScoped": true,
+   "csRows": 1167
+  },
+  {
+   "schema": "public",
+   "table": "classnote_parent_reactions",
+   "rows": 16,
+   "tenantScoped": true,
+   "csRows": 16
+  },
+  {
+   "schema": "public",
+   "table": "classnote_parent_replies",
+   "rows": 23,
+   "tenantScoped": true,
+   "csRows": 23
+  },
+  {
+   "schema": "public",
+   "table": "classnote_student_links",
+   "rows": 0,
+   "tenantScoped": true,
+   "csRows": 0
+  },
+  {
+   "schema": "public",
+   "table": "classnote_sync_requests",
+   "rows": 25,
+   "tenantScoped": true,
+   "csRows": 25
+  },
+  {
+   "schema": "public",
+   "table": "classnote_video_files",
+   "rows": 532,
+   "tenantScoped": true,
+   "csRows": 532
+  },
+  {
+   "schema": "public",
+   "table": "classnote_video_folders",
+   "rows": 13,
+   "tenantScoped": true,
+   "csRows": 13
+  },
+  {
+   "schema": "public",
+   "table": "classnote_video_history",
+   "rows": 1,
+   "tenantScoped": true,
+   "csRows": 1
+  },
+  {
+   "schema": "public",
+   "table": "classnote_workers",
+   "rows": 1,
+   "tenantScoped": true,
+   "csRows": 1
+  },
+  {
+   "schema": "public",
+   "table": "classrooms",
+   "rows": 25,
+   "tenantScoped": true,
+   "csRows": 21
+  },
+  {
+   "schema": "public",
+   "table": "consultation_ai_analysis",
+   "rows": 37,
+   "tenantScoped": false,
+   "csRows": null
+  },
+  {
+   "schema": "public",
+   "table": "consultation_recordings",
+   "rows": 41,
+   "tenantScoped": true,
+   "csRows": 41
+  },
+  {
+   "schema": "public",
+   "table": "daily_briefings",
+   "rows": 89,
+   "tenantScoped": true,
+   "csRows": 77
+  },
+  {
+   "schema": "public",
+   "table": "document_categories",
+   "rows": 36,
+   "tenantScoped": true,
+   "csRows": 12
+  },
+  {
+   "schema": "public",
+   "table": "document_folder_favorites",
+   "rows": 0,
+   "tenantScoped": true,
+   "csRows": 0
+  },
+  {
+   "schema": "public",
+   "table": "edutrix_archive",
+   "rows": 29317,
+   "tenantScoped": true,
+   "csRows": 29317
+  },
+  {
+   "schema": "public",
+   "table": "english_levels",
+   "rows": 12,
+   "tenantScoped": true,
+   "csRows": 12
+  },
+  {
+   "schema": "public",
+   "table": "enrollment_consultations",
+   "rows": 2378,
+   "tenantScoped": true,
+   "csRows": 2258
+  },
+  {
+   "schema": "public",
+   "table": "enrollments",
+   "rows": 1753,
+   "tenantScoped": true,
+   "csRows": 1534
+  },
+  {
+   "schema": "public",
+   "table": "exams",
+   "rows": 14,
+   "tenantScoped": true,
+   "csRows": 0
+  },
+  {
+   "schema": "public",
+   "table": "expenses",
+   "rows": 273,
+   "tenantScoped": true,
+   "csRows": 261
+  },
+  {
+   "schema": "public",
+   "table": "grade_comments",
+   "rows": 1055,
+   "tenantScoped": true,
+   "csRows": 0
+  },
+  {
+   "schema": "public",
+   "table": "grade_goals",
+   "rows": 1055,
+   "tenantScoped": true,
+   "csRows": 0
+  },
+  {
+   "schema": "public",
+   "table": "help_answers",
+   "rows": 0,
+   "tenantScoped": true,
+   "csRows": 0
+  },
+  {
+   "schema": "public",
+   "table": "help_posts",
+   "rows": 0,
+   "tenantScoped": true,
+   "csRows": 0
+  },
+  {
+   "schema": "public",
+   "table": "homework_video_assignment_history",
+   "rows": 79,
+   "tenantScoped": true,
+   "csRows": 79
+  },
+  {
+   "schema": "public",
+   "table": "homework_video_assignments",
+   "rows": 72,
+   "tenantScoped": true,
+   "csRows": 72
+  },
+  {
+   "schema": "public",
+   "table": "homework_video_drive_account_owners",
+   "rows": 0,
+   "tenantScoped": true,
+   "csRows": 0
+  },
+  {
+   "schema": "public",
+   "table": "homework_video_drive_connections",
+   "rows": 0,
+   "tenantScoped": true,
+   "csRows": 0
+  },
+  {
+   "schema": "public",
+   "table": "homework_video_drive_oauth_attempts",
+   "rows": 0,
+   "tenantScoped": true,
+   "csRows": 0
+  },
+  {
+   "schema": "public",
+   "table": "homework_video_drive_roots",
+   "rows": 1,
+   "tenantScoped": true,
+   "csRows": 1
+  },
+  {
+   "schema": "public",
+   "table": "homework_video_drive_settings",
+   "rows": 0,
+   "tenantScoped": true,
+   "csRows": 0
+  },
+  {
+   "schema": "public",
+   "table": "homework_video_link_uploads",
+   "rows": 276,
+   "tenantScoped": true,
+   "csRows": 276
+  },
+  {
+   "schema": "public",
+   "table": "homework_video_links",
+   "rows": 366,
+   "tenantScoped": true,
+   "csRows": 366
+  },
+  {
+   "schema": "public",
+   "table": "homework_video_reviews",
+   "rows": 495,
+   "tenantScoped": true,
+   "csRows": 495
+  },
+  {
+   "schema": "public",
+   "table": "homework_video_site_attempts",
+   "rows": 84,
+   "tenantScoped": true,
+   "csRows": 84
+  },
+  {
+   "schema": "public",
+   "table": "intake_attempts",
+   "rows": 1,
+   "tenantScoped": true,
+   "csRows": 1
+  },
+  {
+   "schema": "public",
+   "table": "intake_tokens",
+   "rows": 2,
+   "tenantScoped": true,
+   "csRows": 2
+  },
+  {
+   "schema": "public",
+   "table": "inventory_assets",
+   "rows": 139,
+   "tenantScoped": true,
+   "csRows": 132
+  },
+  {
+   "schema": "public",
+   "table": "inventory_audits",
+   "rows": 9,
+   "tenantScoped": true,
+   "csRows": 9
+  },
+  {
+   "schema": "public",
+   "table": "inventory_categories",
+   "rows": 11,
+   "tenantScoped": true,
+   "csRows": 10
+  },
+  {
+   "schema": "public",
+   "table": "inventory_loans",
+   "rows": 8,
+   "tenantScoped": true,
+   "csRows": 8
+  },
+  {
+   "schema": "public",
+   "table": "inventory_supplies",
+   "rows": 20,
+   "tenantScoped": true,
+   "csRows": 19
+  },
+  {
+   "schema": "public",
+   "table": "inventory_vendors",
+   "rows": 1,
+   "tenantScoped": true,
+   "csRows": 1
+  },
+  {
+   "schema": "public",
+   "table": "invoice_session_terms",
+   "rows": 2019,
+   "tenantScoped": true,
+   "csRows": 2019
+  },
+  {
+   "schema": "public",
+   "table": "invoice_teacher_splits",
+   "rows": 0,
+   "tenantScoped": true,
+   "csRows": 0
+  },
+  {
+   "schema": "public",
+   "table": "invoices",
+   "rows": 4971,
+   "tenantScoped": true,
+   "csRows": 4291
+  },
+  {
+   "schema": "public",
+   "table": "kakao_channels",
+   "rows": 0,
+   "tenantScoped": true,
+   "csRows": 0
+  },
+  {
+   "schema": "public",
+   "table": "kiosk_devices",
+   "rows": 2,
+   "tenantScoped": true,
+   "csRows": 2
+  },
+  {
+   "schema": "public",
+   "table": "lab_menu_assignments",
+   "rows": 5,
+   "tenantScoped": false,
+   "csRows": null
+  },
+  {
+   "schema": "public",
+   "table": "leave_adjustments",
+   "rows": 0,
+   "tenantScoped": true,
+   "csRows": 0
+  },
+  {
+   "schema": "public",
+   "table": "leave_forms",
+   "rows": 3,
+   "tenantScoped": true,
+   "csRows": 3
+  },
+  {
+   "schema": "public",
+   "table": "lesson_report_rating_queue",
+   "rows": 103,
+   "tenantScoped": true,
+   "csRows": 103
+  },
+  {
+   "schema": "public",
+   "table": "lesson_report_ratings",
+   "rows": 5496,
+   "tenantScoped": true,
+   "csRows": 5496
+  },
+  {
+   "schema": "public",
+   "table": "lesson_report_send_events",
+   "rows": 20629,
+   "tenantScoped": true,
+   "csRows": 20623
+  },
+  {
+   "schema": "public",
+   "table": "lesson_reports",
+   "rows": 31043,
+   "tenantScoped": true,
+   "csRows": 23085
+  },
+  {
+   "schema": "public",
+   "table": "level_tests",
+   "rows": 0,
+   "tenantScoped": true,
+   "csRows": 0
+  },
+  {
+   "schema": "public",
+   "table": "login_events",
+   "rows": 447,
+   "tenantScoped": true,
+   "csRows": 372
+  },
+  {
+   "schema": "public",
+   "table": "makeedu_history_bills",
+   "rows": 85605,
+   "tenantScoped": true,
+   "csRows": 85605
+  },
+  {
+   "schema": "public",
+   "table": "makeedu_history_events",
+   "rows": 17224,
+   "tenantScoped": true,
+   "csRows": 17224
+  },
+  {
+   "schema": "public",
+   "table": "makeedu_history_students",
+   "rows": 4823,
+   "tenantScoped": true,
+   "csRows": 4823
+  },
+  {
+   "schema": "public",
+   "table": "makeedu_push_batches",
+   "rows": 9,
+   "tenantScoped": true,
+   "csRows": 9
+  },
+  {
+   "schema": "public",
+   "table": "makeedu_push_requests",
+   "rows": 76,
+   "tenantScoped": true,
+   "csRows": 76
+  },
+  {
+   "schema": "public",
+   "table": "makeedu_sync_requests",
+   "rows": 42,
+   "tenantScoped": true,
+   "csRows": 42
+  },
+  {
+   "schema": "public",
+   "table": "makeedu_sync_runs",
+   "rows": 275,
+   "tenantScoped": true,
+   "csRows": 275
+  },
+  {
+   "schema": "public",
+   "table": "makeedu_sync_state",
+   "rows": 8,
+   "tenantScoped": true,
+   "csRows": 8
+  },
+  {
+   "schema": "public",
+   "table": "makeedu_sync_workers",
+   "rows": 1,
+   "tenantScoped": true,
+   "csRows": 1
+  },
+  {
+   "schema": "public",
+   "table": "makeup_adjustments",
+   "rows": 0,
+   "tenantScoped": true,
+   "csRows": 0
+  },
+  {
+   "schema": "public",
+   "table": "makeup_allocations",
+   "rows": 0,
+   "tenantScoped": true,
+   "csRows": 0
+  },
+  {
+   "schema": "public",
+   "table": "makeup_case_sources",
+   "rows": 0,
+   "tenantScoped": true,
+   "csRows": 0
+  },
+  {
+   "schema": "public",
+   "table": "makeup_cases",
+   "rows": 0,
+   "tenantScoped": true,
+   "csRows": 0
+  },
+  {
+   "schema": "public",
+   "table": "makeup_commands",
+   "rows": 4,
+   "tenantScoped": true,
+   "csRows": 4
+  },
+  {
+   "schema": "public",
+   "table": "makeup_events",
+   "rows": 4,
+   "tenantScoped": true,
+   "csRows": 4
+  },
+  {
+   "schema": "public",
+   "table": "makeup_fulfillments",
+   "rows": 0,
+   "tenantScoped": true,
+   "csRows": 0
+  },
+  {
+   "schema": "public",
+   "table": "makeup_legacy_maps",
+   "rows": 0,
+   "tenantScoped": true,
+   "csRows": 0
+  },
+  {
+   "schema": "public",
+   "table": "makeup_participants",
+   "rows": 0,
+   "tenantScoped": true,
+   "csRows": 0
+  },
+  {
+   "schema": "public",
+   "table": "makeup_policy_versions",
+   "rows": 0,
+   "tenantScoped": true,
+   "csRows": 0
+  },
+  {
+   "schema": "public",
+   "table": "makeup_projection_jobs",
+   "rows": 0,
+   "tenantScoped": true,
+   "csRows": 0
+  },
+  {
+   "schema": "public",
+   "table": "makeup_recognitions",
+   "rows": 0,
+   "tenantScoped": true,
+   "csRows": 0
+  },
+  {
+   "schema": "public",
+   "table": "makeup_reconciliation",
+   "rows": 0,
+   "tenantScoped": true,
+   "csRows": 0
+  },
+  {
+   "schema": "public",
+   "table": "makeup_reconciliation_runs",
+   "rows": 0,
+   "tenantScoped": true,
+   "csRows": 0
+  },
+  {
+   "schema": "public",
+   "table": "makeup_reservations",
+   "rows": 15,
+   "tenantScoped": true,
+   "csRows": 11
+  },
+  {
+   "schema": "public",
+   "table": "makeup_sessions",
+   "rows": 0,
+   "tenantScoped": true,
+   "csRows": 0
+  },
+  {
+   "schema": "public",
+   "table": "math_book_targets",
+   "rows": 0,
+   "tenantScoped": true,
+   "csRows": 0
+  },
+  {
+   "schema": "public",
+   "table": "math_learning_goals",
+   "rows": 0,
+   "tenantScoped": true,
+   "csRows": 0
+  },
+  {
+   "schema": "public",
+   "table": "math_learning_track_goals",
+   "rows": 410,
+   "tenantScoped": true,
+   "csRows": 298
+  },
+  {
+   "schema": "public",
+   "table": "math_month_goals",
+   "rows": 887,
+   "tenantScoped": true,
+   "csRows": 372
+  },
+  {
+   "schema": "public",
+   "table": "math_textbook_assignments",
+   "rows": 0,
+   "tenantScoped": true,
+   "csRows": 0
+  },
+  {
+   "schema": "public",
+   "table": "meeting_minutes",
+   "rows": 95,
+   "tenantScoped": true,
+   "csRows": 86
+  },
+  {
+   "schema": "public",
+   "table": "ment_ai_drafts",
+   "rows": 92,
+   "tenantScoped": true,
+   "csRows": 92
+  },
+  {
+   "schema": "public",
+   "table": "migration_data_marks",
+   "rows": 1,
+   "tenantScoped": false,
+   "csRows": null
+  },
+  {
+   "schema": "public",
+   "table": "notice_dismissals",
+   "rows": 41,
+   "tenantScoped": true,
+   "csRows": 41
+  },
+  {
+   "schema": "public",
+   "table": "notice_popup_translations",
+   "rows": 2,
+   "tenantScoped": false,
+   "csRows": null
+  },
+  {
+   "schema": "public",
+   "table": "notice_popups",
+   "rows": 5,
+   "tenantScoped": true,
+   "csRows": 5
+  },
+  {
+   "schema": "public",
+   "table": "notification_events",
+   "rows": 11850,
+   "tenantScoped": true,
+   "csRows": 11710
+  },
+  {
+   "schema": "public",
+   "table": "notifications",
+   "rows": 11585,
+   "tenantScoped": true,
+   "csRows": 11534
+  },
+  {
+   "schema": "public",
+   "table": "onescreen_daily_sessions",
+   "rows": 14299,
+   "tenantScoped": true,
+   "csRows": 6342
+  },
+  {
+   "schema": "public",
+   "table": "onescreen_student_order",
+   "rows": 1,
+   "tenantScoped": true,
+   "csRows": 1
+  },
+  {
+   "schema": "public",
+   "table": "operating_periods",
+   "rows": 24,
+   "tenantScoped": true,
+   "csRows": 24
+  },
+  {
+   "schema": "public",
+   "table": "operator_tenant_views",
+   "rows": 8,
+   "tenantScoped": true,
+   "csRows": 1
+  },
+  {
+   "schema": "public",
+   "table": "page_usage_daily",
+   "rows": 3411,
+   "tenantScoped": true,
+   "csRows": 3335
+  },
+  {
+   "schema": "public",
+   "table": "parent_account_students",
+   "rows": 0,
+   "tenantScoped": true,
+   "csRows": 0
+  },
+  {
+   "schema": "public",
+   "table": "parent_accounts",
+   "rows": 0,
+   "tenantScoped": true,
+   "csRows": 0
+  },
+  {
+   "schema": "public",
+   "table": "parent_departure_acks",
+   "rows": 0,
+   "tenantScoped": true,
+   "csRows": 0
+  },
+  {
+   "schema": "public",
+   "table": "payroll_records",
+   "rows": 49,
+   "tenantScoped": true,
+   "csRows": 0
+  },
+  {
+   "schema": "public",
+   "table": "payslips",
+   "rows": 7,
+   "tenantScoped": true,
+   "csRows": 7
+  },
+  {
+   "schema": "public",
+   "table": "progress_containers",
+   "rows": 348,
+   "tenantScoped": true,
+   "csRows": 348
+  },
+  {
+   "schema": "public",
+   "table": "progress_entries",
+   "rows": 1917,
+   "tenantScoped": true,
+   "csRows": 1917
+  },
+  {
+   "schema": "public",
+   "table": "progress_events",
+   "rows": 4664,
+   "tenantScoped": true,
+   "csRows": 4664
+  },
+  {
+   "schema": "public",
+   "table": "push_subscriptions",
+   "rows": 1,
+   "tenantScoped": true,
+   "csRows": 1
+  },
+  {
+   "schema": "public",
+   "table": "record_coverage_marks",
+   "rows": 2,
+   "tenantScoped": true,
+   "csRows": 1
+  },
+  {
+   "schema": "public",
+   "table": "reenrollment_campaign_targets",
+   "rows": 0,
+   "tenantScoped": true,
+   "csRows": 0
+  },
+  {
+   "schema": "public",
+   "table": "report_jj_snapshots",
+   "rows": 1,
+   "tenantScoped": true,
+   "csRows": 1
+  },
+  {
+   "schema": "public",
+   "table": "report_templates",
+   "rows": 2,
+   "tenantScoped": true,
+   "csRows": 2
+  },
+  {
+   "schema": "public",
+   "table": "salary_tiers",
+   "rows": 25,
+   "tenantScoped": true,
+   "csRows": 25
+  },
+  {
+   "schema": "public",
+   "table": "school_enrollment_stats",
+   "rows": 1848,
+   "tenantScoped": true,
+   "csRows": 1848
+  },
+  {
+   "schema": "public",
+   "table": "school_exam_periods",
+   "rows": 0,
+   "tenantScoped": true,
+   "csRows": 0
+  },
+  {
+   "schema": "public",
+   "table": "seat_period_moves",
+   "rows": 0,
+   "tenantScoped": true,
+   "csRows": 0
+  },
+  {
+   "schema": "public",
+   "table": "seat_period_pins",
+   "rows": 0,
+   "tenantScoped": true,
+   "csRows": 0
+  },
+  {
+   "schema": "public",
+   "table": "seat_placements",
+   "rows": 0,
+   "tenantScoped": true,
+   "csRows": 0
+  },
+  {
+   "schema": "public",
+   "table": "share_link_views",
+   "rows": 1098,
+   "tenantScoped": true,
+   "csRows": 1097
+  },
+  {
+   "schema": "public",
+   "table": "shuttle_boardings",
+   "rows": 23,
+   "tenantScoped": true,
+   "csRows": 23
+  },
+  {
+   "schema": "public",
+   "table": "shuttle_history_acks",
+   "rows": 0,
+   "tenantScoped": true,
+   "csRows": 0
+  },
+  {
+   "schema": "public",
+   "table": "shuttle_ride_exception_history",
+   "rows": 14,
+   "tenantScoped": true,
+   "csRows": 14
+  },
+  {
+   "schema": "public",
+   "table": "shuttle_ride_exceptions",
+   "rows": 10,
+   "tenantScoped": true,
+   "csRows": 10
+  },
+  {
+   "schema": "public",
+   "table": "shuttle_rider_history",
+   "rows": 0,
+   "tenantScoped": true,
+   "csRows": 0
+  },
+  {
+   "schema": "public",
+   "table": "shuttle_riders",
+   "rows": 372,
+   "tenantScoped": true,
+   "csRows": 372
+  },
+  {
+   "schema": "public",
+   "table": "shuttle_run_stops",
+   "rows": 261,
+   "tenantScoped": true,
+   "csRows": 261
+  },
+  {
+   "schema": "public",
+   "table": "shuttle_runs",
+   "rows": 30,
+   "tenantScoped": true,
+   "csRows": 30
+  },
+  {
+   "schema": "public",
+   "table": "shuttle_stops",
+   "rows": 23,
+   "tenantScoped": true,
+   "csRows": 23
+  },
+  {
+   "schema": "public",
+   "table": "shuttle_trips",
+   "rows": 7,
+   "tenantScoped": true,
+   "csRows": 7
+  },
+  {
+   "schema": "public",
+   "table": "shuttle_vehicles",
+   "rows": 3,
+   "tenantScoped": true,
+   "csRows": 3
+  },
+  {
+   "schema": "public",
+   "table": "slack_connections",
+   "rows": 1,
+   "tenantScoped": true,
+   "csRows": 1
+  },
+  {
+   "schema": "public",
+   "table": "slack_inbox",
+   "rows": 514,
+   "tenantScoped": true,
+   "csRows": 514
+  },
+  {
+   "schema": "public",
+   "table": "slack_link_codes",
+   "rows": 0,
+   "tenantScoped": true,
+   "csRows": 0
+  },
+  {
+   "schema": "public",
+   "table": "slack_outbox",
+   "rows": 2131,
+   "tenantScoped": true,
+   "csRows": 2131
+  },
+  {
+   "schema": "public",
+   "table": "slack_rules",
+   "rows": 4,
+   "tenantScoped": true,
+   "csRows": 4
+  },
+  {
+   "schema": "public",
+   "table": "slack_user_links",
+   "rows": 2,
+   "tenantScoped": true,
+   "csRows": 2
+  },
+  {
+   "schema": "public",
+   "table": "staff_attendance_days",
+   "rows": 2342,
+   "tenantScoped": true,
+   "csRows": 2342
+  },
+  {
+   "schema": "public",
+   "table": "staff_contracts",
+   "rows": 156,
+   "tenantScoped": true,
+   "csRows": 156
+  },
+  {
+   "schema": "public",
+   "table": "staff_leaves",
+   "rows": 7,
+   "tenantScoped": true,
+   "csRows": 0
+  },
+  {
+   "schema": "public",
+   "table": "staff_task_assignees",
+   "rows": 246,
+   "tenantScoped": true,
+   "csRows": 246
+  },
+  {
+   "schema": "public",
+   "table": "staff_task_events",
+   "rows": 611,
+   "tenantScoped": true,
+   "csRows": 611
+  },
+  {
+   "schema": "public",
+   "table": "staff_task_notifications",
+   "rows": 708,
+   "tenantScoped": true,
+   "csRows": 708
+  },
+  {
+   "schema": "public",
+   "table": "staff_tasks",
+   "rows": 238,
+   "tenantScoped": true,
+   "csRows": 238
+  },
+  {
+   "schema": "public",
+   "table": "student_consultations",
+   "rows": 2927,
+   "tenantScoped": true,
+   "csRows": 2043
+  },
+  {
+   "schema": "public",
+   "table": "student_contribution_months",
+   "rows": 12735,
+   "tenantScoped": true,
+   "csRows": 12735
+  },
+  {
+   "schema": "public",
+   "table": "student_contribution_settings",
+   "rows": 1,
+   "tenantScoped": true,
+   "csRows": 1
+  },
+  {
+   "schema": "public",
+   "table": "student_daily_stats",
+   "rows": 35,
+   "tenantScoped": true,
+   "csRows": 7
+  },
+  {
+   "schema": "public",
+   "table": "student_grades",
+   "rows": 1267,
+   "tenantScoped": true,
+   "csRows": 212
+  },
+  {
+   "schema": "public",
+   "table": "student_history_monthly",
+   "rows": 99,
+   "tenantScoped": true,
+   "csRows": 92
+  },
+  {
+   "schema": "public",
+   "table": "student_homework_videos",
+   "rows": 733,
+   "tenantScoped": true,
+   "csRows": 733
+  },
+  {
+   "schema": "public",
+   "table": "student_memos",
+   "rows": 878,
+   "tenantScoped": true,
+   "csRows": 2
+  },
+  {
+   "schema": "public",
+   "table": "student_onboarding_checks",
+   "rows": 172,
+   "tenantScoped": true,
+   "csRows": 22
+  },
+  {
+   "schema": "public",
+   "table": "student_ontology_summaries",
+   "rows": 452,
+   "tenantScoped": true,
+   "csRows": 452
+  },
+  {
+   "schema": "public",
+   "table": "student_ontology_summary_daily_usage",
+   "rows": 1,
+   "tenantScoped": true,
+   "csRows": 1
+  },
+  {
+   "schema": "public",
+   "table": "student_parent_event_imports",
+   "rows": 1,
+   "tenantScoped": true,
+   "csRows": 1
+  },
+  {
+   "schema": "public",
+   "table": "student_parent_event_recognitions",
+   "rows": 41,
+   "tenantScoped": true,
+   "csRows": 41
+  },
+  {
+   "schema": "public",
+   "table": "student_parent_event_registrations",
+   "rows": 36,
+   "tenantScoped": true,
+   "csRows": 36
+  },
+  {
+   "schema": "public",
+   "table": "student_parent_event_revisions",
+   "rows": 36,
+   "tenantScoped": true,
+   "csRows": 36
+  },
+  {
+   "schema": "public",
+   "table": "student_parent_events",
+   "rows": 14,
+   "tenantScoped": true,
+   "csRows": 14
+  },
+  {
+   "schema": "public",
+   "table": "student_positive_signals",
+   "rows": 1000,
+   "tenantScoped": true,
+   "csRows": 1000
+  },
+  {
+   "schema": "public",
+   "table": "student_siblings",
+   "rows": 0,
+   "tenantScoped": true,
+   "csRows": 0
+  },
+  {
+   "schema": "public",
+   "table": "students",
+   "rows": 1023,
+   "tenantScoped": true,
+   "csRows": 840
+  },
+  {
+   "schema": "public",
+   "table": "super_admin_audit_logs",
+   "rows": 62,
+   "tenantScoped": false,
+   "csRows": null
+  },
+  {
+   "schema": "public",
+   "table": "super_admins",
+   "rows": 4,
+   "tenantScoped": false,
+   "csRows": null
+  },
+  {
+   "schema": "public",
+   "table": "support_notices",
+   "rows": 0,
+   "tenantScoped": false,
+   "csRows": null
+  },
+  {
+   "schema": "public",
+   "table": "support_requests",
+   "rows": 1,
+   "tenantScoped": true,
+   "csRows": 1
+  },
+  {
+   "schema": "public",
+   "table": "sync_agent_attempts",
+   "rows": 1,
+   "tenantScoped": false,
+   "csRows": null
+  },
+  {
+   "schema": "public",
+   "table": "sync_agent_codes",
+   "rows": 1,
+   "tenantScoped": true,
+   "csRows": 1
+  },
+  {
+   "schema": "public",
+   "table": "sync_agent_devices",
+   "rows": 1,
+   "tenantScoped": true,
+   "csRows": 1
+  },
+  {
+   "schema": "public",
+   "table": "sync_agent_events",
+   "rows": 2974,
+   "tenantScoped": true,
+   "csRows": 2974
+  },
+  {
+   "schema": "public",
+   "table": "sync_agent_management_codes",
+   "rows": 1,
+   "tenantScoped": false,
+   "csRows": null
+  },
+  {
+   "schema": "public",
+   "table": "sync_agent_module_sessions",
+   "rows": 2,
+   "tenantScoped": false,
+   "csRows": null
+  },
+  {
+   "schema": "public",
+   "table": "sync_agent_releases",
+   "rows": 8,
+   "tenantScoped": false,
+   "csRows": null
+  },
+  {
+   "schema": "public",
+   "table": "sync_agent_schedule_runs",
+   "rows": 58,
+   "tenantScoped": true,
+   "csRows": 58
+  },
+  {
+   "schema": "public",
+   "table": "sync_agent_settings",
+   "rows": 1,
+   "tenantScoped": true,
+   "csRows": 1
+  },
+  {
+   "schema": "public",
+   "table": "teacher_evaluation_entries",
+   "rows": 0,
+   "tenantScoped": true,
+   "csRows": 0
+  },
+  {
+   "schema": "public",
+   "table": "teacher_evaluation_presets",
+   "rows": 0,
+   "tenantScoped": true,
+   "csRows": 0
+  },
+  {
+   "schema": "public",
+   "table": "teacher_evaluation_settings",
+   "rows": 0,
+   "tenantScoped": true,
+   "csRows": 0
+  },
+  {
+   "schema": "public",
+   "table": "teacher_ment_styles",
+   "rows": 7,
+   "tenantScoped": true,
+   "csRows": 7
+  },
+  {
+   "schema": "public",
+   "table": "teacher_portfolio_months",
+   "rows": 126,
+   "tenantScoped": true,
+   "csRows": 126
+  },
+  {
+   "schema": "public",
+   "table": "teacher_satisfaction_claims",
+   "rows": 0,
+   "tenantScoped": true,
+   "csRows": 0
+  },
+  {
+   "schema": "public",
+   "table": "teacher_satisfaction_judgments",
+   "rows": 996,
+   "tenantScoped": true,
+   "csRows": 996
+  },
+  {
+   "schema": "public",
+   "table": "teacher_schedule_blocks",
+   "rows": 199,
+   "tenantScoped": true,
+   "csRows": 199
+  },
+  {
+   "schema": "public",
+   "table": "tenant_ai_models",
+   "rows": 0,
+   "tenantScoped": true,
+   "csRows": 0
+  },
+  {
+   "schema": "public",
+   "table": "tenant_licenses",
+   "rows": 15,
+   "tenantScoped": true,
+   "csRows": 11
+  },
+  {
+   "schema": "public",
+   "table": "tenant_settings",
+   "rows": 5,
+   "tenantScoped": true,
+   "csRows": 1
+  },
+  {
+   "schema": "public",
+   "table": "tenants",
+   "rows": 5,
+   "tenantScoped": false,
+   "csRows": null
+  },
+  {
+   "schema": "public",
+   "table": "textbook_catalog",
+   "rows": 147,
+   "tenantScoped": true,
+   "csRows": 145
+  },
+  {
+   "schema": "public",
+   "table": "textbook_lessons",
+   "rows": 1297,
+   "tenantScoped": true,
+   "csRows": 1273
+  },
+  {
+   "schema": "public",
+   "table": "textbook_orders",
+   "rows": 632,
+   "tenantScoped": true,
+   "csRows": 616
+  },
+  {
+   "schema": "public",
+   "table": "textbooks",
+   "rows": 160,
+   "tenantScoped": true,
+   "csRows": 158
+  },
+  {
+   "schema": "public",
+   "table": "timetable_cell_memos",
+   "rows": 0,
+   "tenantScoped": true,
+   "csRows": 0
+  },
+  {
+   "schema": "public",
+   "table": "timetable_import_logs",
+   "rows": 24,
+   "tenantScoped": true,
+   "csRows": 24
+  },
+  {
+   "schema": "public",
+   "table": "timetable_lab_apply_jobs",
+   "rows": 1,
+   "tenantScoped": true,
+   "csRows": 1
+  },
+  {
+   "schema": "public",
+   "table": "timetable_lab_drafts",
+   "rows": 5,
+   "tenantScoped": true,
+   "csRows": 5
+  },
+  {
+   "schema": "public",
+   "table": "timetable_memo_sheets",
+   "rows": 1,
+   "tenantScoped": true,
+   "csRows": 1
+  },
+  {
+   "schema": "public",
+   "table": "timetable_snapshots",
+   "rows": 19,
+   "tenantScoped": true,
+   "csRows": 19
+  },
+  {
+   "schema": "public",
+   "table": "todays_math_exam_report_links",
+   "rows": 0,
+   "tenantScoped": true,
+   "csRows": 0
+  },
+  {
+   "schema": "public",
+   "table": "todays_math_result_days",
+   "rows": 0,
+   "tenantScoped": true,
+   "csRows": 0
+  },
+  {
+   "schema": "public",
+   "table": "todays_math_test_results",
+   "rows": 0,
+   "tenantScoped": true,
+   "csRows": 0
+  },
+  {
+   "schema": "public",
+   "table": "tuition_catalog",
+   "rows": 52,
+   "tenantScoped": true,
+   "csRows": 50
+  },
+  {
+   "schema": "public",
+   "table": "tuition_quotes",
+   "rows": 27,
+   "tenantScoped": true,
+   "csRows": 20
+  },
+  {
+   "schema": "public",
+   "table": "user_integrations",
+   "rows": 3,
+   "tenantScoped": true,
+   "csRows": 3
+  },
+  {
+   "schema": "public",
+   "table": "users",
+   "rows": 73,
+   "tenantScoped": true,
+   "csRows": 63
+  },
+  {
+   "schema": "public",
+   "table": "video_homework_auto_outcomes",
+   "rows": 416,
+   "tenantScoped": true,
+   "csRows": 416
+  },
+  {
+   "schema": "public",
+   "table": "video_homework_automation_config",
+   "rows": 1,
+   "tenantScoped": false,
+   "csRows": null
+  },
+  {
+   "schema": "public",
+   "table": "video_homework_cancels",
+   "rows": 57,
+   "tenantScoped": true,
+   "csRows": 57
+  },
+  {
+   "schema": "public",
+   "table": "video_homework_extra_issues",
+   "rows": 30,
+   "tenantScoped": true,
+   "csRows": 30
+  },
+  {
+   "schema": "public",
+   "table": "video_homework_marks",
+   "rows": 465,
+   "tenantScoped": true,
+   "csRows": 465
+  },
+  {
+   "schema": "public",
+   "table": "video_homework_rejections",
+   "rows": 0,
+   "tenantScoped": true,
+   "csRows": 0
+  },
+  {
+   "schema": "public",
+   "table": "withdrawal_report_archive_mappings",
+   "rows": 13,
+   "tenantScoped": true,
+   "csRows": 13
+  },
+  {
+   "schema": "public",
+   "table": "withdrawal_report_archives",
+   "rows": 421,
+   "tenantScoped": true,
+   "csRows": 421
+  },
+  {
+   "schema": "public",
+   "table": "withdrawal_report_events",
+   "rows": 2,
+   "tenantScoped": true,
+   "csRows": 2
+  },
+  {
+   "schema": "public",
+   "table": "withdrawal_report_groups",
+   "rows": 1,
+   "tenantScoped": true,
+   "csRows": 1
+  },
+  {
+   "schema": "public",
+   "table": "withdrawal_report_sources",
+   "rows": 26,
+   "tenantScoped": true,
+   "csRows": 26
+  },
+  {
+   "schema": "public",
+   "table": "withdrawal_reports",
+   "rows": 1,
+   "tenantScoped": true,
+   "csRows": 1
+  },
+  {
+   "schema": "public",
+   "table": "worker_execution_leases",
+   "rows": 0,
+   "tenantScoped": true,
+   "csRows": 0
+  },
+  {
+   "schema": "realtime",
+   "table": "messages",
+   "rows": 0,
+   "tenantScoped": false,
+   "csRows": null
+  },
+  {
+   "schema": "realtime",
+   "table": "messages_2026_10_24",
+   "rows": 0,
+   "tenantScoped": false,
+   "csRows": null
+  },
+  {
+   "schema": "realtime",
+   "table": "messages_2026_10_25",
+   "rows": 0,
+   "tenantScoped": false,
+   "csRows": null
+  },
+  {
+   "schema": "realtime",
+   "table": "messages_2026_10_26",
+   "rows": 0,
+   "tenantScoped": false,
+   "csRows": null
+  },
+  {
+   "schema": "realtime",
+   "table": "messages_2026_10_27",
+   "rows": 0,
+   "tenantScoped": false,
+   "csRows": null
+  },
+  {
+   "schema": "realtime",
+   "table": "messages_2026_10_28",
+   "rows": 0,
+   "tenantScoped": false,
+   "csRows": null
+  },
+  {
+   "schema": "realtime",
+   "table": "messages_2026_10_29",
+   "rows": 0,
+   "tenantScoped": false,
+   "csRows": null
+  },
+  {
+   "schema": "realtime",
+   "table": "messages_2026_10_30",
+   "rows": 0,
+   "tenantScoped": false,
+   "csRows": null
+  },
+  {
+   "schema": "realtime",
+   "table": "schema_migrations",
+   "rows": 91,
+   "tenantScoped": false,
+   "csRows": null
+  },
+  {
+   "schema": "realtime",
+   "table": "subscription",
+   "rows": 186,
+   "tenantScoped": false,
+   "csRows": null
+  },
+  {
+   "schema": "storage",
+   "table": "buckets",
+   "rows": 10,
+   "tenantScoped": false,
+   "csRows": null
+  },
+  {
+   "schema": "storage",
+   "table": "buckets_analytics",
+   "rows": 0,
+   "tenantScoped": false,
+   "csRows": null
+  },
+  {
+   "schema": "storage",
+   "table": "buckets_vectors",
+   "rows": 0,
+   "tenantScoped": false,
+   "csRows": null
+  },
+  {
+   "schema": "storage",
+   "table": "migrations",
+   "rows": 74,
+   "tenantScoped": false,
+   "csRows": null
+  },
+  {
+   "schema": "storage",
+   "table": "objects",
+   "rows": 8286,
+   "tenantScoped": false,
+   "csRows": null
+  },
+  {
+   "schema": "storage",
+   "table": "s3_multipart_uploads",
+   "rows": 0,
+   "tenantScoped": false,
+   "csRows": null
+  },
+  {
+   "schema": "storage",
+   "table": "s3_multipart_uploads_parts",
+   "rows": 0,
+   "tenantScoped": false,
+   "csRows": null
+  },
+  {
+   "schema": "storage",
+   "table": "vector_indexes",
+   "rows": 0,
+   "tenantScoped": false,
+   "csRows": null
+  },
+  {
+   "schema": "supabase_migrations",
+   "table": "schema_migrations",
+   "rows": 1,
+   "tenantScoped": false,
+   "csRows": null
+  },
+  {
+   "schema": "tm_sync_private",
+   "table": "automatic_settings",
+   "rows": 1,
+   "tenantScoped": false,
+   "csRows": null
+  },
+  {
+   "schema": "tm_sync_private",
+   "table": "bindings",
+   "rows": 1,
+   "tenantScoped": true,
+   "csRows": 1
+  },
+  {
+   "schema": "tm_sync_private",
+   "table": "class_state",
+   "rows": 137,
+   "tenantScoped": false,
+   "csRows": null
+  },
+  {
+   "schema": "tm_sync_private",
+   "table": "codes",
+   "rows": 0,
+   "tenantScoped": false,
+   "csRows": null
+  },
+  {
+   "schema": "tm_sync_private",
+   "table": "content_dirty",
+   "rows": 0,
+   "tenantScoped": false,
+   "csRows": null
+  },
+  {
+   "schema": "tm_sync_private",
+   "table": "export_state",
+   "rows": 1,
+   "tenantScoped": false,
+   "csRows": null
+  },
+  {
+   "schema": "tm_sync_private",
+   "table": "function_contract",
+   "rows": 12,
+   "tenantScoped": false,
+   "csRows": null
+  },
+  {
+   "schema": "tm_sync_private",
+   "table": "nonces",
+   "rows": 3,
+   "tenantScoped": false,
+   "csRows": null
+  },
+  {
+   "schema": "tm_sync_private",
+   "table": "outbox",
+   "rows": 7513,
+   "tenantScoped": false,
+   "csRows": null
+  },
+  {
+   "schema": "tm_sync_private",
+   "table": "pages",
+   "rows": 25051,
+   "tenantScoped": false,
+   "csRows": null
+  },
+  {
+   "schema": "tm_sync_private",
+   "table": "snapshots",
+   "rows": 335,
+   "tenantScoped": false,
+   "csRows": null
+  },
+  {
+   "schema": "tm_sync_private",
+   "table": "trigger_contract",
+   "rows": 20,
+   "tenantScoped": false,
+   "csRows": null
+  },
+  {
+   "schema": "tm_sync_private",
+   "table": "user_state",
+   "rows": 56,
+   "tenantScoped": false,
+   "csRows": null
+  },
+  {
+   "schema": "tm_sync_private",
+   "table": "wake_config",
+   "rows": 1,
+   "tenantScoped": false,
+   "csRows": null
+  },
+  {
+   "schema": "tm_sync_private",
+   "table": "wake_transactions",
+   "rows": 1,
+   "tenantScoped": false,
+   "csRows": null
+  },
+  {
+   "schema": "vault",
+   "table": "secrets",
+   "rows": 0,
+   "tenantScoped": false,
+   "csRows": null
+  }
+ ]
+}

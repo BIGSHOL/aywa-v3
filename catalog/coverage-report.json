@@ -1,0 +1,161 @@
+{
+ "verifiedAt": "2026-10-27T08:38:13.029Z",
+ "inventorySourceCommit": "3ffa7f58f109d0a443ff48a58ee5b9ca689d5af3",
+ "currentHead": "3ffa7f58f109d0a443ff48a58ee5b9ca689d5af3",
+ "inventorySha256": "98d5985f25cc8b72c2dd2a3799aa1436fb23f1a4325cbbdf826e50efda8e4123",
+ "result": "PASS",
+ "summary": {
+  "pages": "186/186",
+  "apiRoutes": "92/92",
+  "crons": "23 scheduled + 1 unscheduled handler",
+  "featureModules": "80/80",
+  "serverActionExports": 730,
+  "menuKeys": "53/53",
+  "navEntries": "231/231",
+  "families": 47,
+  "keyOperations": 189,
+  "routeClasses": {
+   "auth": 2,
+   "detail": 36,
+   "dev": 2,
+   "device": 2,
+   "form": 17,
+   "platform": 13,
+   "portal": 5,
+   "print": 12,
+   "public-share": 9,
+   "redirect": 10,
+   "screen": 72,
+   "stats": 6
+  },
+  "gateStatus": {
+   "custom-gate": 24,
+   "layout-gate": 14,
+   "menu-gate": 128,
+   "public-by-design": 14,
+   "session-only": 1,
+   "verified-in-loader": 5
+  },
+  "verification": {
+   "reviewed": 34,
+   "source-read": 13
+  },
+  "remainingUncertainties": {
+   "family": 6,
+   "autoDetected": 1,
+   "notes": 3
+  },
+  "resolvedBySourceRead": 4
+ },
+ "checks": [
+  {
+   "name": "모든 페이지 라우트가 인벤토리에 있다",
+   "ok": true,
+   "failures": [],
+   "total": 186
+  },
+  {
+   "name": "모든 페이지 라우트에 패밀리·클래스가 있다",
+   "ok": true,
+   "failures": []
+  },
+  {
+   "name": "게이트를 찾지 못한 사용자 화면이 없다(공개 설계 제외)",
+   "ok": true,
+   "failures": [],
+   "gateStatus": {
+    "custom-gate": 24,
+    "layout-gate": 14,
+    "menu-gate": 128,
+    "public-by-design": 14,
+    "session-only": 1,
+    "verified-in-loader": 5
+   }
+  },
+  {
+   "name": "모든 API 라우트가 인벤토리에 있다",
+   "ok": true,
+   "failures": [],
+   "total": 92
+  },
+  {
+   "name": "모든 API 라우트에 패밀리·클래스가 있다",
+   "ok": true,
+   "failures": []
+  },
+  {
+   "name": "vercel.json 크론이 모두 인벤토리에 있다",
+   "ok": true,
+   "failures": [],
+   "total": 23
+  },
+  {
+   "name": "모든 기능 모듈이 패밀리에 배정됐다",
+   "ok": true,
+   "failures": [],
+   "total": 80
+  },
+  {
+   "name": "모든 서버 액션 export가 인벤토리에 있다",
+   "ok": true,
+   "failures": [],
+   "files": 252
+  },
+  {
+   "name": "모든 권한 메뉴 키가 패밀리에 배정됐다",
+   "ok": true,
+   "failures": [],
+   "total": 53
+  },
+  {
+   "name": "모든 내비·탭 소스 항목이 인벤토리에 있다",
+   "ok": true,
+   "failures": [],
+   "sources": 34
+  },
+  {
+   "name": "모든 내비·탭 항목이 화면·면·파생 원본으로 풀린다",
+   "ok": true,
+   "failures": []
+  },
+  {
+   "name": "재조립 문제(미배정·없는 함수·없는 테이블·풀리지 않는 주소) 0건",
+   "ok": true,
+   "failures": []
+  },
+  {
+   "name": "커밋된 인벤토리가 재생성 결과와 같다(낡은 생성본 아님)",
+   "ok": true,
+   "failures": []
+  },
+  {
+   "name": "AUDIT.md가 커밋된 인벤토리 해시를 들고 있다",
+   "ok": true,
+   "failures": []
+  },
+  {
+   "name": "시안 13개 화면이 모두 2.0 패밀리와 연결된다",
+   "ok": true,
+   "failures": [],
+   "total": 13
+  },
+  {
+   "name": "AX 4개 화면이 모두 2.0 패밀리와 연결된다",
+   "ok": true,
+   "failures": [],
+   "total": 4
+  },
+  {
+   "name": "AX 이슈 7종이 모두 2.0 패밀리와 연결된다",
+   "ok": true,
+   "failures": [],
+   "total": 7
+  },
+  {
+   "name": "모든 패밀리가 입구·핵심 동작·AX 제안·범위를 가진다",
+   "ok": true,
+   "failures": [],
+   "families": 47
+  }
+ ]
+}
