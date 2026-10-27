@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { loadSnapshot } from './snapshot.mjs';
 import { fullDbRoot } from './full-db-paths.mjs';
 import { openFullDatabase, tenantId } from './full-db.mjs';
+import { createAssistantFromEnv } from './claude-bridge-http.mjs';
 
 const port=Number(process.env.OWNER_CONCEPT_PORT||4310);
 if(!Number.isInteger(port)||port<1024||port>65535)throw new Error('Invalid local dev port');
@@ -28,6 +29,8 @@ const headers={
  'Cross-Origin-Resource-Policy':'same-origin',
  'Content-Security-Policy':"default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; frame-ancestors 'none'; form-action 'none'; base-uri 'none'",
 };
+// Local dev chat on this PC's Claude subscription; facts come from the snapshot above (CLAUDE-DEV.md).
+const assistant=createAssistantFromEnv({snapshot,origins,headers,runtimeDefault:new URL('../claude-runtime/',fullDbRoot)});
 async function documentFile(id){
  const db=await openFullDatabase();let document;
  try{[document]=await db.begin('read only',sql=>sql`select file_path,file_name from public.academy_documents where id=${id} and tenant_id=${tenantId}`);}finally{await db.end();}
@@ -44,6 +47,7 @@ const server=createServer(async(req,res)=>{
  const reject=(code,message)=>{res.writeHead(code,{'Content-Type':'text/plain; charset=utf-8',...headers});res.end(message);};
  if(!hosts.has(req.headers.host)||req.headers.origin&&!origins.has(req.headers.origin)){reject(403,'Local access only');return;}
  let path;try{path=new URL(req.url,`http://127.0.0.1:${port}`).pathname;}catch{reject(400,'Invalid request');return;}
+ if(path===assistant.path){try{await assistant.handle(req,res);}catch{if(!res.headersSent)reject(500,'로컬 비서를 실행하지 못했습니다.');}return;}
  if(!['GET','HEAD'].includes(req.method)){reject(405,'Read-only preview');return;}
  if(req.headers['sec-fetch-site']==='cross-site'&&path!=='/'){reject(403,'Local access only');return;}
  try{
