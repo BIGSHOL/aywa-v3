@@ -143,10 +143,15 @@
   const state={page:'home',month:db.meta.month,homeRange:'recent',studentFilter:'enrolled',studentQuery:'',studentPage:0,admissionFilter:'all',classSubject:'all',classView:'flow',classPage:0,resourceView:'textbooks',taskFilter:'open',vehicle:db.vehicles[0]?.id,season:'term',selectedDate:db.meta.asOf,calendarMonth:db.meta.month,calendarOffset:0,financeMonth:db.meta.month,financePage:0,studentId:'',noteContext:'',search:'',localNotes:[]};
   let toastTimer;
   const toast=text=>{const node=$('#toast');node.textContent=text;node.classList.add('show');clearTimeout(toastTimer);toastTimer=setTimeout(()=>node.classList.remove('show'),3000);};
-  const ax=window.createOwnerWorkspace({db,h,fmt,won,icon,chart,lineChart,exact,dialog,navigate,render,attachScroll,toast,showStudent,showBill,showApproval,showTask,getPage:()=>state.page,hasView:id=>Boolean(id&&views[id]),closeMenu});
+  // Factories: ax (briefing/requests/assistant) first, then workspaces (catalog-driven family screens) which uses ax.
+  const api={db,h,fmt,won,icon,chart,lineChart,exact,dialog,navigate,render,attachScroll,toast,showStudent,showBill,showApproval,showTask,openRecord,canOpenRecord,getPage:()=>state.page,hasView:id=>Boolean(viewFor(id)),closeMenu};
+  const ax=window.createOwnerWorkspace(api);
+  const ws=typeof window.createWorkspaces==='function'?window.createWorkspaces({...api,ax}):null;
+  ax.useWorkspaces?.(ws);
+  const viewFor=page=>{if(!page)return null;if(views[page])return views[page];const id=ws?.familyOf(page);return id&&ws.has(id)?()=>ws.view(id):null;};
   const mobileNav=matchMedia('(max-width: 760px)');
   const scrollObserver=new ResizeObserver(entries=>entries.forEach(e=>fade(e.target)));
-  function fade(node){const top=Math.max(0,node.scrollTop),bottom=Math.max(0,node.scrollHeight-node.clientHeight-top);node.style.setProperty('--fade-top',`${Math.min(26,top)}px`);node.style.setProperty('--fade-bottom',`${Math.min(26,bottom>1?bottom:0)}px`);}
+  function fade(node){const top=Math.max(0,node.scrollTop),bottom=Math.max(0,node.scrollHeight-node.clientHeight-top),left=Math.max(0,node.scrollLeft),right=Math.max(0,node.scrollWidth-node.clientWidth-left);node.style.setProperty('--fade-top',`${Math.min(26,top)}px`);node.style.setProperty('--fade-bottom',`${Math.min(26,bottom>1?bottom:0)}px`);node.style.setProperty('--fade-left',`${Math.min(26,left)}px`);node.style.setProperty('--fade-right',`${Math.min(26,right>1?right:0)}px`);}
   function attachScroll(){document.querySelectorAll('.nav-scroll,.live-scroll').forEach(node=>{fade(node);node.addEventListener('scroll',()=>fade(node),{passive:true});scrollObserver.observe(node);});}
   function shell(){
     const offset=$('.nav-scroll')?.scrollTop||0;
@@ -247,7 +252,10 @@
       `${filters('vehicle',db.vehicles.map(v=>[v.id,v.name]),state.vehicle)}${filters('season',[['term','학기 중'],['vacation','방학']],state.season)}${filters('run',runs.map(r=>[r.id,`${r.direction==='in'?'등원':'하원'} · ${r.label}`]),run?.id)}`+
       `<div class="live-grid">${panel(run?`${h(run.label)} · ${run.direction==='in'?'등원':'하원'}의 연결`:'운행 정보','시간과 정류장을 따라 배정 학생을 확인하세요.',run?`<div class="live-agenda">${run.stops.map(s=>`<div class="live-agenda-item"><span>${h(s.time||'시간 미정')}</span><div><strong>${h(s.name)}</strong><p>${s.riders.length}명 배정</p><div class="live-filter">${s.riders.map(r=>`<button class="button small" data-student="${h(r.studentId)}">${h(r.name)}</button>`).join('')}</div></div></div>`).join('')}</div>`:empty('등록된 운행 정보가 없습니다.'))}${panel(`${shortDate(state.selectedDate)} 탑승 기록`,'배정 정보만으로 탑승 여부를 판단하지 않습니다.',records.length?`<div class="live-agenda">${records.map(b=>`<button class="live-agenda-item" data-student="${h(b.studentId)}"><span>${h(b.vehicle||'차량')}</span><div><strong>${h(b.name)} · ${status(b.status)}</strong><p>${h(b.stop)}</p></div></button>`).join('')}</div>`:empty('이 날짜의 탑승 기록이 없습니다.','아직 기록되지 않은 상태입니다. 실제 미탑승 또는 결석을 의미하지 않습니다.'))}</div>`;
   };
-  const taskKind=k=>({attendance_absent_desk:'출결 확인',video_unassigned:'영상 배정',video_upload_check:'과제영상 확인',unsent_report:'리포트 전달',enrollment_followup:'입학 후속',withdrawal_step:'퇴원 절차',owner_review:'원장 검토'}[k]||'운영 업무');
+  // 2.0 staff_tasks kinds. They open and close from the underlying records (never by a button); owner_review is this prototype's personal task.
+  const taskKind=k=>({report_send_failed:'보고서 발송 실패',followup_due:'상담 후속조치',enrollment_followup:'콜&상담 후속 조치',progress_anomaly:'진도 기록 이상',attendance_absent_desk:'결석 확인 전화',video_upload_check:'영상 업로드 확인',video_unassigned:'미배정 영상',unsent_report:'미발송 수업 보고서',approval_turn:'전자결재 차례',withdrawal_step:'퇴원보고서',help_question:'도움말 질문',owner_review:'원장 개인 업무'}[k]||'자동 할 일');
+  const TASK_SOURCE={report_send_failed:['lesson-reports','learning'],followup_due:['consultations','students'],enrollment_followup:['enrollment','admissions'],progress_anomaly:['students','learning'],attendance_absent_desk:['attendance','students'],video_upload_check:['video-homework','learning'],video_unassigned:['video-homework','learning'],unsent_report:['lesson-reports','learning'],approval_turn:['approvals','approvals'],withdrawal_step:['withdrawal-reports','students'],help_question:['help','settings']};
+  const taskSourcePage=k=>{const [family,legacy]=TASK_SOURCE[k]||[];return family&&viewFor(`workspace-${family}`)?`workspace-${family}`:legacy||'';};
   const approvals=()=>{
     const open=db.tasks.filter(t=>t.status==='open'),rows=db.tasks.filter(t=>state.taskFilter==='all'||t.status===state.taskFilter);
     return heading('결정에서 실행까지','결재의 맥락을 읽고, 담당자의 다음 행동까지 연결합니다.',button(`${icon('plus')} 검토 업무 추가`,'new-task','primary'))+
@@ -317,8 +325,11 @@
     `<div class="live-drawer-summary"><strong>${status(a.status)}</strong><p>${a.local?'시안에서 검토한 상태입니다.':'복사 시점에 기록된 상태입니다.'}</p></div>`+
     panel('결정의 연결','순서에 따른 결재 기록',recordLines(a.steps.map((s,i)=>({date:`${i+1}단계`,title:s.name,text:`${({approve:'승인',approved:'승인',reject:'반려',rejected:'반려',pending:'대기'}[s.decision]||'대기')} ${s.date?shortDate(s.date):''}${s.comment?'\n'+s.comment:''}`}))))+
     (a.note?`<p class="live-pre">${h(a.note)}</p>`:'')+(a.status==='pending'?`<div class="flex">${button('승인해보기','approve','primary')}${button('반려 의견 작성','reject','danger')}</div><p class="live-note">승인·반려의 흐름을 이 시안에서 확인합니다. 운영 문서는 변경되지 않습니다.</p>`:'')+notePanel(`approval:${id}`));}
-  function showTask(id){const t=byId('tasks',id);if(!t)return;state.taskId=id;dialog('detail',t.title,`${taskKind(t.kind)} · ${status(t.status)}`,
-    `<p class="live-pre">${h(t.detail||'상세 내용이 없습니다.')}</p><dl><dt>담당</dt><dd>${h(t.owners.join(', ')||'담당 미지정')}</dd><dt>기한</dt><dd>${t.due||'미정'}</dd><dt>열린 날짜</dt><dd>${t.opened||'미입력'}</dd></dl>${button(t.status==='done'?'다시 열어보기':'완료해보기','complete-task','primary')}<p class="live-note">시안에서 변경한 상태는 새로고침하면 초기화됩니다.</p>`);}
+  function showTask(id){const t=byId('tasks',id);if(!t)return;state.taskId=id;const personal=t.kind==='owner_review'&&t.local,source=taskSourcePage(t.kind);dialog('detail',t.title,`${taskKind(t.kind)} · ${status(t.status)}`,
+    `<p class="live-pre">${h(t.detail||'상세 내용이 없습니다.')}</p><dl><dt>담당</dt><dd>${h(t.owners.join(', ')||'담당 미지정')}</dd><dt>기한</dt><dd>${t.due||'미정'}</dd><dt>열린 날짜</dt><dd>${t.opened||'미입력'}</dd>${t.closed?`<dt>닫힌 날짜</dt><dd>${h(t.closed)}</dd>`:''}</dl>${personal?`${button(t.status==='done'?'다시 열기':'완료 표시','complete-task','primary')}<p class="live-note">원장님이 이 시안에서 만든 개인 업무입니다. 완료 표시는 이 화면에서만 바뀌고 새로고침하면 초기화됩니다.</p>`:`<div class="live-drawer-summary"><strong>자동 할 일</strong><p>2.0은 원본 기록이 처리되면 이 할 일을 자동으로 닫습니다. 버튼으로 완료 처리하지 않습니다.</p></div><div class="flex">${source?`<button class="button primary" data-go="${h(source)}">원본 기록 열기</button>`:''}${button('후속 요청 만들기','task-followup')}</div>`}`);}
+  const RECORD_VIEWS=[['students',showStudent],['invoices',showBill],['approvals',showApproval],['tasks',showTask],['classes',id=>showClass(id)],['staff',id=>showStaff(id)],['admissions',id=>showLead(id)],['messages',id=>showMessage(id)],['textbooks',id=>showBook(id)],['documents',id=>showDocument(id)],['calendar',id=>showEvent(id)]];
+  function canOpenRecord(id){return RECORD_VIEWS.some(([collection])=>db[collection]?.some(x=>String(x.id)===String(id)));}
+  function openRecord(id){const hit=RECORD_VIEWS.find(([collection])=>db[collection]?.some(x=>String(x.id)===String(id)));if(hit)hit[1](String(id));}
   function showBook(id){const b=byId('textbooks',id);if(!b)return;dialog('detail',b.name,`${b.student} · ${status(b.status)}`,`<dl><dt>담당 선생님</dt><dd>${h(b.teacher||'미입력')}</dd><dt>교재 금액</dt><dd>${won(b.price)}</dd><dt>요청일</dt><dd>${b.date||'미입력'}</dd><dt>주문일</dt><dd>${b.ordered||'미입력'}</dd><dt>전달일</dt><dd>${b.delivered||'미입력'}</dd></dl>${b.studentId?`<button class="button" data-student="${h(b.studentId)}">학생의 맥락 보기</button>`:''}`);}
   function showDocument(id){const d=byId('documents',id);if(!d)return;dialog('detail',d.title,`${d.category||'일반 문서'} · ${shortDate(d.updated)} 갱신`,`${d.description?`<p class="live-pre">${h(d.description)}</p>`:''}${d.body?`<div class="live-pre">${h(d.body)}</div>`:''}${d.hasFile?`<button class="button primary" data-document-download="${h(id)}">로컬 첨부파일 다운로드</button>`:empty('첨부파일이 없는 문서입니다.','현재 복사본에 저장된 설명과 본문을 표시합니다.')}`);}
   function showEvent(id){const e=byId('calendar',id);if(!e)return;state.eventId=id;dialog('detail',e.title,`${e.date}${e.end&&e.end!==e.date?' ~ '+e.end:''}`,`<div class="live-drawer-summary"><strong>${h(e.start||'종일 일정')}</strong><p>${h(e.finish?e.finish+' 종료':'학원에 등록된 일정')}</p></div>${button('이 일정의 검토 메모','event-note','primary')}`+notePanel(`event:${id}`));}
@@ -336,7 +347,7 @@
     const q=state.search.trim().toLowerCase(),matched=(text)=>String(text).toLowerCase().includes(q);
     const menus=pages.filter(p=>matched(p[1])),students=db.students.filter(s=>matched(`${s.name} ${s.school}`)).slice(0,10),classes=db.classes.filter(c=>matched(`${c.name} ${c.teacher}`)).slice(0,5),staff=db.staff.filter(s=>matched(s.name)).slice(0,5);
     const item=(attrs,title,note)=>`<button class="live-search-item" ${attrs}><span><strong>${h(title)}</strong><br><small>${h(note)}</small></span>${icon('chevron')}</button>`;
-    return menus.map(p=>item(`data-go="${p[0]}"`,p[1],'메뉴')).join('')+students.map(s=>item(`data-search-student="${h(s.id)}"`,s.name,`${s.school} · ${status(s.status)}`)).join('')+classes.map(c=>item(`data-search-class="${h(c.id)}"`,c.name,c.teacher)).join('')+staff.map(s=>item(`data-search-staff="${h(s.id)}"`,s.name,s.title)).join('')||empty('검색 결과가 없습니다.');
+    return (q?ws?.searchItems(q)||[]:[]).map(w=>item(`data-go="${h(w.page)}"`,w.title,w.note)).join('')+menus.map(p=>item(`data-go="${p[0]}"`,p[1],'메뉴')).join('')+students.map(s=>item(`data-search-student="${h(s.id)}"`,s.name,`${s.school} · ${status(s.status)}`)).join('')+classes.map(c=>item(`data-search-class="${h(c.id)}"`,c.name,c.teacher)).join('')+staff.map(s=>item(`data-search-staff="${h(s.id)}"`,s.name,s.title)).join('')||empty('검색 결과가 없습니다.');
   }
   function showSearch(){state.search='';const node=$('#modal');node.innerHTML=`<header class="live-dialog-header"><h2 id="modal-title">맥락으로 바로 가기</h2><button class="icon-button" data-close="modal" aria-label="닫기">${icon('close')}</button></header><div class="live-form"><input id="global-search" aria-label="통합 검색" placeholder="학생, 학교, 수업, 선생님 검색" autocomplete="off"></div><div class="live-search-results live-scroll" id="search-results">${searchResults()}</div>`;if(!node.open)node.showModal();$('#global-search').focus();attachScroll();}
 
@@ -344,9 +355,9 @@
   function render(){
     const focused=document.activeElement,focusId=focused?.id,selection=typeof focused?.selectionStart==='number'?focused.selectionStart:null;
     const navHref=focused?.closest('#sidebar')&&focused.getAttribute('href');
-    const scrollPositions=new Map([...document.querySelectorAll('[data-scroll-key]')].map(n=>[n.dataset.scrollKey,n.scrollTop]));
-    hideTip();scrollObserver.disconnect();shell();ax.decorateShell();$('#main').innerHTML=state.page==='home'?ax.home():(views[state.page]||home)();ax.decorateView();
-    document.querySelectorAll('[data-scroll-key]').forEach(n=>{if(scrollPositions.has(n.dataset.scrollKey))n.scrollTop=scrollPositions.get(n.dataset.scrollKey);});attachScroll();
+    const scrollPositions=new Map([...document.querySelectorAll('[data-scroll-key]')].map(n=>[n.dataset.scrollKey,[n.scrollTop,n.scrollLeft]]));
+    hideTip();scrollObserver.disconnect();shell();ax.decorateShell();$('#main').innerHTML=state.page==='home'?ax.home():(viewFor(state.page)||home)();ax.decorateView();
+    document.querySelectorAll('[data-scroll-key]').forEach(n=>{const kept=scrollPositions.get(n.dataset.scrollKey);if(kept)[n.scrollTop,n.scrollLeft]=kept;});attachScroll();
     if(focusId){const next=document.getElementById(focusId);next?.focus({preventScroll:true});if(selection!==null&&next?.setSelectionRange)next.setSelectionRange(selection,selection);}
     if(navHref)document.querySelector(`#sidebar a[href="${CSS.escape(navHref)}"]`)?.focus({preventScroll:true});
     syncMenu();
@@ -355,7 +366,7 @@
   function syncMenu(){const open=document.body.classList.contains('menu-open');$('#sidebar').inert=mobileNav.matches&&!open;$('[data-action="menu"]')?.setAttribute('aria-expanded',String(open));}
   function closeMenu(returnFocus){const wasOpen=document.body.classList.contains('menu-open');document.body.classList.remove('menu-open');syncMenu();if(wasOpen&&returnFocus)$('[data-action="menu"]')?.focus();}
   mobileNav.addEventListener('change',syncMenu);
-  function navigate(page){if(!views[page])return;document.querySelectorAll('dialog[open]').forEach(d=>d.close());closeMenu(false);if(location.hash===`#${page}`){state.page=page;render();}else location.hash=page;}
+  function navigate(page){if(!viewFor(page))return;document.querySelectorAll('dialog[open]').forEach(d=>d.close());closeMenu(false);if(location.hash===`#${page}`){state.page=page;render();}else location.hash=page;}
   function showNotes(){dialog('modal','검토 메모와 안내 초안',`${state.localNotes.length}건 · 현재 시안에만 저장됩니다.`,recordLines(state.localNotes.map(n=>({date:shortDate(n.date),title:n.title,text:n.body})),'아직 작성한 검토 메모가 없습니다.'));}
   function exportMetrics(){
     const rows=[['청구월','청구 대상 학생','청구액','복사 시점 누적 수납액','남은 수납액','접수 상담'],...db.trend.map(t=>[t.month,t.payingStudents,t.billed,t.paid,t.remaining,t.inquiries])];
@@ -381,7 +392,8 @@
     'advance-lead':()=>{const a=byId('admissions',state.leadId);if(!a||a.outcome==='enrolled')return;const next=a.outcome==='scheduled'?'consulted':a.outcome==='consulted'||a.outcome==='ai_done'?'enrolled':'scheduled';a.outcome=next;a.local=true;if(next==='enrolled'){const t=db.trend.find(t=>a.date.startsWith(t.month));if(t)t.registered++;}render();showLead(a.id);toast('시안의 상담 단계를 변경했습니다.');},
     approve:()=>{const a=byId('approvals',state.approvalId);if(!a)return;a.status='approved';a.local=true;a.steps.forEach(s=>{if(!['approve','approved'].includes(s.decision)){s.decision='approve';s.date=db.meta.asOf;}});render();showApproval(a.id);toast('시안에서 승인 흐름을 반영했습니다.');},
     reject:()=>previewForm('reject','반려 의견',`approval:${state.approvalId}`),
-    'complete-task':()=>{const t=byId('tasks',state.taskId);if(!t)return;t.status=t.status==='done'?'open':'done';t.local=true;render();showTask(t.id);toast('시안의 업무 상태를 변경했습니다.');},
+    'task-followup':()=>{const t=byId('tasks',state.taskId);if(!t)return;const [family]=TASK_SOURCE[t.kind]||[];$('#detail').close();ax.showRequest({title:`${t.title} 후속 확인`,body:`${taskKind(t.kind)} 할 일이 아직 열려 있습니다(${t.detail||t.title}). 원본 기록을 처리했는지 확인하고, 처리하지 못한 이유와 예정일을 보고해 주세요.`,source:'task',draftKey:`task:${t.id}`,context:family?{family,familyLabel:ws?.area(family)?.label||taskKind(t.kind),records:[{id:t.id,label:t.title}],task:t.id}:{task:t.id,records:[{id:t.id,label:t.title}]}});},
+    'complete-task':()=>{const t=byId('tasks',state.taskId);if(!t||!(t.kind==='owner_review'&&t.local))return;t.status=t.status==='done'?'open':'done';t.local=true;render();showTask(t.id);toast('시안의 업무 상태를 변경했습니다.');},
     'save-name':()=>{const name=$('#academy-name')?.value.trim();if(!name){toast('학원 표시 이름을 입력해 주세요.');return;}db.meta.tenant=name.slice(0,40);render();toast('시안의 표시 이름을 변경했습니다.');},
   };
   document.addEventListener('click',async event=>{
@@ -442,6 +454,6 @@
     toast('시안에 초안을 저장했습니다.');
   });
   document.addEventListener('keydown',event=>{if((event.ctrlKey||event.metaKey)&&event.key.toLowerCase()==='k'){event.preventDefault();showSearch();}if(event.key==='Escape')actions['close-menu']();});
-  window.addEventListener('hashchange',()=>{state.page=location.hash.slice(1)||'home';if(!views[state.page])state.page='home';document.querySelectorAll('dialog[open]').forEach(d=>d.close());closeMenu(false);render();window.scrollTo(0,0);});
-  state.page=location.hash.slice(1)||'home';if(!views[state.page])state.page='home';render();document.fonts.ready.then(()=>document.querySelectorAll('.nav-scroll,.live-scroll').forEach(fade));
+  window.addEventListener('hashchange',()=>{state.page=location.hash.slice(1)||'home';if(!viewFor(state.page))state.page='home';document.querySelectorAll('dialog[open]').forEach(d=>d.close());closeMenu(false);render();window.scrollTo(0,0);});
+  state.page=location.hash.slice(1)||'home';if(!viewFor(state.page))state.page='home';render();document.fonts.ready.then(()=>document.querySelectorAll('.nav-scroll,.live-scroll').forEach(fade));
 })();
