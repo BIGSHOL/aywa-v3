@@ -32,7 +32,7 @@ test('engine: success carries model, versions, origins, list-price estimate; no 
   assert.deepEqual([r.status, r.route, r.model, r.provider], ['decided', 'auto_route', 'jev-1.14.0', 'typesafe']);
   assert.deepEqual([r.area.origin, r.signals.origin, r.assignees[0].origin], ['jev', 'jev', 'rule']);
   assert.equal(r.cost.estimatedUsd, (1000 * 0.042) / 1e6); assert.equal(r.cost.billedThisCall, true);
-  assert.deepEqual(r.versions, { contract: 'owner-decision/1', questions: 'owner-decision-q1', rules: 'owner-decision-r1' });
+  assert.deepEqual(r.versions, { contract: 'owner-decision/1', questions: 'owner-decision-q2', rules: 'owner-decision-r2' });
   assert.ok(!JSON.stringify(r).includes(KEY));
 });
 test('engine: failures are explicit review_needed with no probabilities', async () => {

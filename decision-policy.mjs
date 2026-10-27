@@ -4,7 +4,7 @@
 // automatic "no action" band is narrower than the docs' default and money or
 // personnel matters always go to a person. Assignees come only from caller-supplied
 // candidates (DB relationships); Jev never names or invents a person.
-export const RULES_VERSION = 'owner-decision-r1';
+export const RULES_VERSION = 'owner-decision-r2';
 export const THRESHOLDS = Object.freeze({
   actionYes: 0.7,        // p(open task) at or above: work exists
   actionNo: 0.2,         // p(open task) at or below: automatic no-action (narrower than the docs' 0.3)
@@ -74,13 +74,15 @@ export function applyPolicy(answers, ctx, t = THRESHOLDS) {
     return { status: 'decided', route: 'no_action', assignees: [], reasons: [reason('no_open_task', 'jev')], claudeRecommended: false };
   }
   if (pAction < t.actionYes) return review('human_review', ['uncertain_action', ...(known ? ['known_open_work_guard'] : [])]);
-  if (pContext < t.contextMin || area.choice === 'unclear') return review('insufficient_context', [pContext < t.contextMin ? 'context_insufficient' : 'area_unclear']);
+  const multiple = pSecond >= t.secondAreaMax;
+  const missing = pContext < t.contextMin ? ['context_insufficient'] : area.choice === 'unclear' ? ['area_unclear'] : [];
+  // r2: a manager decision outranks missing context (the manager can ask back); it used to end in insufficient_context.
+  if (pManager >= t.managerMin || ALWAYS_MANAGER.has(area.choice)) {
+    return toManager([ALWAYS_MANAGER.has(area.choice) ? 'personnel_always_reviewed' : 'manager_review_signal', ...(multiple ? ['multiple_areas'] : []), ...missing]);
+  }
+  if (missing.length) return review('insufficient_context', missing);
   if (area.choice === 'none') return review('human_review', ['signals_conflict_action_vs_area_none']);
   if (area.confidence < t.areaConfidenceMin) return review('human_review', ['uncertain_area']);
-  const multiple = pSecond >= t.secondAreaMax;
-  if (pManager >= t.managerMin || ALWAYS_MANAGER.has(area.choice)) {
-    return toManager([ALWAYS_MANAGER.has(area.choice) ? 'personnel_always_reviewed' : 'manager_review_signal', ...(multiple ? ['multiple_areas'] : [])]);
-  }
   if (multiple) return review('human_review', ['multiple_areas']);
   if (!linked(ctx.links, area.choice)) return review('human_review', ['missing_link']);
   const assignees = pickAssignees(ctx.candidates, AREA_ROLES[area.choice] ?? []);

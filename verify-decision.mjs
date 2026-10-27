@@ -94,6 +94,7 @@ test('context: rejects bad dates, future records, unknown roles, unredacted cont
   const issues = patch => validateContext({ ...baseContext(), ...patch }).issues ?? [];
   assert.deepEqual(issues({ today: '2026-02-30' }), ['today']);
   assert.deepEqual(issues({ recordDate: '2026-10-28' }), ['record_date_in_future']);
+  assert.deepEqual(issues({ recordDate: '2026-10-26', thread: [{ date: '2026-10-27', text: '나중 글' }] }), ['thread_after_record']);
   assert.deepEqual(issues({ candidates: [{ staffId: 's1', roles: ['admin'] }] }), ['candidates']);
   assert.deepEqual(issues({ knownOpenWork: [{ area: 'none', code: 'x' }] }), ['known_open_work']);
   for (const text of ['연락처 010-1234-5678 로 주세요', '주민 900101-1234567', 'mail a@b.co', '계좌 110-123-456789']) {
@@ -139,4 +140,10 @@ test('policy: money/personnel/multi-area/unclear never auto-route', () => {
   assert.equal(applyPolicy(answersFor({ areaP: 0.45 }).parsed, ctxOf({})).reasons[0].code, 'uncertain_area');
   const noManager = applyPolicy(answersFor({ manager: 0.9 }).parsed, ctxOf({ candidates: [{ staffId: 't', roles: ['homeroom_teacher'] }] }));
   assert.deepEqual([noManager.route, noManager.reasons.at(-1).code], ['human_review', 'no_eligible_manager']);
+});
+test('policy r2: a manager signal outranks missing context, keeping the context reason visible', () => {
+  const r = applyPolicy(answersFor({ area: 'billing', manager: 0.95, context: 0.25 }).parsed, ctxOf({}));
+  assert.equal(r.route, 'manager_review');
+  assert.deepEqual(r.reasons.map(x => x.code), ['manager_review_signal', 'context_insufficient']);
+  assert.equal(applyPolicy(answersFor({ area: 'unclear', manager: 0.03, context: 0.01 }).parsed, ctxOf({})).route, 'insufficient_context');
 });
