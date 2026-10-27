@@ -86,17 +86,23 @@ window.createFlowUI = function createFlowUI(api) {
     }catch{if(controller.signal.aborted)return;store.status=store.flow?'ready':'error';store.error='업무 흐름 서버에 연결하지 못했습니다.';}
     paint();
   }
-  // Cases come in pages of casePageSize; later pages are read at the same revision (a change in between restarts the
-  // read, up to three times). If they never line up the first page is shown with a note instead of a silent zero.
+  // Cases come in pages of casePageSize. Every page must answer with the head's revision and page count (a change in
+  // between restarts the read with a fresh head, up to three times). Reading stops at 40 pages; anything short of the
+  // whole set is shown with a note (loaded and total counts), never as a silent zero.
+  const MAX_PAGES=40;
   async function allPages(first,signal){
-    const count=Math.min(Number(first.casePageCount)||1,40);if(count<=1){store.partial=false;return first;}
+    if((Number(first.casePageCount)||1)<=1){store.partial=false;return first;}
+    let best=first;
     for(let attempt=0;attempt<3;attempt++){
       const head=attempt?await (await fetch(ENDPOINT,{headers:{Accept:'application/json'},signal})).json():first;
-      const pages=[head];
-      for(let p=2;p<=count;p++){const r=await fetch(`${ENDPOINT}?casePage=${p}`,{headers:{Accept:'application/json'},signal});const j=await r.json().catch(()=>null);if(!r.ok||!j||!Array.isArray(j.cases)||j.revision!==head.revision)break;pages.push(j);}
-      if(pages.length===count){store.partial=false;const seen=new Set();return {...head,cases:pages.flatMap(x=>x.cases).filter(c=>!seen.has(c.id)&&seen.add(c.id))};}
+      if(!head||!Array.isArray(head.cases))break;
+      const total=Number(head.casePageCount)||1,count=Math.min(total,MAX_PAGES),pages=[head];
+      for(let p=2;p<=count;p++){const r=await fetch(`${ENDPOINT}?casePage=${p}`,{headers:{Accept:'application/json'},signal});const j=await r.json().catch(()=>null);if(!r.ok||!j||!Array.isArray(j.cases)||j.revision!==head.revision||(Number(j.casePageCount)||1)!==total)break;pages.push(j);}
+      const seen=new Set(),merged={...head,cases:pages.flatMap(x=>x.cases).filter(c=>!seen.has(c.id)&&seen.add(c.id))};
+      if(pages.length===count){store.partial=count<total;return merged;}
+      best=merged;
     }
-    store.partial=true;return first;
+    store.partial=true;return best;
   }
   // Reads older event pages until this case's whole history is present (or nothing older is left), at most 10 reads.
   async function loadOlder(id){

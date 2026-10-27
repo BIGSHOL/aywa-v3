@@ -235,6 +235,11 @@ try{
     const ready=flowRoutes.mock.state.cases.filter(x=>x.state!=='done'&&x.steps.some(s=>s.status==='ready'&&!s.review&&s.assigneeIds.includes(person.id))).length;
     await expectText('.ax-signals .fl-count .ax-signal-value',new RegExp(`^${ready.toLocaleString('ko-KR')}건$`));
     assert(await showCard(lastId),'Later-page work is reachable');
+    // A case added while the pages are being read changes the page count: the read restarts and the new last page is not lost.
+    let grown='';await page.route(url=>url.pathname==='/api/flow'&&url.searchParams.get('casePage')==='2',route=>{if(!grown)grown=flowRoutes.mock.seedBulk(500,person.id);return route.fallback();});
+    flowRoutes.mock.seedBulk(1,person.id);await page.evaluate(()=>window.dispatchEvent(new Event('focus')));
+    await expectText('.ax-signals .fl-count .ax-signal-value',new RegExp(`^${(ready+501).toLocaleString('ko-KR')}건$`),'Work on the page that appeared mid-read is counted');
+    assert(grown&&await showCard(grown),'The last page that appeared mid-read is reachable');
     await asActor(owner.id);await page.locator('[data-fl="filter"][data-id="done"]').first().click();
     await (await showCard(absenceId)).locator('[data-fl="open"]').first().click();
     await expectText('#detail .ax-request-timeline',/아직 불러오지 않았습니다/);

@@ -82,7 +82,7 @@ export function createFlowMock(db){
   // first cases' history falls outside the newest 200 events.
   function seedBulk(n,assigneeId){
     let last='';
-    for(let i=0;i<n;i++){const id=`src-bulk-${i}`,c=base(id,{kind:'source',scenario:null,familyId:'tasks-notifications',title:`시험 자동 할 일 ${i+1}`,summary:'페이지 시험용 원본 할 일',closure:'fact',origin:'snapshot',sourceStatus:'open',sourceStatusLabel:'처리 전',factClosed:false,closedReason:null,doneRule:'원본 기록이 2.0에서 처리되면 닫힙니다.'});
+    for(let k=0;k<n;k++){const i=state.bulk=(state.bulk||0)+1,id=`src-bulk-${i}`,c=base(id,{kind:'source',scenario:null,familyId:'tasks-notifications',title:`시험 자동 할 일 ${i}`,summary:'페이지 시험용 원본 할 일',closure:'fact',origin:'snapshot',sourceStatus:'open',sourceStatusLabel:'처리 전',factClosed:false,closedReason:null,doneRule:'원본 기록이 2.0에서 처리되면 닫힙니다.'});
       c.steps=[{...step(id,1,{key:'source_task',label:'시험 자동 할 일',role:'source',evidenceRequired:true},{assigneeIds:[assigneeId],queue:null,rule:'2.0 할 일 담당'},1),status:'ready'}];
       state.cases.push(c);const e=evt(c,'source.task_opened','시험 자동 할 일',null,{origin:'snapshot',targetActorIds:[assigneeId]});c.trigger={eventId:e.id,type:'source.task_opened',label:'시험 자동 할 일',actorId:null,at:e.at};refresh(c);last=id;}
     state.revision+=1;return last;
