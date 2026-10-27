@@ -2,6 +2,7 @@
 // 영역 id = 패밀리 id(백엔드 model.workspaces.families와 같은 키). page = 'workspace-' + id.
 // facet.ref = 원문 근거(빌드·검증 전용, 브라우저로 나가지 않는다): { route } 또는 { file, has }(그 파일에 has 문자열이 있어야 함).
 // action.ops = 그 패밀리 핵심 동작 ID의 뒷부분(다른 패밀리는 'family.op'). 원장 표시 패밀리의 모든 핵심 동작은 어느 action엔가 연결돼야 한다.
+// 핵심 동작 밖에서 새로 찾은 동작 묶음(operation-groups.mjs DISCOVERED)도 같은 id 공간이다 — 그 묶음의 dest.action이 이 동작이면 빌드가 sourceOperationIds에 더한다.
 // mode: navigate = 같은 영역의 facet 또는 기존 시안 화면으로 이동 · preview = 저장하지 않는 로컬 계산·양식 미리보기 ·
 //       request = 기존 다중 담당자 요청 흐름에 넣을 초안(원장이 담당자·기한을 고른다). 실제 쓰기·발송·결제는 없다.
 // 필드 선택지는 opt('출처 id') — option-sources.mjs가 2.0 코드에서 읽는다.
@@ -133,6 +134,12 @@ export const AREAS = [
       pre('classes.delegation', '결근 대체 위임', [cls(), staff('대신 맡을 선생님'), date('from', '시작일'), date('to', '종료일')], ['createClassDelegation'], '결근 대체 위임 미리보기', '기간 동안 다른 선생님이 반을 맡는 내용을 확인합니다.'),
       pre('classes.enroll', '수강 배정', [student(), cls(), date('start', '시작일')], ['createEnrollment', 'rescheduleEnrollment'], '수강 배정 미리보기', '원생을 반에 배정하는 내용을 확인합니다.'),
       req('classes.term-end', '운영 기간 종료 요청', [cls(), date('end', '종료일'), memo()], ['endClassTerm'], '반 운영 기간 종료', '아래 반의 운영 기간을 종료해 주세요. 열린 수강은 종료일로 닫힙니다.'),
+      pre('classes.classroom-auto', '강의실 자동배정 미리보기', [], ['classroom-auto'], '강의실 자동배정 미리보기', '반마다 강의실을 자동으로 정했을 때 바뀌는 반만 확인합니다. 적용하지 않습니다.'),
+      req('classes.level', '반 레벨 변경 요청', [cls(), f('change', '변경', 'select', { required: true,
+        options: [{ value: 'number-up', label: '숫자 올리기' }, { value: 'number-down', label: '숫자 내리기' }, { value: 'class-up', label: '레벨 올리기' }, { value: 'class-down', label: '레벨 내리기' }],
+        evidence: [{ file: 'src/features/timetable/lib/level.ts', has: ['"number-up" | "number-down" | "class-up" | "class-down"'] },
+          { file: 'src/features/teacher-view/i18n.ts', has: ['숫자 올리기 (예: DP3 → DP4)', '숫자 내리기 (예: DP4 → DP3)', '레벨 올리기 (예: DP3 → PL1)', '레벨 내리기 (예: PL1 → DP3)'] }] })],
+      ['timetable.class-level'], '반 레벨 변경', '아래 영어 반의 이름을 레벨 규칙에 따라 바꿔 주세요(예: DP3 → DP4). 같은 이름의 반이 이미 있으면 바뀌지 않습니다.'),
     ] },
   { id: 'makeups', label: '보강관리', group: 'class', viewKind: 'flow', summary: '보강 사례를 접수부터 인정·종결까지 단계로 봅니다.',
     facets: [fc('cases', '보강관리', route('/makeups')), fc('candidates', '미연결 근거', route('/makeups/candidates'), 'face'), fc('dry-run', '도입 사전 점검', route('/makeups/dry-run'), 'face'), fc('reconciliation', '대사·복구', route('/makeups/reconciliation'), 'face')],
@@ -255,6 +262,8 @@ export const AREAS = [
       pre('staff.leave', '휴가 신청 미리보기', [staff('휴가 직원'), sel('type', '휴가 유형', 'leaveType'), date('from', '시작일'), date('to', '종료일')], ['requestLeave', 'addLeaveAdjustment'], '휴가 신청 미리보기', '휴가 기간과 유형을 확인합니다.'),
       req('staff.contract', '계약 갱신 요청', [staff('대상 직원'), date('end', '계약 만료일'), memo()], ['updateStaffContract'], '근로계약 갱신', '아래 직원의 계약 갱신을 준비해 주세요.'),
       req('staff.task', '직원 업무 요청', [staff('담당 직원'), f('title', '업무', 'text', { required: true }), date('due', '기한')], ['createStaffTask'], '직원 업무', '아래 업무를 진행하고 완료되면 알려 주세요.'),
+      req('staff.schedule', '근무 설정 변경 요청', [staff('대상 직원'), f('days', '근무 요일', 'multiselect', { required: true, ...opt('weekday') }), f('time', '근무 시간', 'text'), memo()],
+        ['work-schedule'], '근무 설정 변경', '아래 직원의 주간 근무 일정을 바꿔 주세요.'),
     ] },
   { id: 'payroll', label: '급여·명세서', group: 'operation', viewKind: 'report', summary: '급여명세서와 강사 정산을 봅니다.',
     facets: [fc('payslip', '급여명세서', route('/payroll/[teacherId]/payslip')), fc('teacher', '강사 정산', route('/staff/[id]/payroll'), 'face'), fc('month', '월별 급여', route('/staff/payroll'), 'face')],

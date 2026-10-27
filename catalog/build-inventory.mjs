@@ -22,6 +22,10 @@ writeFileSync(join(catalogDir, 'feature-inventory.json'), json);
 const { buildWorkspaceCatalog } = await import('./build-workspace-catalog.mjs');
 const wsBuilt = buildWorkspaceCatalog({ inventoryText: json });
 const wsCatalog = wsBuilt.problems.length ? null : wsBuilt.catalog;
+// 서버 액션 export 추적표도 같은 인벤토리·카탈로그로 계산만 한다(파일은 build-operation-coverage.mjs가 쓴다).
+const { buildOperationCoverage } = await import('./build-operation-coverage.mjs');
+const opBuilt = wsCatalog ? buildOperationCoverage({ inventoryText: json, catalog: wsCatalog }) : null;
+const opCov = opBuilt && !opBuilt.problems.length ? opBuilt.coverage : null;
 // 해시는 줄바꿈을 LF로 맞춘 뒤 계산한다(Windows 체크아웃의 CRLF 변환에도 같은 값).
 const digest = createHash('sha256').update(json.replace(/\r\n/g, '\n')).digest('hex');
 
@@ -50,6 +54,11 @@ L.push(`- 불확실성은 0으로 꾸미지 않았다: 남은 패밀리 기록 $
 L.push(`- 검증 수준(원문 검토이며 실행 시험이 아니다): 패밀리 ${Object.entries(c.verification).map(([k, v]) => `${k} ${v}`).join(' · ')} — 패밀리마다 핵심 동작 대표 서버 액션의 본문 머리와 권한·쓰기·감사·외부 호출 줄을 줄 번호로 읽고 근거 앵커를 남겼다(본문 전체 정독이 아닌 곳은 readScope에 적음). API ${c.apiRoutes}개: ${Object.entries(c.apiVerification).map(([k, v]) => `${k} ${v}`).join(' · ')}(핸들러 본문 전체를 읽음, 부분 읽기 ${c.apiPartialReads}건은 §11).`);
 L.push(`- 근거 앵커는 검증기가 줄 단위로 확인한다(파일·줄·포함 문자열). 실제 실행·외부 연동·원본 DB 접근은 하지 않았다 — 실행이 필요한 질문은 '실행 확인 필요'로 남겼다.`);
 L.push(`- 원장 표시: ${c.ownerVisibleFamilies}개 패밀리(핵심 동작 ${c.ownerVisibleKeyOperations}개) · 감사 전용 ${c.auditOnlyFamilies}개(인증·운영 콘솔·개발·데모·공용 기반·녹음 파이프라인). 원장 표시 패밀리는 3.0 카탈로그(§13)에서 모든 핵심 동작에 목적지를 가진다.`);
+if (opCov) {
+  const k = opCov.counts;
+  L.push(`- **export 단위 회계(§13.2)**: 서버 액션 export ${k.exports}개 전부가 동작 묶음 ${k.groups}개(핵심 동작 ${k.groupsBySource['key-op']} · 새로 찾은 묶음 ${k.groupsBySource.discovered} · 개인 보기 설정 ${k.groupsBySource['view-prefs']})에 들어갔다 — 묶음 없는 export 0. 본문 추적 종류: 쓰기 ${k.byKind.mutation} · 읽기 ${k.byKind.read} · 도우미 ${k.byKind.helper ?? 0}(사람이 고친 판정 ${k.kindOverrides}건). 쓰기 ${k.mutationExports}개 모두 3.0 목적지가 있고 원장 표시 묶음 ${k.ownerFacingGroups}개가 모두 카탈로그 동작·화면 면에 닿는다.`);
+  L.push(`- **검토 수준을 섞지 않는다**: 730개 전부 기계 추적(TS AST — 본문과 부르는 도우미의 게이트·표·RPC·외부 연동을 줄 근거로) · 사람의 검토는 ${Object.entries(k.review).map(([a, b]) => `${{ 'body-read': '본문 직접 읽음', 'key-action': '핵심 동작 검토', 'digest-reviewed': '요약 검토' }[a] || a} ${b}`).join(' · ')}. "730개 본문 전체를 읽었다"가 아니다.`);
+}
 L.push('');
 L.push('## 2. 방법');
 L.push('');
@@ -200,6 +209,7 @@ for (const u of inventory.uncertainties.autoDetected) L.push(`- ${u.route ? `\`$
 L.push('');
 L.push('불확실성 — 일부만 읽은 API 본문:');
 for (const u of inventory.uncertainties.apiPartialReads) L.push(`- \`${u.api}\` (${u.family}) — ${u.issue}`);
+if (!inventory.uncertainties.apiPartialReads.length) L.push('- 없음 — API 92개 모두 핸들러 본문 전체를 읽었다(`/api/webhooks/assemblyai`는 route 본문 1,012줄과 직접 부르는 상태 도우미까지; 분석 프롬프트 본문은 해당 패밀리 검토 범위).');
 L.push('');
 L.push('메모:');
 for (const n of inventory.uncertainties.notes) L.push(`- ${n}`);
@@ -213,6 +223,8 @@ L.push('node experiments/owner-concept/catalog/build-inventory.mjs    # 인벤�
 L.push('node experiments/owner-concept/catalog/verify-catalog.mjs     # 소스 ↔ 인벤토리 집합 대조 + 근거 앵커 + 문서 해시');
 L.push('node experiments/owner-concept/catalog/build-workspace-catalog.mjs   # 3.0 카탈로그 생성(문제 1건이라도 있으면 실패)');
 L.push('node experiments/owner-concept/verify-workspace-catalog.mjs          # 카탈로그 재생성 일치·스키마·커버리지·선택지·문구·정적 서빙');
+L.push('node experiments/owner-concept/catalog/build-operation-coverage.mjs  # 서버 액션 export 추적표 생성(묶음 없는 export가 있으면 실패)');
+L.push('node experiments/owner-concept/catalog/verify-operation-coverage.mjs # 독립 AST 집계 대조·묶음·목적지·근거 줄·수치');
 L.push('```');
 L.push('');
 L.push('검증기가 실패하는 조건: 새 페이지·API·크론·모듈·액션 파일·메뉴 키·내비 항목이 인벤토리에 없거나, 인벤토리에만 있는 낡은 항목이 있거나, 핵심 동작의 함수가 사라졌거나, 시안 화면·AX 화면이 어느 패밀리와도 이어지지 않았거나, 이 문서가 인벤토리와 다른 해시를 들고 있을 때. 결과는 `coverage-report.json`.');
@@ -224,7 +236,7 @@ if (wsCatalog) {
   L.push('생성물 `experiments/owner-concept/workspace-catalog.js`(같은 데이터 `catalog/workspace-catalog.json`) · 생성기 `catalog/build-workspace-catalog.mjs` · 검증기 `verify-workspace-catalog.mjs`.');
   L.push('');
   L.push(`- 영역 ${cv.areas}(= 원장 표시 패밀리) · facet ${cv.facets} · 동작 ${cv.actions}(${Object.entries(cv.actionsByMode).map(([k, v]) => `${k} ${v}`).join(' · ')}) · 원장 표시 핵심 동작 ${cv.operationsWithDestination}/${cv.ownerVisibleOperations}에 목적지 · 실제 쓰기 연결 ${cv.productionLinkedWrites}.`);
-  L.push(`- 수치 구분: 원문 검토(source-audited) = 패밀리 ${c.families}·API ${c.apiRoutes} / 런타임 미리보기(runtime-previews) = 동작 ${cv.actions}(전부 로컬, liveWrite:false) / 실제 운영 연결(production-linked) = ${cv.productionLinkedWrites}.`);
+  L.push(`- 수치 구분: 원문 검토(source-audited) = 패밀리 ${c.families}·API ${c.apiRoutes}${opCov ? ` · 서버 액션 export ${opCov.counts.exports} 회계(본문 직접 ${opCov.counts.review['body-read'] || 0} / 핵심 동작 검토 ${opCov.counts.review['key-action'] || 0} / 요약 검토 ${opCov.counts.review['digest-reviewed'] || 0})` : ''} / 런타임 미리보기(runtime-previews) = 동작 ${cv.actions}(전부 로컬, liveWrite:false) / 실제 운영 연결(production-linked) = ${cv.productionLinkedWrites}.`);
   L.push('- facet은 2.0 화면의 실제 탭·면·결재함·단계를 원문 근거(라우트 또는 파일 안 문자열)로 확인했고, 필드 선택지는 2.0 열거값을 TS AST로 그대로 읽는다(catalog/option-sources.mjs).');
   L.push('');
   L.push(table(['영역', '그룹', '보기', 'facet', '동작(이동/미리보기/요청)'], wsCatalog.areas.map(a => [`${a.id} ${a.label}`, a.group, a.viewKind, a.facets.map(x => x.label).join(' · '), ['navigate', 'preview', 'request'].map(m => a.actions.filter(x => x.mode === m).length).join('/')])));
@@ -234,29 +246,68 @@ L.push('### 13.1 워크플로·쓰기 공백 — 목적지가 있다고 완성�
 L.push('');
 {
   const levelLabel = { simulated: '세션 흉내(저장 안 됨)', 'read-only': '읽기 전용', absent: '없음' };
-  const writeExports = id => inventory.serverActions.filter(s => s.family === id && s.writes).flatMap(s => s.exports.filter(e => e.verb !== '조회'));
-  const writeFiles = id => inventory.serverActions.filter(s => s.family === id && s.writes).length;
+  // 쓰기 수 = export 본문 추적(§13.2)의 mutation. 옛 파일 단위 추정(쓰기 파일 안의 조회 아닌 이름)은 비교용으로만 적는다.
+  const heuristic = inventory.serverActions.filter(s => s.writes).reduce((n, s) => n + s.exports.filter(e => e.verb !== '조회').length, 0);
+  const writeExports = id => (opCov ? opCov.exports.filter(x => x.family === id && x.kind === 'mutation') : []);
+  const writeFiles = id => new Set(writeExports(id).map(x => x.file)).size;
   const visibleFams = inventory.families.filter(f => f.ownerVisible);
   const totalWrites = visibleFams.reduce((n, f) => n + writeExports(f.id).length, 0);
-  const allWrites = inventory.families.reduce((n, f) => n + writeExports(f.id).length, 0);
+  const allWrites = opCov ? opCov.counts.mutationExports : 0;
   const lv = {};
   for (const f of visibleFams) lv[f.ax.level] = (lv[f.ax.level] || 0) + 1;
   L.push(`- 카탈로그 ${wsCatalog ? wsCatalog.coverage.operationsWithDestination : '?'}/${wsCatalog ? wsCatalog.coverage.ownerVisibleOperations : '?'}은 "원장이 그 일로 갈 곳이 있다"는 뜻이지 "3.0에서 그 일을 할 수 있다"는 뜻이 아니다. 미리보기(preview)는 입력 모양·2.0 선택지·근거를 보여 주는 로컬 화면이고, 요청(request)은 사람에게 보내는 원장 요청 초안이다. 둘 다 2.0의 상태 전이(결재 순서, 퇴원 처리 트랜잭션, 청구·배분 재확정, 발송 큐, 사실 기반 할 일 종료)를 실행하지 않는다.`);
-  L.push(`- 2.0 쓰기 동작(쓰기가 있는 액션 파일의 조회 아닌 export): 전체 ${allWrites}개 · 원장 표시 패밀리 ${totalWrites}개. 이 중 3.0 시안에서 2.0 기록(원본·복사본 DB)까지 가는 것 **0개**(로컬 오버레이 저장은 별개이며 2.0 쓰기를 대신하지 않는다).`);
+  L.push(`- 2.0 쓰기 export(본문 추적 — DB·감사로그·스토리지·쿠키·알림·외부 발신 중 하나라도): 전체 ${allWrites}개 · 원장 표시 패밀리 ${totalWrites}개(1차 감사의 파일 단위 추정은 ${heuristic}개였다). 이 중 3.0 시안에서 2.0 기록(원본·복사본 DB)까지 가는 것 **0개**(로컬 오버레이 저장은 별개이며 2.0 쓰기를 대신하지 않는다).`);
   L.push(`- 원장 표시 패밀리 ${visibleFams.length}개의 지금 시안 수준: ${Object.entries(lv).map(([k, v]) => `${levelLabel[k] || k} ${v}`).join(' · ')}. 카탈로그는 이 수준을 올리지 않는다(화면 목적지를 줄 뿐).`);
   L.push('- 3.0의 다음 층(이벤트 → 규칙 → 케이스·단계 → 역할 수신함 → 근거 보고 → 다음 이벤트)이 메워야 할 것은 아래 "남은 워크플로" 열이다. 사실 기반으로 닫히는 2.0 할 일은 3.0이 대신 닫지 않는다.');
   L.push('');
-  L.push(table(['패밀리', '2.0 쓰기 동작(파일)', '알림·AI·감사', '지금 시안', '3.0 목적지(이동/미리보기/요청)', '3.0 실제 쓰기', '남은 워크플로'], visibleFams.map(f => {
+  L.push(table(['패밀리', '2.0 쓰기 export(파일)', '알림·AI·감사', '지금 시안', '3.0 목적지(이동/미리보기/요청)', '3.0 실제 쓰기', '남은 워크플로'], visibleFams.map(f => {
     const area = wsCatalog?.areas.find(a => a.id === f.id);
     const flags = [f.operations.sendsNotifications && '알림', f.operations.usesAI && 'AI', f.operations.writesAuditLog && '감사'].filter(Boolean).join('·') || '—';
     return [`${f.id} ${f.label}`, `${writeExports(f.id).length}(${writeFiles(f.id)})`, flags, levelLabel[f.ax.level] || f.ax.level, area ? ['navigate', 'preview', 'request'].map(m => area.actions.filter(x => x.mode === m).length).join('/') : '—', '0', f.ax.missing || '—'];
   })));
 }
 L.push('');
+L.push('### 13.2 서버 액션 export 추적 — 730개 하나도 빼지 않고');
+L.push('');
+if (opCov) {
+  const k = opCov.counts;
+  const RL = { 'body-read': '본문 직접 읽음', 'key-action': '핵심 동작 검토', 'digest-reviewed': '요약 검토' };
+  const RT = { 'read-preview': '읽기·이동', 'local-preview': '로컬 미리보기', 'manual-request': '사람에게 요청', 'ui-state': '화면 상태', 'audit-only': '감사 전용' };
+  L.push('기계 판독본 `catalog/operation-coverage.json` · 생성기 `catalog/build-operation-coverage.mjs` · 묶음 판단 `catalog/operation-groups.mjs` · 본문 분석기 `catalog/operation-analysis.mjs` · 검증기 `catalog/verify-operation-coverage.mjs`.');
+  L.push('');
+  L.push(`- 집계: export ${k.exports}개(파일 ${k.files}개) — 스캐너(정규식)와 따로 TS AST로 'use server' 파일을 다시 세어 같은 집합임을 검증기가 확인한다(함수 안 인라인 서버 액션 0).`);
+  L.push(`- 종류(본문 추적): 쓰기 ${k.byKind.mutation} · 읽기 ${k.byKind.read} · 도우미 ${k.byKind.helper ?? 0}. 2.0 효과: ${Object.entries(k.effects).map(([a, b]) => `${a} ${b}`).join(' · ')}.`);
+  L.push(`- 묶음 배정: ${Object.entries(k.groupSource).map(([a, b]) => `${{ 'key-op': '같은 패밀리 핵심 동작', 'key-op-cross-family': '다른 패밀리 핵심 동작', 'key-op-attached': '핵심 동작에 붙임(변형·짝·입력 보조)', discovered: '새로 찾은 묶음', 'view-prefs': '개인 보기 설정' }[a] || a} ${b}`).join(' · ')}.`);
+  L.push(`- 3.0 목적지(묶음 ${k.groups}개): ${Object.entries(k.runtime).map(([a, b]) => `${a.split('+').map(x => RT[x] || x).join('+')} ${b}`).join(' · ')}. 실제 운영 연결 ${k.productionLinkedWrites}.`);
+  L.push(`- 검토 수준: ${Object.entries(k.review).map(([a, b]) => `${RL[a] || a} ${b}`).join(' · ')} — ${Object.entries(opCov.method.reviewLevels).map(([a, b]) => `${RL[a] || a} = ${b}`).join('; ')}.`);
+  L.push(`- 방법의 한계: ${opCov.method.limits.join(' ')}`);
+  L.push('');
+  L.push(table(['패밀리', 'export', '쓰기/읽기/도우미', '묶음(핵심/새로/보기)', '검토(본문/핵심/요약)', '외부·알림·AI'], [...new Set(opCov.exports.map(x => x.family))].sort().map(fid => {
+    const xs = opCov.exports.filter(x => x.family === fid);
+    const n = (f) => xs.filter(f).length;
+    const gs = [...new Set(xs.map(x => x.group))].map(id => opCov.groups.find(g => g.id === id));
+    const fx = [...new Set(xs.flatMap(x => x.effects.filter(e => ['external-send', 'external-read', 'notify', 'push', 'ai'].includes(e))))].join('·') || '—';
+    return [fid, xs.length, `${n(x => x.kind === 'mutation')}/${n(x => x.kind === 'read')}/${n(x => x.kind === 'helper')}`,
+      `${gs.filter(g => g.source === 'key-op').length}/${gs.filter(g => g.source === 'discovered').length}/${gs.filter(g => g.source === 'view-prefs').length}`,
+      `${n(x => x.review === 'body-read')}/${n(x => x.review === 'key-action')}/${n(x => x.review === 'digest-reviewed')}`, fx];
+  })));
+  L.push('');
+  L.push(`새로 찾은 동작 묶음 ${k.discoveredGroups}개 — 핵심 동작 목록에 없던 독립 동작(빠진 기능이 아니라 목록이 덜 세던 것). 원장 기능인 셋(강의실 자동배정·반 레벨 변경·근무 설정)은 카탈로그 동작을 새로 만들었다:`);
+  L.push('');
+  L.push(table(['묶음', '동작', 'export', '쓰기', '3.0 목적지', '원문에서 확인한 것'], opCov.groups.filter(g => g.source === 'discovered').map(g => [g.id, g.label, g.exports, g.kinds.mutation || 0,
+    g.destination.type === 'action' ? g.destination.actions.join(', ') : g.destination.type === 'facet' ? `${g.destination.page}/${g.destination.facet}` : `화면 상태 — ${g.destination.reason}`, g.note || '—'])));
+  L.push('');
+  L.push('사람이 본문을 보고 고친 기계 판정(경로를 가리지 않는 추적의 과대 추정):');
+  for (const x of opCov.exports.filter(x => x.machineKind)) L.push(`- \`${x.family}|${x.name}\` ${x.machineKind} → ${x.kind} — ${x.kindReason}`);
+  const notifTypes = [...new Set(opCov.exports.flatMap(x => x.notificationTypes))].sort();
+  L.push('');
+  L.push(`알림 종류: 서버 액션 본문 추적에서 \`notifyUsers\`의 type이 잡힌 것은 ${notifTypes.length}종(${notifTypes.join(', ')})이다. 39종 목록의 나머지는 API·크론·DB 트리거·워커에서 만들거나 type이 동적이다 — 이 표만으로 출처를 단정하지 않는다.`);
+} else L.push('추적표를 계산하지 못했다 — build-operation-coverage.mjs의 문제를 먼저 해결할 것.');
+L.push('');
 L.push('## 14. 다음 구현 권고');
 L.push('');
 L.push('1. **요청 저장소부터** — AX "요청한 업무"(원장 → 담당자, 기한·우선순위·알림 채널, 확인·완료 보고)를 저장할 테이블이 2.0에 없다. `staff_tasks`는 기록의 사실로 자동 생성·자동 종료되는 할 일이라 사람이 보낸 요청과 섞으면 종료 규칙이 깨진다. 새 테이블(tenant_id + RLS) + 감사로그 + 강사 미니셸 수신함(teacher-workspace)이 한 묶음이다.');
-L.push('2. **P0 이슈 원천을 실제 판정으로 교체** — 시안 이슈 7종은 복사본 집계다. 2.0이 이미 판정하는 원천을 그대로 읽는다: 할 일 11종(`staff_tasks.kind`), 알림 38종(`notifications.type`), 대시보드 위젯 36종의 판정 함수(`src/features/dashboard/*`). 같은 숫자를 두 번 계산하지 않는다(같은 데이터는 같은 원본).');
+L.push('2. **P0 이슈 원천을 실제 판정으로 교체** — 시안 이슈 7종은 복사본 집계다. 2.0이 이미 판정하는 원천을 그대로 읽는다: 할 일 11종(`staff_tasks.kind`), 알림 39종(`notifications.type`), 대시보드 위젯 36종의 판정 함수(`src/features/dashboard/*`). 같은 숫자를 두 번 계산하지 않는다(같은 데이터는 같은 원본).');
 L.push('3. **근거 패널 = 2.0 상세 화면 딥링크** — 원생 상세(탭 13), 반 상세, 청구 상세, 상담 상세, 결재 문서, 보고서 발송 큐. 3.0 메뉴를 186개로 늘리지 않고 이슈 → 근거 → 2.0 화면(창)으로 들어간다.');
 L.push('4. **결정 이슈는 실제 경로로** — 결재(`decideDocument`), 퇴원보고서(`changeWithdrawalReport`), 학부모 답글(`requestParentReply`)처럼 원장이 결정하는 동작은 시안의 세션 흉내를 걷고 2.0 서버 액션을 그대로 부른다.');
 L.push('5. **자동화 = 2.0 슬랙 규칙 구조** — 범주 12·프리셋 4·전달 이벤트 38·요약 일정·방해금지. AX 자동화 토글은 새 저장소를 만들지 말고 `slack_rules`/`tenant_settings` 위에 얹는다.');

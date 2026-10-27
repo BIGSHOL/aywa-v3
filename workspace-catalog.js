@@ -3,8 +3,8 @@
 window.AxCatalog = {
  "schemaVersion": 1,
  "source": {
-  "inventorySha256": "f66ed58b6e5958caf7f1af1e71326dad593e2c344c5aa3c6775ed810241f11eb",
-  "sourceCommit": "2c5be8b7b4d4d8c2a30a33a40656d7cec967a005"
+  "inventorySha256": "af99e3ccd8ea53faf33bb1386de7ac109e48c5e651c1ce25c3315ed9dd154ea8",
+  "sourceCommit": "3413658d6062962577a6173872cf7a260dfad346"
  },
  "liveWrites": false,
  "fieldTypes": [
@@ -193,11 +193,14 @@ window.AxCatalog = {
       "label": "화면 이동",
       "liveWrite": false
      },
-     "sourceOperationIds": []
+     "sourceOperationIds": [
+      "staff.dashboard-assign"
+     ]
     }
    ],
    "relations": [
-    "dashboard"
+    "dashboard",
+    "staff"
    ],
    "meta": {
     "ownerScope": "owner",
@@ -644,7 +647,9 @@ window.AxCatalog = {
      },
      "sourceOperationIds": [
       "onescreen.generateReportComment",
-      "onescreen.savePrompt"
+      "onescreen.savePrompt",
+      "onescreen.trend-optout",
+      "onescreen.ment-styles"
      ]
     },
     {
@@ -710,7 +715,8 @@ window.AxCatalog = {
       "liveWrite": false
      },
      "sourceOperationIds": [
-      "onescreen.registerMakeupEntries"
+      "onescreen.registerMakeupEntries",
+      "class-sheets.ecs-makeup-remove"
      ]
     },
     {
@@ -745,7 +751,8 @@ window.AxCatalog = {
     }
    ],
    "relations": [
-    "onescreen"
+    "onescreen",
+    "class-sheets"
    ],
    "meta": {
     "ownerScope": "owner-linked",
@@ -1240,7 +1247,8 @@ window.AxCatalog = {
      "sourceOperationIds": [
       "class-sheets.upsertGoal",
       "class-sheets.saveMonthPlanCells",
-      "class-sheets.copyWeekFromPrevious"
+      "class-sheets.copyWeekFromPrevious",
+      "attendance.seat-plan"
      ]
     },
     {
@@ -1276,7 +1284,9 @@ window.AxCatalog = {
      },
      "sourceOperationIds": [
       "class-sheets.upsertStudentMark",
-      "class-sheets.pullEcsMemorizedWords"
+      "class-sheets.pullEcsMemorizedWords",
+      "attendance.seat-jj",
+      "class-sheets.shouting"
      ]
     },
     {
@@ -1296,7 +1306,9 @@ window.AxCatalog = {
       "label": "화면 이동",
       "liveWrite": false
      },
-     "sourceOperationIds": []
+     "sourceOperationIds": [
+      "textbooks.plan-compare"
+     ]
     },
     {
      "id": "class-sheets.math",
@@ -1331,12 +1343,15 @@ window.AxCatalog = {
       "liveWrite": false
      },
      "sourceOperationIds": [
-      "class-sheets.saveMathLearningGoals"
+      "class-sheets.saveMathLearningGoals",
+      "class-sheets.mcs-goals"
      ]
     }
    ],
    "relations": [
-    "class-sheets"
+    "class-sheets",
+    "attendance",
+    "textbooks"
    ],
    "meta": {
     "ownerScope": "owner",
@@ -1476,7 +1491,8 @@ window.AxCatalog = {
      },
      "sourceOperationIds": [
       "attendance.setAttendanceCell",
-      "attendance.setSeatCell"
+      "attendance.setSeatCell",
+      "class-sheets.ecs-attendance"
      ]
     },
     {
@@ -1677,7 +1693,8 @@ window.AxCatalog = {
     }
    ],
    "relations": [
-    "attendance"
+    "attendance",
+    "class-sheets"
    ],
    "meta": {
     "ownerScope": "owner",
@@ -1962,10 +1979,77 @@ window.AxCatalog = {
      "sourceOperationIds": [
       "classes.endClassTerm"
      ]
+    },
+    {
+     "id": "classes.classroom-auto",
+     "label": "강의실 자동배정 미리보기",
+     "mode": "preview",
+     "draft": {
+      "title": "강의실 자동배정 미리보기",
+      "body": "반마다 강의실을 자동으로 정했을 때 바뀌는 반만 확인합니다. 적용하지 않습니다."
+     },
+     "fields": [],
+     "result": {
+      "label": "미리보기 — 저장되지 않습니다",
+      "liveWrite": false
+     },
+     "sourceOperationIds": [
+      "classes.classroom-auto"
+     ]
+    },
+    {
+     "id": "classes.level",
+     "label": "반 레벨 변경 요청",
+     "mode": "request",
+     "draft": {
+      "title": "반 레벨 변경",
+      "body": "아래 영어 반의 이름을 레벨 규칙에 따라 바꿔 주세요(예: DP3 → DP4). 같은 이름의 반이 이미 있으면 바뀌지 않습니다."
+     },
+     "fields": [
+      {
+       "id": "class",
+       "label": "반",
+       "type": "class",
+       "required": true
+      },
+      {
+       "id": "change",
+       "label": "변경",
+       "type": "select",
+       "required": true,
+       "options": [
+        {
+         "value": "number-up",
+         "label": "숫자 올리기"
+        },
+        {
+         "value": "number-down",
+         "label": "숫자 내리기"
+        },
+        {
+         "value": "class-up",
+         "label": "레벨 올리기"
+        },
+        {
+         "value": "class-down",
+         "label": "레벨 내리기"
+        }
+       ],
+       "optionSource": "inline-verified"
+      }
+     ],
+     "result": {
+      "label": "요청 초안으로 열기",
+      "liveWrite": false
+     },
+     "sourceOperationIds": [
+      "timetable.class-level"
+     ]
     }
    ],
    "relations": [
-    "classes"
+    "classes",
+    "timetable"
    ],
    "meta": {
     "ownerScope": "owner",
@@ -4982,6 +5066,77 @@ window.AxCatalog = {
      "sourceOperationIds": [
       "staff.createStaffTask"
      ]
+    },
+    {
+     "id": "staff.schedule",
+     "label": "근무 설정 변경 요청",
+     "mode": "request",
+     "draft": {
+      "title": "근무 설정 변경",
+      "body": "아래 직원의 주간 근무 일정을 바꿔 주세요."
+     },
+     "fields": [
+      {
+       "id": "staff",
+       "label": "대상 직원",
+       "type": "staff",
+       "required": true
+      },
+      {
+       "id": "days",
+       "label": "근무 요일",
+       "type": "multiselect",
+       "required": true,
+       "options": [
+        {
+         "value": "mon",
+         "label": "월"
+        },
+        {
+         "value": "tue",
+         "label": "화"
+        },
+        {
+         "value": "wed",
+         "label": "수"
+        },
+        {
+         "value": "thu",
+         "label": "목"
+        },
+        {
+         "value": "fri",
+         "label": "금"
+        },
+        {
+         "value": "sat",
+         "label": "토"
+        },
+        {
+         "value": "sun",
+         "label": "일"
+        }
+       ],
+       "optionSource": "weekday"
+      },
+      {
+       "id": "time",
+       "label": "근무 시간",
+       "type": "text"
+      },
+      {
+       "id": "memo",
+       "label": "메모",
+       "type": "textarea"
+      }
+     ],
+     "result": {
+      "label": "요청 초안으로 열기",
+      "liveWrite": false
+     },
+     "sourceOperationIds": [
+      "staff.work-schedule"
+     ]
     }
    ],
    "relations": [
@@ -7123,12 +7278,15 @@ window.AxCatalog = {
       "liveWrite": false
      },
      "sourceOperationIds": [
-      "owner-settings.mergeStudents"
+      "owner-settings.mergeStudents",
+      "students.progress-backfill",
+      "students.dup-suspect"
      ]
     }
    ],
    "relations": [
-    "owner-settings"
+    "owner-settings",
+    "students"
    ],
    "meta": {
     "ownerScope": "owner",
@@ -7881,15 +8039,16 @@ window.AxCatalog = {
   "auditOnlyFamilies": 6,
   "areas": 41,
   "facets": 198,
-  "actions": 148,
+  "actions": 151,
   "actionsByMode": {
    "navigate": 31,
-   "preview": 72,
-   "request": 45
+   "preview": 73,
+   "request": 47
   },
   "ownerVisibleOperations": 177,
   "operationsWithDestination": 177,
   "productionLinkedWrites": 0,
+  "discoveredGroups": 28,
   "operationDestinations": {
    "approvals.addApprovalComment": [
     "approvals.decide"
@@ -7923,6 +8082,12 @@ window.AxCatalog = {
    ],
    "attendance.saveAttendanceSalaryRates": [
     "attendance.salary"
+   ],
+   "attendance.seat-jj": [
+    "class-sheets.missing"
+   ],
+   "attendance.seat-plan": [
+    "class-sheets.goal"
    ],
    "attendance.setAttendanceCell": [
     "attendance.mark"
@@ -7978,6 +8143,15 @@ window.AxCatalog = {
    "class-sheets.copyWeekFromPrevious": [
     "class-sheets.goal"
    ],
+   "class-sheets.ecs-attendance": [
+    "attendance.mark"
+   ],
+   "class-sheets.ecs-makeup-remove": [
+    "onescreen.makeup"
+   ],
+   "class-sheets.mcs-goals": [
+    "class-sheets.math"
+   ],
    "class-sheets.pullEcsMemorizedWords": [
     "class-sheets.missing"
    ],
@@ -7987,11 +8161,17 @@ window.AxCatalog = {
    "class-sheets.saveMonthPlanCells": [
     "class-sheets.goal"
    ],
+   "class-sheets.shouting": [
+    "class-sheets.missing"
+   ],
    "class-sheets.upsertGoal": [
     "class-sheets.goal"
    ],
    "class-sheets.upsertStudentMark": [
     "class-sheets.missing"
+   ],
+   "classes.classroom-auto": [
+    "classes.classroom-auto"
    ],
    "classes.createClass": [
     "classes.open"
@@ -8170,6 +8350,9 @@ window.AxCatalog = {
    "onescreen.issueReportAttachmentUploadTicket": [
     "onescreen.unwritten"
    ],
+   "onescreen.ment-styles": [
+    "onescreen.ment"
+   ],
    "onescreen.registerMakeupEntries": [
     "onescreen.makeup"
    ],
@@ -8187,6 +8370,9 @@ window.AxCatalog = {
    ],
    "onescreen.sendOnescreenNotice": [
     "onescreen.notice"
+   ],
+   "onescreen.trend-optout": [
+    "onescreen.ment"
    ],
    "owner-settings.absorbSubject": [
     "owner-settings.subject"
@@ -8281,6 +8467,9 @@ window.AxCatalog = {
    "staff.createStaffTask": [
     "staff.task"
    ],
+   "staff.dashboard-assign": [
+    "dashboard.layout"
+   ],
    "staff.ensureStaffIntakeToken": [
     "staff.register"
    ],
@@ -8292,6 +8481,9 @@ window.AxCatalog = {
    ],
    "staff.updateStaffContract": [
     "staff.contract"
+   ],
+   "staff.work-schedule": [
+    "staff.schedule"
    ],
    "student-contribution.generateStudentRecordSummary": [
     "student-contribution.summary"
@@ -8320,8 +8512,14 @@ window.AxCatalog = {
    "students.createStudentMemo": [
     "students.memo"
    ],
+   "students.dup-suspect": [
+    "owner-settings.data"
+   ],
    "students.endStudentEnrollments": [
     "students.end"
+   ],
+   "students.progress-backfill": [
+    "owner-settings.data"
    ],
    "students.setProgressAnomalyResolved": [
     "students.progress"
@@ -8360,6 +8558,9 @@ window.AxCatalog = {
    "textbook-requests.requestTextbook": [
     "textbook-requests.order"
    ],
+   "textbooks.plan-compare": [
+    "class-sheets.gap"
+   ],
    "textbooks.previewTextbookFill": [
     "textbooks.fill"
    ],
@@ -8374,6 +8575,9 @@ window.AxCatalog = {
    ],
    "textbooks.setLessonShift": [
     "textbooks.shift"
+   ],
+   "timetable.class-level": [
+    "classes.level"
    ],
    "timetable.createClassSplit": [
     "timetable.move"
@@ -8426,6 +8630,52 @@ window.AxCatalog = {
    "withdrawals.updateWithdrawalReason": [
     "withdrawals.reason"
    ]
+  },
+  "operationFacets": {
+   "attendance.change-poll": {
+    "page": "workspace-attendance",
+    "facet": "live"
+   },
+   "attendance.hub-search": {
+    "page": "workspace-attendance",
+    "facet": "monthly"
+   },
+   "class-review.portfolio-compare": {
+    "page": "workspace-class-review",
+    "facet": "portfolio"
+   },
+   "class-sheets.day-plan": {
+    "page": "workspace-class-sheets",
+    "facet": "ecs"
+   },
+   "documents.view": {
+    "page": "workspace-documents",
+    "facet": "preview"
+   },
+   "enrollment.count-poll": {
+    "page": "workspace-enrollment",
+    "facet": "pending"
+   },
+   "onescreen.report-reads": {
+    "page": "workspace-onescreen",
+    "facet": "reports"
+   },
+   "shuttle.live-map": {
+    "page": "workspace-shuttle",
+    "facet": "live"
+   },
+   "shuttle.parent-live": {
+    "page": "workspace-parent-portal",
+    "facet": "live"
+   },
+   "student-contribution.evidence-reads": {
+    "page": "workspace-student-contribution",
+    "facet": "ontology"
+   },
+   "withdrawals.exit-overlay": {
+    "page": "workspace-timetable",
+    "facet": "board"
+   }
   }
  }
 };

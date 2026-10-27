@@ -10,6 +10,7 @@ import { AREAS, AREA_GROUPS } from './workspace-areas.mjs';
 import { families } from './families.mjs';
 import { extractOptions, OPTION_SOURCES } from './option-sources.mjs';
 import { repoRoot } from './scan-source.mjs';
+import { DISCOVERED } from './operation-groups.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 export const catalogJsPath = join(here, '..', 'workspace-catalog.js');
@@ -50,6 +51,11 @@ export function buildWorkspaceCatalog({ pages = scanPages(), inventoryText = rea
   const areaIds = new Set(AREAS.map(a => a.id));
   if (areaIds.size !== AREAS.length) problems.push('영역 id 중복');
 
+  // 새로 찾은 동작 묶음(operation-groups.mjs) — 핵심 동작과 같은 id 공간. 동작 목적지는 그 동작의 sourceOperationIds에 더한다.
+  const discoveredById = Object.fromEntries(DISCOVERED.map(g => [g.id, g]));
+  const knownOp = id => famById[id.slice(0, id.indexOf('.'))]?.keyOps.some(o => o.id === id) || !!discoveredById[id];
+  const extraOps = new Map();
+  for (const g of DISCOVERED) if (g.dest.action) (extraOps.get(g.dest.action) || extraOps.set(g.dest.action, []).get(g.dest.action)).push(g.id);
   const covered = new Map();
   const actionIds = new Set();
   const drafts = new Set();
@@ -76,10 +82,10 @@ export function buildWorkspaceCatalog({ pages = scanPages(), inventoryText = rea
       const key = `${act.draft.title}|${act.draft.body}`;
       if (drafts.has(key)) problems.push(`${act.id}: 다른 동작과 같은 초안`);
       drafts.add(key);
-      const sourceOperationIds = act.ops.map(op => (op.includes('.') ? op : `${a.id}.${op}`));
+      const listed = act.ops.map(op => (op.includes('.') ? op : `${a.id}.${op}`));
+      const sourceOperationIds = [...listed, ...(extraOps.get(act.id) || []).filter(id => !listed.includes(id))];
       for (const id of sourceOperationIds) {
-        const fid = id.slice(0, id.indexOf('.'));
-        if (!famById[fid]?.keyOps.some(o => o.id === id)) problems.push(`${act.id}: 없는 핵심 동작 ${id}`);
+        if (!knownOp(id)) problems.push(`${act.id}: 없는 핵심 동작·동작 묶음 ${id}`);
         (covered.get(id) || covered.set(id, []).get(id)).push(act.id);
       }
       let target;
@@ -112,7 +118,7 @@ export function buildWorkspaceCatalog({ pages = scanPages(), inventoryText = rea
           }
         } else if (fd.options) {
           if (!fd.evidence) problems.push(`${act.id}.${fd.id}: 직접 적은 선택지에 원문 근거가 없음`);
-          else for (const h of fd.evidence.has) if (!fileHas(fd.evidence.file, h)) problems.push(`${act.id}.${fd.id}: ${fd.evidence.file}에 "${h}" 없음`);
+          else for (const ev of [].concat(fd.evidence)) for (const h of ev.has) if (!fileHas(ev.file, h)) problems.push(`${act.id}.${fd.id}: ${ev.file}에 "${h}" 없음`);
           out.options = fd.options;
           out.optionSource = 'inline-verified';
         }
@@ -137,6 +143,22 @@ export function buildWorkspaceCatalog({ pages = scanPages(), inventoryText = rea
 
   // 원장 표시 패밀리의 모든 핵심 동작이 어느 동작엔가 이어졌는가
   for (const f of visible) for (const op of f.keyOps) if (!covered.has(op.id)) problems.push(`목적지 없는 핵심 동작: ${op.id} (${op.op})`);
+  // 새로 찾은 동작 묶음의 목적지 — 동작은 실제로 있어야 하고, 화면 면은 그 영역에 있어야 한다
+  const operationFacets = {};
+  for (const g of DISCOVERED) {
+    if (!famById[g.family]) problems.push(`${g.id}: 없는 패밀리 ${g.family}`);
+    if (!g.id.startsWith(`${g.family}.`)) problems.push(`${g.id}: 패밀리 접두사가 아님`);
+    if (famById[g.family]?.keyOps.some(o => o.id === g.id)) problems.push(`${g.id}: 핵심 동작 id와 겹침`);
+    const kinds = ['action', 'facet', 'ui'].filter(k => g.dest[k]);
+    if (kinds.length !== 1) problems.push(`${g.id}: 목적지는 action·facet·ui 중 하나`);
+    if (g.dest.action && !actionIds.has(g.dest.action)) problems.push(`${g.id}: 없는 카탈로그 동작 ${g.dest.action}`);
+    if (g.dest.facet) {
+      const [areaId, facetId] = g.dest.facet.split('/');
+      const area = AREAS.find(x => x.id === areaId);
+      if (!area || !area.facets.some(x => x.id === facetId)) problems.push(`${g.id}: 없는 화면 면 ${g.dest.facet}`);
+      else operationFacets[g.id] = { page: `workspace-${areaId}`, facet: facetId };
+    }
+  }
 
   // 화면 문구 검사
   const visibleStrings = [];
@@ -167,7 +189,9 @@ export function buildWorkspaceCatalog({ pages = scanPages(), inventoryText = rea
       facets: outAreas.reduce((n, a) => n + a.facets.length, 0), actions: outAreas.reduce((n, a) => n + a.actions.length, 0), actionsByMode: modes,
       ownerVisibleOperations: visible.reduce((n, f) => n + f.keyOps.length, 0), operationsWithDestination: [...covered.keys()].filter(id => visible.some(f => f.keyOps.some(o => o.id === id))).length,
       productionLinkedWrites: 0,
+      discoveredGroups: DISCOVERED.length,
       operationDestinations: Object.fromEntries([...covered.entries()].sort()),
+      operationFacets: Object.fromEntries(Object.entries(operationFacets).sort()),
     },
   };
   for (const re of BANNED_ANYWHERE) { const m = JSON.stringify(catalog).match(re); if (m) problems.push(`카탈로그에 비밀·식별자 모양(${re}): "${m[0]}"`); }

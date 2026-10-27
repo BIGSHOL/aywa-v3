@@ -1,7 +1,7 @@
 # 2.0 전체 기능 감사 · 3.0 AX 갭
 
-> 기준 커밋 `2c5be8b7b4d4d8c2a30a33a40656d7cec967a005` · 로컬 복사본 DB 읽기 `2026-10-27T07:54:13.759Z` · 기계 판독본 [`feature-inventory.json`](feature-inventory.json) · 검증기 [`verify-catalog.mjs`](verify-catalog.mjs)
-> <!-- inventory-sha256: f66ed58b6e5958caf7f1af1e71326dad593e2c344c5aa3c6775ed810241f11eb -->
+> 기준 커밋 `3413658d6062962577a6173872cf7a260dfad346` · 로컬 복사본 DB 읽기 `2026-10-27T07:54:13.759Z` · 기계 판독본 [`feature-inventory.json`](feature-inventory.json) · 검증기 [`verify-catalog.mjs`](verify-catalog.mjs)
+> <!-- inventory-sha256: af99e3ccd8ea53faf33bb1386de7ac109e48c5e651c1ce25c3315ed9dd154ea8 -->
 
 ## 1. 결론
 
@@ -12,9 +12,11 @@
 - 현재 AX(시안 13 + AX 4)는 **실제 쓰기를 하나도 하지 않는다**. 세션 메모리 흉내 동작 19종(advance-lead, approve, bill-note, calendar-note, close-menu, complete-task, event-note, lead-note, menu, message-draft, new-lead, new-task, reject, reply-draft, report-note, save-name, student-note, student-task, today)과 AX 이슈 7종(수납·상담·출결·결재·업무·교재·경영)이 전부다.
 - AX에 전혀 없는 패밀리 16개: 교재목록(커리큘럼·반 배정), 직원 평가·직원 포트폴리오, 신규생 관리(90일 체크리스트), 회의록(녹음·AI 분석), 고객센터(공지·개선요청), 도움말(설명서·질문 게시판), 강사 작업 공간(미니셸·내 정보·뷰 전환), 학생 내 학습, 학부모 포털(셔틀·시간표), 공개 랜딩(제품·학원), 로그인·세션·링크 만료·지점 보기 안내, 운영 콘솔(슈퍼관리자), 외부 연동(makeedu·구글 시트·오늘 수학·IJW), 녹음·전사 파이프라인, 데모 지점 갱신, 개발용 화면.
 - 불확실성은 0으로 꾸미지 않았다: 남은 패밀리 기록 8건 + 자동 감지 1건 + 메모 3건(§11). 원문을 읽어 해소한 것 9건은 따로 적었다.
-- 검증 수준(원문 검토이며 실행 시험이 아니다): 패밀리 source-read 47 — 패밀리마다 핵심 동작 대표 서버 액션의 본문 머리와 권한·쓰기·감사·외부 호출 줄을 줄 번호로 읽고 근거 앵커를 남겼다(본문 전체 정독이 아닌 곳은 readScope에 적음). API 92개: source-read 92(핸들러 본문 전체를 읽음, 부분 읽기 1건은 §11).
+- 검증 수준(원문 검토이며 실행 시험이 아니다): 패밀리 source-read 47 — 패밀리마다 핵심 동작 대표 서버 액션의 본문 머리와 권한·쓰기·감사·외부 호출 줄을 줄 번호로 읽고 근거 앵커를 남겼다(본문 전체 정독이 아닌 곳은 readScope에 적음). API 92개: source-read 92(핸들러 본문 전체를 읽음, 부분 읽기 0건은 §11).
 - 근거 앵커는 검증기가 줄 단위로 확인한다(파일·줄·포함 문자열). 실제 실행·외부 연동·원본 DB 접근은 하지 않았다 — 실행이 필요한 질문은 '실행 확인 필요'로 남겼다.
 - 원장 표시: 41개 패밀리(핵심 동작 177개) · 감사 전용 6개(인증·운영 콘솔·개발·데모·공용 기반·녹음 파이프라인). 원장 표시 패밀리는 3.0 카탈로그(§13)에서 모든 핵심 동작에 목적지를 가진다.
+- **export 단위 회계(§13.2)**: 서버 액션 export 730개 전부가 동작 묶음 227개(핵심 동작 182 · 새로 찾은 묶음 28 · 개인 보기 설정 17)에 들어갔다 — 묶음 없는 export 0. 본문 추적 종류: 쓰기 588 · 읽기 121 · 도우미 21(사람이 고친 판정 5건). 쓰기 588개 모두 3.0 목적지가 있고 원장 표시 묶음 198개가 모두 카탈로그 동작·화면 면에 닿는다.
+- **검토 수준을 섞지 않는다**: 730개 전부 기계 추적(TS AST — 본문과 부르는 도우미의 게이트·표·RPC·외부 연동을 줄 근거로) · 사람의 검토는 요약 검토 228 · 핵심 동작 검토 477 · 본문 직접 읽음 25. "730개 본문 전체를 읽었다"가 아니다.
 
 ## 2. 방법
 
@@ -1270,8 +1272,9 @@
   - 동작: 오디오 업로드 티켓(종류별 메뉴 권한·확장자·형식 검증) → AssemblyAI 웹훅 → 분석. 멈춘 처리 회수·보존 기간 삭제 크론.
   - 권한: 업로드는 해당 메뉴 full/scoped.
   - 연동: AssemblyAI, Storage.
-  - 근거: `src/features/media/server/upload-actions.ts:36` · `src/app/api/webhooks/assemblyai/route.ts:148`
-- ⚠️ 불확실: 실행 확인 필요: 웹훅 분석 도우미 본문(약 600줄)은 읽지 않았다
+  - 근거: `src/features/media/server/upload-actions.ts:36` · `src/app/api/webhooks/assemblyai/route.ts:148` · `src/app/api/webhooks/assemblyai/route.ts:749` · `src/app/api/webhooks/assemblyai/route.ts:836`
+  - 발견: 다중 녹음 분석은 그 사이 다른 녹음이 끝났으면 쓰기를 전부 건너뛰고, 종결된 상담(등록·거절·노쇼)의 칸반 단계를 되돌리지 않으며, 상담사가 적은 칸은 덮지 않는다(빈 칸만 채움).
+- ⚠️ 불확실: 실행 확인 필요: 실제 웹훅 재전송·270초 기한 초과 때의 실패 처리 순서는 실행해 보지 않았다(원문상으로는 진행 중인 행만 failed, 다른 녹음이 이어 가면 덮지 않음).
 
 ### `shell-infrastructure` 공용 기반(검색·동시편집·메뉴 기록·최대화·내보내기·통계·학교명)
 
@@ -1616,7 +1619,7 @@
 | /api/video-submit/event | public-submit | video-homework | POST | — | public-token — 같은 출처(uploadOrigin) + 4KB 상한 + 토큰 | 업로드 진행 이벤트를 기록한다. | — | 핸들러 전체 |
 | /api/video-submit/site | public-submit | video-homework | POST | — | public-rate-limited — 휴대폰 뒷 4자리 + 이름, IP 기준 횟수 제한(초과 429) | /v 올리기 사이트 — 숙제 찾기(lookupSite)와 제출 링크 열기(openSiteLink). | — | 핸들러 전체 |
 | /api/video-submit/start | public-submit | video-homework | POST | — | public-token — 제출 링크 토큰 + 출처·호스트(startLinkUpload 안) | 업로드를 시작하고 응답 뒤 후속 처리. | Google Drive | 핸들러 전체 |
-| /api/webhooks/assemblyai | webhook | recording-transcription | POST | — | shared-secret — x-eywa-webhook-secret = ASSEMBLYAI_WEBHOOK_SECRET(timingSafeEqual) | transcript_id로 회의록·상담 녹음·신규 콜&상담(·원생상담)을 찾아 완료/진행 중이면 건너뛰고, 아니면 응답 뒤 270초 예산으로 분석한다(실패 시 행을 실패로). | AssemblyAI, AI(generateJSON) | 부분: 1,013줄 중 인증·라우팅·백그라운드 처리 골격(코드 약 250줄)만 읽었다. 분석 도우미(handleMeeting·handleConsultationRecording·recoverConsultationAnalysis 등) 본문은 읽지 않았다. |
+| /api/webhooks/assemblyai | webhook | recording-transcription | POST | — | shared-secret — x-eywa-webhook-secret = ASSEMBLYAI_WEBHOOK_SECRET(timingSafeEqual) | transcript_id로 회의록 → 상담 녹음 행 → 레거시 신규 콜&상담 → 원생상담 → 영상 설명 메모 순으로 행을 찾고, 완료·진행 중(10분 안)이면 건너뛴다. 곧바로 200을 주고 응답 뒤(after) 270초 기한으로 처리한다. 회의: 전사 확인(30자·5초 미만이면 실패) → 분석 중 → 8섹션 분석·화자 역할 저장. 상담 녹음 행: 녹음 행 completed → 완료 녹음 합본(분석 입력은 종료 후 잡음 꼬리를 잘라 냄)으로 13섹션 분석 + 폼 추출을 병렬 실행 → 그 사이 다른 녹음이 completed로 늘었으면 모든 쓰기를 건너뜀(부분 합본이 전체를 덮지 않게) → consultation_ai_analysis upsert → 상담 행의 빈 칸만 채우고 종결 상태(등록·거절·노쇼)면 칸반 단계를 되돌리지 않는다. 녹음은 completed인데 상담이 분석에서 멈췄으면 저장된 합본으로 분석만 복구한다. 원생상담: 7섹션 분석을 행에 저장. 영상 설명 메모: 전사만 넣고 단계를 judge(말소리가 거의 없으면 skipped)로 옮긴다. 기한 초과·예외면 진행 중인 행만 failed로(다른 녹음이 이어 가면 상담 전체를 실패로 덮지 않음). | AssemblyAI(전사 조회), AI(generateJSON — 회의·상담·원생상담 분석, 폼 추출) | 핸들러 전체 |
 | /home | auth-redirect | auth-session | GET | — | session — 세션이 없으면 학부모 → /parent, 퇴사 계정 → 로그아웃, 운영 계정 → 운영 콘솔, 그 밖은 /login | 역할·과목에 맞는 홈으로 보내는 서버 리다이렉터. 방금 로그인했으면 로그인 기록을 남긴다. | — | 핸들러 전체 |
 | /tenant-view/exit | auth-redirect | auth-session | GET | — | session — 읽기 전용 지점 보기 쿠키 | 지점 보기를 끝내고 운영 콘솔의 학원 상세로 돌아간다. | — | 핸들러 전체 |
 | /tenant-view/sync | auth-redirect | auth-session | GET | — | session — 읽기 전용 지점 보기 상태 | 보기 상태를 맞춘다 — 살아 있으면 /home, 아니면 보기를 닫는다. | — | 핸들러 전체 |
@@ -1711,7 +1714,7 @@
 - `payroll` 실행 확인 필요: payroll_records가 침산 복사본에서 0행 — 급여 기능이 genericFeatureDisabled("payroll")로 꺼져 있는지(명세서 7건은 payslips 표)
 - `shuttle` 실행 확인 필요: parent_accounts가 침산 복사본에서 0행 — 학부모 포털을 실제로 발급해 쓰는지
 - `help` 실행 확인 필요: help_posts가 침산 복사본에서 0행 — 질문 게시판 사용 여부
-- `recording-transcription` 실행 확인 필요: 웹훅 분석 도우미 본문(약 600줄)은 읽지 않았다
+- `recording-transcription` 실행 확인 필요: 실제 웹훅 재전송·270초 기한 초과 때의 실패 처리 순서는 실행해 보지 않았다(원문상으로는 진행 중인 행만 failed, 다른 녹음이 이어 가면 덮지 않음).
 
 원문을 읽어 해소한 것:
 - `dashboard` daily-briefing 일정 없음은 의도된 중지 — 크론 핸들러는 410(DAILY_BRIEFING_DISABLED_MESSAGE)을 돌려주고 재생성 액션도 DAILY_BRIEFING_ENABLED로 막는다(원문 확인)
@@ -1728,7 +1731,7 @@
 - `src/features/english-assessment` (shell-infrastructure) — src 전체에서 모듈 밖 import가 0건(테스트 제외) — 사용처 없는 모듈일 수 있다
 
 불확실성 — 일부만 읽은 API 본문:
-- `/api/webhooks/assemblyai` (recording-transcription) — 1,013줄 중 인증·라우팅·백그라운드 처리 골격(코드 약 250줄)만 읽었다. 분석 도우미(handleMeeting·handleConsultationRecording·recoverConsultationAnalysis 등) 본문은 읽지 않았다.
+- 없음 — API 92개 모두 핸들러 본문 전체를 읽었다(`/api/webhooks/assemblyai`는 route 본문 1,012줄과 직접 부르는 상태 도우미까지; 분석 프롬프트 본문은 해당 패밀리 검토 범위).
 
 메모:
 - 크론 핸들러 /api/cron/daily-briefing는 vercel.json 일정이 없다(수동/중지)
@@ -1744,6 +1747,8 @@ node experiments/owner-concept/catalog/build-inventory.mjs    # 인벤토리·�
 node experiments/owner-concept/catalog/verify-catalog.mjs     # 소스 ↔ 인벤토리 집합 대조 + 근거 앵커 + 문서 해시
 node experiments/owner-concept/catalog/build-workspace-catalog.mjs   # 3.0 카탈로그 생성(문제 1건이라도 있으면 실패)
 node experiments/owner-concept/verify-workspace-catalog.mjs          # 카탈로그 재생성 일치·스키마·커버리지·선택지·문구·정적 서빙
+node experiments/owner-concept/catalog/build-operation-coverage.mjs  # 서버 액션 export 추적표 생성(묶음 없는 export가 있으면 실패)
+node experiments/owner-concept/catalog/verify-operation-coverage.mjs # 독립 AST 집계 대조·묶음·목적지·근거 줄·수치
 ```
 
 검증기가 실패하는 조건: 새 페이지·API·크론·모듈·액션 파일·메뉴 키·내비 항목이 인벤토리에 없거나, 인벤토리에만 있는 낡은 항목이 있거나, 핵심 동작의 함수가 사라졌거나, 시안 화면·AX 화면이 어느 패밀리와도 이어지지 않았거나, 이 문서가 인벤토리와 다른 해시를 들고 있을 때. 결과는 `coverage-report.json`.
@@ -1752,8 +1757,8 @@ node experiments/owner-concept/verify-workspace-catalog.mjs          # 카탈로
 
 생성물 `experiments/owner-concept/workspace-catalog.js`(같은 데이터 `catalog/workspace-catalog.json`) · 생성기 `catalog/build-workspace-catalog.mjs` · 검증기 `verify-workspace-catalog.mjs`.
 
-- 영역 41(= 원장 표시 패밀리) · facet 198 · 동작 148(navigate 31 · preview 72 · request 45) · 원장 표시 핵심 동작 177/177에 목적지 · 실제 쓰기 연결 0.
-- 수치 구분: 원문 검토(source-audited) = 패밀리 47·API 92 / 런타임 미리보기(runtime-previews) = 동작 148(전부 로컬, liveWrite:false) / 실제 운영 연결(production-linked) = 0.
+- 영역 41(= 원장 표시 패밀리) · facet 198 · 동작 151(navigate 31 · preview 73 · request 47) · 원장 표시 핵심 동작 177/177에 목적지 · 실제 쓰기 연결 0.
+- 수치 구분: 원문 검토(source-audited) = 패밀리 47·API 92 · 서버 액션 export 730 회계(본문 직접 25 / 핵심 동작 검토 477 / 요약 검토 228) / 런타임 미리보기(runtime-previews) = 동작 151(전부 로컬, liveWrite:false) / 실제 운영 연결(production-linked) = 0.
 - facet은 2.0 화면의 실제 탭·면·결재함·단계를 원문 근거(라우트 또는 파일 안 문자열)로 확인했고, 필드 선택지는 2.0 열거값을 TS AST로 그대로 읽는다(catalog/option-sources.mjs).
 
 | 영역 | 그룹 | 보기 | facet | 동작(이동/미리보기/요청) |
@@ -1766,7 +1771,7 @@ node experiments/owner-concept/verify-workspace-catalog.mjs          # 카탈로
 | timetable 시간표 | 수업 | sheet | 시간표 · 시간표 편집기 · 영어 시트 반영 | 1/2/1 |
 | class-sheets 강사 시트 | 수업 | sheet | 영어 · 월간 · 반 계획 보기 · 계획 대비 현황 · 수학 · 선생님별 · 수학 학습 진도맵 | 1/2/1 |
 | attendance 출석부 | 수업 | sheet | 월별 출석부 · 오늘 출결 · 출결 모드 · 날짜별 입력 · 랩실·JJ실 출석부 · 출결 통계 · 시수 마스터 · 키오스크 설정 | 2/4/1 |
-| classes 수업목록 | 수업 | records | 수업목록 · 반 상세 · 새 반 | 1/3/2 |
+| classes 수업목록 | 수업 | records | 수업목록 · 반 상세 · 새 반 | 1/4/3 |
 | makeups 보강관리 | 수업 | flow | 보강관리 · 미연결 근거 · 도입 사전 점검 · 대사·복구 | 1/2/1 |
 | textbooks 교재목록 | 수업 | records | 교재 · 반 배정 | 0/2/1 |
 | lesson-reports 수업보고서 | 수업 | report | 작성률 · 목록 · 발송 큐 · 반 구성 · 반 공지 · 직접 발송 · 회수 · 학부모 글·답글 · 보고서 설정 · AI 멘트 · 보고서 통계 | 2/3/2 |
@@ -1780,7 +1785,7 @@ node experiments/owner-concept/verify-workspace-catalog.mjs          # 카탈로
 | newcomers 신규생 관리 | 원생 | flow | 수업 전 사전 콜 · 첫 수업 안내 · OJT · 첫 수업 후 콜 · 1개월 콜 · 신규생 기록 | 0/1/1 |
 | withdrawals 퇴원관리 | 원생 | flow | 퇴원관리 · 퇴원 상세 | 0/1/1 |
 | withdrawal-reports 퇴원보고서 | 원생 | flow | 퇴원보고서 · 보고서 · 스프레드시트 기록 | 0/2/1 |
-| staff 직원관리 | 운영 | records | 직원 목록 · 직원 상세 · 휴가 관리 · 연차 관리 · 월별 급여 | 1/1/3 |
+| staff 직원관리 | 운영 | records | 직원 목록 · 직원 상세 · 휴가 관리 · 연차 관리 · 월별 급여 | 1/1/4 |
 | payroll 급여·명세서 | 운영 | report | 급여명세서 · 강사 정산 · 월별 급여 | 0/2/0 |
 | billing 수납관리 | 운영 | report | 수납 · 교재 · 지출 · 수강료 계산기 · 회차 확정 · 환불 요청서 · 강사 정산 · 수납 통계 · 수강료 단가 · 교재 단가표 · 공휴일 · 저장된 청구서 | 1/5/1 |
 | textbook-requests 교재 요청 | 운영 | flow | 교재 요청 · 교재 요청서 | 1/1/1 |
@@ -1803,58 +1808,155 @@ node experiments/owner-concept/verify-workspace-catalog.mjs          # 카탈로
 ### 13.1 워크플로·쓰기 공백 — 목적지가 있다고 완성이 아니다
 
 - 카탈로그 177/177은 "원장이 그 일로 갈 곳이 있다"는 뜻이지 "3.0에서 그 일을 할 수 있다"는 뜻이 아니다. 미리보기(preview)는 입력 모양·2.0 선택지·근거를 보여 주는 로컬 화면이고, 요청(request)은 사람에게 보내는 원장 요청 초안이다. 둘 다 2.0의 상태 전이(결재 순서, 퇴원 처리 트랜잭션, 청구·배분 재확정, 발송 큐, 사실 기반 할 일 종료)를 실행하지 않는다.
-- 2.0 쓰기 동작(쓰기가 있는 액션 파일의 조회 아닌 export): 전체 511개 · 원장 표시 패밀리 500개. 이 중 3.0 시안에서 2.0 기록(원본·복사본 DB)까지 가는 것 **0개**(로컬 오버레이 저장은 별개이며 2.0 쓰기를 대신하지 않는다).
+- 2.0 쓰기 export(본문 추적 — DB·감사로그·스토리지·쿠키·알림·외부 발신 중 하나라도): 전체 588개 · 원장 표시 패밀리 572개(1차 감사의 파일 단위 추정은 511개였다). 이 중 3.0 시안에서 2.0 기록(원본·복사본 DB)까지 가는 것 **0개**(로컬 오버레이 저장은 별개이며 2.0 쓰기를 대신하지 않는다).
 - 원장 표시 패밀리 41개의 지금 시안 수준: 세션 흉내(저장 안 됨) 10 · 읽기 전용 20 · 없음 11. 카탈로그는 이 수준을 올리지 않는다(화면 목적지를 줄 뿐).
 - 3.0의 다음 층(이벤트 → 규칙 → 케이스·단계 → 역할 수신함 → 근거 보고 → 다음 이벤트)이 메워야 할 것은 아래 "남은 워크플로" 열이다. 사실 기반으로 닫히는 2.0 할 일은 3.0이 대신 닫지 않는다.
 
-| 패밀리 | 2.0 쓰기 동작(파일) | 알림·AI·감사 | 지금 시안 | 3.0 목적지(이동/미리보기/요청) | 3.0 실제 쓰기 | 남은 워크플로 |
+| 패밀리 | 2.0 쓰기 export(파일) | 알림·AI·감사 | 지금 시안 | 3.0 목적지(이동/미리보기/요청) | 3.0 실제 쓰기 | 남은 워크플로 |
 | --- | --- | --- | --- | --- | --- | --- |
-| dashboard 대시보드(운영실) | 6(2) | 감사 | 세션 흉내(저장 안 됨) | 2/2/0 | 0 | 위젯 카탈로그 36종(카드 27 + KPI 9)·역할별 배치·과목 커팅·학원 공지·통계 상세 화면(/students/stats 등)으로의 드릴다운 |
+| dashboard 대시보드(운영실) | 9(4) | 감사 | 세션 흉내(저장 안 됨) | 2/2/0 | 0 | 위젯 카탈로그 36종(카드 27 + KPI 9)·역할별 배치·과목 커팅·학원 공지·통계 상세 화면(/students/stats 등)으로의 드릴다운 |
 | calendar 캘린더 | 4(1) | 감사 | 세션 흉내(저장 안 됨) | 0/2/0 | 0 | 실제 일정 저장·태그·구글 동기화 상태 |
 | tasks-notifications 할 일·알림(벨·푸시) | 5(1) | — | 세션 흉내(저장 안 됨) | 1/1/1 | 0 | notifications 미연결(2.0 유니언 39종, cs 31종 11,534행 — 벨·푸시·보관함) · 할 일 쓰기 없음(2.0 할 일은 사실 기반 자동 종료라 버튼 완료가 없다 — 시안 complete-task는 의미가 다르다) · 할 일 종류: 2.0 코드 11종 중 시안 라벨 맵(live.js taskKind)에 없는 5종 = report_send_failed·followup_due·progress_anomaly·approval_turn·help_question, 시안의 owner_review는 2.0 종류가 아니다, cs 데이터에 있는 종류는 6종(모두 시안 맵에 있음) · 원장→담당자 요청 저장 테이블 없음 |
-| slack 슬랙 연동 | 9(3) | 감사 | 세션 흉내(저장 안 됨) | 1/1/1 | 0 | 실제 규칙 편집(무엇을·어디로·어떻게·언제), 사람 연결, 실패 재발송, 발송 이력 |
-| onescreen 선생님 원스크린(수업 마감) | 24(8) | 감사 | 읽기 전용 | 0/3/2 | 0 | 강사의 수업 마감 흐름 전체(원장 작업 공간 밖이지만 요청의 목적지) |
-| video-homework 영상 숙제(제출 사이트·장부·AI 검토) | 5(5) | 감사 | 읽기 전용 | 1/1/2 | 0 | 미배정 영상·미제출·반려 흐름, AI 검토 메모 |
-| timetable 시간표(배치·가져오기·편집기·메모) | 17(8) | 감사 | 읽기 전용 | 1/2/1 | 0 | 배치 편집·가져오기·충돌 판정·메모·연습본 |
-| class-sheets 강사 시트(영어 ECS·수학 MCS) | 32(6) | 감사 | 읽기 전용 | 1/2/1 | 0 | 시트 작성 현황·계획 대비 차이·목표 |
-| attendance 출석부(월별·오늘·출결 모드·자리·키오스크) | 36(15) | 알림·감사 | 읽기 전용 | 2/4/1 | 0 | 출결 입력·데스크 확인 큐·미입력 판정·자리/키오스크·통계 추이 |
-| classes 수업목록(반·수강·인수인계) | 21(6) | 알림·감사 | 읽기 전용 | 1/3/2 | 0 | 반·수강 편집, 인수인계·위임 |
-| makeups 보강관리 | 2(1) | 감사 | 읽기 전용 | 1/2/1 | 0 | 보강 사례(미처리 분·기한)·명령 |
-| textbooks 교재목록(커리큘럼·반 배정) | 17(8) | 감사 | 없음 | 0/2/1 | 0 | 커리큘럼 마스터·반 배정 전부(시안의 "교재"는 주문 흐름뿐) |
-| lesson-reports 수업보고서·ClassNote 발송 | 20(9) | 감사 | 세션 흉내(저장 안 됨) | 2/3/2 | 0 | 발송 큐·실패 재시도·회수·반 보드 동기화·실제 답글 발송·평점 |
-| class-review 직원 평가·직원 포트폴리오 | 12(3) | 감사 | 없음 | 2/0/1 | 0 | 평가·포트폴리오 전부 |
-| students 원생목록·원생 상세·원생 통계 | 25(3) | 감사 | 세션 흉내(저장 안 됨) | 1/4/2 | 0 | 상세 탭 중 SRS·오늘 수학·숙제 영상·기여도·타임라인·형제, 상태 전환·수강 편집 |
-| student-contribution 원생 기여도(온톨로지·소개) | 4(2) | 감사 | 읽기 전용 | 2/2/0 | 0 | 기여도·온톨로지·소개 |
-| exams 성적관리(통합·입력·확인·JJ실) | 2(2) | 감사 | 읽기 전용 | 1/1/2 | 0 | 입력·응시율·성적 급락(알림 grade_drop) |
-| consultations 원생상담(재원생 상담·AI 분석) | 7(2) | 감사 | 읽기 전용 | 0/2/1 | 0 | 상담 작성·AI 분석·통계 |
-| enrollment 신규 콜&상담(QR 접수·브리프·인수인계) | 16(5) | 감사 | 세션 흉내(저장 안 됨) | 2/3/2 | 0 | 실제 저장·후속 조치 필수 규칙·QR·AI 분석·브리프·병합·관리현황 |
+| slack 슬랙 연동 | 12(4) | 감사 | 세션 흉내(저장 안 됨) | 1/1/1 | 0 | 실제 규칙 편집(무엇을·어디로·어떻게·언제), 사람 연결, 실패 재발송, 발송 이력 |
+| onescreen 선생님 원스크린(수업 마감) | 26(12) | 감사 | 읽기 전용 | 0/3/2 | 0 | 강사의 수업 마감 흐름 전체(원장 작업 공간 밖이지만 요청의 목적지) |
+| video-homework 영상 숙제(제출 사이트·장부·AI 검토) | 10(8) | 감사 | 읽기 전용 | 1/1/2 | 0 | 미배정 영상·미제출·반려 흐름, AI 검토 메모 |
+| timetable 시간표(배치·가져오기·편집기·메모) | 18(12) | 감사 | 읽기 전용 | 1/2/1 | 0 | 배치 편집·가져오기·충돌 판정·메모·연습본 |
+| class-sheets 강사 시트(영어 ECS·수학 MCS) | 37(10) | 감사 | 읽기 전용 | 1/2/1 | 0 | 시트 작성 현황·계획 대비 차이·목표 |
+| attendance 출석부(월별·오늘·출결 모드·자리·키오스크) | 47(20) | 알림·감사 | 읽기 전용 | 2/4/1 | 0 | 출결 입력·데스크 확인 큐·미입력 판정·자리/키오스크·통계 추이 |
+| classes 수업목록(반·수강·인수인계) | 21(6) | 알림·감사 | 읽기 전용 | 1/4/3 | 0 | 반·수강 편집, 인수인계·위임 |
+| makeups 보강관리 | 1(1) | 감사 | 읽기 전용 | 1/2/1 | 0 | 보강 사례(미처리 분·기한)·명령 |
+| textbooks 교재목록(커리큘럼·반 배정) | 15(9) | 감사 | 없음 | 0/2/1 | 0 | 커리큘럼 마스터·반 배정 전부(시안의 "교재"는 주문 흐름뿐) |
+| lesson-reports 수업보고서·ClassNote 발송 | 20(11) | 감사 | 세션 흉내(저장 안 됨) | 2/3/2 | 0 | 발송 큐·실패 재시도·회수·반 보드 동기화·실제 답글 발송·평점 |
+| class-review 직원 평가·직원 포트폴리오 | 19(7) | 감사 | 없음 | 2/0/1 | 0 | 평가·포트폴리오 전부 |
+| students 원생목록·원생 상세·원생 통계 | 29(6) | 감사 | 세션 흉내(저장 안 됨) | 1/4/2 | 0 | 상세 탭 중 SRS·오늘 수학·숙제 영상·기여도·타임라인·형제, 상태 전환·수강 편집 |
+| student-contribution 원생 기여도(온톨로지·소개) | 5(3) | 감사 | 읽기 전용 | 2/2/0 | 0 | 기여도·온톨로지·소개 |
+| exams 성적관리(통합·입력·확인·JJ실) | 6(6) | 감사 | 읽기 전용 | 1/1/2 | 0 | 입력·응시율·성적 급락(알림 grade_drop) |
+| consultations 원생상담(재원생 상담·AI 분석) | 8(3) | 감사 | 읽기 전용 | 0/2/1 | 0 | 상담 작성·AI 분석·통계 |
+| enrollment 신규 콜&상담(QR 접수·브리프·인수인계) | 21(6) | 감사 | 세션 흉내(저장 안 됨) | 2/3/2 | 0 | 실제 저장·후속 조치 필수 규칙·QR·AI 분석·브리프·병합·관리현황 |
 | retention 이탈 방어 | 4(1) | 감사 | 읽기 전용 | 1/1/1 | 0 | 위험 판정 로스터·캠페인·메시지 조치 |
-| newcomers 신규생 관리(90일 체크리스트) | 1(1) | 감사 | 없음 | 0/1/1 | 0 | 체크리스트 전부 — 시안 스냅샷에는 student_onboarding_checks 표가 들어 있으나 화면이 없다 |
-| withdrawals 퇴원관리 | 3(1) | 감사 | 읽기 전용 | 0/1/1 | 0 | 사유 분석·추이·3개월 내 퇴원·퇴원 상세 |
+| newcomers 신규생 관리(90일 체크리스트) | 2(2) | 감사 | 없음 | 0/1/1 | 0 | 체크리스트 전부 — 시안 스냅샷에는 student_onboarding_checks 표가 들어 있으나 화면이 없다 |
+| withdrawals 퇴원관리 | 4(2) | 감사 | 읽기 전용 | 0/1/1 | 0 | 사유 분석·추이·3개월 내 퇴원·퇴원 상세 |
 | withdrawal-reports 퇴원보고서(작성·순차 승인·옛 시트) | 4(2) | 감사 | 읽기 전용 | 0/2/1 | 0 | 보고서 작성·승인 흐름 |
-| staff 직원관리(명부·계약·이력서·휴가·연차) | 28(10) | 알림·감사 | 읽기 전용 | 1/1/3 | 0 | 등록·계약·휴가·연차·권한 |
+| staff 직원관리(명부·계약·이력서·휴가·연차) | 36(13) | 알림·감사 | 읽기 전용 | 1/1/4 | 0 | 등록·계약·휴가·연차·권한 |
 | payroll 급여·명세서·강사 정산 | 11(4) | 감사 | 읽기 전용 | 0/2/0 | 0 | 계산·발급·조정 |
-| billing 수납관리(청구·교재·지출·계산기·회차 확정·환불·정산) | 52(19) | 감사 | 세션 흉내(저장 안 됨) | 1/5/1 | 0 | 청구 생성·회차 확정·배분·환불·지출 결재·견적 |
+| billing 수납관리(청구·교재·지출·계산기·회차 확정·환불·정산) | 51(19) | 감사 | 세션 흉내(저장 안 됨) | 1/5/1 | 0 | 청구 생성·회차 확정·배분·환불·지출 결재·견적 |
 | textbook-requests 교재 요청(강사) | 0(0) | — | 읽기 전용 | 1/1/1 | 0 | 요청 작성·안내 발송 |
 | expense-requests 지출결의서(강사 제출) | 0(0) | — | 읽기 전용 | 0/0/1 | 0 | 강사 제출 흐름 |
-| shuttle 셔틀(노선 편성·주간·오늘·학부모 등하원·운행 현황·위치) | 30(7) | 감사 | 읽기 전용 | 1/3/1 | 0 | 편성·탑승 기록·학부모 변경 확인 |
-| inventory 재고관리(자산·대여·실사·소모품·업체) | 21(7) | 감사 | 읽기 전용 | 0/3/1 | 0 | 대여·실사·업체·편집 |
+| shuttle 셔틀(노선 편성·주간·오늘·학부모 등하원·운행 현황·위치) | 39(9) | 감사 | 읽기 전용 | 1/3/1 | 0 | 편성·탑승 기록·학부모 변경 확인 |
+| inventory 재고관리(자산·대여·실사·소모품·업체) | 22(7) | 감사 | 읽기 전용 | 0/3/1 | 0 | 대여·실사·업체·편집 |
 | meetings 회의록(녹음·AI 분석) | 9(1) | 감사 | 없음 | 0/1/2 | 0 | 회의록 전부 |
 | approvals 전자결재(기안·결재함) | 11(1) | 알림·감사 | 세션 흉내(저장 안 됨) | 1/2/0 | 0 | 실제 결재·기안·결재선 |
-| documents 데이터베이스(서식·문서 저장소) | 15(4) | 감사 | 읽기 전용 | 1/0/2 | 0 | 폴더 편집·업로드 |
+| documents 데이터베이스(서식·문서 저장소) | 14(4) | 감사 | 읽기 전용 | 1/0/2 | 0 | 폴더 편집·업로드 |
 | support 고객센터(공지·개선요청) | 5(2) | 감사 | 없음 | 0/2/0 | 0 | 고객센터 전부 |
-| owner-settings 학원 설정(18면)·관리자 도구 | 24(8) | 감사 | 세션 흉내(저장 안 됨) | 1/3/2 | 0 | 18면 전부(권한·메뉴·운영 체계·청구·알림·대시보드 배치·연동·데이터 정리·감사로그) |
+| owner-settings 학원 설정(18면)·관리자 도구 | 23(8) | 감사 | 세션 흉내(저장 안 됨) | 1/3/2 | 0 | 18면 전부(권한·메뉴·운영 체계·청구·알림·대시보드 배치·연동·데이터 정리·감사로그) |
 | help 도움말(설명서·질문 게시판) | 5(1) | 감사 | 없음 | 0/1/0 | 0 | 도움말 전부 |
-| teacher-workspace 강사 작업 공간(미니셸·내 정보·뷰 전환) | 3(1) | 감사 | 없음 | 0/1/1 | 0 | 강사 쪽 수신함(요청 확인·완료 보고) 없음 |
+| teacher-workspace 강사 작업 공간(미니셸·내 정보·뷰 전환) | 4(2) | 감사 | 없음 | 0/1/1 | 0 | 강사 쪽 수신함(요청 확인·완료 보고) 없음 |
 | student-portal 학생 내 학습 | 0(0) | — | 없음 | 1/0/0 | 0 | 학생 화면 미리보기(현재 데모 데이터) |
 | parent-portal 학부모 포털(셔틀·시간표) | 0(0) | — | 없음 | 0/1/1 | 0 | 해당 없음(원장 작업 공간 밖) |
 | public-sites 공개 랜딩(제품·학원) | 0(0) | — | 없음 | 1/0/0 | 0 | 학원 공개 페이지 미리보기 |
-| integrations 외부 연동(makeedu·구글 시트·오늘 수학·IJW) | 10(2) | 감사 | 없음 | 0/1/2 | 0 | 연동 상태·실패 이력 |
+| integrations 외부 연동(makeedu·구글 시트·오늘 수학·IJW) | 15(4) | 감사 | 없음 | 0/1/2 | 0 | 연동 상태·실패 이력 |
+
+### 13.2 서버 액션 export 추적 — 730개 하나도 빼지 않고
+
+기계 판독본 `catalog/operation-coverage.json` · 생성기 `catalog/build-operation-coverage.mjs` · 묶음 판단 `catalog/operation-groups.mjs` · 본문 분석기 `catalog/operation-analysis.mjs` · 검증기 `catalog/verify-operation-coverage.mjs`.
+
+- 집계: export 730개(파일 252개) — 스캐너(정규식)와 따로 TS AST로 'use server' 파일을 다시 세어 같은 집합임을 검증기가 확인한다(함수 안 인라인 서버 액션 0).
+- 종류(본문 추적): 쓰기 588 · 읽기 121 · 도우미 21. 2.0 효과: db-write 554 · notify 24 · cookie 5 · external-send 19 · external-read 37 · ai 19 · audit-log 31 · storage-ticket 10 · storage-write 1.
+- 묶음 배정: 핵심 동작에 붙임(변형·짝·입력 보조) 142 · 같은 패밀리 핵심 동작 453 · 새로 찾은 묶음 55 · 개인 보기 설정 56 · 다른 패밀리 핵심 동작 24.
+- 3.0 목적지(묶음 227개): 로컬 미리보기 100 · 읽기·이동 33 · 사람에게 요청 63 · 화면 상태 19 · 감사 전용 10 · 로컬 미리보기+사람에게 요청 2. 실제 운영 연결 0.
+- 검토 수준: 요약 검토 228 · 핵심 동작 검토 477 · 본문 직접 읽음 25 — 본문 직접 읽음 = 이번 검토에서 함수 본문을 처음부터 끝까지 직접 읽음; 핵심 동작 검토 = 패밀리 핵심 동작으로 묶인 함수 — 패밀리 원문 검토(대표 줄)와 기계 추적; 요약 검토 = 기계 추적 요약(문서 주석·게이트·쓰는 표·외부 연동·사용자 사유 문구)을 사람이 읽고 묶음.
+- 방법의 한계: 경로를 가리지 않는다 — 플래그로 꺼진 갈래의 쓰기도 잡혀 과대 추정될 수 있다(사람 검토로 고친 것은 kindOverrides). 동적 표 이름·함수 인자로 넘긴 콜백·깊이 4 밖은 놓칠 수 있다. 실행 시험이 아니다 — 외부 연동·DB 쓰기는 하나도 실행하지 않았다.
+
+| 패밀리 | export | 쓰기/읽기/도우미 | 묶음(핵심/새로/보기) | 검토(본문/핵심/요약) | 외부·알림·AI |
+| --- | --- | --- | --- | --- | --- |
+| approvals | 11 | 11/0/0 | 4/0/0 | 0/11/0 | notify |
+| attendance | 59 | 47/12/0 | 9/4/1 | 5/26/28 | notify·external-send·external-read·ai |
+| auth-session | 1 | 0/0/1 | 1/0/0 | 0/0/1 | — |
+| billing | 63 | 51/10/2 | 11/0/1 | 0/34/29 | — |
+| calendar | 5 | 4/1/0 | 2/0/0 | 0/5/0 | — |
+| class-review | 22 | 19/3/0 | 5/1/1 | 1/12/9 | — |
+| class-sheets | 39 | 37/2/0 | 6/5/1 | 7/15/17 | external-read |
+| classes | 27 | 21/5/1 | 7/1/1 | 1/17/9 | notify |
+| consultations | 9 | 8/1/0 | 3/0/1 | 0/7/2 | ai·external-send |
+| dashboard | 10 | 9/1/0 | 6/0/0 | 0/10/0 | ai |
+| demo-tenant | 1 | 1/0/0 | 1/0/0 | 0/1/0 | — |
+| documents | 16 | 14/1/1 | 4/1/0 | 0/13/3 | — |
+| enrollment | 24 | 21/3/0 | 5/1/1 | 0/14/10 | external-send·ai·external-read |
+| exams | 8 | 6/2/0 | 2/0/1 | 0/4/4 | — |
+| help | 5 | 5/0/0 | 1/0/0 | 0/5/0 | notify |
+| integrations | 20 | 15/4/1 | 7/0/0 | 0/16/4 | external-send·external-read |
+| inventory | 22 | 22/0/0 | 6/0/1 | 0/16/6 | — |
+| lesson-reports | 34 | 20/14/0 | 7/0/1 | 0/22/12 | — |
+| makeups | 6 | 1/0/5 | 3/0/0 | 0/6/0 | — |
+| meetings | 9 | 9/0/0 | 4/0/0 | 0/9/0 | ai·external-send |
+| newcomers | 2 | 2/0/0 | 1/0/1 | 0/1/1 | — |
+| onescreen | 48 | 26/20/2 | 8/4/1 | 2/23/23 | ai·notify·external-read |
+| owner-settings | 25 | 23/1/1 | 7/1/0 | 1/17/7 | ai |
+| payroll | 11 | 11/0/0 | 4/0/0 | 0/11/0 | — |
+| platform-console | 12 | 12/0/0 | 5/0/0 | 0/12/0 | — |
+| recording-transcription | 1 | 0/1/0 | 1/0/0 | 0/1/0 | — |
+| retention | 4 | 4/0/0 | 2/0/0 | 0/4/0 | — |
+| shell-infrastructure | 3 | 3/0/0 | 2/0/0 | 0/3/0 | — |
+| shuttle | 46 | 39/7/0 | 10/2/1 | 1/35/10 | external-send |
+| slack | 14 | 12/2/0 | 4/0/0 | 0/13/1 | external-send |
+| staff | 42 | 36/4/2 | 8/2/1 | 2/23/17 | ai·external-read·notify |
+| student-contribution | 12 | 5/7/0 | 4/1/0 | 1/6/5 | ai |
+| students | 30 | 29/1/0 | 7/2/1 | 2/19/9 | external-read·external-send |
+| support | 5 | 5/0/0 | 2/0/0 | 0/5/0 | notify |
+| tasks-notifications | 5 | 5/0/0 | 1/0/0 | 0/5/0 | — |
+| teacher-workspace | 5 | 4/1/0 | 2/0/0 | 0/4/1 | — |
+| textbooks | 23 | 15/7/1 | 5/1/0 | 1/14/8 | — |
+| timetable | 30 | 18/8/4 | 7/1/1 | 1/21/8 | external-read |
+| video-homework | 12 | 10/2/0 | 4/0/0 | 0/10/2 | ai |
+| withdrawal-reports | 4 | 4/0/0 | 3/0/0 | 0/4/0 | external-read |
+| withdrawals | 5 | 4/1/0 | 2/1/1 | 0/3/2 | — |
+
+새로 찾은 동작 묶음 28개 — 핵심 동작 목록에 없던 독립 동작(빠진 기능이 아니라 목록이 덜 세던 것). 원장 기능인 셋(강의실 자동배정·반 레벨 변경·근무 설정)은 카탈로그 동작을 새로 만들었다:
+
+| 묶음 | 동작 | export | 쓰기 | 3.0 목적지 | 원문에서 확인한 것 |
+| --- | --- | --- | --- | --- | --- |
+| attendance.change-poll | 오늘 출결·출결 요약 변화 감지(폴링) | 2 | 0 | workspace-attendance/live | 건수만이 아니라 정정(출석→결석)까지 잡는 지문을 돌려준다. 권한이 없거나 실패하면 폴링이 조용히 멈춘다. |
+| attendance.hub-search | 출석부 허브 원생 찾기 | 1 | 0 | workspace-attendance/monthly | — |
+| attendance.seat-jj | 자리 출석부 JJ 칸 기록·외운 단어 가져오기 | 3 | 3 | class-sheets.missing | 그 교시 명단에 있는 학생만 · 칸 길이 제한 · 값이 다 비면 행을 지운다. 외운 단어 가져오기는 IJW 조회이며 공개 PIN 화면에서는 막힌다. |
+| attendance.seat-plan | 자리 출석부 진도(수업계획) 줄 편집 — 공개 자리 화면 포함 | 6 | 6 | class-sheets.goal | 영어 시트와 같은 표(class_sheet_plan_lines)·같은 쓰기 함수(plan-write.ts)를 공개 자리 화면 게이트(gateSeatPlanWrite·gateSeatPinOnly) 뒤에서 부른다. 칸 감사로그는 칸을 떠날 때 한 줄. |
+| class-review.portfolio-compare | 직원 포트폴리오 비교 표 | 1 | 0 | workspace-class-review/portfolio | — |
+| class-sheets.day-plan | 영어 시트 하루 수업계획 조회 | 1 | 0 | workspace-class-sheets/ecs | — |
+| class-sheets.ecs-attendance | 영어 시트 출석 체크·취소 | 2 | 2 | attendance.mark | 기록이 없을 때만 출석으로(RPC 원자 처리), 취소는 결석·지각·사유·시수가 적힌 기록이면 거절한다. 강사는 출결 수정 기간 안에서만. |
+| class-sheets.ecs-makeup-remove | 영어 시트 보강(수업외) 학생 빼기 | 1 | 1 | onescreen.makeup | 그날 실제 수강생이면 거절하고, 보강 예약·보강 사례에 이어진 기록이면 지우지 않는다. 출결과 태도 기록을 함께 지운다. |
+| class-sheets.mcs-goals | 수학 강사 시트 월 목표 작성·지난 달 가져오기 | 3 | 3 | class-sheets.math | 그 반 학생만 · 두 값이 비면 행을 지운다 · 가져오기는 이번 달에 비어 있는 학생만 채운다. |
+| class-sheets.shouting | EiE 교시 Shouting 체크 | 1 | 1 | class-sheets.missing | EiE 반에서만 저장된다. |
+| classes.classroom-auto | 강의실 자동배정 | 2 | 1 | classes.classroom-auto | 반 관리 권한자만 · 바뀐 반만 강의실별로 묶어 classes.classroom_id를 고친다. |
+| documents.view | 문서 열람·내려받기 링크 | 1 | 0 | workspace-documents/preview | — |
+| enrollment.count-poll | 신규 콜&상담 건수 폴링 | 1 | 0 | workspace-enrollment/pending | — |
+| onescreen.ment-styles | 강사별 멘트 말투 프로파일 보기·지금 갱신(AI) | 2 | 1 | onescreen.ment | — |
+| onescreen.report-reads | 원스크린 조회(성적 추이·발송 달력·지난 보고서·발송 상태·첨부 썸네일·JJ 하루) | 6 | 0 | workspace-onescreen/reports | — |
+| onescreen.student-order | 원스크린 학생 순서 | 1 | 1 | 화면 상태 — 강사 개인의 학생 줄 순서 — 3.0 화면이 스스로 정렬한다 | — |
+| onescreen.trend-optout | 학습 추세 미발송 지정 | 1 | 1 | onescreen.ment | 켜면 최근 14일 안의 아직 안 보낸 내 보고서에서 학습 추세 문장을 지운다. |
+| owner-settings.popup-dismiss | 팝업 공지 다시 보지 않기(계정 단위) | 2 | 2 | 화면 상태 — 받는 사람 개인의 팝업 닫기 상태 — 3.0 화면 상태 | — |
+| shuttle.live-map | 실시간 차량 위치·회차 도로 경로 | 2 | 0 | workspace-shuttle/live | 도로 경로는 카카오 길찾기 API(POST 조회)로 계산한다. |
+| shuttle.parent-live | 학부모 실시간 차량·셔틀 알림 확인 | 3 | 1 | workspace-parent-portal/live | 우리 아이가 오늘 타는 회차만 보인다. 알림 확인은 학부모 본인 화면에서만 내린다. |
+| staff.dashboard-assign | 직원별 대시보드 배정 | 1 | 1 | dashboard.layout | 원장 역할만 · 학원 설정 저장 경로(saveOwnerSection)를 그대로 거친다. |
+| staff.work-schedule | 직원 주간 근무 일정 | 1 | 1 | staff.schedule | 직원관리 쓰기 권한 + 대상보다 강한 역할만 · 요일 키와 유효 시간대만 저장. |
+| student-contribution.evidence-reads | 기여도 근거 조회(소통·학습 연결·학부모 행사·대기 상세·최근·영상 숙제) | 6 | 0 | workspace-student-contribution/ontology | 저장된 월 실적·점수는 바꾸지 않는다. 게이트 = 기여도 게이트 + 열람 가능한 학생(getLiveContext). |
+| students.dup-suspect | 동명이인 의심 표식 내리기 | 1 | 1 | owner-settings.data | — |
+| students.progress-backfill | 진도 기록 재구성(지난 수학 보고서 백필) | 1 | 1 | owner-settings.data | 원생 쓰기 권한 · 시험 실행(dryRun) 갈래가 있다 · 멱등 · 감사로그를 남기지 않는다. |
+| textbooks.plan-compare | 원래 월간계획과 실제 비교 | 1 | 0 | class-sheets.gap | — |
+| timetable.class-level | 영어 반 레벨 변경(반 이름 규칙) | 1 | 1 | classes.level | 반 이름을 레벨 규칙(DP3→DP4 등)으로 바꾼다. 강사는 담당 반만, 같은 이름의 반이 있으면 이름 가드가 막는다. |
+| withdrawals.exit-overlay | 시간표 X — 석 달 퇴원 겹침 | 1 | 0 | workspace-timetable/board | — |
+
+사람이 본문을 보고 고친 기계 판정(경로를 가리지 않는 추적의 과대 추정):
+- `lesson-reports|getAdminSendClassOptions` mutation → read — 반 보드가 없을 때의 사유만 묻고 동기화 요청 갈래는 끈다(request: false) — 요청은 실제 발송 때.
+- `shuttle|getParentRunRoadPath` mutation → read — 카카오 길찾기 API를 POST로 부르지만 경로 계산 조회다(학부모 화면, 상태를 바꾸지 않음).
+- `shuttle|getRunRoadPath` mutation → read — 카카오 길찾기 API를 POST로 부르지만 경로 계산 조회다(상태를 바꾸지 않음).
+- `slack|listSlackChannels` mutation → read — Slack 읽기 메서드(conversations.list)를 폼 POST로 부른다.
+- `slack|loadSlackPeople` mutation → read — Slack 읽기 메서드(users.list)를 폼 POST로 부른다.
+
+알림 종류: 서버 액션 본문 추적에서 `notifyUsers`의 type이 잡힌 것은 8종(approval_decided, approval_requested, attendance_complete, attendance_input_request, class_delegation, support_answer, teacher_handover, todays_math_exam_report)이다. 39종 목록의 나머지는 API·크론·DB 트리거·워커에서 만들거나 type이 동적이다 — 이 표만으로 출처를 단정하지 않는다.
 
 ## 14. 다음 구현 권고
 
 1. **요청 저장소부터** — AX "요청한 업무"(원장 → 담당자, 기한·우선순위·알림 채널, 확인·완료 보고)를 저장할 테이블이 2.0에 없다. `staff_tasks`는 기록의 사실로 자동 생성·자동 종료되는 할 일이라 사람이 보낸 요청과 섞으면 종료 규칙이 깨진다. 새 테이블(tenant_id + RLS) + 감사로그 + 강사 미니셸 수신함(teacher-workspace)이 한 묶음이다.
-2. **P0 이슈 원천을 실제 판정으로 교체** — 시안 이슈 7종은 복사본 집계다. 2.0이 이미 판정하는 원천을 그대로 읽는다: 할 일 11종(`staff_tasks.kind`), 알림 38종(`notifications.type`), 대시보드 위젯 36종의 판정 함수(`src/features/dashboard/*`). 같은 숫자를 두 번 계산하지 않는다(같은 데이터는 같은 원본).
+2. **P0 이슈 원천을 실제 판정으로 교체** — 시안 이슈 7종은 복사본 집계다. 2.0이 이미 판정하는 원천을 그대로 읽는다: 할 일 11종(`staff_tasks.kind`), 알림 39종(`notifications.type`), 대시보드 위젯 36종의 판정 함수(`src/features/dashboard/*`). 같은 숫자를 두 번 계산하지 않는다(같은 데이터는 같은 원본).
 3. **근거 패널 = 2.0 상세 화면 딥링크** — 원생 상세(탭 13), 반 상세, 청구 상세, 상담 상세, 결재 문서, 보고서 발송 큐. 3.0 메뉴를 186개로 늘리지 않고 이슈 → 근거 → 2.0 화면(창)으로 들어간다.
 4. **결정 이슈는 실제 경로로** — 결재(`decideDocument`), 퇴원보고서(`changeWithdrawalReport`), 학부모 답글(`requestParentReply`)처럼 원장이 결정하는 동작은 시안의 세션 흉내를 걷고 2.0 서버 액션을 그대로 부른다.
 5. **자동화 = 2.0 슬랙 규칙 구조** — 범주 12·프리셋 4·전달 이벤트 38·요약 일정·방해금지. AX 자동화 토글은 새 저장소를 만들지 말고 `slack_rules`/`tenant_settings` 위에 얹는다.
