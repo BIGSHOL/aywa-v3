@@ -5,6 +5,15 @@ import { openStore, namespaceDir, StoreError } from './flow-store.mjs';
 import { seedSource } from './flow-engine.mjs';
 import { buildView } from './flow-view.mjs';
 import { failedDecision, recordDecision, runCommand } from './flow-commands.mjs';
+import { createHierarchyRuntime, openOverlay } from './flow-hierarchy-runtime.mjs';
+import { createHierarchyProviders } from './flow-hierarchy-providers.mjs';
+
+/** Hierarchy AI providers: off unless OWNER_CONCEPT_HIERARCHY_AI=on (tests and other servers make no calls). */
+function hierarchyProviders(option, env) {
+  if (option && 'providers' in option) return { providers: option.providers, reason: option.providers ? null : '자동 분석이 꺼져 있음' };
+  if (env.OWNER_CONCEPT_HIERARCHY_AI !== 'on' || env.NODE_ENV === 'production' || env.VERCEL) return { providers: null, reason: '자동 분석이 꺼져 있음' };
+  try { return { providers: createHierarchyProviders({ env }), reason: null }; } catch (error) { console.error(`Hierarchy AI unavailable: ${error.code || 'error'}`); return { providers: null, reason: '자동 분석 전송 설정 오류' }; }
+}
 
 const REPO = resolve(fileURLToPath(new URL('../../', import.meta.url)));
 /** Default store dir: <data root>/../owner-flow/<worktree folder>/<tenant>-<capturedAt>. */
@@ -14,7 +23,7 @@ export function defaultStoreDir({ dataRoot, identity, env = process.env }) {
   return namespaceDir({ root, namespace: env.OWNER_CONCEPT_FLOW_NAMESPACE || basename(REPO), tenantSlug: identity.tenantSlug, capturedAt: identity.capturedAt });
 }
 
-export async function createFlowService({ source, dir, ai, tenantName = '', lock = true, now = () => new Date().toISOString(), waitMs }) {
+export async function createFlowService({ source, dir, ai, tenantName = '', lock = true, now = () => new Date().toISOString(), waitMs, hierarchy, env = process.env }) {
   const store = await openStore({ dir, identity: source.identity, lock });
   // Seeding is idempotent per stable source key; it only writes when something new appears.
   const seeded = await store.transact(async draft => {
@@ -24,7 +33,7 @@ export async function createFlowService({ source, dir, ai, tenantName = '', lock
     return { next: draft, result: created };
   });
   // A judgment still pending on disk belonged to a process that is gone: record it as interrupted
-  // (visible, review kept). Nothing calls AI on start.
+  // (visible, review kept). No case judgment is re-run on start (the hierarchy queue below is separate).
   const interrupted = await store.transact(async draft => {
     const list = Object.values(draft.cases).filter(c => c.pendingDecision);
     if (!list.length) return { next: null, result: 0 };
@@ -37,13 +46,22 @@ export async function createFlowService({ source, dir, ai, tenantName = '', lock
     return { next: draft, result: list.length };
   });
   const jobs = new Map(); // judgments running outside the write queue, by request event id
+  let overlay;
+  try { overlay = await openOverlay({ dir, identity: source.identity, lock }); } catch (error) { await store.close(); throw error; }
+  // Issue hierarchy (FLOW-HIERARCHY.md): GET reads the overlay only; the background queue starts here
+  // (seeds the supported case once) and is nudged after every committed command.
+  const { providers, reason } = hierarchyProviders(hierarchy, env);
+  const runtime = createHierarchyRuntime({ getSource: () => source, getState: () => store.state, overlay, providers, disabledReason: reason, budget: hierarchy?.budget, clock: hierarchy?.clock, log: hierarchy?.log || (m => console.log(m)) });
+  runtime.start();
   return {
-    store, seeded, interrupted,
+    store, seeded, interrupted, hierarchyRuntime: runtime,
     view: (params = {}) => buildView(store.state, source, { aiStatus: ai.status(), tenantName, inFlight: jobs, ...params }),
-    command: body => runCommand(store, source, body, { ai, now, jobs, waitMs }),
+    hierarchy: caseId => runtime.view(caseId),
+    hierarchyTag: caseId => { runtime.check(caseId); return runtime.etag(caseId); },
+    command: async body => { const result = await runCommand(store, source, body, { ai, now, jobs, waitMs }); runtime.notify(); return result; },
     /** Resolves when every judgment started so far has settled (tests, shutdown). */
     settled: () => Promise.all([...jobs.values()]),
-    close: () => store.close(),
+    close: async () => { await runtime.close(); await overlay.close(); await store.close(); },
   };
 }
 

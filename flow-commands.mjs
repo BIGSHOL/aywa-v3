@@ -4,6 +4,7 @@ import { scrub } from './domain-snapshot-core.mjs';
 import { FAMILY_IDS } from './domain-snapshot.mjs';
 import { COMMAND_KINDS, COMMAND_ROLES, PRIORITIES, REPORT_OUTCOMES, SCENARIOS, TEMPLATES } from './flow-rules.mjs';
 import { actorMap, advance, entityRef, newEvent, refreshCase, resolveRole, step } from './flow-engine.mjs';
+import { signalStepRefs } from './flow-hierarchy.mjs';
 
 export class CommandError extends Error { constructor(status, code, message, extra = {}) { super(message); this.status = status; this.code = code; this.extra = extra; } }
 const bad = (message, code = 'invalid_request') => new CommandError(400, code, message);
@@ -54,9 +55,9 @@ const assignable = (actors, ids, field = 'assigneeIds') => {
   for (const id of ids) { const a = actors.get(id); if (!a || a.preview || !a.assignable) throw new CommandError(400, 'assignee_not_allowed', '배정할 수 없는 사람이 있습니다.'); }
   return ids;
 };
-function recordRefs(source, list, allowed) {
+function recordRefs(source, list, allowed, max = 20) {
   if (list === undefined) return [];
-  if (!Array.isArray(list) || list.length > 20) throw bad('recordRefs는 20개까지입니다.');
+  if (!Array.isArray(list) || list.length > max) throw bad(`recordRefs는 ${max}개까지입니다.`);
   return list.map(r => {
     const key = typeof r === 'string' ? r : r && typeof r === 'object' ? `${r.type}:${r.id}` : '';
     if (!/^[a-z_]{2,30}:[A-Za-z0-9:_-]{1,80}$/.test(key) || (allowed && !allowed.has(key))) throw new CommandError(400, 'record_ref_not_allowed', '이 업무와 관련된 기록만 근거로 붙일 수 있습니다.');
@@ -65,6 +66,15 @@ function recordRefs(source, list, allowed) {
   });
 }
 const caseRefKeys = (source, c) => { const s = new Set(c.entityRefs.map(r => `${r.type}:${r.id}`)); for (const st of c.steps) for (const k of st.refs || []) s.add(k); for (const k of [...s]) for (const r of source.relations) if (`${r.from.type}:${r.from.id}` === k) s.add(`${r.to.type}:${r.to.id}`); return s; };
+// Hierarchy-supported signal cases: the reporting step's full verified refs (the seed stores ≤50) plus one
+// FK hop — never another step's records. Every other case keeps caseRefKeys.
+const reportRefKeys = (source, c, step) => {
+  const full = signalStepRefs(source, c);
+  if (!full) return caseRefKeys(source, c);
+  const s = new Set(full.get(step.id) || []);
+  for (const k of [...s]) for (const r of source.relations) if (`${r.from.type}:${r.from.id}` === k) s.add(`${r.to.type}:${r.to.id}`);
+  return s;
+};
 
 function pickStep(c, payload, predicate, actor) {
   if (payload.stepId !== undefined && !/^[A-Za-z0-9_-]{1,140}$/.test(payload.stepId)) throw bad('stepId 형식이 올바르지 않습니다.');
@@ -141,7 +151,8 @@ export async function applyCommand(state, source, cmd, { now, inFlight = new Map
       const c = getCase(), s = pickStep(c, payload, x => (x.status === 'ready' || x.status === 'working') && !x.review, actor);
       if (!str(payload.note, 2, 2000)) throw new CommandError(400, 'evidence_required', '처리 결과를 2자 이상 적어 주세요.');
       if (payload.outcome !== undefined && !REPORT_OUTCOMES[payload.outcome]) throw bad('outcome 값이 올바르지 않습니다.');
-      const refs = recordRefs(source, payload.recordRefs, caseRefKeys(source, c));
+      // A hierarchy student cell sends all of its records (one class, real max 18): 60 there, 20 everywhere else.
+      const refs = recordRefs(source, payload.recordRefs, reportRefKeys(source, c, s), signalStepRefs(source, c) ? 60 : 20);
       const evidence = { id: `ev-${state.seq + 1}`, note: scrub(payload.note.trim()), recordRefs: refs, actorId: actor.id, at, stepId: s.id, outcome: payload.outcome || 'done' };
       if (c.closure === 'fact') {
         // Source facts never close locally: the report becomes a linked local follow-up case.

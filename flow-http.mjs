@@ -2,8 +2,9 @@
 // assistant: exact same-origin, JSON only, bounded body. The store directory is never served.
 import { CommandError } from './flow-commands.mjs';
 import { StoreError } from './flow-store.mjs';
+import { HierarchyError } from './flow-hierarchy.mjs';
 
-export const FLOW_PATH = '/api/flow', ACTIONS_PATH = '/api/flow/actions';
+export const FLOW_PATH = '/api/flow', ACTIONS_PATH = '/api/flow/actions', HIERARCHY_PATH = '/api/flow/hierarchy';
 const BODY_LIMIT = 16 * 1024;
 const JSON_TYPE = /^application\/json\s*(?:;\s*charset\s*=\s*"?utf-8"?\s*)?$/i;
 
@@ -28,15 +29,30 @@ export function createFlowRoute({ flow, origins, headers = {}, enabled = true })
   const fail = (res, error) => {
     if (error instanceof CommandError) return send(res, error.status, { error: error.code, message: error.message, ...error.extra }, error.status === 413 ? { Connection: 'close' } : {});
     if (error instanceof StoreError) return send(res, error.code === 'store_write_failed' ? 500 : 503, { error: error.code, message: error.message });
+    if (error instanceof HierarchyError) return send(res, error.status, { error: error.code, message: error.message });
     return send(res, 500, { error: 'flow_failed', message: '업무 흐름을 처리하지 못했습니다.' });
   };
   const unavailable = res => { const f = flow.failure; send(res, 503, f ? { error: f.code, message: f.message } : { error: 'flow_starting', message: '업무 흐름을 준비하는 중입니다.' }, { 'Retry-After': '2' }); };
   return {
-    handles: path => path === FLOW_PATH || path === ACTIONS_PATH,
+    handles: path => path === FLOW_PATH || path === ACTIONS_PATH || path === HIERARCHY_PATH,
     async handle(req, res, path) {
       if (!enabled) return send(res, 404, { error: 'not_found', message: '사용할 수 없는 주소입니다.' });
       const site = req.headers['sec-fetch-site'];
       if (site && site !== 'same-origin' && site !== 'none') return send(res, 403, { error: 'forbidden_origin', message: '이 화면에서만 요청할 수 있습니다.' });
+      // Issue hierarchy: stored tree + AI results only. GET never starts a provider call (FLOW-HIERARCHY.md).
+      if (path === HIERARCHY_PATH) {
+        if (!['GET', 'HEAD'].includes(req.method)) return send(res, 405, { error: 'method_not_allowed', message: '조회만 할 수 있습니다.' }, { Allow: 'GET, HEAD' });
+        const q = new URL(req.url, 'http://127.0.0.1').searchParams;
+        if ([...q.keys()].some(k => k !== 'caseId') || q.getAll('caseId').length !== 1 || !/^[A-Za-z0-9_-]{1,120}$/.test(q.get('caseId'))) return send(res, 400, { error: 'invalid_request', message: '업무 번호(caseId) 하나만 보낼 수 있습니다.' });
+        if (!flow.service) return unavailable(res);
+        try {
+          const tag = flow.service.hierarchyTag(q.get('caseId'));
+          if (req.headers['if-none-match'] === tag) { res.writeHead(304, { ...headers, ETag: tag }); return res.end(); }
+          const body = Buffer.from(JSON.stringify(flow.service.hierarchy(q.get('caseId'))));
+          res.writeHead(200, { ...headers, 'Content-Type': 'application/json; charset=utf-8', 'Content-Length': body.length, ETag: tag });
+          return res.end(req.method === 'HEAD' ? undefined : body);
+        } catch (error) { return fail(res, error); }
+      }
       if (path === FLOW_PATH) {
         if (!['GET', 'HEAD'].includes(req.method)) return send(res, 405, { error: 'method_not_allowed', message: '조회만 할 수 있습니다.' }, { Allow: 'GET, HEAD' });
         if (!flow.service) return unavailable(res);

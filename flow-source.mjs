@@ -26,8 +26,9 @@ export async function loadFlowSource({ workspaces, capturedAt, asOf }) {
       for (const u of users) put('staff', u.id, u.display_name, 'staff');
       const staffKey = id => id && entities.has(`staff:${id}`) ? `staff:${id}` : null;
 
-      const students = await sql`select id, name from public.students where tenant_id=${t} and not coalesce(is_test,false)`;
-      for (const s of students) put('student', s.id, s.name, 'students');
+      const students = await sql`select id, name, status::text st, school, grade from public.students where tenant_id=${t} and not coalesce(is_test,false)`;
+      // status/school/grade stay server-side (hierarchy cohort check and local labels); the /api/flow entity view does not copy them.
+      for (const s of students) put('student', s.id, s.name, 'students', { status: s.st, school: scrub(s.school) || null, grade: scrub(s.grade) || null });
       const studentKey = id => id && entities.has(`student:${id}`) ? `student:${id}` : null;
       const classes = await sql`select id, class_name, teacher_id from public.classes where tenant_id=${t}`;
       for (const c of classes) { const k = put('class', c.id, c.class_name, 'classes', { teacherId: c.teacher_id }); link('homeroom', k, staffKey(c.teacher_id), 'classes.teacher_id'); }
@@ -38,8 +39,8 @@ export async function loadFlowSource({ workspaces, capturedAt, asOf }) {
       // Absences this month (latest correction only) — scenario candidates and the repeat-absence signal.
       const absences = await sql`select a.id, a.student_id, a.class_id, a.session_date::text d from public.attendance_records a where a.tenant_id=${t} and a.status='absent' and a.session_date between ${monthStart} and ${asOf} and not exists (select 1 from public.attendance_records b where b.tenant_id=${t} and b.supersedes_id=a.id) order by a.session_date desc, a.id`;
       for (const a of absences) { if (!studentKey(a.student_id)) continue; const k = put('attendance', a.id, `${a.d} 결석`, 'attendance', { date: a.d, studentId: a.student_id, classId: a.class_id }); link('about_student', k, studentKey(a.student_id), 'attendance_records.student_id'); link('in_class', k, classKey(a.class_id), 'attendance_records.class_id'); }
-      const invoices = await sql`select id, student_id, period, greatest(0, amount_total - coalesce(amount_discount,0) - coalesce(amount_paid,0))::float8 remaining, due_date::text due, status::text st from public.invoices where tenant_id=${t} and period=${month} and status::text not in ('void','refunded')`;
-      for (const i of invoices) { if (!studentKey(i.student_id)) continue; const k = put('invoice', i.id, `${i.period} 청구`, 'billing', { remaining: i.remaining, dueDate: i.due }); link('billed_to', k, studentKey(i.student_id), 'invoices.student_id'); }
+      const invoices = await sql`select id, student_id, period, amount_total::float8 billed, coalesce(amount_discount,0)::float8 discount, coalesce(amount_paid,0)::float8 paid, greatest(0, amount_total - coalesce(amount_discount,0) - coalesce(amount_paid,0))::float8 remaining, due_date::text due, status::text st from public.invoices where tenant_id=${t} and period=${month} and status::text not in ('void','refunded')`;
+      for (const i of invoices) { if (!studentKey(i.student_id)) continue; const k = put('invoice', i.id, `${i.period} 청구`, 'billing', { remaining: i.remaining, dueDate: i.due, period: i.period, billed: i.billed, discount: i.discount, paid: i.paid, studentId: i.student_id }); link('billed_to', k, studentKey(i.student_id), 'invoices.student_id'); }
       const consults = await sql`select id, student_id, counselor_id, to_char(consulted_at at time zone 'Asia/Seoul','YYYY-MM-DD') d from public.student_consultations where tenant_id=${t} and (consulted_at at time zone 'Asia/Seoul')::date between ${asOf}::date - 30 and ${asOf} order by consulted_at desc, id`;
       for (const c of consults) { if (!studentKey(c.student_id)) continue; const k = put('consultation', c.id, `${c.d} 상담`, 'consultations', { date: c.d }); link('about_student', k, studentKey(c.student_id), 'student_consultations.student_id'); link('counselor', k, staffKey(c.counselor_id), 'student_consultations.counselor_id'); }
       const leads = await sql`select id, prospect_name, consultant_id from public.enrollment_consultations where tenant_id=${t} and outcome::text in ('scheduled','consulted','ai_done')`;

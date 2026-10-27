@@ -1,7 +1,7 @@
 // GET /api/flow body (flow_contract v1.1). Read-only over the in-memory state; never calls AI.
 import { actorsOf } from './flow-engine.mjs';
 
-export const LIMITS = Object.freeze({ cases: 500, events: 200, entities: 3000 });
+export const LIMITS = Object.freeze({ cases: 500, events: 200, entities: 3000, candidates: 100 });
 const PRIORITY_ORDER = { high: 0, normal: 1, low: 2 }, STATE_ORDER = { review: 0, open: 1, working: 2, done: 3 };
 
 // Judgment display (UX contract): status ok|pending|unavailable|error|skipped + Korean reason.
@@ -87,8 +87,19 @@ export function buildView(state, source, { aiStatus, now = new Date().toISOStrin
     byActor, bottlenecks: [...roleWaiting.values()].sort((a, b) => b.waiting - a.waiting).slice(0, 6),
     devActions: state.events.filter(e => e.origin === 'dev').length, snapshotEvents: state.events.filter(e => e.origin === 'snapshot').length,
   };
+  // Scenario picker: the real records event.simulate accepts, with FK-verified fields only (labels are joined
+  // by id on the client; no contacts). followup = the open local scenario already made from that record.
+  const openScenario = new Map(all.filter(c => c.kind === 'scenario' && c.state !== 'done').map(c => [`${c.scenario}|${c.scenarioKey}`, { caseId: c.id, state: c.state }]));
+  const picker = (scenario, type, fields) => (source.candidates?.[scenario] || []).slice(0, LIMITS.candidates).map(id => source.entities.get(`${type}:${id}`)).filter(Boolean)
+    .map(e => ({ id: e.id, ...fields(e), followup: openScenario.get(`${scenario}|${type}:${e.id}`) || null }));
+  const scenarioCandidates = {
+    absence: picker('absence', 'attendance', e => ({ date: e.date, studentId: e.studentId, classId: e.classId && source.entities.has(`class:${e.classId}`) ? e.classId : null })),
+    // remaining = billed − discount − paid (the discount is not unpaid).
+    billing: picker('billing', 'invoice', e => ({ period: e.period ?? null, studentId: e.studentId ?? null, billed: e.billed ?? null, discount: e.discount ?? null, paid: e.paid ?? null, remaining: e.remaining, due: e.dueDate || null })),
+    totals: { absence: source.candidates?.absence?.length || 0, billing: source.candidates?.billing?.length || 0 }, limit: LIMITS.candidates,
+  };
   return {
-    schemaVersion: 1, asOf: source.identity.asOf, revision: state.revision, mode: 'local-preview',
+    schemaVersion: 1, asOf: source.identity.asOf, revision: state.revision, mode: 'local-preview', scenarioCandidates,
     source: { tenant: tenantName, capturedAt: source.identity.capturedAt, asOf: source.identity.asOf, note: '원본은 복사 시점의 기록이며, 이 화면의 처리·요청은 로컬 미리보기(origin dev)입니다.' },
     actors, entities, relations, cases: cases.map(c => caseView(c, inFlight)), casesTotal: all.length, casePage, casePageSize: LIMITS.cases, casePageCount: Math.max(1, Math.ceil(all.length / LIMITS.cases)),
     // Newest events (chronological); older ones via ?eventsBefore=<event number>.

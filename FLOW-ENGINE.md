@@ -54,7 +54,11 @@
 
 ## API
 
-`GET /api/flow[?casePage=N][&eventsBefore=N]` → `{ schemaVersion:1, mode:'local-preview', asOf, revision, source, actors, entities, relations, cases(≤500), casesTotal, casePage, casePageSize, casePageCount, events(최신 200), eventsTotal, metrics, aiStatus }`. 읽기 전용이며 **AI를 부르지 않습니다**(5~10초 폴링 안전).
+`GET /api/flow[?casePage=N][&eventsBefore=N]` → `{ schemaVersion:1, mode:'local-preview', asOf, revision, source, actors, entities, relations, cases(≤500), casesTotal, casePage, casePageSize, casePageCount, events(최신 200), eventsTotal, metrics, aiStatus, scenarioCandidates }`. 읽기 전용이며 **AI를 부르지 않습니다**(5~10초 폴링 안전).
+
+`scenarioCandidates` = `event.simulate`가 받는 실제 기록(각 100건까지, 결석은 최신 수업일 먼저) — `absence[{id,date,studentId,classId|null,followup}]` · `billing[{id,period,studentId,billed,discount,paid,remaining,due,followup}]`(remaining = billed − discount − paid) · `totals`(자르기 전 수) · `limit`. 외래키로 확인된 값만 담고 이름·연락처는 넣지 않습니다. `followup`은 같은 기록으로 열린 로컬 시나리오(`{caseId,state}`)가 있을 때만.
+
+원생 → 반 → 강사 → 관리자·원장 계층과 그 AI 큐는 [`FLOW-HIERARCHY.md`](FLOW-HIERARCHY.md)(`GET /api/flow/hierarchy?caseId=`).
 
 `POST /api/flow/actions` `{ commandId, expectedRevision, actorId, kind, caseId?, payload }`
 
@@ -82,7 +86,7 @@
 
 ## AI 판정
 
-- 새 시나리오(`event.simulate`)는 Jev 판정을 **한 번** 요청하고, 그 밖에는 `case.analyze`(명시 버튼)일 때만 부릅니다. 화면 조회·시드·재시작은 AI를 부르지 않습니다. 같은 맥락은 판정 모듈 캐시가 받습니다(`cache.hit`).
+- 새 시나리오(`event.simulate`)는 Jev 판정을 **한 번** 요청하고, 그 밖에는 `case.analyze`(명시 버튼)일 때만 부릅니다. 화면 조회·시드·재시작은 이 업무 판정 AI를 부르지 않습니다(예외: `OWNER_CONCEPT_HIERARCHY_AI=on`일 때 계층 큐가 서버 시작과 명령 직후 새·바뀐 근거만 백그라운드로 처리 — FLOW-HIERARCHY.md). 같은 맥락은 판정 모듈 캐시가 받습니다(`cache.hit`).
 - **AI는 쓰기 대기열 밖에서 돕니다.** 1단계 쓰기에서 `decision.requested`를 남기고 일을 먼저 배정합니다(검토 단계는 보수적으로 포함). 판정은 그 뒤 따로 돌고(Jev 12초, Claude 초안 90초 제한), 2단계 쓰기가 `decision.recorded`(원인 = 판정 요청)를 남깁니다. 그동안 다른 직원의 처리는 그대로 저장됩니다. POST는 1.5초까지만 기다리고, 넘으면 `decision:'pending'`으로 답합니다.
   - 판정이 늦게 와도 이미 열린 검토 단계를 되돌리지 않습니다(`data.applied:false`). 사람이 `needs_review`·`unreachable`로 보고했으면 판정이 검토를 빼지 못합니다.
   - 판정이 도는 동안 같은 업무의 두 번째 `case.analyze`는 `duplicate:true`(revision 그대로).

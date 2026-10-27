@@ -32,6 +32,8 @@ const routes=new Map([
  ['/workspaces.css',['workspaces.css','text/css; charset=utf-8']],
  ['/flow-ui.js',['flow-ui.js','text/javascript; charset=utf-8']],
  ['/flow-ui.css',['flow-ui.css','text/css; charset=utf-8']],
+ ['/context-picker.js',['context-picker.js','text/javascript; charset=utf-8']],
+ ['/context-picker.css',['context-picker.css','text/css; charset=utf-8']],
  ['/fonts/PretendardVariable.woff2',['../../public/fonts/PretendardVariable.woff2','font/woff2']],
 ]);
 const headers={
