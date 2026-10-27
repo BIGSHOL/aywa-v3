@@ -7,6 +7,7 @@ import { EVAL_DIR } from './decision-eval-budget.mjs';
 import { summarize, latency, costSensitivity } from './decision-eval-metrics.mjs';
 import { claudeRoute } from './decision-eval.mjs';
 import { JEV_PRICE_USD_PER_MTOK, PRICE_SOURCE } from './decision-jev.mjs';
+import { BUDGETS } from './decision-eval-budget.mjs';
 
 const read = async name => { try { return JSON.parse(await readFile(join(EVAL_DIR, name), 'utf8')); } catch { return null; } };
 const byId = Object.fromEntries(CASES.map(k => [k.id, k]));
@@ -15,7 +16,7 @@ const usd = v => (v === null || v === undefined ? '—' : `$${v.toFixed(6)}`);
 const jevSignals = r => r.signals && { action: r.signals.actionNeeded.probability >= 0.5, area: r.area.value, manager: r.signals.managerReview.probability >= 0.5, safety: r.signals.safetyConcern.probability >= 0.5 };
 
 export async function buildReport() {
-  const [test, dev, rerun, swap, claude, draft, ledger, probe] = await Promise.all(['run-jev-test.json', 'run-jev-dev.json', 'run-jev-dev-rerun.json', 'run-swap.json', 'run-claude.json', 'run-draft.json', 'ledger.json', 'model-probe.json'].map(read));
+  const [test, dev, rerun, swap, claude, draft, ledger, probe, draftP2, deadlineProbe] = await Promise.all(['run-jev-test.json', 'run-jev-dev.json', 'run-jev-dev-rerun.json', 'run-swap.json', 'run-claude.json', 'run-draft.json', 'ledger.json', 'model-probe.json', 'run-draft-owner-draft-p2.json', 'run-probe-deadline.json'].map(read));
   if (!test) throw new Error('run-jev-test.json missing');
   const jevRows = test.rows.map(r => ({ k: byId[r.id], result: r.result, signals: jevSignals(r.result) }));
   const jev = summarize(jevRows);
@@ -40,7 +41,7 @@ export async function buildReport() {
       latency: { wallMs: latency(test.rows.map(r => r.wallMs)), transportMs: latency(test.rows.map(r => r.result.jevElapsedMs)), firstCallWallMs: test.rows[0].wallMs, sequentialTotalMs: test.totalWallMs },
       tokens: { inputTotal: tokens.reduce((a, b) => a + b, 0), inputPerRecord: latency(tokens), listUsdPerRecord: jevUsdPerRecord, priceSource: PRICE_SOURCE } },
     swap: swap && swap.rows.map(r => ({ id: r.id, area: r.result.area?.value, route: r.result.route, sameAreaAsTest: r.result.area?.value === test.rows.find(x => x.id === r.id).result.area?.value, sameRouteAsTest: r.result.route === test.rows.find(x => x.id === r.id).result.route })),
-    claude: base, draft,
+    claude: base, draft, draftP2, deadlineProbe,
     sensitivity: claudeDraftUsd === null ? null : { formula: 'usdPerRecord = jevUsdPerRecord + escalationFraction x claudeDraftUsd (Claude API-equivalent list price; subscription marginal bill not measured)', jevUsdPerRecord, claudeDraftUsd,
       table: costSensitivity({ jevUsdPerRecord, claudeUsdPerDraft: claudeDraftUsd, fractions: [jev.escalationFraction, 0.1, 0.25, 0.5, 1] }) },
     dev: { q1r1: dev && dev.rows.map(r => ({ id: r.id, route: r.result.route, ideal: byId[r.id].label.ideal })), q2r2Rerun: rerun && rerun.rows.map(r => ({ id: r.id, route: r.result.route, ideal: byId[r.id].label.ideal, urgency: r.result.signals?.urgency.value })) },
@@ -55,7 +56,7 @@ function markdown(r, test) {
   const row = (name, f) => `| ${name} | ${f(j)} | ${c ? f(c) : '—'} |`;
   const pr = m => `P ${pct(m.precision)} · R ${pct(m.recall)} (n=${m.n}, FN ${m.fn})`;
   const lines = [
-    '# Decision evaluation report', '', `Generated ${r.generatedAt}. Freeze ${r.freeze} · ${JSON.stringify(r.versions)}. Calls used: Jev ${r.ledger?.jev}/60 (incl. models GET, probes, dev, swap) · Claude ${r.ledger?.claude}/4.`,
+    '# Decision evaluation report', '', `Generated ${r.generatedAt}. Freeze ${r.freeze} · ${JSON.stringify(r.versions)}. Calls recorded: Jev ${r.ledger?.jev} · Claude ${r.ledger?.claude} (shared caps Jev ${BUDGETS.jev} / Claude ${BUDGETS.claude}: evaluation 60/4 + follow-up 2/1 + backend 2/1; incl. models GET, probes, dev, swap).`,
     `Jev model ${r.jev.model.join(', ')} · Claude ${r.claude?.model.join(', ') ?? '—'} (effort ${r.claude?.effort ?? '—'}, ${r.claude ? `${r.claude.auth.authMethod}/${r.claude.auth.subscriptionType}` : ''}). Synthetic held-out test set n=${r.jev.cases}: smoke evidence, not calibration.`, '',
     '| Metric (held-out test, same 32 records) | Jev + rules | Claude -p labels + same rules |', '|---|---|---|',
     row('Ideal route', s => pct(s.routeIdealRate)), row('Acceptable route', s => pct(s.routeAcceptableRate)),
@@ -72,9 +73,13 @@ function markdown(r, test) {
     ...(r.claude ? [
       ...r.claude.batches.map((b, i) => `- Claude batch ${i + 1}: ${b.records} records, wall ${b.wallMs} ms (API ${b.apiMs} ms, local startup ≈${b.startupMs} ms) → amortized ${Math.round(b.wallMs / b.records)} ms/record batch throughput, not per-record latency; CLI API-equivalent ${usd(b.apiEquivalentUsd)}; tokens ${JSON.stringify(b.usage)}.`),
       `- Claude single record (${r.claude.single.id}): wall ${r.claude.single.wallMs} ms (API ${r.claude.single.apiMs} ms, startup ≈${r.claude.single.startupMs} ms); API-equivalent ${usd(r.claude.single.apiEquivalentUsd)} (system prompt partly served from prompt cache: ${JSON.stringify(r.claude.single.usage)}).`] : []),
-    ...(r.draft ? [`- draftWithClaude (${r.draft.id}, route ${r.draft.route}): ${r.draft.draft.status}, ${r.draft.wallMs} ms, API-equivalent ${usd(r.draft.draft.apiEquivalentUsd)}, output ${r.draft.draft.usage?.outputTokens} tokens.`] : []),
+    ...(r.draft ? [`- draftWithClaude p1 (${r.draft.id}, route ${r.draft.route}): ${r.draft.draft.status}, ${r.draft.wallMs} ms, API-equivalent ${usd(r.draft.draft.apiEquivalentUsd)}, output ${r.draft.draft.usage?.outputTokens} tokens. Restated the urgency Choice confidence 0.79 as if it were a probability.`] : []),
+    ...(r.draftP2 ? [`- draftWithClaude ${r.draftP2.draft.promptVersion} (${r.draftP2.id}, same saved result): ${r.draftP2.draft.status}, ${r.draftP2.wallMs} ms, API-equivalent ${usd(r.draftP2.draft.apiEquivalentUsd)}, output ${r.draftP2.draft.usage?.outputTokens} tokens, cache read ${r.draftP2.draft.usage?.cacheReadTokens}. Decimal/percent claims in draft: ${r.draftP2.draft.status === 'drafted' ? 'none (validator passed)' : r.draftP2.draft.reason}.`] : []),
     '', '## Cost sensitivity (list-price estimates only)', '', `${r.sensitivity?.formula ?? '—'}`, '', '| escalation fraction | USD/record | USD/1,000 records |', '|---|---|---|',
     ...(r.sensitivity?.table ?? []).map(t => `| ${pct(t.escalationFraction)} | ${usd(t.usdPerRecord)} | $${t.usdPer1000Records.toFixed(4)} |`), '',
+    '## Follow-up live checks (task c59b2fc3e06b)', '',
+    ...(r.deadlineProbe ? [`- Deadline probe P1 (not in the frozen set, text 학생A 내일 결석합니다., requestedActionDate ${r.deadlineProbe.result.deadline.date}): ${r.deadlineProbe.result.model} ${r.deadlineProbe.result.route}; model urgency label ${r.deadlineProbe.result.signals?.urgency.value} (Choice confidence ${r.deadlineProbe.result.signals?.urgency.confidence.toFixed(2)}, not accuracy) vs code deadline ${r.deadlineProbe.result.deadline.relation} -> ${r.deadlineProbe.result.deadline.urgency}; ${r.deadlineProbe.wallMs} ms, ${r.deadlineProbe.result.usage?.inputTokens} input tokens. One record: it shows the field works end to end, not that model date reading is reliable (dev D8 said no_deadline for 내일).`] : []),
+    ...(r.draftP2 ? [`- Draft p2 explanation: ${r.draftP2.draft.explanation ?? '(none)'}`] : []), '',
     '## Option-order check (work_area options reversed)', '', ...(r.swap ?? []).map(s => `- ${s.id}: area ${s.area} (${s.sameAreaAsTest ? 'same' : 'DIFFERENT'}), route ${s.route} (${s.sameRouteAsTest ? 'same' : 'DIFFERENT'})`), '',
     '## Per-case (held-out test)', '', '| id | category | ideal | Jev route | action p | area (conf) | mgr p | safety p | ctx p | 2nd p | urgency | Claude route |', '|---|---|---|---|---|---|---|---|---|---|---|---|',
     ...test.rows.map(x => { const s = x.result.signals, a = r.claude?.agreement.find(y => y.id === x.id); const k = CASES.find(y => y.id === x.id);

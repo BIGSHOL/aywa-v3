@@ -12,7 +12,7 @@ import { createDecisionEngine } from './decision-engine.mjs';
 import { QUESTIONS, reversedAreaQuestions, validateContext } from './decision-questions.mjs';
 import { THRESHOLDS, applyPolicy } from './decision-policy.mjs';
 import { loadTypesafeKey } from './decision-key.mjs';
-import { CASES, contextOf } from './decision-eval-cases.mjs';
+import { CASES, CANDIDATES, TODAY, contextOf } from './decision-eval-cases.mjs';
 import { createLedger, EVAL_DIR } from './decision-eval-budget.mjs';
 import { BASELINE_SCHEMA, BASELINE_SYSTEM_PROMPT, buildBaselineInput, validateBaseline, claudeAnswers } from './decision-eval-claude.mjs';
 import { claudeArgs, createCliRunner, prepareRuntimeDir, DEFAULT_RUNTIME } from './decision-claude-cli.mjs';
@@ -99,16 +99,31 @@ async function main([mode, arg]) {
     process.stdout.write(`single ${one.id}: ${call.ok ? 'ok' : call.error} ${call.wallMs}ms\n`);
     await save('run-claude.json', out);
   } else if (mode === '--claude-draft') {
+    // Re-drafts a saved frozen test result; output file per prompt version (p1 = run-draft.json, kept).
     const k = byId(arg);
     const saved = (await load('run-jev-test.json')).rows.find(r => r.id === k.id);
-    const runner = await claudeRunner((await import('./decision-claude.mjs')).DRAFT_SCHEMA, (await import('./decision-claude.mjs')).DRAFT_SYSTEM_PROMPT, 0.5);
-    const done = await ledger.reserve('claude', `draftWithClaude ${k.id}`);
+    const { DRAFT_SCHEMA, DRAFT_SYSTEM_PROMPT, DRAFT_PROMPT_VERSION, buildDraftInput } = await import('./decision-claude.mjs');
+    const runner = await claudeRunner(DRAFT_SCHEMA, DRAFT_SYSTEM_PROMPT, 0.5);
+    const verdictSent = JSON.parse(buildDraftInput(validateContext(contextOf(k)).value, saved.result).split('\n').at(-1));
+    const done = await ledger.reserve('claude', `followup: draftWithClaude ${k.id} ${DRAFT_PROMPT_VERSION}`);
     const t0 = performance.now();
     const draft = await draftWithClaude(contextOf(k), saved.result, { runner, force: true });
     await done(draft.status);
-    await save('run-draft.json', { at: new Date().toISOString(), id: k.id, route: saved.result.route, wallMs: Math.round(performance.now() - t0), draft });
-    process.stdout.write(`draft ${k.id}: ${draft.status} ${draft.elapsedMs}ms\n`);
-  } else throw new Error('usage: --jev dev|test | --swap ids | --claude-baseline [singleId] | --claude-draft id');
+    await save(`run-draft-${DRAFT_PROMPT_VERSION}.json`, { at: new Date().toISOString(), id: k.id, route: saved.result.route, wallMs: Math.round(performance.now() - t0), verdictSent, draft });
+    process.stdout.write(`draft ${k.id} ${DRAFT_PROMPT_VERSION}: ${draft.status}${draft.reason ? ` (${draft.reason})` : ''} ${draft.elapsedMs}ms\n`);
+  } else if (mode === '--probe-deadline') {
+    // One live record outside the frozen set: Jev's urgency label next to the code deadline (D8 weakness).
+    const context = { recordId: 'P1', source: 'parent_message', today: TODAY, recordDate: TODAY, text: '학생A 내일 결석합니다.',
+      links: { student: true }, candidates: CANDIDATES, requestedActionDate: '2026-10-28' };
+    const engine = createDecisionEngine({ keyProvider, concurrency: 1, timeoutMs: 15_000 });
+    const done = await ledger.reserve('jev', 'followup: deadline probe P1');
+    const t0 = performance.now();
+    const result = await engine.evaluateDecision(context);
+    const wallMs = Math.round(performance.now() - t0);
+    await done(result.signals ? 'ok' : `review:${result.reasons[0]?.code}`);
+    await save('run-probe-deadline.json', { at: new Date().toISOString(), context: { ...context, candidates: '(synthetic CANDIDATES)' }, wallMs, result });
+    process.stdout.write(`P1 ${result.route} model urgency ${result.signals?.urgency.value ?? '-'} / code deadline ${result.deadline?.urgency} ${wallMs}ms\n`);
+  } else throw new Error('usage: --jev dev|test | --swap ids | --claude-baseline [singleId] | --claude-draft id | --probe-deadline');
   process.stdout.write(`${JSON.stringify(await ledger.snapshot())}\n`);
 }
 

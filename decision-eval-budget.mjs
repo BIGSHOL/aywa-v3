@@ -1,13 +1,15 @@
 // Persistent call budget for the decision evaluation (ignored work/ folder).
 // A call is reserved and written to disk BEFORE it is sent, so a crash or a
-// failed attempt still counts. Budgets: Jev 60 HTTP calls (models list and
-// retries included), Claude 4 `claude -p` calls, for the whole task.
+// failed attempt still counts. Shared caps (models list and retries included):
+//   task 210674e21ca4 evaluation   Jev 60 · Claude 4
+//   task c59b2fc3e06b follow-up    Jev +2 · Claude +1   (purpose prefix 'followup:')
+//   backend integration (separate) Jev +2 · Claude +1   (only if it reserves here, prefix 'backend:')
 import { mkdir, readFile, writeFile, rename } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 export const EVAL_DIR = resolve(fileURLToPath(new URL('../../work/owner-concept/decision-eval/', import.meta.url)));
-export const BUDGETS = Object.freeze({ jev: 60, claude: 4 });
+export const BUDGETS = Object.freeze({ jev: 60 + 2 + 2, claude: 4 + 1 + 1 });
 
 export class BudgetExceeded extends Error {
   constructor(kind, used, limit) { super(`${kind} call budget exhausted (${used}/${limit})`); this.kind = kind; }
