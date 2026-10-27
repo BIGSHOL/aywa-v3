@@ -1,0 +1,37 @@
+diff --git a/src/features/attendance/parent-alerts/server/jev-shadow.test.ts b/src/features/attendance/parent-alerts/server/jev-shadow.test.ts
+index 6c246150d..83939500d 100644
+--- a/src/features/attendance/parent-alerts/server/jev-shadow.test.ts
++++ b/src/features/attendance/parent-alerts/server/jev-shadow.test.ts
+@@ -27,7 +27,7 @@ function setup(thread: unknown[] = [row]) {
+ beforeEach(() => {
+   vi.clearAllMocks(); from.mockReset();
+   vi.stubEnv("CLASSNOTE_JEV_SHADOW_TENANT_IDS", tenantId); vi.stubEnv("CLASSNOTE_INTERNAL_SECRET", "test-secret");
+-  generate.mockResolvedValue({ data: { attendance: { type: "choice", choice: "late", confidence: 0.96, probabilities: { late: 1 } } }, model: "jev-1.13.0", elapsedMs: 200, usage: { inputTokens: 100, outputTokens: 10 } });
++  generate.mockResolvedValue({ data: { attendance: { type: "choice", choice: "late", confidence: 0.96, probabilities: { late: 1 } } }, model: "jev-1.14.0", elapsedMs: 200, usage: { inputTokens: 100, outputTokens: 10 } });
+ });
+ afterEach(() => vi.unstubAllEnvs());
+ 
+diff --git a/src/lib/ai/generate-decision.test.ts b/src/lib/ai/generate-decision.test.ts
+index 49bd42deb..adb6e0839 100644
+--- a/src/lib/ai/generate-decision.test.ts
++++ b/src/lib/ai/generate-decision.test.ts
+@@ -16,7 +16,7 @@ const options = {
+ };
+ beforeEach(() => {
+   vi.clearAllMocks(); licensed.mockResolvedValue(true); insert.mockResolvedValue({ error: null });
+-  call.mockResolvedValue({ model: "jev-1.13.0", data: {}, usage: { inputTokens: 12, outputTokens: 3 }, elapsedMs: 10 });
++  call.mockResolvedValue({ model: "jev-1.14.0", data: {}, usage: { inputTokens: 12, outputTokens: 3 }, elapsedMs: 10 });
+   vi.stubEnv("TYPESAFE_API_KEY", "base-test-key"); vi.stubEnv("TYPESAFE_API_KEY_ATTENDANCE", "");
+   vi.stubEnv("SUPABASE_SERVICE_ROLE_KEY", "fake"); vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", "https://test.invalid");
+ });
+diff --git a/src/lib/ai/jev.ts b/src/lib/ai/jev.ts
+index 6423184ea..392d59270 100644
+--- a/src/lib/ai/jev.ts
++++ b/src/lib/ai/jev.ts
+@@ -1,5 +1,5 @@
+ /** TypeSafe transport. Application callers must use generateJSON({ mode: "decision" }). */
+-export const JEV_MODEL = "jev-1.13.0";
++export const JEV_MODEL = "jev-1.14.0";
+ export type ChoiceQuestion = { type: "choice"; instructions: string; criteria: Record<string, string> };
+ export type DecisionQuestions = Record<string, ChoiceQuestion>;
+ export type ChoiceAnswer = { type: "choice"; choice: string; confidence: number; probabilities: Record<string, number> };

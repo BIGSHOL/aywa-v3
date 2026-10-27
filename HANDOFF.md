@@ -13,7 +13,7 @@
 | 무엇 | 침산 지점 DB 전체 복사본 위에서 도는 **원장·경영자용 3.0 AX 웹앱 시안**(로컬 dev 전용, 바닐라 JS + Node 서버) |
 | 화면 | http://127.0.0.1:4310/ (이 PC에서만 열림) |
 | 원본 위치 | eywa 저장소 `experiments/owner-concept/` · 브랜치 `chrismathone/v3.0.0` (main에 반영 안 함, origin에 안 올림) |
-| 이 레포 | `BIGSHOL/aywa-v3`(비공개) — 위 폴더만 커밋 이력째 뽑아 올린 것. 폴더 바깥 변경 3건은 여기 없음(§1). **DB·첨부파일은 올리지 않음** — 다른 PC에서는 §2.9로 새로 받음 |
+| 이 레포 | `BIGSHOL/aywa-v3`(비공개) — 위 폴더만 커밋 이력째 뽑아 올린 것. 폴더 바깥 변경 3건은 `AGENTS.md`·`eywa-patches/`로 함께 넣음(§1). **DB·첨부파일은 올리지 않음** — 다른 PC에서는 §2.9로 새로 받음 |
 | DB | 원본은 **읽기만 하고 손대지 않음**. Docker 안 PostgreSQL 17.6 복사본(`127.0.0.1:5444/aywa_full_snapshot`)도 앱은 **읽기만** 함 |
 | 쓰기 | 흐름 처리·AI 결과만 F 드라이브의 로컬 JSON 파일에 기록. DB 쓰기 0, 실제 발송(슬랙·알림톡·ClassNote) 0, 운영 배포 0 |
 | AI | dev는 **Claude 구독 CLI(`claude -p`)** + **Jev(TypeSafe) 키**. 정식 오픈 때 API 키로 바꿀 수 있게 분리만 해 둠 |
@@ -25,10 +25,11 @@
 
 - 이 레포는 eywa 저장소 `experiments/owner-concept/`의 내용과 그 폴더에 닿은 커밋 이력만 담습니다. 파일은 레포 최상위에 있습니다(eywa에서는 `experiments/owner-concept/` 아래).
 - 실제 실행은 **지금도 eywa 작업 트리 안에서** 합니다. 이 폴더는 eywa의 `work/`·`public/fonts`·`node_modules`를 상대 경로로 씁니다. 단독 실행에 필요한 수정은 §8에 있습니다.
-- **eywa 쪽에만 있고 이 레포에는 없는 변경 3건**(같은 브랜치에 커밋돼 있음, main 반영 여부는 원장 결정 대기):
-  1. `AGENTS.md` — 스크롤 UI 원칙·차트 상호작용 원칙 추가(원문은 §5.7에 옮겨 둠)
+- **이 폴더 밖에서 바꾼 3건도 이 레포에 넣었습니다**(eywa 브랜치에는 커밋돼 있고, eywa main에는 아직 반영하지 않음):
+  1. `AGENTS.md` — 스크롤 UI 원칙·차트 상호작용 원칙 추가 → 이 레포 최상위 `AGENTS.md`(작업 때 쓴 eywa `AGENTS.md` 원문 그대로) + 패치 `eywa-patches/0001-agents-scroll-chart-principles.patch`
   2. `src/lib/ai/jev.ts` — 기존 2.0 Jev 어댑터를 `jev-1.14.0`으로 고정
   3. 위 고정에 맞춘 테스트 2개(`src/lib/ai/generate-decision.test.ts`, `src/features/attendance/parent-alerts/server/jev-shadow.test.ts`)
+     → 2·3은 패치 `eywa-patches/0002-pin-jev-1.14.0.patch`. 적용법·확인 결과는 `eywa-patches/README.md`(10-27 22:18 eywa main에 적용 가능 확인, 테스트 12건 통과). eywa main 반영은 원장 승인 뒤.
 - 커밋 안 된 현장 자료(실데이터가 담긴 화면 캡처·검증 결과·로그)는 eywa의 `work/owner-concept/`에 있고 git에서 제외됩니다. 이 레포에도 없습니다.
 
 ---
@@ -452,6 +453,8 @@ Claude 독립 리뷰 3건(eywa `work/owner-concept/review-v2-dashboard.txt`·`re
 | `CLAUDE-DEV.md` | 구독 CLI 비서(`/api/assistant`) 설정·계약 |
 | `DOMAIN-DATA.md` · `DOMAIN-COVERAGE.md` | 47개 업무 영역 읽기 모델, 2.0 의미 출처, 가리기, 영역별 범위 |
 | `catalog/AUDIT.md` | 2.0 전체 회계(페이지 186 · API 92 · 서버 액션 파일 252 / export 730 · 패밀리 47) |
+| `AGENTS.md` | 작업 때 쓴 eywa `AGENTS.md` 원문(검증 범위·문구·스크롤·차트 원칙) |
+| `eywa-patches/README.md` | 폴더 밖 변경 3건을 eywa에 적용하는 패치와 방법 |
 | eywa `work/owner-concept/CLAUDE-MAIN-HANDOFF-20261027.txt` | Codex → Claude 인계 원문(git 제외) |
 
 ---
