@@ -11,7 +11,7 @@ page.setDefaultTimeout(10000);
 await mkdir('work/owner-concept/live-qa',{recursive:true});
 const close=async()=>{await page.evaluate(()=>document.querySelectorAll('dialog[open]').forEach(d=>d.close()));};
 const go=async id=>{await close();await page.evaluate(id=>{location.hash=id;},id);try{await page.waitForFunction(id=>document.body.dataset.page===id,id);}catch(error){throw new Error(`Navigation to ${id} failed: ${errors.join(', ')}`,{cause:error});}};
-const layout=async label=>{const result=await page.evaluate(()=>({viewport:innerWidth,width:document.documentElement.scrollWidth,characters:document.querySelector('main').innerText.length,tables:document.querySelectorAll('main table').length}));assert(result.width<=result.viewport+1,`${label}: horizontal overflow ${result.width}/${result.viewport}`);assert(result.characters>100,`${label}: empty view`);assert.equal(result.tables,0,`${label}: list-first primary layout`);};
+const layout=async label=>{const result=await page.evaluate(()=>({viewport:innerWidth,width:document.documentElement.scrollWidth,characters:document.querySelector('main').innerText.length,tables:document.querySelectorAll('main table').length,topbar:getComputedStyle(document.querySelector('#topbar')).display,mainTop:document.querySelector('main').getBoundingClientRect().top+scrollY}));assert(result.width<=result.viewport+1,`${label}: horizontal overflow ${result.width}/${result.viewport}`);assert(result.characters>100,`${label}: empty view`);assert.equal(result.tables,0,`${label}: list-first primary layout`);if(result.viewport>760)assert(result.topbar==='none'&&result.mainTop<=1,`${label}: no desktop header band`);else assert(result.topbar!=='none'&&result.mainTop<=64,`${label}: slim mobile menu bar`);};
 try{
  await page.goto(base);await page.evaluate(()=>document.fonts.ready);
  assert.equal(await page.locator('h1').innerText(),'브리핑');
@@ -43,11 +43,15 @@ try{
  await nav.evaluate(n=>{n.scrollTop=n.scrollHeight;n.dispatchEvent(new Event('scroll'));});assert.equal(await nav.evaluate(n=>n.style.getPropertyValue('--fade-bottom')),'0px');
  const offset=await nav.evaluate(n=>n.scrollTop);await go('finance');assert.equal(await nav.evaluate(n=>n.scrollTop),offset,'Navigation position must survive re-render');
  await page.setViewportSize({width:1440,height:1500});await page.waitForFunction(()=>document.querySelector('.nav-scroll').style.getPropertyValue('--fade-bottom')==='0px');assert.equal(await nav.evaluate(n=>n.style.getPropertyValue('--fade-top')),'0px');
- await page.setViewportSize({width:390,height:844});await go('home');await page.locator('[data-action="menu"]').click();assert(await page.locator('body').evaluate(n=>n.classList.contains('menu-open')));await page.locator('#sidebar a[href="#requests"]').click();await page.waitForFunction(()=>!document.body.classList.contains('menu-open'));await layout('mobile navigation');
+ await page.setViewportSize({width:390,height:844});await go('home');assert.equal(await page.locator('#sidebar').evaluate(n=>n.inert),true,'Closed mobile menu leaves the tab order');
+ await page.locator('[data-action="menu"]').click();assert(await page.locator('body').evaluate(n=>n.classList.contains('menu-open')));assert(await page.evaluate(()=>Boolean(document.activeElement?.closest('#sidebar'))),'Focus moves into the opened menu');
+ await page.keyboard.press('Escape');await page.waitForFunction(()=>!document.body.classList.contains('menu-open'));assert.equal(await page.evaluate(()=>document.activeElement?.dataset.action),'menu','Escape returns focus to the menu button');
+ await page.locator('[data-action="menu"]').click();await page.locator('#sidebar [data-action="search"]').click();assert(await page.locator('#modal').isVisible()&&!await page.locator('body').evaluate(n=>n.classList.contains('menu-open')),'Sidebar search opens over a closed menu');await close();
+ await page.locator('[data-action="menu"]').click();await page.locator('#sidebar a[href="#requests"]').click();await page.waitForFunction(()=>!document.body.classList.contains('menu-open'));await layout('mobile navigation');
  await page.reload();assert.equal(await page.evaluate(()=>window.AcademySnapshot.tasks.filter(t=>t.local).length),0,'Preview edits must reset');
  assert.deepEqual(errors,[]);assert.deepEqual(external,[]);
  const post=await page.request.post(base,{data:{test:true}});assert.equal(post.status(),405);
  const foreign=await page.request.get(base+'/snapshot.js',{headers:{Origin:'https://example.invalid'}});assert.equal(foreign.status(),403);
  const secret=await page.request.get(base+'/.env.local');assert.equal(secret.status(),404);
- console.log('PASS: 13 views at 3 widths, full DB data, workflow previews, document download, CSV, native wheel/fade edges, scroll retention, local-only access, no browser errors.');
+ console.log('PASS: 13 views at 3 widths without a desktop header band, full DB data, workflow previews, document download, CSV, native wheel/fade edges, scroll retention, local-only access, no browser errors.');
 }finally{await browser.close();}
