@@ -64,19 +64,25 @@ export function createDecisionEngine({ apiKey, keyProvider, model = process.env.
     let left = false;
     const leave = () => { if (left) return; left = true; if (--entry.callers === 0) entry.controller.abort(); };
     signal?.addEventListener('abort', leave, { once: true });
-    return abortable(entry.promise, signal).finally(() => { signal?.removeEventListener('abort', leave); if (!signal?.aborted) left = true; });
+    const owner = entry;
+    const promise = abortable(entry.promise, signal).finally(() => { signal?.removeEventListener('abort', leave); if (!signal?.aborted) left = true; });
+    // claim() is true for exactly one consumer per HTTP call; only that consumer accounts usage, cost and failures.
+    return { promise, claim: () => (owner.claimed ? false : (owner.claimed = true)) };
   }
 
-  function resolveKey() {
-    const value = keyProvider ? keyProvider() : apiKey ?? process.env.TYPESAFE_API_KEY;
-    return typeof value === 'string' && value.trim() ? value.trim() : null;
+  /** Key lookup may do I/O; any failure is reported as a code, never with the provider's message. */
+  async function resolveKey() {
+    try {
+      const value = keyProvider ? await keyProvider() : apiKey ?? process.env.TYPESAFE_API_KEY;
+      return { value: typeof value === 'string' && value.trim() ? value.trim() : null };
+    } catch { return { error: true }; }
   }
 
   async function evaluateDecision(context, { signal } = {}) {
     const started = now();
     totals.evaluations++;
     const recordId = typeof context?.recordId === 'string' && context.recordId.length <= 64 ? context.recordId : null;
-    const base = { contract: CONTRACT_VERSION, recordId, provider: 'typesafe', model: null, versions, cache: { hit: false, key: null },
+    const base = { contract: CONTRACT_VERSION, recordId, provider: 'typesafe', model: null, versions, cache: { hit: false, shared: false, key: null },
       area: null, signals: null, assignees: [], usage: null, jevElapsedMs: null,
       cost: { estimatedUsd: 0, basis: `${PRICE_SOURCE}; estimate, not an invoice`, billedThisCall: false }, claude: { status: 'not_requested' } };
     const finish = fields => ({ ...base, ...fields, elapsedMs: Math.round(now() - started) });
@@ -90,12 +96,14 @@ export function createDecisionEngine({ apiKey, keyProvider, model = process.env.
     if (hasNoContent(ctx)) return review('no_content', 'rule', 'insufficient_context', false);
     const state = buildState(ctx);
     const key = createHash('sha256').update(JSON.stringify({ versions, model, questions, state })).digest('hex');
-    const fromAnswers = (result, hit) => {
+    // via: 'call' = this consumer accounts the HTTP call; 'shared' = joined an identical in-flight call; 'cache'.
+    const fromAnswers = (result, via) => {
       const { answers } = result;
       const decision = applyPolicy(answers, ctx, thresholds);
-      const estimatedUsd = hit ? 0 : estimateJevCostUsd(result.model, result.usage.inputTokens) ?? 0;
-      return finish({ ...decision, model: result.model, cache: { hit, key }, usage: result.usage, jevElapsedMs: hit ? null : result.elapsedMs,
-        cost: { ...base.cost, estimatedUsd, billedThisCall: !hit },
+      const billed = via === 'call';
+      const estimatedUsd = billed ? estimateJevCostUsd(result.model, result.usage.inputTokens) ?? 0 : 0;
+      return finish({ ...decision, model: result.model, cache: { hit: via === 'cache', shared: via === 'shared', key }, usage: result.usage,
+        jevElapsedMs: via === 'cache' ? null : result.elapsedMs, cost: { ...base.cost, estimatedUsd, billedThisCall: billed },
         area: { value: answers.work_area.choice, confidence: answers.work_area.confidence, probabilities: answers.work_area.probabilities, origin: 'jev' },
         signals: { origin: 'jev', actionNeeded: { probability: answers.action_needed.probability }, managerReview: { probability: answers.manager_review.probability },
           contextSufficient: { probability: answers.context_sufficient.probability }, secondArea: { probability: answers.second_area.probability },
@@ -103,27 +111,36 @@ export function createDecisionEngine({ apiKey, keyProvider, model = process.env.
           urgency: { value: answers.urgency.choice, confidence: answers.urgency.confidence, probabilities: answers.urgency.probabilities } } });
     };
     const hit = cache.get(key);
-    if (hit) { cache.delete(key); cache.set(key, hit); totals.cacheHits++; return fromAnswers(hit, true); }
+    if (hit) { cache.delete(key); cache.set(key, hit); totals.cacheHits++; return fromAnswers(hit, 'cache'); }
     if (now() < openUntil) return review('jev_circuit_open');
-    const apiKeyValue = resolveKey();
-    if (!apiKeyValue) return review('jev_not_configured');
+    const resolved = await resolveKey();
+    if (resolved.error) return review('jev_key_error');
+    if (!resolved.value) return review('jev_not_configured');
+    const cancelled = () => finish({ status: 'cancelled', route: 'human_review', reasons: [{ code: 'cancelled', origin: 'adapter' }], claudeRecommended: false });
+    if (signal?.aborted) return cancelled();
+    const call = shared(key, state, resolved.value, signal);
     let result;
-    try { result = await shared(key, state, apiKeyValue, signal); }
+    try { result = await call.promise; }
     catch (error) {
-      if (error?.code === 'cancelled' || signal?.aborted) return finish({ status: 'cancelled', route: 'human_review', reasons: [{ code: 'cancelled', origin: 'adapter' }], claudeRecommended: false });
-      totals.failures++;
-      if (TRIPS_BREAKER.has(error?.code) && (++failures >= breakerThreshold || error.code === 'auth')) openUntil = now() + Math.max(breakerCooldownMs, error.retryAfterMs ?? 0);
+      if (error?.code === 'cancelled' || signal?.aborted) return cancelled();
+      const owns = call.claim();
       const usage = error?.usage ?? null;
-      const estimatedUsd = usage ? estimateJevCostUsd(model, usage.inputTokens) ?? 0 : 0;
-      if (usage) { totals.inputTokens += usage.inputTokens ?? 0; totals.estimatedUsd += estimatedUsd; }
-      return { ...review(FAILURE_REASON[error?.code] ?? 'jev_unavailable'), usage, cost: { ...base.cost, estimatedUsd, billedThisCall: !!usage } };
+      const estimatedUsd = owns && usage ? estimateJevCostUsd(model, usage.inputTokens) ?? 0 : 0;
+      if (owns) {
+        totals.failures++;
+        if (TRIPS_BREAKER.has(error?.code) && (++failures >= breakerThreshold || error.code === 'auth')) openUntil = now() + Math.max(breakerCooldownMs, error.retryAfterMs ?? 0);
+        if (usage) { totals.inputTokens += usage.inputTokens ?? 0; totals.estimatedUsd += estimatedUsd; }
+      }
+      return { ...review(FAILURE_REASON[error?.code] ?? 'jev_unavailable'), usage, cache: { hit: false, shared: !owns, key },
+        cost: { ...base.cost, estimatedUsd, billedThisCall: owns && !!usage } };
     }
+    if (!call.claim()) return fromAnswers(result, 'shared');
     failures = 0;
     totals.inputTokens += result.usage.inputTokens ?? 0;
     totals.estimatedUsd += estimateJevCostUsd(result.model, result.usage.inputTokens) ?? 0;
     cache.set(key, result);
     while (cache.size > cacheSize) cache.delete(cache.keys().next().value);
-    return fromAnswers(result, false);
+    return fromAnswers(result, 'call');
   }
 
   return {

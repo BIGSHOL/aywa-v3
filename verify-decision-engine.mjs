@@ -77,6 +77,30 @@ test('engine: identical in-flight requests share one call; it is aborted only wh
   const pre = new AbortController(); pre.abort();
   assert.equal((await engineWith(both).evaluateDecision(ctx(), { signal: pre.signal })).status, 'cancelled');
 });
+test('engine: a shared call is accounted once (usage, cost, failures) with per-consumer provenance', async () => {
+  const fetchImpl = fakeJev({ delayMs: 30 }), engine = engineWith(fetchImpl);
+  const rs = await Promise.all([1, 2, 3].map(() => engine.evaluateDecision(ctx())));
+  assert.equal(fetchImpl.calls, 1);
+  assert.deepEqual(rs.map(r => r.cost.billedThisCall).sort(), [false, false, true]);
+  assert.deepEqual(rs.map(r => r.cache.shared).sort(), [false, true, true]);
+  assert.equal(rs.reduce((s, r) => s + r.cost.estimatedUsd, 0), (1000 * 0.042) / 1e6);
+  assert.deepEqual([engine.stats().inputTokens, engine.stats().jevCalls], [1000, 1]);
+  const bad = fakeJev({ delayMs: 30, answers: { action_needed: { type: 'noul', noul: 0.9 } } }), e2 = engineWith(bad);
+  const fs = await Promise.all([1, 2].map(() => e2.evaluateDecision(ctx())));
+  assert.deepEqual(fs.map(r => r.reasons[0].code), ['jev_invalid_answer', 'jev_invalid_answer']);
+  assert.deepEqual([fs.filter(r => r.cost.billedThisCall).length, e2.stats().failures, e2.stats().inputTokens], [1, 1, 1000]);
+});
+test('engine: a throwing or async key provider never rejects or leaks its message', async () => {
+  const fetchImpl = fakeJev();
+  const thrown = await createDecisionEngine({ keyProvider: () => { throw new Error(`disk ${KEY}`); }, fetchImpl }).evaluateDecision(ctx());
+  assert.deepEqual([thrown.status, thrown.reasons[0].code], ['review_needed', 'jev_key_error']);
+  assert.ok(!JSON.stringify(thrown).includes(KEY) && !JSON.stringify(thrown).includes('disk'));
+  const rejected = await createDecisionEngine({ keyProvider: async () => { throw new Error('io'); }, fetchImpl }).evaluateDecision(ctx());
+  assert.equal(rejected.reasons[0].code, 'jev_key_error');
+  const asyncKey = await createDecisionEngine({ keyProvider: async () => KEY, fetchImpl }).evaluateDecision(ctx());
+  assert.equal(asyncKey.route, 'auto_route');
+  assert.equal(fetchImpl.calls, 1);
+});
 test('engine: bounded concurrency and queue; overflow is review_needed, not dropped', async () => {
   const fetchImpl = fakeJev({ delayMs: 30 }), engine = engineWith(fetchImpl, { concurrency: 2 });
   await Promise.all([1, 2, 3, 4, 5].map(i => engine.evaluateDecision(ctx({ text: `학생A ${i}일 결석` }))));

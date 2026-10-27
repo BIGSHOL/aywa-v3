@@ -30,7 +30,7 @@ const draft  = await draftWithClaude(context, result, { signal });   // 수 초~
 const engine = createDecisionEngine({ model: 'jev-1.14.0', timeoutMs: 8000, concurrency: 4, maxQueue: 64, cacheSize: 500 });
 ```
 
-키: 기본은 `process.env.TYPESAFE_API_KEY`(호출 시점에 읽음). 로컬 dev는 `createDecisionEngine({ keyProvider })`에 `loadTypesafeKey()`(`decision-key.mjs`)의 값을 넘깁니다. 이 함수는 `OWNER_CONCEPT_TYPESAFE_KEY_FILE`(절대 경로)에서 `TYPESAFE_API_KEY` 한 줄만 읽고, 키 값·앞자리·길이·헤더를 로그에 남기지 않습니다.
+키: 기본은 `process.env.TYPESAFE_API_KEY`(호출 시점에 읽음). 로컬 dev는 `createDecisionEngine({ keyProvider })`(동기·비동기 모두 가능, 예외는 `jev_key_error` 검토 필요로 바뀜)에 `loadTypesafeKey()`(`decision-key.mjs`)의 값을 넘깁니다. 이 함수는 `OWNER_CONCEPT_TYPESAFE_KEY_FILE`(절대 경로)에서 `TYPESAFE_API_KEY` 한 줄만 읽고, 키 값·앞자리·길이·헤더를 로그에 남기지 않습니다.
 
 ### context (호출자가 만든다 — 좁고, 가린 값만)
 
@@ -65,9 +65,9 @@ const engine = createDecisionEngine({ model: 'jev-1.14.0', timeoutMs: 8000, conc
   claudeRecommended: boolean,                                    // 이 결과에 Claude 초안이 도움이 되는가
   provider: 'typesafe', model: 'jev-1.14.0' | null,
   versions: { contract, questions: 'owner-decision-q1', rules: 'owner-decision-r1' },
-  cache: { hit, key }, elapsedMs, jevElapsedMs,
+  cache: { hit, shared, key }, elapsedMs, jevElapsedMs,       // shared = 같은 내용의 진행 중 호출에 합류(비용 0)
   usage: { inputTokens, outputTokens } | null,                   // 캐시 적중이면 원래 호출의 값
-  cost: { estimatedUsd, basis, billedThisCall },                 // 목록가 추정
+  cost: { estimatedUsd, basis, billedThisCall },                 // 목록가 추정 · HTTP 1회당 한 소비자만 billedThisCall=true
   claude: { status: 'not_requested' },
 }
 ```
@@ -105,7 +105,7 @@ Noul 값은 "예"일 확률 하나뿐이며 별도 신뢰도가 없습니다. Ch
 ## 캐시·동시성·취소
 
 - 캐시 키 = sha256(계약·질문·규칙 버전 + 모델 + 질문 + Jev 상태). 저장하는 것은 Jev 답이고 규칙은 매번 다시 적용하므로 후보 목록이 바뀌면 담당자도 바뀝니다. LRU 500개.
-- 같은 내용의 동시 요청은 HTTP 한 번을 나눠 씁니다. 모든 호출자가 취소해야 그 요청을 끊습니다.
+- 같은 내용의 동시 요청은 HTTP 한 번을 나눠 씁니다. 토큰·비용·실패는 한 소비자만 셉니다(나머지는 `cache.shared:true`, 비용 0). 모든 호출자가 취소해야 그 요청을 끊습니다.
 - 동시 4건, 대기 64건(넘치면 `adapter_busy`로 검토 필요). 자동 재시도 없음. 서비스 오류 3번 연속 또는 인증 실패 시 30초(또는 `retry-after`) 동안 호출하지 않고 `jev_circuit_open`.
 - 제한 시간 8초(응답 본문 읽기 포함). Claude는 한 번에 1건, 대기 4건, 120초.
 
