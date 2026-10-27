@@ -1,7 +1,7 @@
 # 2.0 전체 기능 감사 · 3.0 AX 갭
 
-> 기준 커밋 `3ffa7f58f109d0a443ff48a58ee5b9ca689d5af3` · 로컬 복사본 DB 읽기 `2026-10-27T07:54:13.759Z` · 기계 판독본 [`feature-inventory.json`](feature-inventory.json) · 검증기 [`verify-catalog.mjs`](verify-catalog.mjs)
-> <!-- inventory-sha256: 98d5985f25cc8b72c2dd2a3799aa1436fb23f1a4325cbbdf826e50efda8e4123 -->
+> 기준 커밋 `ab808b647676b59e37d34c85d45807ac93092e80` · 로컬 복사본 DB 읽기 `2026-10-27T07:54:13.759Z` · 기계 판독본 [`feature-inventory.json`](feature-inventory.json) · 검증기 [`verify-catalog.mjs`](verify-catalog.mjs)
+> <!-- inventory-sha256: b3016134597bc819cba54e1a4e4e462deb1d058b47af889e469e4784c8627dc3 -->
 
 ## 1. 결론
 

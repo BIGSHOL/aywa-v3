@@ -18,7 +18,8 @@ if (problems.length) {
 
 const json = JSON.stringify(inventory, null, 1) + '\n';
 writeFileSync(join(catalogDir, 'feature-inventory.json'), json);
-const digest = createHash('sha256').update(json).digest('hex');
+// 해시는 줄바꿈을 LF로 맞춘 뒤 계산한다(Windows 체크아웃의 CRLF 변환에도 같은 값).
+const digest = createHash('sha256').update(json.replace(/\r\n/g, '\n')).digest('hex');
 
 // ── AUDIT.md ──
 const esc = v => String(v ?? '').replaceAll('|', '\\|').replaceAll('\n', ' ');

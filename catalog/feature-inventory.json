@@ -1,6 +1,6 @@
 {
  "schemaVersion": 1,
- "sourceCommit": "3ffa7f58f109d0a443ff48a58ee5b9ca689d5af3",
+ "sourceCommit": "ab808b647676b59e37d34c85d45807ac93092e80",
  "scope": "2.0 Next 앱(src/) 전체 — 페이지·API·크론·서버 액션·기능 모듈·내비·탭·권한 키·DB 엔티티",
  "method": {
   "scan": "experiments/owner-concept/catalog/scan-source.mjs (TS AST + 정규식, 읽기 전용)",

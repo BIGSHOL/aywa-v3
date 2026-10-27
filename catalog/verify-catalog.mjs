@@ -53,7 +53,7 @@ const strip = o => JSON.stringify({ ...o, sourceCommit: null });
 check('커밋된 인벤토리가 재생성 결과와 같다(낡은 생성본 아님)', strip(fresh) === strip(inv) ? [] : ['feature-inventory.json이 현재 소스·families.mjs와 다르다 — build-inventory.mjs를 다시 실행']);
 
 // 4) AUDIT.md가 같은 인벤토리에서 만들어졌다
-const sha = createHash('sha256').update(invText).digest('hex');
+const sha = createHash('sha256').update(invText.replace(/\r\n/g, '\n')).digest('hex');
 const audit = existsSync(join(catalogDir, 'AUDIT.md')) ? readFileSync(join(catalogDir, 'AUDIT.md'), 'utf8') : '';
 check('AUDIT.md가 커밋된 인벤토리 해시를 들고 있다', audit.includes(`inventory-sha256: ${sha}`) ? [] : ['AUDIT.md 해시 불일치 — build-inventory.mjs를 다시 실행']);
 
