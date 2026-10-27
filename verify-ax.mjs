@@ -1,0 +1,85 @@
+import { chromium } from '@playwright/test';
+import assert from 'node:assert/strict';
+import { mkdir } from 'node:fs/promises';
+
+const base='http://127.0.0.1:4310';
+const browser=await chromium.launch();
+const page=await browser.newPage({viewport:{width:1440,height:1000}});
+const errors=[],external=[],mutations=[];
+page.on('pageerror',e=>errors.push(e.message));
+page.on('request',r=>{if(!r.url().startsWith(base)&&!r.url().startsWith('data:'))external.push(r.url());if(!['GET','HEAD'].includes(r.method()))mutations.push(r.method());});
+const close=()=>page.evaluate(()=>document.querySelectorAll('dialog[open]').forEach(d=>d.close()));
+const go=async id=>{await close();await page.evaluate(id=>{location.hash=id;},id);await page.waitForFunction(id=>document.body.dataset.page===id,id);};
+const shot=async name=>page.screenshot({path:`work/owner-concept/ax-qa/${name}.png`,fullPage:true,animations:'disabled'});
+try {
+  await mkdir('work/owner-concept/ax-qa',{recursive:true});
+  await page.goto(base);await page.evaluate(()=>document.fonts.ready);
+  assert.equal(await page.locator('h1').innerText(),'브리핑');
+  assert.equal(await page.locator('.nav-scroll a').count(),4,'Primary navigation is the owner workflow');
+  assert.equal(await page.locator('.ax-domain-grid button').count(),12);
+  assert.match(await page.locator('.ax-issue-detail').innerText(),/329,000원/);
+  const issueCount=await page.locator('.ax-issue').count();assert(issueCount>=6);
+  assert.deepEqual(await page.locator('.ax-summary').evaluate(n=>({font:getComputedStyle(n).fontSize,color:getComputedStyle(n).color})),{font:'16px',color:'rgb(18, 18, 18)'});
+  for(const width of [1440,1024,390]){
+    await page.setViewportSize({width,height:width===390?844:1000});
+    for(const view of ['home','inbox','requests','automation']){
+      await go(view);assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),`${view} at ${width} overflow`);
+      if(view==='home')await shot(`briefing-${width}`);
+    }
+  }
+  await page.setViewportSize({width:1440,height:1000});await go('home');
+  await page.locator('.ax-issue-detail [data-ax="request"]').click();
+  await page.locator('[data-ax-form="request"] button[type=submit]').click();
+  assert.match(await page.locator('.ax-form-error').innerText(),/담당자/);
+  const owners=page.locator('.ax-people input');assert(await owners.count()>1);
+  await owners.nth(0).check();await owners.nth(1).check();
+  await page.locator('[name=body]').fill('실제 납부 내역을 대조하고 보호자 안내 여부를 확인해 주세요. <검토>');
+  await shot('request-compose');
+  await page.locator('[data-ax-form="request"] button[type=submit]').click();
+  assert.match(await page.locator('#detail').innerText(),/확인 대기/);
+  assert.match(await page.locator('#detail').innerText(),/<검토>/,'Request text must be rendered as text');
+  await page.locator('[data-ax="request-slack"]').click();
+  assert.match(await page.locator('#modal').innerText(),/실제 발송되지 않았습니다/);
+  await shot('slack-preview');
+  await page.locator('#modal [data-ax="request-detail"]').click();
+  await page.locator('[data-ax="request-start"]').click();
+  assert.match(await page.locator('#detail').innerText(),/진행 중/);
+  await page.locator('[name=result]').fill('납부 내역 확인 완료. 추가 연락이 필요한 가정을 정리했습니다.');
+  await page.locator('[data-ax-form=result] button[type=submit]').click();
+  assert.match(await page.locator('#detail').innerText(),/완료 보고/);
+  await close();await page.locator('[data-ax=bell]').click();
+  assert.match(await page.locator('#detail .ax-notifications').innerText(),/추가 연락이 필요한 가정/);
+  await shot('notification-result');
+  await page.locator('#detail [data-ax=request-detail]').first().click();
+  await page.locator('[data-ax=request-reopen]').click();
+  assert.match(await page.locator('.ax-request-timeline').innerText(),/추가 확인 요청/);
+  await go('requests');assert.equal(await page.locator('.ax-workflow section').nth(1).locator('.ax-request-row').count(),1);
+  await go('home');
+  await page.locator('#ax-home-command').fill('미수납 확인을 관리자에게 요청해줘');
+  await page.locator('[data-ax-form=chat] button[type=submit]').click();
+  assert.match(await page.locator('.ax-chat-answer').innerText(),/329,000원/);
+  await page.locator('.ax-chat-answer [data-ax=request]').click();
+  assert.match(await page.locator('[name=title]').inputValue(),/수납/);
+  await close();await page.locator('[data-ax=bell]').click();
+  await page.locator('[data-ax=inbox-tab][data-id=all]').click();
+  await page.locator('[data-ax=open-issue][data-id=attendance]').click();
+  assert.match(await page.locator('.ax-issue-detail').innerText(),/수업별 출결 건수/);
+  await page.locator('.ax-issue-detail [data-ax=archive]').click();
+  await go('inbox');await page.locator('main [data-ax=inbox-tab][data-id=archived]').click();
+  assert.match(await page.locator('main .ax-notifications').innerText(),/출결 특이사항/);
+  await page.locator('main [data-ax=open-issue][data-id=attendance]').click();
+  const candidates=page.locator('.ax-evidence-records');
+  assert.equal(await candidates.evaluate(n=>getComputedStyle(n).scrollbarWidth),'none');
+  await candidates.evaluate(n=>{n.scrollTop=n.scrollHeight;n.dispatchEvent(new Event('scroll'));});
+  assert.equal(await candidates.evaluate(n=>n.style.getPropertyValue('--fade-bottom')),'0px');
+  const savedScroll=await candidates.evaluate(n=>n.scrollTop);await page.locator('main [data-ax=read]').click();assert.equal(await candidates.evaluate(n=>n.scrollTop),savedScroll,'Reading an issue must preserve its evidence position');
+  await go('automation');await page.locator('[data-ax-setting=slack]').uncheck();
+  await page.locator('main [data-ax=digest]').click();assert.match(await page.locator('#modal').innerText(),/선택되지 않았습니다/);await close();
+  await page.locator('[data-ax=request]').first().click();assert(!await page.locator('[name=channel][value=slack]').isChecked());
+  await go('home');await page.setViewportSize({width:390,height:844});
+  await page.locator('[data-action=menu]').click();await page.locator('#sidebar a[href="#requests"]').click();
+  await page.waitForFunction(()=>document.body.dataset.page==='requests'&&!document.body.classList.contains('menu-open'));
+  await page.reload();assert.equal(await page.locator('.ax-request-row').count(),0,'Session requests must reset');
+  assert.deepEqual(errors,[]);assert.deepEqual(external,[]);assert.deepEqual(mutations,[]);
+  console.log('PASS: AX briefing/inbox/request/automation, 3 widths, 2.0 typography, multiple assignees, validation, Slack preview, progress/report/reopen, result notification, grounded command, archive/restore, fade, session isolation.');
+} finally {await browser.close();}

@@ -1,0 +1,44 @@
+name: aywa-full-snapshot
+services:
+  db:
+    image: supabase/postgres:17.6.1.173@sha256:da28f45caeb2d0857a5f53759654859a46c469112f257290e28bc2c291727506
+    container_name: aywa-full-db
+    user: postgres
+    entrypoint: ["/bin/sh", "/clone/start-full-db.sh"]
+    restart: unless-stopped
+    environment:
+      PGDATA: /var/lib/postgresql/data/clone
+    volumes:
+      - full-data:/var/lib/postgresql/data
+      - ./start-full-db.sh:/clone/start-full-db.sh:ro
+      - ./full-db-hba.conf:/clone/pg_hba.conf:ro
+      - ${FULL_DB_ROOT:?Set FULL_DB_ROOT}:/backup
+    secrets:
+      - full_pg_password
+    networks: [isolated]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U clone_admin -d postgres"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+  local-access:
+    image: haproxy:3.0-alpine
+    container_name: aywa-full-db-local-access
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:5444:5432"
+    volumes:
+      - ./full-db-proxy.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro
+    networks: [isolated, local-access]
+    depends_on:
+      db:
+        condition: service_healthy
+secrets:
+  full_pg_password:
+    file: ${FULL_DB_ROOT:?Set FULL_DB_ROOT}/local.password
+networks:
+  isolated:
+    internal: true
+  local-access: {}
+volumes:
+  full-data:
