@@ -387,7 +387,7 @@ window.createFlowUI = function createFlowUI(api) {
     if(action==='reload'){load();return;}
     if(action==='older'){el.disabled=true;loadOlder(id);return;}
     if(action==='more'){store.all=id;api.render();requestAnimationFrame(()=>document.querySelector(`.fl-list[data-list="${CSS.escape(id)}"] .fl-case:nth-child(21) [data-fl="open"]`)?.focus());return;}
-    if(action==='filter'){store.filter=id;store.all='';if(api.getPage()!=='home'&&api.getPage()!=='flow')navigate('home');else api.render();requestAnimationFrame(()=>{$('#fl-detail')?.scrollIntoView({block:'start'});$('#fl-detail-title,#fl-detail h2')?.focus?.({preventScroll:true});});return;}
+    if(action==='filter'){store.filter=id;store.all='';const routed=api.getPage()!=='home'&&api.getPage()!=='flow';if(routed)navigate('home');else api.render();requestAnimationFrame(()=>{api.scrollToSection('#fl-detail',{instant:routed});$('#fl-detail-title,#fl-detail h2')?.focus?.({preventScroll:true});});return;}
     if(action==='open'){showCase(id);return;}
     const stepId=el.dataset.step?{stepId:el.dataset.step}:{};
     if(action==='ack'){command('case.ack',{caseId:id,payload:stepId}).then(r=>{if(r)toast('확인했습니다. 진행 중으로 바뀌었습니다.');});return;}

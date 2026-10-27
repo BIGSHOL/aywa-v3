@@ -144,7 +144,7 @@
   let toastTimer;
   const toast=text=>{const node=$('#toast');node.textContent=text;node.classList.add('show');clearTimeout(toastTimer);toastTimer=setTimeout(()=>node.classList.remove('show'),3000);};
   // Factories: ax (briefing/requests/assistant) first, then workspaces (catalog-driven family screens) which uses ax.
-  const api={db,h,fmt,won,icon,chart,lineChart,exact,dialog,navigate,render,attachScroll,toast,subjectLabel:subject,showStudent,showBill,showApproval,showTask,openRecord,canOpenRecord,getPage:()=>state.page,hasView:id=>Boolean(viewFor(id)),closeMenu};
+  const api={db,h,fmt,won,icon,chart,lineChart,exact,dialog,navigate,render,attachScroll,scrollToSection,toast,subjectLabel:subject,showStudent,showBill,showApproval,showTask,openRecord,canOpenRecord,getPage:()=>state.page,hasView:id=>Boolean(viewFor(id)),closeMenu};
   const ax=window.createOwnerWorkspace(api);
   const ws=typeof window.createWorkspaces==='function'?window.createWorkspaces({...api,ax}):null;
   ax.useWorkspaces?.(ws);
@@ -156,6 +156,29 @@
   const scrollObserver=new ResizeObserver(entries=>entries.forEach(e=>fade(e.target)));
   function fade(node){const top=Math.max(0,node.scrollTop),bottom=Math.max(0,node.scrollHeight-node.clientHeight-top),left=Math.max(0,node.scrollLeft),right=Math.max(0,node.scrollWidth-node.clientWidth-left);node.style.setProperty('--fade-top',`${Math.min(26,top)}px`);node.style.setProperty('--fade-bottom',`${Math.min(26,bottom>1?bottom:0)}px`);node.style.setProperty('--fade-left',`${Math.min(26,left)}px`);node.style.setProperty('--fade-right',`${Math.min(26,right>1?right:0)}px`);}
   function attachScroll(){document.querySelectorAll('.nav-scroll,.live-scroll').forEach(node=>{fade(node);node.addEventListener('scroll',()=>fade(node),{passive:true});scrollObserver.observe(node);});}
+  /* Explicit in-page section jumps ('아래에서 보기', issue cues): a visible page scroll that brakes into the target
+     (ease-out cubic, 550–1000ms by distance). Wheel/touch/key/pointer input, a route change or the next jump stops it;
+     reduced motion, tiny hops and route arrivals position at once. A selector target is re-read every frame, so a
+     re-render keeps the motion going and a vanished target ends it. Route changes, search-option nearest, chat
+     autoscroll and restored offsets keep their immediate scrolling elsewhere. */
+  const motion={frame:0,stop:null};
+  function scrollToSection(target,{instant=false}={}){
+    motion.stop?.();
+    const root=document.scrollingElement||document.documentElement;
+    const node=()=>{const n=typeof target==='string'?document.querySelector(target):target;return n?.isConnected?n:null;};
+    const goal=n=>{const pad=parseFloat(getComputedStyle(root).scrollPaddingTop)||0,margin=parseFloat(getComputedStyle(n).scrollMarginTop)||0;return Math.max(0,Math.min(root.scrollHeight-root.clientHeight,n.getBoundingClientRect().top+window.scrollY-margin-pad));};
+    const first=node();if(!first)return;
+    const from=window.scrollY,distance=Math.abs(goal(first)-from);
+    if(instant||distance<8||matchMedia('(prefers-reduced-motion: reduce)').matches){window.scrollTo({top:goal(first),behavior:'instant'});return;}
+    const duration=Math.min(1000,Math.max(550,350+distance*.4)),start=performance.now(),intent=['wheel','touchstart','pointerdown','hashchange'];
+    let last=from;
+    const moved=()=>{if(Math.abs(window.scrollY-last)>2)stop();};
+    const key=event=>{if(!['Shift','Control','Alt','Meta'].includes(event.key))stop();};
+    const stop=()=>{cancelAnimationFrame(motion.frame);intent.forEach(type=>removeEventListener(type,stop,true));removeEventListener('keydown',key,true);removeEventListener('scroll',moved);if(motion.stop===stop)motion.stop=null;};
+    const step=now=>{const n=node();if(!n){stop();return;}const t=Math.min(1,(now-start)/duration),to=goal(n);window.scrollTo({top:from+(to-from)*(1-(1-t)**3),behavior:'instant'});last=window.scrollY;if(t<1)motion.frame=requestAnimationFrame(step);else stop();};
+    intent.forEach(type=>addEventListener(type,stop,{capture:true,passive:true}));addEventListener('keydown',key,{capture:true,passive:true});addEventListener('scroll',moved,{passive:true});
+    motion.stop=stop;motion.frame=requestAnimationFrame(step);
+  }
   function shell(){
     const offset=$('.nav-scroll')?.scrollTop||0;
     $('#sidebar').innerHTML=`<a href="#home" class="brand"><span class="brand-mark">${icon('trend')}</span><div><div class="brand-name">aywa</div><div class="brand-caption">학원을 잇는 경영 공간</div></div></a><div class="academy-box"><span class="academy-symbol">${icon('building')}</span><div class="grow"><strong>${h(db.meta.tenant)}</strong><small>원장 · 경영자</small></div>${icon('down')}</div><nav class="nav-scroll" aria-label="학원 업무">${pages.filter(p=>p[0]!=='settings').map(([id,label,symbol,section])=>`${section?`<div class="nav-group">${section}</div>`:''}<a class="nav-item ${state.page===id?'active':''}" href="#${id}" ${state.page===id?'aria-current="page"':''}>${icon(symbol)}<span>${label}</span>${id==='approvals'?`<span class="nav-count">${db.approvals.filter(a=>a.status==='pending').length}</span>`:''}</a>`).join('')}</nav><div class="sidebar-bottom"><a class="nav-item ${state.page==='settings'?'active':''}" href="#settings">${icon('settings')}학원 설정</a><div class="profile">${avatar('원장')}<div class="grow"><strong>원장님</strong><small>${h(db.meta.tenant)} · 원장실</small></div>${icon('chevron')}</div></div>`;

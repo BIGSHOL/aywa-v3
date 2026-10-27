@@ -33,7 +33,6 @@ window.createOwnerWorkspace = function createOwnerWorkspace(api) {
   const names=ids=>ids.map(id=>staffById.get(id)?.name||'담당자').join(', ');
   const clip=(text,limit)=>String(text??'').slice(0,limit);
   const norm=text=>String(text??'').toLowerCase().replace(/\s+/g,'');
-  const reducedMotion=()=>matchMedia('(prefers-reduced-motion: reduce)').matches;
 
   function issues(){
     const now=current(),prev=db.trend.find(t=>t.month===db.trend.at(-2).month),delta=now.payingStudents-prev.payingStudents;
@@ -114,10 +113,11 @@ window.createOwnerWorkspace = function createOwnerWorkspace(api) {
     const all=issues().filter(i=>!ui.archived.has(i.id)),open=reqs().filter(r=>r.status!=='done').length;
     return `<div class="ax-fold"><div class="page-heading"><div><h1>브리핑</h1><p>${caption} · 현재 재원 ${fmt(db.students.filter(s=>s.status==='enrolled').length)}명 · 확인할 이슈 ${all.length}건 · 진행 중 요청 ${open}건</p></div><div class="heading-actions">${button('직접 업무 요청','request','',true)}</div></div>${firstScreen(all)}<button type="button" class="ax-scroll-cue" data-ax="focus-list"><span><strong>${workspaces?.homeSignals()?'작업 공간 신호와 ':''}전체 이슈 ${all.length}건과 근거</strong><small>아래로 스크롤하거나 눌러서 이동합니다</small></span>${icon('down')}</button></div>${flowUI?.ownerBelow()||''}${workspaces?.homeSignals()||''}${issueList(all)}<section class="ax-request-summary"><div class="ax-section-head"><h2>요청한 업무</h2>${button('전체 보기','navigate','requests')}</div>${reqs().length?reqs().slice(-3).reverse().map(requestRow).join(''):'<p>이슈의 ‘업무 요청’에서 담당자와 기한을 지정하면 이곳에 진행 상황이 모입니다.</p>'}</section>${coverage()}`;
   }
-  function focusIssue(id){
+  // In-page jumps animate (api.scrollToSection); arriving from another page (instant) lands at once.
+  function focusIssue(id,{instant=false}={}){
     const node=document.getElementById(id==='list'?'ax-issues':`ax-issue-${id}`);if(!node)return;
     const target=id==='list'?$('#ax-issues-title'):node;
-    node.scrollIntoView({behavior:reducedMotion()?'auto':'smooth',block:'start'});target.focus({preventScroll:true});
+    api.scrollToSection(`#${CSS.escape(node.id)}`,{instant});target.focus({preventScroll:true});
     node.classList.add('ax-flash');setTimeout(()=>node.classList.remove('ax-flash'),1600);
   }
 
@@ -383,7 +383,7 @@ window.createOwnerWorkspace = function createOwnerWorkspace(api) {
     if(action==='filter'){ui.filter=id;render();return;}
     if(action==='focus-issue'){ui.read.add(id);ui.archived.delete(id);ui.filter='all';render();requestAnimationFrame(()=>focusIssue(id));return;}
     if(action==='focus-list'){focusIssue('list');return;}
-    if(action==='open-issue'){ui.read.add(id);ui.archived.delete(id);ui.filter='all';ui.focusIssue=id;navigate('home');return;}
+    if(action==='open-issue'){ui.read.add(id);ui.archived.delete(id);ui.filter='all';ui.focusIssue=id;ui.focusRouted=!(api.getPage()==='home'&&location.hash==='#home');navigate('home');return;}
     if(action==='expand'){const list=$(`#ax-records-${id}`),open=list.dataset.collapsed==='true',more=list.querySelectorAll('.ax-more').length,unit=findIssue(id)?.unit||'건';list.dataset.collapsed=String(!open);el.setAttribute('aria-expanded',String(open));el.textContent=open?'접기':`나머지 ${more}${unit} 더 보기`;if(open)ui.expanded.add(id);else ui.expanded.delete(id);return;}
     if(action==='request'){showRequest({issues:id?[id]:[]});return;}
     if(action==='draft-reset'){ui.drafts.delete(id);showRequest(ui.requestArgs||{});return;}
@@ -440,7 +440,7 @@ window.createOwnerWorkspace = function createOwnerWorkspace(api) {
   },true);
   function decorateView(){
     const page=api.getPage();
-    if(page==='home'&&ui.focusIssue){const id=ui.focusIssue;ui.focusIssue=null;requestAnimationFrame(()=>focusIssue(id));}
+    if(page==='home'&&ui.focusIssue){const id=ui.focusIssue,instant=ui.focusRouted;ui.focusIssue=null;requestAnimationFrame(()=>focusIssue(id,{instant}));}
     else if(!['home','flow','inbox','requests','automation'].includes(page)&&!page.startsWith('workspace-')&&$('main h1'))$('main h1').textContent=labels[page]||$('main h1').textContent;
   }
   const requestsForFamily=family=>reqs().filter(r=>r.context?.family===family);
