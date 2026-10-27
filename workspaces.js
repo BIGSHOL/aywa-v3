@@ -112,11 +112,18 @@ window.createWorkspaces = function createWorkspaces(api) {
   }
   // Teacher workspace: what a selected staff member receives. Owner requests can be acknowledged and completion-reported
   // here (session only); automatic 2.0 tasks are listed separately and only open their source record.
+  function recipientPicker(staffId,owners){
+    const CP=window.ContextPicker;
+    if(!CP)return `<label class="ws-recipient-pick">직원<select id="ws-recipient" data-ws-recipient>${db.staff.map(s=>`<option value="${h(s.id)}" ${s.id===staffId?'selected':''}>${h(s.name)} · ${h(s.title)}${owners.includes(s.id)?' · 요청 있음':''}</option>`).join('')}</select></label>`;
+    const list=CP.lists.staff({db,subjectLabel:api.subjectLabel});
+    list.options.forEach(o=>{if(owners.includes(o.value)){o.sub=[o.sub,'원장 요청 있음'].filter(Boolean).join(' · ');o.context=[o.context,'원장 요청 있음'].filter(Boolean).join(' · ');o.search=`${o.search||''} 요청`;}});
+    return `<div class="ws-recipient-pick">${CP.html({id:'ws-recipient',name:'recipient',label:'받는 직원',clearable:false,selected:staffId?[staffId]:[],attrs:{'data-ws-recipient':''},...list})}</div>`;
+  }
   function recipientPreview(){
     const owners=ax.recipient?.owners()||[],staffId=state.recipient||owners[0]||db.staff[0]?.id||'',person=db.staff.find(s=>s.id===staffId);
     const list=ax.recipient?.list(staffId)||[],auto=person?db.tasks.filter(t=>t.status==='open'&&!t.local&&t.owners.includes(person.name)):[];
     const status={requested:'확인 대기',working:'진행 중',done:'완료 보고'};
-    return `<section class="ws-recipient" aria-labelledby="ws-recipient-title"><div class="ax-section-head"><h2 id="ws-recipient-title">받는 사람 수신함 미리보기</h2><label class="ws-recipient-pick">직원<select id="ws-recipient" data-ws-recipient>${db.staff.map(s=>`<option value="${h(s.id)}" ${s.id===staffId?'selected':''}>${h(s.name)} · ${h(s.title)}${owners.includes(s.id)?' · 요청 있음':''}</option>`).join('')}</select></label></div><p class="ax-note">원장님이 보낸 요청을 이 직원이 받는 화면을 미리 봅니다. 확인과 완료 보고는 이 시안에서만 반영되고 원장 알림으로 돌아옵니다.</p>${list.length?list.map(r=>`<article class="ws-inbox-item"><header>${pill(status[r.status],r.status==='done'?'green':'blue')}<strong>${h(r.title)}</strong><small>${h(r.due)}까지 · ${h(r.priority)}${r.context?.familyLabel?` · ${h(r.context.familyLabel)}`:''}</small></header><p class="live-pre">${h(r.body)}</p>${r.status==='requested'?btn('확인했습니다','recipient-ack',`data-request="${h(r.id)}"`,true):r.status==='working'?`<form class="ws-form" data-ws-form="recipient-report" data-request="${h(r.id)}" novalidate><label>완료 보고<textarea name="result" rows="2" maxlength="3000" required></textarea></label><p class="ax-form-error" role="alert"></p><div class="ws-form-foot"><span class="ax-note">보고는 원장 알림으로 갑니다(시안).</span><button class="button primary" type="submit">완료 보고</button></div></form>`:`<p class="ax-note">보고 내용: ${h(r.result)}</p>`}</article>`).join(''):`<p class="live-empty">이 직원에게 보낸 원장 요청이 없습니다. 업무 요청에서 이 직원을 담당자로 고르면 여기에 표시됩니다.</p>`}<section class="ws-auto"><h3>자동 할 일 ${auto.length}건</h3><p class="ax-note">2.0이 원본 기록을 보고 열고 닫는 할 일입니다. 여기서 완료 처리하지 않습니다.</p>${auto.slice(0,6).map(t=>`<button type="button" class="ws-record" data-task="${h(t.id)}"><span><strong>${h(t.title)}</strong><small>${h(t.detail||'')}</small></span><span class="ws-record-meta">${t.due?`<small>${h(t.due)}까지</small>`:''}</span>${icon('chevron')}</button>`).join('')}${auto.length>6?`<p class="ax-note">나머지 ${auto.length-6}건은 할 일 목록에서 확인합니다.</p>`:''}</section></section>`;
+    return `<section class="ws-recipient" aria-labelledby="ws-recipient-title"><div class="ax-section-head"><h2 id="ws-recipient-title">받는 사람 수신함 미리보기</h2>${recipientPicker(staffId,owners)}</div><p class="ax-note">원장님이 보낸 요청을 이 직원이 받는 화면을 미리 봅니다. 확인과 완료 보고는 이 시안에서만 반영되고 원장 알림으로 돌아옵니다.</p>${list.length?list.map(r=>`<article class="ws-inbox-item"><header>${pill(status[r.status],r.status==='done'?'green':'blue')}<strong>${h(r.title)}</strong><small>${h(r.due)}까지 · ${h(r.priority)}${r.context?.familyLabel?` · ${h(r.context.familyLabel)}`:''}</small></header><p class="live-pre">${h(r.body)}</p>${r.status==='requested'?btn('확인했습니다','recipient-ack',`data-request="${h(r.id)}"`,true):r.status==='working'?`<form class="ws-form" data-ws-form="recipient-report" data-request="${h(r.id)}" novalidate><label>완료 보고<textarea name="result" rows="2" maxlength="3000" required></textarea></label><p class="ax-form-error" role="alert"></p><div class="ws-form-foot"><span class="ax-note">보고는 원장 알림으로 갑니다(시안).</span><button class="button primary" type="submit">완료 보고</button></div></form>`:`<p class="ax-note">보고 내용: ${h(r.result)}</p>`}</article>`).join(''):`<p class="live-empty">이 직원에게 보낸 원장 요청이 없습니다. 업무 요청에서 이 직원을 담당자로 고르면 여기에 표시됩니다.</p>`}<section class="ws-auto"><h3>자동 할 일 ${auto.length}건</h3><p class="ax-note">2.0이 원본 기록을 보고 열고 닫는 할 일입니다. 여기서 완료 처리하지 않습니다.</p>${auto.slice(0,6).map(t=>`<button type="button" class="ws-record" data-task="${h(t.id)}"><span><strong>${h(t.title)}</strong><small>${h(t.detail||'')}</small></span><span class="ws-record-meta">${t.due?`<small>${h(t.due)}까지</small>`:''}</span>${icon('chevron')}</button>`).join('')}${auto.length>6?`<p class="ax-note">나머지 ${auto.length-6}건은 할 일 목록에서 확인합니다.</p>`:''}</section></section>`;
   }
   const localCount=(id,rid)=>(state.local[id]||[]).filter(e=>e.recordId===String(rid)).length;
   function recordButton(id,r){
@@ -166,6 +173,7 @@ window.createWorkspaces = function createWorkspaces(api) {
     const id=`ws-f-${scope}-${a.id}-${x.id}-${f.id}`.replace(/[^\w-]/g,'_'),req=f.required?'required':'',label=`<span>${h(f.label)}${f.required?' <em aria-hidden="true">*</em>':''}</span>`;
     const options=type=>type==='record'?visibleRecords(a.id).items.map(r=>({value:String(r.id),label:r.label})):type==='staff'?db.staff.map(s=>({value:s.id,label:`${s.name} · ${s.title}`})):type==='class'?db.classes.map(c=>({value:c.id,label:`${c.name} · ${c.teacher}`})):type==='subject'?[...new Set(db.classes.map(c=>c.subject).filter(Boolean))].map(v=>({value:v,label:api.subjectLabel?.(v)||v})):(f.options||[]).map(o=>typeof o==='object'?{value:String(o.value??o.id??o.label),label:String(o.label??o.value)}:{value:String(o),label:String(o)});
     const t=f.type||'text';
+    if(window.ContextPicker&&['student','staff','class','record'].includes(t))return pickerField(a,f,t,id,recordId,scope);
     if(t==='textarea')return `<label for="${id}">${label}<textarea id="${id}" name="${h(f.id)}" rows="3" maxlength="2000" ${req}></textarea></label>`;
     if(t==='checkbox'||t==='boolean')return `<label class="ws-check" for="${id}"><input type="checkbox" id="${id}" name="${h(f.id)}" value="예"> ${h(f.label)}</label>`;
     if(t==='student')return `<label for="${id}">${label}<input id="${id}" name="${h(f.id)}" list="ws-students" autocomplete="off" maxlength="60" placeholder="이름 입력 후 목록에서 선택" ${req}><small>재원생 목록에서 고릅니다.</small></label>`;
@@ -175,24 +183,53 @@ window.createWorkspaces = function createWorkspaces(api) {
     const lo=Number.isFinite(Number(f.min))?Number(f.min):0,hi=Number.isFinite(Number(f.max))?Number(f.max):null;
     return `<label for="${id}">${label}<input id="${id}" name="${h(f.id)}" type="${html}" ${html==='number'?`step="any" min="${lo}" ${hi!==null?`max="${hi}"`:''}`:''} ${html==='text'?'maxlength="200"':''} ${req}>${t==='money'||t==='amount'?'<small>원 단위</small>':hi!==null?`<small>${lo}~${hi}</small>`:''}</label>`;
   }
+  // Decision fields (student · staff · class · record) use the shared ContextPicker (context-picker.js): the form value is
+  // the verified id and each row shows who or which it is. Inline settings forms keep their pick across a records
+  // refresh; a modal form starts from the record it was opened for.
+  function pickerField(a,f,t,id,recordId,scope){
+    const CP=window.ContextPicker,inline=scope==='i';
+    const list=t==='student'?CP.lists.students({db}):t==='staff'?CP.lists.staff({db,subjectLabel:api.subjectLabel}):t==='class'?CP.lists.classes({db,subjectLabel:api.subjectLabel}):recordList(a,recordId);
+    return CP.html({id,name:f.id,label:f.label,required:Boolean(f.required),empty:`${f.label} 선택`,persist:inline,...(inline?{}:{selected:t==='record'&&recordId?[String(recordId)]:[]}),...list});
+  }
+  // Record choices: the loaded page first (labeled as such), the whole family through the read-only records endpoint.
+  // Billing rows join the copy's invoice by id; otherwise the record's own amounts (청구액 · 수납 · 남은 금액) are shown.
+  const amount=v=>{const t=String(v??'').trim(),n=Number(t.replace(/[^\d.-]/g,''));return t&&t!=='—'&&Number.isFinite(n)?n:undefined;};
+  const invoiceRow=r=>{const fv=l=>(r.fields||[]).find(x=>x.label===l)?.value;return {id:r.id,name:r.label,period:r.detail||'',total:amount(fv('청구액')),paid:amount(fv('수납')),remaining:amount(fv('남은 금액'))};};
+  function recordList(a,recordId){
+    const CP=window.ContextPicker,vis=visibleRecords(a.id),picked=recordId?recordById(a.id,recordId):null;
+    const items=[...(picked&&!vis.items.some(r=>String(r.id)===String(recordId))?[picked]:[]),...vis.items],billing=a.id==='billing';
+    const out=billing?CP.lists.invoices({db,items:items.map(invoiceRow)}):CP.lists.records({items,familyLabel:a.label});
+    const toOptions=list=>billing?CP.lists.invoices({db,items:list.map(invoiceRow)}).options:list.map(out.option);
+    const total=Math.max(Number(vis.total)||0,items.length);
+    const remote=state.unsupported?null:{load:async(q,{signal})=>{
+      const params=new URLSearchParams({q:q.slice(0,100),page:'1',pageSize:'50'});
+      const res=await fetch(`/api/workspaces/${encodeURIComponent(a.id)}/records?${params}`,{headers:{Accept:'application/json'},signal});
+      let json=null;try{json=await res.json();}catch{/* not served here */}
+      if(!res.ok||!json||!Array.isArray(json.items))throw new Error(typeof json?.message==='string'?json.message:'전체 기록을 찾지 못했습니다. 불러온 목록에서만 보여 드립니다.');
+      return {options:toOptions(json.items),filtered:Number(json.filteredTotal)||json.items.length};
+    }};
+    return {...out,remote,note:total>items.length?`불러온 ${items.length}건 표시 · 전체 ${total.toLocaleString('ko-KR')}건은 검색어로 찾습니다`:`${items.length}건`};
+  }
   function previewForm(a,x,recordId='',inline=false,kind='preview'){
     const fields=Array.isArray(x.fields)?x.fields.filter(f=>f&&f.id&&f.label):[];
-    if(fields.some(f=>f.type==='student')&&!document.getElementById('ws-students'))document.body.insertAdjacentHTML('beforeend',`<datalist id="ws-students">${db.students.filter(s=>s.status==='enrolled').map(s=>`<option value="${h(`${s.name} · ${s.school} ${s.grade}`)}"></option>`).join('')}</datalist>`);
+    if(!window.ContextPicker&&fields.some(f=>f.type==='student')&&!document.getElementById('ws-students'))document.body.insertAdjacentHTML('beforeend',`<datalist id="ws-students">${db.students.filter(s=>s.status==='enrolled').map(s=>`<option value="${h(`${s.name} · ${s.school} ${s.grade}`)}"></option>`).join('')}</datalist>`);
     return `<form class="ws-form" data-ws-form="${kind}" data-id="${h(a.id)}" data-action="${h(x.id)}" ${inline?'data-inline="1"':''} novalidate>${fields.map(f=>fieldHtml(a,x,f,recordId,inline?'i':'m')).join('')||'<p class="ax-note">입력할 항목이 없는 작업입니다. 실행 내용을 메모로 남겨 미리보기를 기록합니다.</p><label>메모<textarea name="__note" rows="2" maxlength="500"></textarea></label>'}<p class="ax-form-error" role="alert"></p><div class="ws-form-foot"><span class="ax-note">${kind==='request'?'담당자와 기한은 다음 단계에서 고릅니다. 등록 전까지 전달되지 않습니다.':'로컬 미리보기 · 2.0에는 반영되지 않습니다.'}</span><button class="button primary" type="submit">${kind==='request'?'요청서로 이어 쓰기':'미리보기로 기록'}</button></div></form>`;
   }
+  const FIRST_CONTROL='#modal .ws-form :is(input:not([type=hidden]):not([data-cpick-search]),select,textarea,.cpick-trigger)';
   function openAction(familyId,actionId,recordId=''){
     const a=area(familyId),x=a&&actionsOf(a).find(y=>y.id===actionId);if(!x)return;
     if(x.mode==='navigate'){const {page,facet}=targetOf(x),dest=resolvePage(page);if(!dest){toast('이동할 화면을 찾지 못했습니다.');return;}const fam=familyOf(dest),tgt=fam&&area(fam);if(tgt&&facet){if(facetsOf(tgt).some(f=>f.id===facet)){state.facet[fam]=facet;state.page[fam]=1;}else if(screensOf(tgt).some(f=>f.id===facet)){if(viewKind(tgt)==='settings')state.face[fam]=facet;else state.screen[fam]=facet;}}navigate(dest);return;}
-    if(x.mode==='preview'){dialog('modal',x.label,`${a.label} · 로컬 미리보기`,`${recordId?`<p class="ws-context">기록: ${h(recordById(familyId,recordId)?.label||'')}</p>`:''}<p class="ax-note">${h(actionIntent(x))}</p>${previewForm(a,x,recordId)}`);$('#modal .ws-form :is(input,select,textarea)')?.focus();return;}
+    if(x.mode==='preview'){dialog('modal',x.label,`${a.label} · 로컬 미리보기`,`${recordId?`<p class="ws-context">기록: ${h(recordById(familyId,recordId)?.label||'')}</p>`:''}<p class="ax-note">${h(actionIntent(x))}</p>${previewForm(a,x,recordId)}`);$(FIRST_CONTROL)?.focus();return;}
     const r=recordId?recordById(familyId,recordId):null;
-    if((x.fields||[]).some(f=>f&&f.id&&f.label)){dialog('modal',x.label,`${a.label} · 요청에 담을 내용`,`${r?`<p class="ws-context">기록: ${h(r.label)}</p>`:''}<p class="ax-note">${h(actionIntent(x))}</p>${previewForm(a,x,recordId,false,'request')}`);$('#modal .ws-form :is(input,select,textarea)')?.focus();return;}
+    if((x.fields||[]).some(f=>f&&f.id&&f.label)){dialog('modal',x.label,`${a.label} · 요청에 담을 내용`,`${r?`<p class="ws-context">기록: ${h(r.label)}</p>`:''}<p class="ax-note">${h(actionIntent(x))}</p>${previewForm(a,x,recordId,false,'request')}`);$(FIRST_CONTROL)?.focus();return;}
     requestFrom(a,{title:x.draft?.title||x.label,body:x.draft?.body||`${a.label}에서 ‘${x.label}’을 처리하고 결과를 보고해 주세요.`,action:x.id,records:r?[r]:[]});
   }
   function requestFrom(a,{title,body,action='',signal='',records=[]}){
     const recordLines=records.length?`\n\n확인 대상: ${records.map(r=>r.label).join(', ')}`:'';
     ax.showRequest({title,body:`${body}${recordLines}`,source:'workspace',draftKey:`ws:${a.id}:${action||signal||(records[0]?.id||'direct')}`,context:{family:a.id,familyLabel:a.label,records:records.map(r=>({id:String(r.id),label:String(r.label)})),signal,action}});
   }
-  const studentFor=v=>db.students.find(s=>s.status==='enrolled'&&`${s.name} · ${s.school} ${s.grade}`===v);
+  const studentText=s=>`${s.name} · ${s.school} ${s.grade}`;
+  const studentFor=v=>db.students.find(s=>s.status==='enrolled'&&(s.id===v||studentText(s)===v));
   function validate(form,fields){
     const errors=[];
     fields.forEach(f=>{
@@ -209,8 +246,8 @@ window.createWorkspaces = function createWorkspaces(api) {
   function submitPreview(form,kind='preview'){
     const a=area(form.dataset.id),x=a&&actionsOf(a).find(y=>y.id===form.dataset.action);if(!x)return;
     const fields=Array.isArray(x.fields)?x.fields.filter(f=>f&&f.id&&f.label):[],errors=validate(form,fields),out=form.querySelector('.ax-form-error');
-    if(errors.length){out.textContent=errors[0];const first=fields.find(f=>f.required&&!new FormData(form).getAll(f.id).some(v=>String(v).trim()));(first?form.querySelector(`[name="${CSS.escape(first.id)}"]`):form.querySelector('input,select,textarea'))?.focus();return;}
-    const values=new FormData(form),display=(f,v)=>f.type==='subject'?api.subjectLabel?.(v)||v:f.type==='record'?recordById(a.id,v)?.label||v:f.type==='staff'?db.staff.find(s=>s.id===v)?.name||v:f.type==='class'?db.classes.find(c=>c.id===v)?.name||v:f.type==='multiselect'||f.type==='select'?(f.options||[]).map(o=>typeof o==='object'?o:{value:o,label:o}).find(o=>String(o.value??o.id??o.label)===v)?.label||v:v;
+    if(errors.length){out.textContent=errors[0];const first=fields.find(f=>f.required&&!new FormData(form).getAll(f.id).some(v=>String(v).trim()));if(!(first&&window.ContextPicker?.focus(form,first.id)))(first?form.querySelector(`[name="${CSS.escape(first.id)}"]:not([type=hidden])`):form.querySelector('input:not([type=hidden]),select,textarea'))?.focus();return;}
+    const values=new FormData(form),display=(f,v)=>f.type==='student'?(studentFor(v)?studentText(studentFor(v)):v):f.type==='subject'?api.subjectLabel?.(v)||v:f.type==='record'?recordById(a.id,v)?.label||window.ContextPicker?.label(form.querySelector(`[data-cpick-name="${CSS.escape(f.id)}"]`),v)||v:f.type==='staff'?db.staff.find(s=>s.id===v)?.name||v:f.type==='class'?db.classes.find(c=>c.id===v)?.name||v:f.type==='multiselect'||f.type==='select'?(f.options||[]).map(o=>typeof o==='object'?o:{value:o,label:o}).find(o=>String(o.value??o.id??o.label)===v)?.label||v:v;
     const entry={id:crypto.randomUUID(),actionId:x.id,label:x.label,result:resultLabel(x),at:new Date().toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit'}),recordId:String(fields.filter(f=>f.type==='record').map(f=>values.get(f.id)).find(Boolean)||''),values:fields.length?fields.map(f=>({label:f.label,value:values.getAll(f.id).map(v=>display(f,String(v))).join(', ')||(f.type==='checkbox'?'아니요':'—')})):[{label:'메모',value:String(values.get('__note')||'—')}]};
     if(kind==='request'){const r=entry.recordId?recordById(a.id,entry.recordId):null;form.closest('dialog')?.close();requestFrom(a,{title:x.draft?.title||x.label,body:`${x.draft?.body||`${a.label}에서 ‘${x.label}’을 처리하고 결과를 보고해 주세요.`}\n${entry.values.map(v=>`· ${v.label}: ${v.value}`).join('\n')}`,action:x.id,records:r?[r]:[]});return;}
     (state.local[a.id]||(state.local[a.id]=[])).unshift(entry);
@@ -333,7 +370,7 @@ window.createWorkspaces = function createWorkspaces(api) {
     if(form.dataset.wsForm==='recipient-report'){event.preventDefault();event.stopImmediatePropagation();const text=String(new FormData(form).get('result')||'').trim();if(!text){form.querySelector('.ax-form-error').textContent='완료 보고 내용을 입력해 주세요.';form.querySelector('textarea').focus();return;}const person=db.staff.find(s=>s.id===(state.recipient||ax.recipient?.owners()[0]));ax.recipient?.complete(form.dataset.request,person?.name||'담당자',text,person?.id||'');return;}
     if(form.dataset.wsForm!=='preview'&&form.dataset.wsForm!=='request')return;event.preventDefault();event.stopImmediatePropagation();submitPreview(form,form.dataset.wsForm);
   },true);
-  document.addEventListener('change',event=>{if(event.target.dataset?.wsRecipient!==undefined){state.recipient=event.target.value;const id=familyOf(api.getPage());if(id)refreshMain(id);}});
+  document.addEventListener('change',event=>{if(event.target.dataset?.wsRecipient!==undefined){state.recipient=event.target.matches('[data-cpick]')?window.ContextPicker.value(event.target)[0]||'':event.target.value;const id=familyOf(api.getPage());if(id)refreshMain(id);}});
   document.addEventListener('input',event=>{
     const el=event.target;
     if(el.id==='ws-find'){state.query=el.value;state.active=matches(el.value).length?0:-1;updateFinder();return;}

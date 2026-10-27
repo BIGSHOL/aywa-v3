@@ -1,0 +1,76 @@
+/* Shared contextual picker (context-picker.js). Forms 2.0 tokens from ax.css; the open list is as wide as its field.
+   Wide: one aligned ledger row per option under labeled columns (numbers right, tabular). Narrow (data-stacked):
+   the name on its own line, then every value with its own label, wrapping without horizontal scroll. */
+.cpick{display:flex;flex-direction:column;gap:8px;min-width:0}
+.cpick .cpick-label{display:block;font-size:var(--ax-sm,16px);font-weight:500;color:var(--ax-ink,#121212)}
+.cpick .cpick-label em{color:var(--ax-danger,#a12f2f);font-style:normal}
+.cpick .cpick-label span{margin-left:6px;font-size:var(--ax-xs,14px);font-weight:400}
+.cpick-field{display:flex;flex-wrap:wrap;align-items:center;gap:6px;min-width:0;min-height:40px;padding:3px;border:1px solid var(--ax-line,rgba(29,29,31,.14));border-radius:8px;background:#fff}
+.cpick-field:has([aria-invalid=true]){border-color:var(--ax-danger,#a12f2f)}
+.cpick-trigger{flex:1 1 180px;display:flex;align-items:center;justify-content:space-between;gap:8px;min-width:0;min-height:32px;padding:3px 7px;border-radius:6px;color:var(--ax-ink,#121212);text-align:left;font-size:var(--ax-sm,16px);line-height:1.4}
+.cpick-trigger:hover{background:var(--ax-soft,#e9edf4)}
+.cpick-trigger:focus-visible,.cpick-clear:focus-visible,.cpick-chip button:focus-visible{outline-offset:1px}
+.cpick-trigger>.icon{width:16px;height:16px;flex-shrink:0;transition:transform .15s}
+.cpick-trigger[aria-expanded=true]>.icon{transform:rotate(180deg)}
+.cpick-shown{display:flex;flex-direction:column;min-width:0;word-break:keep-all;overflow-wrap:anywhere}
+.cpick-title{font-weight:500}
+.cpick-context,.cpick-more small{font-size:var(--ax-xs,14px)}
+.cpick-more small{margin-left:8px}
+.cpick-clear{display:inline-grid;place-items:center;flex-shrink:0;width:32px;height:32px;border-radius:6px;color:var(--ax-ink,#121212)}
+.cpick-clear[hidden]{display:none}
+.cpick-clear:hover,.cpick-chip button:hover{background:#d6deea}
+.cpick-clear .icon,.cpick-chip .icon{width:14px;height:14px}
+.cpick-chips{display:contents;list-style:none;margin:0;padding:0}
+.cpick-chip{display:inline-flex;align-items:center;gap:2px;max-width:100%;min-height:30px;padding:0 2px 0 10px;border-radius:6px;background:var(--ax-soft,#e9edf4);font-size:var(--ax-sm,16px)}
+.cpick-chip>span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cpick-chip strong{font-weight:500}
+.cpick-chip small{margin-left:6px;font-size:var(--ax-xs,14px)}
+.cpick-chip button{display:inline-grid;place-items:center;flex-shrink:0;width:26px;height:26px;border-radius:5px;color:var(--ax-ink,#121212)}
+.cpick-hint{font-size:var(--ax-xs,14px)}
+.cpick-dropped{font-size:var(--ax-xs,14px);color:var(--ax-warning,#995709)}
+
+/* Panel: popover (top layer) so dialogs and scroll areas never clip it; placed by JS to the field's box. */
+.cpick-panel{position:fixed;inset:auto;z-index:80;box-sizing:border-box;display:flex;flex-direction:column;gap:6px;max-height:440px;margin:0;padding:8px;overflow:hidden;border:1px solid var(--ax-line,rgba(29,29,31,.14));border-radius:8px;background:#fff;color:var(--ax-ink,#121212);font-size:var(--ax-xs,14px);line-height:1.45;box-shadow:0 10px 28px rgba(18,18,18,.14)}
+.cpick-panel[hidden]{display:none}
+.cpick-search input{box-sizing:border-box;width:100%;height:38px;padding:0 10px;border:1px solid var(--ax-line,rgba(29,29,31,.14));border-radius:8px;background:#fff;font-size:var(--ax-sm,16px)}
+.cpick-cols,.cpick-opt{display:grid;grid-template-columns:var(--cpick-cols);column-gap:12px;align-items:center}
+.cpick-cols{padding:0 8px 6px;border-bottom:1px solid var(--ax-line,rgba(29,29,31,.14));font-weight:500}
+.cpick-cols>span,.cpick-cell{min-width:0}
+.cpick-cols .is-end,.cpick-cell.is-end{text-align:right}
+.cpick-list{flex:1 1 auto;min-height:0;margin:0;padding:0;list-style:none;overflow:auto;overscroll-behavior:contain;scrollbar-width:none;scroll-padding-block:8px;mask-image:linear-gradient(to bottom,transparent,#000 var(--fade-top,0px),#000 calc(100% - var(--fade-bottom,0px)),transparent)}
+.cpick-list::-webkit-scrollbar{display:none}
+.cpick-opt{position:relative;padding:7px 8px;border-radius:6px;cursor:pointer}
+.cpick-opt:hover,.cpick-opt.is-active{background:var(--ax-soft,#e9edf4)}
+.cpick-opt[aria-disabled=true]{opacity:.5;cursor:not-allowed}
+.cpick-tick{display:inline-grid;place-items:center;width:18px;height:18px;border-radius:4px;color:transparent}
+.cpick-tick .icon{width:14px;height:14px;stroke-width:2.4}
+.cpick.is-multi .cpick-tick{border:1px solid #8f8f96}
+.cpick-opt[aria-selected=true] .cpick-tick{color:var(--ax-primary,#153e75)}
+.cpick.is-multi .cpick-opt[aria-selected=true] .cpick-tick{background:var(--ax-primary,#153e75);border-color:var(--ax-primary,#153e75);color:#fff}
+.cpick-cell{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden;word-break:keep-all;overflow-wrap:anywhere}
+.cpick-cell.is-primary{display:block}
+.cpick-cell.is-primary strong{display:block;font-size:var(--ax-sm,16px);font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cpick-cell.is-primary small{display:block;font-size:var(--ax-xs,14px);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cpick-cell.is-end{display:block;white-space:nowrap;font-variant-numeric:tabular-nums;letter-spacing:-.01em}
+.cpick-cell.is-strong .cpick-v{font-weight:600}
+.cpick-k{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
+.cpick-status{padding:4px 8px;font-size:var(--ax-xs,14px)}
+.cpick-status:empty{display:none}
+.cpick-panel.is-loading .cpick-list{opacity:.55}
+.cpick-foot{display:flex;align-items:center;justify-content:space-between;gap:8px;padding-top:6px;border-top:1px solid var(--ax-line,rgba(29,29,31,.14))}
+.cpick-note{min-width:0;word-break:keep-all}
+.cpick-foot .button{flex-shrink:0;font-size:var(--ax-control-sm,16px);height:var(--ax-control-h-sm,26px);min-height:var(--ax-control-h-sm,26px)}
+
+/* Narrow field: one fixed set of areas per list (the panel's --cpick-areas) for the labels and every option, so each
+   label sits right above its value in every row. Values stay on one line; amounts right-aligned. */
+.cpick-panel[data-compact=true] :is(.cpick-cols,.cpick-opt){grid-template-columns:var(--cpick-ccols);grid-template-areas:var(--cpick-areas);column-gap:10px;row-gap:2px;align-items:baseline}
+.cpick-panel[data-compact=true] :is(.cpick-cols,.cpick-opt)>*{grid-area:var(--ca)}
+.cpick-panel[data-compact=true] .cpick-cols{row-gap:0}
+.cpick-panel[data-compact=true] .cpick-opt{padding:8px}
+.cpick-panel[data-compact=true] .cpick-tick{align-self:start;margin-top:2px}
+.cpick-panel[data-compact=true] .cpick-cell.is-primary{display:flex;align-items:baseline;gap:6px;min-width:0}
+.cpick-panel[data-compact=true] .cpick-cell.is-primary strong{flex-shrink:0;max-width:100%}
+.cpick-panel[data-compact=true] .cpick-cell.is-primary small{min-width:0}
+.cpick-panel[data-compact=true] .cpick-cell:not(.is-primary){display:block;-webkit-line-clamp:unset;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cpick-panel[data-compact=true] :is(.cpick-cols,.cpick-opt) :is(.is-end,.is-cend){text-align:right}
+@media (prefers-reduced-motion:reduce){.cpick-trigger>.icon{transition:none}}

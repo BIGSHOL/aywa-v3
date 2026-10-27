@@ -133,51 +133,18 @@ window.createOwnerWorkspace = function createOwnerWorkspace(api) {
     return `<div class="page-heading"><div><h1>자동화</h1><p>어떤 이슈를 어디로 받고, 누가 처리할지 설정합니다.</p></div></div><section class="ax-rules"><h2>원장 브리핑</h2><p>수납 잔액, 상담 후속, 출결 특이사항, 결재 대기, 업무 기한, 교재 진행과 청구 대상 변화를 묶습니다.</p><div class="ax-rule-path"><span>업무 기록 확인</span>${icon('chevron')}<span>같은 이슈 묶기</span>${icon('chevron')}<span>원장에게 알림</span>${icon('chevron')}<span>담당자 요청·결과 보고</span></div><label><input type="checkbox" data-ax-setting="rule" ${ui.rule?'checked':''}> 브리핑 규칙 사용</label><div class="ax-channel-options"><label><input type="checkbox" data-ax-setting="app" ${ui.app?'checked':''}> 앱 알림</label><label><input type="checkbox" data-ax-setting="slack" ${ui.slack?'checked':''}> 슬랙 알림</label></div><p>${slack?.configured?`복사본의 슬랙 설정: 연결됨 · 사용 중 규칙 ${slack.enabledRules}개 · 요약 ${h(slack.digest)} · 방해금지 ${h(slack.quiet)}`:'복사본에서 슬랙 연결 설정을 찾지 못했습니다.'}</p><p class="ax-note">이 화면의 변경은 시안 설정입니다. 실제 알림 발송과 예약 실행은 연결하지 않았습니다.</p>${button('브리핑 알림 미리보기','digest')}</section>${coverage()}`;
   }
 
-  /* ---------- Staff multi-select: searchable listbox, removable chips, hidden inputs as the single value source ---------- */
+  /* ---------- Owner picker: shared ContextPicker (context-picker.js) with each person's role, duty, subjects and homeroom
+     classes. With the work flow, only the people it can assign (same rule as its reassign list: real, assignable, not
+     an owner); without it (session-only requests), the copy's staff. Earlier draft picks that are no longer allowed are
+     named and left out, never sent. ---------- */
+  const assignableActors=()=>flowUI?.ready()?flowUI.actors().filter(a=>a&&!a.preview&&a.assignable!==false&&a.role!=='owner'):null;
   function ownerPicker(selected){
-    return `<div class="ax-picker" data-ax-picker><span class="ax-field-label" id="ax-owner-label">담당자 <span>여러 명 선택 가능</span></span><div class="ax-picker-field"><ul class="ax-picker-chips" aria-label="선택한 담당자"></ul><button type="button" class="ax-picker-trigger" id="ax-owner-trigger" data-picker-toggle aria-haspopup="listbox" aria-expanded="false" aria-controls="ax-owner-panel" aria-describedby="ax-request-error"><span data-picker-label>담당자 선택</span>${icon('down')}</button></div><div class="ax-picker-panel" id="ax-owner-panel" hidden><input type="search" class="ax-picker-search" id="ax-owner-search" role="combobox" aria-expanded="true" aria-controls="ax-owner-list" aria-autocomplete="list" aria-activedescendant="" aria-label="담당자 검색 · 이름, 직급, 부서" placeholder="이름·직급·부서 검색" autocomplete="off" enterkeyhint="done"><ul class="ax-picker-list live-scroll" id="ax-owner-list" role="listbox" aria-multiselectable="true" aria-labelledby="ax-owner-label">${db.staff.map(s=>`<li role="option" class="ax-picker-option" id="ax-owner-${h(s.id)}" data-owner="${h(s.id)}" data-search="${h(norm(`${s.name} ${s.title} ${s.department}`))}" aria-selected="false"><span class="ax-check" aria-hidden="true">${icon('check')}</span><span><strong>${h(s.name)}</strong><small>${h(s.title)} · ${h(s.department)}</small></span></li>`).join('')}</ul><p class="ax-picker-empty" role="status" aria-live="polite"></p><div class="ax-picker-foot"><span data-picker-count></span><button type="button" class="button" data-picker-done>선택 완료</button></div></div><div data-picker-inputs>${selected.filter(id=>staffById.has(id)).map(id=>`<input type="hidden" name="owner" value="${h(id)}">`).join('')}</div></div>`;
+    const CP=window.ContextPicker,actors=assignableActors();
+    if(!CP)return `<fieldset class="ws-multi"><legend>담당자</legend>${(actors||db.staff).map(p=>`<label><input type="checkbox" name="owner" value="${h(p.id)}" ${selected.includes(p.id)?'checked':''}> ${h(p.name)} · ${h(p.roleLabel||p.title||'')}</label>`).join('')}</fieldset>`;
+    const list=actors?CP.lists.people({db,actors,subjectLabel:api.subjectLabel}):CP.lists.staff({db,subjectLabel:api.subjectLabel}),allowed=new Set(list.options.map(o=>o.value));
+    const dropped=[...new Set(selected)].filter(id=>!allowed.has(id)).map(id=>({label:staffById.get(id)?.name||flowUI?.nameOf?.(id)||'이전에 고른 사람',reason:actors?'업무 흐름에서 배정할 수 없음':'직원 목록에 없음'}));
+    return CP.html({id:'ax-owner',name:'owner',label:'담당자',required:true,multiple:true,empty:'담당자 선택',describedBy:'ax-request-error',selected:selected.filter(id=>allowed.has(id)),dropped,...list});
   }
-  const pickerIds=root=>[...root.querySelectorAll('[data-picker-inputs] input[name=owner]')].map(i=>i.value);
-  function syncPicker(root){
-    const ids=pickerIds(root),people=ids.map(id=>staffById.get(id)).filter(Boolean),trigger=root.querySelector('[data-picker-toggle]');
-    root.querySelector('.ax-picker-chips').innerHTML=people.map(s=>`<li class="ax-picker-chip"><span>${h(s.name)}</span><button type="button" data-picker-remove="${h(s.id)}" aria-label="${h(s.name)} 선택 해제">${icon('close')}</button></li>`).join('');
-    root.querySelectorAll('[role=option]').forEach(o=>o.setAttribute('aria-selected',String(ids.includes(o.dataset.owner))));
-    root.querySelector('[data-picker-label]').textContent=people.length?'담당자 추가·변경':'담당자 선택';
-    trigger.setAttribute('aria-label',people.length?`담당자 추가·변경 · ${people.length}명 선택됨: ${people.map(s=>s.name).join(', ')}`:'담당자 선택 · 선택된 사람 없음');
-    root.querySelector('[data-picker-count]').textContent=`${people.length}명 선택`;
-    root.classList.toggle('has-value',people.length>0);
-  }
-  function setOwners(root,ids){
-    root.querySelector('[data-picker-inputs]').innerHTML=[...new Set(ids)].filter(id=>staffById.has(id)).map(id=>`<input type="hidden" name="owner" value="${h(id)}">`).join('');
-    syncPicker(root);
-    const form=root.closest('form');if(ids.length&&form){form.querySelector('.ax-form-error').textContent='';root.querySelector('[data-picker-toggle]').removeAttribute('aria-invalid');}
-    if(form)saveDraft(form);
-  }
-  const toggleOwner=(root,id)=>{const ids=pickerIds(root);setOwners(root,ids.includes(id)?ids.filter(x=>x!==id):[...ids,id]);};
-  function setActive(root,option){
-    root.querySelectorAll('.ax-picker-option.active').forEach(o=>o.classList.remove('active'));
-    const search=root.querySelector('.ax-picker-search');search.setAttribute('aria-activedescendant',option?.id||'');
-    if(option){option.classList.add('active');option.scrollIntoView({block:'nearest'});}
-  }
-  function filterPicker(root){
-    const raw=root.querySelector('.ax-picker-search').value,query=norm(raw);let first=null,count=0;
-    root.querySelectorAll('[role=option]').forEach(o=>{const show=!query||o.dataset.search.includes(query);o.hidden=!show;if(show){count++;first??=o;}});
-    root.querySelector('.ax-picker-empty').textContent=count?'':`‘${raw.trim()}’와 맞는 직원이 없습니다. 이름·직급·부서를 다시 확인해 주세요.`;
-    setActive(root,first);root.querySelector('.ax-picker-list').dispatchEvent(new Event('scroll'));
-  }
-  function openPicker(root,open,focusTrigger=false){
-    const panel=root.querySelector('.ax-picker-panel'),trigger=root.querySelector('[data-picker-toggle]');
-    if(panel.hidden===!open)return;
-    panel.hidden=!open;trigger.setAttribute('aria-expanded',String(open));
-    if(open){const search=root.querySelector('.ax-picker-search');search.value='';filterPicker(root);search.focus();}
-    else if(focusTrigger)trigger.focus();
-  }
-  function movePicker(root,step){
-    const visible=[...root.querySelectorAll('[role=option]:not([hidden])')];if(!visible.length)return;
-    const index=visible.indexOf(root.querySelector('.ax-picker-option.active'));
-    setActive(root,visible[step==='first'?0:step==='last'?visible.length-1:Math.min(visible.length-1,Math.max(0,index+step))]);
-  }
-
   /* ---------- Request form: draft kept per source until submitted ---------- */
   function saveDraft(form){
     const key=form.dataset.draftKey;if(!key||form.dataset.submitted)return;
@@ -194,12 +161,11 @@ window.createOwnerWorkspace = function createOwnerWorkspace(api) {
     const linked=sources.map(findIssue).filter(Boolean);
     const lead=args.source==='chat'?'AI 제안 요청안 · 검토 후 등록할 때만 추가됩니다.':context?.familyLabel?`${context.familyLabel}에서 보내는 요청 · 등록 전까지 전달되지 않습니다.`:issue?`${issue.category} · 확인 대상 ${issue.records.length||'변동 근거'}${issue.records.length?issue.unit:''}`:'관리자·강사에게 요청할 내용을 작성하세요.';
     dialog('modal','업무 요청',lead,`<form data-ax-form="request" class="ax-request-form" data-draft-key="${h(key)}" data-source="${h(args.source||(sources.length?'issue':'direct'))}">${sources.map(id=>`<input type="hidden" name="issue" value="${h(id)}">`).join('')}${draft?`<p class="ax-draft-note" role="status">작성하던 내용을 이어서 표시합니다. ${button('처음 내용으로','draft-reset',key)}</p>`:''}${linked.length?`<div class="ax-linked-issues"><span>연결 이슈</span>${linked.map(i=>pill(i.title)).join('')}</div>`:''}${context?.familyLabel||context?.records.length?`<div class="ax-linked-issues"><span>출처</span>${context.familyLabel?pill(context.familyLabel,'blue'):''}${context.records.slice(0,4).map(r=>pill(r.label)).join('')}${context.records.length>4?`<span>외 ${context.records.length-4}건</span>`:''}</div>`:''}<label>요청 제목<input name="title" required maxlength="${flowUI?.ready()?80:120}" value="${h(value.title)}"></label>${ownerPicker(value.owners)}<div class="ax-form-pair"><label>완료 기한<input name="due" type="date" required min="${db.meta.asOf}" value="${h(value.due)}"></label><label>우선순위<select name="priority">${['보통','높음'].map(p=>`<option ${p===value.priority?'selected':''}>${p}</option>`).join('')}</select></label></div><label>요청 내용<textarea name="body" rows="5" required maxlength="${flowUI?.ready()?2000:3000}">${h(value.body)}</textarea></label><fieldset><legend>알림 방법</legend><div class="ax-channel-options"><label><input type="checkbox" name="channel" value="app" ${value.channels.includes('app')?'checked':''}> 앱 알림</label><label><input type="checkbox" name="channel" value="slack" ${value.channels.includes('slack')?'checked':''}> 슬랙</label></div></fieldset><p class="ax-note">이슈 근거와 확인 대상이 요청에 연결됩니다. 시안에서는 요청 등록·알림 미리보기까지 진행됩니다.</p><p class="ax-form-error" id="ax-request-error" role="alert"></p><button class="button primary" type="submit">요청 등록</button></form>`);
-    syncPicker($('#modal [data-ax-picker]'));
   }
   function submitRequest(form){
-    const values=new FormData(form),error=form.querySelector('.ax-form-error'),picker=form.querySelector('[data-ax-picker]');
+    const values=new FormData(form),error=form.querySelector('.ax-form-error'),picker=form.querySelector('[data-cpick-name="owner"]');
     const owners=values.getAll('owner').filter(id=>staffById.has(id)),channels=values.getAll('channel'),title=String(values.get('title')||'').trim(),body=String(values.get('body')||'').trim();
-    if(!owners.length){error.textContent='담당자를 한 명 이상 선택해 주세요.';const trigger=picker.querySelector('[data-picker-toggle]');trigger.setAttribute('aria-invalid','true');trigger.focus();return;}
+    if(!owners.length){error.textContent='담당자를 한 명 이상 선택해 주세요.';const trigger=picker?.querySelector('.cpick-trigger');trigger?.setAttribute('aria-invalid','true');trigger?.focus();return;}
     if(!form.reportValidity())return;
     if(!channels.length||!title||!body){error.textContent=!channels.length?'알림 방법을 하나 이상 선택해 주세요.':'제목과 요청 내용을 입력해 주세요.';return;}
     const id=crypto.randomUUID(),sources=values.getAll('issue').filter(Boolean),source=form.dataset.source||(sources.length?'issue':'direct');
@@ -362,20 +328,7 @@ window.createOwnerWorkspace = function createOwnerWorkspace(api) {
   window.addEventListener('ax-catalog',()=>{if($('#ax-launcher-list'))$('#ax-launcher-list').innerHTML=launcherList($('#ax-launcher-search').value);});
 
   /* ---------- Events ---------- */
-  function pickerClick(event){
-    document.querySelectorAll('[data-ax-picker]').forEach(root=>{if(!root.contains(event.target))openPicker(root,false);});
-    const root=event.target.closest('[data-ax-picker]');if(!root)return false;
-    const remove=event.target.closest('[data-picker-remove]'),option=event.target.closest('[role=option]');
-    if(event.target.closest('[data-picker-toggle]'))openPicker(root,root.querySelector('.ax-picker-panel').hidden);
-    else if(remove){const id=remove.dataset.pickerRemove,next=pickerIds(root).filter(x=>x!==id);setOwners(root,next);(root.querySelector(`[data-picker-remove]`)||root.querySelector('[data-picker-toggle]')).focus();}
-    else if(option){toggleOwner(root,option.dataset.owner);setActive(root,option);root.querySelector('.ax-picker-search').focus({preventScroll:true});}
-    else if(event.target.closest('[data-picker-done]'))openPicker(root,false,true);
-    else return false;
-    event.stopPropagation();return true;
-  }
-  document.addEventListener('mousedown',event=>{if(event.target.closest('.ax-picker-option'))event.preventDefault();},true);
   document.addEventListener('click',event=>{
-    if(pickerClick(event))return;
     const el=event.target.closest('[data-ax]');if(!el)return;event.preventDefault();event.stopImmediatePropagation();
     const {ax:action,id,prompt,type}=el.dataset;
     if(el.closest('#sidebar'))api.closeMenu?.(false);
@@ -406,29 +359,16 @@ window.createOwnerWorkspace = function createOwnerWorkspace(api) {
     if(action==='launcher'){launcher();return;}
   },true);
   document.addEventListener('keydown',event=>{
-    const root=event.target.closest?.('[data-ax-picker]');
-    if(root){
-      const open=!root.querySelector('.ax-picker-panel').hidden,inSearch=event.target.matches('.ax-picker-search');
-      if(event.key==='Escape'&&open){event.preventDefault();event.stopPropagation();openPicker(root,false,true);return;}
-      if(event.target.matches('[data-picker-toggle]')&&event.key==='ArrowDown'){event.preventDefault();openPicker(root,true);return;}
-      if(inSearch&&!event.isComposing&&event.keyCode!==229){
-        if(event.key==='ArrowDown'||event.key==='ArrowUp'){event.preventDefault();movePicker(root,event.key==='ArrowDown'?1:-1);}
-        else if(event.key==='PageDown'||event.key==='PageUp'){event.preventDefault();movePicker(root,event.key==='PageDown'?'last':'first');}
-        else if(event.key==='Enter'){event.preventDefault();const active=root.querySelector('.ax-picker-option.active');if(active)toggleOwner(root,active.dataset.owner);}
-      }else if(inSearch&&event.key==='Enter')event.preventDefault();
-      return;
-    }
     if(event.key==='Enter'&&(event.isComposing||event.keyCode===229)&&event.target.matches?.('#ax-home-command,#ax-chat-command')){event.preventDefault();return;}
     if(event.key==='Enter'&&!event.shiftKey&&event.target.matches?.('#ax-chat-command')){event.preventDefault();event.target.form.requestSubmit();}
   },true);
   document.addEventListener('input',event=>{
-    const root=event.target.closest?.('[data-ax-picker]');if(root&&event.target.matches('.ax-picker-search')){filterPicker(root);return;}
+    if(event.target.dataset?.cpickName==='owner'&&window.ContextPicker?.value(event.target).length){const form=event.target.closest('form');if(form)form.querySelector('.ax-form-error').textContent='';}
     if(event.target.id==='ax-home-command')ui.homePrompt=event.target.value;
     if(event.target.id==='ax-launcher-search'&&!event.isComposing)$('#ax-launcher-list').innerHTML=launcherList(event.target.value);
     const form=event.target.closest?.('form[data-ax-form="request"]');if(form)saveDraft(form);
   });
   document.addEventListener('compositionend',event=>{if(event.target.id==='ax-launcher-search')$('#ax-launcher-list').innerHTML=launcherList(event.target.value);});
-  document.addEventListener('focusout',event=>{const root=event.target.closest?.('[data-ax-picker]');if(root)setTimeout(()=>{if(!root.contains(document.activeElement)&&document.activeElement!==document.body)openPicker(root,false);},0);});
   document.addEventListener('change',event=>{const key=event.target.dataset.axSetting;if(key)ui[key]=event.target.checked;const form=event.target.closest?.('form[data-ax-form="request"]');if(form)saveDraft(form);});
   document.addEventListener('submit',event=>{
     const form=event.target,kind=form.dataset.axForm;if(!kind)return;event.preventDefault();event.stopImmediatePropagation();
