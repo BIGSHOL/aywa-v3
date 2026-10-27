@@ -43,7 +43,9 @@ window.createWorkspaces = function createWorkspaces(api) {
   function stagesOf(a){const list=facetsOf(a),dims=[...new Set(list.map(f=>dimension(f.id)).filter(Boolean))],dim=dims.includes('status')?'status':dims[0];return dim?list.filter(f=>dimension(f.id)===dim):list;}
   const screenActions=(a,screenId)=>actionsOf(a).filter(x=>targetOf(x).facet===screenId);
   const previews=id=>Array.isArray(data(id)?.records)?data(id).records:[];
-  const recordById=(id,rid)=>[...previews(id),...(state.remote[id]?.data?.items||[])].find(r=>String(r.id)===String(rid));
+  // Records read one by one by exact id (GET …/records?id=) for links to a record off the loaded page.
+  const exact={};
+  const recordById=(id,rid)=>[...previews(id),...(state.remote[id]?.data?.items||[]),...(exact[id]?.values()||[])].find(r=>String(r.id)===String(rid));
 
   /* ---------- records: previews first, full list through the read-only endpoint when it is served ---------- */
   function remoteKey(id){return `${state.q[id]||''}|${state.facet[id]||''}|${state.page[id]||1}`;}
@@ -263,9 +265,26 @@ window.createWorkspaces = function createWorkspaces(api) {
     return `<section class="ws-requests"><h2>이 화면에서 보낸 요청 ${list.length}건</h2>${list.map(r=>`<button type="button" class="ax-request-row" data-ax="request-detail" data-id="${r.id}"><span><strong>${h(r.title)}</strong><small>${h(r.owners.map(o=>db.staff.find(s=>s.id===o)?.name||'담당자').join(', '))} · ${h(r.due)}까지</small></span>${pill({requested:'확인 대기',working:'진행 중',done:'완료 보고'}[r.status],r.status==='done'?'green':'blue')}</button>`).join('')}</section>`;
   }
   function relations(a){const list=(a.relations||[]).filter(has);return list.length?`<section class="ws-relations"><h2>함께 보는 화면</h2><div>${list.map(id=>`<a class="ws-link" href="#workspace-${h(id)}">${h(area(id).label)}</a>`).join('')}</div></section>`:'';}
+  // A record on the loaded list opens at once. One off it (a link from elsewhere) is read by its exact id first; the
+  // dialog changes only on success, and an answer that arrives after the person moved on (another record asked for,
+  // a different dialog, the dialog closed, another page, a form open) is dropped. Resolves 'shown', 'missing',
+  // 'failed' or 'stale'.
+  let recordAsk=0;
   function showRecord(familyId,recordId){
-    const a=area(familyId),r=recordById(familyId,recordId);if(!a||!r)return;
-    const local=(state.local[familyId]||[]).filter(e=>e.recordId===String(recordId)),open=api.openRecord&&api.canOpenRecord?.(recordId);
+    const a=area(familyId);if(!a)return Promise.resolve('missing');
+    const r=recordById(familyId,recordId);
+    if(r){recordAsk++;renderRecord(a,familyId,r);return Promise.resolve('shown');}
+    const ask=++recordAsk,view=()=>{const d=document.getElementById('detail');return [d?.open?d.querySelector('h2')?.textContent??'':null,location.hash,Boolean(document.querySelector('#modal[open]'))];},before=view();
+    const same=()=>ask===recordAsk&&view().every((x,i)=>x===before[i]);
+    const fail=missing=>{toast(missing?'이 기록을 찾지 못했습니다. 이 업무 영역의 복사본에 없는 기록입니다.':'기록을 불러오지 못했습니다. 잠시 뒤 다시 시도해 주세요.');return missing?'missing':'failed';};
+    return fetch(`/api/workspaces/${encodeURIComponent(familyId)}/records?id=${encodeURIComponent(recordId)}`,{headers:{Accept:'application/json'}})
+      .then(async res=>{const j=await res.json().catch(()=>null);if(!same())return 'stale';
+        if(res.ok&&j?.item&&String(j.item.id)===String(recordId)){(exact[familyId]||(exact[familyId]=new Map())).set(String(j.item.id),j.item);renderRecord(a,familyId,j.item);return 'shown';}
+        return fail(res.status===404);})
+      .catch(()=>same()?fail(false):'stale');
+  }
+  function renderRecord(a,familyId,r){
+    const recordId=String(r.id),local=(state.local[familyId]||[]).filter(e=>e.recordId===recordId),open=api.openRecord&&api.canOpenRecord?.(recordId);
     dialog('detail',r.label,`${a.label}${r.date?` · ${r.date}`:''}`,`<div class="ax-issue-meta">${r.status?pill(r.status):''}${(r.facetIds||[]).map(f=>pill(facetsOf(a).find(x=>x.id===f)?.label||f)).join('')}</div>${r.detail?`<p class="live-pre">${h(r.detail)}</p>`:''}${(r.fields||[]).length?`<dl>${r.fields.map(f=>`<dt>${h(f.label)}</dt><dd>${h(f.value)}</dd>`).join('')}</dl>`:''}<div class="ax-actions">${btn('이 기록으로 요청','record-request',`data-id="${h(familyId)}" data-record="${h(r.id)}"`,true)}${open?btn('기존 상세 화면','record-open',`data-record="${h(r.id)}"`):''}</div>${local.length?`<section class="ax-evidence"><h3>이 기록의 미리보기 ${local.length}건</h3>${local.map(e=>`<p><strong>${h(e.label)}</strong> · ${h(e.values.map(v=>`${v.label} ${v.value}`).join(' · '))}</p>`).join('')}</section>`:''}<section class="ws-record-actions"><h3>이 기록으로 할 수 있는 일</h3>${actionsOf(a).map(x=>`<button type="button" class="ws-action" data-ws="action" data-id="${h(familyId)}" data-action="${h(x.id)}" data-record="${h(r.id)}"><strong>${h(x.label)}</strong><small>${h(MODE[x.mode]?.label||'요청 초안')}</small></button>`).join('')}</section>`);
   }
   // Partial refresh of the records region; keeps focus and the horizontal/vertical position of inner scrollers.

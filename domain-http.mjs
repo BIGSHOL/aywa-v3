@@ -1,10 +1,13 @@
 // GET /api/workspaces/:familyId/records?q=&facet=&page=&pageSize= — read-only evidence pages
 // from the server-side store built with the verified startup snapshot (domain-snapshot.mjs).
+// GET …/records?id=<recordId> — one record of that family by its exact id (alone, never with search or paging; no
+// matching by name or date), so a link to a record outside the loaded page can open it.
 // Same-origin page only (serve-live.mjs host/origin/sec-fetch guards apply before this).
 import { FAMILY_IDS, workspaceRecords } from './domain-snapshot.mjs';
 
 export const RECORDS_PATH = /^\/api\/workspaces\/([a-z][a-z-]{0,40})\/records$/;
-const KEYS = new Set(['q', 'facet', 'page', 'pageSize']);
+const KEYS = new Set(['q', 'facet', 'page', 'pageSize', 'id']);
+const RECORD_ID = /^[A-Za-z0-9][A-Za-z0-9:._-]{0,99}$/;
 const LIMITS = Object.freeze({ q: 100, facet: 100, page: 100000, pageSize: 100 });
 
 const text = r => [r.label, r.detail, r.status, r.date, ...r.fields.map(f => f.value)].join(' ').toLowerCase();
@@ -12,6 +15,13 @@ const text = r => [r.label, r.detail, r.status, r.date, ...r.fields.map(f => f.v
 export function queryRecords(store, familyId, params) {
   if (!FAMILY_IDS.includes(familyId)) return { status: 404, body: { error: 'unknown_family', message: '알 수 없는 업무 영역입니다.' } };
   for (const key of params.keys()) if (!KEYS.has(key) || params.getAll(key).length > 1) return { status: 400, body: { error: 'invalid_request', message: '허용하지 않는 조회 조건입니다.' } };
+  if (params.has('id')) {
+    const id = params.get('id');
+    if ([...params.keys()].length !== 1 || !RECORD_ID.test(id)) return { status: 400, body: { error: 'invalid_request', message: '기록 id 조회 조건이 올바르지 않습니다.' } };
+    if (!store) return { status: 503, body: { error: 'records_unavailable', message: '근거 목록을 아직 준비하지 못했습니다.' } };
+    const item = store.families.get(familyId).records.find(r => String(r.id) === id);
+    return item ? { status: 200, body: { familyId, item } } : { status: 404, body: { error: 'record_not_found', message: '이 업무 영역에서 그 기록을 찾지 못했습니다.' } };
+  }
   const q = (params.get('q') || '').trim(), facet = params.get('facet') || '';
   const int = (v, d) => v === null || v === '' ? d : /^\d{1,6}$/.test(v) ? Number(v) : NaN;
   const page = int(params.get('page'), 1), pageSize = int(params.get('pageSize'), 20);

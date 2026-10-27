@@ -75,6 +75,21 @@ test('records endpoint: strict parameters, consistent facet counts, search and p
   assert.equal(queryRecords(store, 'help', new URLSearchParams()).body.total, 0);
 });
 
+test('records endpoint: one record by exact id, family-scoped, alone', () => {
+  const f = fam('billing', { evidence: ev });
+  const store = { families: new Map([['billing', { facets: f.facets, records: f[EVIDENCE] }], ['help', { facets: [], records: [] }]]) };
+  const q = (family, s) => queryRecords(store, family, new URLSearchParams(s));
+  assert.deepEqual(q('billing', 'page=1&pageSize=2').body.items.map(r => r.id), ['a', 'b'], 'c is beyond the first page');
+  const hit = q('billing', 'id=c'); assert.equal(hit.status, 200); assert.equal(hit.body.item.id, 'c'); assert.equal(hit.body.familyId, 'billing');
+  assert.deepEqual(hit.body.item, f[EVIDENCE].find(r => r.id === 'c'), 'the same record the list serves');
+  assert.equal(q('billing', 'id=zz').status, 404); assert.equal(q('billing', 'id=zz').body.error, 'record_not_found');
+  assert.equal(q('help', 'id=c').status, 404, 'another family does not see it');
+  assert.equal(q('nope', 'id=c').status, 404);
+  for (const bad of ['id=', 'id=c&q=a', 'id=c&page=1', 'id=c&id=b', 'id=%20c', `id=${'x'.repeat(101)}`, 'id=c%27%3B']) assert.equal(q('billing', bad).status, 400, bad);
+  assert.equal(queryRecords(null, 'billing', new URLSearchParams('id=c')).status, 503);
+  assert.equal(q('billing', `q=${encodeURIComponent('나')}`).body.items[0].id, 'b', 'search still works');
+});
+
 test('withdrawal semantics follow 2.0 (reason aliases, bookkeeping-only exits)', () => {
   assert.equal(normalizeReason('dissatisfied'), 'dissatisfaction'); assert.equal(normalizeReason('반 이동'), 'other'); assert.equal(normalizeReason(null), null);
   assert.equal(isBookkeepingOnlyExit('other', '데이터 정리 일괄 퇴원', false), true);
