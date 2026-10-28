@@ -4,13 +4,14 @@
    수업목록 껍데기와 같다(모양은 v2-screen-timetable.css의 `.v2h-*`).
    보는 사람 = 저장하는 사람: 처리 화면은 누가 보느냐로 단추가 달라진다(담임 = 작성 · 관리자 = 승인 · 원장 = 최종 승인) — 고른 값은
    같은 출처 저장소 `v2-host-actor:withdrawal-reports` + v2-host-actor 알림으로 호스트에 가고, 호스트가 그 사람으로 다시 읽는다.
-   기록 바로 열기: `#v2-withdrawal-reports?v2path=/withdrawal-reports/<보고서 id>`(원본은 /withdrawal-reports/archive/<id>). */
+   기록 바로 열기: `#v2-withdrawal-reports?v2path=/withdrawal-reports/<보고서 id>[&actor=<직원 id>]`(원본은 /withdrawal-reports/archive/<id>) ·
+   진행 중만 = `status=pending`. */
 (() => {
   'use strict';
   const ID = 'withdrawal-reports', LABEL = '퇴원보고서', HOST = `/v2-host/${ID}.html`, S = window.V2Screens; if (!S) return;
   // 2.0 page.tsx가 읽는 주소 열쇠 그대로 + v2path(2.0 하위 경로 — 보고서 상세 · 원본 상세).
   const KEEP = ['v2path', 'status', 'range', 'from', 'to', 'subject', 'teacher', 'link', 'q', 'page', 'request'];
-  let api = null, frame = null, requested = null, hostOk = null, wired = false, editors = [], actor = null;
+  let api = null, frame = null, requested = null, hostOk = null, wired = false, editors = [], actor = null, urlActor = null;
   const ACTOR_KEY = `v2-host-actor:${ID}`, SEL = `[data-v2-screen="${ID}"]`;
   const esc = s => S.esc(s);
   const queryOf = q => { const o = new URLSearchParams(); for (const k of KEEP) { const v = q.get(k); if (v) o.set(k, v); } return o.toString(); };
@@ -92,6 +93,15 @@
     id: ID, label: LABEL,
     render(ctx) {
       api = ctx.api; wire();
+      // 주소의 actor=<직원 id>가 가장 먼저 이긴다(업무 흐름 '처리 화면' 단추가 그 단계 담당을 싣는다 — 메인 10-28).
+      // 이미 떠 있는 화면에서 고른 값보다 앞서고, 고를 수 있는 사람이 아니면 currentActor가 무시한다.
+      const asked = ctx.query.get('actor');
+      if (asked && /^[0-9a-f-]{36}$/i.test(asked) && location.hash !== urlActor) {
+        urlActor = location.hash; actor = asked; // 같은 주소로 다시 와도(그 사이 사람을 바꿨어도) 다시 이긴다
+        try { localStorage.setItem(ACTOR_KEY, asked); } catch { /* 이 창에서만 */ }
+        if (editors.length) { const at = document.querySelector(`${SEL} [data-v2h-actor-slot]`); if (at) at.innerHTML = actorPicker(); }
+        tellHost();
+      }
       const query = queryOf(ctx.query);
       if (hostOk === null) fetch(HOST, { method: 'HEAD' }).then(r => r.ok, () => false).then(ok => { if (hostOk === null) { hostOk = ok; api?.render?.(); } });
       else if (hostOk) requestAnimationFrame(() => { ensureFrame(query); place(); });
