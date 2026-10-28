@@ -26,6 +26,7 @@ import { PopupsManager } from "@/app/(shell)/owner/_components/popups-manager";
 import type { AdminPopup } from "@/features/notices/server/queries";
 import { OwnerAuditFace, type OwnerAuditData } from "./owner-audit";
 import { OwnerDataFace, type OwnerData } from "./owner-data";
+import { OwnerDashboardFace, type OwnerDashboardData } from "./owner-dashboard";
 
 type Sp = Record<string, string | undefined>;
 
@@ -68,6 +69,7 @@ export type OwnerPageData = {
   /** 감사로그 면(tab=audit)에서만 읽은 원본 조회 결과. */
   audit: OwnerAuditData | null;
   data: OwnerData | null;
+  dashboard: OwnerDashboardData | null;
 };
 
 function facesFor(canReadAudit: boolean, showModules: boolean, showMakeups: boolean, showEvaluation: boolean, showContribution: boolean): OwnerFaceDef[] {
@@ -96,7 +98,7 @@ function fmt(iso: string | null): string {
 export function OwnerHostPage({ d, sp }: { d: OwnerPageData; sp: Sp }) {
   const { settings, meta, tab, canEditSettings, canReadAudit, isMaster, showMakeups, showEvaluation, showContribution, showsOperations, canEditOperations, settingsUnreadable,
     operationsTokens, operationsForClient, seatPin, classrooms, canImportClassrooms, teacherLabelsBySubject, periodDefs, sessionYear, holidayDates, permissionsSource,
-    permissionsTok, userOverrideNames, permissionStaff, hiddenPermissionIds, hiddenSettingKeys, navigationGates, integrations, popups, audit, data } = d;
+    permissionsTok, userOverrideNames, permissionStaff, hiddenPermissionIds, hiddenSettingKeys, navigationGates, integrations, popups, audit, data, dashboard } = d;
   // 2.0 page.tsx와 같은 식 — 연동 면 makeedu 실행 이력 쪽(지금은 '아직')이 쓴다.
   const page = Math.max(1, Number(sp.page) || 1);
   const allowedTabs = new Map<OwnerFaceKey, boolean>(d.allowedTabEntries);
@@ -232,7 +234,7 @@ export function OwnerHostPage({ d, sp }: { d: OwnerPageData; sp: Sp }) {
           (원장 시점 전체 스냅샷)을 **읽지도 않는다** — 면을 감추는 게 아니라 조회 자체를 안 한다. */}
       {tab === "dashboard" ? (
         canReadAudit ? (
-          <OwnerServerFace face="dashboard" />
+          <OwnerDashboardFace d={dashboard!} />
         ) : (
           <div className="bg-card border-line rounded-2xl border p-6">
             <p className="text-foreground text-sm font-bold">대시보드 관리는 원장만 바꿀 수 있습니다</p>

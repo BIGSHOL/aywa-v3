@@ -14,6 +14,7 @@ import { integrationsView, integrationActions } from './v2-owner-integrations.mj
 import { listPopups, popupActions } from './v2-owner-popups.mjs';
 import { loadOwnerAudit } from './v2-owner-audit.mjs';
 import { loadOwnerData, ownerDataActions } from './v2-owner-data.mjs';
+import { loadOwnerDashboard, loadOwnerDashboardPreview } from './v2-owner-dashboard.mjs';
 
 const ID = 'owner';
 const plain = v => !!v && typeof v === 'object' && !Array.isArray(v);
@@ -182,6 +183,9 @@ async function ownerPage({ sql, t, R, O, sp, viewers, viewer, settings, row, imp
     tab === 'audit' && canReadAudit ? loadOwnerAudit(viewer.id, t, sp, settings.operations.subjects) : null,
     tab === 'data' ? loadOwnerData(viewer.id, t, canManageData, canConfirmData) : null,
   ]);
+  // 편집기 본문은 직원·역할 목록만 읽는다. 33개 영역 미리보기는 별도 GET으로 이어서 읽는다.
+  const dashboard = tab === 'dashboard' && canReadAudit
+    ? await loadOwnerDashboard({ sql, tenantId: t, importV2, viewerId: viewer.id, settings }) : null;
   const operators = new Set(supers.map(s => s.id));
   // 🔴 설정 전체(자리 PIN · 권한 원본 …)를 브라우저에 보내지 않는다 — 2.0 page.tsx도 면마다 그 섹션만 부품에 넘긴다. 머리(학원 이름)·탭(preset · modules)은 늘, 나머지는 그 면일 때만.
   const settingsView = { preset: settings.preset, profile: tab === 'profile' ? settings.profile : { name: settings.profile.name }, modules: settings.modules,
@@ -207,7 +211,7 @@ async function ownerPage({ sql, t, R, O, sp, viewers, viewer, settings, row, imp
     navigationGates: null,
     integrations: tab === 'sheets' ? await integrationsView(sql, t, R, settings, viewer) : null,
     popups: tab === 'popups' ? await listPopups(sql, t, importV2) : null,
-    audit, data,
+    audit, data, dashboard,
   };
 }
 
@@ -223,13 +227,19 @@ export const screen = {
   // 저장 = 2.0 saveOwnerSection(v2-owner-save.mjs) — 저장하는 사람 = 보는 사람.
   actions: { ...ownerActions(ownerIo), ...integrationActions(ownerIo), ...popupActions(ownerIo), ...ownerDataActions(ownerIo) },
   params: { viewer: UUID, tab: /^[a-z_]{1,24}$/, year: /^\d{4}$/, sub: /^[a-zA-Z_]{1,24}$/, page: /^\d{1,4}$/,
-    action: /^[a-z0-9_]{1,80}$/, q: /^[\s\S]{0,200}$/, from: /^\d{4}-\d{2}-\d{2}$/, to: /^\d{4}-\d{2}-\d{2}$/ },
+    action: /^[a-z0-9_]{1,80}$/, q: /^[\s\S]{0,200}$/, from: /^\d{4}-\d{2}-\d{2}$/, to: /^\d{4}-\d{2}-\d{2}$/,
+    read: /^dashboard_preview$/ },
   load: async ({ sql, params: sp, tenantId: t, importV2 }) => {
     const [R, O] = await Promise.all([loadRules(importV2), loadOwnerRules(importV2)]);
     const row = await readSettingsRow(sql, t);
     const settings = O.resolve.resolveSettings(row.data, { name: row.name });
     const viewers = await readOwnerViewers(sql, t, R, O, settings);
     const viewer = viewers.find(v => v.id === sp.viewer) ?? viewers[0] ?? null;
+    if (sp.read === 'dashboard_preview') {
+      if (sp.tab !== 'dashboard' || !viewer || viewer.id !== sp.viewer || viewer.systemRole !== 'master' || viewer.level(O.faceAccess.ownerFaceMenu('dashboard')) === 'none')
+        return { route: 'denied' };
+      return { route: 'read', preview: await loadOwnerDashboardPreview({ sql, tenantId: t, importV2, viewerId: viewer.id }) };
+    }
     const common = { editors: viewers.map(v => ({ id: v.id, name: v.name, role: v.roleLabel })), viewer: viewer && { id: viewer.id, name: viewer.name, role: viewer.roleLabel },
       // OperationsProvider가 읽는 네 칸만(자리 PIN 등 운영 섹션 나머지는 싣지 않는다).
       host: { operations: { subjects: settings.operations.subjects, gradeLevels: settings.operations.gradeLevels, jobTitles: settings.operations.jobTitles,

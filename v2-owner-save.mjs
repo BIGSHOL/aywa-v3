@@ -5,10 +5,11 @@
 //  · 섹션 단위 머지(다른 섹션 보존) · 운영·권한 섹션은 순번(rev)을 섹션 안에 · 🔴 문서 최상위에 새 키를 두지 않는다(0335a 쓰기 가드)
 //  · 쓰기 = 2.0 사용자 클라이언트(authenticated + 그 사람 신분) — 0335a·0080a·0281a 쓰기 가드가 2.0처럼 본다 · updated_at이 읽은 값과 같을 때만(다른 창 저장 보호)
 //  · 감사로그 owner_settings_update(바뀐 칸 · 순번은 빼고) + '3.0 연습 복사본' 표시
-// ⚠️ 보강 운영(makeups — 2.0은 DB 함수 makeup_command)과 대시보드 배치(dashboard — 원장 화면이 아직 '아직' 면)는 이 연습 화면에서 아직 받지 않는다.
+// ⚠️ 보강 운영(makeups — 2.0은 DB 함수 makeup_command)은 다음 면에서 받는다.
 import { V2Error } from './v2-screens.mjs';
 import { audit, asAuthenticated } from './v2-timetable-save.mjs';
 import { UUID } from './v2-mcs-core.mjs';
+import { validateDashboardAssignments } from './v2-owner-dashboard.mjs';
 
 const bad = () => new V2Error(400, 'invalid_request', '입력 값을 확인해 주세요.');
 const plain = v => !!v && typeof v === 'object' && !Array.isArray(v);
@@ -18,11 +19,12 @@ const NOT_YET = '연습 화면에서는 아직 지원하지 않는 저장입니�
 let rulesPromise = null;
 function loadSaveRules(importV2) {
   rulesPromise ??= (async () => {
-    const [diff, error, special, payslip, studentStatus, navigation, canonical, perms, dbError] = await Promise.all([
+    const [diff, error, special, payslip, studentStatus, navigation, canonical, perms, dbError, dashboard] = await Promise.all([
       'features/owner/settings-diff.ts', 'features/owner/settings-error.ts', 'features/owner/special-access.ts', 'features/owner/payslip-permissions.ts',
       'features/owner/student-status-permissions.ts', 'features/owner/normalize-navigation.ts', 'features/owner/permissions-canonical.ts', 'lib/permissions.ts', 'lib/supabase/db-error.ts',
+      'features/dashboard/layout/normalize.ts',
     ].map(p => importV2(p)));
-    return { diff, error, special, payslip, studentStatus, navigation, canonical, perms, dbError };
+    return { diff, error, special, payslip, studentStatus, navigation, canonical, perms, dbError, dashboard };
   })().catch(error => { rulesPromise = null; throw error; });
   return rulesPromise;
 }
@@ -69,7 +71,7 @@ export async function saveOwnerSection(io, actor, [, rawForm]) {
   }
   if (section === 'modules' && actor.systemRole !== 'master') return { error: '기능 켜기·끄기는 원장만 바꿀 수 있습니다' };
   if (section === 'dashboard' && actor.systemRole !== 'master') return { error: '대시보드 배치는 원장만 바꿀 수 있습니다' };
-  if (section === 'dashboard' || section === 'makeups') return { error: NOT_YET };
+  if (section === 'makeups') return { error: NOT_YET };
   let parsedJson;
   try { parsedJson = JSON.parse(String(formData.get('data') ?? 'null')); } catch { return { error: '설정 데이터 형식이 올바르지 않습니다' }; }
   let operationsRequest;
@@ -117,6 +119,22 @@ export async function saveOwnerSection(io, actor, [, rawForm]) {
     }
   }
   const base = existing?.data ?? {};
+  // 마지막 저장 우선: 편집기가 밝힌 배치 묶음만 현재 문서 위에 덮는다.
+  const dashboardPart = section === 'dashboard' ? S.dashboard.dashboardSavePart(formData.get('dashboardPart'), formData.get('dashboardTouched')) : null;
+  if (dashboardPart === 'invalid') return { error: '저장 요청을 읽지 못했습니다. 새로고침한 뒤 다시 저장해 주세요.' };
+  if (section === 'dashboard') {
+    const expected = formData.get('dashboardBaseline');
+    if (!dashboardPart && typeof expected === 'string' && expected !== JSON.stringify(S.dashboard.normalizeDashboard(base.dashboard)))
+      return { error: '다른 창에서 대시보드 설정이 변경되었습니다. 새로고침한 뒤 다시 저장해 주세요.' };
+    const sent = S.dashboard.normalizeDashboard(result?.data).assignments ?? [];
+    const toCheck = dashboardPart
+      ? dashboardPart.part === 'assignments' ? sent.filter(a => dashboardPart.touched.includes(a.userId)) : []
+      : result?.data?.assignments !== undefined ? sent : [];
+    if (toCheck.length) {
+      const error = await validateDashboardAssignments(sql, t, toCheck);
+      if (error) return { error };
+    }
+  }
   if (section === 'navigation') {
     const expected = formData.get('navigationBaseline');
     if (typeof expected === 'string' && expected !== S.navigation.navigationRevision(base.navigation))
@@ -129,6 +147,11 @@ export async function saveOwnerSection(io, actor, [, rawForm]) {
     if ('error' in built) return { error: built.issue ? S.error.settingsValidationError(section, built.issue, built.checked) : built.error };
     if ('unchanged' in built) return { ok: true, nonce: Date.now(), operations: O.opsSave.operationsReply(fresh, operationsRequest), version: O.stamp.settingsRevOf(base.operations) };
     sectionData = O.preset.prepareSectionForSave(preset, section, built.raw, built.parsed, base[section]);
+  } else if (section === 'dashboard') {
+    const submitted = result?.data;
+    sectionData = dashboardPart
+      ? S.dashboard.normalizeDashboard(S.dashboard.mergeDashboardSave(base.dashboard, submitted, dashboardPart.part, dashboardPart.touched), { dropDefaults: true })
+      : S.dashboard.normalizeDashboard({ ...submitted, assignments: submitted.assignments ?? S.dashboard.normalizeDashboard(base.dashboard).assignments }, { dropDefaults: true });
   } else {
     sectionData = O.preset.prepareSectionForSave(preset, section, parsedJson, result?.data, base[section]);
   }
@@ -154,7 +177,9 @@ export async function saveOwnerSection(io, actor, [, rawForm]) {
     const err = { code: e?.code ?? null, message: e?.message ?? '', details: e?.detail ?? null, hint: e?.hint ?? null };
     return { error: S.error.plainSettingsReason(S.dbError.explainDbError(err, { scope: 'owner.saveOwnerSection', fallback: '설정을 저장하지 못했습니다. 잠시 뒤 다시 시도해 주세요.' }).message) };
   } finally { await sql`select set_config('v2.actor_claims', '', true)`; }
-  if (!written.length) return { error: '다른 창에서 설정이 먼저 저장되었습니다. 새로고침한 뒤 다시 저장해 주세요.' };
+  if (!written.length) return { error: dashboardPart
+    ? '다른 저장과 겹쳐 저장하지 못했습니다. 편집한 내용은 그대로이니 저장을 한 번 더 눌러 주세요.'
+    : '다른 창에서 설정이 먼저 저장되었습니다. 새로고침한 뒤 다시 저장해 주세요.' };
   const diff = S.diff.diffSettingsSection(section, O.stamp.withoutSettingsRev(base[section]), sectionData);
   await audit(sql, t, actor, 'owner_settings_update', 'tenant_settings', { section, ...(diff.changes.length ? { changes: diff.changes } : {}), ...(diff.others ? { others: diff.others } : {}) },
     O.types.SECTION_LABELS[section]);

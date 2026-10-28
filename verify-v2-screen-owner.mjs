@@ -10,6 +10,7 @@ import { pathToFileURL } from 'node:url';
 import { openFullDatabase, tenantId } from './full-db.mjs';
 import { importV2 } from './v2-bridge.mjs';
 import * as M from './v2-screen-owner.mjs';
+import { validateDashboardAssignments } from './v2-owner-dashboard.mjs';
 import { build } from './v2-host/build.mjs';
 import { readV2, runV2Server, stopV2Server } from './v2-server-runner.mjs';
 
@@ -23,7 +24,7 @@ const fd = obj => ({ $formData: Object.entries(obj).map(([k, v]) => [k, typeof v
 await check('주소 열쇠 = 2.0 page.tsx가 서버에서 읽는 칸(tab · year · sub) + 보는 사람(viewer)', async () => {
   const page = lf(await src('app/(shell)/owner/page.tsx'));
   for (const k of ['tab', 'year', 'sub']) assert.match(page, new RegExp(`sp\\.${k}\\b`));
-  assert.deepEqual(Object.keys(M.screen.params).sort(), ['action', 'from', 'page', 'q', 'sub', 'tab', 'to', 'viewer', 'year']);
+  assert.deepEqual(Object.keys(M.screen.params).sort(), ['action', 'from', 'page', 'q', 'read', 'sub', 'tab', 'to', 'viewer', 'year']);
 });
 
 await check('그리기 = 2.0 owner/page.tsx 글자 그대로 — 바꾼 곳은 서버에서만 나오는 값 셋과 서버 컴포넌트 면(owner-page.swaps.json)', async () => {
@@ -36,7 +37,7 @@ await check('그리기 = 2.0 owner/page.tsx 글자 그대로 — 바꾼 곳은 �
     const i = page.indexOf(a); assert.ok(mine.includes(page.slice(i, page.indexOf(b, i) + b.length)), a);
   }
   // 바꾼 자리 = 서버 값 셋(자리 PIN 상태 · 휴일 · 권한 token) + 서버 컴포넌트 면 — 2.0 클라 부품(섹션 폼)은 손대지 않았다
-  assert.equal(swaps.filter(([, to]) => /OwnerServerFace|OwnerIntegrationsFace|OwnerAuditFace|OwnerDataFace|PopupsManager/.test(to)).length, swaps.length - 3);
+  assert.equal(swaps.filter(([, to]) => /OwnerServerFace|OwnerIntegrationsFace|OwnerAuditFace|OwnerDataFace|OwnerDashboardFace|PopupsManager/.test(to)).length, swaps.length - 3);
   assert.ok(swaps.some(([from, to]) => from === '<PopupsFace />' && to === '<PopupsManager items={popups ?? []} />'), '팝업 공지 = popups-face.tsx 본문(<PopupsManager items={items} />) 그대로');
   assert.match(lf(await src('app/(shell)/owner/_components/popups-face.tsx')), /const items = await listPopups\(\);\n  return <PopupsManager items=\{items\} \/>;/);
   // 연동 면 = integrations-face.tsx · sheets-face.tsx 본문 그대로(서버 카드만 '아직' — owner-integrations.swaps.json)
@@ -298,6 +299,53 @@ try {
       assert.equal(trial.probes[0][0].dup_suspect, false);
       assert.equal((await db`select dup_suspect from public.students where id=${student.id}`)[0].dup_suspect, student.dup_suspect, '되돌림');
     }
+  });
+  await check('대시보드 배치 = 원장에게만 편집기 원본·직원·역할 메뉴·실데이터 33영역을 주고 다른 면에서는 읽지 않는다', async () => {
+    const p = (await load({ tab: 'dashboard' })).page;
+    assert.ok(p.canReadAudit && p.dashboard);
+    assert.ok(p.dashboard.members.people.length > 0 && !p.dashboard.members.failed);
+    assert.equal(Object.keys(p.dashboard.roleMenus).length, 10);
+    assert.equal(p.dashboard.viewerId, base.viewer.id);
+    assert.ok(!('preview' in p.dashboard), '편집기는 미리보기를 따로 읽는다');
+    const preview = await load({ tab: 'dashboard', read: 'dashboard_preview', viewer: base.viewer.id });
+    assert.equal(preview.route, 'read');
+    assert.equal(Object.keys(preview.preview.sections).length, 33);
+    assert.equal((await load({ tab: 'profile' })).page.dashboard, null);
+    assert.ok(!('permissions' in p.settings) && !('operations' in p.settings), '편집 원본은 면에 필요한 값만');
+    if (admin) {
+      const other = await load({ tab: 'dashboard', viewer: admin.id });
+      assert.ok(other.route !== 'page' || other.page.dashboard === null, '위임 계정에 원장 미리보기를 싣지 않는다');
+      assert.equal((await load({ tab: 'dashboard', read: 'dashboard_preview', viewer: admin.id })).route, 'denied');
+    }
+  });
+  await check('대시보드 저장(되돌림) = 역할별 부분 병합 · 오래된 기준의 옛 요청만 거절 · 직원 배정 범위 · 다른 섹션 보존 · 감사로그', async () => {
+    const d = (await load({ tab: 'dashboard' })).page.dashboard;
+    const a = M.screen.actions.saveOwnerSection;
+    const ROLL = new Error('rollback');
+    try {
+      await db.begin(async sql => {
+        const save = (values, actor = base.viewer.id) => a.run({ sql, body: a.validate({ module: 'features/owner/server/actions.ts', actor,
+          args: [null, fd(values)] }), tenantId, importV2 });
+        const [{ data: before }] = await sql`select data from public.tenant_settings where tenant_id=${tenantId}`;
+        assert.deepEqual(await save({ section: 'dashboard', data: d.initial, dashboardPart: 'bad', dashboardTouched: '[]' }),
+          { error: '저장 요청을 읽지 못했습니다. 새로고침한 뒤 다시 저장해 주세요.' });
+        assert.deepEqual(await save({ section: 'dashboard', data: d.initial, dashboardBaseline: 'stale' }),
+          { error: '다른 창에서 대시보드 설정이 변경되었습니다. 새로고침한 뒤 다시 저장해 주세요.' });
+        assert.equal(await validateDashboardAssignments(sql, tenantId, [{ userId: base.viewer.id }, { userId: base.viewer.id }]), '같은 직원의 배정이 두 번 들어 있습니다');
+        assert.equal(await validateDashboardAssignments(sql, tenantId, [{ userId: '00000000-0000-4000-8000-000000000001' }]), '현재 지점의 직원만 대시보드에 배정할 수 있습니다');
+        const form = { section: 'dashboard', data: d.initial, dashboardPart: 'layouts', dashboardTouched: JSON.stringify(['owner']), dashboardBaseline: 'stale' };
+        assert.equal((await save(form)).ok, true);
+        assert.equal((await save(form)).ok, true, '부분 저장은 오래된 기준을 붙여도 현재 문서 위에 다시 병합한다');
+        const [{ data: after }] = await sql`select data from public.tenant_settings where tenant_id=${tenantId}`;
+        assert.deepEqual(Object.keys(after).sort(), Object.keys(before).sort(), '최상위 새 키 없음');
+        for (const k of Object.keys(before).filter(k => !['dashboard', 'version'].includes(k))) assert.deepEqual(after[k], before[k], `${k} 그대로`);
+        if (admin) assert.deepEqual(await save(form, admin.id), { error: '학원 설정 변경 권한이 없습니다' });
+        const logs = await sql`select metadata->>'section' section, metadata->>'via' via from public.audit_logs where tenant_id=${tenantId} and created_at=now() and action='owner_settings_update'`;
+        assert.equal(logs.filter(l => l.section === 'dashboard').length, 2);
+        assert.ok(logs.every(l => l.via === '3.0 연습 복사본'));
+        throw ROLL;
+      });
+    } catch (e) { if (e !== ROLL) throw e; }
   });
 } finally { await stopV2Server(); await db.end(); }
 
