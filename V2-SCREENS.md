@@ -38,7 +38,7 @@
 | `lesson-reports` | 수업보고서 관리(목록·발송 큐·공지·학부모 글) | 중 | `src/app/(shell)/lesson-reports/**`, `src/features/report-admin/**` | O |
 | `textbooks` · `textbook-requests` | 교재목록 · 교재 요청 | 중 | `src/app/(shell)/textbooks/**`, `src/app/(shell)/textbook-requests/**` | T |
 | `class-review` | 직원 평가(채점·포트폴리오) | 중 | `src/app/(shell)/class-review/**` | L |
-| `staff` | 직원관리 | 중 | `src/app/(shell)/staff/**`, `src/features/staff/**` | L |
+| `staff` | 직원관리 | 중 | `src/app/(shell)/staff/**`, `src/features/staff/**` | R |
 | `withdrawals` · `withdrawal-reports` | 퇴원관리 · 퇴원보고서 | 중 | `src/app/(shell)/withdrawals/**`, `src/app/(shell)/withdrawal-reports/**` | R |
 | `approvals` | 전자결재(결재함·기안·결재·결재선) | 중 | `src/app/(shell)/approvals/**`, `src/features/approvals/**` | R |
 | `owner` | 학원 설정(18면) | 중 | `src/app/(shell)/owner/**`, `src/features/owner/**` | T |
