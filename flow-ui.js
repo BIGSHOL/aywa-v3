@@ -206,7 +206,7 @@ window.createFlowUI = function createFlowUI(api) {
     return entityChips(c,refs).replace(/<\/div>$/,refs.length>4?`<span class="fl-entity-more">외 ${fmt(refs.length-4)}건</span></div>`:'</div>');
   }
   function entityChips(c,refs){
-    return `<div class="fl-entities" aria-label="관련 기록">${refs.slice(0,4).map(r=>{const ws=r.familyId&&api.hasView(`workspace-${r.familyId}`);return `<button type="button" class="fl-entity" data-fl="entity" data-family="${h(r.familyId||'')}" data-record="${h(r.recordId||r.id||'')}" ${ws||api.canOpenRecord?.(r.recordId||r.id)?'':'disabled'}>${h(r.type==='task'&&r.label===c.title?'원본 할 일':r.label)}${r.familyId?`<small>${h(api.familyLabel?.(r.familyId)||'')}</small>`:''}</button>`;}).join('')}</div>`;
+    return `<div class="fl-entities" aria-label="관련 기록">${refs.slice(0,4).map(r=>{const fam=r.type==='task'?'tasks-notifications':r.familyId||'',ws=fam&&api.hasView(`workspace-${fam}`);return `<button type="button" class="fl-entity" data-fl="entity" data-family="${h(fam)}" data-record="${h(r.recordId||r.id||'')}" ${ws||api.canOpenRecord?.(r.recordId||r.id)?'':'disabled'}>${h(r.type==='task'&&r.label===c.title?'원본 할 일':r.label)}${fam?`<small>${h(api.familyLabel?.(fam)||'')}</small>`:''}</button>`;}).join('')}</div>`;
   }
   function why(c){
     const t=c.trigger||{},s=stepOf(c),d=c.decision;
@@ -225,7 +225,7 @@ window.createFlowUI = function createFlowUI(api) {
     const out=[],add=(t,hint,tone='')=>{if(!out.some(f=>f[0]===t))out.push([t,hint,tone]);};
     if(c.kind==='scenario')add('연습 시나리오','연습용으로 만든 일입니다. 집계에 들지 않습니다.','amber');
     const src=c.closure==='fact'&&c.sourceStatusLabel&&['done','cancelled'].includes(c.sourceStatus)?c.sourceStatusLabel:'';
-    add(src||STATE[c.state]||'상태 미확인',src?`원본 기록에서 ${src} 일입니다.`:STATE_HINT[c.state]||'');
+    add(src||STATE[c.state]||'상태 미확인',src?(c.sourceStatus==='cancelled'?'원본 기록에서 취소된 일입니다.':'원본 기록에서 처리된 일입니다.'):STATE_HINT[c.state]||'');
     if(late(c)||c.state!=='done'&&c.sourceStatus==='expired')add('기한 지남',c.dueAt?`${md(kstDate(c.dueAt))}까지였는데 아직 끝나지 않았습니다.`:'기한이 지났는데 아직 끝나지 않았습니다.','amber');
     if(unassigned(c))add('담당 없음','맡을 사람이 정해지지 않았습니다.','amber');
     if(c.priority==='high'&&c.state!=='done'&&!(c.closure==='fact'&&c.taskKind))add(...(c.signalId?['결정 필요','원장·관리자가 정해야 하는 일입니다.']:c.decision?.priority==='high'?['오늘 처리','오늘 안에 처리할 일로 판정됐습니다.']:['중요','요청할 때 중요로 표시한 일입니다.']),'amber');
@@ -236,7 +236,7 @@ window.createFlowUI = function createFlowUI(api) {
   const whoOf=s=>queued(s)?'관리자·원장 누구나':(s.assigneeIds||[]).map(nameOf).join(', ')||'담당 없음';
   function caseCard(c,{actions=true}={}){
     const s=myStep(c)||stepOf(c),open=activeSteps(c),links=(c.linkedCaseIds||[]).filter(caseById);
-    return `<article class="fl-case" data-case="${h(c.id)}"><header><div class="ax-issue-meta">${chips(c)}</div><h3><button type="button" data-fl="open" data-id="${h(c.id)}">${h(c.title)}</button></h3></header>${c.summary?`<p class="fl-summary">${h(c.summary)}</p>`:''}${why(c)}${entityLinks(c)}${s?`<p class="fl-step">${!String(s.label||'').startsWith(c.title)&&!splitCase(c)?`${h(s.label)} · `:''}${h(s.skipped?'건너뜀':isReview(s)&&s.status==='ready'?STEP.review:STEP[s.status]||'상태 미확인')} · ${h(whoOf(s))}${open.length>1?` · 함께 남은 단계 ${open.length}개`:''}${c.dueAt?` · ${h(md(kstDate(c.dueAt)))}까지`:''}${s.evidenceRequired?' · 근거 필요':''}</p>`:''}${links.length?`<p class="fl-step">후속 보고 ${links.length}건 · ${signalCase(c)?'원본 기록이 바뀌면 닫힙니다':'원본 기록이 처리되면 닫힙니다'}</p>`:''}${actions?actionBar(c):''}</article>`;
+    return `<article class="fl-case" data-case="${h(c.id)}"><header><div class="ax-issue-meta">${chips(c)}</div><h3><button type="button" data-fl="open" data-id="${h(c.id)}">${h(c.title)}</button></h3></header>${c.summary?`<p class="fl-summary">${h(c.summary)}</p>`:''}${why(c)}${entityLinks(c)}${s?`<p class="fl-step">${!String(s.label||'').startsWith(c.title)&&!splitCase(c)?`${h(s.label)} · `:''}${h(s.skipped?'건너뜀':isReview(s)&&s.status==='ready'?STEP.review:STEP[s.status]||'상태 미확인')} · ${h(whoOf(s))}${open.length>1?` · 함께 남은 단계 ${open.length}개`:''}${c.dueAt?` · ${h(md(kstDate(c.dueAt)))}까지`:''}</p>`:''}${links.length?`<p class="fl-step">후속 보고 ${links.length}건 · ${signalCase(c)?'원본 기록이 바뀌면 닫힙니다':'원본 기록이 처리되면 닫힙니다'}</p>`:''}${actions?actionBar(c):''}</article>`;
   }
   // 업무 흐름 보드 = 표(원장 10-28 "열정렬안되어있는거 정렬" · "열마다 딱 너비가 정해져있어서 넘치면 짤라버려. 마우스 올리면 짤린거 볼 수 있게").
   // 열 너비는 표 머리 한 곳(table-layout:fixed)이 정한다 — 줄마다 글 길이가 달라도 열이 흔들리지 않는다. 넘친 글은 말줄임(.fl-cut),
@@ -245,17 +245,19 @@ window.createFlowUI = function createFlowUI(api) {
   const refsOf=c=>(c.entityRefs||[]).filter(r=>r&&r.label&&!(r.type==='task'&&r.label===c.title));
   const placeOf=c=>c.familyId&&api.familyLabel?.(c.familyId)||'';
   const whoText=c=>{const s=myStep(c)||stepOf(c);return s?whoOf(s):'';};
-  const atOf=c=>(c.trigger||{}).at||c.createdAt||'';
+  // 신호에서 생긴 일은 신호가 실은 기록 시각(at)을 쓴다 — 기록을 점검한 시각은 발생 시간이 아니다(검수 10-28 M8).
+  const signalAt=c=>c.signalId?(db.workspaces?.families?.[c.familyId]?.signals||[]).find(x=>x.id===c.signalId)?.at||'':'';
+  const atOf=c=>signalAt(c)||(c.trigger||{}).at||c.createdAt||'';
   // 열마다 걸러 보는 값(한 일이 값을 여럿 가질 수 있다 — 상태 표시·관련 기록·담당자)과 정렬 값. 빈 값은 '없음'으로 걸러지고 정렬에선 늘 맨 뒤.
   const COLV={state:c=>flags(c).map(f=>f[0]),title:c=>[c.title||'제목 없음'],rec:c=>{const r=refsOf(c).map(x=>x.label);return r.length?[...new Set(r)]:['없음'];},who:c=>{const w=whoText(c);return w?w.split(', '):['없음'];},due:c=>[c.dueAt?md(kstDate(c.dueAt)):'없음'],at:c=>[md(kstDate(atOf(c)))||'없음'],place:c=>[placeOf(c)||'없음']};
   const FLAG_RANK=['기한 지남','담당 없음','결정 필요','오늘 처리','중요','검토 필요','검토 대기','진행 중','처리 전','연습 시나리오'];
   const SORTV={state:c=>Math.min(...flags(c).map(f=>{const i=FLAG_RANK.indexOf(f[0]);return i<0?FLAG_RANK.length:i;})),title:c=>c.title||'',rec:c=>refsOf(c)[0]?.label||'',who:whoText,due:c=>c.dueAt?kstDate(c.dueAt):'',at:c=>Date.parse(atOf(c))||'',place:placeOf};
   // 고르기(원장 10-28 "토글로 전체 선택같은거 해서 한번에 담당바꾸기 처리도 가능하게") — 원장·관리자만, 남은 단계가 있는 일만.
   // 고른 일은 쪽·정렬을 넘어 남고 보기를 바꾸면 비운다. 검색·필터로 목록에서 빠진 일은 고른 것에서도 뺀다(안 보이는 일을 바꾸지 않게).
-  const canPick=c=>lead()&&c.state!=='done'&&activeSteps(c).length>0;
+  const canPick=c=>lead()&&c.state!=='done'&&activeSteps(c).length>0&&c.familyId!=='approvals';
   function caseRow(c){
     const refs=refsOf(c),fl=flags(c),place=placeOf(c),who=whoText(c),at=when(atOf(c));
-    const pick=lead()?`<td class="c-sel">${canPick(c)?`<input type="checkbox" data-fl-pick="${h(c.id)}" aria-label="${h(c.title)} 고르기" ${store.sel.has(c.id)?'checked':''}>`:''}</td>`:'';
+    const pick=lead()?`<td class="c-sel">${canPick(c)?`<input type="checkbox" data-fl-pick="${h(c.id)}" aria-label="${h([c.title,c.summary].filter(Boolean).join(' — '))} 고르기" ${store.sel.has(c.id)?'checked':''}>`:''}</td>`:'';
     // 관련 기록 = '기록 보기' 단추 하나(원장 10-28 "[기록보기] 라벨로 바꾸고 마우스 올리면 리스트 깔끔하게 정리해서 보여주는것도 · 혹은 눌렀을때도 오버레이로").
     return `<tr class="fl-row" data-case="${h(c.id)}">${pick}<td class="c-state"><span class="fl-cut fl-line" data-hint="${h(fl.map(([t,hint])=>hint?`${t} — ${hint}`:t).join('\n'))}">${chips(c)}</span></td><td class="c-title"><button type="button" class="fl-cut" data-fl="open" data-id="${h(c.id)}">${h(c.title)}</button>${c.summary?`<small class="fl-cut">${h(c.summary)}</small>`:''}</td><td class="c-rec">${refs.length?`<button type="button" class="fl-recbtn" data-fl="recs" data-id="${h(c.id)}" aria-haspopup="dialog">기록 보기<b>${fmt(refs.length)}</b></button>`:'<span class="fl-dim">—</span>'}</td><td class="c-who"><span class="fl-cut">${h(who||'—')}</span></td><td class="c-due"><span class="fl-cut">${c.dueAt?h(md(kstDate(c.dueAt))):'—'}</span></td><td class="c-at"><span class="fl-cut">${h(at)}</span></td><td class="c-place">${place?`<button type="button" class="fl-place fl-cut" data-fl="goto" data-id="${h(c.id)}" aria-label="${h(place)} 열기">${h(place)}</button>`:'<span class="fl-dim">—</span>'}</td><td class="c-act">${actionBar(c,{compact:true})}</td></tr>`;
   }
@@ -263,9 +265,9 @@ window.createFlowUI = function createFlowUI(api) {
   // 보고·요청에 붙인 기록(서버가 복사본 기록 저장소에서 확인한 값) — 누르면 그 기록을 연다.
   const attachList=list=>(list||[]).length?`<ul class="fl-attach">${list.map(a=>`<li><button type="button" class="ax-text-link" data-fl="attach-open" data-id="${h(a.familyId)}" data-record="${h(a.recordId)}">${h(a.label)}</button><small>${h([api.familyLabel?.(a.familyId),a.date,a.status,...(a.fields||[]).slice(0,3).map(f=>`${f.label} ${f.value}`)].filter(Boolean).join(' · '))}</small></li>`).join('')}</ul>`:'';
   // compact = 표 한 줄용 — 주 동작 하나(처리 화면은 옆 열, 근거와 흐름·후속 보고는 제목을 누르면 열리는 상세 창).
-  function actionBar(c,{compact=false}={}){
+  function actionBar(c,{compact=false,drawer=false}={}){
     const id=h(c.id),s=myStep(c),sk=s?h(s.id):'';
-    if(c.state==='done')return `<div class="ax-actions">${lead()&&c.closure!=='fact'?btn('다시 열기','reopen-open',`data-id="${id}"`):''}${compact?'':btn('근거와 흐름','open',`data-id="${id}"`)}</div>`;
+    if(c.state==='done')return `<div class="ax-actions">${lead()&&c.closure!=='fact'?btn('다시 열기','reopen-open',`data-id="${id}"`):''}${compact||drawer?'':btn('근거와 흐름','open',`data-id="${id}"`)}</div>`;
     if(compact){
       const first=s&&!isReview(s)&&s.status==='ready'?btn('확인','ack',`data-id="${id}" data-step="${sk}" data-fl-key="case.ack:${id}"`,true):s&&isReview(s)&&lead()?btn('검토','review-open',`data-id="${id}" data-step="${sk}"`,true):lead()&&activeSteps(c).length?btn(unassigned(c)?'담당 지정':'담당 바꾸기','reassign-open',`data-id="${id}"`):'';
       return `<div class="ax-actions">${first||'<span class="fl-dim">—</span>'}</div>`;
@@ -275,7 +277,7 @@ window.createFlowUI = function createFlowUI(api) {
     if(s&&!isReview(s))out.push(btn(c.closure==='fact'?'후속 보고 쓰기':'보고 쓰기','report-open',`data-id="${id}" data-step="${sk}"`,s.status==='working'));
     if(s&&isReview(s)&&lead())out.push(btn('검토','review-open',`data-id="${id}" data-step="${sk}"`,true));
     if(lead()&&activeSteps(c).length)out.push(btn(unassigned(c)?'담당 지정':'담당 바꾸기','reassign-open',`data-id="${id}"`));
-    out.push(btn('근거와 흐름','open',`data-id="${id}"`));
+    if(!drawer)out.push(btn('근거와 흐름','open',`data-id="${id}"`));
     // 일을 처리하는 화면으로 가는 길(원장 10-28 "만족도를 확인하러 가고 싶은데 어디로 가야하는지 배선 같은게 없음").
     const where=c.familyId&&api.familyLabel?.(c.familyId);if(where)out.push(btn(`${where} 열기`,'goto',`data-id="${id}"`));
     return `<div class="ax-actions">${out.join('')}</div>`;
@@ -308,7 +310,7 @@ window.createFlowUI = function createFlowUI(api) {
   }
 
   /* ---------- role views ---------- */
-  const navList=(active,title,items)=>items.length?`<p class="fl-nav-head">${h(title)}</p><ul>${items.map(([id,label,n])=>`<li><button type="button" data-fl="filter" data-id="${h(id)}" aria-pressed="${active===id}" class="${n?'':'zero'}"><span>${h(label)}</span><b>${fmt(n)}</b></button></li>`).join('')}</ul>`:'';
+  const navList=(active,title,items)=>items.length?`<p class="fl-nav-head">${h(title)}</p><ul>${items.map(([id,label,n])=>`<li><button type="button" data-fl="filter" data-id="${h(id)}" aria-pressed="${active===id}" class="${n?'':'zero'}"><span class="fl-cut">${h(label)}</span><b>${fmt(n)}</b></button></li>`).join('')}</ul>`:'';
   function filterBar(active,items){return `<div class="ax-filter" role="group" aria-label="보기">${items.map(([id,label,n])=>`<button type="button" data-fl="filter" data-id="${h(id)}" aria-pressed="${active===id}">${h(label)} ${fmt(n)}</button>`).join('')}</div>`;}
   // 쪽 나누기(원장 10-28 "106건 모두 보기 말고 적절한 위치에 페이지네이션 처리해. 전체개수는 필요없음") — 20건씩, 목록 바로 아래 쪽 번호만.
   // 쪽은 목록 열쇠마다 따로 기억하고, 보기·검색·필터·정렬이 바뀌면 첫 쪽으로 돌아간다.
@@ -376,7 +378,12 @@ window.createFlowUI = function createFlowUI(api) {
   const matchCase=(c,q)=>{const hay=haystack(c);return q.split(/\s+/).filter(Boolean).every(w=>hay.includes(fold(w)));};
   // 열 필터: 열마다 고른 값 중 하나라도 가진 일만 남긴다. skip = 값 목록을 뽑는 그 열(자기 필터는 빼고 센다 — 엑셀과 같다).
   const colOn=()=>Object.entries(store.cols).filter(([k,v])=>COLV[k]&&Array.isArray(v));
-  const colPass=(c,skip='')=>colOn().every(([k,vals])=>k===skip||COLV[k](c).some(v=>vals.includes(v)));
+  // 값을 여럿 가진 열(상태 표시·관련 기록·담당)은 칩과 같은 뜻으로 거른다: 뺀 값이 고른 값보다 적으면 'OO 제외' = 뺀 값을 하나라도
+  // 가진 일은 숨김, 아니면 'OO만' = 고른 값을 하나라도 가진 일만(담당이 여럿인 일도 그 사람 몫으로 남는다).
+  const allVals=k=>{const all=new Set();for(const x of board.base||[])for(const v of COLV[k](x))all.add(v);return [...all];};
+  let modeKey='',modes=new Map();
+  const colMode=k=>{const key=`${JSON.stringify(store.cols)}|${(board.base||[]).length}`;if(key!==modeKey){modeKey=key;modes=new Map(colOn().map(([col,vals])=>{const out=allVals(col).filter(v=>!vals.includes(v)).length;return [col,out&&out<vals.length?'except':'only'];}));}return modes.get(k)||'only';};
+  const colPass=(c,skip='')=>colOn().every(([k,vals])=>k===skip||(colMode(k)==='except'?COLV[k](c).every(v=>vals.includes(v)):COLV[k](c).some(v=>vals.includes(v))));
   // 정렬은 안정 정렬(같은 값이면 원래 순서) · 빈 값은 방향과 상관없이 맨 뒤.
   function sortCases(list){
     const {col,dir}=store.sort,key=SORTV[col];if(!key)return list;
@@ -417,7 +424,7 @@ window.createFlowUI = function createFlowUI(api) {
     const on=colOn();if(!on.length)return '';
     // 뺀 값이 고른 값보다 적으면 'OO 제외'로 적는다(하나만 끈 필터가 남은 값 목록으로 길어지지 않게).
     const name=k=>COLS.find(c=>c[0]===k)?.[1]||'',few=v=>v.length>2?`${v.slice(0,2).join(', ')} 외 ${fmt(v.length-2)}`:v.join(', ');
-    const vals=(k,v)=>{if(!v.length)return '고른 값 없음';const out=colValues(k).map(([x])=>x).filter(x=>!v.includes(x));return out.length&&out.length<v.length?`${few(out)} 제외`:few(v);};
+    const vals=(k,v)=>{if(!v.length)return '고른 값 없음';const out=allVals(k).filter(x=>!v.includes(x));return colMode(k)==='except'?`${few(out)} 제외`:few(v);};
     return `<div class="fl-active" role="group" aria-label="걸러 보는 조건">${on.map(([k,v])=>`<button type="button" class="fl-active-chip" data-fl="col-clear" data-col="${k}" aria-label="${h(name(k))} 필터 지우기"><span>${h(name(k))}: ${h(vals(k,v))}</span><b aria-hidden="true">×</b></button>`).join('')}${on.length>1?'<button type="button" class="ax-text-link" data-fl="col-clear" data-col="">필터 모두 지우기</button>':''}</div>`;
   }
   function ownerBelow({heading=true}={}){
@@ -479,7 +486,7 @@ window.createFlowUI = function createFlowUI(api) {
     const jev=providers.find(p=>p.id==='jev'),claude=providers.find(p=>p.id==='claude-cli'),off=p=>p&&!['ready','ok'].includes(p.status);
     const lock=pending?'disabled':'',key=`data-id="${h(c.id)}" data-fl-key="case.analyze:${h(c.id)}" ${lock}`;
     const buttons=lead()&&c.state!=='done'?`<div class="ax-actions">${btn(d?'AI 판정 다시 받기':'AI 판정 받기','analyze',key)}${btn('AI 설명 초안까지 받기','analyze-draft',key)}</div>${off(jev)||off(claude)?`<p class="ax-note">${[jev,claude].filter(off).map(p=>h(PROVIDER[p.id]||'자동 판정')).join('·')}을 지금 쓸 수 없습니다. 눌러도 사람이 판단하도록 넘어갑니다.</p>`:''}`:'';
-    if(!d&&!pending)return `<section class="ax-evidence fl-decision"><h3>판정</h3><p>자동 판정 기록이 없습니다. 정해진 규칙과 사람의 배정으로 진행합니다.</p>${buttons}</section>`;
+    if(!d&&!pending)return '';
     if(pending)return `<section class="ax-evidence fl-decision"><h3>판정</h3><p role="status">${pill('판정 중','amber')} ${d?.requestedAt?`${h(when(d.requestedAt))} 요청 · `:''}결과가 나오면 이 화면에 바로 나타납니다. 그동안 일은 정해진 담당자에게 그대로 있습니다.</p>${d?.previous?`<details class="ax-detail"><summary>이전 판정</summary>${decisionMemo(d.previous)}</details>`:''}${buttons}</section>`;
     return `<section class="ax-evidence fl-decision"><h3>판정</h3>${decisionMemo(d)}${buttons}</section>`;
   }
@@ -653,7 +660,7 @@ window.createFlowUI = function createFlowUI(api) {
     const summary=r==='owner'?(d.ownerSummary?synth('원장용 정리',d.ownerSummary,e):synth('관리자용 정리',d.managerSummary,e)):r==='manager'?synth('관리자용 정리',d.managerSummary,e):'';
     return `<section class="fl-tree" aria-labelledby="fl-tree-title"><div class="fl-tree-head"><h3 id="fl-tree-title">선생님별 반·학생</h3><p>${korean(b.label)?h(b.label):(d0=>`${Number(d0.slice(5,7))}/${Number(d0.slice(8,10))} 기준`)(String(b.asOf||asOf()))}</p></div>${korean(b.interpretation)?`<p class="fl-tree-note">${h(b.interpretation)}</p>`:''}${cells.length?`<dl class="fl-tree-counts">${cells.map(([t,v,u])=>`<div><dt>${h(t)}</dt><dd>${fmt(v)}<small>${u}</small></dd></div>`).join('')}</dl>`:''}${num(k.students)!==null&&teacherSum>num(k.students)?'<p class="fl-tree-note">여러 반을 다니는 학생은 한 번만 셉니다. 선생님·반마다 나오는 학생 수를 더하면 이보다 많습니다.</p>':''}${info.length?`<details class="fl-tree-more"><summary>집계 기준</summary>${info.map(x=>`<p>${h(x)}</p>`).join('')}</details>`:''}${warn.map(x=>`<p class="fl-tree-warn" role="note">${h(x)}</p>`).join('')}${e.stale?`<p class="fl-tree-warn" role="status">정리를 새로 불러오지 못해 ${h(when(e.at))}에 받은 내용을 보여 줍니다. ${btn('다시 불러오기','tree-reload',`data-id="${h(c.id)}"`)}</p>`:''}${summary}${progressLine(d.analysis)}<div class="fl-tree-find"><label for="fl-tree-q">찾기</label><input id="fl-tree-q" type="search" data-fl-tree-q="${h(c.id)}" value="${h(e.query)}" placeholder="선생님·반·학생 이름" autocomplete="off" spellcheck="false"><span class="fl-tree-hits" aria-live="polite">${h(hitsText(e))}</span></div><div class="fl-tree-body" data-fl-tree-body>${bodyHtml(c,e)}</div></section>`;
   }
-  const chainHtml=c=>`<section class="fl-chain" aria-label="처리 단계"><h3>처리 단계</h3><ol>${(c.steps||[]).map(s=>`<li class="${s.id===c.currentStepId||activeSteps(c).includes(s)?'current':''} ${h(s.status)}"><strong>${h((c.steps||[]).length===1&&String(s.label||'').startsWith(`${c.title} · `)?c.title:s.label)}</strong><span>${h(s.skipped?'필요 없어 건너뜀':isReview(s)&&s.status==='ready'?STEP.review:STEP[s.status]||'상태 미확인')} · ${h(whoOf(s))}${s.roleLabel?` · ${h(s.roleLabel)}`:''}${s.evidenceRequired?' · 근거 필요':''}</span>${ruleText(s.rule)?`<small>배정 근거: ${h(ruleText(s.rule))}</small>`:''}${s.unassignedReason&&/[가-힣]/.test(s.unassignedReason)?`<small>담당을 못 정한 이유: ${h(s.unassignedReason)}</small>`:''}</li>`).join('')}</ol></section>`;
+  const chainHtml=c=>`<section class="fl-chain" aria-label="처리 단계"><h3>처리 단계</h3><ol>${(c.steps||[]).map(s=>`<li class="${s.id===c.currentStepId||activeSteps(c).includes(s)?'current':''} ${h(s.status)}"><strong>${h((c.steps||[]).length===1&&String(s.label||'').startsWith(`${c.title} · `)?c.title:s.label)}</strong><span>${h(s.skipped?'필요 없어 건너뜀':isReview(s)&&s.status==='ready'?STEP.review:STEP[s.status]||'상태 미확인')} · ${h(whoOf(s))}${s.roleLabel?` · ${h(s.roleLabel)}`:''}</span></li>`).join('')}</ol></section>`;
   // Without a tree: the steps as before. A case that needs a tree says plainly why the repeated steps are shown instead.
   function slotInner(c,e){
     if(e.status==='ready'&&e.data)return treeHtml(c,e);
@@ -663,7 +670,11 @@ window.createFlowUI = function createFlowUI(api) {
     if(hint&&e.status!=='none')return `<p class="fl-tree-warn" role="note">${e.status==='error'&&e.error?`${h(e.error)} `:''}선생님·반·학생으로 묶은 화면을 불러오지 못했습니다. 아래는 정리하기 전의 단계 목록이라 같은 제목이 선생님마다 되풀이됩니다. ${btn('다시 불러오기','tree-reload',`data-id="${h(c.id)}"`)}</p>${chainHtml(c)}`;
     return chainHtml(c);
   }
+  // flow-hierarchy.mjs ADAPTERS와 같은 목록(서버가 계층으로 묶는 신호).
+  const TREE_SIGNALS=new Set(['attendance-repeat-absence']);
+  const treeable=c=>relational(c)||c.kind==='source'&&TREE_SIGNALS.has(c.signalId);
   function treeSlot(c){
+    if(!treeable(c)){if(treeCase)stopTree(treeCase);treeCase='';return `<div class="fl-tree-slot">${chainHtml(c)}</div>`;}
     if(treeCase&&treeCase!==c.id)stopTree(treeCase);
     treeCase=c.id;const e=treeEntry(c.id);
     // Read again (ETag) when the flow moved or AI was still working when this case was last shown; a newly previewed
@@ -705,11 +716,13 @@ window.createFlowUI = function createFlowUI(api) {
     const c=caseById(id);if(!c)return;
     const timeline=(c.history||[]).map(eventById).filter(Boolean),missing=(c.history||[]).length-timeline.length;
     const links=(c.linkedCaseIds||[]).map(caseById).filter(Boolean);
-    const fact=c.closure==='fact'?`<section class="ax-evidence"><h3>${signalCase(c)?'닫히는 조건':'원본 할 일'}</h3>${signalCase(c)&&!c.sourceStatusLabel&&!c.factClosed?'':`<p>${h(c.sourceStatusLabel?`원본 상태: ${c.sourceStatus==='open'&&late(c)?'늦음':c.sourceStatusLabel}`:'원본 기록')}${c.factClosed?` · 원본에서 닫힘${c.closedReason?`(${h(c.closedReason)})`:''}`:''}</p>`}${c.doneRule?`<p class="live-pre">${h(c.doneRule)}</p>`:'<p>원본 기록이 처리되면 닫힙니다.</p>'}<p class="ax-note">이 화면에서 닫을 수 없습니다. 보고는 따로 남는 후속 기록이 됩니다.</p></section>`:'';
+    // 닫히는 조건은 부제(CLOSURE)가 이미 말한다 — 원본 할 일의 상태만 한 줄(검수 10-28 M6).
+    const fact=c.closure==='fact'&&!signalCase(c)&&(c.sourceStatusLabel||c.factClosed)?`<section class="ax-evidence"><h3>원본 할 일</h3><p>${h(c.sourceStatusLabel?`원본 상태: ${c.sourceStatus==='open'&&late(c)?'기한 지남':c.sourceStatusLabel}`:'원본 기록')}${c.factClosed?` · 원본에서 닫힘${c.closedReason?`(${h(c.closedReason)})`:''}`:''}</p></section>`:'';
+    const evid=c.evidence||[];
     const linkList=links.length?`<section class="ax-evidence"><h3>연결된 업무 ${links.length}건</h3><div class="ax-actions">${links.map(x=>btn(x.title,'open',`data-id="${h(x.id)}"`)).join('')}</div></section>`:'';
-    dialog('detail',c.title,CLOSURE[c.closure]||'',`<div data-fl-case-root="${h(c.id)}"><div class="ax-issue-meta">${chips(c)}</div>${c.summary?`<p class="live-pre">${h(c.summary)}</p>`:''}${why(c)}${entityLinks(c)}${fact}${treeSlot(c)}${decisionView(c)}<section class="ax-evidence"><h3>근거 ${(c.evidence||[]).length}건</h3>${(c.evidence||[]).map(e=>`<p><strong>${h(nameOf(e.actorId))}</strong> · ${h(when(e.at))}${OUTCOME[e.outcome]?` · ${h(OUTCOME[e.outcome])}`:e.outcome==='returned'?' · 보완 요청':e.outcome==='accepted'?' · 승인':''}<br><span class="live-pre">${h(e.note||'')}</span>${(e.recordRefs||[]).length?`<br><small>연결 기록 ${(e.recordRefs||[]).map(r=>h(r.label||'기록')).join(', ')}</small>`:''}</p>${attachList(e.attachments)}`).join('')||'<p>아직 남긴 근거가 없습니다.</p>'}${(c.attachments||[]).length?`<h4>요청에 붙인 기록</h4>${attachList(c.attachments)}`:''}</section>${linkList}<section class="ax-request-timeline"><h3>사건 기록</h3><ol>${timeline.map(e=>`<li><strong>${h(e.label||'기록')}</strong><p>${h(e.actorId?nameOf(e.actorId):e.origin!=='snapshot'?'자동 처리':e.type==='source.signal'?'기록 점검':'원본 기록')} · ${h(when(e.at))}</p></li>`).join('')||'<li><p>사건 기록이 없습니다.</p></li>'}</ol>${missing>0?`<p class="ax-note">이전 사건 ${fmt(missing)}건은 아직 불러오지 않았습니다.</p><div class="ax-actions">${btn('이전 사건 더 불러오기','older',`data-id="${h(c.id)}"`)}</div>`:''}</section>${actionBar(c)}</div>`);
+    dialog('detail',c.title,CLOSURE[c.closure]||'',`<div data-fl-case-root="${h(c.id)}"><div class="ax-issue-meta">${chips(c)}</div>${c.summary?`<p class="live-pre">${h(c.summary)}</p>`:''}${why(c)}${entityLinks(c)}${fact}${treeSlot(c)}${decisionView(c)}${evid.length||(c.attachments||[]).length?`<section class="ax-evidence"><h3>근거 ${evid.length}건</h3>${evid.map(e=>`<p><strong>${h(nameOf(e.actorId))}</strong> · ${h(when(e.at))}${OUTCOME[e.outcome]?` · ${h(OUTCOME[e.outcome])}`:e.outcome==='returned'?' · 보완 요청':e.outcome==='accepted'?' · 승인':''}<br><span class="live-pre">${h(e.note||'')}</span>${(e.recordRefs||[]).length?`<br><small>연결 기록 ${(e.recordRefs||[]).map(r=>h(r.label||'기록')).join(', ')}</small>`:''}</p>${attachList(e.attachments)}`).join('')}${(c.attachments||[]).length?`<h4>요청에 붙인 기록</h4>${attachList(c.attachments)}`:''}</section>`:''}${linkList}<section class="ax-request-timeline"><h3>사건 기록</h3><ol>${timeline.map(e=>`<li><strong>${h(e.label||'기록')}</strong><p>${h(e.actorId?nameOf(e.actorId):e.origin!=='snapshot'?'자동 처리':'원본 기록')} · ${h(when(e.at))}</p></li>`).join('')||'<li><p>사건 기록이 없습니다.</p></li>'}</ol>${missing>0?`<div class="ax-actions">${btn(`이전 사건 ${fmt(missing)}건 더 보기`,'older',`data-id="${h(c.id)}"`)}</div>`:''}</section>${actionBar(c,{drawer:true})}</div>`);
   }
-  const pickerHtml=(selected=[])=>{const people=actors().filter(a=>assignable(a)&&a.role!=='owner');return picker(()=>({id:'fl-assignee-reassign',name:'assignee',label:'담당자',multiple:true,required:true,selected,...window.ContextPicker.lists.people({db,actors:people,subjectLabel:api.subjectLabel})}),`<div class="fl-assignees live-scroll" role="group" aria-label="담당자">${people.map(a=>`<label><input type="checkbox" name="assignee" value="${h(a.id)}" ${selected.includes(a.id)?'checked':''}> ${h(a.name)} · ${h(a.roleLabel||ROLE_GROUP[a.role])}</label>`).join('')}</div>`);};
+  const pickerHtml=(selected=[])=>{const cur=actors().filter(a=>selected.includes(a.id)&&assignable(a)),people=[...cur,...actors().filter(a=>assignable(a)&&!selected.includes(a.id))];selected=cur.map(a=>a.id);return picker(()=>({id:'fl-assignee-reassign',name:'assignee',label:'담당자',multiple:true,required:true,selected,...window.ContextPicker.lists.people({db,actors:people,subjectLabel:api.subjectLabel})}),`<div class="fl-assignees live-scroll" role="group" aria-label="담당자">${people.map(a=>`<label><input type="checkbox" name="assignee" value="${h(a.id)}" ${selected.includes(a.id)?'checked':''}> ${h(a.name)} · ${h(a.roleLabel||ROLE_GROUP[a.role])}</label>`).join('')}</div>`);};
   // What a report covers. From a student in the tree: exactly that student's records in that class (sent as recordRefs).
   // From a teacher or the case: the whole step, with no per-student records, so no student reads as handled.
   function reportScope(c,s,node){
@@ -727,7 +740,7 @@ window.createFlowUI = function createFlowUI(api) {
     if(kind==='review')dialog('modal','검토',c.title,`<div class="fl-review-evidence">${(c.evidence||[]).slice(-2).map(e=>`<p><strong>${h(nameOf(e.actorId))}</strong> · ${h(e.note||'')}</p>`).join('')||'<p>보고 내용이 없습니다.</p>'}</div><form class="ws-form" data-fl-form="review" data-id="${h(id)}" data-step="${sk}" novalidate><fieldset class="ws-multi"><legend>결정</legend><label><input type="radio" name="decision" value="accept" required> 승인하고 다음 단계로</label><label><input type="radio" name="decision" value="return"> 보완하라고 되돌림</label></fieldset><label>메모(되돌릴 때 필수)<textarea name="note" rows="3" maxlength="2000"></textarea></label><p class="ax-form-error" role="alert"></p><div class="ws-form-foot"><span class="ax-note">결정은 사건 기록에 남습니다.</span><button class="button primary" type="submit" data-fl-key="case.review:${h(id)}">결정 보내기</button></div></form>`);
     // A step chosen from the tree (a teacher's own step) wins; otherwise an unassigned step first, as before.
     const open=activeSteps(c),target=(step&&open.find(x=>x.id===step))||open.find(x=>!(x.assigneeIds||[]).length)||s;
-    if(kind==='reassign')dialog('modal',unassigned(c)?'담당 지정':'담당 바꾸기',c.title,`<form class="ws-form" data-fl-form="reassign" data-id="${h(id)}" novalidate>${open.length>1?`${picker(()=>({id:'fl-reassign-step',name:'step',label:'바꿀 단계',clearable:false,selected:target?[target.id]:[],...window.ContextPicker.lists.choices({noun:'단계',columns:[{key:'name',label:'단계'},{key:'who',label:'지금 담당'}],items:open.map(x=>({value:x.id,title:x.label,cells:{who:whoOf(x)}}))})}),`<label>바꿀 단계<select name="step">${open.map(x=>`<option value="${h(x.id)}" ${x===target?'selected':''}>${h(x.label)} · ${h(whoOf(x))}</option>`).join('')}</select></label>`)}`:`<p>현재 단계: ${h(target?.label||'')}</p><input type="hidden" name="step" value="${h(target?.id||'')}">`}${pickerHtml(target?.queue?[]:target?.assigneeIds||[])}<p class="ax-form-error" role="alert"></p><div class="ws-form-foot"><span class="ax-note">바꾼 기록이 사건 기록에 남습니다.</span><button class="button primary" type="submit" data-fl-key="case.reassign:${h(id)}">담당 저장</button></div></form>`);
+    if(kind==='reassign')dialog('modal',unassigned(c)?'담당 지정':'담당 바꾸기',[c.title,c.summary].filter(Boolean).join(' — '),`<form class="ws-form" data-fl-form="reassign" data-id="${h(id)}" novalidate>${open.length>1?`${picker(()=>({id:'fl-reassign-step',name:'step',label:'바꿀 단계',clearable:false,selected:target?[target.id]:[],...window.ContextPicker.lists.choices({noun:'단계',columns:[{key:'name',label:'단계'},{key:'who',label:'지금 담당'}],items:open.map(x=>({value:x.id,title:x.label,cells:{who:whoOf(x)}}))})}),`<label>바꿀 단계<select name="step">${open.map(x=>`<option value="${h(x.id)}" ${x===target?'selected':''}>${h(x.label)} · ${h(whoOf(x))}</option>`).join('')}</select></label>`)}`:`<p>지금 담당: ${h(target?whoOf(target):'없음')}</p><input type="hidden" name="step" value="${h(target?.id||'')}">`}${pickerHtml(target?.queue?[]:target?.assigneeIds||[])}<p class="ax-form-error" role="alert"></p><div class="ws-form-foot"><span class="ax-note">바꾼 기록이 사건 기록에 남습니다.</span><button class="button primary" type="submit" data-fl-key="case.reassign:${h(id)}">담당 저장</button></div></form>`);
     if(kind==='reopen')dialog('modal','다시 열기',c.title,`<form class="ws-form" data-fl-form="reopen" data-id="${h(id)}" novalidate><label>다시 여는 이유 <em aria-hidden="true">*</em><textarea name="note" rows="3" maxlength="2000" required></textarea></label><p class="ax-form-error" role="alert"></p><div class="ws-form-foot"><span class="ax-note">마지막 단계 담당자의 할 일로 돌아갑니다.</span><button class="button primary" type="submit" data-fl-key="case.reopen:${h(id)}">다시 열기</button></div></form>`);
     $('#modal form :is(textarea,select,input:not([type=hidden]))')?.focus();
   }
@@ -784,6 +797,7 @@ window.createFlowUI = function createFlowUI(api) {
   function syncColAll(){const el=colMenu.el;if(!el)return;const boxes=[...el.querySelectorAll('[data-flc="val"]')],all=el.querySelector('[data-flc="all"]'),n=boxes.filter(b=>b.checked).length;if(all){all.checked=boxes.length>0&&n===boxes.length;all.indeterminate=n>0&&n<boxes.length;}el.querySelector('[data-flc="clear"]').disabled=!Array.isArray(store.cols[colMenu.key])&&store.sort.col!==colMenu.key;el.querySelectorAll('[data-flc="sort"]').forEach(b=>b.setAttribute('aria-pressed',String(store.sort.col===colMenu.key&&store.sort.dir===b.dataset.dir)));}
   function paintColMenu(){const list=colMenu.el?.querySelector('.fl-colpop-list');if(!list)return;list.innerHTML=colListHtml(colMenu.key);syncColAll();api.attachScroll?.();}
   function openColMenu(key){
+    closeRecPop();
     closeColMenu(false);if(!COLV[key])return;hideTip();colMenu.key=key;colMenu.q='';
     const label=colLabel(key),el=document.createElement('div');
     el.className='fl-colpop';el.setAttribute('role','dialog');el.setAttribute('aria-label',`${label} 정렬·필터`);
@@ -847,7 +861,7 @@ window.createFlowUI = function createFlowUI(api) {
     tipEl.style.left=`${Math.min(Math.max(8,r.left),innerWidth-w-8)}px`;tipEl.style.top=`${top}px`;
   }
   function hideTip(){tipFor?.removeAttribute('aria-describedby');tipFor=null;if(!tipEl)return;if(tipEl.showPopover){if(tipEl.matches(':popover-open'))tipEl.hidePopover();}else tipEl.hidden=true;}
-  const cutOf=t=>t?.closest?.(':is(.fl-table,.fl-rectable) .fl-cut');
+  const cutOf=t=>t?.closest?.(':is(.fl-table,.fl-rectable,.fl-nav) .fl-cut');
   document.addEventListener('pointerover',event=>{const el=cutOf(event.target);if(el===tipFor)return;if(el)showTip(el);else if(tipFor)hideTip();});
   document.addEventListener('focusin',event=>{const el=cutOf(event.target);if(el)showTip(el);else if(tipFor)hideTip();});
   document.addEventListener('pointerdown',()=>{if(tipFor)hideTip();},true);
@@ -922,9 +936,13 @@ window.createFlowUI = function createFlowUI(api) {
   function recTable(list,facts){
     // 열 = 그 묶음에서 값이 하나라도 있는 칸. 순서는 기록이 칸을 내는 순서 — 새 칸은 그 줄에서 바로 앞 칸 뒤에 끼운다(첫 줄에 없는 칸이 맨 뒤로 밀리지 않게).
     const cols=[];facts.forEach(f=>{const ks=(f||[]).filter(([,v])=>v).map(([k])=>k);ks.forEach((k,j)=>{if(cols.includes(k))return;let at=0;for(let p=j-1;p>=0;p--){const i=cols.indexOf(ks[p]);if(i>=0){at=i+1;break;}}cols.splice(at,0,k);});});
-    const cell=v=>`<td><span class="fl-cut">${h(v||'')}</span></td>`;
-    return `<table class="fl-rectable"><thead><tr><th scope="col">이름</th>${cols.map(k=>`<th scope="col">${h(k)}</th>`).join('')}<th aria-hidden="true"></th></tr></thead><tbody>${list.map((r,i)=>{const fam=r.familyId||'',id=String(r.recordId||r.id||''),can=fam&&api.hasView(`workspace-${fam}`)||api.canOpenRecord?.(id),f=new Map(facts[i]||[]),at=`data-family="${h(fam)}" data-record="${h(id)}"`,name=recName.get(`${fam}:${id}`)||r.label;
-      return `<tr ${can?`class="can" data-fl="rec-open" ${at}`:''}><th scope="row">${can?`<button type="button" class="fl-cut" data-fl="rec-open" ${at}>${h(name)}</button>`:`<span class="fl-cut">${h(name)}</span>`}</th>${facts[i]===null?`<td colspan="${cols.length||1}" class="fl-dim">정보를 읽지 못했습니다.</td>`:cols.map(k=>cell(f.get(k))).join('')}<td class="fl-rec-go">${can?icon('chevron'):''}</td></tr>`;}).join('')}</tbody></table>`;
+    // 열 정렬은 값으로 정한다(원장 10-28 "내용에 따라 제목행은 가운데 정렬 왼쪽 정렬 등 적극적으로 활용해서 깔끔하게"):
+    // 금액은 오른쪽, 짧은 값(상태·날짜·일수·이름 하나)은 가운데, 긴 글은 왼쪽 — 제목도 같은 쪽.
+    const align=cols.map(k=>{const vs=facts.map(f=>new Map(f||[]).get(k)).filter(Boolean).map(String);if(!vs.length)return '';if(vs.every(v=>/^-?[\d,]+원$/.test(v)))return 'al-r';return Math.max(...vs.map(v=>v.length))<=8?'al-c':'';});
+    const cls=i=>align[i]?` class="${align[i]}"`:'';
+    const cell=(v,i)=>`<td${cls(i)}><span class="fl-cut">${h(v||'')}</span></td>`;
+    return `<table class="fl-rectable"><thead><tr><th scope="col">이름</th>${cols.map((k,i)=>`<th scope="col"${cls(i)}>${h(k)}</th>`).join('')}<th aria-hidden="true"></th></tr></thead><tbody>${list.map((r,i)=>{const fam=r.familyId||'',id=String(r.recordId||r.id||''),can=fam&&api.hasView(`workspace-${fam}`)||api.canOpenRecord?.(id),f=new Map(facts[i]||[]),at=`data-family="${h(fam)}" data-record="${h(id)}"`,name=recName.get(`${fam}:${id}`)||r.label;
+      return `<tr ${can?`class="can" data-fl="rec-open" ${at}`:''}><th scope="row">${can?`<button type="button" class="fl-cut" data-fl="rec-open" ${at}>${h(name)}</button>`:`<span class="fl-cut">${h(name)}</span>`}</th>${facts[i]===null?`<td colspan="${cols.length||1}" class="fl-dim">정보를 읽지 못했습니다.</td>`:cols.map((k,i)=>cell(f.get(k),i)).join('')}<td class="fl-rec-go">${can?icon('chevron'):''}</td></tr>`;}).join('')}</tbody></table>`;
   }
   function fillFacts(root,refs){
     const groups=new Map();for(const r of refs){const t=recType(r);if(!groups.has(t))groups.set(t,[]);groups.get(t).push(r);}
@@ -1026,7 +1044,7 @@ window.createFlowUI = function createFlowUI(api) {
     if(action==='reload'){load();return;}
     if(action==='attach-open'){api.showWorkspaceRecord?.(id,el.dataset.record);return;}
     // 처리 화면('전자결재' 등): 2.0 화면이 있으면 그 화면, 없으면 작업 공간을 신호의 걸러 보기로 — 이 화면 위 엿보기 창에 연다(원장 10-28).
-    if(action==='goto'){const c=caseById(id);if(!c)return;const facet=(db.workspaces?.families?.[c.familyId]?.signals||[]).find(x=>x.id===c.signalId)?.facet||'',v2=!facet&&window.V2Screens?.target(c.familyId);openPeek(v2?{page:v2.slice(1)}:{page:`workspace-${c.familyId}`,family:c.familyId,facet},el);return;}
+    if(action==='goto'){const c=caseById(id);if(!c)return;const facet=(db.workspaces?.families?.[c.familyId]?.signals||[]).find(x=>x.id===c.signalId)?.facet||'',v2=!facet&&window.V2Screens?.target(c.familyId),own=refsOf(c).filter(r=>r.familyId===c.familyId&&r.type!=='task'&&(r.recordId||r.id)),record=own.length===1?String(own[0].recordId||own[0].id):'';openPeek(v2?{page:v2.slice(1)}:{page:`workspace-${c.familyId}`,family:c.familyId,facet,...(record?{record}:{})},el);return;}
     if(action==='older'){el.disabled=true;loadOlder(id);return;}
     if(action==='recs'){showRecords(id);return;}
     if(action==='bulk-all'){board.items.filter(canPick).forEach(c=>store.sel.add(c.id));paintBoardList();return;}
