@@ -98,7 +98,7 @@
 .ax-signal-title{font-size:var(--ax-sm);font-weight:600;overflow-wrap:anywhere}
 .ax-signal-go{display:inline-flex;align-items:center;gap:4px;margin-top:auto;padding-top:4px;font-size:var(--ax-xs);color:var(--ax-primary)}
 .ax-signal-go .icon{width:1em;height:1em}
-.ax-change{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));border:1px solid var(--ax-line);border-radius:8px;overflow:hidden}
+.ax-change{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));border:1px solid var(--ax-line);border-radius:8px;overflow:hidden}
 .ax-change-cell{display:flex;flex-direction:column;min-width:0;padding:12px 18px}
 .ax-change-cell+.ax-change-cell{border-left:1px solid var(--ax-line)}
 .ax-change-link{display:flex;flex:1 1 auto;flex-direction:column;align-items:stretch;gap:2px;min-width:0;min-height:0;margin:-6px -8px 0;padding:6px 8px;border-radius:6px;text-align:left}
