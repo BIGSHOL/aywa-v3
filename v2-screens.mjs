@@ -37,6 +37,8 @@ export async function loadScreens(log = console.error) {
       const { screen } = await import(new URL(name, here).href);
       if (!screen?.id || typeof screen.load !== 'function' || `v2-screen-${screen.id}.mjs` !== name) throw new Error('screen export must match its file name');
       for (const [k, a] of Object.entries(screen.actions || {})) if (!ACTION.test(k) || typeof a?.validate !== 'function' || typeof a?.run !== 'function') throw new Error(`action ${k} needs validate and run`);
+      // 화면 스크립트(v2-screen-<id>.js)가 아직 없는 화면 = 공유 작업 트리에서 만드는 중 — 등록하지 않는다(사이드바에 깨진 화면·MIME 오류가 뜨던 것).
+      if (!existsSync(new URL(`v2-screen-${screen.id}.js`, here))) throw new Error('client script not written yet (screen in progress)');
       out.set(screen.id, screen);
     } catch (error) { log(`2.0 screen ${name} skipped: ${error.message}`); }
   }
