@@ -70,5 +70,8 @@ window.V2Screens = (() => {
       api.render();
     });
   }
-  return { register, view, sidebar, bind, esc };
+  /** A 3.0 workspace id → its 2.0 screen address when that screen is registered (workspace links open the 2.0 form first). */
+  const WORKSPACE_ALIAS = { 'class-sheets': 'ecs' }; // the only workspace whose id differs from its 2.0 screen
+  const target = wsId => { const id = WORKSPACE_ALIAS[wsId] || wsId; return screens.has(id) ? `#v2-${id}` : null; };
+  return { register, view, sidebar, bind, esc, target };
 })();

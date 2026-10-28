@@ -269,7 +269,7 @@ window.createWorkspaces = function createWorkspaces(api) {
     const list=ax.requestsFor?.(a.id)||[];if(!list.length)return '';
     return `<section class="ws-requests"><h2>이 화면에서 보낸 요청 ${list.length}건</h2>${list.map(r=>`<button type="button" class="ax-request-row" data-ax="request-detail" data-id="${r.id}"><span><strong>${h(r.title)}</strong><small>${h(r.owners.map(o=>db.staff.find(s=>s.id===o)?.name||'담당자').join(', '))} · ${h(r.due)}까지</small></span>${pill({requested:'확인 대기',working:'진행 중',done:'완료 보고'}[r.status],r.status==='done'?'green':'blue')}</button>`).join('')}</section>`;
   }
-  function relations(a){const list=(a.relations||[]).filter(has);return list.length?`<section class="ws-relations"><h2>함께 보는 화면</h2><div>${list.map(id=>`<a class="ws-link" href="#workspace-${h(id)}">${h(area(id).label)}</a>`).join('')}</div></section>`:'';}
+  function relations(a){const list=(a.relations||[]).filter(id=>id!==a.id&&has(id));return list.length?`<section class="ws-relations"><h2>함께 보는 화면</h2><div>${list.map(id=>`<a class="ws-link" href="${h(window.V2Screens?.target(id)||`#workspace-${id}`)}">${h(area(id).label)}</a>`).join('')}</div></section>`:'';} // 자기 화면은 빼고(원장 10-28), 2.0 화면이 있으면 그 화면으로
   // A record on the loaded list opens at once. One off it (a link from elsewhere) is read by its exact id first; the
   // dialog changes only on success, and an answer that arrives after the person moved on (another record asked for,
   // a different dialog, the dialog closed, another page, a form open) is dropped. Resolves 'shown', 'missing',
