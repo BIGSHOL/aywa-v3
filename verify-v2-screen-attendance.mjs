@@ -178,4 +178,93 @@ test('화면: 2.0 라벨·표식이 그대로 서고 이름은 이스케이프�
   for (const cls of all) assert.ok(css.includes(`.${cls.replace(/[[\]#/]/g, m => `\\${m}`)}`) || ['ring-1', 'ring-inset', 'ring-line', 'outline-1', 'outline-dashed', '-outline-offset-2', 'outline-purple/60'].includes(cls), `css for ${cls}`);
 });
 
+// ── 2단계: 칸 저장(2.0 setAttendanceCell) — 테스트 학생 '학원이' · 테스트 반(원장의 시험용), 늘 되돌리는 트랜잭션 하나 안에서. ──
+const STUDENT = '6219e442-aa57-455f-a5bc-834b222d9e1c', CLASS = 'e4a2c026-8992-4211-a5fe-b9e93be8a0f3', ROLLBACK = Symbol('rollback');
+async function inRollback(fn) {
+  const { tenantId } = await import('./full-db.mjs');
+  const run = (sql, raw) => screen.actions.cell.run({ sql, body: screen.actions.cell.validate(raw), tenantId, importV2 });
+  await db.begin(async sql => { await fn({ sql, run, t: tenantId }); throw ROLLBACK; }).catch(e => { if (e !== ROLLBACK) throw e; });
+}
+const ok = { actor: CLASS, studentId: STUDENT, classId: CLASS, date: '2026-10-26' };
+
+test('저장: 입력 검사는 복사본에 닿기 전에 거절한다', () => {
+  const v = screen.actions.cell.validate;
+  assert.throws(() => v({ ...ok, actor: 'x' }), /입력 값/); assert.throws(() => v({ ...ok, date: '2026-10-26T00' }), /입력 값/);
+  assert.throws(() => v({ ...ok, status: 'gone' }), /잘못된 상태/); assert.throws(() => v({ ...ok, units: 5 }), /입력 값/);
+  assert.throws(() => v({ ...ok, typed: '123456789' }), /입력 값/); assert.throws(() => v({ ...ok, scopeTeacherId: 'x' }), /입력 값/);
+  assert.throws(() => v({ ...ok, noteOnly: 'yes' }), /입력 값/); assert.throws(() => v({ ...ok, note: 'x'.repeat(2001) }), /입력 값/);
+  assert.equal(v({ ...ok }).status, null); assert.equal(v({ ...ok, note: null }).note, null);
+});
+
+test('저장(복사본, 되돌림): 칸 입력·덮어쓰기·메모만·지우기가 2.0과 같은 행·감사로그를 남긴다', { skip: !db && 'local database not running' }, async () => {
+  const before = await db`select (select count(*)::int from public.audit_logs) audits, (select count(*)::int from net.http_request_queue) net`;
+  await inRollback(async ({ sql, run, t }) => {
+    const settings = await A.readSettings(sql, t, R), actors = await A.__test.actorsOf(sql, t, R, settings);
+    const [{ teacher_id: homeroom }] = await sql`select teacher_id from public.classes where id=${CLASS}`;
+    const actor = actors.find(a => a.id === homeroom) ?? actors[0], desk = actors.find(a => a.id !== homeroom && a.role !== 'master');
+    assert.ok(actor && desk, 'two writers to compare recorded_via');
+    const key = { ...ok, actor: actor.id };
+    const rows = () => sql`select status::text status, session_units::float8 units, note, recorded_by, recorded_via, slot_start from public.attendance_records where class_id=${CLASS} and student_id=${STUDENT} and session_date=${key.date}`;
+    // 한 트랜잭션이라 감사로그 시각(now())이 모두 같다 — 순서가 아니라 내용으로 찾는다.
+    const audits = action => sql`select actor_id, actor_name, metadata from public.audit_logs where tenant_id=${t} and action=${action} and metadata->>'studentId'=${STUDENT} and metadata->>'date'=${key.date} and metadata->>'via'='3.0 연습 복사본'`;
+    const one = async (action, pred) => { const list = (await audits(action)).filter(pred); assert.equal(list.length, 1, `${action}: exactly one matching line`); return list[0]; };
+    // 지우고 시작(복사본에 그날 기록이 있을 수 있다) → 타이핑 '1' = 새 행 한 줄(출석 · 시수 기본 · 교시 없음 · 그 반 담임이 쓰면 'teacher').
+    await run(sql, { ...key, status: null });
+    assert.equal((await rows()).length, 0);
+    await run(sql, { ...key, typed: '1' });
+    let [r] = await rows();
+    assert.deepEqual({ ...r }, { status: 'present', units: null, note: null, recorded_by: actor.id, recorded_via: 'teacher', slot_start: null });
+    let a = await one('attendance_cell', x => x.metadata.created === true && x.metadata.status === 'present' && !x.metadata.scopeTeacherId);
+    assert.deepEqual([a.actor_id, a.actor_name, a.metadata.units], [actor.id, actor.name, null]);
+    // 읽을 수 없는 타이핑은 2.0처럼 아무것도 하지 않는다.
+    assert.deepEqual(await run(sql, { ...key, typed: '.' }), { ok: true, skipped: true });
+    // 덮어쓰기 — 지각 + 시수 1.5, 이전 상태·시수가 감사로그에 남는다. 담임이 아닌 사람이 쓰면 'desk'.
+    await run(sql, { ...key, actor: desk.id, status: 'late', units: '1.5' });
+    [r] = await rows(); assert.deepEqual([r.status, r.units, r.recorded_by, r.recorded_via], ['late', 1.5, desk.id, 'desk']);
+    a = await one('attendance_cell', x => x.metadata.status === 'late');
+    assert.deepEqual([a.actor_id, a.metadata.overwrote, a.metadata.prevStatus, a.metadata.units, a.metadata.prevUnits, a.metadata.nextUnits], [desk.id, true, 'present', 1.5, 1, 1.5]);
+    // 메모만 — 상태·시수·입력자는 그대로, 감사로그엔 본문 없이 '채웠다'만.
+    await run(sql, { ...key, noteOnly: true, note: ' 병결 ' });
+    [r] = await rows(); assert.deepEqual([r.status, r.units, r.note, r.recorded_by], ['late', 1.5, '병결', desk.id]);
+    a = await one('attendance_note', () => true); assert.equal(a.metadata.cleared, false); assert.ok(!JSON.stringify(a.metadata).includes('병결'), 'no memo text in the audit line');
+    // 타이핑 '0' = 결석(시수 기본으로), 메모는 그대로.
+    await run(sql, { ...key, typed: '0' });
+    [r] = await rows(); assert.deepEqual([r.status, r.units, r.note], ['absent', null, '병결']);
+    // 지우기 — 행이 사라지고 2.0 지우기 줄.
+    await run(sql, { ...key, status: null });
+    assert.equal((await rows()).length, 0); assert.equal((await audits('attendance_clear')).length, 2, 'two clears (start + this one)');
+    // 기록 없는 칸의 메모만은 2.0 문장으로 거절.
+    await assert.rejects(run(sql, { ...key, noteOnly: true, note: 'x' }), /먼저 출결을 입력하세요/);
+    // 강사 보기(그 반을 맡은 강사) — 같은 칸을 그 강사 몫으로 쓴다(수학 반은 교시 담당이 없어 담임 몫 = 그날 한 행).
+    await run(sql, { ...key, status: 'present', units: '', scopeTeacherId: homeroom });
+    [r] = await rows(); assert.equal(r.status, 'present'); await one('attendance_cell', x => x.metadata.scopeTeacherId === homeroom && x.metadata.created === true);
+    // 그 반을 안 맡은 강사의 보기에서 온 저장은 2.0 문장으로 거절.
+    const [stranger] = await sql`select id from public.users where tenant_id=${t} and system_role='teacher' and status='active' and id not in (select coalesce(teacher_id,'00000000-0000-0000-0000-000000000000') from public.classes where id=${CLASS}) limit 1`;
+    await assert.rejects(run(sql, { ...key, status: 'absent', scopeTeacherId: stranger.id }), e => e.code === 'scope_not_taught');
+    // 출결 '전체' 권한이 아닌 사람(강사)은 저장할 수 없다.
+    await assert.rejects(run(sql, { ...key, actor: stranger.id, status: 'present' }), e => e.status === 403);
+    // 보강 예약이 걸린 칸 — 2.0은 예약 이행까지 바꾸므로 3.0은 저장하지 않는다(사유를 말한다).
+    await sql`insert into public.makeup_reservations (tenant_id, student_id, class_id, absence_date, makeup_date, slot_start, slot_end, status) values (${t}, ${STUDENT}, ${CLASS}, '2026-10-20', ${key.date}, '16:20', '17:15', 'reserved')`;
+    await assert.rejects(run(sql, { ...key, status: 'present' }), e => e.code === 'reservation_cell');
+    // 바깥으로 나가려는 요청이 없다.
+    assert.equal((await sql`select count(*)::int n from net.http_request_queue`)[0].n, before[0].net);
+  });
+  const after = await db`select (select count(*)::int from public.audit_logs) audits`;
+  assert.equal(after[0].audits, before[0].audits, 'rolled back — the copy is unchanged');
+});
+
+test('화면(저장 가능): 입력하는 사람·복사본 안내·칸 선택 표식이 선다', { skip: !db && 'local database not running' }, async () => {
+  const { tenantId: t } = await import('./full-db.mjs');
+  const d = await db.begin('isolation level repeatable read read only', sql => screen.load({ sql, params: { class: CLASS, period: 'month' }, tenantId: t, importV2 }));
+  assert.ok(d.actors.length > 0 && d.actors.every(a => a.name && a.roleLabel)); assert.equal(d.scope, null);
+  assert.ok(d.popover.statuses.map(s => s.label).join(',') === '출석,결석,지각,조퇴,보강');
+  const text = await here('v2-screen-attendance.js');
+  let def = null;
+  const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  vm.runInNewContext(text, { window: { V2Screens: { register: x => { def = x; }, esc } }, document: { addEventListener() {}, querySelector: () => null, querySelectorAll: () => [], body: { append() {} } }, queueMicrotask() {}, localStorage: { getItem: () => null, setItem() {} } });
+  const html = def.render({ query: new URLSearchParams(`class=${CLASS}`), load: () => ({ status: 'ready', data: d }), go() {}, refresh() {}, writable: true, copyNote: '연습용 복사본(Docker)에 저장됩니다.' });
+  for (const l of ['연습용 복사본(Docker)에 저장됩니다.', '2.0 화면 · 연습 복사본', '입력하는 사람', '고른 사람 이름으로 연습용 복사본에 저장합니다']) assert.ok(html.includes(l), l);
+  assert.match(html, /data-ck="[0-9a-f-]+\|[0-9a-f-]+\|2026-10-\d\d" tabindex="-1"/, 'cells are selectable');
+});
+
 test.after(async () => { await db?.end(); });

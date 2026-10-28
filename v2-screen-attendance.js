@@ -2,13 +2,19 @@
    툴바 한 줄(과목·강사·반 · 달 이동 · 기간 · 보기 · 정렬 · 검색 · 살아 있는 합계 · 안내) + 표 위 한 줄(칸 안내·범례·보기 옵션) +
    학생 × 날짜 격자(31칸 고정 · 이름/학교 고정 열 · 반 머리행 · 합계 행). 강사를 고르기 전엔 2.0 '출석부 요약' 허브.
    칸 표기·색·카드 줄은 서버가 2.0 `cellDisplay`·`rollupDay`·사전으로 만든 것을 그대로 그린다(여기서 판정하지 않는다).
-   상태는 주소(#v2-attendance?…)에 — 2.0의 계정 보기 설정(정렬·기간·퇴직 숨김)도 여기에 둔다. 검색어·접기는 이 창에서만. */
+   상태는 주소(#v2-attendance?…)에 — 2.0의 계정 보기 설정(정렬·기간·퇴직 숨김)도 여기에 둔다. 검색어·접기는 이 창에서만.
+   2단계: 칸 하나 입력(숫자 타이핑 · 우클릭/더블클릭 팝오버의 상태·시수·메모·지우기)을 ctx.act('cell')로 복사본에 — 해석·판정은
+   서버가 2.0 함수로 한다. 범위 선택·복사/붙여넣기·채우기(2.0 setAttendanceRange)는 아직 없다. */
 (() => {
   'use strict';
   const S = window.V2Screens; if (!S) return;
   const h = S.esc, ID = 'attendance', SEL = `[data-v2-screen="${ID}"]`;
   const READONLY = '복사본 보기 전용 — 이 화면에서는 아직 출결을 입력하지 않습니다.';
   let last = null, model = null, query = '', searchOpen = false;
+  // 2단계 입력 — 2.0 격자와 같은 조작: 칸 선택 · 숫자 타이핑(0 결석 / 1·1.5·2 출석+시수) · Enter·Tab·방향키 이동 · Delete 지우기 ·
+  // 우클릭(더블클릭)·Space = 칸 팝오버. 고른 칸·입력 중 글자·저장 중 칸은 다시 그려도 이어진다(주소가 아니라 이 창 안 상태).
+  let active = null, buffer = null, popover = null, actorId = null, scrollPos = null;
+  const saving = new Set();
   const collapsed = new Set(), hiddenCols = new Set();
   const tf = (s, vars) => String(s ?? '').replace(/\{(\w+)\}/g, (m, k) => (vars[k] ?? m));
 
@@ -43,12 +49,19 @@
       ${teacherSel}${retiredChip}
       <label class="at-sel at-marker ${f.classValue ? 'on' : ''}"><span>${h(L['att.filter.class'])}</span><select data-at="set" data-k="class" aria-label="${h(L['att.filter.class'])}">${opt('', L['att.filter.classAll'], !f.classValue)}${f.classOptions.map(o => opt(o.value, o.hint ? `${o.label} · ${o.hint}` : o.label, o.value === f.classValue)).join('')}</select></label>
       <span class="at-period-nav" role="group" aria-label="달 이동"><button type="button" data-at="month" data-v="${h(d.prevMonth)}" aria-label="${h(L['att.nav.prev'])}">‹</button><button type="button" class="at-month" data-at="month" data-v="${h(d.currentMonth)}" title="${h(L['att.nav.current'])}">${h(d.monthLabel)}</button><button type="button" data-at="month" data-v="${h(d.nextMonth)}" aria-label="${h(L['att.nav.next'])}">›</button>${d.relation !== 'current' ? `<small class="at-rel">${d.relation === 'past' ? '과거 조회' : '미래 조회'}</small>` : ''}</span>
-      ${period}${view}${sort}
+      ${period}${view}${sort}${actorSelect(d)}
       ${d.selectedClassLabel ? `<span class="at-target">${h(d.selectedClassLabel)}</span>` : ''}
       <div class="at-right">${!gridShown && d.scopeChip ? scopeChip(d) : ''}${gridShown ? `<span data-at-stats>${stats(d)}</span>` : ''}${notices}</div></div>`;
   }
   /** 검색이 걸렸을 때 — 2.0 `SearchScopeChip`(걸린 학생 / 전체 · 숫자도 검색 기준) + 지우기. */
   const searchChip = d => (query && d.grid ? `<span class="at-scope" title="${h(d.L['att.search.totalsNote'])}">${h(tf(d.L['att.search.count'], { n: new Set(matched(d.grid).map(r => r.studentId)).size }))} / ${d.stats.totalStudents}</span><button type="button" class="at-link" data-at="search-clear">${h(d.L['att.search.clear'])}</button>` : '');
+ /** 저장하는 사람 — 출결 '전체' 권한 직원(2.0 권한 표). 3.0엔 로그인이 없어 화면에서 고른다(감사로그 actor). */
+  const actorSelect = d => (last?.writable && d.grid && d.actors?.length ? `<label class="at-sel at-actor"><span>입력하는 사람</span><select data-at="actor" aria-label="입력하는 사람">${d.actors.map(a => opt(a.id, a.roleLabel ? `${a.name} · ${a.roleLabel}` : a.name, a.id === currentActor(d))).join('')}</select></label>` : '');
+  function currentActor(d) {
+    if (actorId && d.actors.some(a => a.id === actorId)) return actorId;
+    try { const saved = localStorage.getItem('v2-attendance-actor'); if (saved && d.actors.some(a => a.id === saved)) return (actorId = saved); } catch { /* 저장소를 못 쓰면 기본값 */ }
+    return (actorId = (d.actors.find(a => a.roleLabel === '원장') ?? d.actors[0]).id);
+  }
   const scopeChip = d => `<span class="at-scope" title="${h(d.L['att.scopeChip.title'])}">${h(d.L['att.scopeChip'])}</span>`;
   const metric = (label, value, unit, of, cls = '') => `<span class="at-metric"><span>${h(label)}</span><strong class="${cls}">${h(value)}</strong>${of != null ? `<small>/ ${h(of)}</small>` : ''}${unit ? `<small>${h(unit)}</small>` : ''}</span>`;
   const rateColor = r => (r === null ? '' : r >= 90 ? 'ok' : r >= 80 ? 'warn' : 'bad');
@@ -96,8 +109,10 @@
     if (!cell) return '<td class="pad" aria-hidden="true"></td>';
     const reserved = cell.rv ? `<span class="at-rv" aria-hidden="true">${model.grid.reservedChars.map(ch => `<span>${h(ch)}</span>`).join('')}</span>` : h(cell.x);
     const badges = cell.b ? `<span class="at-badges ${cell.b.align === 'end' ? 'end' : 'start'}">${cell.b.list.map(b => `<span class="at-badge ${K(b.k)}">${h(b.label)}</span>`).join('')}</span>` : '';
-    const label = `${model.grid.head[ci].date} ${cell.s ? (cell.tip?.r?.[0]?.[1] ?? '') : cell.rv ? model.L['att.cell.reserved'] : model.L['att.cell.unmarked']}${cell.n > 1 ? tf(model.L['att.cell.andNPeriods'], { n: cell.n - 1 }) : ''}`;
-    return `<td class="at-td"><div class="at-cell ${K(cell.k)}" role="gridcell" aria-label="${h(label)}" data-r="${ri}" data-c="${ci}" ${cell.bg ? `style="background:${h(cell.bg)}"` : ''}>${reserved}${cell.m ? '<span class="at-memo" aria-hidden="true"></span>' : ''}</div>
+    const date = model.grid.head[ci].date, ck = `${row.key}|${date}`, isActive = active === ck, editing = isActive && buffer !== null;
+    const label = `${date} ${cell.s ? (cell.tip?.r?.[0]?.[1] ?? '') : cell.rv ? model.L['att.cell.reserved'] : model.L['att.cell.unmarked']}${cell.n > 1 ? tf(model.L['att.cell.andNPeriods'], { n: cell.n - 1 }) : ''}`;
+    const writable = !!last?.writable && model.actors?.length;
+    return `<td class="at-td"><div class="at-cell ${K(cell.k)}${isActive ? ' is-active' : ''}${saving.has(ck) ? ' is-saving' : ''}" role="gridcell" aria-label="${h(label)}" aria-selected="${isActive}" ${saving.has(ck) ? 'aria-busy="true"' : ''} data-r="${ri}" data-c="${ci}" data-ck="${h(ck)}" ${writable ? `tabindex="${isActive ? 0 : -1}"` : ''} ${cell.bg ? `style="background:${h(cell.bg)}"` : ''}>${editing ? `<span class="at-buf">${h(buffer)}</span>` : reserved}${cell.m ? '<span class="at-memo" aria-hidden="true"></span>' : ''}</div>
       ${cell.sp ? `<span class="at-split ${cell.sp}" aria-hidden="true"></span>` : ''}${badges}</td>`;
   }
   function rowHtml(row, ri) {
@@ -156,20 +171,30 @@
     last = ctx;
     const q = ctx.query, params = Object.fromEntries(['month', 'subject', 'teacher', 'class', 'mode', 'sort', 'period', 'retired'].map(k => [k, q.get(k) || '']));
     const e = ctx.load(params);
-    const head = `<div class="v2s-head"><h1>출석부</h1><span class="v2s-badge">2.0 화면 · 복사본 보기 전용</span></div>`;
+    const head = `<div class="v2s-head"><h1>출석부</h1><span class="v2s-badge">${ctx.writable ? '2.0 화면 · 연습 복사본' : '2.0 화면 · 복사본 보기 전용'}</span></div>${ctx.writable ? `<p class="v2s-note">${h(ctx.copyNote)}</p>` : ''}`;
     if (e.status === 'loading') return `${head}<p class="v2s-note">불러오는 중입니다…</p>`;
     if (e.status === 'error') return `${head}<p class="v2s-note">${h(e.error)}</p><button type="button" class="at-chip" data-at="retry">다시 불러오기</button>`;
     model = e.data;
     queueMicrotask(after);
-    return `${head}<div class="att">${toolbar(model)}<div class="at-region" data-at-region>${region(model)}</div><p class="at-foot">${h(READONLY)}</p></div>`;
+    const foot = ctx.writable ? `칸을 고르고 숫자를 치거나 우클릭해 입력합니다 — 고른 사람 이름으로 연습용 복사본에 저장합니다(2.0 감사로그와 같은 줄 · 알림은 보내지 않습니다).` : READONLY;
+    return `${head}<div class="att">${toolbar(model)}<div class="at-region" data-at-region>${region(model)}</div><p class="at-foot">${h(foot)}</p></div>`;
   } });
 
   // ── 그린 뒤: 열 숨김 적용 · 스크롤 가장자리 페이드 ──
   function after() {
     const root = document.querySelector(SEL); if (!root) return;
-    const sc = root.querySelector('[data-at-scroll]'); if (sc && !sc.dataset.fade) { sc.dataset.fade = '1'; sc.addEventListener('scroll', () => fade(sc), { passive: true }); }
+    const sc = root.querySelector('[data-at-scroll]');
+    if (sc && !sc.dataset.fade) {
+      sc.dataset.fade = '1';
+      // 다시 그려도(저장 뒤 새 값) 보던 자리 그대로 — 스크롤 위치를 쥐고 있다가 되돌린다(AGENTS.md 스크롤 원칙).
+      if (scrollPos?.view === viewKey()) { sc.scrollLeft = scrollPos.left; sc.scrollTop = scrollPos.top; }
+      sc.addEventListener('scroll', () => { scrollPos = { view: viewKey(), left: sc.scrollLeft, top: sc.scrollTop }; fade(sc); }, { passive: true });
+    }
     if (sc) fade(sc);
+    if (popover) drawPopover();
+    else if (active) root.querySelector(`[data-ck="${CSS.escape(active)}"]`)?.focus({ preventScroll: true });
   }
+  const viewKey = () => (last ? ['month', 'subject', 'teacher', 'class', 'mode', 'sort', 'period'].map(k => last.query.get(k) || '').join('|') : '');
   /** 더 볼 내용이 남은 방향의 가장자리에만 페이드(AGENTS.md 스크롤 원칙) — 고정 머리줄·이름 열 바깥에서 시작한다. */
   function fade(el) {
     const x = el.scrollLeft, y = el.scrollTop, maxX = el.scrollWidth - el.clientWidth - 1, maxY = el.scrollHeight - el.clientHeight - 1;
@@ -204,6 +229,82 @@
   });
   document.addEventListener('scroll', hideCard, true);
 
+  // ── 2단계: 입력 ────────────────────────────────────────────────────────────────
+  /** 칸 → 저장 재료. 칸 키 = `${rowKey}|${date}`(rowKey = `${classId}|${studentId}`, 2.0 grid/model). */
+  function cellOf(ck) {
+    if (!model?.index || !ck) return null;
+    const i = ck.lastIndexOf('|'), key = ck.slice(0, i), date = ck.slice(i + 1), ri = model.index.findIndex(r => r.key === key), ci = model.grid.head.findIndex(x => x.date === date);
+    if (ri < 0 || ci < 0) return null;
+    const row = model.index[ri];
+    return { ck, ri, ci, row, date, cell: row.cells[ci] };
+  }
+  /** 2.0 `scopeFieldsFor` — 강사 전체 보기의 그 강사 반 칸만 몫을 싣는다(보강 묶음은 싣지 않는다). */
+  const scopeFor = classId => (model.scope && model.scope.classIds.includes(classId) ? { scopeTeacherId: model.scope.teacherId } : {});
+  async function save(ck, body) {
+    const c = cellOf(ck); if (!c || saving.has(ck)) return;
+    saving.add(ck); paint(ck);
+    try { await last.act('cell', { actor: currentActor(model), studentId: c.row.studentId, classId: c.row.classId, date: c.date, ...body, ...scopeFor(c.row.classId) }); }
+    catch (error) { const msg = error?.message || '저장하지 못했습니다.'; if (last.api?.toast) last.api.toast(msg); else window.alert(msg); }
+    finally { saving.delete(ck); paint(ck); }
+  }
+  /** 칸 하나만 다시 칠한다(선택·입력 중 글자·저장 중) — 표 전체를 다시 그리지 않는다. */
+  function paint(ck) {
+    const el = document.querySelector(`${SEL} [data-ck="${CSS.escape(ck)}"]`), c = cellOf(ck); if (!el || !c) return;
+    const tmp = document.createElement('tbody'); tmp.innerHTML = `<tr>${cellHtml(c.row, c.ri, c.cell, c.ci)}</tr>`;
+    const fresh = tmp.querySelector('.at-cell'); el.replaceWith(fresh);
+    if (active === ck && !popover) fresh.focus({ preventScroll: true });
+  }
+  function select(ck) {
+    const prev = active; active = ck; buffer = null;
+    if (prev && prev !== ck) paint(prev);
+    paint(ck); document.querySelector(`${SEL} [data-ck="${CSS.escape(ck)}"]`)?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+  }
+  function move(dc, dr) {
+    const c = cellOf(active); if (!c) return;
+    const cols = model.grid.head.map((x, i) => (x.placeholder ? -1 : i)).filter(i => i >= 0), at = cols.indexOf(c.ci);
+    const ri = Math.min(model.index.length - 1, Math.max(0, c.ri + dr)), nc = cols[Math.min(cols.length - 1, Math.max(0, at + dc))];
+    select(`${model.index[ri].key}|${model.grid.head[nc].date}`);
+  }
+  /** 친 글자 확정 — 해석은 서버가 2.0 `commitBuffer`로 한다(0 = 결석 · 1·1.5·2 = 출석 + 시수). */
+  function commit() { if (buffer === null || !active) return; const typed = buffer, ck = active; buffer = null; paint(ck); if (typed.trim()) save(ck, { typed }); }
+
+  function popoverHtml() {
+    const c = cellOf(popover?.ck); if (!c) return '';
+    const P = model.popover, L = P.L, cell = c.cell || {}, recorded = !!cell.s && !cell.d, masked = !!cell.nm, locked = !!cell.rs;
+    // 2.0 `unitsDraft` 초기값 — 기록이 있으면 그 시수(기본 1), 없으면 빈 칸(서버가 자동 시수를 넣는다 · 자리표시로 그 값을 보인다).
+    const units = recorded ? String(cell.u ?? 1) : cell.u != null ? String(cell.u) : '';
+    const r = popover.anchor, left = Math.max(8, Math.min(r.x, window.innerWidth - 230)), pos = r.top != null ? `top:${r.top}px` : `bottom:${r.bottom}px`;
+    const ph = !recorded && cell.au != null ? tf(L['att.pop.unitsPhAuto'], { n: formatSessionUnits(cell.au) }) : L['att.pop.unitsPh'];
+    return `<div class="at-pop-back" data-at="pop-close" aria-hidden="true"></div><div class="at-pop" role="dialog" aria-label="${h(L['att.pop.aria'])}" style="left:${left}px;${pos}">
+      <p class="at-pop-head"><strong>${h(c.row.name)}</strong> <small>${h(md(c.date))}</small></p>
+      ${locked ? `<div class="at-pop-resv"><strong>${h(L['att.pop.reserved'])}</strong><p>${h(cell.rs.span)}</p><p>2.0은 이 칸을 저장할 때 보강 예약 이행(결석 칸 메모·시수)까지 함께 바꿉니다 — 이 연습 화면에서는 저장하지 않습니다.</p></div>` : ''}
+      ${P.statuses.map(o => `<button type="button" class="at-pop-item ${cell.s === o.value ? 'on' : ''}" data-at="pop-status" data-v="${o.value}" ${locked ? 'disabled' : ''}>${h(o.label)}<span class="at-sw ${h(o.tone)}" aria-hidden="true"></span></button>`).join('')}
+      <button type="button" class="at-pop-item" disabled title="보강 예약 창은 이 연습 화면에 아직 없습니다">${h(L['att.pop.reserve'])}<span class="at-sw at-sw-resv" aria-hidden="true"></span></button>
+      <div class="at-pop-form"><input type="text" inputmode="decimal" data-at="pop-units" value="${h(units)}" placeholder="${h(ph)}" aria-label="${h(L['att.pop.unitsAria'])}" title="${h(L['att.pop.unitsTitle'])}" ${locked ? 'disabled' : ''}>
+        <input type="text" data-at="pop-note" value="${h(masked ? '' : cell.nt ?? '')}" placeholder="${h(masked ? '연락처가 적힌 메모 — 여기서는 고치지 않습니다' : L['att.pop.notePh'])}" aria-label="${h(L['att.pop.notePh'])}" ${masked || locked ? 'disabled' : ''}>
+        <button type="button" class="at-pop-save" data-at="pop-save" ${cell.s && !locked ? '' : 'disabled'} ${cell.s ? '' : `title="${h(L['att.pop.pickFirst'])}"`}>${h(L['att.pop.save'])}</button></div>
+      ${cell.s && !locked ? `<button type="button" class="at-pop-item clear" data-at="pop-clear">${h(L['att.pop.clear'])}</button>` : ''}</div>`;
+  }
+  function openPopover(ck, el) {
+    const r = el.getBoundingClientRect(), vh = window.innerHeight, up = vh - r.bottom < 320 && r.top > vh - r.bottom;
+    hideCard(); if (active !== ck) select(ck);
+    buffer = null; popover = { ck, anchor: up ? { x: r.left, bottom: vh - r.top + 4 } : { x: r.left, top: r.bottom + 4 } };
+    drawPopover(); document.querySelector(`${SEL} .at-pop [data-at="pop-units"]`)?.focus();
+  }
+  function drawPopover() {
+    document.querySelectorAll(`${SEL} .at-pop, ${SEL} .at-pop-back`).forEach(n => n.remove());
+    if (!popover) return;
+    const box = document.createElement("div"); box.innerHTML = popoverHtml(); document.querySelector(`${SEL} .att`)?.append(...box.childNodes);
+  }
+  const closePopover = () => { const ck = popover?.ck; popover = null; drawPopover(); if (ck) paint(ck); };
+  /** 2.0 `CellPopover.apply` — 상태 버튼 = 그 상태 + 시수 칸 원문(메모는 안 보낸다) · '저장' = 메모까지 · '지우기' = 상태 없음. */
+  function applyPopover(status, withNote) {
+    const c = cellOf(popover?.ck); if (!c) return;
+    const units = document.querySelector(`${SEL} .at-pop [data-at="pop-units"]`)?.value ?? '', noteEl = document.querySelector(`${SEL} .at-pop [data-at="pop-note"]`);
+    const body = status === null ? { status: null } : { status, units, ...(withNote && noteEl && !noteEl.disabled ? { note: noteEl.value } : {}) };
+    const ck = c.ck; closePopover(); save(ck, body);
+  }
+
   // ── 조작 — 바뀌는 것은 모두 주소(뒤로·새로고침에도 같은 화면). 검색·접기·열 숨김만 이 창 안에서. ──
   const go = patch => { if (!last) return; const p = Object.fromEntries(last.query); Object.assign(p, patch); for (const k of Object.keys(p)) if (p[k] === '' || p[k] == null) delete p[k]; hideCard(); last.go(p); };
   const redrawRegion = () => { const root = document.querySelector(SEL); if (!root || !model) return; const r = root.querySelector('[data-at-region]'); if (r) r.innerHTML = region(model); const st = root.querySelector('[data-at-stats]'); if (st) st.innerHTML = stats(model); after(); };
@@ -220,6 +321,37 @@
     else if (k === 'cols') { const m = t.nextElementSibling; m.hidden = !m.hidden; t.setAttribute('aria-expanded', String(!m.hidden)); }
     else if (k === 'cols-all') { hiddenCols.clear(); redrawRegion(); }
     else if (k === 'retry') last.refresh();
+    else if (k === 'pop-close') closePopover();
+    else if (k === 'pop-status') applyPopover(t.dataset.v, false);
+    else if (k === 'pop-save') { const c = cellOf(popover?.ck); if (c?.cell?.s) applyPopover(c.cell.s, true); }
+    else if (k === 'pop-clear') applyPopover(null, false);
+  });
+  // 칸 고르기 · 우클릭/더블클릭 = 팝오버(2.0 AttendanceCell). 저장할 수 있는 화면에서만.
+  const editable = () => !!last?.writable && !!model?.grid && !!model.actors?.length;
+  document.addEventListener('mousedown', ev => {
+    const el = ev.target.closest?.(`${SEL} .at-cell[data-ck]`); if (!el || !editable() || ev.button !== 0) return;
+    ev.preventDefault(); if (active !== el.dataset.ck) { commit(); select(el.dataset.ck); }
+  });
+  const pop = ev => { const el = ev.target.closest?.(`${SEL} .at-cell[data-ck]`); if (!el || !editable()) return; ev.preventDefault(); commit(); openPopover(el.dataset.ck, el); };
+  document.addEventListener('dblclick', pop);
+  document.addEventListener('contextmenu', pop);
+  document.addEventListener('keydown', ev => {
+    if (!editable() || !active) return;
+    if (popover) {
+      if (ev.key === 'Escape') { ev.preventDefault(); closePopover(); }
+      else if (ev.key === 'Enter' && ev.target.matches?.('.at-pop input')) { ev.preventDefault(); document.querySelector(`${SEL} .at-pop [data-at="pop-save"]:not([disabled])`)?.click(); }
+      return;
+    }
+    if (!ev.target.closest?.(`${SEL} .at-cell`)) return;
+    const moves = { ArrowUp: [0, -1], ArrowDown: [0, 1], ArrowLeft: [-1, 0], ArrowRight: [1, 0], Enter: [0, ev.shiftKey ? -1 : 1], Tab: [ev.shiftKey ? -1 : 1, 0] };
+    if (moves[ev.key]) { ev.preventDefault(); commit(); move(...moves[ev.key]); return; }
+    if (ev.key === 'Escape') { ev.preventDefault(); buffer = null; paint(active); return; }
+    if (ev.key === ' ') { ev.preventDefault(); const el = document.querySelector(`${SEL} [data-ck="${CSS.escape(active)}"]`); if (el) openPopover(active, el); return; }
+    if (ev.isComposing || ev.ctrlKey || ev.metaKey || ev.altKey) return;
+    if (/^[0-9.,]$/.test(ev.key)) { ev.preventDefault(); const next = `${buffer ?? ''}${ev.key === ',' ? '.' : ev.key}`; if (next.length <= 4) { buffer = next; paint(active); } return; }
+    if (ev.key === 'Backspace' && buffer !== null) { ev.preventDefault(); buffer = buffer.slice(0, -1); paint(active); return; }
+    // 2.0 격자: 글자가 없을 때 Delete·Backspace = 그 칸 지우기 저장(빈 칸이어도 서버가 지우기 줄을 남긴다).
+    if ((ev.key === 'Delete' || ev.key === 'Backspace') && buffer === null) { ev.preventDefault(); if (cellOf(active)?.cell) save(active, { status: null }); }
   });
   function rerenderToolbar() {
     const root = document.querySelector(SEL); const tb = root?.querySelector('.at-toolbar'); if (!tb || !model) return;
@@ -231,6 +363,7 @@
     if (k === 'set') go({ [t.dataset.k]: t.value });
     else if (k === 'view') go(t.value === 'teacher' ? { mode: 'teacher', class: '' } : { mode: 'class' });
     else if (k === 'col') { if (t.checked) hiddenCols.delete(t.dataset.v); else hiddenCols.add(t.dataset.v); redrawRegion(); }
+    else if (k === 'actor') { actorId = t.value; try { localStorage.setItem('v2-attendance-actor', t.value); } catch { /* 이 창에서만 기억 */ } }
   });
   document.addEventListener('input', ev => {
     const t = ev.target.closest?.(`${SEL} [data-at="search"]`); if (!t) return;

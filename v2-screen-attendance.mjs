@@ -7,6 +7,7 @@
 //    .tsx 안에만 있는 몇 줄(31칸 채우기·날짜축·담당 강사 합집합·역할 판정)과 불러올 수 없는 resolve.ts의 설정 병합은 아래 PORTED에
 //    옮겼다 — verify가 2.0 원문과 맞는지 잡는다.
 // "오늘"은 복사본 기준일(백업 시각의 KST 날짜) — 3.0 다른 화면과 같은 날이다.
+// 2단계(저장) = 아래 `actions.cell` — 2.0 `setAttendanceCell`의 관리자 경로를 같은 표·칸·감사로그로(파일 끝 주석).
 import { readFile } from 'node:fs/promises';
 import { activeBackup } from './full-db-paths.mjs';
 import { scrub } from './domain-snapshot-core.mjs';
@@ -30,6 +31,10 @@ const MODULES = {
   units: 'features/attendance/session-units.ts', edit: 'features/attendance/edit-window.ts', attHref: 'app/(shell)/attendance/_components/att-href.ts',
   holidaySheet: 'features/class-sheets/lib/holiday.ts', grid: 'features/attendance/grid/model.ts', pool: 'features/classes/makeup-pool.ts',
   search: 'features/attendance/student-search.ts', viewPrefs: 'features/attendance/view-prefs.ts',
+  // 2단계(저장) — setAttendanceCell이 쓰는 순수 규칙.
+  typing: 'features/attendance/grid/typing.ts', scopeOwn: 'features/attendance/scope-ownership.ts', scopedSplit: 'features/attendance/scoped-split.ts',
+  ghost: 'features/attendance/ghost-transfer.ts', saveTargets: 'features/attendance/save-targets.ts', unitsAudit: 'features/attendance/units-audit.ts',
+  perms: 'lib/permissions.ts', roles: 'lib/auth/role-hierarchy.ts', delegWin: 'features/classes/delegation-window.ts', tlabel: 'features/timetable/lib/teacher-label.ts',
 };
 let rulesPromise = null;
 /** 2.0 순수 모듈 — 모듈마다 이름공간(같은 이름의 함수가 여러 모듈에 있다: monthBounds·addDays …). 실패하면 다음 요청에서 다시. */
@@ -151,7 +156,7 @@ export async function readSettings(sql, t, R) {
   const [row] = await sql`select s.data, tn.name from public.tenants tn left join public.tenant_settings s on s.tenant_id=tn.id where tn.id=${t}`;
   const stored = row?.data ?? null, preset = R.preset.presetOfStored(stored), base = R.preset.baseSettingsFor(preset);
   const merged = deepMerge(base, stored);
-  return { preset, profileName: merged.profile?.name || row?.name || '',
+  return { preset, profileName: merged.profile?.name || row?.name || '', permissions: merged.permissions,
     operations: { ...merged.operations, subjects: normalizeSubjects(merged.operations.subjects, base), holidays: normalizeHolidays(merged.operations.holidays) },
     modules: { disabled: R.modules.normalizeDisabledModules(merged.modules.disabled) } };
 }
@@ -370,8 +375,17 @@ export async function buildMatrix(ctx, { month, classId, periodMode = 'month', s
     if (status === 'present') presentCount++; else if (status === 'absent') absentCount++; else if (status === 'late') lateCount++; else if (status === 'makeup') makeupCount++;
   }
   const presentRate = totalRecords > 0 ? Math.round(R.rate.attendanceRate(R.rate.attendedCount({ present: presentCount, late: lateCount }), totalRecords) * 10) / 10 : 0;
-  const autoUnits = R.auto.isAutoUnitsSubject(selectedSubject) && R.lesson.lessonProfileOf({ preset: settings.preset }).autoUnits
+  let autoUnits = R.auto.isAutoUnitsSubject(selectedSubject) && R.lesson.lessonProfileOf({ preset: settings.preset }).autoUnits
     ? R.auto.autoUnitsByDate(days.map(d => d.date), schedules.map(s => R.auto.toAutoUnitsSchedule(s))) : null;
+  if (selectedSubject === 'english') {
+    // 2.0 `englishCells` — 영어 반도 빈 칸 기본 시수(강사 보기면 그 강사가 새로 만들 교시들의 합)를 싣는다(보이는 기본값 = 저장될 값).
+    const cells = days.map(d => ({ date: d.date, starts: scopeTeacherId ? R.scopeOwn.scopeInsertSlots({ homeroomTeacherId, slots: axisSlots }, scopeTeacherId, d.date) : null }));
+    const english = await autoUnitsOf(sql, t, R, settings, cells.flatMap(c => (c.starts ? c.starts.map(slotStart => ({ classId, date: c.date, slotStart })) : [{ classId, date: c.date }])));
+    autoUnits = Object.fromEntries(cells.flatMap(c => {
+      const u = c.starts ? c.starts.reduce((sum, start) => sum + (english.get(R.auto.autoUnitsKey(classId, c.date, start)) ?? 1), 0) : english.get(R.auto.autoUnitsKey(classId, c.date));
+      return u === undefined || u === 1 ? [] : [[c.date, u]];
+    }));
+  }
   return {
     ...base, classDows, students, marks, notes, units, slots, ...(ownDateSet ? { ownDates: [...ownDateSet] } : {}), dayAxis, derived, derivedActive,
     ...(autoUnits ? { autoUnits } : {}), ...(Object.keys(resv).length ? { reservations: resv } : {}), ...(Object.keys(splitView.marks).length ? { splits: splitView.marks } : {}),
@@ -636,6 +650,9 @@ export const screen = {
         holidayLine: holiday ? hubHolidayLine(R, hubTodayLabel(today), holiday) : null, noClassesLine: R.i18n.sheetTf('ko', 'att.hub.noClasses', { date: hubTodayLabel(today) }), todayPre: R.i18n.sheetTf('ko', 'att.hub.today.a', { date: hubTodayLabel(today) }) };
     }
     const grid = !hubShown && !sheetEmpty ? buildGridModel(R, { groups: allGroups, days: visibleDays, ordered: orderedRows, holidays, showGroups, today, eieOn }) : null;
+    // 2단계 — 저장하는 사람(출결 '전체' 권한 직원)과 강사 전체 보기의 몫 범위(2.0 `attendanceScope`: 그 강사 반만 · 보강 묶음 제외).
+    const actors = grid ? await actorsOf(sql, t, R, settings) : [];
+    const scope = mode === 'teacher' && effectiveTeacher ? { teacherId: effectiveTeacher, classIds: teacherClasses.map(c => c.id) } : null;
     return {
       asOf: today, month, monthLabel: R.i18n.sheetMonthLabel(month, `${month.slice(0, 4)}년 ${Number(month.slice(5, 7))}월`, 'ko'), prevMonth: shiftMonth(month, -1), nextMonth: shiftMonth(month, 1), currentMonth: current,
       relation: month === current ? 'current' : month < current ? 'past' : 'future', L,
@@ -646,6 +663,7 @@ export const screen = {
       period: { mode: periodMode, label: R.windowLabel.periodWindowLabel(matrix.window, 'ko'), disabledReason: mode === 'teacher' ? L['att.period.disabledTeacher'] : !effectiveClassId ? L['att.period.disabledNoClass'] : null },
       selectedClassLabel: selectedClassLabel ?? null, scopeChip: mode === 'teacher' && allGroups.length > 0, notices,
       stats: { totalStudents, ...statsCount, rate: R.totals.rateDecimal(statsCount) },
+      actors: actors.map(a => ({ id: a.id, name: a.name, roleLabel: R.roles.ROLE_LABEL?.[a.role] ?? '' })), scope, popover: popoverLabels(R),
       hub, empty: !hubShown && sheetEmpty ? { title: R.i18n.sheetT('ko', mode === 'teacher' ? 'att.empty.teacher' : 'att.empty.class'), desc: L['att.empty.desc'] } : null, grid,
       substitute: substituteCells.length ? { title: R.i18n.sheetTf('ko', 'att.sub.title', { n: substituteCells.length, units: R.units.formatSessionUnits(substituteCells.reduce((s, c) => s + c.units, 0)) }),
         items: substituteCells.slice(0, 24).map(c => `${Number(c.date.slice(5, 7))}/${Number(c.date.slice(8, 10))} · ${c.className || '—'} · ${c.studentName || '—'} · ${R.attLabel.attendanceLabelOf(c.status, 'ko') ?? c.status} ${R.units.formatSessionUnits(c.units)}`),
@@ -700,7 +718,9 @@ function buildGridModel(R, { groups, days, ordered, holidays, showGroups, today,
       return { x: reservedShown ? '' : display.text, k: k(reservedShown ? R.reserve.RESERVED_CELL_CLASS : display.className), ...(display.style?.background ? { bg: display.style.background } : {}),
         ...(shownNote ? { m: 1 } : {}), ...(reservedShown ? { rv: 1 } : {}), ...(tip ? { tip } : {}), ...(splitMarks[d.date] ? { sp: splitMarks[d.date].dir } : {}),
         ...(b ? { b: { align: b.align, list: b.badges.map(x => ({ label: R.span.badgeLabelOf(x.kind, 'ko'), k: k(R.cell.BADGE_TONE[x.kind]) })) } } : {}),
-        ...(status ? { s: status } : {}), ...(u != null ? { u } : {}), ...(derived ? { d: 1 } : {}), ...(day ? { n: day.count } : {}) };
+        ...(status ? { s: status } : {}), ...(u != null ? { u } : {}), ...(derived ? { d: 1 } : {}), ...(day ? { n: day.count } : {}),
+        ...(shownNote ? { nt: shownNote, ...(shownNote !== note ? { nm: 1 } : {}) } : {}), ...(reservation ? { rs: { span: R.reserve.reservationDetail({ ...reservation, makeupDate: d.date }, { createdByName: reservation.createdByName }) } } : {}),
+        ...(m.autoUnits?.[d.date] !== undefined && !status ? { au: m.autoUnits[d.date] } : {}) };
     });
     const schoolGrade = R.school.schoolGradeLabel(s.school, s.grade) || '';
     return { key: R.grid.rowKey(g.classId, s.id), classId: g.classId, studentId: s.id, name: s.name, tone: k(nameTone ? R.studentTone.VIVID_STUDENT_TONE_STICKY[nameTone] : 'text-foreground bg-card'),
@@ -726,6 +746,13 @@ function buildGridModel(R, { groups, days, ordered, holidays, showGroups, today,
     days: Object.fromEntries(Object.entries(totals.dayUnits).map(([d, u]) => [d, R.suffix.formatUnitsWithSuffix(u, null)])) }, legend };
 }
 
+/** 칸 팝오버 문구 — 2.0 사전(`att.pop.*`)·상태 표기 그대로. */
+function popoverLabels(R) {
+  const keys = ['att.pop.aria', 'att.pop.reserve', 'att.pop.reserveHint', 'att.pop.reserved', 'att.pop.reservedTip', 'att.pop.unitsPh', 'att.pop.unitsPhAuto', 'att.pop.unitsAria', 'att.pop.unitsTitle',
+    'att.pop.notePh', 'att.pop.save', 'att.pop.pickFirst', 'att.pop.clear', 'att.pop.saving', 'att.pop.saveNote', 'att.pop.noteAnytime', 'att.pop.noRecord'];
+  return { L: Object.fromEntries(keys.map(k => [k, R.i18n.sheetT('ko', k)])), statuses: ['present', 'absent', 'late', 'early_leave', 'makeup'].map(st => ({ value: st, label: R.cell.statusTextOf(st, 'ko'), tone: R.cell.STATUS_TONE[st] })) };
+}
+
 /** 허브 '오늘' 표기 — 2.0은 `Intl.DateTimeFormat('ko-KR', { timeZone: 'Asia/Seoul', month:'long', day:'numeric', weekday:'short' })`(복사본 기준일로). */
 const hubTodayLabel = ymd => new Intl.DateTimeFormat('ko-KR', { timeZone: 'Asia/Seoul', month: 'long', day: 'numeric', weekday: 'short' }).format(new Date(`${ymd}T12:00:00+09:00`));
 function hubHolidayLine(R, date, holiday) {
@@ -735,4 +762,206 @@ function hubHolidayLine(R, date, holiday) {
   return head + (a.students > 0 ? R.i18n.sheetTf('ko', 'att.hub.holiday.recorded', { students: a.students, classes: a.classes }) : '') + (a.reservations > 0 ? R.i18n.sheetTf('ko', 'att.hub.holiday.reserved', { n: a.reservations }) : '');
 }
 
-export const __test = { readProcessing, readClassAxis, readTransitions, buildGridModel };
+// ── 2단계: 칸 저장 = 2.0 `setAttendanceCell`(features/attendance/server/actions.ts) ─────────────────────────────
+// 원장 2026-10-28 "연습용이므로 모두 docker" — 같은 표(attendance_records)·같은 칸·같은 감사로그(attendance_cell · attendance_note ·
+// attendance_clear)를 Docker 복사본에. 저장하는 사람(actor)은 화면에서 고른 '출결 전체 권한' 직원(2.0 권한 표 그대로), 감사로그
+// metadata.via = '3.0 연습 복사본'. 월별 출석부의 칸은 교시를 지정하지 않으므로(slotStart 없음) 2.0의 '그날 칸' 갈래만 탄다.
+// 2.0과 다른 점(이유를 화면·시험이 함께 적는다):
+//  · 보강 예약(예정·이행)이 걸린 칸은 저장하지 않는다 — 2.0은 같은 저장에서 예약 이행(결석 칸 메모·시수)까지 바꾸는데 그 갈래를 옮기지 않았다.
+//  · 알림 벨(반 출결 완료·결석 확인·미출결 → 출석)은 만들지 않는다 — 저장 뒤 따로 도는 알림이라 연습 복사본에선 끈다.
+const VIA = '3.0 연습 복사본';
+const STATUSES = ['present', 'absent', 'late', 'excused', 'makeup', 'early_leave'];
+const bad = () => new V2Error(400, 'invalid_request', '입력 값을 확인해 주세요.');
+function cellBody(raw) {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw bad();
+  for (const k of ['actor', 'studentId', 'classId']) if (typeof raw[k] !== 'string' || !UUID.test(raw[k])) throw bad();
+  if (typeof raw.date !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(raw.date)) throw bad();
+  const optStr = (v, max) => { if (v === undefined) return undefined; if (typeof v !== 'string' || v.length > max) throw bad(); return v; };
+  if (raw.status !== undefined && raw.status !== null && !STATUSES.includes(raw.status)) throw new V2Error(400, 'invalid_status', '잘못된 상태입니다');
+  if (raw.scopeTeacherId !== undefined && raw.scopeTeacherId !== null && (typeof raw.scopeTeacherId !== 'string' || !UUID.test(raw.scopeTeacherId))) throw bad();
+  if (raw.noteOnly !== undefined && typeof raw.noteOnly !== 'boolean') throw bad();
+  return { actor: raw.actor, studentId: raw.studentId, classId: raw.classId, sessionDate: raw.date, status: raw.status ?? null, typed: optStr(raw.typed, 8),
+    units: optStr(raw.units, 10), note: raw.note === null ? null : optStr(raw.note, 2000), noteOnly: raw.noteOnly === true, scopeTeacherId: raw.scopeTeacherId ?? null };
+}
+
+/** 저장할 수 있는 사람 — 출결 '전체' 권한(2.0 권한 표: 역할 기본 + 학원 설정 덮어쓰기 + 개인 예외). 운영자 계정은 뺀다. */
+async function actorsOf(sql, t, R, settings) {
+  const [users, supers] = await Promise.all([
+    sql`select id::text id, display_name, system_role::text role from public.users where tenant_id=${t} and status='active' and display_name is not null order by display_name`,
+    sql`select id::text id from public.super_admins`.catch(() => []),
+  ]);
+  const operators = new Set(supers.map(s => s.id)), base = R.perms.resolveMatrix(settings.permissions?.overrides ?? []), userOverrides = settings.permissions?.userOverrides ?? [];
+  return users.filter(u => !operators.has(u.id) && R.perms.accessLevel(u.role, 'attendance', R.perms.applyUserOverrides(base, u.id, u.role, userOverrides)) === 'full')
+    .map(u => ({ id: u.id, name: u.display_name, role: u.role }));
+}
+
+/** 이 사람이 그날 이 반을 가르치나 → recorded_via('teacher'|'desk') — 2.0 `resolveWriteVia`(담당 반 ∪ 그날 위임 ∪ 그날 교시 담당 ∪ JJ 담당). */
+async function writeViaOf(sql, t, R, settings, actorId, classId, date) {
+  const dow = R.axis.axisDowOf(date);
+  const [own, dele, slot] = await Promise.all([
+    sql`select 1 from public.classes where tenant_id=${t} and id=${classId} and teacher_id=${actorId}`,
+    sql`select from_date::text from_date, to_date::text to_date, revoked_at from public.class_delegations where tenant_id=${t} and class_id=${classId} and delegate_user_id=${actorId} and revoked_at is null and from_date<=${date} and to_date>=${date}`,
+    sql`select 1 from public.class_schedules where tenant_id=${t} and class_id=${classId} and teacher_id=${actorId} and valid_from<=${date} and (valid_to is null or valid_to>=${date}) limit 1`,
+  ]);
+  let teaches = own.length > 0 || slot.length > 0 || dele.some(d => R.delegWin.isDelegationActiveOn({ fromDate: d.from_date, toDate: d.to_date, revokedAt: d.revoked_at }, date));
+  if (!teaches && dow && (settings.permissions?.specialAccess?.jjReportManagerIds ?? []).includes(actorId)) {
+    const jj = await sql`select teacher_id, slot_teacher_label, valid_from::text valid_from, valid_to::text valid_to from public.class_schedules where tenant_id=${t} and class_id=${classId} and day_of_week::text=${dow} and teacher_id is null and slot_teacher_label is not null`;
+    teaches = jj.some(r => { const s = { teacherId: r.teacher_id, slotTeacherLabel: r.slot_teacher_label, validFrom: r.valid_from, validTo: r.valid_to }; return R.axis.isSeatSlot(s) && R.tlabel.specialSlotLabel(r.slot_teacher_label) === R.tlabel.SELF_STUDY_ROOM_LABEL && R.axis.slotLiveOn(s, date); });
+  }
+  return teaches ? 'teacher' : 'desk';
+}
+
+/** 강사 보기 몫 판정 재료(반 담임·그 달 교시) — 2.0 `loadScopeFacts`. */
+async function scopeFactsOf(sql, t, R, classId, date) {
+  const { from, to } = R.date.monthRange(date.slice(0, 7));
+  const [classes, schedules] = await Promise.all([
+    sql`select id, teacher_id from public.classes where tenant_id=${t} and id=${classId}`,
+    sql`select class_id, day_of_week::text day_of_week, start_time::text start_time, teacher_id, slot_teacher_label, valid_from::text valid_from, valid_to::text valid_to
+      from public.class_schedules where tenant_id=${t} and class_id=${classId} and valid_from<=${to} and (valid_to is null or valid_to>=${from}) order by id`,
+  ]);
+  const out = new Map(classes.map(c => [c.id, { homeroomTeacherId: c.teacher_id ?? null, slots: [] }]));
+  for (const r of schedules) out.get(r.class_id)?.slots.push({ dayOfWeek: r.day_of_week, startTime: r.start_time ?? null, teacherId: r.teacher_id ?? null, slotTeacherLabel: r.slot_teacher_label ?? null, validFrom: r.valid_from, validTo: r.valid_to ?? null });
+  return out;
+}
+
+/** 새 칸 자동 시수 — 2.0 server `resolveAutoUnits`(수업 길이 → 시수 · 일반판 학원은 없음). */
+async function autoUnitsOf(sql, t, R, settings, cells) {
+  if (!cells.length || !R.lesson.lessonProfileOf({ preset: settings.preset }).autoUnits) return new Map();
+  const classIds = [...new Set(cells.map(c => c.classId))], dates = [...new Set(cells.map(c => c.date))].sort();
+  const [classes, schedules] = await Promise.all([
+    sql`select id, subject, english_track, class_name from public.classes where tenant_id=${t} and id = any(${classIds}::uuid[])`,
+    sql`select class_id, day_of_week::text day_of_week, start_time::text start_time, end_time::text end_time, valid_from::text valid_from, valid_to::text valid_to, slot_teacher_label, lab_separate
+      from public.class_schedules where tenant_id=${t} and class_id = any(${classIds}::uuid[]) and valid_from<=${dates.at(-1)} and (valid_to is null or valid_to>=${dates[0]}) order by id`,
+  ]);
+  const schedulesOf = new Map();
+  for (const r of schedules) (schedulesOf.get(r.class_id) ?? schedulesOf.set(r.class_id, []).get(r.class_id)).push(R.auto.toAutoUnitsSchedule(r));
+  return R.auto.planAutoUnits(cells, new Map(classes.map(c => [c.id, c.subject ?? null])), schedulesOf,
+    new Map(classes.map(c => [c.id, c.english_track === 'eie' || c.english_track === 'injaewon' ? c.english_track : null])), new Map(classes.map(c => [c.id, c.class_name])));
+}
+
+const audit = (sql, t, actor, action, metadata) => sql`insert into public.audit_logs (tenant_id, actor_id, actor_name, action, target_type, target_label, metadata)
+  values (${t}, ${actor.id}, ${actor.name}, ${action}, 'attendance', null, ${sql.json({ ...metadata, via: VIA })})`;
+const backdated = (date, today) => (date < today ? { backdated: true } : {});
+
+async function setCell(sql, t, b, R) {
+  const [settings, today] = await Promise.all([readSettings(sql, t, R), copyDay()]);
+  const actor = (await actorsOf(sql, t, R, settings)).find(a => a.id === b.actor);
+  if (!actor) throw new V2Error(403, 'actor_not_allowed', '출석 관리 권한이 없습니다');
+  // 격자 타이핑(2.0 `commitBuffer`) — 0 = 결석, 1·1.5·2 = 출석 + 시수. 숫자로 읽을 수 없으면 2.0처럼 아무것도 하지 않는다.
+  let { status, units } = b;
+  if (b.typed !== undefined) { const v = R.typing.commitBuffer(b.typed); if (!v) return { ok: true, skipped: true }; status = v.status; units = v.units; }
+  const { studentId, classId, sessionDate } = b, noteOnly = b.noteOnly, noteProvided = b.note !== undefined, noteVal = (b.note ?? '').trim() || null;
+  if (noteOnly && !noteProvided) throw new V2Error(400, 'note_missing', '메모가 없습니다');
+  const unitsProvided = units !== undefined;
+  let unitsVal = null;
+  if (unitsProvided) { const parsed = R.units.parseSessionUnits(units); if (!parsed.ok) throw new V2Error(400, 'invalid_units', parsed.error); unitsVal = parsed.value; }
+  if (b.scopeTeacherId != null && !R.scopeOwn.isScopeTeacherId(b.scopeTeacherId)) throw new V2Error(400, 'invalid_scope', R.scopedSplit.SCOPE_INVALID_MESSAGE);
+  const [[cls], [stu]] = await Promise.all([sql`select id from public.classes where tenant_id=${t} and id=${classId}`, sql`select id from public.students where tenant_id=${t} and id=${studentId}`]);
+  if (!cls || !stu) throw new V2Error(404, 'not_found', '반 또는 학생을 찾지 못했습니다.');
+  const [resv] = await sql`select 1 from public.makeup_reservations where tenant_id=${t} and class_id=${classId} and student_id=${studentId} and makeup_date=${sessionDate} and status in ('reserved','done') limit 1`;
+  if (resv) throw new V2Error(409, 'reservation_cell', '보강 예약이 걸린 칸입니다 — 2.0은 이 저장에서 예약 이행(결석 칸 메모·시수)까지 함께 바꾸는데, 이 연습 화면은 아직 그 부분이 없어 저장하지 않습니다.');
+  const via = await writeViaOf(sql, t, R, settings, actor.id, classId, sessionDate);
+  const scopeTeacherId = b.scopeTeacherId ?? null;
+  const scopeShareOf = facts => {
+    if (!R.scopeOwn.scopeTeaches(facts.get(classId), scopeTeacherId, sessionDate)) throw new V2Error(409, 'scope_not_taught', R.scopedSplit.SCOPE_NOT_TAUGHT_MESSAGE);
+    return R.scopeOwn.buildScopeShare({ teacherId: scopeTeacherId, facts });
+  };
+  const dayRows = () => sql`select id::text id, slot_start::text slot_start, seat_label, recorded_via, note, taught_by, status::text status, session_units::float8 session_units
+    from public.attendance_records where tenant_id=${t} and class_id=${classId} and student_id=${studentId} and session_date=${sessionDate} order by recorded_at desc, id desc`;
+  const seatOf = share => r => share(classId, sessionDate, r) === 'seat', ownerOf = share => r => share(classId, sessionDate, r) === 'mine';
+  const base = { studentId, classId, date: sessionDate };
+
+  if (noteOnly) {
+    // 메모만 — 상태·시수·입력자는 그대로(돈에 안 닿는다). 고칠 행 = 화면이 그 메모를 보여 준 행(교시별 최신 · 사유 있는 메모 우선).
+    const [rows, facts] = await Promise.all([dayRows(), scopeTeacherId ? scopeFactsOf(sql, t, R, classId, sessionDate) : null]);
+    let candidates, skippedSeatRows = 0;
+    if (scopeTeacherId) {
+      const share = scopeShareOf(facts);
+      if (rows.some(r => share.takenSeat?.(classId, sessionDate, r) === true)) throw new V2Error(409, 'seat_taken', R.ghost.SCOPED_REJECT_MESSAGE.seatTaken);
+      const { write, seat } = R.scopedSplit.splitOutSeatRows(rows, seatOf(share), ownerOf(share));
+      const mine = write.filter(r => share(classId, sessionDate, r) === 'mine'), latest = new Set(R.saveTargets.pickSaveTargets(mine, null).updateIds);
+      candidates = mine.filter(r => latest.has(r.id)); skippedSeatRows = seat.length;
+    } else { const latest = new Set(R.saveTargets.pickSaveTargets(rows, null).updateIds); candidates = rows.filter(r => latest.has(r.id)); }
+    const chosen = R.proxy.noteTargetRow(candidates), ids = R.proxy.sameNoteRows(candidates, chosen).map(r => r.id);
+    if (!chosen) throw new V2Error(409, 'no_record', '그날 출결 기록이 없어 메모만 남길 수 없습니다 — 먼저 출결을 입력하세요');
+    await sql`update public.attendance_records set note=${noteVal} where id = any(${ids.length > 1 ? ids : [chosen.id]}::uuid[])`;
+    await audit(sql, t, actor, 'attendance_note', { ...base, cleared: noteVal === null, ...(scopeTeacherId ? { scopeTeacherId } : {}), ...(skippedSeatRows > 0 ? { skippedSeatRows } : {}), ...backdated(sessionDate, today) });
+    return { ok: true };
+  }
+
+  if (status === null) {
+    // 지우기 — 보강 보고서가 가리키는 반의 칸은 지우지 않는다(2.0 `makeupAnchorDeleteBlock`).
+    const [anchor] = await sql`select classnote_status, classnote_sent_at from public.lesson_reports where tenant_id=${t} and makeup and class_id is null and student_id=${studentId} and makeup_class_id=${classId} and report_date=${sessionDate} limit 1`;
+    if (anchor) throw new V2Error(409, 'makeup_anchor', anchor.classnote_sent_at || anchor.classnote_status === 'success'
+      ? '이 칸은 학부모에게 발송된 보강 보고서의 반입니다 — 지울 수 없습니다(보고서와 출석부 반이 갈라집니다)'
+      : "이 칸은 보강 보고서가 가리키는 반입니다 — 원스크린에서 '보강 빼기'로 보고서와 함께 지우거나, 보강 반을 바꿔 주세요");
+    let skippedSeatRows = 0;
+    if (scopeTeacherId) {
+      const [rows, facts] = await Promise.all([dayRows(), scopeFactsOf(sql, t, R, classId, sessionDate)]);
+      const share = scopeShareOf(facts), byId = new Map(rows.map(r => [r.id, r]));
+      const plan = R.ghost.planScopedDay({ targets: R.saveTargets.pickSaveTargets(rows, null).updateIds.map(id => byId.get(id)), share: r => share(classId, sessionDate, r), clearing: true, taken: r => share.takenSeat?.(classId, sessionDate, r) === true });
+      if (plan.kind === 'reject') throw new V2Error(409, plan.reason, R.ghost.SCOPED_REJECT_MESSAGE[plan.reason]);
+      if (plan.kind === 'skip') return { ok: true };
+      const { write, seat } = R.scopedSplit.splitOutSeatRows(rows, seatOf(share), ownerOf(share)); skippedSeatRows = seat.length;
+      if (write.length) await sql`delete from public.attendance_records where id = any(${write.map(r => r.id)}::uuid[])`;
+    } else await sql`delete from public.attendance_records where tenant_id=${t} and class_id=${classId} and student_id=${studentId} and session_date=${sessionDate}`;
+    await audit(sql, t, actor, 'attendance_clear', { ...base, ...(scopeTeacherId ? { scopeTeacherId } : {}), ...(skippedSeatRows > 0 ? { skippedSeatRows } : {}), ...backdated(sessionDate, today) });
+    return { ok: true };
+  }
+
+  // 쓰기 — 그날 행(정정 이력 포함, 최신 먼저)에서 교시별 최신을 대상으로(2.0 `pickSaveTargets`).
+  const [rows, scopeFacts] = await Promise.all([dayRows(), scopeTeacherId ? scopeFactsOf(sql, t, R, classId, sessionDate) : null]);
+  const share = scopeTeacherId ? scopeShareOf(scopeFacts) : null;
+  const { updateIds } = R.saveTargets.pickSaveTargets(rows, null), rowById = new Map(rows.map(r => [r.id, r]));
+  const dayTargets = updateIds.map(id => ({ id, slot_start: rowById.get(id)?.slot_start ?? null, seat_label: rowById.get(id)?.seat_label ?? null, recorded_via: rowById.get(id)?.recorded_via ?? null, taught_by: rowById.get(id)?.taught_by ?? null }));
+  const split = R.scopedSplit.splitOutSeatRows(dayTargets, share ? seatOf(share) : null, share ? ownerOf(share) : null);
+  const scopedPlan = share ? R.ghost.planScopedDay({ targets: dayTargets, share: r => share(classId, sessionDate, r), clearing: false, ghostIntent: false, taken: r => share.takenSeat?.(classId, sessionDate, r) === true }) : null;
+  if (scopedPlan?.kind === 'reject') throw new V2Error(409, scopedPlan.reason, R.ghost.SCOPED_REJECT_MESSAGE[scopedPlan.reason]);
+  const createOwn = scopedPlan?.kind === 'create', writeIds = createOwn ? [] : split.write.map(r => r.id);
+  const targetIds = new Set(writeIds), prevRow = rows.find(r => targetIds.has(r.id)), prevStatus = prevRow?.status ?? null;
+  const overwrote = !createOwn && updateIds.length > 0;
+  const unitsArg = unitsProvided ? unitsVal ?? (R.units.isDefaultUnitsRaw(units) ? null : 1) : undefined;
+  let unitsAudit = null, insertedAuto, createdSlots, createdDefaultTotal;
+  const ownInsertSlots = !overwrote && share ? R.scopeOwn.scopeInsertSlots(scopeFacts.get(classId), scopeTeacherId, sessionDate) : null;
+  if (overwrote) {
+    const dayPlan = R.scopedSplit.planDayCellUnits({ targets: dayTargets, owns: share ? r => share(classId, sessionDate, r) === 'mine' : null, unitsVal: unitsArg });
+    if (!dayPlan.ok) {
+      if (dayPlan.reason === 'noneOwned') throw new V2Error(409, 'none_owned', R.cell.NOT_MINE_MESSAGE);
+      throw new V2Error(409, 'indivisible', `이 날은 교시가 ${dayPlan.slots}개라 시수 ${unitsVal}을(를) 교시별로 나눌 수 없습니다 — 더 큰 값을 넣거나 교시별로 입력해 주세요.`);
+    }
+    if (unitsProvided) unitsAudit = R.unitsAudit.unitsAuditFields({ rows: [...dayPlan.units.keys()].map(id => ({ status: String(rowById.get(id)?.status ?? ''), units: rowById.get(id)?.session_units ?? null })), status, unitsVal: unitsArg, spread: 'split' });
+    const groups = R.scopedSplit.groupByPlannedUnits(writeIds, dayPlan.units);
+    for (const g of groups.length ? groups : []) {
+      if (g.units === undefined) await sql`update public.attendance_records set status=${status}, recorded_by=${actor.id}, recorded_at=now(), recorded_via=${via} ${noteProvided ? sql`, note=${noteVal}` : sql``} where id = any(${g.ids}::uuid[])`;
+      else await sql`update public.attendance_records set status=${status}, recorded_by=${actor.id}, recorded_at=now(), recorded_via=${via}, session_units=${g.units} ${noteProvided ? sql`, note=${noteVal}` : sql``} where id = any(${g.ids}::uuid[])`;
+    }
+  } else if (ownInsertSlots) {
+    // 강사 보기 · 그날 교시를 다른 선생님과 나눠 맡는 날 — 제 교시마다 한 행(2.0 그대로).
+    const wantsAuto = R.auto.autoUnitsApply({ rawUnits: units, slotStart: null, status });
+    const auto = wantsAuto ? await autoUnitsOf(sql, t, R, settings, ownInsertSlots.map(slotStart => ({ classId, date: sessionDate, slotStart }))) : new Map();
+    const plan = R.scopedSplit.planDayCellUnits({ targets: ownInsertSlots.map((start, i) => ({ id: `new-${i}`, slot_start: start })), owns: null, unitsVal: unitsArg });
+    if (!plan.ok) throw new V2Error(409, 'indivisible', `이 날은 교시가 ${ownInsertSlots.length}개라 시수 ${unitsVal}을(를) 교시별로 나눌 수 없습니다 — 더 큰 값을 넣거나 교시별로 입력해 주세요.`);
+    for (const [i, start] of ownInsertSlots.entries()) {
+      const u = wantsAuto ? auto.get(R.auto.autoUnitsKey(classId, sessionDate, start)) ?? null : plan.units.get(`new-${i}`) ?? null;
+      await sql`insert into public.attendance_records (tenant_id, class_id, student_id, session_date, slot_start, status, note, session_units, recorded_by, recorded_via)
+        values (${t}, ${classId}, ${studentId}, ${sessionDate}, ${start}, ${status}, ${noteProvided ? noteVal : null}, ${u}, ${actor.id}, ${via})`;
+    }
+    createdSlots = ownInsertSlots;
+    if (wantsAuto) createdDefaultTotal = ownInsertSlots.reduce((sum, start) => sum + (auto.get(R.auto.autoUnitsKey(classId, sessionDate, start)) ?? 1), 0);
+  } else {
+    const lookedUp = R.auto.autoUnitsApply({ rawUnits: units, slotStart: null, status }) ? ((await autoUnitsOf(sql, t, R, settings, [{ classId, date: sessionDate, slotStart: null }])).get(R.auto.autoUnitsKey(classId, sessionDate, null)) ?? null) : undefined;
+    const ins = R.auto.newRowUnits(units, unitsVal, lookedUp);
+    insertedAuto = ins.auto === undefined ? undefined : ins.units;
+    await sql`insert into public.attendance_records (tenant_id, class_id, student_id, session_date, slot_start, status, note, session_units, recorded_by, recorded_via)
+      values (${t}, ${classId}, ${studentId}, ${sessionDate}, null, ${status}, ${noteProvided ? noteVal : null}, ${ins.units}, ${actor.id}, ${via})`;
+  }
+  await audit(sql, t, actor, 'attendance_cell', { ...base, status, ...(overwrote ? { overwrote: true, prevStatus } : { created: true }), ...(unitsProvided ? { units: unitsVal } : {}),
+    ...(unitsAudit ? { prevUnits: unitsAudit.prevUnits, nextUnits: unitsAudit.nextUnits } : {}), ...(insertedAuto != null ? { autoUnits: insertedAuto } : {}),
+    ...(scopeTeacherId ? { scopeTeacherId } : {}), ...(split.seat.length > 0 ? { skippedSeatRows: split.seat.length } : {}), ...(createdSlots ? { createdSlots } : {}), ...backdated(sessionDate, today) });
+  if (createdDefaultTotal !== undefined) return { ok: true, autoUnits: createdDefaultTotal };
+  return insertedAuto !== undefined ? { ok: true, autoUnits: insertedAuto } : { ok: true };
+}
+
+screen.actions = { cell: { validate: cellBody, run: async ({ sql, body, tenantId, importV2 }) => setCell(sql, tenantId, body, await loadRules(importV2)) } };
+
+export const __test = { readProcessing, readClassAxis, readTransitions, buildGridModel, actorsOf };
