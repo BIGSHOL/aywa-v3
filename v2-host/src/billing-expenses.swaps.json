@@ -1,0 +1,24 @@
+{
+ "panel": [
+  [
+   "import {\n  getExpensesForMonth,\n  getExpenseMonths,\n  summarizeExpenses,\n} from \"@/features/billing/server/expense-queries\";\n",
+   "import type { ExpensesPanelData } from \"./billing-types\";\n"
+  ],
+  [
+   "import { BillingMonthNav } from \"./billing-month-nav\";\nimport { ExpensesTable } from \"./expenses-table\";\n",
+   "import { BillingMonthNav } from \"@/app/(shell)/billing/_components/billing-month-nav\";\nimport { ExpensesTable } from \"@/app/(shell)/billing/_components/expenses-table\";\n"
+  ],
+  [
+   "export async function ExpensesPanel({ sp, canImport = false }: { sp: Sp; canImport?: boolean }) {",
+   "export function ExpensesPanel({ sp, canImport = false, data }: { sp: Sp; canImport?: boolean; data: ExpensesPanelData }) {"
+  ],
+  [
+   "  const [allRows, months] = await Promise.all([getExpensesForMonth(period), getExpenseMonths()]);\n",
+   "  const [allRows, months] = [data.rows, data.months];\n"
+  ],
+  [
+   "  const summary = summarizeExpenses(allRows, period);\n",
+   "  const summary = data.summary; // 이 달 전체 집계 = 서버가 2.0 summarizeExpenses 원문으로(server-only 파일 안의 순수 함수)\n"
+  ]
+ ]
+}

@@ -38,7 +38,9 @@ export async function readBillingViewers(sql, t, R, env) {
     // 2.0 getUserPermMatrix 순서: 역할 재정의 → 개인 예외 → 꺼진 기능(모듈) 캡(급여 기능이 꺼진 학원은 강사 정산 '없음').
     const m = R.modules.capDisabledModules(R.perms.applyUserOverrides(matrix, u.id, u.role, userOverrides), env.disabled), level = menu => R.perms.accessLevel(u.role, menu, m);
     return { id: u.id, name: u.display_name, systemRole: u.role, roleLabel: R.ROLE_LABEL[u.role] ?? '',
-      billing: level('billing'), payroll: level('payroll_settings'), owner: level('owner') };
+      billing: level('billing'), payroll: level('payroll_settings'), owner: level('owner'),
+      // 지출결의서 쓰기 범위(2.0 expenseWriteScope) — 수납 쓰기 = 전건, 아니면 지출결의서 쓰기 = 본인 것만.
+      expenseRequests: level('expense_requests') };
   }).filter(u => u.billing !== 'none' || u.payroll !== 'none')
     .sort((a, b) => (RANK.includes(a.systemRole) ? RANK.indexOf(a.systemRole) : RANK.length) - (RANK.includes(b.systemRole) ? RANK.indexOf(b.systemRole) : RANK.length) || a.name.localeCompare(b.name, 'ko'));
 }
@@ -64,6 +66,7 @@ export async function readBranding(sql, t, R) {
 
 // ── 저장 도구 ──────────────────────────────────────────────────────────────────────────────────────────────────────
 export const VIA = '3.0 연습 복사본';
+export const UUID_RE = UUID;
 export const badRequest = () => new V2Error(400, 'invalid_request', '입력 값을 확인해 주세요.');
 /** 2.0 logAction — 감사로그(actor = 보는 사람 · metadata.via = 연습 복사본). */
 export const audit = (sql, t, actor, action, targetType, metadata, targetLabel = null) => sql`insert into public.audit_logs (tenant_id, actor_id, actor_name, action, target_type, target_label, metadata)

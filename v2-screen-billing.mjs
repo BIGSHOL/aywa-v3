@@ -4,13 +4,16 @@
 //    회차 정산 모듈(session_billing) · 동기화 배지(MakeeduSyncBadge — getMakeeduSyncState + 학원 설정 열람 권한)
 //  · 수납 면(billing-content.tsx): getInvoicesForPeriod · getAvailablePeriods · getStudentOptions · getMakeeduSyncState("invoices") · canWriteTenant
 //  · 교재 면(textbooks-face.tsx): 목록(textbooks-panel.tsx) · 교재 단가표(catalog-panel.tsx) — v2-billing-textbooks.mjs
-//  · 다른 면(지출 · 수강료 계산기 · 회차 확정 · 환불 요청서 · 강사 정산)은 다음 단계 — 지금은 '아직 지원하지 않는 기능'.
+//  · 지출 면(expenses-panel.tsx) · 지출결의서 상세(expenses/[id]/page.tsx) — v2-billing-expenses.mjs
+//  · 다른 면(수강료 계산기 · 회차 확정 · 환불 요청서 · 강사 정산)은 다음 단계 — 지금은 '아직 지원하지 않는 기능'.
 // 사람마다 보이는 것이 다르다 — '보는 사람'을 고르고(운영자 계정 제외 · 원장 먼저) 그 사람의 권한 표로 2.0과 같게 낸다(v2-billing-common.mjs).
 // 🔴 급여(강사 정산)는 급여 열람 게이트(payroll_settings · 급여 기능 켜짐)를 지난 사람에게만 싣는다.
 //
 // 2.0 서버 액션 ↔ actions 대응표(이름·인자·반환 = 2.0 그대로, 저장하는 사람 = 보는 사람):
 //  features/billing/server/textbook-actions.ts        toggleTextbookCheck(_prev, fd{id, field, checked}) · createTextbookOrder(_prev, fd) ·
 //                                                      updateTextbookOrder(_prev, fd{id,…}) · deleteTextbookOrder(_prev, fd{id}) → TextbookState
+//  features/billing/server/expense-actions.ts         createExpense · updateExpense · deleteExpense · toggleExpenseApproval · duplicateExpense ·
+//                                                      setExpenseReceiptType(_prev, fd) → ExpenseState (증빙 파일 올리기·열기·지우기 = 받지 않음)
 //  features/billing/server/textbook-notice-actions.ts  saveMyTextbookMent(text) → { ok } · loadMyTextbookMent() = 읽기(GET ?ment=1 → { ment })
 //
 // 호스트에 붙일 때(v2-host/src/billing.tsx · billing-page.tsx · billing-sync-badge.tsx):
@@ -24,6 +27,7 @@ import { UUID } from './v2-mcs-core.mjs';
 import { loadBillingRules, readSettings, readBillingViewers, billingEditorsOf, readSyncState, resolveBillingTab } from './v2-billing-common.mjs';
 import { readInvoicesForPeriod, readAvailablePeriods, readStudentOptions } from './v2-billing-invoices.mjs';
 import { readTextbooksFace, loadMyTextbookMent, textbookFaceActions } from './v2-billing-textbooks.mjs';
+import { readExpensesFace, readExpenseById, loadExpenseRules, expenseActions } from './v2-billing-expenses.mjs';
 
 const ID = 'billing';
 const PERIOD = /^\d{4}-(0[1-9]|1[0-2])$/;
@@ -42,7 +46,7 @@ const PARAMS = {
 export const screen = {
   id: ID, label: '수납관리', order: 9,
   params: PARAMS,
-  actions: { ...textbookFaceActions },
+  actions: { ...textbookFaceActions, ...expenseActions },
   load: async ({ sql, params: sp, tenantId: t, importV2 }) => {
     const R = await loadBillingRules(importV2);
     const env = await readSettings(sql, t, R), viewers = await readBillingViewers(sql, t, R, env);
@@ -60,14 +64,21 @@ export const screen = {
       // MakeeduSyncBadge의 '연동 설정 열기' 링크 = 학원 설정 접근.
       owner: viewer.owner !== 'none',
     };
+    // 하위 주소 — 지출결의서 상세(2.0 expenses/[id]/page.tsx: requireAccess('billing') → getExpenseById → 없으면 notFound).
+    const expenseId = /^\/billing\/expenses\/([0-9a-f-]{36})$/.exec(sp.v2path ?? '')?.[1];
+    if (expenseId) {
+      if (!access.billing) return { ...common, route: 'page', access, page: 'noAccess' };
+      const X = await loadExpenseRules(importV2), expense = await readExpenseById(sql, t, X, expenseId);
+      return { ...common, route: 'page', access, page: expense ? 'expense' : 'notFound', expense };
+    }
     const tab = resolveBillingTab(sp.tab), sessionOn = R.modules.isModuleEnabled(env.disabled, 'session_billing');
     const effectiveTab = (tab === 'payroll' && !access.readSalary) || (!sessionOn && ['sessions', 'verify', 'payroll'].includes(tab)) ? 'billing' : tab;
     const denied = !(tab === 'payroll' ? access.payrollMenu : access.billing) || (effectiveTab !== 'payroll' && !access.billing);
-    if (denied) return { ...common, route: 'page', access, sync: {}, billing: null, textbooks: null };
+    if (denied) return { ...common, route: 'page', access, sync: {}, billing: null, textbooks: null, expenses: null };
     // 동기화 배지(수납 · 교재 면만) — 면이 고르는 도메인.
     const domain = effectiveTab === 'billing' ? 'invoices' : effectiveTab === 'textbooks' ? 'textbook_checks' : null;
     const sync = domain ? { [domain]: await readSyncState(sql, t, R, env, domain) } : {};
-    let billing = null, textbooks = null;
+    let billing = null, textbooks = null, expenses = null;
     if (effectiveTab === 'billing') {
       // billing-content.tsx — period = sp.period ?? 이번 달(2.0 currentPeriod) · sort = sp.sort ?? 'status' · desc = sp.desc === '1'.
       const period = sp.period ?? R.calc.currentPeriod();
@@ -77,6 +88,7 @@ export const screen = {
       ]);
       billing = { monthRows, periods, students, syncState: sync.invoices ?? null, canWriteBilling: access.writeBilling };
     } else if (effectiveTab === 'textbooks') textbooks = await readTextbooksFace(sql, t, R, importV2, sp);
-    return { ...common, route: 'page', access, sync, billing, textbooks };
+    else if (effectiveTab === 'expenses') expenses = await readExpensesFace(sql, t, importV2, sp);
+    return { ...common, route: 'page', access, sync, billing, textbooks, expenses };
   },
 };

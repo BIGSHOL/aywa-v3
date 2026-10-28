@@ -46,15 +46,16 @@ await check('그리기 = 2.0 billing/page.tsx · billing-content.tsx · makeedu-
   }
   // 아직 옮기지 않은 면은 자리표시 — 면 탭은 2.0 그대로.
   const page = lf(await here('./v2-host/src/billing-page.tsx'));
-  assert.equal(page.split('<HostFaceNotReady />').length - 1, 5, '지출 · 계산기 · 환불 · 회차 확정 · 강사 정산');
+  assert.equal(page.split('<HostFaceNotReady />').length - 1, 4, '계산기 · 환불 · 회차 확정 · 강사 정산');
   // 교재 면 = textbooks-face · textbooks-panel · catalog-panel 글자 그대로(billing-textbooks.swaps.json)
   const tb = JSON.parse(await here('./v2-host/src/billing-textbooks.swaps.json'));
   for (const [key, file, mineFile] of [['face', 'textbooks-face.tsx', 'billing-textbooks-face.tsx'], ['panel', 'textbooks-panel.tsx', 'billing-textbooks-panel.tsx'],
-    ['catalog', 'catalog-panel.tsx', 'billing-catalog-panel.tsx']]) {
-    const want = applySwaps(lf(await src(`app/(shell)/billing/_components/${file}`)), tb[key], key), mine = lf(await here(`./v2-host/src/${mineFile}`));
+    ['catalog', 'catalog-panel.tsx', 'billing-catalog-panel.tsx'], ['expenses', 'expenses-panel.tsx', 'billing-expenses-panel.tsx']]) {
+    const swaps = key === 'expenses' ? JSON.parse(await here('./v2-host/src/billing-expenses.swaps.json')).panel : tb[key];
+    const want = applySwaps(lf(await src(`app/(shell)/billing/_components/${file}`)), swaps, key), mine = lf(await here(`./v2-host/src/${mineFile}`));
     assert.ok(mine.endsWith(want), `${mineFile} = 2.0 ${file} + 짝`);
     assert.ok(mine.slice(0, mine.length - want.length).split('\n').filter(Boolean).every(l => l.startsWith('//')), `${mineFile} 앞에는 주석만`);
-    assert.doesNotMatch(want.split('\n').filter(l => !/^\s*(\/\/|\*|\/\*)/.test(l)).join('\n'), /\bawait\b|getCurrentUser|getTenantSettings|resolveBrandingSrc/, `${mineFile}: 서버 호출이 남지 않는다`);
+    assert.doesNotMatch(want.split('\n').filter(l => !/^\s*(\/\/|\*|\/\*)/.test(l)).join('\n'), /\bawait\b|getCurrentUser|getTenantSettings|resolveBrandingSrc|summarizeExpenses\(/, `${mineFile}: 서버 호출이 남지 않는다`);
   }
 });
 
@@ -248,6 +249,81 @@ try {
       });
     } catch (e) { if (e !== ROLL) throw e; }
     assert.equal((await db`select count(*)::int n from public.textbook_orders where tenant_id=${tenantId}`)[0].n, before, '되돌린 뒤 남은 연습 행 0');
+  });
+
+  await check('지출 면 = 그 달 지출 전부(지출일 최신 → id) · 집계 = 2.0 summarizeExpenses 원문 실행 = 독립 SQL(통화별 · 주 통화 분류별) · 지출 달 목록 · 결의서 상세', async () => {
+    for (const period of ['2026-07', '2026-09']) {
+      const e = (await load({ tab: 'expenses', period })).expenses;
+      const raw = await db`select id::text id, currency, category, amount::float8 amount from public.expenses where tenant_id=${tenantId}
+        and expense_date >= ${`${period}-01`}::date and expense_date < (${`${period}-01`}::date + interval '1 month') order by expense_date desc, id`;
+      assert.deepEqual(e.rows.map(r => r.id), raw.map(r => r.id), `${period} 행 · 순서`);
+      const byCur = await db`select coalesce(currency,'KRW') c, count(*)::int n, sum(amount)::float8 total from public.expenses where tenant_id=${tenantId}
+        and expense_date >= ${`${period}-01`}::date and expense_date < (${`${period}-01`}::date + interval '1 month') group by 1 order by n desc, total desc, c`;
+      assert.deepEqual(e.summary.byCurrency.map(c => [c.currency, c.count, Math.round(c.total * 100)]), byCur.map(c => [c.c, c.n, Math.round(c.total * 100)]), `${period} 통화별`);
+      const primary = byCur[0]?.c ?? 'KRW';
+      const cats = raw.filter(r => (r.currency || 'KRW') === primary).reduce((m, r) => m.set(r.category, (m.get(r.category) ?? 0) + r.amount), new Map());
+      assert.deepEqual(e.summary.byCategory.map(c => [c.category, Math.round(c.amount)]), [...cats].sort((a, b) => b[1] - a[1]).map(([k, v]) => [k, Math.round(v)]), `${period} 분류별`);
+      assert.equal(e.summary.count, raw.length);
+    }
+    const base = (await load({ tab: 'expenses' })).expenses;
+    const months = (await db`select distinct to_char(expense_date,'YYYY-MM') m from public.expenses where tenant_id=${tenantId} and expense_date is not null order by 1 desc`).map(r => r.m);
+    assert.deepEqual(base.months, months);
+    // 행 모양 = 2.0 ExpenseRow
+    const type = lf(await src('features/billing/server/expense-queries.ts')), at = type.indexOf('export type ExpenseRow = {'), block = type.slice(at, type.indexOf('};', at));
+    const row = (await load({ tab: 'expenses', period: '2026-07' })).expenses.rows[0];
+    assert.deepEqual(Object.keys(row).sort(), [...block.matchAll(/^\s{2}([a-zA-Z]+):/gm)].map(m => m[1]).sort());
+    const detail = await load({ v2path: `/billing/expenses/${row.id}` });
+    assert.equal(detail.page, 'expense'); assert.deepEqual(detail.expense, row);
+    assert.equal((await load({ v2path: '/billing/expenses/00000000-0000-0000-0000-000000000000' })).page, 'notFound');
+  });
+
+  await check('지출 저장(되돌림) — 등록(작성 결재 자동) · 결재(원장+대표 = 결재 완료 · 해제 방향) · 수정(바뀐 값만 이전값) · 복제 · 증빙 유형 · 삭제 — 문구·감사로그 2.0 그대로 · 감사로그에 계좌번호 없음 · 바깥 요청 0', async () => {
+    const actions = lf(await src('features/billing/server/expense-actions.ts')), mine = lf(await here('./v2-billing-expenses.mjs'));
+    for (const fn of ['createExpense', 'updateExpense', 'deleteExpense', 'toggleExpenseApproval', 'duplicateExpense', 'setExpenseReceiptType', 'guardOwnExpense']) {
+      const at = actions.indexOf(`function ${fn}(`), end = actions.indexOf('\nexport async function', at + 10);
+      for (const m of actions.slice(at, end < 0 ? undefined : end).matchAll(/error: "([^"]+)"|return "([^"]+)"|action: "([a-z_]+)"/g))
+        assert.ok(mine.includes(m[1] ?? m[2] ?? `'${m[3]}'`), `${fn}: ${m[1] ?? m[2] ?? m[3]}`);
+    }
+    const ROLL = new Error('rollback');
+    const before = (await db`select count(*)::int n from public.expenses where tenant_id=${tenantId}`)[0].n;
+    try {
+      await db.begin(async sql => {
+        const [{ q0 }] = await sql`select count(*)::int q0 from net.http_request_queue`;
+        const fd = pairs => ({ $formData: Object.entries(pairs).map(([k, v]) => [k, String(v)]) });
+        const act = (name, args, actor = base.viewer.id) => { const a = M.screen.actions[name]; return a.run({ sql, body: a.validate({ module: 'features/billing/server/expense-actions.ts', actor, args }), tenantId, importV2 }); };
+        const TITLE = '연습 지출 시험';
+        assert.deepEqual(await act('createExpense', [null, fd({ title: ' ', expenseDate: '2026-10-28' })]), { fieldErrors: { title: '항목명을 입력해주세요' } });
+        assert.deepEqual(await act('createExpense', [null, fd({ title: TITLE, expenseDate: '' })]), { fieldErrors: { expenseDate: '지출일을 입력해주세요' } });
+        const lines = JSON.stringify([{ description: '연습', quantity: 2, unitPrice: 1500, vat: false, total: 3000, vendor: '연습상회' }]);
+        assert.deepEqual(await act('createExpense', [null, fd({ title: TITLE, category: '운영비', amount: '3,000', expenseDate: '2026-10-28', lineItems: lines, bankName: '연습은행', accountNumber: '000-0000' })]), { ok: true });
+        const [made] = await sql`select id::text id, author, vendor, category, amount::float8 amount, currency, approval_checks, created_by::text created_by from public.expenses where tenant_id=${tenantId} and title=${TITLE}`;
+        assert.deepEqual([made.author, made.vendor, made.category, made.amount, made.currency, made.created_by], [base.viewer.name, '연습상회', '운영비', 3000, 'KRW', base.viewer.id]);
+        assert.equal(made.approval_checks.author.checked, true);
+        for (const role of ['director', 'ceo']) assert.deepEqual(await act('toggleExpenseApproval', [null, fd({ id: made.id, role, checked: 'true' })]), { ok: true });
+        assert.equal((await sql`select approval_status s from public.expenses where id=${made.id}`)[0].s, 'approved');
+        assert.deepEqual(await act('toggleExpenseApproval', [null, fd({ id: made.id, role: 'ceo', checked: 'false' })]), { ok: true });
+        assert.equal((await sql`select approval_status s from public.expenses where id=${made.id}`)[0].s, 'pending');
+        assert.deepEqual(await act('toggleExpenseApproval', [null, fd({ id: made.id, role: 'boss', checked: 'true' })]), { error: '잘못된 결재 역할입니다' });
+        assert.deepEqual(await act('updateExpense', [null, fd({ id: made.id, title: TITLE, category: '운영비', amount: '4500', expenseDate: '2026-10-28', lineItems: lines })]), { ok: true });
+        assert.deepEqual(await act('setExpenseReceiptType', [null, fd({ id: made.id, receiptType: '영수증' })]), { ok: true });
+        assert.deepEqual(await act('setExpenseReceiptType', [null, fd({ id: made.id, receiptType: '편지' })]), { error: '잘못된 증빙 유형입니다' });
+        assert.deepEqual(await act('duplicateExpense', [null, fd({ id: made.id })]), { ok: true });
+        const copies = await sql`select id::text id, amount::float8 amount, approval_status, expense_date::text d from public.expenses where tenant_id=${tenantId} and title=${TITLE} and id <> ${made.id}`;
+        assert.equal(copies.length, 1); assert.deepEqual([copies[0].amount, copies[0].approval_status], [4500, 'pending']);
+        for (const id of [made.id, copies[0].id]) assert.deepEqual(await act('deleteExpense', [null, fd({ id })]), { ok: true });
+        assert.equal((await sql`select count(*)::int n from public.expenses where tenant_id=${tenantId} and title=${TITLE}`)[0].n, 0);
+        const logs = await sql`select action, metadata from public.audit_logs where tenant_id=${tenantId} and created_at = now()`;
+        assert.deepEqual(logs.map(l => l.action).sort(), ['expense_approval', 'expense_approval', 'expense_approval', 'expense_create', 'expense_delete', 'expense_delete', 'expense_duplicate', 'expense_receipt_type', 'expense_update']);
+        assert.ok(logs.every(l => l.metadata.via === '3.0 연습 복사본'));
+        assert.ok(!JSON.stringify(logs).includes('000-0000') && !JSON.stringify(logs).includes('연습은행'), '감사로그에 계좌 없음');
+        assert.equal(logs.find(l => l.action === 'expense_update').metadata.amountBefore, 3000, '바뀐 값만 이전값');
+        assert.deepEqual(logs.filter(l => l.action === 'expense_approval').map(l => l.metadata.direction).sort(), ['승인', '승인', '해제']);
+        const [{ q1 }] = await sql`select count(*)::int q1 from net.http_request_queue`;
+        assert.equal(q1, q0, '바깥 요청 0');
+        throw ROLL;
+      });
+    } catch (e) { if (e !== ROLL) throw e; }
+    assert.equal((await db`select count(*)::int n from public.expenses where tenant_id=${tenantId}`)[0].n, before, '되돌린 뒤 남은 연습 행 0');
   });
 } finally { await db.end(); }
 

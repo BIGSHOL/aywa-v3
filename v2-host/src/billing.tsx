@@ -9,7 +9,9 @@ import { OperationsProvider } from '@/features/owner/operations-context';
 import { EmbedProvider } from '@/components/workspace/embed-context';
 import { hostRefresh, onHostRefresh } from '../shims/host-nav';
 import { useHostSearch } from '../shims/next-navigation';
-import { hostActor, registerHostHandler, setHostEditors, type HostEditor } from '../shims/server-action';
+import { VIEW_ONLY, hostActor, registerHostHandler, setHostEditors, type HostEditor } from '../shims/server-action';
+import { ExpenseDocument } from '@/app/(shell)/billing/_components/expense-document';
+import type { ExpenseRow } from '@/features/billing/server/expense-queries';
 import { HostFrame, HostMessage } from './host-frame';
 import { BillingPage, type BillingPageData } from './billing-page';
 import { DEFAULT_TEXTBOOK_MENT } from '@/features/billing/textbook-notice';
@@ -38,6 +40,11 @@ const TEXTBOOK = 'features/billing/server/textbook-actions.ts', NOTICE = 'featur
 for (const name of ['toggleTextbookCheck', 'createTextbookOrder', 'updateTextbookOrder', 'deleteTextbookOrder']) saving(TEXTBOOK, name, true);
 // 내 학부모 메시지 — 중간저장(2.0도 다시 그리지 않는다) · 읽기는 같은 화면의 GET(ment). 못 읽으면 기본 문구(2.0 loadMyTextbookMent의 빈 값 자리).
 saving(NOTICE, 'saveMyTextbookMent', false);
+// 지출 — 증빙 파일(올리기·열기·지우기)은 파일 저장소라 받지 않는다(보내지 않고 '아직 지원하지 않는 저장').
+const EXPENSE = 'features/billing/server/expense-actions.ts';
+for (const name of ['createExpense', 'updateExpense', 'deleteExpense', 'toggleExpenseApproval', 'duplicateExpense', 'setExpenseReceiptType']) saving(EXPENSE, name, true);
+for (const name of ['issueReceiptUploadTicket', 'addExpenseReceipt', 'removeExpenseReceipt', 'signExpenseReceipts', 'signExpenseReceipt'])
+  registerHostHandler(EXPENSE, name, async () => ({ ok: false, error: VIEW_ONLY }));
 registerHostHandler(NOTICE, 'loadMyTextbookMent', async () => {
   const q = new URLSearchParams({ ment: '1' }); const actor = hostActor(); if (actor) q.set('viewer', actor);
   const r = await fetch(`/api/v2/billing?${q}`, { headers: { Accept: 'application/json' } }).catch(() => null);
@@ -51,7 +58,9 @@ export const HOST_ROUTE = '/billing';
 
 type Ops = Parameters<typeof OperationsProvider>[0];
 type Data = { editors: HostEditor[]; viewer: { id: string; name: string; role: string } | null; route: 'none' | 'page' }
-  & Partial<Omit<BillingPageData, 'host'>> & { host: { operations: Ops; disabledModules: Ops['disabledModules'] } };
+  & Partial<Omit<BillingPageData, 'host'>> & { host: { operations: Ops; disabledModules: Ops['disabledModules'] } }
+  // 하위 주소 — 지출결의서 상세(expenses/[id]/page.tsx) · 2.0 requireAccess · notFound 자리.
+  & { page?: 'expense' | 'notFound' | 'noAccess'; expense?: ExpenseRow | null };
 
 /** 2.0 page.tsx · 각 면의 searchParams — 서버가 다시 그리던 열쇠(v2path = 하위 주소). */
 const KEYS = ['v2path', 'tab', 'period', 'q', 'sort', 'desc', 'page', 'overdue', 'missing', 'subject', 'only', 'allocation', 'confirmation', 'panel', 'status',
@@ -101,6 +110,10 @@ function App() {
   }
   const d = state.data, ops = d.host.operations;
   if (d.route === 'none' || !d.access) return <HostMessage text="수납관리를 볼 수 있는 직원이 없습니다." />;
+  if (d.page === 'noAccess') return <HostMessage text="고른 사람은 이 화면을 볼 수 없습니다." />;
+  if (d.page === 'notFound') return <HostMessage text="이 주소의 화면이 없습니다." />;
+  // 2.0 expenses/[id]/page.tsx — 본문은 부품 하나(ExpenseDocument)라 그대로 그린다.
+  if (d.page === 'expense' && d.expense) return <ExpenseDocument expense={d.expense} />;
   return (
     <EmbedProvider embed>
       <OperationsProvider subjects={ops.subjects} gradeLevels={ops.gradeLevels} jobTitles={ops.jobTitles} jobTitlesByDepartment={ops.jobTitlesByDepartment} disabledModules={d.host.disabledModules}>
