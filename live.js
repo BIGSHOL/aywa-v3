@@ -4,6 +4,16 @@
   // 엿보기 모드(?peek=1) = 업무 흐름의 엿보기 창 안에서 띄운 이 앱(flow-ui.js) — 메뉴·머리 없이 본문만, 모르는 주소는 빈 화면.
   const PEEK=new URLSearchParams(location.search).has('peek');if(PEEK)document.documentElement.classList.add('peek');
   const db=window.AcademySnapshot;
+  let fullReady=!db.meta.detailDeferred,fullPromise=null;
+  function ensureFull(){
+    if(fullReady)return Promise.resolve();
+    fullPromise??=fetch('/snapshot.json',{cache:'no-store',headers:{Accept:'application/json'}}).then(async response=>{
+      if(!response.ok)throw new Error('상세 자료를 불러오지 못했습니다.');
+      const data=await response.json();if(!data?.meta||!Array.isArray(data.students))throw new Error('상세 자료 형식이 올바르지 않습니다.');
+      refill(db,data,true);fullReady=true;
+    }).catch(error=>{fullPromise=null;throw error;});
+    return fullPromise;
+  }
   const $=q=>document.querySelector(q);
   const h=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const fmt=n=>Number(n||0).toLocaleString('ko-KR',{maximumFractionDigits:1});
@@ -380,6 +390,7 @@
   const notesFor=context=>state.localNotes.filter(n=>n.context===context);
   const notePanel=context=>notesFor(context).length?panel('작성한 메모','새로고침하면 사라집니다.',recordLines(notesFor(context).map(n=>({date:shortDate(n.date),title:n.title,text:n.body})))):'';
   function showStudent(id){
+    if(!fullReady){ensureFull().then(()=>showStudent(id),()=>toast('상세 자료를 불러오지 못했습니다. 다시 시도해 주세요.'));return;}
     const s=byId('students',id);if(!s)return;state.studentId=id;
     const classRows=s.classes.map(id=>byId('classes',id)).filter(Boolean);
     dialog('detail',s.name,`${s.school} · ${s.grade} · ${status(s.status)}`,
@@ -398,7 +409,7 @@
   function showLead(id){const a=byId('admissions',id);if(!a)return;state.leadId=id;dialog('detail',`${a.name} · 신규 콜&상담`,`${a.school||'학교 미입력'} · ${a.grade||'학년 미입력'}`,
     `<div class="live-drawer-summary"><strong>${status(a.outcome)}</strong><p>${shortDate(a.date)} 접수 · ${h(a.teacher)} 담당${a.local?' · 변경됨(저장 안 됨)':''}</p></div><dl><dt>상담 과목</dt><dd>${h(subject(a.subject))}</dd><dt>유입 경로</dt><dd>${h(a.channel)}</dd><dt>후속 일정</dt><dd>${shortDate(a.followup)}</dd><dt>상담 메모</dt><dd>${h(a.note||a.reason||'입력된 메모가 없습니다.')}</dd></dl>`+
     `<div class="flex">${a.outcome!=='enrolled'?button('다음 단계로','advance-lead','primary'):badge('등록','teal')}${button('후속 메모','lead-note')}</div><p class="live-note">단계 변경은 저장되지 않고, 실제 학생 등록도 하지 않습니다.</p>`+notePanel(`lead:${id}`));}
-  function showBill(id){const i=byId('invoices',id);if(!i)return;state.billId=id;dialog('detail',`${i.name} · ${mlabel(i.period)} 수납`,status(i.status),
+  function showBill(id){if(!fullReady){ensureFull().then(()=>showBill(id),()=>toast('상세 자료를 불러오지 못했습니다. 다시 시도해 주세요.'));return;}const i=byId('invoices',id);if(!i)return;state.billId=id;dialog('detail',`${i.name} · ${mlabel(i.period)} 수납`,status(i.status),
     `<div class="live-drawer-summary"><strong>${won(i.remaining)}</strong><p>남은 금액</p></div><dl><dt>할인 전 금액</dt><dd>${won(i.gross)}</dd><dt>할인</dt><dd>${won(i.discount)}</dd><dt>실제 청구 금액</dt><dd>${won(i.total)}</dd><dt>누적 수납</dt><dd>${won(i.paid)}</dd><dt>납부 기한</dt><dd>${i.due||'미입력'}</dd><dt>청구 구분</dt><dd>${i.category==='tuition'?'수강료':'기타'}</dd></dl><div class="flex"><button class="button" data-student="${h(i.studentId)}">학생 상세 보기</button>${button('수납 확인 메모','bill-note','primary')}</div>`+notePanel(`bill:${id}`));}
   function showStaff(id){const s=byId('staff',id);if(!s)return;dialog('detail',s.name,s.title,
     `<div class="live-drawer-summary"><strong>담임 반 ${s.classes.length}개</strong><p>이번 달 근무 기록 ${s.workDays}일 · 남은 업무 ${s.tasks}건</p></div>`+
@@ -417,7 +428,7 @@
     `<p class="live-pre">${h(t.detail||'상세 내용이 없습니다.')}</p><dl><dt>담당</dt><dd>${h(t.owners.join(', ')||'담당 미지정')}</dd><dt>기한</dt><dd>${t.due||'미정'}</dd><dt>생긴 날짜</dt><dd>${t.opened||'미입력'}</dd>${t.closed?`<dt>닫힌 날짜</dt><dd>${h(t.closed)}</dd>`:''}</dl>${personal?`${button(t.status==='done'?'다시 열기':'처리됨으로 표시','complete-task','primary')}<p class="live-note">원장 개인 업무입니다. 새로고침하면 처리 상태가 처음으로 돌아갑니다.</p>`:`<div class="live-drawer-summary"><strong>자동 할 일</strong><p>원본 기록이 처리되면 이 할 일은 자동으로 닫힙니다. 버튼으로 완료 처리하지 않습니다.</p></div><div class="flex">${source?`<button class="button primary" data-go="${h(source)}">원본 기록 열기</button>`:''}${button('후속 요청 만들기','task-followup')}</div>`}`);}
   const RECORD_VIEWS=[['students',showStudent],['invoices',showBill],['approvals',showApproval],['tasks',showTask],['classes',id=>showClass(id)],['staff',id=>showStaff(id)],['admissions',id=>showLead(id)],['messages',id=>showMessage(id)],['textbooks',id=>showBook(id)],['documents',id=>showDocument(id)],['calendar',id=>showEvent(id)]];
   function canOpenRecord(id){return RECORD_VIEWS.some(([collection])=>db[collection]?.some(x=>String(x.id)===String(id)));}
-  function openRecord(id){const hit=RECORD_VIEWS.find(([collection])=>db[collection]?.some(x=>String(x.id)===String(id)));if(hit)hit[1](String(id));}
+  function openRecord(id){if(!fullReady){ensureFull().then(()=>openRecord(id),()=>toast('상세 자료를 불러오지 못했습니다. 다시 시도해 주세요.'));return;}const hit=RECORD_VIEWS.find(([collection])=>db[collection]?.some(x=>String(x.id)===String(id)));if(hit)hit[1](String(id));}
   function showBook(id){const b=byId('textbooks',id);if(!b)return;dialog('detail',b.name,`${b.student} · ${status(b.status)}`,`<dl><dt>담당 선생님</dt><dd>${h(b.teacher||'미입력')}</dd><dt>교재 금액</dt><dd>${won(b.price)}</dd><dt>요청일</dt><dd>${b.date||'미입력'}</dd><dt>주문일</dt><dd>${b.ordered||'미입력'}</dd><dt>전달일</dt><dd>${b.delivered||'미입력'}</dd></dl>${b.studentId?`<button class="button" data-student="${h(b.studentId)}">학생 상세 보기</button>`:''}`);}
   function showDocument(id){const d=byId('documents',id);if(!d)return;dialog('detail',d.title,`${d.category||'일반 문서'} · ${shortDate(d.updated)} 갱신`,`${d.description?`<p class="live-pre">${h(d.description)}</p>`:''}${d.body?`<div class="live-pre">${h(d.body)}</div>`:''}${d.hasFile?`<button class="button primary" data-document-download="${h(id)}">첨부파일 다운로드</button>`:empty('첨부파일이 없는 문서입니다.','')}`);}
   function showEvent(id){const e=byId('calendar',id);if(!e)return;state.eventId=id;dialog('detail',e.title,`${e.date}${e.end&&e.end!==e.date?' ~ '+e.end:''}`,`<div class="live-drawer-summary"><strong>${h(e.start||'종일 일정')}</strong><p>${h(e.finish?e.finish+' 종료':'학원에 등록된 일정')}</p></div>${button('검토 메모','event-note','primary')}`+notePanel(`event:${id}`));}
@@ -441,6 +452,7 @@
 
   const views={home,students,admissions,classes,learning,finance,staff,parents,shuttle,approvals,resources,calendar,settings,inbox:ax.inbox,requests:ax.requests,automation:ax.automation,...(flowUI?{flow:()=>flowUI.fullView()}:{})};
   function render(){
+    if(state.page&&state.page!=='home'&&!fullReady){shell();ax.decorateShell();$('#main').innerHTML='<p class="live-note" role="status">상세 자료를 불러오는 중입니다.</p>';ensureFull().then(()=>render(),()=>{$('#main').innerHTML='<p class="live-note" role="alert">상세 자료를 불러오지 못했습니다. 화면을 다시 열어 주세요.</p>';});return;}
     clearSpotlight();
     const focused=document.activeElement,focusId=focused?.id,selection=typeof focused?.selectionStart==='number'?focused.selectionStart:null;
     const navHref=focused?.closest('#sidebar')&&focused.getAttribute('href');
@@ -565,7 +577,7 @@
   function applyFresh(){
     if(!fresh.next||busyHere())return;
     const {data,revision,etag}=fresh.next;fresh.next=null;
-    if(data){refill(db,data,true);fresh.etag=etag;const y=window.scrollY;render();window.scrollTo({top:y,behavior:'instant'});}
+    if(data){refill(db,data,true);fullReady=true;fresh.etag=etag;const y=window.scrollY;render();window.scrollTo({top:y,behavior:'instant'});}
     fresh.revision=revision;window.V2Screens?.dataChanged?.();dispatchEvent(new CustomEvent('aywa:data-revision',{detail:{revision}}));
   }
   async function checkFresh(){

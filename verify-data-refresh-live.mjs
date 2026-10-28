@@ -42,7 +42,8 @@ try {
     assert(js.body.toString('utf8').endsWith(`;window.AcademySnapshotRevision=${JSON.stringify({ revision: 1, etag: start.etag })};`));
     const json = await timed('/snapshot.json');
     assert.equal(json.status, 200); assert.equal(json.headers.get('etag'), start.etag); assert.equal(json.headers.get('x-data-revision'), '1');
-    assert.equal(js.body.length, 'window.AcademySnapshot='.length + json.body.length + `;window.AcademySnapshotRevision=${JSON.stringify({ revision: 1, etag: start.etag })};`.length);
+    assert(js.body.length < json.body.length * 0.65, `초기 스크립트 ${js.body.length}B / 전체 ${json.body.length}B`);
+    assert(js.body.toString('utf8').includes('"detailDeferred":true'));
     assert.equal(JSON.parse(json.body).meta.asOf, start.asOf);
   });
 
@@ -84,8 +85,23 @@ try {
     browser = await chromium.launch({ headless: true });
     const page = await browser.newPage({ viewport: { width: 1280, height: 640 } }), pageErrors = [];
     page.on('pageerror', e => pageErrors.push(e.message));
+    const detailUrls = [];
+    page.on('request', request => { if (new URL(request.url()).pathname === '/snapshot.json') detailUrls.push(request.url()); });
     const poke = async () => { await sleep(2100); await page.evaluate(() => dispatchEvent(new Event('focus'))); }; // 화면은 2초에 한 번만 묻는다
     await page.goto(base); await page.waitForFunction(() => document.querySelector('#footer')?.textContent.includes(window.AcademySnapshot.meta.tenant));
+    await page.waitForSelector('.fl-count');
+    const homeFacts = () => page.evaluate(() => [...document.querySelectorAll('.ax-kpi-row .ws-kpi, .fl-count, .ax-change-cell')].map(node => node.textContent.replace(/\s+/g, ' ').trim()));
+    const beforeDetail = await homeFacts();
+    assert(beforeDetail.length >= 3, '핵심 KPI·원장 결정·업무 수가 첫 화면에 있다');
+    assert.equal(detailUrls.length, 0, '첫 화면과 빈 엿보기는 상세 자료를 받지 않는다');
+    assert.equal(await page.evaluate(() => window.AcademySnapshot.meta.detailDeferred), true, '첫 화면은 요약 자료로 시작');
+    assert.equal(await page.evaluate(() => window.AcademySnapshot.students[0].lessons), undefined);
+    await page.evaluate(() => { location.hash = '#students'; });
+    await page.waitForFunction(() => !window.AcademySnapshot.meta.detailDeferred && Array.isArray(window.AcademySnapshot.students[0].lessons));
+    assert.equal(detailUrls.length, 1, `상세 화면 첫 이동에서 한 번만 전체 자료를 읽는다: ${detailUrls.join(', ')}`);
+    await page.evaluate(() => { location.hash = '#home'; });
+    await page.waitForFunction(() => document.querySelector('#main .ax-fold'));
+    assert.deepEqual(await homeFacts(), beforeDetail, '전체 자료를 받은 뒤에도 같은 지점·기준일의 KPI·결정 대기·업무 수가 같다');
     const tenant = await page.evaluate(() => window.AcademySnapshot.meta.tenant);
     assert.deepEqual(await page.evaluate(() => window.AcademySnapshotRevision), { revision: 1, etag: start.etag });
     assert.equal(await page.evaluate(() => typeof window.V2Screens?.dataChanged), 'function');

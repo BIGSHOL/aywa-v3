@@ -42,11 +42,25 @@ export function encodeData(snapshot, records) {
   return { json, snapshotHash: sha(json), recordsHash: packed.hash, records: packed };
 }
 
+/** 첫 화면과 업무 신호에 필요한 필드만 부팅 스크립트에 싣는다. 상세 자료는 /snapshot.json에서 첫 상세 이동 때 읽는다. */
+export function compactSnapshot(snapshot) {
+  const pick = (rows, keys) => rows?.map(row => Object.fromEntries(keys.map(key => [key, row[key]]))) || [];
+  const out = { ...snapshot };
+  for (const [name, keys] of Object.entries({
+    students: ['id', 'name', 'grade', 'school', 'status', 'attendance', 'classes', 'remaining'],
+    invoices: ['id', 'name', 'studentId', 'period', 'remaining', 'discount'],
+    textbooks: ['id', 'name', 'student', 'status'], calendar: ['id'], runs: ['id'],
+  })) if (name in out) out[name] = pick(out[name], keys);
+  if ('students' in out && 'invoices' in out) out.meta = { ...out.meta, detailDeferred: true };
+  return out;
+}
+
 /** 지금 내주는 첫 화면 자료 — 개정 번호·ETag·/snapshot.js 본문(끝에 개정 번호를 붙여 화면이 자기 자료의 번호를 안다). */
 export function createDataHolder(initial, now = () => new Date().toISOString()) {
   const make = (d, revision) => {
     const etag = `"${d.snapshotHash.slice(0, 24)}"`;
-    const script = Buffer.concat([Buffer.from('window.AcademySnapshot='), d.json, Buffer.from(`;window.AcademySnapshotRevision=${JSON.stringify({ revision, etag })};`)]);
+    const boot = Buffer.from(JSON.stringify(compactSnapshot(JSON.parse(d.json.toString('utf8')))).replaceAll('<', '\\u003c'));
+    const script = Buffer.concat([Buffer.from('window.AcademySnapshot='), boot, Buffer.from(`;window.AcademySnapshotRevision=${JSON.stringify({ revision, etag })};`)]);
     return Object.freeze({ revision, etag, refreshedAt: now(), json: d.json, script, snapshotHash: d.snapshotHash, recordsHash: d.recordsHash });
   };
   let current = make(initial, 1);
