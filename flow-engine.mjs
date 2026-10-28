@@ -73,7 +73,7 @@ export const step = (id, def, resolved, group, extra = {}) => ({ id, key: def.ke
 const at0 = (iso, fallback) => iso || fallback;
 /** Seeds fact-closed source cases once per stable key (open 2.0 staff_tasks + workspace signals). */
 export function seedSource(state, source) {
-  let created = 0;
+  let created = 0, reworded = 0;
   const seededAt = `${source.identity.capturedAt}`;
   for (const t of source.tasks) {
     const key = `task:${t.id}`; if (state.seededKeys[key]) continue;
@@ -91,7 +91,9 @@ export function seedSource(state, source) {
     refreshCase(c); state.seededKeys[key] = id; created += 1;
   }
   for (const sg of source.signals) {
-    const key = `signal:${sg.familyId}:${sg.signal.id}`; if (state.seededKeys[key]) continue;
+    const key = `signal:${sg.familyId}:${sg.signal.id}`;
+    // Already seeded: an open case follows the source's current wording (원장 10-28 '최근 결석 3회 이상' — 저장된 옛 문구가 남지 않게). History and state stay as they are.
+    if (state.seededKeys[key]) { const c = state.cases[state.seededKeys[key]]; if (c && c.state !== 'done' && c.title !== sg.signal.title) { reworded += 1; for (const st of c.steps || []) if (st.key === 'source_check' && typeof st.label === 'string' && st.label.startsWith(c.title)) st.label = sg.signal.title + st.label.slice(c.title.length); c.title = sg.signal.title; c.summary = sg.signal.summary; } continue; }
     const id = `src-sig-${sg.familyId}-${sg.signal.id}`.replace(/[^a-z0-9-]/gi, '-');
     // One step per person who owns the referenced records (FK); records without an owner go to the manager queue.
     const owners = new Map();
@@ -103,7 +105,7 @@ export function seedSource(state, source) {
     state.cases[id].trigger = { eventId: e.id, type: 'source.signal', label: sg.signal.title, actorId: null, at: seededAt };
     refreshCase(state.cases[id]); state.seededKeys[key] = id; created += 1;
   }
-  return created;
+  return created + reworded; // reworded open cases are written too (the caller persists when this is > 0)
 }
 
 function signalOwner(source, ref) {
