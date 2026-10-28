@@ -10,6 +10,8 @@ import { assistantRequestProblems } from './ax-assistant-limits.mjs';
 // bounds, 2.0 screens and setting faces, record paging — work end to end. Nothing is written or sent. Flows pick their
 // actions from the catalog by mode and field types instead of fixed ids, so a catalog update does not break them.
 const base=process.env.OWNER_CONCEPT_URL||'http://127.0.0.1:4310';
+// 4a는 업무 흐름 저장소에 요청을 보낸다(POST) — 4310(실제 업무 저장소)에 연습 일이 남지 않게 격리 서버에서만: VERIFY_FLOW_WRITES=1이고 대상이 4310이 아닐 때.
+const flowWrites=process.env.VERIFY_FLOW_WRITES==='1'&&new URL(base).port!=='4310';
 const dir=new URL('./',import.meta.url),shots='work/owner-concept/workspace-qa';
 const inventory=await loadInventory(),owner=ownerFamilies(inventory),auditOnly=inventory.families.filter(x=>x.ownerScope==='audit-only').map(x=>x.id);
 const browser=await chromium.launch();
@@ -120,9 +122,13 @@ try{
   assert(await page.locator(`#search-results [data-go="workspace-${areaOf('meetings')?'meetings':cat.areas[2].id}"]`).count()===1,'Global search finds workspaces');await close();
 
   // 4a. Local preview with validation → session log → request with family/record context → recipient report → owner
-  //     notification → back to the source workspace.
+  //     notification → back to the source workspace. 격리 서버에서만(flowWrites) — 그 밖에는 건너뛰고 한 줄 알린다.
+  //     a0c947a3a 이후 보는 사람 고르개가 공용 선택창 — 다시 켤 때 고칠 것(pickOwner의 #ax-owner-trigger · #ax-owner-list).
+  let pa=null;
+  if(!flowWrites)console.log('업무 흐름 쓰기 시험은 격리 서버에서만(VERIFY_FLOW_WRITES=1)');
+  else{
   const pv=cat.areas.flatMap(a=>(a.actions||[]).filter(x=>x.mode==='preview'&&usable(a,x)&&(x.fields||[]).some(f=>f.required)).map(x=>({a,x})));
-  const {a:pa,x:px}=pv.find(({a})=>a.id==='makeups')||pv[0];
+  const picked=pv.find(({a})=>a.id==='makeups')||pv[0],px=picked.x;pa=picked.a;
   await go(`workspace-${pa.id}`);
   await sideAction(pa.id,px.id).click();
   const pform=page.locator('#modal form[data-ws-form="preview"]');
@@ -147,6 +153,7 @@ try{
   await shot('teacher-recipient');
   await go('inbox');await expectText('main .ax-notifications',/처리 완료했습니다/);
   await page.locator(`main .ax-notifications [data-ax="navigate"][data-id="workspace-${pa.id}"]`).click();await page.waitForFunction(id=>document.body.dataset.page===`workspace-${id}`,pa.id);
+  }
 
   // 4b. A request action with catalog fields collects them first, then hands the values to the request form.
   const rq=cat.areas.flatMap(a=>(a.actions||[]).filter(x=>x.mode==='request'&&usable(a,x)&&(x.fields||[]).some(f=>f.required)).map(x=>({a,x})))[0];
@@ -194,7 +201,7 @@ try{
   if(await page.locator('.ws-cell').count()>1){
     const cell=page.locator('.ws-cell').first();await cell.focus();await page.keyboard.press('Enter');
     await page.locator('.ws-cell-input').fill('테스트 값');await page.keyboard.press('Enter');
-    assert.equal(await page.locator('.ws-cell.changed').count(),1);await expectText('.ws-sheet-bar',/바뀐 칸 1개/);
+    assert.equal(await page.locator('.ws-cell.changed').count(),1);await expectText('.ws-sheet-bar',/바꾼 칸 1개/);
     await page.locator('.ws-cell').nth(1).focus();await page.keyboard.press('Enter');await page.locator('.ws-cell-input').fill('취소될 값');await page.keyboard.press('Escape');
     assert.equal(await page.locator('.ws-cell.changed').count(),1,'Escape cancels a cell edit');
     await shot('class-sheet');
@@ -230,13 +237,14 @@ try{
   }
 
   // 4k. Automatic tasks are not completed by a button; personal tasks keep their own completion toggle.
-  await page.locator('#ax-issue-tasks [data-ax="record"]').first().click();
+  //     첫 화면의 할 일 목록(#ax-issue-tasks)은 첫 화면 개편으로 없어졌다 — 같은 할 일 상세(showTask)를 여는 전자결재·할 일 화면의 할 일 줄에서 연다.
+  await go('approvals');await page.locator('main [data-task]').first().click();
   assert.equal(await page.locator('#detail [data-action="complete-task"]').count(),0,'Automatic tasks have no generic complete button');
-  await expectText('#detail',/자동으로 닫습니다/);
+  await expectText('#detail',/자동으로 닫힙니다/);
   assert.equal(await page.locator('#detail [data-go]').count(),1,'Automatic tasks open their source record');
   await page.locator('#detail [data-action="task-followup"]').click();await expectText('#modal .ax-linked-issues',/출처/);await close();
   await go('approvals');await page.locator('[data-action="new-task"]').click();await page.getByLabel('해야 할 일').fill('원장 개인 확인');await page.locator('#preview-form button[type="submit"]').click();
-  await page.locator('#detail [data-action="complete-task"]').click();await expectText('#detail',/완료/);await close();
+  await page.locator('#detail [data-action="complete-task"]').click();await expectText('#detail',/처리됨/); // 상태 글 = '처리됨'(할 일 상태 표기)await close();
 
   // 5. Phone: workspace without overflow, horizontal stage scroller with edge fades kept across a refresh, finder in the menu.
   await page.setViewportSize({width:390,height:844});
@@ -255,5 +263,5 @@ try{
   assert(!await overflow());await shot('inventory-390');
 
   assert.deepEqual(errors,[]);assert.deepEqual(external,[]);assert.deepEqual(mutations,[]);
-  console.log(`PASS: ${areaIds.length} owner workspaces reachable (${Object.entries(byView).map(([k,v])=>`${k} ${v}`).join(', ')}), ${cov.totals.operations} operations mapped (${Object.entries(cov.totals.byDestination).map(([k,v])=>`${k} ${v}`).join(', ')}), no native tooltips, ${routes.fixtureCatalog?`${auditedOps.length} audited operation groups covered, `:''}left finder/launcher/global search, ${pa.id} preview→request→teacher report→owner notification→source, request fields → request body (${rq.a.id}), ${nb?`numeric bounds (${nb.a.id}), `:''}${nv?'navigation, ':''}${sa?`2.0 screens (${sa.id}), `:''}${st?`setting faces (${st.id}), `:sf?`setting face switch (${sf.id}), `:''}class sheet edit, ${paged.length?`records endpoint paging/filter (${paged[0]}), `:''}null-context question, auto-task semantics, phone. Catalog=${routes.catalogSource}, data=${routes.fixtureData?'test projection of the real copy':'served'}.`);
+  console.log(`PASS: ${areaIds.length} owner workspaces reachable (${Object.entries(byView).map(([k,v])=>`${k} ${v}`).join(', ')}), ${cov.totals.operations} operations mapped (${Object.entries(cov.totals.byDestination).map(([k,v])=>`${k} ${v}`).join(', ')}), no native tooltips, ${routes.fixtureCatalog?`${auditedOps.length} audited operation groups covered, `:''}left finder/launcher/global search, ${pa?`${pa.id} preview→request→teacher report→owner notification→source`:'flow writes skipped'}, request fields → request body (${rq.a.id}), ${nb?`numeric bounds (${nb.a.id}), `:''}${nv?'navigation, ':''}${sa?`2.0 screens (${sa.id}), `:''}${st?`setting faces (${st.id}), `:sf?`setting face switch (${sf.id}), `:''}class sheet edit, ${paged.length?`records endpoint paging/filter (${paged[0]}), `:''}null-context question, auto-task semantics, phone. Catalog=${routes.catalogSource}, data=${routes.fixtureData?'test projection of the real copy':'served'}.`);
 }finally{await browser.close();}
