@@ -89,14 +89,11 @@ test('매개변수는 정해진 값만 받는다(나머지는 공통 틀이 400)
     'saveLiveSubjectFilter', 'saveSeatMonthlyCollapsed', 'searchAttendanceHubStudents', 'searchIntakeStudents', 'setAttendanceBulk', 'setAttendanceCell', 'setAttendanceRange', 'setSeatCell', 'setSeatJjField']);
 });
 
-test('아직 옮기지 않은 조회 셋은 그 함수의 2.0 실패 모양으로 답한다(부품이 결과를 읽다 깨지지 않게 · 쓰기 없음)', async () => {
+test('허브 검색·결석 접수: 입력은 2.0 인자 모양만 받고(사람이 비어도 거절하지 않는다), 부품은 결과 모양을 그대로 읽는다', async () => {
   const HUB = 'features/attendance/server/hub-search-actions.ts', INTAKE = 'features/attendance/intake/server/actions.ts';
-  const ask = async (name, module, ...args) => { const a = screen.actions[name]; return a.run({ sql: null, body: a.validate({ module, actor: null, args }), tenantId: null, importV2 }); };
-  const hub = await ask('searchAttendanceHubStudents', HUB, { query: '김', month: '2026-10' });
-  assert.deepEqual(hub.hits, []); assert.equal(hub.limit, R.hubSearch.HUB_SEARCH_LIMIT); assert.equal(hub.truncated, false); assert.match(hub.error, /아직 없습니다/);
-  const s = await ask('searchIntakeStudents', INTAKE, '김'); assert.deepEqual(s.students, []); assert.match(s.note, /아직 없습니다/);
-  const p = await ask('previewAbsenceIntake', INTAKE, { studentId: STUDENT, from: '2026-10-27', to: '2026-10-27' }); assert.deepEqual([p.student, p.cells], [null, []]); assert.match(p.error, /아직 없습니다/);
-  assert.match((await ask('recordAbsenceIntake', INTAKE, {})).error, /바뀐 것은 없습니다/);
+  assert.equal(screen.actions.searchIntakeStudents.validate({ module: INTAKE, actor: null, args: ['김'] }).actor, null);
+  assert.throws(() => screen.actions.recordAbsenceIntake.validate({ module: INTAKE, actor: 'x', args: [{}] }), /입력 값/);
+  assert.throws(() => screen.actions.recordAbsenceIntake.validate({ module: INTAKE, actor: CLASS, args: [{ exclude: 'k' }] }), /입력 값/);
   // 다른 2.0 모듈의 같은 이름·인자 넘침은 받지 않는다.
   assert.throws(() => screen.actions.searchIntakeStudents.validate({ module: HUB, args: ['김'] }), /입력 값/);
   assert.throws(() => screen.actions.searchAttendanceHubStudents.validate({ module: HUB, args: [{}, {}] }), /입력 값/);
@@ -705,6 +702,74 @@ test('저장(복사본, 되돌림): 범위 채우기·지우기 — 새 칸·덮
 });
 /** 담임이 아닌 출결 전체 권한 직원(쓰는 문 'desk'). */
 const desk = (writers, homeroom) => writers.find(w => w.level === 'full' && w.id !== homeroom && w.role !== 'master') ?? writers.find(w => w.level === 'full' && w.id !== homeroom);
+
+test('저장(복사본, 되돌림): 허브 학생 검색 · 결석 통보 접수 — 독립 SQL과 같은 결과 · 새 결석/건너뜀/메모만 · 두 번 해도 한 번 · 데스크 큐 처리 · 담당 강사 벨(행까지) · 바깥 요청 0', { skip: !db && 'local database not running' }, async () => {
+  const before = await db`select (select count(*)::int from public.audit_logs) audits, (select count(*)::int from net.http_request_queue) net, (select count(*)::int from public.notifications) bells`;
+  const LV = await import('./v2-attendance-live.mjs'), I = await (await import('./v2-attendance-intake.mjs')).loadIntakeRules(importV2);
+  const HUB = 'features/attendance/server/hub-search-actions.ts', INTAKE = 'features/attendance/intake/server/actions.ts';
+  const TODAY = await A.copyDay(), addDays = (d, n) => new Date(Date.parse(`${d}T00:00:00Z`) + n * 86400000).toISOString().slice(0, 10);
+  await inRollback(async ({ sql, run, t }) => {
+    const settings = await A.readSettings(sql, t, R), writers = await LV.attendanceWritersOf(sql, t, R, settings);
+    const [{ teacher_id: homeroom, class_name: className }] = await sql`select teacher_id, class_name from public.classes where id=${CLASS}`;
+    const desk = writers.find(w => w.level === 'full' && w.id !== homeroom), teacher = writers.find(w => w.level === 'scoped');
+    assert.ok(desk && teacher);
+    const ask = (name, module, actor, ...args) => run(sql, name, { module, actor: actor?.id ?? null, args });
+
+    // ① 허브 검색 — 그 달 기준일에 수강 중인 반(보는 사람이 볼 수 있는 반) · 이름 부분 일치. 독립 SQL과 같은 (학생·반).
+    const month = TODAY.slice(0, 7), range = R.date.monthRange(month), asOf = R.hubSearch.hubEnrollmentAsOf(TODAY, range.from, range.to);
+    const hub = await ask('searchAttendanceHubStudents', HUB, desk, { query: '학원이', month });
+    const want = await sql`select e.student_id::text s, e.class_id::text c from public.enrollments e join public.students st on st.id=e.student_id join public.classes c on c.id=e.class_id
+      where e.tenant_id=${t} and c.is_active and (c.closed_at is null or c.closed_at>=${range.from}) and not e.on_hold and e.start_date<=${asOf} and (e.end_date is null or e.end_date>=${asOf}) and st.name ilike '%학원이%'`;
+    assert.deepEqual(hub.hits.map(h => `${h.studentId}|${h.classId}`).sort(), want.map(r => `${r.s}|${r.c}`).sort());
+    assert.ok(hub.hits.some(h => h.studentId === STUDENT && h.classId === CLASS && h.className === className));
+    assert.deepEqual([hub.limit, hub.truncated, typeof hub.where], [R.hubSearch.HUB_SEARCH_LIMIT, false, 'string']);
+    const nobody = await ask('searchAttendanceHubStudents', HUB, null, { query: '학원이', month });
+    assert.deepEqual([nobody.hits, nobody.where], [[], R.i18n.sheetTf('ko', 'att.search.scope.plain', { month: R.i18n.sheetMonthLabel(month, `${Number(month.slice(5, 7))}월`, 'ko') })]);
+
+    // ② 접수 학생 검색 — 재원 + 살아 있는 수강(독립 SQL) · 사무실만 · 비면 사유 한 줄.
+    const found = await ask('searchIntakeStudents', INTAKE, desk, '학원이');
+    const live = await sql`select st.id::text id from public.students st where st.tenant_id=${t} and st.status='enrolled' and st.name ilike '%학원이%'
+      and exists (select 1 from public.enrollments e where e.student_id=st.id and not e.on_hold and (e.end_date is null or e.end_date>=${TODAY}))`;
+    assert.deepEqual(found.students.map(s => s.id).sort(), live.map(r => r.id).sort());
+    assert.deepEqual(await ask('searchIntakeStudents', INTAKE, teacher, '학원이'), { students: [], note: null, truncated: false });
+    assert.deepEqual((await ask('searchIntakeStudents', INTAKE, desk, '없는이름가나다')).note, I.intake.intakeSearchEmptyMessage('없는이름가나다', 'no_match'));
+
+    // ③ 미리보기 — 사무실만 · 그 기간 이 반 칸(수학 = 그날 한 칸).
+    const D1 = addDays(TODAY, 1), D3 = addDays(TODAY, 3), D2 = addDays(TODAY, 2);
+    await sql`delete from public.attendance_records where student_id=${STUDENT} and session_date between ${D1} and ${D3}`;
+    assert.deepEqual(await ask('previewAbsenceIntake', INTAKE, teacher, { studentId: STUDENT, from: D1, to: D3 }), { student: null, cells: [], error: '결석 접수 권한이 없습니다' });
+    const pv = await ask('previewAbsenceIntake', INTAKE, desk, { studentId: STUDENT, from: D1, to: D3 });
+    const mine = pv.cells.filter(c => c.classId === CLASS);
+    assert.deepEqual([pv.error, pv.student.id, mine.map(c => c.date)], [null, STUDENT, [D1, D2, D3].filter(d => !(d in R.cal.buildHolidayMap(settings.operations.holidays)))]);
+    assert.ok(mine.every(c => c.saveSlot === null && c.existing === null && c.key === I.intake.cellKey(c)));
+    // ④ 접수 — D1 빈 칸 = 결석 + 사유 · D2 출석 = 건너뜀 · D3 결석 = 메모만. 다른 반 칸은 화면에서 뺐다(exclude).
+    await sql`insert into public.attendance_records (tenant_id, class_id, student_id, session_date, status, recorded_by) values (${t}, ${CLASS}, ${STUDENT}, ${D2}, 'present', ${homeroom})`;
+    await sql`insert into public.attendance_records (tenant_id, class_id, student_id, session_date, status, note, recorded_by) values (${t}, ${CLASS}, ${STUDENT}, ${D3}, 'absent', '병결', ${homeroom})`;
+    const exclude = pv.cells.filter(c => c.classId !== CLASS).map(c => c.key), memo = I.intake.intakeMemo('감기');
+    const rec = await ask('recordAbsenceIntake', INTAKE, desk, { studentId: STUDENT, from: D1, to: D3, reason: ' 감기 ', exclude });
+    assert.deepEqual(rec, { ok: true, saved: 1, noted: 1, skipped: [{ className, date: D2, statusLabel: I.intake.attendanceStatusLabel('present') }], failed: [], queueMarkFailed: false });
+    const day = d => sql`select status::text status, note, recorded_by::text by from public.attendance_records where class_id=${CLASS} and student_id=${STUDENT} and session_date=${d}`;
+    assert.deepEqual((await day(D1)).map(r => ({ ...r })), [{ status: 'absent', note: memo, by: desk.id }]);
+    assert.deepEqual((await day(D2)).map(r => r.status), ['present']);
+    assert.deepEqual((await day(D3)).map(r => [r.status, r.note]), [['absent', `병결\n${memo}`]]);
+    const fus = await sql`select session_date::text d, state, outcome, contacted_via, handled_by::text by from public.attendance_followups where tenant_id=${t} and student_id=${STUDENT} and session_date between ${D1} and ${D3} order by 1`;
+    assert.deepEqual(fus.map(r => ({ ...r })), [D1, D3].map(d => ({ d, state: 'resolved', outcome: 'absent_today', contacted_via: 'phone', by: desk.id })));
+    const bells = () => sql`select recipient_id::text r, title, link, actor_id::text a from public.notifications where tenant_id=${t} and type='attendance_absence_intake' and created_at >= now() - interval '1 minute'`;
+    const b1 = await bells();
+    assert.ok(b1.length > 0 && b1.every(b => b.a === desk.id && b.r !== desk.id && b.title.includes('학원이')), 'bells to the class teachers, not to the desk');
+    assert.ok(b1.some(b => b.r === homeroom), 'the homeroom teacher hears it');
+    // ⑤ 같은 접수를 다시 — 이미 메모가 있는 칸은 그대로 · 벨은 한 번(같은 접수 bucket).
+    const again = await ask('recordAbsenceIntake', INTAKE, desk, { studentId: STUDENT, from: D1, to: D3, reason: '감기', exclude });
+    assert.deepEqual([again.saved, again.noted, again.skipped.length, again.failed.length], [0, 0, 1, 0]);
+    assert.deepEqual([(await day(D1)).map(r => r.note), (await day(D3)).map(r => r.note), (await bells()).length], [[memo], [`병결\n${memo}`], b1.length]);
+    assert.deepEqual(await ask('recordAbsenceIntake', INTAKE, teacher, { studentId: STUDENT, from: D1, to: D3, reason: '감기' }), { error: '결석 접수 권한이 없습니다' });
+    assert.deepEqual(await ask('recordAbsenceIntake', INTAKE, desk, { studentId: STUDENT, from: D1, to: D3, reason: '  ' }), { error: '사유를 입력해 주세요 — 이 문장이 출석부 메모가 됩니다' });
+    // 바깥으로 나가는 요청 0(벨은 행까지만).
+    assert.equal((await sql`select count(*)::int n from net.http_request_queue`)[0].n, before[0].net);
+  });
+  const after = await db`select (select count(*)::int from public.audit_logs) audits, (select count(*)::int from public.notifications) bells`;
+  assert.deepEqual([after[0].audits, after[0].bells], [before[0].audits, before[0].bells], 'rolled back — the copy is unchanged');
+});
 
 test('저장(복사본, 되돌림): 보기 설정 4종 = 2.0 prefs-actions — 그 사람의 ui_prefs.attendance만, 다른 화면 설정은 그대로', { skip: !db && 'local database not running' }, async () => {
   const before = await db`select (select count(*)::int from net.http_request_queue) net`;

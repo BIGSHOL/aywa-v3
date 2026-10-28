@@ -26,8 +26,9 @@
 //      features/attendance/server/prefs-actions.ts saveAttendanceSort · saveAttendancePeriodMode · saveAttendanceHideRetired ·
 //                                                 saveAttendanceCollapsed → actions.같은 이름 (users.ui_prefs.attendance · 감사로그 없음 = 2.0과 같다)
 //      hub-search-actions.ts searchAttendanceHubStudents · intake/server/actions.ts searchIntakeStudents · previewAbsenceIntake ·
-//                                                 recordAbsenceIntake → actions.같은 이름 — 아직 옮기지 않아 **그 함수의 2.0 실패 모양**으로
-//                                                 답한다(쓰기 없음). shim 공통 거절 `{ok:false}`로는 부품이 결과를 읽다 깨진다.
+//                                                 recordAbsenceIntake → actions.같은 이름(v2-attendance-intake.mjs — 검색·미리보기는 읽기만 ·
+//                                                 접수 = 칸 저장 그대로 + 데스크 큐 처리 + 담당 강사 벨 행(바깥 발송 없음)). 사람이 비어도 거절하지 않고
+//                                                 2.0 빈 결과 모양으로 답한다(부품이 r.hits · p.cells를 그대로 읽는다).
 //      아직 받지 않는 것(shim이 '복사본 보기 전용' `{ok:false,error}`로 거절 — 부르는 2.0 부품이 모두 `"error" in res`로 읽는다):
 //        actions.ts saveAttendance · linkMakeupToAbsence · searchMakeupStudents
 //        makeup-reservation-actions.ts setReservationReportMode · moveReservationToRegular · checkMakeupReservation(원스크린이 부른다)
@@ -76,6 +77,7 @@ import * as SeatSave from './v2-attendance-seat-save.mjs';
 import * as LiveSave from './v2-attendance-live-save.mjs';
 import * as Reserve from './v2-attendance-reserve.mjs';
 import * as Range from './v2-attendance-range.mjs';
+import * as Intake from './v2-attendance-intake.mjs';
 import { loadMakeupRules, completeMakeupReservations, nativeMakeupsOn, completionKey } from './v2-attendance-makeup.mjs';
 import { loadLiveRules, quickProps, liveProps, pollFingerprint, attendanceWritersOf, readTaughtClassSet } from './v2-attendance-live.mjs';
 
@@ -1276,8 +1278,6 @@ function readCall(raw, module, arity) {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw) || raw.module !== module || !Array.isArray(raw.args) || raw.args.length > arity) throw bad();
   return {};
 }
-const HUB_MODULE = 'features/attendance/server/hub-search-actions.ts', INTAKE_MODULE = 'features/attendance/intake/server/actions.ts';
-const INTAKE_NOT_YET = '결석 통보 접수는 이 연습 화면에 아직 없습니다 — 바뀐 것은 없습니다.';
 const notYet = (module, arity, reply) => ({ validate: raw => readCall(raw, module, arity), run: async ({ importV2 }) => reply(await loadRules(importV2)) });
 
 // 자리(랩실·JJ실) 저장 — 2.0 seat/server/*의 "use server" 함수(v2-attendance-seat-save.mjs).
@@ -1321,6 +1321,18 @@ const reserveAction = (validate, fn) => ({
   },
 });
 
+/** 허브 검색·결석 접수 — 사람 = 출결을 쓸 수 있는 직원(없으면 null — 각 함수가 2.0 실패 모양으로 답한다). */
+const intakeAction = (validate, fn) => ({
+  validate,
+  run: async ({ sql, body, tenantId, importV2 }) => {
+    const [R, L, M, I] = await Promise.all([loadRules(importV2), loadLiveRules(importV2), loadMakeupRules(importV2), Intake.loadIntakeRules(importV2)]);
+    const [settings, today] = await Promise.all([readSettings(sql, tenantId, R), copyDay()]);
+    const actor = await attendanceWriterOf(sql, tenantId, R, settings, body.actor);
+    return fn({ sql, t: tenantId, R, I, settings, today, actor, h: { readClassAxis, readTransitions },
+      cellIn: (s, b) => setCell(s, tenantId, b, R, L, M), followup: input => LiveSave.recordFollowup({ sql, t: tenantId, R, L, settings, actorId: actor.id }, input) }, body);
+  },
+});
+
 const prefs = (check, update) => ({ validate: prefsBody(check), run: async ({ sql, body, tenantId, importV2 }) => { const R = await loadRules(importV2); return mergeAttendancePrefs(sql, tenantId, R, body.actor, prev => update(R, prev, body.value)); } });
 
 // 2.0 "use server" 함수와 1:1 — 이름 = 2.0 export 이름(호스트가 그 이름으로 부른다), 인자 = 2.0 인자 그대로.
@@ -1342,11 +1354,11 @@ screen.actions = {
   saveAttendancePeriodMode: prefs(v => typeof v === 'string' && v.length <= 20, (R, prev, v) => ({ ...prev, periodMode: R.viewPrefs.parsePeriodMode(v) })),
   saveAttendanceHideRetired: prefs(v => typeof v === 'boolean', (R, prev, v) => ({ ...prev, hideRetired: v !== false })),
   saveAttendanceCollapsed: prefs(v => Array.isArray(v) && v.length <= 400 && v.every(x => typeof x === 'string' && x.length <= 64), (R, prev, v) => ({ ...prev, collapsed: R.viewPrefs.parseAttendanceViewPrefs({ collapsed: v }).collapsed })),
-  // 아직 없는 조회 — 2.0 실패 모양(HubSearchResult.error · IntakeStudentSearch.note · 미리보기 error).
-  searchAttendanceHubStudents: notYet(HUB_MODULE, 1, R => ({ hits: [], truncated: false, limit: R.hubSearch.HUB_SEARCH_LIMIT, where: '', error: '강사를 고르기 전 학생 검색은 이 연습 화면에 아직 없습니다 — 강사를 고른 뒤 표 위 검색을 쓰세요.' })),
-  searchIntakeStudents: notYet(INTAKE_MODULE, 1, () => ({ students: [], note: INTAKE_NOT_YET, truncated: false })),
-  previewAbsenceIntake: notYet(INTAKE_MODULE, 1, () => ({ student: null, cells: [], error: INTAKE_NOT_YET })),
-  recordAbsenceIntake: notYet(INTAKE_MODULE, 1, () => ({ error: INTAKE_NOT_YET })),
+  // 허브 학생 검색 · 결석 통보 접수(2.0 hub-search-actions.ts · intake/server/actions.ts — v2-attendance-intake.mjs). 접수의 칸 쓰기는 위 칸 저장을 그대로 지난다.
+  searchAttendanceHubStudents: intakeAction(Intake.hubBody, Intake.searchAttendanceHubStudents),
+  searchIntakeStudents: intakeAction(Intake.intakeSearchBody, Intake.searchIntakeStudents),
+  previewAbsenceIntake: intakeAction(Intake.previewBody, Intake.previewAbsenceIntake),
+  recordAbsenceIntake: intakeAction(Intake.recordBody, Intake.recordAbsenceIntake),
   // 자리 출석부(2.0 seat/server/*) — 이름·인자·반환 모양 = 2.0 그대로.
   setSeatCell: seatAction(SEAT_ACTIONS, ['slot', 'cell'], (c, input) => SeatSave.setSeatCell(c, input)),
   fillSeatSlot: seatAction(SEAT_ACTIONS, ['slot'], (c, input) => SeatSave.fillSeatSlot(c, input)),
