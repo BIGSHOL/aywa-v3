@@ -1,6 +1,8 @@
 /* Owner concept: verified full Docker snapshot; edits are session-only previews. */
 (() => {
   'use strict';
+  // 엿보기 모드(?peek=1) = 업무 흐름의 엿보기 창 안에서 띄운 이 앱(flow-ui.js) — 메뉴·머리 없이 본문만, 모르는 주소는 빈 화면.
+  const PEEK=new URLSearchParams(location.search).has('peek');if(PEEK)document.documentElement.classList.add('peek');
   const db=window.AcademySnapshot;
   const $=q=>document.querySelector(q);
   const h=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -431,11 +433,12 @@
     const focused=document.activeElement,focusId=focused?.id,selection=typeof focused?.selectionStart==='number'?focused.selectionStart:null;
     const navHref=focused?.closest('#sidebar')&&focused.getAttribute('href');
     const scrollPositions=new Map([...document.querySelectorAll('[data-scroll-key]')].map(n=>[n.dataset.scrollKey,[n.scrollTop,n.scrollLeft]]));
-    hideTip();scrollObserver.disconnect();shell();ax.decorateShell();$('#main').innerHTML=state.page==='home'?ax.home():(viewFor(state.page)||home)();ax.decorateView();
+    hideTip();scrollObserver.disconnect();shell();ax.decorateShell();$('#main').innerHTML=PEEK&&!viewFor(state.page)?'':state.page==='home'?ax.home():(viewFor(state.page)||home)();ax.decorateView();
     document.querySelectorAll('[data-scroll-key]').forEach(n=>{const kept=scrollPositions.get(n.dataset.scrollKey);if(kept)[n.scrollTop,n.scrollLeft]=kept;});attachScroll();
     if(focusId){const next=document.getElementById(focusId);next?.focus({preventScroll:true});if(selection!==null&&next?.setSelectionRange)next.setSelectionRange(selection,selection);}
     if(navHref)document.querySelector(`#sidebar a[href="${CSS.escape(navHref)}"]`)?.focus({preventScroll:true});
     syncMenu();
+    if(PEEK)dispatchEvent(new CustomEvent('aywa:render',{detail:{page:state.page}}));
   }
   // Off-canvas menu on phones: hidden links leave the tab order, focus moves in on open and back on Escape.
   function syncMenu(){const open=document.body.classList.contains('menu-open');$('#sidebar').inert=mobileNav.matches&&!open;$('[data-action="menu"]')?.setAttribute('aria-expanded',String(open));}
@@ -529,6 +532,6 @@
     toast('초안을 남겼습니다. 새로고침하면 사라집니다.');
   });
   document.addEventListener('keydown',event=>{if((event.ctrlKey||event.metaKey)&&event.key.toLowerCase()==='k'){event.preventDefault();showSearch();}if(event.key==='Escape')actions['close-menu']();});
-  window.addEventListener('hashchange',()=>{state.page=location.hash.slice(1)||'home';if(!viewFor(state.page))state.page='home';document.querySelectorAll('dialog[open]').forEach(d=>d.close());closeMenu(false);render();window.scrollTo(0,0);});
-  state.page=location.hash.slice(1)||'home';if(!viewFor(state.page))state.page='home';render();document.fonts.ready.then(()=>document.querySelectorAll('.nav-scroll,.live-scroll').forEach(fade));
+  window.addEventListener('hashchange',()=>{state.page=location.hash.slice(1)||'home';if(!viewFor(state.page))state.page=PEEK?'':'home';document.querySelectorAll('dialog[open]').forEach(d=>d.close());closeMenu(false);render();window.scrollTo(0,0);});
+  state.page=location.hash.slice(1)||'home';if(!viewFor(state.page))state.page=PEEK?'':'home';render();document.fonts.ready.then(()=>document.querySelectorAll('.nav-scroll,.live-scroll').forEach(fade));
 })();

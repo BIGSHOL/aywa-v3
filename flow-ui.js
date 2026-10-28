@@ -27,7 +27,9 @@ window.createFlowUI = function createFlowUI(api) {
   const ORIGIN={snapshot:'학원 기록',dev:'직접 만든 일'};
   const CLOSURE={fact:'원본 기록이 처리되면 닫힙니다',manual:'사람이 확인하고 보고해 닫습니다'};
   const ROLE_ORDER=['owner','manager','teacher','staff'],ROLE_GROUP={owner:'원장',manager:'관리자',teacher:'선생님',staff:'직원'};
-  const store={status:'idle',flow:null,error:'',controller:null,pending:new Set(),actorId:'',filter:'',all:'',deferred:false,retry:0,etag:'',older:new Map(),partial:false};
+  // 보드 보기 상태: q = 검색어 · sort = 정렬 열과 방향 · cols = 열별 값 필터(열 → 고른 값들, 없으면 전부) · pages = 목록별 쪽.
+  const store={status:'idle',flow:null,error:'',controller:null,pending:new Set(),actorId:'',filter:'',q:'',sort:{col:'',dir:''},cols:{},pages:{},deferred:false,retry:0,etag:'',older:new Map(),partial:false};
+  const PEEK=document.documentElement.classList.contains('peek');
   try{store.actorId=localStorage.getItem(ACTOR_KEY)||'';}catch{/* storage unavailable: first owner actor is used */}
   const pill=(text,tone='')=>`<span class="ax-chip ${tone}">${h(text)}</span>`;
   const btn=(text,action,attrs='',primary=false)=>`<button type="button" class="button ${primary?'primary':''}" data-fl="${action}" ${attrs}>${h(text)}</button>`;
@@ -192,8 +194,9 @@ window.createFlowUI = function createFlowUI(api) {
   function markPending(key,on){document.querySelectorAll(`[data-fl-key="${CSS.escape(key)}"]`).forEach(b=>{b.disabled=on;b.setAttribute('aria-busy',String(on));});}
   // Incoming work shows up without a reload: a light read every 8 seconds while the tab is visible.
   addEventListener('focus',()=>{if(ready())load();});
-  document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'&&ready())load();});
-  setInterval(()=>{if(ready()&&document.visibilityState==='visible'&&!store.pending.size)load();},8000);
+  document.addEventListener('visibilitychange',()=>{if(!PEEK&&document.visibilityState==='visible'&&ready())load();});
+  // 엿보기 창 안(같은 앱을 한 번 더 띄운 것)은 8초 갱신을 하지 않는다 — 바깥 화면이 이미 돌고, 닫히면 바깥이 다시 읽는다.
+  if(!PEEK)setInterval(()=>{if(ready()&&document.visibilityState==='visible'&&!store.pending.size)load();},8000);
 
   /* ---------- shared pieces ---------- */
   // 관련 기록은 넷까지 — 나머지는 '외 N건'(전부는 '근거와 흐름'에서). 카드가 칩으로 옆으로 길어지지 않게(원장 10-28 "너무 가로로 나열").
@@ -213,36 +216,58 @@ window.createFlowUI = function createFlowUI(api) {
     const start=t.label&&t.label!==c.title?t.label:c.closure==='fact'?(signalCase(c)?'학원 기록에서 찾은 일':'자동으로 생긴 할 일'):t.label||'시작 기록 없음',why=[c.title,start].reduce((r,x)=>r.startsWith(`${x} · `)?r.slice(x.length+3):r,reason).replace(/^[\d,]+건 · /,'');
     return `<p class="fl-why"><span>${h(start)}</span>${who?`<span>${h(who)}</span>`:''}<span>${h(when(t.at||c.createdAt))}</span>${why?`<span>${h(why)}</span>`:''}</p>`;
   }
-  // 2.0 calls an open task past its due time '늦음' (staff-tasks taskState), so an open late source task reads '원본 늦음' once.
-  function chips(c){const srcLate=c.closure==='fact'&&c.sourceStatusLabel&&c.sourceStatus==='open'&&late(c);return `${c.kind==='scenario'?pill('연습 시나리오','amber'):''}${srcLate?pill('원본 늦음','amber'):pill(c.closure==='fact'&&c.sourceStatusLabel?`원본 ${c.sourceStatusLabel}`:STATE[c.state]||'상태 미확인')}${c.priority==='high'?pill('우선','amber'):''}${late(c)&&!srcLate?pill('늦음','amber'):''}${unassigned(c)?pill('담당 없음','amber'):''}${c.flags?.needsReview&&c.state!=='done'?pill('사람 검토 필요','amber'):''}`;}
+  // 상태 = 처리 상태 하나 + 걸리는 표시(원장 10-28 "원본늦음 우선이 뭐지?"). 같은 뜻은 한 번만 — 원본 할 일의 '우선'은 서버가
+  // 기한 지난 일에 붙인 것이라 '기한 지남'과 같은 말이다(flow-engine). 표시마다 뜻을 두고, 상태 칸에 마우스를 올리면 보인다.
+  // 원본 기록이 끝난 상태(처리됨·취소됨)만 원본 말을 쓰고, 늦음·기한 지남은 '기한 지남' 하나로 모은다.
+  const STATE_HINT={open:'아직 아무도 처리하지 않았습니다.',working:'담당자가 확인하고 처리하는 중입니다.',review:'보고가 들어와 검토를 기다립니다.',done:'끝난 일입니다.'};
+  function flags(c){
+    const out=[],add=(t,hint,tone='')=>{if(!out.some(f=>f[0]===t))out.push([t,hint,tone]);};
+    if(c.kind==='scenario')add('연습 시나리오','연습용으로 만든 일입니다. 집계에 들지 않습니다.','amber');
+    const src=c.closure==='fact'&&c.sourceStatusLabel&&['done','cancelled'].includes(c.sourceStatus)?c.sourceStatusLabel:'';
+    add(src||STATE[c.state]||'상태 미확인',src?`원본 기록에서 ${src} 일입니다.`:STATE_HINT[c.state]||'');
+    if(late(c)||c.state!=='done'&&c.sourceStatus==='expired')add('기한 지남',c.dueAt?`${md(kstDate(c.dueAt))}까지였는데 아직 끝나지 않았습니다.`:'기한이 지났는데 아직 끝나지 않았습니다.','amber');
+    if(unassigned(c))add('담당 없음','맡을 사람이 정해지지 않았습니다.','amber');
+    if(c.priority==='high'&&c.state!=='done'&&!(c.closure==='fact'&&c.taskKind))add(...(c.signalId?['결정 필요','원장·관리자가 정해야 하는 일입니다.']:c.decision?.priority==='high'?['오늘 처리','오늘 안에 처리할 일로 판정됐습니다.']:['중요','요청할 때 중요로 표시한 일입니다.']),'amber');
+    if(c.flags?.needsReview&&c.state!=='done')add('검토 필요','자동 배정이 확실하지 않아 사람이 확인해야 합니다.','amber');
+    return out;
+  }
+  function chips(c){return flags(c).map(([t,,tone])=>pill(t,tone)).join('');}
   const whoOf=s=>queued(s)?'관리자·원장 누구나':(s.assigneeIds||[]).map(nameOf).join(', ')||'담당 없음';
   function caseCard(c,{actions=true}={}){
     const s=myStep(c)||stepOf(c),open=activeSteps(c),links=(c.linkedCaseIds||[]).filter(caseById);
     return `<article class="fl-case" data-case="${h(c.id)}"><header><div class="ax-issue-meta">${chips(c)}</div><h3><button type="button" data-fl="open" data-id="${h(c.id)}">${h(c.title)}</button></h3></header>${c.summary?`<p class="fl-summary">${h(c.summary)}</p>`:''}${why(c)}${entityLinks(c)}${s?`<p class="fl-step">${!String(s.label||'').startsWith(c.title)&&!splitCase(c)?`${h(s.label)} · `:''}${h(s.skipped?'건너뜀':isReview(s)&&s.status==='ready'?STEP.review:STEP[s.status]||'상태 미확인')} · ${h(whoOf(s))}${open.length>1?` · 함께 남은 단계 ${open.length}개`:''}${c.dueAt?` · ${h(md(kstDate(c.dueAt)))}까지`:''}${s.evidenceRequired?' · 근거 필요':''}</p>`:''}${links.length?`<p class="fl-step">후속 보고 ${links.length}건 · ${signalCase(c)?'원본 기록이 바뀌면 닫힙니다':'원본 기록이 처리되면 닫힙니다'}</p>`:''}${actions?actionBar(c):''}</article>`;
   }
-  // 업무 흐름 보드 = 한 줄 목록(원장 10-28 "우측이 카드형태가 아니라 리스트 형태였으면") — 상태 · 일 · 관련 기록 · 할 차례 · 기한 · 생긴 때 · 동작이
-  // 줄마다 같은 자리. 줄의 동작은 둘(주 동작 · 처리 화면 열기) — 근거와 흐름·후속 보고는 제목을 누르면 열리는 상세 창에 있다.
-  const ROW_HEAD=['상태','일','관련 기록','할 차례','기한','생긴 때',''];
-  const rowHead=()=>`<div class="fl-rows-head" aria-hidden="true">${ROW_HEAD.map(x=>`<span>${x}</span>`).join('')}</div>`;
+  // 업무 흐름 보드 = 표(원장 10-28 "열정렬안되어있는거 정렬" · "열마다 딱 너비가 정해져있어서 넘치면 짤라버려. 마우스 올리면 짤린거 볼 수 있게").
+  // 열 너비는 표 머리 한 곳(table-layout:fixed)이 정한다 — 줄마다 글 길이가 달라도 열이 흔들리지 않는다. 넘친 글은 말줄임(.fl-cut),
+  // 마우스·초점이 오면 전부 보인다(fl-tip). 처리 화면 = 그 일을 처리하는 화면, 누르면 이 화면 위 엿보기 창으로 연다.
+  const COLS=[['state','상태'],['title','일'],['rec','관련 기록'],['who','할 차례'],['due','기한'],['at','생긴 때'],['place','처리 화면'],['act','']];
+  const refsOf=c=>(c.entityRefs||[]).filter(r=>r&&r.label&&!(r.type==='task'&&r.label===c.title));
+  const placeOf=c=>c.familyId&&api.familyLabel?.(c.familyId)||'';
+  const whoText=c=>{const s=myStep(c)||stepOf(c);return s?whoOf(s):'';};
+  const atOf=c=>(c.trigger||{}).at||c.createdAt||'';
+  // 열마다 걸러 보는 값(한 일이 값을 여럿 가질 수 있다 — 상태 표시·관련 기록·담당자)과 정렬 값. 빈 값은 '없음'으로 걸러지고 정렬에선 늘 맨 뒤.
+  const COLV={state:c=>flags(c).map(f=>f[0]),title:c=>[c.title||'제목 없음'],rec:c=>{const r=refsOf(c).map(x=>x.label);return r.length?[...new Set(r)]:['없음'];},who:c=>{const w=whoText(c);return w?w.split(', '):['없음'];},due:c=>[c.dueAt?md(kstDate(c.dueAt)):'없음'],at:c=>[md(kstDate(atOf(c)))||'없음'],place:c=>[placeOf(c)||'없음']};
+  const FLAG_RANK=['기한 지남','담당 없음','결정 필요','오늘 처리','중요','검토 필요','검토 대기','진행 중','처리 전','연습 시나리오'];
+  const SORTV={state:c=>Math.min(...flags(c).map(f=>{const i=FLAG_RANK.indexOf(f[0]);return i<0?FLAG_RANK.length:i;})),title:c=>c.title||'',rec:c=>refsOf(c)[0]?.label||'',who:whoText,due:c=>c.dueAt?kstDate(c.dueAt):'',at:c=>Date.parse(atOf(c))||'',place:placeOf};
   function caseRow(c){
-    const s=myStep(c)||stepOf(c),t=c.trigger||{},refs=(c.entityRefs||[]).filter(r=>r&&r.label&&!(r.type==='task'&&r.label===c.title));
-    const rec=refs.slice(0,2).map(r=>{const ws=r.familyId&&api.hasView(`workspace-${r.familyId}`);return `<button type="button" class="fl-entity" data-fl="entity" data-family="${h(r.familyId||'')}" data-record="${h(r.recordId||r.id||'')}" ${ws||api.canOpenRecord?.(r.recordId||r.id)?'':'disabled'}>${h(r.label)}</button>`;}).join('')+(refs.length>2?`<span class="fl-entity-more">외 ${fmt(refs.length-2)}</span>`:'');
-    return `<li class="fl-row" data-case="${h(c.id)}"><span class="fl-row-state">${chips(c)}</span><span class="fl-row-main"><button type="button" data-fl="open" data-id="${h(c.id)}">${h(c.title)}</button>${c.summary?`<small>${h(c.summary)}</small>`:''}</span><span class="fl-row-rec">${rec||'<span class="fl-dim">—</span>'}</span><span class="fl-row-who">${h(s?whoOf(s):'—')}</span><span class="fl-row-due">${c.dueAt?h(md(kstDate(c.dueAt))):'—'}</span><span class="fl-row-at">${h(when(t.at||c.createdAt))}</span><span class="fl-row-act">${actionBar(c,{compact:true})}</span></li>`;
+    const refs=refsOf(c),fl=flags(c),place=placeOf(c),who=whoText(c),at=when(atOf(c));
+    const chip=r=>{const ws=r.familyId&&api.hasView(`workspace-${r.familyId}`);return `<button type="button" class="fl-entity" data-fl="entity" data-family="${h(r.familyId||'')}" data-record="${h(r.recordId||r.id||'')}" ${ws||api.canOpenRecord?.(r.recordId||r.id)?'':'disabled'}>${h(r.label)}</button>`;};
+    const rec=refs.slice(0,3).map(chip).join('')+(refs.length>3?`<span class="fl-entity-more">외 ${fmt(refs.length-3)}</span>`:'');
+    return `<tr class="fl-row" data-case="${h(c.id)}"><td class="c-state"><span class="fl-cut fl-line" data-hint="${h(fl.map(([t,hint])=>hint?`${t} — ${hint}`:t).join('\n'))}">${chips(c)}</span></td><td class="c-title"><button type="button" class="fl-cut" data-fl="open" data-id="${h(c.id)}">${h(c.title)}</button>${c.summary?`<small class="fl-cut">${h(c.summary)}</small>`:''}</td><td class="c-rec">${refs.length?`<span class="fl-cut fl-line" data-full="${h(refs.map(r=>r.label).join(', '))}">${rec}</span>`:'<span class="fl-dim">—</span>'}</td><td class="c-who"><span class="fl-cut">${h(who||'—')}</span></td><td class="c-due"><span class="fl-cut">${c.dueAt?h(md(kstDate(c.dueAt))):'—'}</span></td><td class="c-at"><span class="fl-cut">${h(at)}</span></td><td class="c-place">${place?`<button type="button" class="fl-place fl-cut" data-fl="goto" data-id="${h(c.id)}" aria-label="${h(place)} 열기">${h(place)}</button>`:'<span class="fl-dim">—</span>'}</td><td class="c-act">${actionBar(c,{compact:true})}</td></tr>`;
   }
   // What the previewed person can do on this case right now (the server still validates every command).
   // 보고·요청에 붙인 기록(서버가 복사본 기록 저장소에서 확인한 값) — 누르면 그 기록을 연다.
   const attachList=list=>(list||[]).length?`<ul class="fl-attach">${list.map(a=>`<li><button type="button" class="ax-text-link" data-fl="attach-open" data-id="${h(a.familyId)}" data-record="${h(a.recordId)}">${h(a.label)}</button><small>${h([api.familyLabel?.(a.familyId),a.date,a.status,...(a.fields||[]).slice(0,3).map(f=>`${f.label} ${f.value}`)].filter(Boolean).join(' · '))}</small></li>`).join('')}</ul>`:'';
-  // compact = 목록 한 줄용 — 주 동작 하나 + 처리 화면 열기(근거와 흐름·후속 보고는 상세 창에서).
+  // compact = 표 한 줄용 — 주 동작 하나(처리 화면은 옆 열, 근거와 흐름·후속 보고는 제목을 누르면 열리는 상세 창).
   function actionBar(c,{compact=false}={}){
     const id=h(c.id),s=myStep(c),sk=s?h(s.id):'';
     if(c.state==='done')return `<div class="ax-actions">${lead()&&c.closure!=='fact'?btn('다시 열기','reopen-open',`data-id="${id}"`):''}${compact?'':btn('근거와 흐름','open',`data-id="${id}"`)}</div>`;
     if(compact){
-      const first=s&&!isReview(s)&&s.status==='ready'?btn('확인했습니다','ack',`data-id="${id}" data-step="${sk}" data-fl-key="case.ack:${id}"`,true):s&&isReview(s)&&lead()?btn('검토','review-open',`data-id="${id}" data-step="${sk}"`,true):lead()&&activeSteps(c).length?btn(unassigned(c)?'담당 지정':'담당 바꾸기','reassign-open',`data-id="${id}"`):'';
-      const where=c.familyId&&api.familyLabel?.(c.familyId);
-      return `<div class="ax-actions">${first}${where?btn(`${where} 열기`,'goto',`data-id="${id}"`):''}</div>`;
+      const first=s&&!isReview(s)&&s.status==='ready'?btn('확인','ack',`data-id="${id}" data-step="${sk}" data-fl-key="case.ack:${id}"`,true):s&&isReview(s)&&lead()?btn('검토','review-open',`data-id="${id}" data-step="${sk}"`,true):lead()&&activeSteps(c).length?btn(unassigned(c)?'담당 지정':'담당 바꾸기','reassign-open',`data-id="${id}"`):'';
+      return `<div class="ax-actions">${first||'<span class="fl-dim">—</span>'}</div>`;
     }
     const out=[];
-    if(s&&!isReview(s)&&s.status==='ready')out.push(btn('확인했습니다','ack',`data-id="${id}" data-step="${sk}" data-fl-key="case.ack:${id}"`,true));
+    if(s&&!isReview(s)&&s.status==='ready')out.push(btn('확인','ack',`data-id="${id}" data-step="${sk}" data-fl-key="case.ack:${id}"`,true));
     if(s&&!isReview(s))out.push(btn(c.closure==='fact'?'후속 보고 쓰기':'보고 쓰기','report-open',`data-id="${id}" data-step="${sk}"`,s.status==='working'));
     if(s&&isReview(s)&&lead())out.push(btn('검토','review-open',`data-id="${id}" data-step="${sk}"`,true));
     if(lead()&&activeSteps(c).length)out.push(btn(unassigned(c)?'담당 지정':'담당 바꾸기','reassign-open',`data-id="${id}"`));
@@ -282,12 +307,21 @@ window.createFlowUI = function createFlowUI(api) {
   /* ---------- role views ---------- */
   const navList=(active,title,items)=>items.length?`<p class="fl-nav-head">${h(title)}</p><ul>${items.map(([id,label,n])=>`<li><button type="button" data-fl="filter" data-id="${h(id)}" aria-pressed="${active===id}" class="${n?'':'zero'}"><span>${h(label)}</span><b>${fmt(n)}</b></button></li>`).join('')}</ul>`:'';
   function filterBar(active,items){return `<div class="ax-filter" role="group" aria-label="보기">${items.map(([id,label,n])=>`<button type="button" data-fl="filter" data-id="${h(id)}" aria-pressed="${active===id}">${h(label)} ${fmt(n)}</button>`).join('')}</div>`;}
-  // rows = 한 줄 목록(업무 흐름 보드) · 아니면 카드(직원·관리자 화면).
-  function list(items,empty,key='',{rows=false}={}){
+  // 쪽 나누기(원장 10-28 "106건 모두 보기 말고 적절한 위치에 페이지네이션 처리해. 전체개수는 필요없음") — 20건씩, 목록 바로 아래 쪽 번호만.
+  // 쪽은 목록 열쇠마다 따로 기억하고, 보기·검색·필터·정렬이 바뀌면 첫 쪽으로 돌아간다.
+  const PER_PAGE=20;
+  function pageOf(items,key){const pages=Math.max(1,Math.ceil(items.length/PER_PAGE)),page=Math.min(Math.max(1,store.pages[key]||1),pages);return {page,pages,shown:items.slice((page-1)*PER_PAGE,page*PER_PAGE)};}
+  function pager(key,page,pages){
+    if(pages<=1)return '';
+    const nums=pages<=7?Array.from({length:pages},(_,i)=>i+1):[...new Set([1,...[page-1,page,page+1].filter(n=>n>1&&n<pages),pages])].reduce((a,n)=>{if(a.length&&n-a.at(-1)>1)a.push('…');a.push(n);return a;},[]);
+    const go=(n,label,attrs='')=>`<button type="button" data-fl="page" data-page-list="${h(key)}" data-id="${n}" ${attrs}>${label}</button>`;
+    return `<nav class="fl-pager" aria-label="쪽 이동">${go(page-1,'‹ 이전',`aria-label="이전 쪽" ${page<=1?'disabled':''}`)}${nums.map(n=>n==='…'?'<span aria-hidden="true">…</span>':go(n,n,n===page?'aria-current="page"':`aria-label="${n}쪽"`)).join('')}${go(page+1,'다음 ›',`aria-label="다음 쪽" ${page>=pages?'disabled':''}`)}</nav>`;
+  }
+  // 카드 목록(직원·관리자 화면). 업무 흐름 보드의 표는 boardTable.
+  function list(items,empty,key=''){
     if(!items.length)return `<p class="live-empty">${h(empty)}</p>`;
-    const all=!key||store.all===key||items.length<=20,shown=all?items:items.slice(0,20);
-    const body=rows?`${rowHead()}<ul class="fl-list fl-rows" ${key?`data-list="${h(key)}"`:''}>${shown.map(caseRow).join('')}</ul>`:`<div class="fl-list" ${key?`data-list="${h(key)}"`:''}>${shown.map(c=>caseCard(c)).join('')}</div>`;
-    return `${body}${all?'':`<div class="ax-actions">${btn(`${fmt(items.length)}건 모두 보기`,'more',`data-id="${h(key)}"`)}</div>`}`;
+    const p=key?pageOf(items,key):{page:1,pages:1,shown:items};
+    return `<div class="fl-list" ${key?`data-list="${h(key)}"`:''}>${p.shown.map(c=>caseCard(c)).join('')}</div>${pager(key,p.page,p.pages)}`;
   }
   function staffView(){
     const me=actor(),mineAll=cases().filter(c=>mine(c)),readyNow=newest(mineAll.filter(c=>myStep(c)?.status==='ready')),working=newest(mineAll.filter(c=>myStep(c)?.status!=='ready')),reviewing=cases().filter(c=>c.state!=='done'&&!mine(c)&&inReview(c)&&(c.evidence||[]).some(e=>e.actorId===me?.id));
@@ -337,25 +371,58 @@ window.createFlowUI = function createFlowUI(api) {
     return fold([c.title,c.summary,kindLabel(c),plain(chips(c)),...(c.entityRefs||[]).map(r=>r?.label),...activeSteps(c).flatMap(st=>[st.label,whoOf(st)]),s?whoOf(s):'',c.dueAt?`${md(kstDate(c.dueAt))}까지`:'',when(t.at||c.createdAt),api.familyLabel?.(c.familyId)].filter(Boolean).join(' '));
   }
   const matchCase=(c,q)=>{const hay=haystack(c);return q.split(/\s+/).filter(Boolean).every(w=>hay.includes(fold(w)));};
-  // 보드 계산 한 벌 — 화면 전체를 그릴 때와 검색어를 칠 때(목록만 다시 그림)가 같은 값을 쓴다.
+  // 열 필터: 열마다 고른 값 중 하나라도 가진 일만 남긴다. skip = 값 목록을 뽑는 그 열(자기 필터는 빼고 센다 — 엑셀과 같다).
+  const colOn=()=>Object.entries(store.cols).filter(([k,v])=>COLV[k]&&Array.isArray(v));
+  const colPass=(c,skip='')=>colOn().every(([k,vals])=>k===skip||COLV[k](c).some(v=>vals.includes(v)));
+  // 정렬은 안정 정렬(같은 값이면 원래 순서) · 빈 값은 방향과 상관없이 맨 뒤.
+  function sortCases(list){
+    const {col,dir}=store.sort,key=SORTV[col];if(!key)return list;
+    const val=new Map(list.map(c=>[c,key(c)])),sign=dir==='desc'?-1:1;
+    return [...list].sort((a,b)=>{const x=val.get(a),y=val.get(b),ex=x===''||x==null,ey=y===''||y==null;if(ex||ey)return ex===ey?0:ex?1:-1;return sign*(typeof x==='number'&&typeof y==='number'?x-y:String(x).localeCompare(String(y),'ko',{numeric:true}));});
+  }
+  // 보드 계산 한 벌 — 화면 전체를 그릴 때와 검색·필터·정렬·쪽을 바꿀 때(표만 다시 그림)가 같은 값을 쓴다.
+  // board.base = 보기 + 검색어까지 거른 일(열 머리 메뉴가 값 목록을 여기서 뽑는다).
+  const board={base:[]};
   function boardParts(){
     const open=cases().filter(c=>c.state!=='done');
     const kinds=kindGroups(open.filter(c=>!local(c)));
     const lists={decide:open.filter(ownerDecides),...Object.fromEntries(kinds.map(k=>[k.key,k.items])),blocked:open.filter(c=>unassigned(c)||late(c)||returned(c)),moving:open.filter(c=>!local(c)),local:cases().filter(local),done:cases().filter(c=>c.state==='done')};
-    const f=lists[store.filter]?store.filter:'decide',q=(store.q||'').trim(),items=q?lists[f].filter(c=>matchCase(c,q)):lists[f];
-    // 보기는 왼쪽 세로 목록(상태 · 종류 많은 순), 일은 오른쪽 목록 — 칩 20여 개를 가로로 늘어놓지 않는다(원장 10-28 "너무 가로로 나열되어있고 공간 낭비 최악").
+    const f=lists[store.filter]?store.filter:'decide',q=(store.q||'').trim();
+    board.base=q?lists[f].filter(c=>matchCase(c,q)):lists[f];
+    const items=sortCases(board.base.filter(c=>colPass(c))),narrowed=Boolean(q)||colOn().length>0;
+    // 보기는 왼쪽 세로 목록(상태 · 종류 많은 순), 일은 오른쪽 표 — 칩 20여 개를 가로로 늘어놓지 않는다(원장 10-28 "너무 가로로 나열되어있고 공간 낭비 최악").
     const states=[['decide','원장 결정 대기',lists.decide.length],['moving','남은 일 전체',lists.moving.length],['blocked','늦은 일·담당 없는 일',lists.blocked.length],['local','직접 만든 일',lists.local.length],['done','끝난 일',lists.done.length]];
     const byKind=[...kinds].sort((a,b)=>b.items.length-a.items.length).map(k=>[k.key,k.label,k.items.length]),label=[...states,...byKind].find(([id])=>id===f)?.[1]||'';
-    return {f,q,states,byKind,label,count:q?`${fmt(items.length)}건 / ${fmt(lists[f].length)}건`:`${fmt(lists[f].length)}건`,listHtml:list(items,q?'검색어와 맞는 일이 없습니다.':'이 조건의 일이 없습니다.',f,{rows:true})};
+    // 제목 옆 건수는 걸러 볼 때만(찾은 수) — 보기 전체 건수는 왼쪽 목록에 있다(원장 10-28 "왼쪽에도 있으므로 전체개수는 숨겨줘 상단은").
+    return {f,q,states,byKind,label,count:narrowed?`찾은 일 ${fmt(items.length)}건`:'',listHtml:boardTable(items,f,narrowed?'조건과 맞는 일이 없습니다.':'이 조건의 일이 없습니다.')};
   }
-  function ownerBelow(){
+  function boardTable(items,f,empty){
+    const {page,pages,shown}=pageOf(items,'board');
+    const th=([key,label])=>{
+      if(key==='act')return '<th class="c-act" scope="col"><span class="ax-visually-hidden">동작</span></th>';
+      const dir=store.sort.col===key?store.sort.dir:'',filtered=Array.isArray(store.cols[key]);
+      return `<th class="c-${key}" scope="col" aria-sort="${dir==='asc'?'ascending':dir==='desc'?'descending':'none'}"><button type="button" class="fl-th${dir||filtered?' on':''}" data-fl="col" data-col="${key}" aria-haspopup="dialog" aria-expanded="${colMenu.key===key}" aria-label="${label} — 정렬·필터${dir?` (${dir==='asc'?'오름차순':'내림차순'})`:''}${filtered?' (필터 켜짐)':''}"><span>${label}</span>${dir?`<b class="fl-th-mark" aria-hidden="true">${dir==='asc'?'▲':'▼'}</b>`:''}${filtered?'<b class="fl-th-mark" aria-hidden="true">●</b>':''}<i class="fl-th-caret" aria-hidden="true">${icon('down')}</i></button></th>`;
+    };
+    return `${activeFilters()}<div class="fl-tablewrap"><table class="fl-table"><thead><tr>${COLS.map(th).join('')}</tr></thead><tbody class="fl-tbody" data-list="${h(f)}">${shown.map(caseRow).join('')}</tbody></table>${items.length?'':`<p class="live-empty">${h(empty)}</p>`}</div>${pager('board',page,pages)}`;
+  }
+  // 걸러 보는 조건을 표 위에 칩으로 — 칩을 누르면 그 열의 필터만 지운다.
+  function activeFilters(){
+    const on=colOn();if(!on.length)return '';
+    // 뺀 값이 고른 값보다 적으면 'OO 제외'로 적는다(하나만 끈 필터가 남은 값 목록으로 길어지지 않게).
+    const name=k=>COLS.find(c=>c[0]===k)?.[1]||'',few=v=>v.length>2?`${v.slice(0,2).join(', ')} 외 ${fmt(v.length-2)}`:v.join(', ');
+    const vals=(k,v)=>{if(!v.length)return '고른 값 없음';const out=colValues(k).map(([x])=>x).filter(x=>!v.includes(x));return out.length&&out.length<v.length?`${few(out)} 제외`:few(v);};
+    return `<div class="fl-active" role="group" aria-label="걸러 보는 조건">${on.map(([k,v])=>`<button type="button" class="fl-active-chip" data-fl="col-clear" data-col="${k}" aria-label="${h(name(k))} 필터 지우기"><span>${h(name(k))}: ${h(vals(k,v))}</span><b aria-hidden="true">×</b></button>`).join('')}${on.length>1?'<button type="button" class="ax-text-link" data-fl="col-clear" data-col="">필터 모두 지우기</button>':''}</div>`;
+  }
+  function ownerBelow({heading=true}={}){
     if(!ready())return stateNote();
-    const p=boardParts();
-    // 화면 전체를 다시 그려도 검색칸의 글자와 커서를 지킨다(8초 갱신·담당 변경 뒤).
+    const p=boardParts();hideTip();warmPeek();
+    // 화면 전체를 다시 그려도 검색칸의 글자와 커서를 지킨다(8초 갱신·담당 변경 뒤). 열 머리 메뉴는 새 머리 칸 아래로 옮긴다.
     if(document.activeElement?.matches?.('[data-fl-search]'))queueMicrotask(()=>{const i=document.querySelector('[data-fl-search]');if(i){i.focus({preventScroll:true});i.setSelectionRange(i.value.length,i.value.length);}});
-    return `<section class="fl-section" id="fl-detail" aria-labelledby="fl-detail-title"><div class="ax-section-head"><h2 id="fl-detail-title" tabindex="-1">업무 흐름</h2></div><div class="fl-board"><nav class="fl-nav" aria-label="보기">${navList(p.f,'상태',p.states)}${navList(p.f,'종류',p.byKind)}</nav><div class="fl-board-main"><div class="fl-board-head"><h3 class="fl-board-title">${h(p.label)} <span id="fl-board-count">${p.count}</span></h3><input type="search" class="fl-search" data-fl-search value="${h(p.q)}" placeholder="이름·내용·담당·기록으로 찾기" aria-label="업무 흐름에서 찾기" autocomplete="off"></div><div id="fl-board-list">${p.listHtml}</div></div></div>${scenarioPanel()}${stageOverview()}</section>`;
+    if(colMenu.el)requestAnimationFrame(placeColMenu);
+    // 업무 흐름 화면에서는 소제목을 숨긴다 — 페이지 제목이 같은 말이다(원장 10-28 "여기도 하단의 업무 흐름 중복임"). 이동 목표로는 남긴다.
+    return `<section class="fl-section" id="fl-detail" aria-labelledby="fl-detail-title">${heading?'<div class="ax-section-head"><h2 id="fl-detail-title" tabindex="-1">업무 흐름</h2></div>':'<h2 id="fl-detail-title" class="ax-visually-hidden" tabindex="-1">업무 흐름</h2>'}<div class="fl-board"><div class="fl-board-head"><h3 class="fl-board-title">${h(p.label)}<span id="fl-board-count">${p.count}</span></h3><input type="search" class="fl-search" data-fl-search value="${h(p.q)}" placeholder="이름·내용·담당·기록으로 찾기" aria-label="업무 흐름에서 찾기" autocomplete="off"></div><nav class="fl-nav" aria-label="보기">${navList(p.f,'상태',p.states)}${navList(p.f,'종류',p.byKind)}</nav><div id="fl-board-list" class="fl-board-list">${p.listHtml}</div></div>${scenarioPanel()}${stageOverview()}</section>`;
   }
-  function fullView(){return role()==='owner'?`<div class="page-heading"><div><h1>업무 흐름</h1><p>${md(asOf())} 기준 · 누가 어떤 일을 왜 맡았는지와 근거를 봅니다.</p></div></div>${ownerBelow()}`:role()==='manager'?managerView():staffView();}
+  function fullView(){return role()==='owner'?`<div class="page-heading"><div><h1>업무 흐름</h1><p>${md(asOf())} 기준 · 누가 어떤 일을 왜 맡았는지와 근거를 봅니다.</p></div></div>${ownerBelow({heading:false})}`:role()==='manager'?managerView():staffView();}
 
   /* ---------- local scenarios (clearly local, tied to real copied records, not counted as history) ---------- */
   // The shared context picker (context-picker.js) when it is loaded; otherwise, or if it fails, the plain control.
@@ -498,7 +565,7 @@ window.createFlowUI = function createFlowUI(api) {
     if(!s||s.skipped||c.state==='done'||!['ready','working','review'].includes(s.status))return '';
     const id=h(c.id),sk=h(s.id),mine=(s.assigneeIds||[]).includes(actor()?.id)||(lead()&&queued(s)),fact=c.closure==='fact',out=[];
     if(scoped){if(mine&&!isReview(s))out.push(btn(fact?'이 학생 후속 보고 쓰기':'이 학생 보고 쓰기','report-open',`data-id="${id}" data-step="${sk}" data-node="${h(scoped.id)}"`,true));return out.length?`<div class="ax-actions">${out.join('')}</div>`:'';}
-    if(mine&&!isReview(s)&&s.status==='ready')out.push(btn('확인했습니다','ack',`data-id="${id}" data-step="${sk}" data-fl-key="case.ack:${id}"`,true));
+    if(mine&&!isReview(s)&&s.status==='ready')out.push(btn('확인','ack',`data-id="${id}" data-step="${sk}" data-fl-key="case.ack:${id}"`,true));
     if(mine&&!isReview(s))out.push(btn(relational(c)?(fact?'단계 전체 후속 보고':'단계 전체 보고 쓰기'):fact?'후속 보고 쓰기':'보고 쓰기','report-open',`data-id="${id}" data-step="${sk}"`,s.status==='working'));
     if(isReview(s)&&lead())out.push(btn('검토','review-open',`data-id="${id}" data-step="${sk}"`,true));
     if(lead())out.push(btn((s.assigneeIds||[]).length?'담당 바꾸기':'담당 지정','reassign-open',`data-id="${id}" data-step="${sk}"`));
@@ -689,6 +756,154 @@ window.createFlowUI = function createFlowUI(api) {
   }
   const actAs=(kind,caseId,actorId,payload={})=>{const c=caseById(caseId),s=c&&myStep(c,actorId);return command(kind,{caseId,payload:{...(s?{stepId:s.id}:{}),...payload},actorId,key:`${kind}:${caseId}`});};
 
+  /* ---------- 열 머리 메뉴: 정렬 · 값 필터(원장 10-28 "전부 필터 및 검색, 오름/내림차순 정렬 가능하게") ---------- */
+  // 엑셀처럼 열 머리를 누르면 그 아래 작은 창 — 오름·내림차순, 그 열의 값 목록(건수와 함께 · 찾기 칸으로 좁힘)을 골라 거른다.
+  // 고르는 즉시 표에 반영하고 창은 열어 둔다. 값 목록은 검색어와 다른 열의 필터를 거친 일에서 뽑는다(그 열 자신의 필터는 빼고).
+  const colMenu={key:'',el:null,q:''};
+  const COLRAW={due:c=>c.dueAt?kstDate(c.dueAt):'',at:c=>kstDate(atOf(c))};
+  function colValues(key){
+    const n=new Map(),raw=new Map();
+    for(const c of board.base.filter(c=>colPass(c,key)))for(const v of COLV[key](c)){n.set(v,(n.get(v)||0)+1);if(COLRAW[key]&&!raw.has(v))raw.set(v,COLRAW[key](c));}
+    return [...n].sort((a,b)=>a[0]==='없음'?1:b[0]==='없음'?-1:COLRAW[key]?String(raw.get(a[0])).localeCompare(String(raw.get(b[0]))):b[1]-a[1]||a[0].localeCompare(b[0],'ko'));
+  }
+  const colLabel=key=>COLS.find(c=>c[0]===key)?.[1]||'';
+  function colListHtml(key){
+    const sel=store.cols[key],on=v=>!Array.isArray(sel)||sel.includes(v),q=fold(colMenu.q),vals=colValues(key),shown=q?vals.filter(([v])=>fold(v).includes(q)):vals;
+    if(!shown.length)return `<p class="fl-dim">${vals.length?'맞는 값이 없습니다.':'고를 값이 없습니다.'}</p>`;
+    return `<label class="fl-colpop-all"><input type="checkbox" data-flc="all"><span>${q?'찾은 값 모두':'모두'}</span></label>${shown.map(([v,n])=>`<label><input type="checkbox" data-flc="val" value="${h(v)}" ${on(v)?'checked':''}><span>${h(v)}</span><b>${fmt(n)}</b></label>`).join('')}`;
+  }
+  // '모두' 칸 = 보이는 값이 다 골라졌으면 체크, 일부면 반만(indeterminate).
+  function syncColAll(){const el=colMenu.el;if(!el)return;const boxes=[...el.querySelectorAll('[data-flc="val"]')],all=el.querySelector('[data-flc="all"]'),n=boxes.filter(b=>b.checked).length;if(all){all.checked=boxes.length>0&&n===boxes.length;all.indeterminate=n>0&&n<boxes.length;}el.querySelector('[data-flc="clear"]').disabled=!Array.isArray(store.cols[colMenu.key])&&store.sort.col!==colMenu.key;el.querySelectorAll('[data-flc="sort"]').forEach(b=>b.setAttribute('aria-pressed',String(store.sort.col===colMenu.key&&store.sort.dir===b.dataset.dir)));}
+  function paintColMenu(){const list=colMenu.el?.querySelector('.fl-colpop-list');if(!list)return;list.innerHTML=colListHtml(colMenu.key);syncColAll();api.attachScroll?.();}
+  function openColMenu(key){
+    closeColMenu(false);if(!COLV[key])return;hideTip();colMenu.key=key;colMenu.q='';
+    const label=colLabel(key),el=document.createElement('div');
+    el.className='fl-colpop';el.setAttribute('role','dialog');el.setAttribute('aria-label',`${label} 정렬·필터`);
+    el.innerHTML=`<div class="fl-colpop-sort" role="group" aria-label="정렬"><button type="button" data-flc="sort" data-dir="asc">오름차순 ▲</button><button type="button" data-flc="sort" data-dir="desc">내림차순 ▼</button></div><input type="search" class="fl-colpop-q" data-flc-q placeholder="${h(label)} 값 찾기" aria-label="${h(label)} 값 찾기" autocomplete="off"><div class="fl-colpop-list live-scroll" role="group" aria-label="${h(label)} 값"></div><div class="fl-colpop-foot"><button type="button" class="ax-text-link" data-flc="clear">이 열 초기화</button><button type="button" class="button" data-flc="close">닫기</button></div>`;
+    document.body.append(el);colMenu.el=el;paintColMenu();placeColMenu();
+    document.querySelector(`.fl-th[data-col="${CSS.escape(key)}"]`)?.setAttribute('aria-expanded','true');
+    el.querySelector('[data-flc-q]').focus({preventScroll:true});
+  }
+  function closeColMenu(returnFocus=true){
+    if(!colMenu.el)return;const key=colMenu.key;colMenu.el.remove();colMenu.el=null;colMenu.key='';
+    const b=document.querySelector(`.fl-th[data-col="${CSS.escape(key)}"]`);b?.setAttribute('aria-expanded','false');if(returnFocus)b?.focus({preventScroll:true});
+  }
+  // 머리 칸 바로 아래(넘치면 위) · 화면 안. 표를 다시 그려 머리 칸이 바뀌어도 같은 열을 따라가고, 머리 칸이 화면 밖으로 나가면 닫는다.
+  function placeColMenu(){
+    const el=colMenu.el;if(!el)return;const a=document.querySelector(`.fl-th[data-col="${CSS.escape(colMenu.key)}"]`);
+    if(!a){closeColMenu(false);return;}const r=a.getBoundingClientRect();if(r.bottom<0||r.top>innerHeight){closeColMenu(false);return;}
+    a.setAttribute('aria-expanded','true');
+    const w=el.offsetWidth,hh=el.offsetHeight;let top=r.bottom+4;if(top+hh>innerHeight-8)top=Math.max(8,r.top-hh-4);
+    el.style.left=`${Math.min(Math.max(8,r.left),innerWidth-w-8)}px`;el.style.top=`${top}px`;
+  }
+  // 값 고르기 — 다 고르면 그 열 필터를 지운다(전부와 같다). 하나도 안 고르면 맞는 일이 없다.
+  function setColValues(key,values,on){
+    const all=colValues(key).map(([v])=>v),sel=new Set(Array.isArray(store.cols[key])?store.cols[key]:all);
+    values.forEach(v=>on?sel.add(v):sel.delete(v));
+    if(all.every(v=>sel.has(v)))delete store.cols[key];else store.cols[key]=[...sel];
+    store.pages.board=1;paintBoardList();syncColAll();
+  }
+  document.addEventListener('click',event=>{
+    const b=event.target.closest?.('.fl-colpop [data-flc]');if(!b||b.matches('input'))return;
+    const key=colMenu.key,act=b.dataset.flc;
+    if(act==='close'){closeColMenu();return;}
+    if(act==='sort'){const same=store.sort.col===key&&store.sort.dir===b.dataset.dir;store.sort=same?{col:'',dir:''}:{col:key,dir:b.dataset.dir};store.pages.board=1;paintBoardList();syncColAll();return;}
+    if(act==='clear'){delete store.cols[key];if(store.sort.col===key)store.sort={col:'',dir:''};colMenu.q='';const q=colMenu.el.querySelector('[data-flc-q]');if(q)q.value='';store.pages.board=1;paintBoardList();paintColMenu();}
+  });
+  document.addEventListener('change',event=>{
+    const t=event.target;if(!t.closest?.('.fl-colpop'))return;const key=colMenu.key;
+    if(t.dataset.flc==='val')setColValues(key,[t.value],t.checked);
+    if(t.dataset.flc==='all'){const boxes=[...colMenu.el.querySelectorAll('[data-flc="val"]')];boxes.forEach(x=>{x.checked=t.checked;});setColValues(key,boxes.map(x=>x.value),t.checked);}
+  });
+  document.addEventListener('input',event=>{if(!event.target.matches?.('.fl-colpop [data-flc-q]'))return;colMenu.q=event.target.value;paintColMenu();});
+  document.addEventListener('keydown',event=>{
+    if(!colMenu.el||event.key!=='Escape'||!event.target.closest?.('.fl-colpop'))return;event.preventDefault();
+    const q=event.target.matches('[data-flc-q]')&&event.target.value?event.target:null;if(q){q.value='';colMenu.q='';paintColMenu();return;}closeColMenu();
+  });
+  document.addEventListener('pointerdown',event=>{if(colMenu.el&&!colMenu.el.contains(event.target)&&!event.target.closest?.('.fl-th'))closeColMenu(false);},true);
+  addEventListener('resize',()=>requestAnimationFrame(placeColMenu));
+  addEventListener('scroll',event=>{if(colMenu.el&&!colMenu.el.contains(event.target))requestAnimationFrame(placeColMenu);},{passive:true,capture:true});
+
+  /* ---------- 잘린 글 보기(원장 10-28 "마우스 올리면 짤린거 볼 수 있게") ---------- */
+  // 표 칸의 .fl-cut이 넘쳐 잘렸으면 마우스·키보드 초점이 왔을 때 전부를 띄운다. data-hint(상태 표시의 뜻)는 잘리지 않아도 띄운다.
+  // 브라우저 기본 툴팁(title)은 쓰지 않는다. 클릭·스크롤을 막지 않고(pointer-events:none) 화면 안에 둔다.
+  let tipEl=null,tipFor=null;
+  function showTip(el){
+    const cut=el.scrollWidth>el.clientWidth+1,text=el.dataset.hint||(cut?el.dataset.full||el.textContent.trim():'');
+    if(!text){hideTip();return;}
+    if(!tipEl){tipEl=document.createElement('div');tipEl.className='fl-tip';tipEl.id='fl-tip';tipEl.setAttribute('role','tooltip');document.body.append(tipEl);}
+    if(tipFor&&tipFor!==el)tipFor.removeAttribute('aria-describedby');
+    tipEl.textContent=text;tipEl.hidden=false;tipFor=el;el.setAttribute('aria-describedby','fl-tip');
+    const r=el.getBoundingClientRect(),w=tipEl.offsetWidth,hh=tipEl.offsetHeight;let top=r.bottom+6;if(top+hh>innerHeight-8)top=Math.max(8,r.top-hh-6);
+    tipEl.style.left=`${Math.min(Math.max(8,r.left),innerWidth-w-8)}px`;tipEl.style.top=`${top}px`;
+  }
+  function hideTip(){tipFor?.removeAttribute('aria-describedby');tipFor=null;if(tipEl)tipEl.hidden=true;}
+  const cutOf=t=>t?.closest?.('.fl-table .fl-cut');
+  document.addEventListener('pointerover',event=>{const el=cutOf(event.target);if(el===tipFor)return;if(el)showTip(el);else if(tipFor)hideTip();});
+  document.addEventListener('focusin',event=>{const el=cutOf(event.target);if(el)showTip(el);else if(tipFor)hideTip();});
+  document.addEventListener('pointerdown',()=>{if(tipFor)hideTip();},true);
+  addEventListener('scroll',()=>{if(tipFor)hideTip();},{passive:true,capture:true});
+
+  /* ---------- 엿보기 창(원장 10-28 "페이지 이동하지말고 내부에 오버레이창으로 바로 처리할 수 있게 … 노션처럼?") ---------- */
+  // 처리 화면(전자결재·신규 콜&상담·출석부 …)과 관련 기록을 이 화면 위 오른쪽 창에 연다. 창 안은 같은 앱을 엿보기 모드(?peek=1)로
+  // 띄운 것이라 그 화면의 버튼·저장이 본래 화면과 똑같이 돈다(같은 문서에 그리면 그 화면의 동작이 바깥 화면을 다시 그린다).
+  // 창은 처음 한 번만 띄우고 닫아도 남겨 둔다 — 다음부터는 화면만 바꿔 바로 열린다. 업무 흐름 표가 보이면 쉬는 틈에 미리 띄운다.
+  // 닫으면 업무 흐름을 다시 읽는다(창 안에서 처리한 일이 표에 반영되게). Esc · 창 밖 누르기 · 바깥 화면 이동으로 닫힌다.
+  const PEEK_MSG='aywa-peek';
+  const peek={dlg:null,frame:null,ready:false,want:null,spec:null,page:'',opener:null,warm:false,timer:0};
+  // 지금 문서 안에서 그 화면으로(엿보기 창 안 · '전체 화면으로 열기'). 기록이 있으면 그 화면이 그려진 뒤 기록을 연다.
+  function moveTo(spec){
+    if(spec.family){
+      const page=`workspace-${spec.family}`,show=()=>{if(spec.record)api.showWorkspaceRecord?.(spec.family,spec.record);};
+      if(location.hash===`#${page}`){api.openWorkspace?.(spec.family,spec.facet||'');show();}else{addEventListener('hashchange',show,{once:true});api.openWorkspace?.(spec.family,spec.facet||'');}
+      return;
+    }
+    navigate(spec.page);
+  }
+  function peekBox(){
+    if(peek.dlg)return peek.dlg;
+    const d=document.createElement('dialog');d.className='fl-peek';d.setAttribute('aria-label','처리 화면');
+    d.innerHTML=`<div class="fl-peek-panel"><div class="fl-peek-bar"><button type="button" class="button" data-peek="full">전체 화면으로 열기</button><button type="button" class="icon-button" data-peek="close" aria-label="닫기">${icon('close')}</button></div><div class="fl-peek-body"><iframe class="fl-peek-frame" title="처리 화면" src="/?peek=1#peek"></iframe><p class="fl-peek-wait" role="status">화면을 여는 중입니다.</p></div></div>`;
+    document.body.append(d);peek.dlg=d;peek.frame=d.querySelector('iframe');
+    d.addEventListener('click',event=>{if(event.target===d){d.close();return;}const b=event.target.closest('[data-peek]');if(!b)return;if(b.dataset.peek==='close')d.close();else peekFull();});
+    d.addEventListener('close',()=>{clearTimeout(peek.timer);if(ready())load({quiet:true});const o=peek.opener;peek.opener=null;if(o?.isConnected)o.focus({preventScroll:true});});
+    return d;
+  }
+  function sendPeek(){const spec=peek.want;peek.want=null;if(spec)peek.frame.contentWindow.postMessage({type:PEEK_MSG,open:spec},location.origin);}
+  function peekShown(){clearTimeout(peek.timer);peek.dlg?.classList.remove('is-switching');}
+  function openPeek(spec,opener){
+    if(!api.hasView(spec.page)){toast('처리할 화면을 찾지 못했습니다.');return;}
+    if(PEEK){document.querySelectorAll('dialog[open]').forEach(d=>d.close());moveTo(spec);return;}
+    hideTip();closeColMenu(false);
+    const d=peekBox();peek.spec=spec;peek.want=spec;peek.opener=opener||document.activeElement;
+    d.classList.add('is-switching');clearTimeout(peek.timer);peek.timer=setTimeout(peekShown,6000);
+    if(!d.open)d.showModal();d.querySelector('[data-peek="close"]').focus({preventScroll:true});
+    if(peek.ready)sendPeek();
+  }
+  function peekFull(){const spec=peek.spec,page=peek.page;peek.dlg.close();if(spec&&(!page||page===spec.page))moveTo(spec);else if(page)navigate(page);}
+  // 업무 흐름 표가 처음 보일 때 쉬는 틈에 창을 미리 띄운다(넓은 화면만 — 휴대폰은 처음 누를 때).
+  function warmPeek(){if(PEEK||peek.warm)return;peek.warm=true;setTimeout(()=>{const go=()=>{if(!peek.dlg&&matchMedia('(min-width: 761px)').matches)peekBox();};if('requestIdleCallback' in window)requestIdleCallback(go,{timeout:4000});else go();},1500);}
+  addEventListener('message',event=>{
+    if(event.origin!==location.origin||event.data?.type!==PEEK_MSG)return;
+    if(PEEK){
+      if(event.source!==parent||!event.data.open)return;const spec=event.data.open;
+      if(!api.hasView(spec.page)){parent.postMessage({type:PEEK_MSG,event:'missing'},location.origin);return;}
+      document.querySelectorAll('dialog[open]').forEach(d=>d.close());moveTo(spec);return;
+    }
+    if(!peek.frame||event.source!==peek.frame.contentWindow)return;
+    const ev=event.data.event;
+    if(ev==='ready'){peek.ready=true;sendPeek();}
+    else if(ev==='page'){peek.page=String(event.data.page||'');peek.dlg?.setAttribute('aria-label',String(event.data.title||'처리 화면'));if(peek.page&&!peek.want){peekShown();if(peek.dlg?.open&&document.activeElement?.closest?.('.fl-peek-bar'))peek.frame.focus();}}
+    else if(ev==='close')peek.dlg?.close();
+    else if(ev==='missing'){peek.dlg?.close();toast('처리할 화면을 찾지 못했습니다.');}
+  });
+  // 엿보기 창 안: 그릴 때마다 바깥에 지금 화면을 알리고(첫 그림 = 준비됨), 열린 대화 창이 없을 때 Esc면 창을 닫게 한다.
+  if(PEEK){
+    const post=x=>parent.postMessage({type:PEEK_MSG,...x},location.origin);let first=true;
+    addEventListener('aywa:render',event=>{if(first){first=false;post({event:'ready'});}post({event:'page',page:event.detail?.page||'',title:document.querySelector('#main h1')?.textContent.trim()||''});});
+    addEventListener('keydown',event=>{if(event.key==='Escape'&&!event.defaultPrevented&&!document.querySelector('dialog[open]'))post({event:'close'});});
+  }
+
   /* ---------- events ---------- */
   document.addEventListener('click',event=>{
     const el=event.target.closest('[data-fl]');if(!el||el.disabled)return;
@@ -697,13 +912,15 @@ window.createFlowUI = function createFlowUI(api) {
     if(el.closest('#sidebar'))api.closeMenu?.(false);
     if(action==='reload'){load();return;}
     if(action==='attach-open'){api.showWorkspaceRecord?.(id,el.dataset.record);return;}
-    // '○○ 열기': 2.0 화면이 있으면 그 화면, 없으면 작업 공간을 신호의 걸러 보기로(대화 창은 닫고 간다).
-    if(action==='goto'){const c=caseById(id);if(!c)return;document.querySelectorAll('dialog[open]').forEach(d=>d.close());const facet=(db.workspaces?.families?.[c.familyId]?.signals||[]).find(x=>x.id===c.signalId)?.facet||'',v2=!facet&&window.V2Screens?.target(c.familyId);if(v2){api.navigate(v2.slice(1));return;}if(!api.openWorkspace?.(c.familyId,facet))toast('처리할 화면을 찾지 못했습니다.');return;}
+    // 처리 화면('전자결재' 등): 2.0 화면이 있으면 그 화면, 없으면 작업 공간을 신호의 걸러 보기로 — 이 화면 위 엿보기 창에 연다(원장 10-28).
+    if(action==='goto'){const c=caseById(id);if(!c)return;const facet=(db.workspaces?.families?.[c.familyId]?.signals||[]).find(x=>x.id===c.signalId)?.facet||'',v2=!facet&&window.V2Screens?.target(c.familyId);openPeek(v2?{page:v2.slice(1)}:{page:`workspace-${c.familyId}`,family:c.familyId,facet},el);return;}
     if(action==='older'){el.disabled=true;loadOlder(id);return;}
-    // 'N건 모두 보기' moves to the first newly shown case like any in-page jump; focus follows without a native jump.
-    if(action==='more'){store.all=id;api.render();requestAnimationFrame(()=>{const sel=`.fl-list[data-list="${CSS.escape(id)}"] :is(.fl-case,.fl-row):nth-child(21)`;api.scrollToSection(sel);document.querySelector(`${sel} [data-fl="open"]`)?.focus({preventScroll:true});});return;}
+    // 쪽 이동 — 표만 다시 그리고, 표 머리가 화면 위로 지나갔으면 표 처음으로 눈에 보이게 옮긴다.
+    if(action==='page'){const key=el.dataset.pageList||'';store.pages[key]=Number(id)||1;if(key==='board')paintBoardList();else api.render();const top=document.querySelector(key==='board'?'#fl-board-list':`:is(.fl-list,.fl-tbody)[data-list="${CSS.escape(key)}"]`);if(top&&top.getBoundingClientRect().top<0)api.scrollToSection(top);document.querySelector(`.fl-pager [data-page-list="${CSS.escape(key)}"][aria-current="page"]`)?.focus({preventScroll:true});return;}
+    if(action==='col'){const key=el.dataset.col;if(colMenu.key===key)closeColMenu();else openColMenu(key);return;}
+    if(action==='col-clear'){const key=el.dataset.col;if(key)delete store.cols[key];else store.cols={};store.pages.board=1;paintBoardList();if(colMenu.el)paintColMenu();document.querySelector('[data-fl-search]')?.focus({preventScroll:true});return;}
     // From another page the jump waits for the home render (the hash change) and lands at once.
-    if(action==='filter'){store.filter=id;store.all='';const routed=api.getPage()!=='home'&&api.getPage()!=='flow',go=()=>requestAnimationFrame(()=>{api.scrollToSection('#fl-detail',{instant:routed,spotlight:()=>{const l=document.querySelector(`#fl-detail .fl-list[data-list="${CSS.escape(id)}"]`),named=(el.dataset.focus||'').split(' ').filter(Boolean).map(c=>l?.querySelector(`:is(.fl-case,.fl-row)[data-case="${CSS.escape(c)}"]`)).filter(Boolean);return named.length?named:l?[l,l.nextElementSibling?.matches('.ax-actions')?l.nextElementSibling:null].filter(Boolean):'#fl-detail';}});$('#fl-detail-title,#fl-detail h2')?.focus?.({preventScroll:true});});if(routed&&location.hash!=='#home'){addEventListener('hashchange',go,{once:true});navigate('home');}else{if(routed)navigate('home');else api.render();go();}return;}
+    if(action==='filter'){store.filter=id;store.pages.board=1;store.pages[id]=1;closeColMenu(false);const routed=api.getPage()!=='home'&&api.getPage()!=='flow',go=()=>requestAnimationFrame(()=>{api.scrollToSection('#fl-detail',{instant:routed,spotlight:()=>{const l=document.querySelector(`#fl-detail :is(.fl-list,.fl-tbody)[data-list="${CSS.escape(id)}"]`),named=(el.dataset.focus||'').split(' ').filter(Boolean).map(c=>l?.querySelector(`:is(.fl-case,.fl-row)[data-case="${CSS.escape(c)}"]`)).filter(Boolean),box=l?.closest('.fl-tablewrap')||l;return named.length?named:box?[box,box.nextElementSibling?.matches('.fl-pager')?box.nextElementSibling:null].filter(Boolean):'#fl-detail';}});$('#fl-detail-title,#fl-detail h2')?.focus?.({preventScroll:true});});if(routed&&location.hash!=='#home'){addEventListener('hashchange',go,{once:true});navigate('home');}else{if(routed)navigate('home');else api.render();go();}return;}
     if(action==='node'||action==='pick'){toggleNode(el);return;}
     if(action==='tree-go'){treeGo(el.dataset.node);return;}
     if(action==='tree-reload'){const e=treeEntry(id);e.retry=0;if(!e.data)e.status='loading';paintTree(id);fetchTree(id);return;}
@@ -716,14 +933,14 @@ window.createFlowUI = function createFlowUI(api) {
     // A tree link opens the copied record in place: the snapshot's own view, else the workspace's record view, which
     // reads a record off its list by exact id. The tree stays until that succeeds; the workspace says when it cannot
     // (not found, failed) and drops an answer that comes after the person moved on. Other links go to the workspace.
-    if(action==='entity'){const {family,record}=el.dataset;if(record&&el.closest('.fl-tree')){if(api.canOpenRecord?.(record)){api.openRecord(record);return;}const p=family?api.showWorkspaceRecord?.(family,record):null;if(p&&typeof p.then==='function'){el.disabled=true;el.setAttribute('aria-busy','true');p.finally(()=>{el.disabled=false;el.removeAttribute('aria-busy');});return;}toast('이 기록은 여기서 바로 열 수 없습니다. 해당 작업 공간 목록에서 찾아 주세요.');return;}document.querySelectorAll('dialog[open]').forEach(d=>d.close());if(family&&api.hasView(`workspace-${family}`)){navigate(`workspace-${family}`);if(record)requestAnimationFrame(()=>{const p=api.showWorkspaceRecord?.(family,record);if(!(p&&typeof p.then==='function')&&!$('#detail[open]'))toast('이 기록은 작업 공간에서 바로 열 수 없습니다. 목록에서 찾아 주세요.');});}else if(record)api.openRecord?.(record);return;}
+    if(action==='entity'){const {family,record}=el.dataset;if(record&&el.closest('.fl-tree')){if(api.canOpenRecord?.(record)){api.openRecord(record);return;}const p=family?api.showWorkspaceRecord?.(family,record):null;if(p&&typeof p.then==='function'){el.disabled=true;el.setAttribute('aria-busy','true');p.finally(()=>{el.disabled=false;el.removeAttribute('aria-busy');});return;}toast('이 기록은 여기서 바로 열 수 없습니다. 해당 작업 공간 목록에서 찾아 주세요.');return;}if(family&&api.hasView(`workspace-${family}`)){openPeek({page:`workspace-${family}`,family,record},el);return;}document.querySelectorAll('dialog[open]').forEach(d=>d.close());if(record)api.openRecord?.(record);return;}
   },true);
   // After a command the open drawer of the same case refreshes in place (scroll, branches and focus kept).
   function reopenCase(id){if(!$('#detail[open]')||!caseById(id))return;if(treeShown(id))refreshDetail();else showCase(id);}
   // 업무 흐름 검색 — 목록과 건수만 다시 그린다(화면 전체를 다시 그리지 않아 글자 입력이 끊기지 않는다) · Esc = 지우기.
-  const paintBoardList=()=>{const box=document.getElementById('fl-board-list'),cnt=document.getElementById('fl-board-count');if(!box||!ready())return;const p=boardParts();box.innerHTML=p.listHtml;if(cnt)cnt.textContent=p.count;};
-  document.addEventListener('input',event=>{if(!event.target.matches?.('[data-fl-search]'))return;store.q=event.target.value;store.all='';paintBoardList();});
-  document.addEventListener('keydown',event=>{if(event.key!=='Escape'||!event.target.matches?.('[data-fl-search]')||!event.target.value)return;event.preventDefault();event.target.value='';store.q='';store.all='';paintBoardList();});
+  const paintBoardList=()=>{const box=document.getElementById('fl-board-list'),cnt=document.getElementById('fl-board-count');if(!box||!ready())return;const p=boardParts();hideTip();box.innerHTML=p.listHtml;if(cnt)cnt.textContent=p.count;if(colMenu.el)placeColMenu();};
+  document.addEventListener('input',event=>{if(!event.target.matches?.('[data-fl-search]'))return;store.q=event.target.value;store.pages.board=1;paintBoardList();});
+  document.addEventListener('keydown',event=>{if(event.key!=='Escape'||!event.target.matches?.('[data-fl-search]')||!event.target.value)return;event.preventDefault();event.target.value='';store.q='';store.pages.board=1;paintBoardList();});
   document.addEventListener('input',event=>{const id=event.target.dataset?.flTreeQ;if(id===undefined)return;const e=trees.get(id);if(!e)return;e.query=event.target.value;e.unforce.clear();paintTree(id,{body:true});});
   document.addEventListener('change',event=>{if(event.target.dataset?.flActor!==undefined){store.actorId=event.target.matches?.('[data-cpick]')?(event.target.querySelector('input[type=hidden]')?.value||store.actorId):event.target.value;store.filter='';store.all='';try{localStorage.setItem(ACTOR_KEY,store.actorId);}catch{/* keep in memory only */}api.closeMenu?.(false);if(api.getPage()==='home')api.render();else navigate('home');}});
   document.addEventListener('submit',event=>{
