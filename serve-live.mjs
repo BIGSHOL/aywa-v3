@@ -11,6 +11,7 @@ import { loadFlowSource } from './flow-source.mjs';
 import { createFlowAI } from './flow-decision.mjs';
 import { createFlowService, defaultStoreDir, startFlow } from './flow-service.mjs';
 import { createFlowRoute } from './flow-http.mjs';
+import { createExitRoute, startExitInsight } from './exit-http.mjs';
 
 const port=Number(process.env.OWNER_CONCEPT_PORT||4310);
 if(!Number.isInteger(port)||port<1024||port>65535)throw new Error('Invalid local dev port');
@@ -34,6 +35,8 @@ const routes=new Map([
  ['/flow-ui.css',['flow-ui.css','text/css; charset=utf-8']],
  ['/context-picker.js',['context-picker.js','text/javascript; charset=utf-8']],
  ['/context-picker.css',['context-picker.css','text/css; charset=utf-8']],
+ ['/exit-insight.js',['exit-insight.js','text/javascript; charset=utf-8']],
+ ['/exit-insight.css',['exit-insight.css','text/css; charset=utf-8']],
  ['/fonts/PretendardVariable.woff2',['../../public/fonts/PretendardVariable.woff2','font/woff2']],
 ]);
 const headers={
@@ -47,6 +50,9 @@ const assistant=createAssistantFromEnv({snapshot,origins,headers,runtimeDefault:
 const flowEnabled=process.env.NODE_ENV!=='production'&&!process.env.VERCEL&&process.env.OWNER_CONCEPT_FLOW!=='off';
 const flow=flowEnabled?startFlow(async()=>{const source=await loadFlowSource({workspaces:snapshot.workspaces,capturedAt:snapshot.meta.importedAt,asOf:snapshot.meta.asOf});return createFlowService({source,dir:defaultStoreDir({dataRoot:fullDbRoot,identity:source.identity}),ai:await createFlowAI(),tenantName:snapshot.meta.tenant});}):{service:null,failure:null};
 const flowRoute=createFlowRoute({flow,origins,headers,enabled:flowEnabled});
+// '왜 줄었나' exit insight (INSIGHT-EXITS.md): code decomposition + case files; AI results beside the flow store, GET only.
+const insight=flowEnabled?startExitInsight({snapshot,dir:defaultStoreDir({dataRoot:fullDbRoot,identity:{tenantId,tenantSlug:'cs',capturedAt:snapshot.meta.importedAt}})}):{service:null,failure:null};
+const insightRoute=createExitRoute({insight,headers,enabled:flowEnabled});
 async function documentFile(id){
  const db=await openFullDatabase();let document;
  try{[document]=await db.begin('read only',sql=>sql`select file_path,file_name from public.academy_documents where id=${id} and tenant_id=${tenantId}`);}finally{await db.end();}
@@ -65,6 +71,7 @@ const server=createServer(async(req,res)=>{
  let path;try{path=new URL(req.url,`http://127.0.0.1:${port}`).pathname;}catch{reject(400,'Invalid request');return;}
  if(path===assistant.path){try{await assistant.handle(req,res);}catch{if(!res.headersSent)reject(500,'로컬 비서를 실행하지 못했습니다.');}return;}
  if(flowRoute.handles(path)){try{await flowRoute.handle(req,res,path);}catch{if(!res.headersSent)reject(500,'업무 흐름을 처리하지 못했습니다.');}return;}
+ if(insightRoute.handles(path)){try{insightRoute.handle(req,res);}catch{if(!res.headersSent)reject(500,'이탈 분석을 처리하지 못했습니다.');}return;}
  // JSON endpoints answer their own method errors; cross-site requests still fall through to the guards below.
  if(req.headers['sec-fetch-site']!=='cross-site'){try{if(handleWorkspaceRecords(req,res,headers))return;}catch{if(!res.headersSent)reject(500,'기록을 읽지 못했습니다.');return;}}
  if(!['GET','HEAD'].includes(req.method)){reject(405,'Read-only preview');return;}

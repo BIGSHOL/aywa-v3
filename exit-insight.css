@@ -1,0 +1,95 @@
+/* '왜 줄었나' insight (exit-insight.js) — 2.0 type scale (--ax-*), white surfaces, one line colour; no new scroll areas. */
+.modal:has(.xi){width:min(1080px,calc(100vw - 32px))}
+.xi{display:flex;flex-direction:column;gap:24px;min-width:0;font-size:var(--ax-sm,16px);color:var(--ax-ink,#121212)}
+.xi section{display:flex;flex-direction:column;gap:12px;min-width:0}
+.xi h3{font-size:var(--ax-lg,20px);font-weight:700}
+.xi h4{font-size:var(--ax-base,18px);font-weight:650}
+.xi-note{font-size:var(--ax-xs,14px);line-height:1.7;overflow-wrap:anywhere}
+.xi-btn{display:inline-flex;align-items:center;justify-content:center;min-height:32px;padding:4px 10px;border:1px solid var(--ax-line);border-radius:8px;background:#fff;font-size:var(--ax-xs,14px);white-space:nowrap}
+.xi-btn:hover{background:var(--ax-soft)}
+.xi-btn.primary{background:var(--ax-primary);border-color:var(--ax-primary);color:#fff}
+.xi-btn.link{border:0;min-height:28px;padding:2px 4px;color:var(--ax-primary);background:none;text-decoration:underline;text-underline-offset:3px}
+.xi-entry{display:inline-flex;align-items:center;gap:6px;align-self:flex-start;margin-top:8px;min-height:32px;padding:4px 10px;border:1px solid #bccce0;border-radius:8px;background:#f4f7fc;color:var(--ax-primary);font-size:var(--ax-xs,14px);font-weight:600}
+.xi-entry:hover{background:#e9effa}
+.xi-entry .icon{width:16px;height:16px}
+.ax-change-cell .xi-entry{grid-column:1/-1}
+.xi-pairs{display:flex;flex-wrap:wrap;gap:8px;align-items:stretch}
+.xi-pair{display:flex;flex-direction:column;align-items:flex-start;gap:2px;padding:6px 10px;border:1px solid var(--ax-line);border-radius:8px;background:#fff;font-size:var(--ax-xs,14px)}
+.xi-pair[aria-pressed="true"]{border-color:var(--ax-primary);box-shadow:inset 0 0 0 1px var(--ax-primary)}
+.xi-pair span{font-variant-numeric:tabular-nums}
+.xi-custom{display:flex;flex-wrap:wrap;align-items:flex-end;gap:8px;margin-left:auto}
+.xi-custom label{display:flex;flex-direction:column;gap:2px;font-size:var(--ax-xs,14px)}
+.xi-custom select{min-height:32px;font-size:var(--ax-xs,14px);padding:2px 6px;border:1px solid var(--ax-line);border-radius:8px;background:#fff}
+.xi-totals{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));border:1px solid var(--ax-line);border-radius:8px}
+.xi-totals>div{display:flex;flex-direction:column;gap:2px;padding:12px 14px;min-width:0}
+.xi-totals>div+div{border-left:1px solid var(--ax-line)}
+.xi-totals span{font-size:var(--ax-xs,14px)}
+.xi-totals strong{font-size:var(--ax-xl,24px);font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
+.xi-totals strong.neg,.xi-bar.neg strong{color:var(--ax-danger,#a12f2f)}
+.xi-bars{display:flex;flex-direction:column;gap:6px;outline-offset:4px}
+.xi-bar{display:grid;grid-template-columns:minmax(0,15em) minmax(80px,1fr) 9.5em 7em;gap:10px;align-items:center;min-height:34px;padding:2px 4px;border-radius:6px;font-size:var(--ax-xs,14px)}
+.xi-bar.head{margin-top:6px;font-weight:700}
+.xi-bar.active{background:var(--ax-soft)}
+.xi-bar-label{min-width:0;overflow-wrap:anywhere}
+.xi-bar-track{position:relative;height:12px;border-radius:3px;background:linear-gradient(to right,transparent calc(50% - .5px),var(--ax-line) calc(50% - .5px),var(--ax-line) calc(50% + .5px),transparent calc(50% + .5px))}
+.xi-bar-track i{position:absolute;top:0;bottom:0;min-width:2px;border-radius:3px;background:#7f93c4}
+.xi-bar.neg .xi-bar-track i{background:#c98585}
+.xi-bar.head .xi-bar-track i{background:#5d72ad}
+.xi-bar.head.neg .xi-bar-track i{background:#a85c5c}
+.xi-bar strong{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+.xi-ai-line{display:flex;flex-wrap:wrap;align-items:center;gap:8px;font-size:var(--ax-xs,14px)}
+.xi-overall{padding:14px 16px;border:1px solid #bccce0;border-radius:8px;background:#f8fafd;gap:8px}
+.xi-overall h3{display:flex;align-items:center;gap:8px;font-size:var(--ax-base,18px)}
+.xi-overall h4{font-size:var(--ax-sm,16px)}
+.xi-overall ul,.xi-chain{display:flex;flex-direction:column;gap:4px;padding-left:20px;line-height:1.7}
+.xi-overall ul{list-style:disc}
+.xi-clusters{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.xi-cluster{display:flex;flex-direction:column;gap:10px;min-width:0;padding:14px 16px;border:1px solid var(--ax-line);border-radius:8px;background:#fff}
+.xi-cluster[hidden]{display:none}
+.xi-cluster>header{display:flex;justify-content:space-between;align-items:flex-start;gap:10px}
+.xi-cluster>header>div{display:flex;flex-direction:column;align-items:flex-start;gap:4px;min-width:0}
+.xi-cluster>header strong{font-size:var(--ax-xs,14px);white-space:nowrap;font-variant-numeric:tabular-nums}
+.xi-ai{display:flex;flex-direction:column;align-items:flex-start;gap:6px;padding:10px 12px;border-radius:6px;background:#f4f7fc;line-height:1.7}
+.xi-chain{list-style:decimal}
+.xi-chain small{display:block;font-size:var(--ax-xs,14px)}
+.xi-chain a{color:var(--ax-primary);text-underline-offset:3px}
+.xi-students,.xi-facts{list-style:none;margin:0;padding:0}
+.xi-facts{display:flex;flex-direction:column;gap:6px;font-size:var(--ax-xs,14px);line-height:1.65}
+.xi-facts>li{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 8px;padding:6px 8px;border-radius:6px;overflow-wrap:anywhere}
+.xi-facts>li>span{min-width:0;flex:1 1 16em}
+.xi-fact-label{flex:0 0 auto!important;font-weight:650}
+.xi-src{padding:0 6px;border:1px solid var(--ax-line);border-radius:4px;font-size:13px}
+.xi-flash{background:#fff3d6}
+.xi-count{font-size:var(--ax-sm,16px);font-weight:500}
+.xi-filter-line{display:flex;flex-wrap:wrap;align-items:center;gap:8px;font-size:var(--ax-xs,14px);font-weight:600}
+.xi-filter-line[hidden]{display:none}
+.xi-students{display:flex;flex-direction:column;border-top:1px solid var(--ax-line)}
+.xi-student{border-bottom:1px solid var(--ax-line)}
+.xi-student[hidden]{display:none}
+.xi-student-head{display:grid;grid-template-columns:minmax(4em,7em) minmax(0,8em) minmax(0,1fr) minmax(0,1.4fr) 8.5em 20px;gap:10px;align-items:center;width:100%;min-height:44px;padding:8px 4px;text-align:left;font-size:var(--ax-xs,14px)}
+.xi-student-head:hover{background:var(--ax-soft)}
+.xi-student-head>span{min-width:0;overflow-wrap:anywhere;display:flex;flex-wrap:wrap;align-items:center;gap:4px}
+.xi-student-head>b{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+.xi-student-head .icon{width:18px;height:18px;transition:transform .15s}
+.xi-student-head[aria-expanded="true"] .icon{transform:rotate(180deg)}
+.xi-student-body{display:flex;flex-direction:column;align-items:flex-start;gap:8px;padding:4px 4px 14px}
+.xi-student-body[hidden]{display:none}
+.xi-cause small{font-size:13px}
+.xi-weeks{display:flex;align-items:flex-end;gap:4px;flex:1 0 100%;height:44px;outline-offset:3px}
+.xi-weeks>span{display:flex;align-items:flex-end;flex:0 0 18px;height:100%}
+.xi-weeks i{position:relative;display:block;width:100%;min-height:2px;border-radius:2px;background:#9fb0d8;overflow:hidden}
+.xi-weeks b{position:absolute;left:0;right:0;bottom:0;background:#c98585}
+.xi-weeks>span.active i{outline:2px solid var(--ax-primary);outline-offset:1px}
+@media(max-width:760px){
+ .modal:has(.xi){width:calc(100vw - 20px)}
+ .xi-custom{margin-left:0}
+ .xi-totals{grid-template-columns:1fr}
+ .xi-totals>div+div{border-left:0;border-top:1px solid var(--ax-line)}
+ .xi-bar{grid-template-columns:minmax(0,1fr) auto;grid-template-areas:"label amount" "track track" "act act";row-gap:4px}
+ .xi-bar-label{grid-area:label}.xi-bar strong{grid-area:amount}.xi-bar-track{grid-area:track}.xi-bar>.xi-btn,.xi-bar>span:last-child{grid-area:act;justify-self:start}
+ .xi-clusters{grid-template-columns:1fr}
+ .xi-cluster>header{flex-direction:column}
+ .xi-student-head{grid-template-columns:minmax(0,1fr) auto 20px;grid-template-areas:"name amount icon" "label label label" "kind kind kind" "cause cause cause"}
+ .xi-student-head>strong{grid-area:name}.xi-student-head>b{grid-area:amount}.xi-student-head>.icon{grid-area:icon}
+ .xi-student-head>span:nth-of-type(1){grid-area:label}.xi-student-head>span:nth-of-type(2){grid-area:kind}.xi-student-head>span:nth-of-type(3){grid-area:cause}
+}
