@@ -196,9 +196,13 @@ window.createFlowUI = function createFlowUI(api) {
   setInterval(()=>{if(ready()&&document.visibilityState==='visible'&&!store.pending.size)load();},8000);
 
   /* ---------- shared pieces ---------- */
+  // 관련 기록은 넷까지 — 나머지는 '외 N건'(전부는 '근거와 흐름'에서). 카드가 칩으로 옆으로 길어지지 않게(원장 10-28 "너무 가로로 나열").
   function entityLinks(c){
     const refs=(c.entityRefs||[]).filter(r=>r&&r.label);if(!refs.length)return '';
-    return `<div class="fl-entities" aria-label="관련 기록">${refs.slice(0,6).map(r=>{const ws=r.familyId&&api.hasView(`workspace-${r.familyId}`);return `<button type="button" class="fl-entity" data-fl="entity" data-family="${h(r.familyId||'')}" data-record="${h(r.recordId||r.id||'')}" ${ws||api.canOpenRecord?.(r.recordId||r.id)?'':'disabled'}>${h(r.type==='task'&&r.label===c.title?'원본 할 일':r.label)}${r.familyId?`<small>${h(api.familyLabel?.(r.familyId)||'')}</small>`:''}</button>`;}).join('')}</div>`;
+    return entityChips(c,refs).replace(/<\/div>$/,refs.length>4?`<span class="fl-entity-more">외 ${fmt(refs.length-4)}건</span></div>`:'</div>');
+  }
+  function entityChips(c,refs){
+    return `<div class="fl-entities" aria-label="관련 기록">${refs.slice(0,4).map(r=>{const ws=r.familyId&&api.hasView(`workspace-${r.familyId}`);return `<button type="button" class="fl-entity" data-fl="entity" data-family="${h(r.familyId||'')}" data-record="${h(r.recordId||r.id||'')}" ${ws||api.canOpenRecord?.(r.recordId||r.id)?'':'disabled'}>${h(r.type==='task'&&r.label===c.title?'원본 할 일':r.label)}${r.familyId?`<small>${h(api.familyLabel?.(r.familyId)||'')}</small>`:''}</button>`;}).join('')}</div>`;
   }
   function why(c){
     const t=c.trigger||{},s=stepOf(c),d=c.decision;
@@ -261,6 +265,7 @@ window.createFlowUI = function createFlowUI(api) {
   }
 
   /* ---------- role views ---------- */
+  const navList=(active,title,items)=>items.length?`<p class="fl-nav-head">${h(title)}</p><ul>${items.map(([id,label,n])=>`<li><button type="button" data-fl="filter" data-id="${h(id)}" aria-pressed="${active===id}" class="${n?'':'zero'}"><span>${h(label)}</span><b>${fmt(n)}</b></button></li>`).join('')}</ul>`:'';
   function filterBar(active,items){return `<div class="ax-filter" role="group" aria-label="보기">${items.map(([id,label,n])=>`<button type="button" data-fl="filter" data-id="${h(id)}" aria-pressed="${active===id}">${h(label)} ${fmt(n)}</button>`).join('')}</div>`;}
   function list(items,empty,key=''){
     if(!items.length)return `<p class="live-empty">${h(empty)}</p>`;
@@ -312,7 +317,10 @@ window.createFlowUI = function createFlowUI(api) {
     const kinds=kindGroups(open.filter(c=>!local(c)));
     const lists={decide:open.filter(ownerDecides),...Object.fromEntries(kinds.map(k=>[k.key,k.items])),blocked:open.filter(c=>unassigned(c)||late(c)||returned(c)),moving:open.filter(c=>!local(c)),local:cases().filter(local),done:cases().filter(c=>c.state==='done')};
     const f=lists[store.filter]?store.filter:'decide';
-    return `<section class="fl-section" id="fl-detail" aria-labelledby="fl-detail-title"><div class="ax-section-head"><h2 id="fl-detail-title" tabindex="-1">업무 흐름</h2></div>${filterBar(f,[['decide','원장 결정 대기',lists.decide.length],...kinds.map(k=>[k.key,k.label,k.items.length]),['blocked','늦은 일·담당 없는 일',lists.blocked.length],['moving','남은 일 전체',lists.moving.length],['local','직접 만든 일',lists.local.length],['done','끝난 일',lists.done.length]])}${list(lists[f],'이 조건의 일이 없습니다.',f)}${scenarioPanel()}${stageOverview()}</section>`;
+    // 보기는 왼쪽 세로 목록(상태 · 종류 많은 순), 일은 오른쪽 카드 — 칩 20여 개를 가로로 늘어놓지 않는다(원장 10-28 "너무 가로로 나열되어있고 공간 낭비 최악").
+    const states=[['decide','원장 결정 대기',lists.decide.length],['moving','남은 일 전체',lists.moving.length],['blocked','늦은 일·담당 없는 일',lists.blocked.length],['local','직접 만든 일',lists.local.length],['done','끝난 일',lists.done.length]];
+    const byKind=[...kinds].sort((a,b)=>b.items.length-a.items.length).map(k=>[k.key,k.label,k.items.length]),label=[...states,...byKind].find(([id])=>id===f)?.[1]||'';
+    return `<section class="fl-section" id="fl-detail" aria-labelledby="fl-detail-title"><div class="ax-section-head"><h2 id="fl-detail-title" tabindex="-1">업무 흐름</h2></div><div class="fl-board"><nav class="fl-nav" aria-label="보기">${navList(f,'상태',states)}${navList(f,'종류',byKind)}</nav><div class="fl-board-main"><h3 class="fl-board-title">${h(label)} <span>${fmt(lists[f].length)}건</span></h3>${list(lists[f],'이 조건의 일이 없습니다.',f)}</div></div>${scenarioPanel()}${stageOverview()}</section>`;
   }
   function fullView(){return role()==='owner'?`<div class="page-heading"><div><h1>업무 흐름</h1><p>${md(asOf())} 기준 · 누가 어떤 일을 왜 맡았는지와 근거를 봅니다.</p></div></div>${ownerBelow()}`:role()==='manager'?managerView():staffView();}
 

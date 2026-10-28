@@ -93,7 +93,8 @@ export function seedSource(state, source) {
   for (const sg of source.signals) {
     const key = `signal:${sg.familyId}:${sg.signal.id}`;
     // Already seeded: an open case follows the source's current wording (원장 10-28 '최근 결석 3회 이상' — 저장된 옛 문구가 남지 않게). History and state stay as they are.
-    if (state.seededKeys[key]) { const c = state.cases[state.seededKeys[key]]; if (c && c.state !== 'done' && c.title !== sg.signal.title) { reworded += 1; for (const st of c.steps || []) if (st.key === 'source_check' && typeof st.label === 'string' && st.label.startsWith(c.title)) st.label = sg.signal.title + st.label.slice(c.title.length); c.title = sg.signal.title; c.summary = sg.signal.summary; } continue; }
+    // 요약만 바뀌어도 따른다(원장 10-28 "기한이 지났다는 뜻은 아닙니다 … 적을 필요가 전혀 없어보임" — 제목은 그대로이고 요약 문장만 지웠다).
+    if (state.seededKeys[key]) { const c = state.cases[state.seededKeys[key]]; if (c && c.state !== 'done' && (c.title !== sg.signal.title || (c.summary ?? '') !== (sg.signal.summary ?? ''))) { reworded += 1; for (const st of c.steps || []) if (st.key === 'source_check' && typeof st.label === 'string' && st.label.startsWith(c.title)) st.label = sg.signal.title + st.label.slice(c.title.length); c.title = sg.signal.title; c.summary = sg.signal.summary; } continue; }
     const id = `src-sig-${sg.familyId}-${sg.signal.id}`.replace(/[^a-z0-9-]/gi, '-');
     // One step per person who owns the referenced records (FK); records without an owner go to the manager queue.
     const owners = new Map();

@@ -143,3 +143,21 @@
 .fl-node-kids>.fl-node-links{margin-left:34px}
 @media(max-width:760px){.fl-node-kids>.fl-node-links{margin-left:10px}}
 .fl-attach{list-style:none;margin:4px 0 8px;padding:0;display:grid;gap:4px}.fl-attach li{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 8px}.fl-attach small{font-size:var(--ax-xs)}
+/* 업무 흐름 = 왼쪽 세로 보기 목록 + 오른쪽 카드 2열(원장 10-28 "너무 가로로 나열되어있고 공간 낭비 최악"). 좁으면 위아래로. */
+.fl-board{display:grid;grid-template-columns:15.5rem minmax(0,1fr);gap:20px;align-items:start}
+.fl-nav{position:sticky;top:12px;display:flex;flex-direction:column;gap:4px;padding:10px;border:1px solid var(--ax-line);border-radius:8px;background:#fff}
+.fl-nav-head{margin:6px 6px 2px;font-size:var(--ax-xs);font-weight:700;color:var(--ax-primary)}
+.fl-nav ul{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:1px}
+.fl-nav button{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:8px;width:100%;min-height:var(--ax-control-h);padding:0 8px;border-radius:6px;font-size:var(--ax-xs);text-align:left}
+.fl-nav button span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.fl-nav button b{font-weight:600;font-variant-numeric:tabular-nums}
+.fl-nav button:hover{background:var(--ax-soft)}
+.fl-nav button[aria-pressed=true]{background:var(--ax-primary);color:#fff}
+.fl-nav button.zero:not([aria-pressed=true]){color:#8a93a3}
+.fl-board-main{display:flex;flex-direction:column;gap:10px;min-width:0}
+.fl-board-title{margin:0;font-size:var(--ax-base)}.fl-board-title span{font-weight:500;font-size:var(--ax-sm);margin-left:4px}
+.fl-board .fl-list{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,400px),1fr));gap:12px;align-items:start}
+.fl-board .fl-case{gap:6px;padding:14px 16px}
+.fl-board .fl-summary{max-width:none;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:3;overflow:hidden}
+.fl-entity-more{align-self:center;font-size:var(--ax-xs);color:#8a93a3}
+@media(max-width:900px){.fl-board{grid-template-columns:1fr}.fl-nav{position:static}}
