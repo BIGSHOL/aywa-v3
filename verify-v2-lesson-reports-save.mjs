@@ -63,6 +63,7 @@ test('대응표 = 2.0 서버 함수 이름 그대로(그 파일이 내보내는 
   for (const n of Object.values(LR_READS).flat()) assert.ok(n in lessonReportsActions, `${n}을 원본 읽기로 연결`);
   assert.match(entry, /연습 복사본이라 실제로 보내지지 않습니다 — 발송 대기로만 남습니다/);
   // 직접 발송·공지·답글 등은 아직 받지 않는다(진입점이 그 자리에서 거절).
+  assert.ok('saveAdminReport' in lessonReportsActions);
   for (const n of ['saveAndQueueAdminReport', 'sendBulkAdminReports', 'editQueuedNotice', 'deleteQueuedNotice', 'requestParentReply', 'requestParentReaction'])
     { assert.ok(refuse.includes(`"${n}"`), n); assert.ok(!(n in lessonReportsActions), n); }
   assert.match(entry, /"requestClassnoteBoardSync", async \(\) => \(\{ ok: false, error: VIEW_ONLY \}\)/);
@@ -246,6 +247,33 @@ test('게시된 공지 수정·회수 = 2.0 요청 상태까지만 · 바깥 요
   assert.equal(revoke.probes[2][0].n, net);
   const [afterRevoke] = await db`select status from public.classnote_notices where id=${target.id}`;
   assert.equal(afterRevoke.status, target.status, '회수 요청 되돌림');
+});
+
+test('관리자 직접 작성 = 시험 학생 보고서 행만 저장 · 발송 상태 없음 · 바깥 요청 0 · 시험 뒤 되돌림', { skip: SKIP }, async () => {
+  const { t, unsent, run, net } = await setup();
+  assert.ok(unsent, '시험 학생 보고서');
+  const reportDate = '2020-01-17', notes = '연습 복사본 직접 작성 시험';
+  const input = { studentId: unsent.student_id, reportDate, subject: 'math',
+    progress: '연습', examInfo: '', homeworkScore: '없음', notes };
+  const before = await db`select id::text id, notes, source, classnote_status from public.lesson_reports
+    where tenant_id=${t} and student_id=${unsent.student_id} and report_date=${reportDate} and class_id is null and subject='math'`;
+  const saved = await run([{ module: `${RA}compose-actions.ts`, fn: 'saveAdminReport', args: [input] }], [
+    { text: `select id::text id, notes, source, classnote_status from public.lesson_reports
+      where tenant_id=$1 and student_id=$2 and report_date=$3 and class_id is null and subject='math'`, params: [t, unsent.student_id, reportDate] },
+    { text: `select metadata->>'via' via from public.audit_logs where tenant_id=$1 and action='lesson_report_save' and created_at=now()`, params: [t] },
+    { text: NET },
+  ]);
+  assert.equal(saved.results[0].value.ok, true, JSON.stringify(saved.results[0].value));
+  assert.equal(saved.probes[0].length, 1);
+  assert.equal(saved.probes[0][0].id, saved.results[0].value.id);
+  assert.equal(saved.probes[0][0].notes, notes);
+  assert.equal(saved.probes[0][0].source, 'admin');
+  assert.equal(saved.probes[0][0].classnote_status, null, '발송하지 않는다');
+  assert.ok(saved.probes[1].some((row) => row.via === VIA));
+  assert.equal(saved.probes[2][0].n, net);
+  const after = await db`select id::text id, notes, source, classnote_status from public.lesson_reports
+    where tenant_id=${t} and student_id=${unsent.student_id} and report_date=${reportDate} and class_id is null and subject='math'`;
+  assert.deepEqual([...after], [...before], '직접 작성 되돌림');
 });
 
 test('저장하는 사람 = 보고서 관리 · 보고서 설정 · AI 멘트 중 하나라도 쓰기인 재직 직원(운영자 계정 제외 · 원장 먼저) · 목록 밖 = 로그인 없음', { skip: SKIP }, async () => {

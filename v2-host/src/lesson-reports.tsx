@@ -91,7 +91,7 @@ for (const [module, names] of QUEUE_ACTIONS) for (const name of names) registerH
 // 여기 적지 않은 함수는 shim이 쓰기 경로로 보낸다. 아래는 그 경로가 받지 않는 저장 — 보내지 않고 그 자리에서 2.0 거절 모양으로.
 const REFUSE: Record<string, string[]> = {
   // 직접 발송 저장 · 원스크린 공지 작성·대기 공지 관리 · 답글 · 공감 — 아직 받지 않는 일.
-  "features/report-admin/server/compose-actions.ts": ["saveAdminReport", "saveAndQueueAdminReport", "sendBulkAdminReports"],
+  "features/report-admin/server/compose-actions.ts": ["saveAndQueueAdminReport", "sendBulkAdminReports"],
   "features/onescreen/server/notice-actions.ts": ["sendOnescreenNotice", "editQueuedNotice", "deleteQueuedNotice"],
   "features/classnote-reply/server/reply-actions.ts": ["requestParentReply", "requestParentReplyEdit", "requestParentReplyDelete"],
   "features/classnote-reply/server/reaction-actions.ts": ["requestParentReaction", "requestParentReactionRemove"],

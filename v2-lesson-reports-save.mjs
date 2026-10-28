@@ -14,7 +14,8 @@
 //   · 직접 발송·학부모 답글 창의 읽기 넷 — 2.0 함수를 읽기 전용 러너로, 고른 사람의 권한으로 실행한다.
 //   · 공지 대상 미리보기는 읽기 전용, 원생별·반 단체 공지 발송은 Docker 대기열까지만.
 //   · 게시된 공지 수정·회수는 edit_requested · revoke_requested까지만. Docker에는 처리할 발송 PC가 없다.
-//  계속 거절(진입점이 그 자리에서 2.0 거절 모양): 직접 발송 저장(saveAdminReport · saveAndQueueAdminReport · sendBulkAdminReports) ·
+//   · 관리자 직접 작성 saveAdminReport — 보고서 행만 저장하고 발송하지 않는다.
+//  계속 거절(진입점이 그 자리에서 2.0 거절 모양): 직접 발송 요청(saveAndQueueAdminReport · sendBulkAdminReports) ·
 //     원스크린 공지 작성·대기 공지 관리 · 동기화 요청 · 답글 · 공감 · AI 미리보기.
 // · 저장하는 사람 = readLessonEditors(보고서 관리 · 보고서 설정 · AI 멘트 중 하나라도 쓰기인 재직 직원 · 운영자 계정 제외 · 원장 먼저). 그 밖이면
 //   2.0 '로그인 없음' 자리(actor = null). 각 2.0 함수가 그 사람의 권한을 다시 본다.
@@ -34,6 +35,7 @@ export const LR_WRITES = {
   'features/report-admin/server/classnote-sync-report-actions.ts': ['downloadClassnoteSyncReport'],
   'features/report-admin/server/notice-actions.ts': ['sendClassNotice'],
   'features/report-admin/server/class-notice-actions.ts': ['sendClassWideNotice'],
+  'features/report-admin/server/compose-actions.ts': ['saveAdminReport'],
   'features/onescreen/server/notice-actions.ts': ['editPostedNotice', 'cancelOnescreenNotice'],
   'features/report-admin/server/board-roster-actions.ts': ['linkClassnoteChild', 'unlinkClassnoteChild'],
   'features/onescreen/server/prompt-actions.ts': ['savePrompt', 'resetPrompt'],
