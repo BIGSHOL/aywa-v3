@@ -37,6 +37,93 @@ try { const { openFullDatabase } = await import('./full-db.mjs'); db = await ope
 const R = await A.loadRules(importV2);
 const ACTIONS = 'features/attendance/server/actions.ts', PREFS = 'features/attendance/server/prefs-actions.ts';
 
+test('일별 목록·입력 폼은 원본 JSX와 부품을 쓰고 주소·저장 인자를 제한한다', async () => {
+  const list = await src('app/(shell)/attendance/[date]/page.tsx');
+  const form = await src('app/(shell)/attendance/[date]/[classId]/page.tsx');
+  const listHost = await here('v2-host/src/attendance-day-list.tsx');
+  const formHost = await here('v2-host/src/attendance-day-form.tsx');
+  const listTail = list.slice(list.indexOf('  // 처리 현황 집계'));
+  const formTail = form.slice(form.indexOf('  return (', form.indexOf('export default async function AttendanceInputPage')));
+  assert.ok(listHost.includes(listTail), '일별 목록 JSX는 원본 그대로');
+  assert.ok(formHost.includes(formTail), '일별 폼 JSX는 원본 그대로');
+  assert.match(formHost, /import \{ AttendanceInputForm \} from '@\/app\/\(shell\)\/attendance\/\[date\]\/\[classId\]\/input-form'/);
+  const p = screen.params.v2path;
+  assert.equal(p.test('/attendance/2026-10-27'), true);
+  assert.equal(p.test(`/attendance/2026-10-27/${CLASS}`), true);
+  assert.equal(p.test('/attendance/2026-10-27/other'), false);
+  assert.equal(p.test('/attendance/2026-10-27/anything/else'), false);
+  const fd = { $formData: [['classId', CLASS], ['date', '2026-11-03']] };
+  assert.deepEqual(screen.actions.saveAttendance.validate({ module: ACTIONS, actor: CLASS, args: [null, fd] }).args[1], fd);
+  assert.throws(() => screen.actions.saveAttendance.validate({ module: PREFS, actor: CLASS, args: [null, fd] }), /입력 값/);
+  assert.throws(() => screen.actions.saveAttendance.validate({ module: ACTIONS, actor: CLASS, args: [null, { $formData: [['x', 1]] }] }), /입력 값/);
+});
+
+test('일별 목록·폼 조회는 원본 함수의 명단·처리 현황·결석 학생·시수를 싣는다', { skip: !db && 'local database not running' }, async () => {
+  const { tenantId: t } = await import('./full-db.mjs');
+  const { runV2Server } = await import('./v2-server-runner.mjs');
+  const [actor] = await db`select id::text id from public.users where tenant_id=${t} and system_role='master' and status='active' limit 1`;
+  const [klass] = await db`select id::text id from public.classes where tenant_id=${t} and class_name='PL5' and english_track='eie' limit 1`;
+  assert.ok(actor && klass);
+  const [before] = await db`select (select count(*)::int from public.audit_logs) audits, (select count(*)::int from net.http_request_queue) net`;
+  const date = '2026-10-27';
+  const page = v2path => db.begin('read only', sql => screen.load({ sql, params: { v2path, viewer: actor.id }, tenantId: t, importV2 }));
+  const list = await page(`/attendance/${date}`), form = await page(`/attendance/${date}/${klass.id}`);
+  const absent = await db.begin('read only', sql => screen.load({ sql, params: { v2path: `/attendance/${date}`, status: 'absent', viewer: actor.id }, tenantId: t, importV2 }));
+  const { results } = await runV2Server({ actorId: actor.id, tenantId: t, mode: 'read', steps: [
+    { module: ACTIONS.replace('actions.ts', 'queries.ts'), fn: 'getAttendanceForDate', args: [date] },
+    { module: ACTIONS.replace('actions.ts', 'queries.ts'), fn: 'getDailyProcessingStatus', args: [date] },
+    { module: ACTIONS.replace('actions.ts', 'queries.ts'), fn: 'getAttendanceInputRows', args: [klass.id, date] },
+    { module: 'features/attendance/server/auto-units.ts', fn: 'getAutoUnitsForClassDay', args: [klass.id, date] },
+    { module: 'features/dashboard/server/absent-students.ts', fn: 'getScopedAbsentStudents', args: [date, null] },
+  ] });
+  assert.deepEqual([list.page, form.page, absent.view], ['dayList', 'dayForm', 'absent']);
+  assert.deepEqual([list.records, list.processing, form.rows, form.autoUnits, absent.day], results.map(r => r.value));
+  assert.equal(form.klass.id, klass.id);
+  assert.equal(list.editors.some(e => e.id === list.viewer), true);
+  const [after] = await db`select (select count(*)::int from public.audit_logs) audits, (select count(*)::int from net.http_request_queue) net`;
+  assert.deepEqual(after, before, '보기만 해서는 감사로그·바깥 요청이 생기지 않는다');
+});
+
+test('일별 폼: 원본 저장·보강 후보 조회와 성공 후 이동 주소, 감사 출처를 되돌림으로 확인한다', { skip: !db && 'local database not running' }, async () => {
+  const { tenantId: t } = await import('./full-db.mjs');
+  const { runV2Server } = await import('./v2-server-runner.mjs');
+  const [actor] = await db`select id::text id from public.users where tenant_id=${t} and system_role='master' and status='active' limit 1`;
+  const [klass] = await db`select id::text id from public.classes where tenant_id=${t} and class_name='PL5' and english_track='eie' limit 1`;
+  const [student] = await db`select id::text id from public.students where tenant_id=${t} and is_test and name='학원이' limit 1`;
+  assert.ok(actor && klass && student);
+  const before = await db`select
+    (select count(*)::int from public.enrollments where student_id=${student.id} and class_id=${klass.id}) enrollments,
+    (select count(*)::int from public.attendance_records where student_id=${student.id} and class_id=${klass.id} and session_date='2026-11-03') attendance,
+    (select count(*)::int from public.audit_logs) audits,
+    (select count(*)::int from net.http_request_queue) net`;
+  assert.deepEqual([before[0].enrollments, before[0].attendance], [0, 0]);
+  const form = { $formData: [['classId', klass.id], ['date', '2026-11-03'], [`status:${student.id}`, 'present'], [`units:${student.id}`, '2'], [`note:${student.id}`, '시험'], [`name:${student.id}`, '학원이']] };
+  const { results, probes } = await runV2Server({ actorId: actor.id, tenantId: t, mode: 'write', rollback: true, steps: [
+    { module: 'features/enrollments/server/actions.ts', fn: 'createEnrollment', args: [null, { $formData: [['studentId', student.id], ['classId', klass.id], ['startDate', '2026-11-01']] }] },
+    { module: ACTIONS, fn: 'saveAttendance', args: [null, form] },
+  ], probes: [
+    { text: `select status::text status, session_units::float8 units from public.attendance_records where student_id=$1 and class_id=$2 and session_date=$3`, params: [student.id, klass.id, '2026-11-03'] },
+    { text: `select action, metadata->>'via' via from public.audit_logs where tenant_id=$1 and created_at=now() and action='attendance_save'`, params: [t] },
+  ] });
+  assert.equal(results[0].value?.enrollmentId?.length > 0, true);
+  assert.deepEqual(results[1], { redirect: '/attendance/2026-11-03?saved=1' });
+  assert.deepEqual(probes, [[{ status: 'present', units: 2 }], [{ action: 'attendance_save', via: '3.0 연습 복사본' }]]);
+  const { results: lookups } = await runV2Server({ actorId: actor.id, tenantId: t, mode: 'read', steps: [
+    { module: ACTIONS, fn: 'searchMakeupStudents', args: [klass.id, '학원이', '2026-10-27'] },
+    { module: 'features/attendance/server/makeup-actions.ts', fn: 'fetchMakeupAbsences', args: [student.id, '2026-10-27', klass.id] },
+    { module: 'features/attendance/server/makeup-actions.ts', fn: 'fetchMakeupHostClasses', args: [student.id, '2026-10-27', null] },
+  ] });
+  assert.ok(lookups[0].value.some(s => s.id === student.id));
+  assert.ok(Array.isArray(lookups[1].value.options));
+  assert.ok(Array.isArray(lookups[2].value.options));
+  const after = await db`select
+    (select count(*)::int from public.enrollments where student_id=${student.id} and class_id=${klass.id}) enrollments,
+    (select count(*)::int from public.attendance_records where student_id=${student.id} and class_id=${klass.id} and session_date='2026-11-03') attendance,
+    (select count(*)::int from public.audit_logs) audits,
+    (select count(*)::int from net.http_request_queue) net`;
+  assert.deepEqual(after, before);
+});
+
 test('옮긴 본문이 2.0 원문과 같은 답을 낸다(설정 병합·휴일·과목 · 날짜축 · 31칸 · 담당 강사 · 달 이동 · 역할)', async () => {
   const resolve = await src('features/owner/resolve.ts'), queries = await src('features/attendance/server/queries.ts'), page = await src('app/(shell)/attendance/page.tsx');
   const sessions = await src('features/attendance/server/subject-sessions.ts');
@@ -84,9 +171,9 @@ test('매개변수는 정해진 값만 받는다(나머지는 공통 틀이 400)
   assert.ok(ok('mode', 'teacher') && !ok('mode', 'Teacher') && ok('q', '김 수') && !ok('q', 'a\nb') && !ok('q', 'x'.repeat(81)));
   assert.ok(ok('subject', 'subject_1') && !ok('subject', 'Math'));
   assert.equal(screen.id, 'attendance'); assert.equal(screen.order, 4); assert.equal(screen.label, '출석부');
-  assert.deepEqual(Object.keys(screen.actions).sort(), ['cancelMakeupReservation', 'clearSeatPeriodChoices', 'commitSeatJjEdits', 'fillSeatPrevAbsent', 'fillSeatSlot', 'generateRecapSummary', 'getMakeupPeriodOptions',
-    'moveSeatStudentPeriod', 'previewAbsenceIntake', 'pullSeatMemorizedWords', 'recordAbsenceIntake', 'recordFollowup', 'requestAttendanceInput', 'reserveMakeup', 'resetSeatPlacements', 'saveAttendanceCollapsed', 'saveAttendanceHideRetired', 'saveAttendancePeriodMode', 'saveAttendanceSalaryRates', 'saveAttendanceSalaryVisible', 'saveAttendanceSort',
-    'saveLiveSubjectFilter', 'saveSeatMonthlyCollapsed', 'searchAttendanceHubStudents', 'searchIntakeStudents', 'setAttendanceBulk', 'setAttendanceCell', 'setAttendanceRange', 'setSeatCell', 'setSeatJjField']);
+  assert.deepEqual(Object.keys(screen.actions).sort(), ['cancelMakeupReservation', 'clearSeatPeriodChoices', 'commitSeatJjEdits', 'fetchMakeupAbsences', 'fetchMakeupHostClasses', 'fillSeatPrevAbsent', 'fillSeatSlot', 'generateRecapSummary', 'getMakeupPeriodOptions',
+    'moveSeatStudentPeriod', 'previewAbsenceIntake', 'pullSeatMemorizedWords', 'recordAbsenceIntake', 'recordFollowup', 'requestAttendanceInput', 'reserveMakeup', 'resetSeatPlacements', 'saveAttendance', 'saveAttendanceCollapsed', 'saveAttendanceHideRetired', 'saveAttendancePeriodMode', 'saveAttendanceSalaryRates', 'saveAttendanceSalaryVisible', 'saveAttendanceSort',
+    'saveLiveSubjectFilter', 'saveSeatMonthlyCollapsed', 'searchAttendanceHubStudents', 'searchIntakeStudents', 'searchMakeupStudents', 'setAttendanceBulk', 'setAttendanceCell', 'setAttendanceRange', 'setSeatCell', 'setSeatJjField']);
 });
 
 test('허브 검색·결석 접수: 입력은 2.0 인자 모양만 받고(사람이 비어도 거절하지 않는다), 부품은 결과 모양을 그대로 읽는다', async () => {
@@ -120,7 +207,8 @@ test('화면 파일에 운영 2.0 주소·끼워 넣기가 없고, 손그림 CSS
   // 화면 폴링(2.0 poll-actions 두 함수)은 그 읽기 경로(GET ?poll=)로만 — 쓰기 경로(POST)를 타지 않는다.
   assert.match(entry, /registerHostHandler\('features\/attendance\/live\/server\/poll-actions\.ts', 'getLiveRecordedCount'/);
   assert.match(entry, /registerHostHandler\('features\/attendance\/recap\/server\/poll-actions\.ts', 'getRecapStatus'/);
-  assert.doesNotMatch(entry, /method:\s*['"]POST/);
+  assert.match(entry, /registerHostHandler\('features\/attendance\/server\/actions\.ts', 'saveAttendance'/);
+  assert.match(entry, /fetch\('\/api\/v2\/attendance\/saveAttendance', \{ method: 'POST'/);
 });
 
 test('3.0 껍데기: 호스트 iframe 하나를 자리 위에 겹치고, 이동·저장하는 사람을 주고받는다', async () => {

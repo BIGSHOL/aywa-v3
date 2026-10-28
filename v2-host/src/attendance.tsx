@@ -17,10 +17,12 @@ import { AttendanceSeatPage, type SeatDayData } from './attendance-seat-page';
 import { AttendanceSeatMonth, AttendanceSeatMonthClosed, type SeatMonthData } from './attendance-seat-month';
 import { AttendanceQuickPage, type QuickData } from './attendance-quick-page';
 import { AttendanceLivePage, type LiveData } from './attendance-live-page';
+import { AttendanceDayList, type DayListData } from './attendance-day-list';
+import { AttendanceDayForm, type DayFormData } from './attendance-day-form';
 
 /** 하위 주소의 값 — 자리 하루(seatDay) · 2.0 redirect · 2.0 notFound. 월별 출석부(`/attendance`)는 page 칸이 없다. */
 type Host = { lang: 'ko' | 'en'; host: AttendanceData['host'] };
-type Data = (AttendanceData & { page?: undefined }) | (SeatDayData & Host) | (SeatMonthData & Host) | (QuickData & Host) | (LiveData & Host) | (Host & { page: 'seatMonthClosed'; seatName: string })
+type Data = (AttendanceData & { page?: undefined }) | (SeatDayData & Host) | (SeatMonthData & Host) | (QuickData & Host) | (LiveData & Host) | (DayListData & Host) | (DayFormData & Host) | (Host & { page: 'seatMonthClosed'; seatName: string })
   | { page: 'unitsMasterUnavailable' }
   | (Host & { page: 'redirect'; to: string }) | (Host & { page: 'notFound' });
 
@@ -32,7 +34,7 @@ export const HOST_ROUTE = '/attendance';
  * 다시 받아야 하는 주소 열쇠 — 2.0에서 서버를 다시 그리던 것(달·과목·강사·반·보기 · 하위 주소 v2path · 자리의 날짜·교시).
  * `q`(학생 검색 씨앗)는 첫 렌더 씨앗일 뿐이라(2.0도 검색어는 History API로만 바꾼다 — att-search-seed.ts) 열쇠에 넣지 않고 함께 보내기만 한다.
  */
-const KEYS = ['v2path', 'month', 'subject', 'teacher', 'class', 'mode', 'date', 'start', 'tab', 'from'] as const;
+const KEYS = ['v2path', 'month', 'subject', 'teacher', 'class', 'mode', 'date', 'start', 'tab', 'from', 'status', 'saved', 'unlinked', 'linkError'] as const;
 
 /**
  * 오늘 출결 화면의 폴링(2.0 `getLiveRecordedCount` · `getRecapStatus` — 바뀌었으면 router.refresh) — 읽기라 쓰기 경로(POST)가 아니라
@@ -47,6 +49,21 @@ const pollRead = (kind: 'live' | 'recap', date: unknown, from?: unknown) => {
 };
 registerHostHandler('features/attendance/live/server/poll-actions.ts', 'getLiveRecordedCount', (date) => pollRead('live', date));
 registerHostHandler('features/attendance/recap/server/poll-actions.ts', 'getRecapStatus', (from, to) => pollRead('recap', to, from));
+// 2.0 폼은 저장 성공 뒤 redirect()로 일별 목록에 간다. 호스트에서는 그 주소를 부모 창에 알려 준다.
+registerHostHandler('features/attendance/server/actions.ts', 'saveAttendance', async (_prev, fd) => {
+  if (!(fd instanceof FormData)) return { error: '입력 값을 확인해 주세요.' };
+  let response: Response;
+  try {
+    response = await fetch('/api/v2/attendance/saveAttendance', { method: 'POST',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify({ module: 'features/attendance/server/actions.ts', actor: hostActor(), args: [null, { $formData: [...fd.entries()].filter(([, v]) => typeof v === 'string') }] }),
+    });
+  } catch { return { error: '저장하지 못했습니다. 다시 시도해 주세요.' }; }
+  const body = await response.json().catch(() => null);
+  if (!response.ok || !body?.ok) return { error: body?.message || '저장하지 못했습니다. 다시 시도해 주세요.' };
+  if (body.result?.redirect) { hostNavigate(body.result.redirect, 'push'); return undefined; }
+  return body.result;
+});
 
 function App() {
   const search = new URLSearchParams(useHostSearch());
@@ -114,6 +131,8 @@ function App() {
             : d.page === 'seatMonth' ? <AttendanceSeatMonth data={d} holidaySource={d.host.operations.holidays} />
             : d.page === 'quick' ? <AttendanceQuickPage data={d} subjects={ops.subjects} />
             : d.page === 'live' ? <AttendanceLivePage data={d} subjects={ops.subjects} />
+            : d.page === 'dayList' ? <AttendanceDayList data={d} />
+            : d.page === 'dayForm' ? <AttendanceDayForm data={d} />
             : <AttendancePage data={d} />}
         </OperationsProvider>
       </SheetLangProvider>

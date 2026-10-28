@@ -621,9 +621,10 @@ export const screen = {
   params: {
     month: /^\d{4}-(0[1-9]|1[0-2])$/, subject: /^[a-z][a-z0-9_]{0,30}$/, teacher: /^(?:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|seat:[a-z]{2,8})$/,
     class: UUID, mode: /^[a-z]{1,12}$/, q: /^[^\u0000-\u001f]{1,80}$/u, viewer: UUID,
-    v2path: /^\/attendance(?:\/seat(?:\/[a-z]{1,8}(?:\/month)?)?|\/quick|\/live|\/units-master)?$/, date: /^\d{4}-\d{2}-\d{2}$/, start: /^(?:\d{2}:\d{2}|all)$/,
+    v2path: /^\/attendance(?:\/seat(?:\/[a-z]{1,8}(?:\/month)?)?|\/quick|\/live|\/units-master|\/\d{4}-\d{2}-\d{2}(?:\/[0-9a-f-]{36})?)?$/, date: /^\d{4}-\d{2}-\d{2}$/, start: /^(?:\d{2}:\d{2}|all)$/,
     // `/attendance/live` — 탭(좌석표·확인 필요·어제 출결) · 요약 기간 시작 · 화면 폴링(2.0 getLiveRecordedCount·getRecapStatus 자리 — 읽기라 GET).
     tab: /^(?:seating|desk|recap)$/, from: /^\d{4}-\d{2}-\d{2}$/, poll: /^(?:live|recap)$/,
+    saved: /^\d{1,4}$/, unlinked: /^\d{1,4}$/, linkError: /^[^\u0000-\u001f]{1,240}$/u, status: /^absent$/,
   },
   /**
    * 2.0 page.tsx(서버 부품)가 JSX에 넘기는 값을 같은 이름·같은 모양으로 — 그리기는 호스트의 2.0 부품(attendance-page.tsx)이 한다.
@@ -633,6 +634,7 @@ export const screen = {
     if (params.v2path === '/attendance/units-master') return { page: 'unitsMasterUnavailable' };
     if (params.v2path === '/attendance/quick') return quickLoad({ sql, params, t, importV2 });
     if (params.v2path === '/attendance/live') return liveLoad({ sql, params, t, importV2 });
+    if (/^\/attendance\/\d{4}-\d{2}-\d{2}(?:\/|$)/.test(params.v2path ?? '')) return dayLoad({ sql, params, t, importV2 });
     if (params.v2path && params.v2path !== '/attendance') return seatLoad({ sql, params, t, importV2 });
     const R = await loadRules(importV2), today = await copyDay();
     const [settings, transitions] = await Promise.all([readSettings(sql, t, R), readTransitions(sql, t, R)]);
@@ -752,6 +754,41 @@ export const screen = {
   },
 };
 
+/** 2.0 일별 목록·입력 폼: 서버 조회 함수를 한 읽기 트랜잭션에서 실행해 원문의 props를 그대로 준다. */
+async function dayLoad({ sql, params, t, importV2 }) {
+  const [, , date, classId] = params.v2path.split('/');
+  const day = new Date(`${date}T00:00:00Z`);
+  if (Number.isNaN(day.getTime()) || day.toISOString().slice(0, 10) !== date || (classId && !UUID.test(classId))) return { page: 'notFound' };
+  const R = await loadRules(importV2), settings = await readSettings(sql, t, R);
+  const editors = await actorsOf(sql, t, R, settings), viewer = pickViewer(editors, params.viewer);
+  if (!viewer) return { page: 'notFound' };
+  const host = { operations: { subjects: settings.operations.subjects, gradeLevels: settings.operations.gradeLevels,
+    jobTitles: settings.operations.jobTitles, jobTitlesByDepartment: settings.operations.jobTitlesByDepartment, holidays: settings.operations.holidays },
+    disabledModules: settings.modules.disabled, preset: settings.preset };
+  const common = { date, lang: 'ko', host, editors: editors.map(e => ({ id: e.id, name: e.name, role: R.roles.ROLE_LABEL?.[e.role] ?? '' })), viewer: viewer.id };
+  const read = async steps => (await runV2Server({ actorId: viewer.id, tenantId: t, mode: 'read', steps })).results.map(r => r.value);
+  const q = 'features/attendance/server/queries.ts';
+  if (classId) {
+    const [klass, rows, autoUnits] = await read([
+      { module: q, fn: 'getClassMeta', args: [classId] },
+      { module: q, fn: 'getAttendanceInputRows', args: [classId, date] },
+      { module: 'features/attendance/server/auto-units.ts', fn: 'getAutoUnitsForClassDay', args: [classId, date] },
+    ]);
+    return klass ? { ...common, page: 'dayForm', classId, klass, rows, autoUnits, locked: false } : { page: 'notFound' };
+  }
+  if (params.status === 'absent') {
+    const [absentDay] = await read([{ module: 'features/dashboard/server/absent-students.ts', fn: 'getScopedAbsentStudents', args: [date, null] }]);
+    return { ...common, page: 'dayList', view: 'absent', day: absentDay, subjectLabel: R.subjects.subjectLabelRecord(settings.operations.subjects) };
+  }
+  const [records, processing, holiday] = await read([
+    { module: q, fn: 'getAttendanceForDate', args: [date] },
+    { module: q, fn: 'getDailyProcessingStatus', args: [date] },
+    { module: 'features/attendance/server/holiday.ts', fn: 'holidayNameOrNull', args: [date] },
+  ]);
+  return { ...common, page: 'dayList', view: 'records', records, processing, holiday,
+    saved: params.saved ?? null, unlinked: params.unlinked ?? null, linkError: params.linkError ?? null };
+}
+
 /**
  * 하위 주소 — 2.0 `/attendance/seat`(첫 자리로 redirect) · `/attendance/seat/<자리>`(자리 하루, v2-attendance-seat.mjs).
  * 2.0과 같이 자리 기능(seat_attendance)이 꺼진 학원·없는 자리는 없는 주소(notFound)다.
@@ -816,6 +853,16 @@ function hostCall(raw, module, arity) {
   return { actor: raw.actor, args: raw.args };
 }
 const ACTIONS_MODULE = 'features/attendance/server/actions.ts', PREFS_MODULE = 'features/attendance/server/prefs-actions.ts';
+const MAKEUP_ACTIONS_MODULE = 'features/attendance/server/makeup-actions.ts';
+const validDay = v => typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v);
+const validId = v => typeof v === 'string' && UUID.test(v);
+function dayActionBody(module, name, arity, check) {
+  return raw => { const { actor, args } = hostCall(raw, module, arity); if (!check(args)) throw bad(); return { actor, args }; };
+}
+async function runDayAction(module, name, body, tenantId, mode) {
+  const { results: [result] } = await runV2Server({ steps: [{ module, fn: name, args: body.args }], actorId: body.actor, tenantId, mode });
+  return result.redirect ? { redirect: result.redirect } : result.value;
+}
 /** 2.0 `setAttendanceCell(input)`의 입력 — 월별 출석부가 보내는 칸. */
 function cellBody(raw) {
   const { actor, args: [input] } = hostCall(raw, ACTIONS_MODULE, 1);
@@ -1369,6 +1416,26 @@ const attendanceActorOk = async (sql, t, importV2, actor) => {
 screen.actions = {
   // 실급여 비율 · '합계 및 실급여 보여주기'(2.0 salary-rates-actions.ts 그대로 · 공용 러너 write).
   ...attendanceMoneyActions(attendanceActorOk),
+  saveAttendance: {
+    validate: dayActionBody(ACTIONS_MODULE, 'saveAttendance', 2, ([, fd]) => fd && typeof fd === 'object' && Array.isArray(fd.$formData) && fd.$formData.length <= 1200
+      && fd.$formData.every(pair => Array.isArray(pair) && pair.length === 2 && typeof pair[0] === 'string' && pair[0].length <= 100 && typeof pair[1] === 'string' && pair[1].length <= 2200)),
+    run: async ({ body, tenantId }) => {
+      try { return await runDayAction(ACTIONS_MODULE, 'saveAttendance', body, tenantId, 'write'); }
+      catch (e) { if (!(e instanceof V2ServerError)) throw e; return { error: e.code === 'outbound_blocked' ? '바깥으로 요청을 보내려 해서 저장을 되돌렸습니다.' : '저장하지 못했습니다. 바뀐 것은 없습니다.' }; }
+    },
+  },
+  searchMakeupStudents: {
+    validate: dayActionBody(ACTIONS_MODULE, 'searchMakeupStudents', 3, ([classId, query, date]) => validId(classId) && typeof query === 'string' && query.length <= 80 && (date == null || validDay(date))),
+    run: async ({ body, tenantId }) => { try { return await runDayAction(ACTIONS_MODULE, 'searchMakeupStudents', body, tenantId, 'read'); } catch { return []; } },
+  },
+  fetchMakeupAbsences: {
+    validate: dayActionBody(MAKEUP_ACTIONS_MODULE, 'fetchMakeupAbsences', 3, ([studentId, date, classId]) => validId(studentId) && validDay(date) && (classId == null || validId(classId))),
+    run: async ({ body, tenantId }) => { try { return await runDayAction(MAKEUP_ACTIONS_MODULE, 'fetchMakeupAbsences', body, tenantId, 'read'); } catch { return { options: [], hiddenBySubject: 0 }; } },
+  },
+  fetchMakeupHostClasses: {
+    validate: dayActionBody(MAKEUP_ACTIONS_MODULE, 'fetchMakeupHostClasses', 3, ([studentId, date, subjects]) => validId(studentId) && validDay(date) && (subjects == null || Array.isArray(subjects) && subjects.length <= 12 && subjects.every(s => typeof s === 'string' && s.length <= 40))),
+    run: async ({ body, tenantId }) => { try { return await runDayAction(MAKEUP_ACTIONS_MODULE, 'fetchMakeupHostClasses', body, tenantId, 'read'); } catch { return { options: [], failed: true }; } },
+  },
   setAttendanceCell: { validate: cellBody, run: async ({ sql, body, tenantId, importV2 }) => body.ghostTransfer
     ? saveGhostWithV2('setAttendanceCell', body, tenantId)
     : setCell(sql, tenantId, body, await loadRules(importV2), await loadLiveRules(importV2), await loadMakeupRules(importV2)) },
