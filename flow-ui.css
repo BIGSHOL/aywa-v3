@@ -274,7 +274,9 @@
 .fl-rectable tr.can:hover{background:var(--ax-soft)}
 .fl-rectable tr.can:hover th button{color:var(--ax-primary);text-decoration:underline;text-underline-offset:3px}
 .fl-rectable .fl-rec-go{width:16px;padding-right:2px}.fl-rectable .fl-rec-go .icon{width:16px;height:16px}
-.fl-recs-modal{min-width:min(44rem,calc(100vw - 60px));overflow-x:auto}
+/* 기록 창은 표 폭만큼 넓어진다(기본 창 510px에 가두면 칸이 많은 기록이 옆으로 넘친다). 칸은 14em에서 말줄임 · 스크롤바는 숨긴다. */
+#modal:has(.fl-recs-modal){width:fit-content;min-width:min(32rem,calc(100vw - 28px));max-width:min(84rem,calc(100vw - 80px))}
+.fl-recs-modal{overflow-x:auto;scrollbar-width:none}.fl-recs-modal::-webkit-scrollbar{display:none}
 /* 잘린 글 보기 · 상태의 뜻 */
 .fl-tip{position:fixed;z-index:70;inset:auto;margin:0;overflow:visible;color:inherit;max-width:min(26rem,calc(100vw - 16px));padding:8px 10px;border:1px solid var(--ax-line);border-radius:8px;background:#fff;box-shadow:0 8px 24px rgba(23,33,62,.14);font-size:var(--ax-xs);line-height:1.5;white-space:pre-line;overflow-wrap:anywhere;pointer-events:none}
 .fl-tip[hidden]{display:none}

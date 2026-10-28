@@ -892,20 +892,24 @@ window.createFlowUI = function createFlowUI(api) {
   // 기록 한 건(GET …/records?id=, 읽기만)의 내용 · 상태 · 날짜 · 칸. 한 번 읽은 기록은 다시 읽지 않는다. 줄을 누르면 그 기록을 엿보기 창에 연다.
   const STUDENT_STATE={enrolled:'재원',withdrawn:'퇴원',paused:'휴원',on_hold:'휴원',leave:'휴원',pending:'등록 예정',waiting:'대기'};
   const schoolGrade=(school,grade)=>{const s=String(school||''),g=String(grade||''),m=/^([초중고])(\d)$/.exec(g);return m&&s.endsWith(m[1])?`${s}${m[2]}`:[s,g].filter(Boolean).join(' ');};
-  const DETAIL_LABEL={enrollment:'학년·학교',students:'학교·학년',billing:'청구월',approvals:'종류','textbook-requests':'요청'};
+  const DETAIL_LABEL={enrollment:'학년·학교',students:'학교·학년',billing:'청구월','textbook-requests':'요청'},DATE_LABEL={approvals:'기안일'};
+  // 열 순서를 정해 둔 종류 — 그 기록을 알아보는 칸이 이름 바로 뒤에 온다(정하지 않은 칸은 기록이 내는 순서로 뒤에).
+  const FACT_ORDER={approvals:['종류','기간','일수','금액','지출일','수입일','분류','상태','결재 차례','결재선','기안','기안일','사유']};
+  const ordered=(fam,list)=>{const o=FACT_ORDER[fam];if(!o)return list;const at=k=>{const i=o.indexOf(k);return i<0?o.length:i;};return list.map((x,i)=>[x,i]).sort((a,b)=>at(a[0][0])-at(b[0][0])||a[1]-b[1]).map(([x])=>x);};
   let studentIndex=null,classIndex=null;
   function studentFacts(id){
     studentIndex??=new Map((db.students||[]).map(s=>[String(s.id),s]));classIndex??=new Map((db.classes||[]).map(k=>[String(k.id),k]));
     const s=studentIndex.get(String(id));if(!s)return null;const cls=(s.classes||[]).map(k=>classIndex.get(String(k))).filter(Boolean),a=s.attendance||{};
     return [['학교·학년',schoolGrade(s.school,s.grade)],['상태',STUDENT_STATE[s.status]||''],['반',cls.length?`${cls.slice(0,2).map(k=>k.name).join(', ')}${cls.length>2?` 외 ${fmt(cls.length-2)}`:''}`:''],['이번 달 결석',a.absent?`${fmt(a.absent)}회`:''],['이번 달 미납',s.remaining>0?`${fmt(s.remaining)}원`:'']];
   }
-  const recCache=new Map();
+  // 이름 칸은 새로 읽은 기록의 이름 — 업무에 실린 이름은 그 일이 생길 때 적은 것이라 옛 이름일 수 있다(휴가 결재 = 신청자).
+  const recCache=new Map(),recName=new Map();
   function recordFacts(r){
     const fam=r.familyId||'',id=String(r.recordId||r.id||''),key=`${fam}:${id}`;
     if(recCache.has(key))return recCache.get(key);
     const known=r.type==='student'?studentFacts(id):null;
     const clean=v=>{const x=String(v??'').trim();return x==='—'?'':/^\d{4}-\d{2}-\d{2}$/.test(x)?md(x):x;};
-    const p=known?Promise.resolve(known):!fam||!id?Promise.resolve([]):fetch(`/api/workspaces/${encodeURIComponent(fam)}/records?id=${encodeURIComponent(id)}`,{headers:{Accept:'application/json'}}).then(res=>res.ok?res.json():null).then(b=>{const it=b?.item;if(!it)return r.detail?[['내용',String(r.detail)]]:[];const label=String(r.label||''),detail=clean(it.detail);return [[DETAIL_LABEL[fam]||'내용',detail&&!label.includes(detail)?detail:''],['상태',clean(it.status)],['날짜',it.date?md(String(it.date).slice(0,10)):''],...(it.fields||[]).filter(f=>f&&f.label).map(f=>[String(f.label),clean(f.value)])];}).catch(()=>{recCache.delete(key);return null;});
+    const p=known?Promise.resolve(known):!fam||!id?Promise.resolve([]):fetch(`/api/workspaces/${encodeURIComponent(fam)}/records?id=${encodeURIComponent(id)}`,{headers:{Accept:'application/json'}}).then(res=>res.ok?res.json():null).then(b=>{const it=b?.item;if(!it)return r.detail?[['내용',String(r.detail)]]:[];if(it.label)recName.set(key,String(it.label));const label=String(it.label||r.label||''),detail=clean(it.detail);return ordered(fam,[[DETAIL_LABEL[fam]||'내용',detail&&!label.includes(detail)?detail:''],['상태',clean(it.status)],[DATE_LABEL[fam]||'날짜',it.date?md(String(it.date).slice(0,10)):''],...(it.fields||[]).filter(f=>f&&f.label).map(f=>[String(f.label),clean(f.value)])]);}).catch(()=>{recCache.delete(key);return null;});
     recCache.set(key,p);return p;
   }
   const recType=r=>r.type==='student'?'원생':r.type==='lead'?'신규 상담':api.familyLabel?.(r.familyId)||'기록';
@@ -919,8 +923,8 @@ window.createFlowUI = function createFlowUI(api) {
     // 열 = 그 묶음에서 값이 하나라도 있는 칸. 순서는 기록이 칸을 내는 순서 — 새 칸은 그 줄에서 바로 앞 칸 뒤에 끼운다(첫 줄에 없는 칸이 맨 뒤로 밀리지 않게).
     const cols=[];facts.forEach(f=>{const ks=(f||[]).filter(([,v])=>v).map(([k])=>k);ks.forEach((k,j)=>{if(cols.includes(k))return;let at=0;for(let p=j-1;p>=0;p--){const i=cols.indexOf(ks[p]);if(i>=0){at=i+1;break;}}cols.splice(at,0,k);});});
     const cell=v=>`<td><span class="fl-cut">${h(v||'')}</span></td>`;
-    return `<table class="fl-rectable"><thead><tr><th scope="col">이름</th>${cols.map(k=>`<th scope="col">${h(k)}</th>`).join('')}<th aria-hidden="true"></th></tr></thead><tbody>${list.map((r,i)=>{const fam=r.familyId||'',id=String(r.recordId||r.id||''),can=fam&&api.hasView(`workspace-${fam}`)||api.canOpenRecord?.(id),f=new Map(facts[i]||[]),at=`data-family="${h(fam)}" data-record="${h(id)}"`;
-      return `<tr ${can?`class="can" data-fl="rec-open" ${at}`:''}><th scope="row">${can?`<button type="button" class="fl-cut" data-fl="rec-open" ${at}>${h(r.label)}</button>`:`<span class="fl-cut">${h(r.label)}</span>`}</th>${facts[i]===null?`<td colspan="${cols.length||1}" class="fl-dim">정보를 읽지 못했습니다.</td>`:cols.map(k=>cell(f.get(k))).join('')}<td class="fl-rec-go">${can?icon('chevron'):''}</td></tr>`;}).join('')}</tbody></table>`;
+    return `<table class="fl-rectable"><thead><tr><th scope="col">이름</th>${cols.map(k=>`<th scope="col">${h(k)}</th>`).join('')}<th aria-hidden="true"></th></tr></thead><tbody>${list.map((r,i)=>{const fam=r.familyId||'',id=String(r.recordId||r.id||''),can=fam&&api.hasView(`workspace-${fam}`)||api.canOpenRecord?.(id),f=new Map(facts[i]||[]),at=`data-family="${h(fam)}" data-record="${h(id)}"`,name=recName.get(`${fam}:${id}`)||r.label;
+      return `<tr ${can?`class="can" data-fl="rec-open" ${at}`:''}><th scope="row">${can?`<button type="button" class="fl-cut" data-fl="rec-open" ${at}>${h(name)}</button>`:`<span class="fl-cut">${h(name)}</span>`}</th>${facts[i]===null?`<td colspan="${cols.length||1}" class="fl-dim">정보를 읽지 못했습니다.</td>`:cols.map(k=>cell(f.get(k))).join('')}<td class="fl-rec-go">${can?icon('chevron'):''}</td></tr>`;}).join('')}</tbody></table>`;
   }
   function fillFacts(root,refs){
     const groups=new Map();for(const r of refs){const t=recType(r);if(!groups.has(t))groups.set(t,[]);groups.get(t).push(r);}

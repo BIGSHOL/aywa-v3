@@ -5,8 +5,18 @@ import { opsFamilies2 } from './domain-snapshot-ops2.mjs';
 const DAY = { mon: '월', tue: '화', wed: '수', thu: '목', fri: '금', sat: '토', sun: '일' };
 // 2.0 ASSET_STATUS_LABEL 원문(src/features/inventory/status.ts). 확인필요·미등록은 복사본에 없어 뺐다.
 const ASSET = { in_use: '사용중', on_loan: '대여중', repair: '수리중', lost: '분실', disposed: '폐기' };
-const APPROVAL = { draft: '작성 중', pending: '결재 대기', approved: '승인 완료', rejected: '반려' };
-const FORM = { leave: '휴가 신청', basic: '일반 기안', expense: '지출', income: '수입' };
+const APPROVAL = { draft: '작성 중', pending: '결재 대기', approved: '승인 완료', rejected: '반려', canceled: '회수' };
+// 2.0 APPROVAL_FORM_LABEL·LEAVE_KIND_LABEL 원문(src/features/approvals/types.ts · src/features/leave/request-days.ts).
+const FORM = { leave: '휴가신청서', proposal: '품의서', expense: '지출결의서', income: '수입결의서' };
+const LEAVE_KIND = { annual: '연차', half: '반차', quarter: '반반차' };
+const dayCount = n => (n == null ? null : `${Number(n)}일`);
+const dayRange = (a, b) => (!a ? null : !b || a === b ? md(a) : `${md(a)}~${md(b)}`);
+const won = n => (n == null ? null : `${Math.round(n).toLocaleString('ko-KR')}원`);
+// 휴가 사유는 편집기 HTML로 저장된다 — 글자만.
+const ENTITY = { amp: '&', lt: '<', gt: '>', quot: '"', '#39': "'", nbsp: ' ' };
+const plain = html => String(html ?? '').replace(/<br\s*\/?>|<\/p>/gi, ' ').replace(/<[^>]*>/g, '').replace(/&(amp|lt|gt|quot|#39|nbsp);/g, (_, k) => ENTITY[k]).replace(/\s+/g, ' ').trim() || null;
+// 값이 있는 칸만 싣는다(없는 칸을 '—'로 남기면 상세 화면에 '기안 —'처럼 뜻 없는 줄이 생긴다).
+const filled = pairs => pairs.filter(([, v]) => v != null && v !== '').map(([l, v]) => field(l, v));
 const DOC_FORM = { staff_resume: '직원 이력서', refund_request: '환불 요청서', class_review: '수업 평가', class_review_template: '수업 평가 양식', staff_intake_token: '직원 정보 입력 링크' };
 const PROCESS = { completed: 'AI 분석 완료', idle: '기록만', failed: '분석 실패', processing: '분석 중', transcribing: '전사 중' };
 const pre = (p, labels) => Object.fromEntries(Object.entries(labels).map(([k, v]) => [`${p}:${k}`, v]));
@@ -56,14 +66,33 @@ export async function opsFamilies(ctx) {
   });
 
   // 전자결재 — 결재 문서(근거)와 결재선.
-  const docs = await sql`select d.id, d.title, d.form_type, d.status, d.current_step, to_char(d.submitted_at at time zone 'Asia/Seoul','YYYY-MM-DD') d, u.display_name drafter, (select count(*)::int from public.approval_steps s where s.tenant_id=${t} and s.document_id=d.id) steps, (select count(*)::int from public.approval_steps s where s.tenant_id=${t} and s.document_id=d.id and s.decision='pending') waiting from public.approval_documents d left join public.users u on u.id=d.drafter_id and u.tenant_id=${t} where d.tenant_id=${t} order by d.submitted_at desc nulls last`;
+  // 휴가는 신청자·종류·기간·일수로 알아보는 문서라 이름 칸은 신청자, 그 밖의 양식은 문서 제목. 결재선은 '이름 역할 → …', 지금 차례는 대기 중 첫 칸
+  // (원장 10-28 "이름이 김예원이어야할거같은데, 항목 잘 정리해봐. 기간 이런걸 표현할 수 있을거같은데").
+  const docs = await sql`select d.id, d.title, d.form_type, d.status, to_char(d.submitted_at at time zone 'Asia/Seoul','YYYY-MM-DD') d, u.display_name drafter,
+      (select count(*)::int from public.approval_steps s where s.tenant_id=${t} and s.document_id=d.id) steps,
+      (select count(*)::int from public.approval_steps s where s.tenant_id=${t} and s.document_id=d.id and s.decision='pending') waiting,
+      (select string_agg(coalesce(a.display_name, '이름 없음') || ' ' || coalesce(s.role_label, '승인'), ' → ' order by s.step_no) from public.approval_steps s left join public.users a on a.id=s.approver_id and a.tenant_id=${t} where s.tenant_id=${t} and s.document_id=d.id) line,
+      (select a.display_name from public.approval_steps s left join public.users a on a.id=s.approver_id and a.tenant_id=${t} where s.tenant_id=${t} and s.document_id=d.id and s.decision='pending' order by s.step_no limit 1) turn,
+      l.leave_kind, l.start_date::text leave_from, l.end_date::text leave_to, l.days::float8 leave_days, l.reason leave_reason, lu.display_name applicant,
+      coalesce(e.amount, i.amount)::float8 amount, coalesce(e.spend_date, i.income_date)::text money_date, coalesce(e.category, i.category) category
+    from public.approval_documents d left join public.users u on u.id=d.drafter_id and u.tenant_id=${t}
+      left join public.leave_forms l on l.document_id=d.id and l.tenant_id=${t} left join public.users lu on lu.id=l.user_id and lu.tenant_id=${t}
+      left join public.approval_expense_forms e on e.document_id=d.id and e.tenant_id=${t} left join public.approval_income_forms i on i.document_id=d.id and i.tenant_id=${t}
+    where d.tenant_id=${t} order by d.submitted_at desc nulls last`;
+  const isLeave = d => d.form_type === 'leave' && d.leave_from;
+  const turn = d => (d.status === 'pending' ? d.turn : null);
+  const facets = d => [`status:${d.status}`, `form:${d.form_type}`];
+  const docRecord = d => (isLeave(d)
+    ? record({ id: d.id, label: d.applicant || d.drafter || d.title, date: d.d, status: APPROVAL[d.status] || '기타', facets: facets(d), fields: filled([['종류', `${LEAVE_KIND[d.leave_kind] || ''} 휴가`.trim()], ['기간', dayRange(d.leave_from, d.leave_to)], ['일수', dayCount(d.leave_days)], ['사유', plain(d.leave_reason)], ['결재 차례', turn(d)], ['결재선', d.line], ['기안', d.drafter && d.drafter !== d.applicant ? d.drafter : null]]) })
+    : record({ id: d.id, label: d.title || '제목 없음', date: d.d, status: APPROVAL[d.status] || '기타', facets: facets(d), fields: filled([['종류', FORM[d.form_type] || '기타 양식'], ['기안', d.drafter], ['금액', won(d.amount)], [d.form_type === 'income' ? '수입일' : '지출일', d.money_date ? md(d.money_date) : null], ['분류', d.category], ['결재 차례', turn(d)], ['결재선', d.line]]) }));
+  const docLine = d => (isLeave(d) ? `${d.applicant || d.drafter || '신청자 모름'} ${LEAVE_KIND[d.leave_kind] || '휴가'} ${dayRange(d.leave_from, d.leave_to)}(${dayCount(d.leave_days)})` : `${d.title || '제목 없음'}(기안 ${d.drafter || '모름'})`);
   const pending = docs.filter(d => d.status === 'pending');
   out.approvals = family('approvals', '전자결재(기안·결재함)', {
     summary: `반려 ${docs.filter(d => d.status === 'rejected').length}건 · 결정을 기다리는 결재 단계 ${docs.reduce((n, d) => n + d.waiting, 0)}개.`,
     metrics: [metric('결재 문서', docs.length, '건'), ...Object.entries(APPROVAL).map(([k, v]) => metric(v, docs.filter(d => d.status === k).length, '건')), metric('대기 중인 결재 단계', docs.reduce((n, d) => n + d.waiting, 0), '개')],
-    evidence: docs.map(d => record({ id: d.id, label: d.title, date: d.d, status: APPROVAL[d.status] || '기타', detail: FORM[d.form_type] || '기타 양식', fields: [field('기안', d.drafter), field('결재선', `${d.current_step || 0}/${d.steps}단계`)], facets: [`status:${d.status}`, `form:${d.form_type}`] })),
+    evidence: docs.map(docRecord),
     facetLabels: { ...pre('status', APPROVAL), ...pre('form', FORM) }, recordSource: 'approval_documents',
-    signals: pending.length ? [signal({ id: 'approval-pending', title: `결재 대기 문서 ${pending.length}건`, summary: scrub(`${pending.slice(0, 3).map(d => `${d.title || '제목 없음'}(기안 ${d.drafter || '모름'})`).join(', ')}${pending.length > 3 ? ` 외 ${pending.length - 3}건` : ''}.`), priority: PRIORITY.decide, source: '전자결재 · 대기 문서', recordIds: pending.map(d => d.id), draft: { title: '결재 문서 검토 및 보완', body: '결재 문서의 내용과 첨부 근거를 확인하고, 보완할 사항이 있으면 정리해서 알려 주세요.' } })] : [],
+    signals: pending.length ? [signal({ id: 'approval-pending', title: `결재 대기 문서 ${pending.length}건`, summary: scrub(`${pending.slice(0, 3).map(docLine).join(', ')}${pending.length > 3 ? ` 외 ${pending.length - 3}건` : ''}.`), priority: PRIORITY.decide, source: '전자결재 · 대기 문서', recordIds: pending.map(d => d.id), draft: { title: '결재 문서 검토 및 보완', body: '결재 문서의 내용과 첨부 근거를 확인하고, 보완할 사항이 있으면 정리해서 알려 주세요.' } })] : [],
     sourceLabel: '전자결재 문서 · 결재선', coverageNote: '목록은 결재 문서 전체입니다(최근 상신 순).',
     sources: [{ table: 'approval_documents', rows: docs.length }, { table: 'approval_steps', rows: docs.reduce((n, d) => n + d.steps, 0) }],
   });
