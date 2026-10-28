@@ -59,7 +59,8 @@ async function page(query = '', teachers = { status: 'ready', data: { teachers: 
 
 test('page: note, teacher picker (escaped, the chosen one selected) and the host slot', async () => {
   const { html, fetched, loads } = await page('teacher=t2&date=2026-10-27');
-  assert(html.includes('연습 복사본(Docker)') && html.includes('data-v2-host-slot'), 'note and slot');
+  assert(html.includes('연습 화면') && html.includes('data-v2-host-slot'), 'note and slot');
+  assert(!/2\.0|Docker/.test(html), 'no 2.0 or developer wording on the screen (원장 10-28)');
   assert(!html.includes('김<b>선생') && html.includes('김&lt;b&gt;선생'), 'teacher names escaped');
   assert(/<option value="t2" selected>이선생 · 반 1<\/option>/.test(html), 'the chosen teacher is selected');
   assert(!html.includes('최근 보고서가 가장 많은 선생님'), 'no default option when a teacher is chosen');
