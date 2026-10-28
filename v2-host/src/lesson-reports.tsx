@@ -57,7 +57,7 @@ toast.success = ((message, data) => {
   }
   if (queuedToastCount > 0 && typeof message === "string" && /(?:재)?발송 대기/.test(message)) {
     queuedToastCount--;
-    return originalSuccess(`${message.replace(" — 발송 PC가 순서대로 보냅니다", "").replace("(발송 PC가 순차 게시)", "")} · ${COPY_QUEUE_NOTICE}`, data);
+    return originalSuccess(`${message.replace(" — 발송 PC가 순서대로 보냅니다", "").replace("(발송 PC가 순차 게시)", "").replace(" — 연동 PC가 자동으로 전송합니다(발송 허용 시간대 설정 시 그 시간에).", "")} · ${COPY_QUEUE_NOTICE}`, data);
   }
   return originalSuccess(message, data);
 }) as typeof toast.success;
@@ -65,6 +65,8 @@ const originalMessage = toast.message;
 toast.message = ((message, data) => originalMessage(
   typeof message === "string" && (message.startsWith("dry-run — 승인 전이라 실제") || message.startsWith("dry-run — '보고서 설정' 탭에서 'ClassNote 실제 발송'"))
     ? "발송 설정이 꺼져 대기열에도 올리지 않았습니다. 연습 복사본에서는 실제로 보내지지 않습니다."
+    : message === "저장했습니다. 현재 실제 발송이 꺼져 있어 전송은 대기 상태입니다(원장 설정에서 켜야 전송)."
+      ? "저장했습니다. 발송 설정이 꺼져 대기열에도 올리지 않았습니다. 연습 복사본에서는 실제로 보내지지 않습니다."
     : message, data,
 )) as typeof toast.message;
 
@@ -72,6 +74,7 @@ const QUEUE_ACTIONS: [string, string[]][] = [
   ["features/report-admin/server/actions.ts", ["sendClassnoteForUnsent", "retryClassnote"]],
   ["features/report-admin/server/notice-actions.ts", ["sendClassNotice"]],
   ["features/report-admin/server/class-notice-actions.ts", ["sendClassWideNotice"]],
+  ["features/report-admin/server/compose-actions.ts", ["saveAndQueueAdminReport"]],
 ];
 for (const [module, names] of QUEUE_ACTIONS) for (const name of names) registerHostHandler(module, name, async (...args) => {
   try {
@@ -81,8 +84,8 @@ for (const [module, names] of QUEUE_ACTIONS) for (const name of names) registerH
     });
     const body = await response.json().catch(() => null) as { ok?: boolean; result?: unknown; message?: string } | null;
     if (!response.ok || !body?.ok) return { ok: false, error: body?.message ?? "발송 요청을 저장하지 못했습니다." };
-    const result = body.result as { ok?: boolean; queued?: number; requeued?: number; dryRun?: boolean } | null;
-    if (result?.ok && !result.dryRun && ((result.queued ?? 0) > 0 || (result.requeued ?? 0) > 0)) queuedToastCount++;
+    const result = body.result as { ok?: boolean; queued?: number; requeued?: number; dryRun?: boolean; status?: string } | null;
+    if (result?.ok && !result.dryRun && ((result.queued ?? 0) > 0 || (result.requeued ?? 0) > 0 || result.status === "queued")) queuedToastCount++;
     return result;
   } catch { return { ok: false, error: "발송 요청을 저장하지 못했습니다." }; }
 });
@@ -90,8 +93,8 @@ for (const [module, names] of QUEUE_ACTIONS) for (const name of names) registerH
 // 저장(회수 · 멈춤 복구 · 원아 연결 · 프롬프트 · 보고서 설정 · 통계 보기 기억)은 이 화면 actions(v2-lesson-reports-save.mjs)가 받는다 —
 // 여기 적지 않은 함수는 shim이 쓰기 경로로 보낸다. 아래는 그 경로가 받지 않는 저장 — 보내지 않고 그 자리에서 2.0 거절 모양으로.
 const REFUSE: Record<string, string[]> = {
-  // 직접 발송 저장 · 원스크린 공지 작성·대기 공지 관리 · 답글 · 공감 — 아직 받지 않는 일.
-  "features/report-admin/server/compose-actions.ts": ["saveAndQueueAdminReport", "sendBulkAdminReports"],
+  // 직접 대량 발송 · 원스크린 공지 작성·대기 공지 관리 · 답글 · 공감 — 아직 받지 않는 일.
+  "features/report-admin/server/compose-actions.ts": ["sendBulkAdminReports"],
   "features/onescreen/server/notice-actions.ts": ["sendOnescreenNotice", "editQueuedNotice", "deleteQueuedNotice"],
   "features/classnote-reply/server/reply-actions.ts": ["requestParentReply", "requestParentReplyEdit", "requestParentReplyDelete"],
   "features/classnote-reply/server/reaction-actions.ts": ["requestParentReaction", "requestParentReactionRemove"],
