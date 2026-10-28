@@ -55,3 +55,6 @@
 .tr-seg .tab{min-height:var(--ax-control-h-sm);padding:0 12px;border:1px solid var(--ax-line);border-radius:6px;background:#fff;font-size:var(--ax-xs);color:var(--ax-ink);white-space:nowrap}
 .tr-seg .tab:hover{background:var(--ax-soft)}
 .tr-seg .tab.active{border-color:var(--ax-primary);background:var(--ax-soft);color:var(--ax-primary);font-weight:650}
+/* 쪼개 보기(원장 10-28 "이 항목을 눌렀을때 해당 기간에 대해 자세한 지표") — 누를 수 있는 점만 손가락 커서 · 쪼개 보는 범위는 필터 칩과 같은 모양(×로 원래 보기). */
+.tr-chart .chart-col[data-tr-drill]{cursor:pointer}
+.tr-range{background:var(--ax-soft)}

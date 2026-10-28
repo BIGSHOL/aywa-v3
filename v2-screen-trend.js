@@ -20,6 +20,11 @@
   // 분자 / 분모는 비율 지표만(건수 지표는 분모가 1이라 '333 / 1'로 보였다).
   const ratio = (p, unit = '%') => (unit === '%' && p && p.den != null ? `${fmt(p.num)} / ${fmt(p.den)}` : '');
   const tip = (title, rows, meta) => esc(JSON.stringify({ title, rows, meta: meta.filter(Boolean) }));
+  // 하루 창은 요일을 붙인다(일마다 나눠 볼 때 어느 요일인지가 곧 정보다) — 축은 점이 14개 이하일 때만(31일이면 글자가 겹친다).
+  const dow = day => '일월화수목금토'[new Date(`${day}T12:00:00Z`).getUTCDay()];
+  const dayName = w => (w.from === w.to ? `${w.label}(${dow(w.from)})` : w.label);
+  const when = w => (w.from === w.to ? dayName(w) : `${w.label} (${w.from} ~ ${w.to})`);
+  const grainName = (d, id) => d.grains.find(g => g.id === id)?.label || '';
 
   // 기준별 꺾은선(원장 10-28 "꺾은선도 과목별로 표시할 수 있게" · "여기도 선생님별 추세선 보이게. 다른 비슷한 확장 추세는 전부").
   // 과목·프로그램은 정해 준 색(원장 10-28 "수학 파란색 영어 빨간색. EiE 주황색"), 그 밖의 줄은 줄 순서대로 같은 색을 받는다(정렬·켜고 끄기에 색이 바뀌지 않게).
@@ -48,7 +53,9 @@
   const nice = raw => { const mag = 10 ** Math.floor(Math.log10(raw)), k = raw / mag; return Math.max((k <= 1 ? 1 : k <= 2 ? 2 : k <= 2.5 ? 2.5 : k <= 5 ? 5 : 10) * mag, 1); };
   function bigChart(d, base, series) {
     const room = document.querySelector('[data-v2-screen="trend"] .tr-main')?.clientWidth || document.querySelector('#main')?.clientWidth || 800;
-    const W = Math.max(560, Math.round(room - 34)), H = 300, L = 52, R = 16, T = 18, B = 34, n = d.windows.length, pct = d.metric.unit === '%';
+    // 오른쪽 여백 = 마지막 축 이름의 반 폭(가운데 맞춤이라 끝 이름이 그림 밖으로 잘렸다 — 주별 '10/21~10/27' 19px · 요일 붙인 '10/20(화)' 10px). 글자 폭은 어림(숫자·기호 7 · 한글 13).
+    const n = d.windows.length, axisName = n <= 14 ? dayName : w => w.label, half = s => Math.ceil([...s].reduce((t, ch) => t + (ch.charCodeAt(0) > 0x3000 ? 13 : 7), 0) / 2);
+    const W = Math.max(560, Math.round(room - 34)), H = 300, L = 52, R = Math.max(16, n ? half(axisName(d.windows[n - 1])) + 4 : 16), T = 18, B = 34, pct = d.metric.unit === '%';
     const vals = [...d.total, ...(base?.total || []), ...series.flatMap(s => s.points)].map(p => p?.value).filter(v => v != null);
     let min = 0, max = 100, tick = 20;
     if (!pct) {
@@ -61,20 +68,22 @@
     const path = list => { const runs = []; list.forEach((p, i) => { if (p?.value == null) return; if (i && list[i - 1]?.value != null) runs.at(-1).push(i); else runs.push([i]); });
       return runs.map(r => (r.length === 1 ? `<circle class="tr-solo" cx="${x(r[0])}" cy="${y(list[r[0]].value)}" r="3"/>` : `<polyline points="${r.map(i => `${x(i)},${y(list[i].value)}`).join(' ')}"/>`)).join(''); };
     const every = Math.ceil(n / 12), name = d.filter?.label ? `${d.filter.label} · ${d.metric.label}` : d.metric.label, many = series.length > 0;
+    // 쪼갤 수 있는 점(기록이 있고 지표가 더 잘게 나눠지는 단위) = data-tr-drill — 누르면(키보드 Enter) 그 기간을 한 단계 잘게. 그 밖의 점은 누를 수 있어 보이지 않는다.
+    const sub = d.drill ? grainName(d, d.drill) : '';
     const cols = d.windows.map((w, i) => {
-      const p = d.total[i], q = i ? d.total[i - 1] : null, b = base?.total?.[i], c = changeOf(p, q, d.metric.unit, d.metric.better);
+      const p = d.total[i], q = i ? d.total[i - 1] : null, b = base?.total?.[i], c = changeOf(p, q, d.metric.unit, d.metric.better), drill = sub && p?.value != null;
       const rows = [{ label: many ? `${name} (전체)` : name, value: shown(p?.value, d.metric.unit), tone: 'primary', color: many ? '#121212' : '' },
         ...(base ? [{ label: '학원 전체', value: shown(b?.value, d.metric.unit), tone: 'secondary' }] : []),
         ...series.map(s => ({ label: s.label, value: shown(s.points[i]?.value, d.metric.unit), color: s.color }))];
-      return `<g class="chart-col" data-point data-tip="${tip(w.from === w.to ? w.label : `${w.label} (${w.from} ~ ${w.to})`, rows, [i ? (c.tone ? { text: `직전 대비 ${c.text}`, tone: c.tone } : `직전 대비 ${c.text}`) : '', ratio(p, d.metric.unit)])}">`
+      return `<g class="chart-col" data-point${drill ? ` data-tr-drill="${i}"` : ''} data-tip="${tip(when(w), rows, [i ? (c.tone ? { text: `직전 대비 ${c.text}`, tone: c.tone } : `직전 대비 ${c.text}`) : '', ratio(p, d.metric.unit), drill ? `눌러서 ${sub}로 보기` : ''])}">`
         + `<rect class="chart-hit" x="${x(i) - step / 2}" y="${T - 8}" width="${step}" height="${H - B - T + 8}"/>`
         + (p?.value == null ? `<text data-anchor x="${x(i)}" y="${H - B - 6}" text-anchor="middle">—</text>` : `<circle class="tr-dot" data-anchor cx="${x(i)}" cy="${y(p.value)}" r="4"/>`)
-        + (i % every === 0 || i === n - 1 ? `<text x="${x(i)}" y="${H - 10}" text-anchor="middle">${esc(w.label)}</text>` : '') + '</g>';
+        + (i % every === 0 || i === n - 1 ? `<text x="${x(i)}" y="${H - 10}" text-anchor="middle">${esc(axisName(w))}</text>` : '') + '</g>';
     }).join('');
     const lines = series.map(s => `<g class="tr-line series" style="--c:${s.color}">${path(s.points)}</g>`).join('');
     const legend = many || base ? `<div class="tr-legend">${[`<span><i class="sum"></i>${esc(many ? '전체' : d.filter.label)}</span>`, ...(base ? ['<span><i class="alt"></i>학원 전체</span>'] : []),
       ...series.map(s => `<span><i style="background:${s.color}"></i>${esc(s.label)}</span>`)].join('')}</div>` : '';
-    return `<div class="chart-box tr-chart${many ? ' has-series' : ''}" data-chart tabindex="0" role="group" aria-label="${esc(name)} 추세 — 화살표 키로 기간을 옮기며 수치를 확인합니다"><svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(name)} ${d.windows.map((w, i) => `${w.label} ${shown(d.total[i]?.value, d.metric.unit)}`).join(', ')}">${grid}${base ? `<g class="tr-line base">${path(base.total)}</g>` : ''}${lines}<g class="tr-line">${path(d.total)}</g>${cols}</svg></div>${legend}`;
+    return `<div class="chart-box tr-chart${many ? ' has-series' : ''}" data-chart tabindex="0" role="group" aria-label="${esc(name)} 추세 — 화살표 키로 기간을 옮기며 수치를 확인합니다${sub ? `. Enter로 그 기간을 ${sub}로 나눠 봅니다` : ''}"><svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(name)} ${d.windows.map((w, i) => `${w.label} ${shown(d.total[i]?.value, d.metric.unit)}`).join(', ')}">${grid}${base ? `<g class="tr-line base">${path(base.total)}</g>` : ''}${lines}<g class="tr-line">${path(d.total)}</g>${cols}</svg></div>${legend}`;
   }
 
   // 기준별 표의 정보 칸(원장 10-28 "각 선생님의 과목, 담당 반 수, 담당 학생 수 표시") — 서버가 줄마다 meta로 준다(지금 재원 수강 기준).
@@ -94,7 +103,7 @@
     rows.sort(cmp);
     const head = (key, label, cls = '') => `<th class="${cls}"><button type="button" data-tr-sort="${key}" aria-pressed="${sort.key === key}">${label}${sort.key === key ? (sort.dir ? ' ↑' : ' ↓') : ''}</button></th>`;
     const cut = showAll ? rows : rows.slice(0, 20), w = d.windows[li];
-    return `<section class="tr-break"><h3>${esc(dim?.label || '기준별')} <span>${esc(w.label)}</span></h3>`
+    return `<section class="tr-break"><h3>${esc(dim?.label || '기준별')} <span>${esc(dayName(w))}</span></h3>`
       + `<div class="tr-table-wrap"><table class="tr-table"><thead><tr><th class="tr-pick"><span class="ax-visually-hidden">그래프에 표시</span></th>${head('name', dim?.label.replace(/별$/, '') || '이름')}${metaCols.map(([k, l]) => `<th class="tr-meta ${k === 'subjects' || k === 'teacher' ? '' : 'num'}">${l}</th>`).join('')}${head('value', '값', 'num')}${head('change', '직전 대비', 'num')}${unit === '%' ? head('den', '대상', 'num') : ''}<th>추세</th><th></th></tr></thead><tbody>`
       + cut.map(r => { const c = changeOf(r.now, r.prev, unit, better), color = colorOf(d, r, order.get(r.key));
         return `<tr><td class="tr-pick"><label><input type="checkbox" data-tr-line="${esc(r.key)}" ${on.has(r.key) ? 'checked' : ''} aria-label="${esc(r.label)} 그래프에 표시"><i style="background:${color}"></i></label></td><th scope="row">${esc(r.label)}</th>`
@@ -117,15 +126,19 @@
   }
 
   function render(ctx) {
-    const q = ctx.query, params = { metric: q.get('metric') || '', grain: q.get('grain') || '', by: q.get('by') || '', f: q.get('f') || '' };
+    // from·to·up = 쪼개 보는 범위(점을 누른 그 기간)와 나눈 창의 단위 — 주소에 실어 새로고침·뒤로 가기에도 같은 보기.
+    const q = ctx.query, params = Object.fromEntries(['metric', 'grain', 'by', 'f', 'from', 'to', 'up'].map(k => [k, q.get(k) || '']));
     last = { params, go: ctx.go, api: ctx.api, by: last?.by || '' };
     const e = ctx.load(params);
     if (!e.data) {
       if (e.status === 'error') return `<p class="v3s-note">${esc(e.error || '불러오지 못했습니다.')}</p>`;
       return lastHtml ? lastHtml.replace('<div class="tr">', '<div class="tr is-loading" aria-busy="true">') : '<div class="tr"><p class="v3s-note">추세를 계산하는 중…</p></div>';
     }
-    const d = e.data; last.by = d.by; last.view = viewKey(d);
-    const base = d.filter ? ctx.load({ metric: d.metric.id, grain: d.grain }).data : null, li = d.windows.length - 1;
+    const d = e.data; last.by = d.by; last.view = viewKey(d); last.d = d;
+    const rq = d.range ? { from: d.range.from, to: d.range.to, up: d.range.up } : {}, li = d.windows.length - 1;
+    // 학원 전체(필터를 걸었을 때의 비교선)는 같은 창의 시작일로 맞춘다 — 필터 쪽과 전체 쪽의 '기록 시작'이 달라 앞을 다르게 잘라도 칸이 어긋나지 않게.
+    const all = d.filter ? ctx.load({ metric: d.metric.id, grain: d.grain, ...rq }).data : null;
+    const base = all ? (m => ({ total: d.windows.map(w => m.get(w.from) ?? null) }))(new Map(all.windows.map((w, i) => [w.from, all.total[i]]))) : null;
     const p = d.total[li], c = changeOf(p, li ? d.total[li - 1] : null, d.metric.unit, d.metric.better), CP = window.ContextPicker;
     // 지표 고르개 = 지표 이름만(원장 10-28 "그냥 지표이름만 보여줘도 될거같음" · "마지막 21개는 필요없음" — 건수 줄은 CSS로 숨긴다). 영역 이름으로도 찾는다.
     const items = d.metrics.map(m => ({ value: m.id, title: m.label, search: `${m.label} ${m.group}` }));
@@ -133,8 +146,9 @@
     const seg = (attr, list, cur) => list.map(x => `<button type="button" class="tab ${x.id === cur ? 'active' : ''}" ${attr}="${esc(x.id)}" aria-pressed="${x.id === cur}">${esc(x.label)}</button>`).join('');
     lastHtml = `<div class="tr"><div class="page-heading"><div><p class="ws-group">확장 추세</p><h1>${esc(d.metric.label)}</h1></div><div class="heading-actions">${picker}</div></div>`
       + `<div class="tr-bar"><div class="tr-seg" role="group" aria-label="기간 단위">${seg('data-tr-grain', d.grains, d.grain)}</div><div class="tr-seg" role="group" aria-label="기준">${seg('data-tr-by', d.metric.dims.filter(x => x.id !== d.filter?.dim), d.by)}</div>`
+      + (d.range ? `<span class="tr-filter tr-range"><strong>${esc(d.range.label)}</strong> ${esc(grainName(d, d.grain))}<button type="button" class="icon-button" data-tr-undrill aria-label="나눠 보기 닫기 — ${esc(grainName(d, d.range.up))} 보기로">×</button></span>` : '')
       + (d.filter ? `<span class="tr-filter"><strong>${esc(d.filter.label)}</strong>만 보는 중<button type="button" class="icon-button" data-tr-unfilter aria-label="필터 풀기">×</button></span>` : '') + '</div>'
-      + `<section class="tr-main"><div class="tr-now"><span>${esc(d.windows[li]?.label || '')}</span><strong>${shown(p?.value, d.metric.unit)}</strong><small class="${c.tone}">${li ? `직전 대비 ${c.text}` : ''}</small><small>${ratio(p, d.metric.unit)}</small></div>${bigChart(d, base, seriesOf(d))}</section>`
+      + `<section class="tr-main"><div class="tr-now"><span>${esc(d.windows[li] ? dayName(d.windows[li]) : '')}</span><strong>${shown(p?.value, d.metric.unit)}</strong><small class="${c.tone}">${li ? `직전 대비 ${c.text}` : ''}</small><small>${ratio(p, d.metric.unit)}</small></div>${bigChart(d, base, seriesOf(d))}</section>`
       + (d.rows.length ? table(d, ctx.api) : '<p class="v3s-note">이 조건의 기록이 없습니다.</p>') + '</div>';
     warm(d, params.grain);
     return lastHtml;
@@ -143,14 +157,46 @@
   S.register({ id: 'trend', label: '확장 추세', nav: false, native: true, render });
 
   const go = patch => { if (!last) return; showAll = false; last.go({ ...last.params, ...patch }); };
+  const UNDRILL = { from: '', to: '', up: '' };
+  // 쪼개 보기 — 누른 점의 창을 한 단계 잘게(기준·필터는 그대로). 떠 있던 팝오버는 옛 그래프의 것이라 닫는다.
+  const drillParams = col => { const d = last?.d, w = d?.drill && d.windows[Number(col.dataset.trDrill)]; return w ? { grain: d.drill, from: w.from, to: w.to, up: d.grain } : null; };
+  const drill = col => { const p = drillParams(col); if (!p) return; const pop = document.getElementById('chart-tip'); if (pop) pop.hidden = true; go(p); };
+  // 터치는 첫 번째 탭이 팝오버(수치 확인), 같은 점을 한 번 더 누르면 쪼갠다 — 마우스는 올리면 팝오버, 누르면 쪼갠다.
+  let down = null;
+  document.addEventListener('pointerdown', ev => {
+    const col = ev.target.closest?.('[data-v2-screen="trend"] .tr-chart .chart-col');
+    down = col ? { touch: ev.pointerType !== 'mouse', armed: col.classList.contains('active') } : null;
+  }, true);
+  document.addEventListener('keydown', ev => {
+    if (ev.key !== 'Enter' || !ev.target.matches?.('[data-v2-screen="trend"] .tr-chart[data-chart]')) return;
+    const col = ev.target.querySelector('.chart-col.active[data-tr-drill]'); if (col) { ev.preventDefault(); drill(col); }
+  });
+  // 마우스가 쪼갤 수 있는 점에 잠시 머물면 그 범위를 서버에 미리 계산시킨다(누르는 순간 바로 뜨게 — 서버가 같은 조건의 답을 기억한다).
+  // 한 번에 하나만 — 선생님 업무 지표의 연 → 월 쪼개기는 한 번에 몇 초라 점을 훑을 때마다 겹쳐 돌리면 서버가 밀린다(데우는 중이면 건너뛴다).
+  const warmedDrill = new Set(); let dwell = 0, warming = false;
+  document.addEventListener('pointerover', ev => {
+    const col = ev.target.closest?.('[data-v2-screen="trend"] .tr-chart .chart-col[data-tr-drill]'); clearTimeout(dwell); if (!col || ev.pointerType !== 'mouse') return;
+    dwell = setTimeout(() => {
+      const p = col.isConnected && !warming ? drillParams(col) : null; if (!p) return; // 그사이 화면이 바뀌었으면 옛 점의 번호다
+      // 필터를 걸었으면 '학원 전체' 비교선의 같은 범위도 함께(render가 그 둘을 읽는다).
+      const qs = [{ ...last.params, ...p }, ...(last.params.f ? [{ metric: last.d.metric.id, ...p }] : [])]
+        .map(one => new URLSearchParams(Object.entries(one).filter(([, v]) => v)).toString()).filter(q => !warmedDrill.has(q));
+      if (!qs.length) return; warming = true; qs.forEach(q => warmedDrill.add(q));
+      Promise.all(qs.map(q => fetch(`/api/v2/trend?${q}`, { headers: { Accept: 'application/json' } }).catch(() => warmedDrill.delete(q)))).finally(() => { warming = false; });
+    }, 350);
+  });
   document.addEventListener('click', ev => {
     const t = ev.target;
     // KPI 카드(어디를 눌러도) → 그 지표의 확장 추세. 카드 안의 링크·단추는 제 일을 한다.
     const card = t.closest?.('.ws-kpi[data-trend]');
     if (card && !t.closest('a,button')) { location.hash = `v2-trend?metric=${encodeURIComponent(card.dataset.trend)}&grain=${encodeURIComponent(card.dataset.grain || 'week')}`; return; }
     if (!t.closest?.('[data-v2-screen="trend"]')) return;
-    const b = t.closest('[data-tr-grain],[data-tr-by],[data-tr-filter],[data-tr-unfilter],[data-tr-sort],[data-tr-more]'); if (!b) return;
-    if (b.dataset.trGrain) go({ grain: b.dataset.trGrain });
+    const col = t.closest('.tr-chart .chart-col[data-tr-drill]');
+    if (col) { if (!down?.touch || down.armed) drill(col); return; }
+    const b = t.closest('[data-tr-grain],[data-tr-by],[data-tr-filter],[data-tr-unfilter],[data-tr-undrill],[data-tr-sort],[data-tr-more]'); if (!b) return;
+    // 기간 단위를 바꾸면 쪼개 보기도 끝난다(쪼개 보는 중 눌린 단추 = 나눈 단위 — 누르면 그 단위의 보통 보기).
+    if (b.dataset.trGrain) go({ grain: b.dataset.trGrain, ...UNDRILL });
+    else if (b.hasAttribute('data-tr-undrill')) go({ grain: last.d?.range?.up || last.params.up || last.params.grain, ...UNDRILL });
     else if (b.dataset.trBy) go({ by: b.dataset.trBy });
     else if (b.dataset.trFilter) go({ f: `${last.by}:${b.dataset.trFilter}`, by: '' });
     else if (b.hasAttribute('data-tr-unfilter')) go({ f: '', by: '' });

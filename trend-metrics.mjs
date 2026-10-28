@@ -19,8 +19,12 @@ async function classScope(sql, tenantId, filter) {
   return { classIds: hit ? classes.filter(hit).map((c) => c.id) : [] };
 }
 
+// 하루 창으로는 셀 수 없는 지표 — 학부모 열람률은 '보낸 지 48시간(2.0 UNREAD_GRACE_HOURS)이 지난 보고서'만 판정하고 창의 '지금'은 그날 23:59라,
+// 하루 창엔 판정할 보고서가 늘 없다(일별 31일이 모두 '기록 없음'이었다). 주·월·연만 둔다(월을 쪼개면 7일 묶음).
+const NO_DAY = new Set(['parent-read']);
 export const TREND_METRICS = Object.freeze([...TEACHER_WORK_METRICS.map((m) => Object.freeze({
   id: m.id, label: m.label, group: '선생님 수업보고서', unit: '%', better: 'up', dims: TEACHER_WORK_DIMS, endsYesterday: !!m.attendance,
+  ...(NO_DAY.has(m.id) ? { grains: Object.freeze(['week', 'month', 'year']) } : {}),
   async series({ sql, asOf, tenantId, importV2, windows, by, filter }) {
     return teacherWorkTrend({ sql, asOf, tenantId, importV2, metric: m.id, windows, by, scope: await classScope(sql, tenantId, filter) });
   },
