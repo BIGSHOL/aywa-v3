@@ -22,6 +22,10 @@ test('기여도 기본 면 = 원본 월별 점수·근거 조회 · 다른 학�
   assert.equal(data.tab.data.contribution.ready, true);
   assert.ok(data.tab.data.contribution.months.length > 0);
   assert.ok(data.tab.data.contribution.months.every((m) => m.studentId === undefined || m.studentId === student.id));
+  assert.equal(data.tab.data.live.studentId, student.id);
+  assert.deepEqual(data.tab.data.live.sections.map((section) => section.key),
+    ['classes', 'consultations', 'memos', 'family', 'reservations', 'makeups']);
+  assert.ok(['ready', 'empty', 'stale', 'unavailable'].includes(data.tab.data.summary?.state));
 });
 test('기여도 월별 점수 본문 = 2.0 본문 그대로', async () => {
   const root = new URL('../../', import.meta.url);
@@ -41,6 +45,16 @@ test('확장 근거 조회는 원본 함수를 Docker 읽기 경로로 호출한
   const parent = await db.begin('read only', (sql) => screen.load({ sql, tenantId, importV2,
     params: { v2path: `/students/${student.id}`, contributionRead: 'parent', sourceId: '0'.repeat(64) } }));
   assert.equal(typeof parent.result.error, 'string');
+});
+test('학습·소통 연결은 펼칠 때만 Docker 원본 함수를 읽는다', async () => {
+  const [student] = await db`select id::text id from public.students where tenant_id=${tenantId}
+    and status='enrolled' and not coalesce(is_test,false) order by id limit 1`;
+  const load = (kind) => db.begin('read only', (sql) => screen.load({ sql, tenantId, importV2,
+    params: { v2path: `/students/${student.id}`, contributionRead: kind } }));
+  const learning = await load('learning'), communication = await load('communication');
+  assert.equal(learning.result.sections.length, 7);
+  assert.equal(communication.result.sections.length, 4);
+  assert.ok(learning.result.sections.every((s) => s.items.every((item) => item.evidence.every((e) => e.studentId))));
 });
 test('긍정 신호 변경은 2.0 함수 AST의 열·감사 이름·낙관적 잠금 조건을 그대로 쓴다', async () => {
   const { text } = await originalSignalFunction();

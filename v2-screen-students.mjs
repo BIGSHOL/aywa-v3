@@ -37,7 +37,7 @@ export const screen = {
   id: ID, label: '원생목록', order: 6,
   params: {
     v2path: SUB, viewer: new RegExp(`^${UUID_BODY}$`), movable: new RegExp(`^${UUID_BODY}$`),
-    contributionRead: /^(video|parent)$/, sourceId: /^[a-f0-9]{64}$/,
+    contributionRead: /^(video|parent|learning|communication)$/, sourceId: /^[a-f0-9]{64}$/,
     // 목록
     status: /^[a-z_]{1,20}$/, subject: /^[a-z0-9_,]{0,200}$/, q: /^[^\u0000-\u001f]{0,200}$/, page: /^\d{1,5}$/, grade: TEXT,
     teacher: new RegExp(`^(all|${UUID_BODY}(?:,${UUID_BODY}){0,60})$`), field: /^[a-z]{1,12}$/, sort: /^[a-zA-Z_]{1,24}$/, noenr: /^[01]$/,

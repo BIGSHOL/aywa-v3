@@ -9,10 +9,17 @@ import { StudentDetailTabs } from "@/features/student-contribution/components/st
 import { ContributionEvidence } from "@/features/student-contribution/components/contribution-evidence";
 import { numberText, monthText, signedText } from "@/features/student-contribution/components/presentation";
 import { StudentContributionScope } from "@/features/student-contribution/components/student-contribution-scope";
+import { LiveSectionView } from "@/features/student-contribution/components/live-section-view";
+import { LearningConnections, CommunicationConnections } from "@/features/student-contribution/components/learning-connections";
+import { RecordSummary } from "@/features/student-contribution/components/record-summary";
+import { EyIcon } from "@/components/icons/aywa-icons";
+import type { LiveConnections } from "@/features/students/ontology/live-contract";
+import type { getStudentRecordSummary } from "@/features/student-contribution/server/summary-query";
 import { MissingTab, useStudentTab } from "./students-shared";
 
 type ContributionData = Awaited<ReturnType<typeof getContributionStudent>>;
-type ContributionTabData = { contribution: ContributionData };
+type ContributionTabData = { contribution: ContributionData; live: LiveConnections | null;
+  summary: Awaited<ReturnType<typeof getStudentRecordSummary>> };
 function ContributionHeader({ title, description }: { title: string; description: string }) {
   return <header className="space-y-5">
     <div className="space-y-2"><h1 className="text-xl font-bold tracking-tight">{title}</h1><p className="max-w-3xl text-sm leading-relaxed">{description}</p></div>
@@ -20,13 +27,36 @@ function ContributionHeader({ title, description }: { title: string; description
 }
 
 export function StudentContributionView({ studentId, params }: { studentId: string; params: Record<string, string | undefined> }) {
-  const { contribution: data } = useStudentTab<ContributionTabData>();
+  const { contribution: data, live, summary } = useStudentTab<ContributionTabData>();
   if (params.contribution && params.contribution !== "student") return <MissingTab />;
   if (!data) return <p>기여도 기록을 열람할 수 없습니다.</p>;
   return <StudentContributionScope studentId={studentId} back={params.back}>
     <div className="w-full min-w-0 space-y-5 pb-6">
       <ContributionHeader title={`${data.student.name}의 기여도와 기록`} description="월별 점수와 계산 근거를 확인하세요." />
       <ContributionStudentPanel studentId={studentId} month={params.month} data={data} />
+      <details key={studentId} id={`current-connections-${studentId}`} tabIndex={-1} className="group rounded-xl border border-line" aria-label="현재 연결">
+        <summary className="flex cursor-pointer list-none items-center justify-between gap-4 px-5 py-4 focus-visible:outline-primary [&::-webkit-details-marker]:hidden">
+          <span><span className="block font-semibold">현재 연결</span><span className="mt-1 block text-xs">현재 수강·담당자, 상담·메모와 최근 기록 요약</span></span>
+          <span className="flex shrink-0 items-center gap-2 text-sm text-primary"><span className="group-open:hidden">펼치기</span><span className="hidden group-open:inline">접기</span><span className="group-open:rotate-180"><EyIcon name="chevronDown" size={16} /></span></span>
+        </summary>
+        <div className="space-y-4 border-t border-line p-4">
+          {live ? <section className="space-y-3" aria-labelledby="current-connections-title">
+            <div className="flex flex-wrap items-end justify-between gap-2"><div><h2 id="current-connections-title" className="font-semibold">현재 수강과 최근 기록</h2>
+              <p className="mt-1 text-xs">지금 확인한 자료로, 월별 기여도와는 기준 시점이 다릅니다.</p></div><span className="text-xs tabular-nums">{live.asOf} 기준</span></div>
+            <div className="grid grid-cols-1 items-start gap-4 md:grid-cols-2 lg:grid-cols-3">
+              {[["classes", "family"], ["consultations", "memos"], ["reservations", "makeups"]].map((keys) => <div key={keys[0]} className="min-w-0 space-y-4">
+                {keys.map((key) => { const section = live.sections.find((item) => item.key === key);
+                  return section && <LiveSectionView key={key} section={section} />; })}
+              </div>)}
+            </div>
+            <LearningConnections key={`${studentId}:${live.checkedAt}`} studentId={studentId} />
+            <CommunicationConnections key={`communication:${studentId}:${live.checkedAt}`} studentId={studentId} />
+          </section> : <p className="rounded-xl border border-line p-5 text-sm">현재 연결을 보려면 해당 학생의 원본 열람 권한이 필요합니다.</p>}
+          {summary && <section id={`record-summary-${studentId}`} tabIndex={-1} aria-label="저장된 요약" className="scroll-mt-4">
+            <RecordSummary key={studentId} studentId={studentId} data={{ ...summary, canWrite: false }} />
+          </section>}
+        </div>
+      </details>
     </div>
   </StudentContributionScope>;
 }

@@ -18,5 +18,11 @@ export async function read({ sql, tenantId, importV2, viewerId, studentId, kind,
       fn: 'getParentEventEvidence', args: [sourceId, studentId] }], actorId: base.viewer.id, tenantId, mode: 'read' });
     return { result: r.value };
   }
+  if (kind === 'learning' || kind === 'communication') {
+    const { results: [r] } = await runV2Server({ steps: [{ module: `features/student-contribution/server/${kind}-actions.ts`,
+      fn: kind === 'learning' ? 'getStudentLearningConnections' : 'getStudentCommunicationConnections', args: [studentId] }],
+      actorId: base.viewer.id, tenantId, mode: 'read' });
+    return { result: r.value };
+  }
   return { result: { error: '조회할 기록을 확인해 주세요.' } };
 }
