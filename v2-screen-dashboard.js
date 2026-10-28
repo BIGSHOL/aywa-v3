@@ -2,7 +2,7 @@
    `/v2-host/dashboard.html?…`(v2-host/src/dashboard.tsx, 데이터 = /api/v2/dashboard?props=1, Docker 복사본). 3.0 쪽은 '연습 화면' 안내 한 줄,
    '보는 원장' 고르기(2.0 화면은 로그인한 사람의 것이라 고르는 칸이 없다), 자리(slot)만 둔다. iframe은 문서에 한 번만 만들어 자리 위에 겹쳐 둔다
    (live.js가 그릴 때마다 #main을 바꾸므로 — v2-screen-onescreen.js와 같은 방식). 카드·팝업의 2.0 주소는 iframe이 모두 넘긴다(v2-host-open):
-   학생·반은 3.0 기록 창, 3.0에 있는 2.0 화면(시간표 · 출석부 …)은 그 화면, 없는 화면은 안내만. 운영실 자리는 늘 운영실이다. */
+   3.0에 있는 2.0 화면(원생 상세 · 반 상세 · 시간표 · 출석부 …)은 그 화면, 그 화면이 없는 학생·반은 3.0 기록 창, 나머지는 안내만. 운영실 자리는 늘 운영실이다. */
 (() => {
   'use strict';
   const ID = 'dashboard', HOST = `/v2-host/${ID}.html`, S = window.V2Screens; if (!S) return;
@@ -40,10 +40,11 @@
    * `/attendance/live` → 오늘 출결 · `/timetable?kind=makeup` → 보강). 둘 다 없으면 안내만(주소를 보이지 않는다).
    */
   function openFromHost(href) {
-    const m = /^\/(students|classes)\/([0-9a-f-]{36})(?:[/?#]|$)/i.exec(href || '');
-    if (m && api?.canOpenRecord?.(m[2])) return m[1] === 'students' ? api.showStudent(m[2]) : api.openRecord(m[2]);
     const u = new URL(href || '/', location.origin), segs = u.pathname.split('/').filter(Boolean);
     const to = segs[0] && segs[0] !== ID ? S.target(segs[0]) : null;
+    // 2.0 화면이 곧 3.0의 새 페이지 — 학생·반도 그 화면(원생 상세 · 반 상세)이 있으면 그리로. 없을 때만 3.0 기록 창(메인 10-28).
+    const m = /^\/(students|classes)\/([0-9a-f-]{36})(?:[/?#]|$)/i.exec(href || '');
+    if (!to && m && api?.canOpenRecord?.(m[2])) return m[1] === 'students' ? api.showStudent(m[2]) : api.openRecord(m[2]);
     if (!to) { api?.toast?.('이 화면은 연습 화면에 아직 없습니다.'); return; }
     const q = new URLSearchParams(u.search);
     if (segs.length > 1) q.set('v2path', u.pathname);

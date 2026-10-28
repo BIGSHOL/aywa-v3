@@ -33,12 +33,14 @@ export const screen = {
     v2path: SUB, viewer: new RegExp(`^${UUID_BODY}$`),
     // 목록
     status: /^[a-z_]{1,20}$/, subject: /^[a-z0-9_,]{0,200}$/, q: /^[^\u0000-\u001f]{0,200}$/, page: /^\d{1,5}$/, grade: TEXT,
-    teacher: new RegExp(`^(all|${UUID_BODY}(,${UUID_BODY})*)$`), field: /^[a-z]{1,12}$/, sort: /^[a-zA-Z_]{1,24}$/, noenr: /^[01]$/,
+    teacher: new RegExp(`^(all|${UUID_BODY}(?:,${UUID_BODY}){0,60})$`), field: /^[a-z]{1,12}$/, sort: /^[a-zA-Z_]{1,24}$/, noenr: /^[01]$/,
     program: /^[a-z]{1,20}$/, first: DAY, level: /^[a-z,]{0,80}$/, mix: /^[A-Za-z,]{0,120}$/, from: /^(dashboard|\d{4}-\d{2}-\d{2})$/,
     // 상세(탭 · 돌아갈 자리 · 탭 안 조회)
     tab: /^[a-z-]{1,20}$/, back: /^\/(?!\/)[^\u0000-\u001f\\]{0,199}$/, video: new RegExp(`^${UUID_BODY}$`), jjFrom: DAY, jjTo: DAY, to: DAY,
     kind: /^[a-z_]{1,30}$/, dir: /^(asc|desc)$/, fScore: TEXT, fDelta: TEXT, contribution: TEXT, month: /^\d{4}-\d{2}$/, view: /^[a-z_-]{1,20}$/, entity: TEXT,
   },
+  // 2.0 원생목록 담임 필터는 다중 선택(uuid 여럿 · 쉼표) — 61명(37자씩)까지.
+  paramMax: { teacher: 2300 },
   load: async ({ sql, params, tenantId, importV2 }) => {
     const sub = SUB.exec(params.v2path ?? '/students');
     const viewerId = params.viewer ?? null;
