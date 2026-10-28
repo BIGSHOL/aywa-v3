@@ -1,7 +1,7 @@
 // 2.0 화면 (V2-SCREENS.md, 원장 지시 2026-10-28): 2.0에서만 할 수 있던 화면(시간표·원스크린·출석부 …)을 3.0 안에 2.0 형태
 // 그대로 새 페이지로 그린다. 데이터는 로컬 Docker 복사본 — 운영 2.0 사이트에는 접속하지 않는다.
 // Each screen is one server module `v2-screen-<id>.mjs` beside this file, found at start (no shared file to edit):
-//   export const screen = { id, label, order, params: { name: /regex/ }, load: async ({ sql, params, tenantId, importV2 }) => data,
+//   export const screen = { id, label, order, params: { name: /regex/ }, paramMax?: { name: n }, load: async ({ sql, params, tenantId, importV2 }) => data,
 //     actions: { name: { validate: raw => body, run: async ({ sql, body, tenantId, importV2 }) => result } } }
 // GET /api/v2 lists the screens; GET /api/v2/<id>?… answers one read-only, repeatable-read transaction on the copy.
 // POST /api/v2/<id>/<action> (원장 2026-10-28 "일단은 docker. 연습용이므로 모두 docker") writes to the Docker copy only, one
@@ -118,7 +118,9 @@ export function createV2ScreenRoute({ screens, headers = {}, open = openFullData
       const q = new URL(req.url, 'http://127.0.0.1').searchParams, rules = screen.params || {}, params = {};
       for (const key of new Set(q.keys())) {
         const v = q.getAll(key);
-        if (!rules[key] || v.length > 1 || v[0].length > 200 || !rules[key].test(v[0])) return send(req, res, 400, { error: 'invalid_request', message: '허용하지 않는 조회 조건입니다.' });
+        // 값 길이 = 기본 200자 · 화면이 열쇠별로 늘릴 수 있다(screen.paramMax: { key: n }, 4000자까지 — 2.0 원생목록 담임 다중 선택은 uuid 여럿).
+        const max = Math.min(Number(screen.paramMax?.[key]) || 200, 4000);
+        if (!rules[key] || v.length > 1 || v[0].length > max || !rules[key].test(v[0])) return send(req, res, 400, { error: 'invalid_request', message: '허용하지 않는 조회 조건입니다.' });
         params[key] = v[0];
       }
       const db = await open();
