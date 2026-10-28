@@ -72,6 +72,7 @@ import { readFile } from 'node:fs/promises';
 import { activeBackup } from './full-db-paths.mjs';
 import { scrub } from './domain-snapshot-core.mjs';
 import { V2Error } from './v2-screens.mjs';
+import { runV2Server, V2ServerError } from './v2-server-runner.mjs';
 import { loadSeatRules, seatDayProps, seatMonthProps, copyClock } from './v2-attendance-seat.mjs';
 import * as SeatSave from './v2-attendance-seat-save.mjs';
 import * as LiveSave from './v2-attendance-live-save.mjs';
@@ -815,7 +816,7 @@ function hostCall(raw, module, arity) {
   return { actor: raw.actor, args: raw.args };
 }
 const ACTIONS_MODULE = 'features/attendance/server/actions.ts', PREFS_MODULE = 'features/attendance/server/prefs-actions.ts';
-/** 2.0 `setAttendanceCell(input)`의 입력 — 월별 출석부가 보내는 칸(교시 지정·당일 출결·보강 추가·빗금 옮기기·비파괴 쓰기 갈래는 아직 없다). */
+/** 2.0 `setAttendanceCell(input)`의 입력 — 월별 출석부가 보내는 칸. */
 function cellBody(raw) {
   const { actor, args: [input] } = hostCall(raw, ACTIONS_MODULE, 1);
   if (!input || typeof input !== 'object' || Array.isArray(input)) throw bad();
@@ -825,15 +826,28 @@ function cellBody(raw) {
   if (input.status !== undefined && input.status !== null && !STATUSES.includes(input.status)) throw new V2Error(400, 'invalid_status', '잘못된 상태입니다');
   if (input.scopeTeacherId !== undefined && input.scopeTeacherId !== null && (typeof input.scopeTeacherId !== 'string' || !UUID.test(input.scopeTeacherId))) throw bad();
   for (const k of ['noteOnly', 'quiet', 'onlyIfEmpty', 'allowMakeup', 'ghostTransfer']) if (input[k] !== undefined && typeof input[k] !== 'boolean') throw bad();
-  if (input.onlyIfEmpty || input.allowMakeup || input.ghostTransfer) {
-    throw new V2Error(409, 'not_in_copy', '보강 추가·다른 선생님 교시로 옮기기는 연습 화면에서는 아직 지원하지 않는 저장입니다. 바뀐 것은 없습니다.');
+  if (input.onlyIfEmpty || input.allowMakeup) {
+    throw new V2Error(409, 'not_in_copy', '보강 추가는 연습 화면에서는 아직 지원하지 않는 저장입니다. 바뀐 것은 없습니다.');
   }
   // 교시 지정(0196a "HH:MM[:SS]") · 화면 교시(데스크 10분 판정) · 당일 출결 화면(source 'live' — 데스크 게이트).
   const time = v => { if (v === undefined || v === null) return null; if (typeof v !== 'string' || !/^\d{2}:\d{2}(:\d{2})?$/.test(v)) throw bad(); return v; };
   if (input.source !== undefined && input.source !== null && input.source !== 'live') throw bad();
   return { actor, studentId: input.studentId, classId: input.classId, sessionDate: input.sessionDate, status: input.status ?? null,
     units: optStr(input.units, 10), note: input.note === null ? null : optStr(input.note, 2000), noteOnly: input.noteOnly === true, scopeTeacherId: input.scopeTeacherId ?? null,
-    slotStart: time(input.slotStart), periodStart: time(input.periodStart), source: input.source ?? undefined };
+    slotStart: time(input.slotStart), periodStart: time(input.periodStart), source: input.source ?? undefined, ghostTransfer: input.ghostTransfer === true };
+}
+/** 빗금 칸은 2.0의 상태 이동·메모 보존·낙관적 잠금 규칙을 서버 함수 그대로 실행한다. */
+async function saveGhostWithV2(name, body, tenantId) {
+  const { actor, ...input } = body;
+  try {
+    const { results: [result] } = await runV2Server({ steps: [{ module: ACTIONS_MODULE, fn: name, args: [input] }], actorId: actor, tenantId, mode: 'write' });
+    return result.value ?? null;
+  } catch (e) {
+    if (!(e instanceof V2ServerError)) throw e;
+    if (e.code === 'outbound_blocked') throw new V2Error(409, 'outbound_blocked', '이 저장이 바깥으로 요청을 보내려 해서 되돌렸습니다. 바뀐 것은 없습니다.');
+    if (e.code === 'unsupported') throw new V2Error(409, 'not_supported', '연습 화면에서는 아직 지원하지 않는 저장입니다.');
+    throw new V2Error(500, 'write_failed', '저장하지 못했습니다. 바뀐 것은 없습니다.');
+  }
 }
 /** 2.0 prefs-actions의 네 함수 — 인자 하나(정렬 · 날짜축 · 퇴직 숨김 · 접은 반). 값 정리는 2.0 parse 함수가 run에서 한다. */
 const prefsBody = check => raw => { const { actor, args: [v] } = hostCall(raw, PREFS_MODULE, 1); if (!check(v)) throw bad(); return { actor, value: v }; };
@@ -1355,12 +1369,15 @@ const attendanceActorOk = async (sql, t, importV2, actor) => {
 screen.actions = {
   // 실급여 비율 · '합계 및 실급여 보여주기'(2.0 salary-rates-actions.ts 그대로 · 공용 러너 write).
   ...attendanceMoneyActions(attendanceActorOk),
-  setAttendanceCell: { validate: cellBody, run: async ({ sql, body, tenantId, importV2 }) => setCell(sql, tenantId, body, await loadRules(importV2), await loadLiveRules(importV2), await loadMakeupRules(importV2)) },
+  setAttendanceCell: { validate: cellBody, run: async ({ sql, body, tenantId, importV2 }) => body.ghostTransfer
+    ? saveGhostWithV2('setAttendanceCell', body, tenantId)
+    : setCell(sql, tenantId, body, await loadRules(importV2), await loadLiveRules(importV2), await loadMakeupRules(importV2)) },
   setAttendanceBulk: { validate: bulkBody, run: async ({ sql, body, tenantId, importV2 }) => setBulk(sql, tenantId, body, await loadRules(importV2), await loadLiveRules(importV2), await loadMakeupRules(importV2)) },
   // 범위 채우기·지우기(2.0 setAttendanceRange — v2-attendance-range.mjs). 저장하는 사람 = 출결을 쓸 수 있는 직원(아니면 2.0 실패 모양).
   setAttendanceRange: {
     validate: Range.rangeBody,
     run: async ({ sql, body, tenantId, importV2 }) => {
+      if (body.cells.some(cell => cell.ghost)) return saveGhostWithV2('setAttendanceRange', body, tenantId);
       const [R, M] = await Promise.all([loadRules(importV2), loadMakeupRules(importV2)]);
       const [settings, today] = await Promise.all([readSettings(sql, tenantId, R), copyDay()]);
       const actor = await attendanceWriterOf(sql, tenantId, R, settings, body.actor);

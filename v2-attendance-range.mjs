@@ -4,8 +4,8 @@
 // 강사 전체 보기(scopeTeacherId)는 시수를 그 강사 몫 행에만 나누고(planDayCellUnits) 자리(JJ·랩실) 행은 상태·지우기까지 안 건드린다 — 판정은 DB로 다시(2.0 그대로).
 // 쓰는 것(2.0과 같다): attendance_records(지우기 = 그 칸 모든 행 · 채우기 = 교시별 최신 행 갱신 + 새 칸 삽입 · 수학 자동 시수) · audit_logs attendance_range_clear /
 // attendance_range · 쓰고 나서 보강 예약 이행·되돌림(v2-attendance-makeup.mjs).
+// 빗금 칸 입력(ghost — 다른 선생님 교시 행에 상태만 옮기기)은 2.0 서버 함수 그대로 실행한다.
 // 2.0과 다른 점(바뀌는 것 없이 사유를 말한다):
-//  · 빗금 칸 입력(ghost — 다른 선생님 교시 행에 상태만 옮기기)은 칸 저장과 같이 아직 옮기지 않아 그런 칸이 하나라도 있으면 저장하지 않는다.
 //  · 새 보강 체계(보강관리 켜짐·정리 중) 학원의 보강 예약 칸이 끼면 저장하지 않는다(칸 저장과 같은 규칙).
 //  · 알림 벨('반 출결 완료')은 만들지 않는다 · 화면 갱신은 호스트가 저장 뒤 다시 받는다.
 import { V2Error } from './v2-screens.mjs';
@@ -16,7 +16,6 @@ export const RANGE_MODULE = 'features/attendance/server/actions.ts';
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/, YMD = /^\d{4}-\d{2}-\d{2}$/;
 const STATUSES = ['present', 'absent', 'late', 'excused', 'makeup', 'early_leave'];
 export const BULK_CELL_LIMIT = 300;
-const GHOST_REFUSAL = '빗금 칸(다른 선생님 교시)에 상태 옮기기는 연습 화면에서는 아직 지원하지 않는 저장입니다. 바뀐 것은 없습니다.';
 const bad = () => new V2Error(400, 'invalid_request', '입력 값을 확인해 주세요.');
 
 /** 2.0 `setAttendanceRange(input)`의 입력 — { cells: [{ studentId, classId, sessionDate, ghost? }], status, units?, quiet?, scopeTeacherId?, scopeClassIds? }. */
@@ -35,8 +34,7 @@ export function rangeBody(raw) {
     if (c.ghost !== undefined && typeof c.ghost !== 'boolean') throw bad();
     return { studentId: typeof c.studentId === 'string' ? c.studentId : '', classId: typeof c.classId === 'string' ? c.classId : '', sessionDate: typeof c.sessionDate === 'string' ? c.sessionDate : '', ghost: c.ghost === true };
   });
-  if (cells.some(c => c.ghost)) throw new V2Error(409, 'not_in_copy', GHOST_REFUSAL);
-  return { actor: raw.actor, cells, status: input.status, units: input.units, scopeTeacherId: input.scopeTeacherId ?? null, scopeClassIds: input.scopeClassIds ?? null };
+  return { actor: raw.actor, cells, status: input.status, units: input.units, quiet: input.quiet === true, scopeTeacherId: input.scopeTeacherId ?? null, scopeClassIds: input.scopeClassIds ?? null };
 }
 
 /** 2.0 `loadScopeFacts` — 여러 (반·날짜)의 몫 판정 재료(반 담임 · 그 달들과 겹치는 교시, id 순). */

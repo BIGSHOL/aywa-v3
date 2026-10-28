@@ -294,7 +294,8 @@ test('저장: 입력 검사는 복사본에 닿기 전에 거절한다', () => {
   assert.throws(() => v(call('setAttendanceCell', A1, { ...cell, scopeTeacherId: 'x' })), /입력 값/);
   assert.throws(() => v(call('setAttendanceCell', A1, { ...cell, noteOnly: 'yes' })), /입력 값/);
   assert.throws(() => v(call('setAttendanceCell', A1, { ...cell, note: 'x'.repeat(2001) })), /입력 값/);
-  for (const k of [{ onlyIfEmpty: true }, { allowMakeup: true }, { ghostTransfer: true }]) assert.throws(() => v(call('setAttendanceCell', A1, { ...cell, ...k })), e => e.code === 'not_in_copy', JSON.stringify(k));
+  for (const k of [{ onlyIfEmpty: true }, { allowMakeup: true }]) assert.throws(() => v(call('setAttendanceCell', A1, { ...cell, ...k })), e => e.code === 'not_in_copy', JSON.stringify(k));
+  assert.equal(v(call('setAttendanceCell', A1, { ...cell, ghostTransfer: true })).ghostTransfer, true);
   assert.throws(() => v(call('setAttendanceCell', A1, { ...cell, source: 'daily' })), /입력 값/, 'source is live or nothing');
   assert.equal(v(call('setAttendanceCell', A1, cell)).status, null); assert.equal(v(call('setAttendanceCell', A1, { ...cell, note: null })).note, null);
   const p = (name, val) => screen.actions[name].validate(call(name, A1, val));
@@ -597,7 +598,7 @@ test('저장(복사본, 되돌림): 보강 예약 창·취소 — 교시 선택�
   assert.deepEqual([after[0].audits, after[0].resv], [before[0].audits, before[0].resv], 'rolled back — the copy is unchanged');
 });
 
-test('범위 채우기: 입력은 2.0 인자 모양만 받고, 빗금 칸 옮기기는 아직 받지 않는다(바뀌는 것 없음)', () => {
+test('범위 채우기: 입력은 2.0 인자 모양만 받고 빗금 칸 표식을 보존한다', () => {
   const v = (args, actor = CLASS, module = ACTIONS) => screen.actions.setAttendanceRange.validate({ module, actor, args });
   const cellsOf = (...xs) => xs.map(d => ({ studentId: STUDENT, classId: CLASS, sessionDate: d }));
   assert.throws(() => v([{ cells: cellsOf('2026-10-26'), status: 'present' }], 'x'), /저장하는 사람을 먼저 고르세요/);
@@ -606,8 +607,54 @@ test('범위 채우기: 입력은 2.0 인자 모양만 받고, 빗금 칸 옮기
   assert.throws(() => v([{ cells: cellsOf('2026-10-26'), status: 'gone' }]), /잘못된 상태/);
   assert.throws(() => v([{ cells: cellsOf('2026-10-26'), status: 'present', units: 1 }]), /입력 값/);
   assert.throws(() => v([{ cells: cellsOf('2026-10-26'), status: 'present', scopeClassIds: 'x' }]), /입력 값/);
-  assert.throws(() => v([{ cells: [{ ...cellsOf('2026-10-26')[0], ghost: true }], status: 'present' }]), e => e.code === 'not_in_copy' && /아직 지원하지 않는 저장/.test(e.message));
+  assert.equal(v([{ cells: [{ ...cellsOf('2026-10-26')[0], ghost: true }], status: 'present' }]).cells[0].ghost, true);
   assert.deepEqual(v([{ cells: cellsOf('2026-10-26'), status: null, units: '', quiet: true }]).status, null);
+});
+
+test('빗금 칸: 원본 저장으로 한 칸·범위를 옮길 때 기존 메모·시수와 감사 출처를 보존한다(되돌림)', { skip: !db && 'local database not running' }, async () => {
+  const { tenantId: t } = await import('./full-db.mjs');
+  const { runV2Server } = await import('./v2-server-runner.mjs');
+  const [fixture] = await db`select s.id::text student_id, c.id::text class_id, c.teacher_id::text actor_id
+    from public.students s cross join public.classes c where s.tenant_id=${t} and s.is_test and s.name='학원이'
+    and c.tenant_id=${t} and c.class_name='PL5' and c.english_track='eie' limit 1`;
+  assert.ok(fixture?.student_id && fixture.class_id && fixture.actor_id, '시험 학생·EIE 반·담당자');
+  const { student_id: studentId, class_id: classId, actor_id: actorId } = fixture;
+  const before = await db`select
+    (select count(*)::int from public.enrollments where student_id=${studentId} and class_id=${classId}) enrollments,
+    (select count(*)::int from public.attendance_records where student_id=${studentId} and class_id=${classId} and session_date in ('2026-11-03', '2026-11-06')) attendance,
+    (select count(*)::int from public.audit_logs) audits,
+    (select count(*)::int from net.http_request_queue) net`;
+  assert.deepEqual([before[0].enrollments, before[0].attendance], [0, 0], '격리된 시험 대상');
+  const base = { studentId, classId, sessionDate: '2026-11-03' };
+  const fd = { $formData: [['studentId', studentId], ['classId', classId], ['startDate', '2026-11-01']] };
+  const { results, probes } = await runV2Server({ actorId, tenantId: t, mode: 'write', rollback: true, steps: [
+    { module: 'features/enrollments/server/actions.ts', fn: 'createEnrollment', args: [null, fd] },
+    { module: ACTIONS, fn: 'setAttendanceCell', args: [{ ...base, slotStart: '16:20', status: 'present', units: '2', note: '기존 메모' }] },
+    { module: ACTIONS, fn: 'setAttendanceCell', args: [{ ...base, status: 'late', scopeTeacherId: actorId, ghostTransfer: true, units: '9', note: '덮기 시도' }] },
+    { module: ACTIONS, fn: 'setAttendanceCell', args: [{ ...base, sessionDate: '2026-11-06', slotStart: '16:20', status: 'present', units: '3', note: '범위 메모' }] },
+    { module: ACTIONS, fn: 'setAttendanceRange', args: [{ cells: [{ ...base, sessionDate: '2026-11-06', ghost: true }], status: 'late', scopeTeacherId: actorId, units: '9' }] },
+  ], probes: [
+    { text: `select session_date::text date, status::text status, session_units::float8 units, note from public.attendance_records
+      where class_id=$1 and student_id=$2 and session_date in ('2026-11-03','2026-11-06') order by session_date`, params: [classId, studentId] },
+    { text: `select action, metadata->>'via' via, metadata->>'ghostTransfer' transferred from public.audit_logs
+      where tenant_id=$1 and created_at=now() and action in ('attendance_cell','attendance_range') order by id`, params: [t] },
+  ] });
+  assert.equal(results[0].value?.enrollmentId?.length > 0, true);
+  assert.deepEqual(results.slice(1).map(r => r.value?.ok), [true, true, true, true]);
+  assert.equal(results[2].value.ghostTransfer, 1);
+  assert.deepEqual([results[4].value.applied, results[4].value.blocked], [1, 0]);
+  assert.deepEqual(probes[0].map(r => [r.date, r.status, r.units, r.note]), [
+    ['2026-11-03', 'late', 2, '기존 메모\n대신 입력: 정유진'],
+    ['2026-11-06', 'late', 3, '범위 메모\n대신 입력: 정유진'],
+  ]);
+  assert.deepEqual(probes[1].filter(r => r.transferred === '1').map(r => [r.action, r.via]).sort((a, b) => a[0].localeCompare(b[0])),
+    [['attendance_cell', '3.0 연습 복사본'], ['attendance_range', '3.0 연습 복사본']]);
+  const after = await db`select
+    (select count(*)::int from public.enrollments where student_id=${studentId} and class_id=${classId}) enrollments,
+    (select count(*)::int from public.attendance_records where student_id=${studentId} and class_id=${classId} and session_date in ('2026-11-03', '2026-11-06')) attendance,
+    (select count(*)::int from public.audit_logs) audits,
+    (select count(*)::int from net.http_request_queue) net`;
+  assert.deepEqual(after, before, '시험 저장은 전부 되돌아간다');
 });
 
 test('저장(복사본, 되돌림): 범위 채우기·지우기 — 새 칸·덮어쓰기·상태만·지우기(이력 행까지) · 강사 게이트 · 강사 보기 자리 행 보존 · 예약 이행이 2.0과 같은 행·감사로그', { skip: !db && 'local database not running' }, async () => {
