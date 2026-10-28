@@ -81,6 +81,9 @@
 .ax-first{display:flex;flex-direction:column;gap:16px}
 .ax-first-head{display:flex;align-items:baseline;justify-content:space-between;gap:4px 16px;flex-wrap:wrap}
 .ax-first-head>span{font-size:var(--ax-xs)}
+/* 운영 상태 · 최근 7일(원장 10-28 "원장은 … 잘되고 있냐 안되고 있냐만 보면") */
+.ax-kpi{display:flex;flex-direction:column;gap:8px}.ax-kpi-head{display:flex;align-items:baseline;justify-content:space-between;gap:4px 12px;flex-wrap:wrap}.ax-kpi-head h3{font-size:var(--ax-sm);margin:0}
+.ax-kpi-row{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,168px),1fr));gap:10px}.ax-kpi-basis{margin:0;font-size:var(--ax-xs)}
 .ax-scroll-cue{display:flex;align-items:center;justify-content:center;gap:12px;margin-top:24px;padding:12px 16px;border-top:1px solid var(--ax-line);text-align:left;color:var(--ax-ink)}
 .ax-scroll-cue>span{display:flex;flex-direction:column}
 .ax-scroll-cue strong{font-size:var(--ax-sm);font-weight:600}

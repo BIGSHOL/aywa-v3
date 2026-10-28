@@ -85,7 +85,10 @@ window.createOwnerWorkspace = function createOwnerWorkspace(api) {
   }
   function firstScreen(all){
     const reports=unreadReports(),top=all.filter(i=>i.id!=='enrollment').slice(0,3),rest=all.length-top.length,flowCards=flowUI?.ownerCards()||'';
-    if(flowCards)return `<section class="ax-first" aria-labelledby="ax-first-title"><div class="ax-first-head"><h2 id="ax-first-title">지금 확인할 일</h2><span>이슈 ${all.length}건과 근거는 아래 전체 목록에 있습니다.</span></div><div class="ax-signals">${reports.length?reportSignal(reports):''}${flowCards}</div>${changeStrip(all)}${commandForm()}</section>`;
+    // 운영 상태 = 2.0 운영실 '강사별 업무 현황' 판정의 최근 7일 추세(선생님 수업보고서 작업 공간과 같은 카드 · 같은 값).
+    const kpis=(workspaces?.data?.('onescreen')?.metrics||[]).filter(m=>m.kind==='kpi'),basis=kpis[0]?.basis||'';
+    const kpiBlock=kpis.length&&workspaces?.kpiCard?`<div class="ax-kpi"><div class="ax-kpi-head"><h3>운영 상태 · 최근 7일</h3><a class="ax-text-link" href="#workspace-onescreen">선생님 수업보고서에서 자세히</a></div><div class="ax-kpi-row">${kpis.map(m=>workspaces.kpiCard(m,basis)).join('')}</div>${basis?`<p class="ax-kpi-basis">${h(basis)} · 지난 7일과 비교</p>`:''}</div>`:'';
+    if(flowCards)return `<section class="ax-first" aria-labelledby="ax-first-title"><div class="ax-first-head"><h2 id="ax-first-title">지금 확인할 일</h2><span>이슈 ${all.length}건과 근거는 아래 전체 목록에 있습니다.</span></div>${kpiBlock}<div class="ax-signals">${reports.length?reportSignal(reports):''}${flowCards}</div>${changeStrip(all)}${commandForm()}</section>`;
     return `<section class="ax-first" aria-labelledby="ax-first-title"><div class="ax-first-head"><h2 id="ax-first-title">지금 확인할 일</h2>${rest>0?`<span>그 밖의 이슈 ${rest}건은 아래 전체 목록에 있습니다.</span>`:''}</div><div class="ax-signals">${reports.length?reportSignal(reports):''}${top.map(issueSignal).join('')||'<p>지금 확인할 이슈가 없습니다.</p>'}</div>${changeStrip(all)}${commandForm()}</section>`;
   }
   function recordList(issue){

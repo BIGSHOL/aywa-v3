@@ -295,9 +295,9 @@ window.createFlowUI = function createFlowUI(api) {
   function ownerCards(){
     if(!ready())return '';
     const open=cases().filter(c=>c.state!=='done'),decide=open.filter(ownerDecides),blocked=open.filter(c=>unassigned(c)||late(c)||returned(c)),moving=open.filter(c=>!local(c));
-    // 원장 결정에 든 일은 종류 카드에 다시 세지 않는다(원장 10-28 "결제대기 kpi는 우측에 있는데 중복").
-    const kinds=kindGroups(moving.filter(c=>!ownerDecides(c))),top=kinds.slice(0,5),rest=kinds.slice(5),restItems=rest.flatMap(k=>k.items);
-    return `${countCard('원장 결정 대기',decide.length,decide.length?kindGroups(decide).map(k=>`${k.label} ${fmt(k.items.length)}`).join(' · '):'지금 결정할 일이 없습니다','decide',decide.length?'urgent':'',decide.map(c=>c.id))}${top.map(k=>countCard(k.label,k.items.length,kindDetail(k.items),k.key,k.items.some(late)?'warn':'')).join('')}${rest.length?countCard('그 밖의 일',restItems.length,[`${fmt(rest.length)}가지`,restItems.filter(late).length?`늦음 ${fmt(restItems.filter(late).length)}`:''].filter(Boolean).join(' · '),'moving'):''}${blocked.length&&!top.length?countCard('늦은 일·담당 없는 일',blocked.length,kindDetail(blocked),'blocked'):''}`;
+    // 원장 첫 화면은 원장의 일만(원장 10-28 "원장은 영상 업로드가 숙제 출제에 비해 잘되고 있냐 안되고 있냐만 보면 되는거 아닌가"):
+    // 개별 처리 건(결석 전화·영상 확인 …)의 종류 카드는 첫 화면에서 빼고 아래 목록의 걸러 보기에만 둔다. 운영 상태는 ax.js가 지표 추세 카드로 그린다.
+    return countCard('원장 결정 대기',decide.length,decide.length?kindGroups(decide).map(k=>`${k.label} ${fmt(k.items.length)}`).join(' · '):'지금 결정할 일이 없습니다','decide',decide.length?'urgent':'',decide.map(c=>c.id));
   }
   function ownerStageCell(){
     if(!ready())return '';
