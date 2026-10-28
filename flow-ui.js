@@ -1033,6 +1033,11 @@ window.createFlowUI = function createFlowUI(api) {
   }
   function sendPeek(){const spec=peek.want;peek.want=null;if(spec)peek.frame.contentWindow.postMessage({type:PEEK_MSG,open:spec},location.origin);}
   function peekShown(){clearTimeout(peek.timer);peek.dlg?.classList.remove('is-switching');}
+  // 처리 화면(2.0 화면)이 있는 영역 — 업무가 가리키는 기록 하나를 그 화면에서 바로 연다(원장 10-28 "근거보기 들어가도 뭘 처리할 수가 없음").
+  // 기록이 여럿이면 그 화면의 목록으로. 주소 형식은 각 화면 세션이 알려 준 것(v2-screen-<id>.js 머리 주석).
+  const V2_RECORD_PATH={'withdrawal-reports':id=>`/withdrawal-reports/${encodeURIComponent(id)}`};
+  // 2.0 화면의 '보는 사람'(= 저장하는 사람) — 지금 보는 사람이 그 단계 담당이면 그대로, 아니면 그 단계 담당(승인 차례인 사람)으로 연다.
+  function v2Actor(c){const me=actor()?.id,ids=activeSteps(c).flatMap(s=>s.assigneeIds||[]),who=ids.includes(me)?me:ids[0]||me;if(who)try{localStorage.setItem(`v2-host-actor:${c.familyId}`,who);}catch{/* 저장소를 못 쓰면 화면의 첫 사람으로 */}}
   function openPeek(spec,opener){
     if(!api.hasView(spec.page)){toast('처리할 화면을 찾지 못했습니다.');return;}
     if(PEEK){document.querySelectorAll('dialog[open]').forEach(d=>d.close());moveTo(spec);return;}
@@ -1075,7 +1080,9 @@ window.createFlowUI = function createFlowUI(api) {
     if(action==='reload'){load();return;}
     if(action==='attach-open'){api.showWorkspaceRecord?.(id,el.dataset.record);return;}
     // 처리 화면('전자결재' 등): 2.0 화면이 있으면 그 화면, 없으면 작업 공간을 신호의 걸러 보기로 — 이 화면 위 엿보기 창에 연다(원장 10-28).
-    if(action==='goto'){const c=caseById(id);if(!c)return;const facet=(db.workspaces?.families?.[c.familyId]?.signals||[]).find(x=>x.id===c.signalId)?.facet||'',v2=!facet&&window.V2Screens?.target(c.familyId),own=refsOf(c).filter(r=>r.familyId===c.familyId&&r.type!=='task'&&(r.recordId||r.id)),record=own.length===1?String(own[0].recordId||own[0].id):'';openPeek(v2?{page:v2.slice(1)}:{page:`workspace-${c.familyId}`,family:c.familyId,facet,...(record?{record}:{})},el);return;}
+    if(action==='goto'){const c=caseById(id);if(!c)return;const facet=(db.workspaces?.families?.[c.familyId]?.signals||[]).find(x=>x.id===c.signalId)?.facet||'',own=refsOf(c).filter(r=>r.familyId===c.familyId&&r.type!=='task'&&(r.recordId||r.id)),record=own.length===1?String(own[0].recordId||own[0].id):'',fix=V2_RECORD_PATH[c.familyId],v2=(fix||!facet)&&window.V2Screens?.target(c.familyId);
+      if(v2&&fix){const path=record?fix(record):'';v2Actor(c);openPeek({page:`${v2.slice(1)}${path?`?${new URLSearchParams({v2path:path})}`:''}`},el);return;}
+      openPeek(v2?{page:v2.slice(1)}:{page:`workspace-${c.familyId}`,family:c.familyId,facet,...(record?{record}:{})},el);return;}
     if(action==='older'){el.disabled=true;loadOlder(id);return;}
     if(action==='recs'){showRecords(id);return;}
     if(action==='bulk-all'){board.items.filter(canPick).forEach(c=>store.sel.add(c.id));paintBoardList();return;}
