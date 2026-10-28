@@ -1,0 +1,85 @@
+// 2.0 부품 호스트 — 학원 설정 진입점. 3.0 `#v2-owner`가 같은 출처 iframe(/v2-host/owner.html?…)으로 연다.
+// 2.0이 창(embed)으로 열 때의 틀(AppProviders · OperationsProvider · <main class="embed-main">) 그대로 감싸고,
+// 데이터 = /api/v2/owner?tab=…&year=…&viewer=…(Docker 복사본, v2-screen-owner.mjs) — 2.0 page.tsx가 return 앞에서 만들던 값 그대로.
+// 보는 사람 = 3.0 띠가 고른 사람(면마다 그 사람의 권한 — 2.0과 같은 판정). 권한 없는 면 · 옛 주소는 서버가 알려 준 주소로 옮긴다(2.0 redirect).
+import { createRoot } from 'react-dom/client';
+import { useEffect, useRef, useState } from 'react';
+import { AppProviders } from '@/lib/providers/app-providers';
+import { OperationsProvider } from '@/features/owner/operations-context';
+import { OwnerHostPage, type OwnerPageData } from './owner-page';
+import { hostNavigate, onHostRefresh } from '../shims/host-nav';
+import { setHostEditors, type HostEditor } from '../shims/server-action';
+import { useHostSearch } from '../shims/next-navigation';
+import { HostFrame, HostMessage } from './host-frame';
+
+/** 진입점 표식(build.mjs가 찾는다) — 창 제목과 이 화면의 2.0 주소. */
+export const HOST_TITLE = '학원 설정';
+export const HOST_ROUTE = '/owner';
+
+type Data = {
+  page?: OwnerPageData;
+  redirect?: string;
+  editors: HostEditor[];
+  viewer: { id: string; name: string; role: string } | null;
+  host: { operations: Parameters<typeof OperationsProvider>[0]; disabledModules: Parameters<typeof OperationsProvider>[0]['disabledModules'] };
+  route: 'none' | 'page' | 'redirect' | 'denied';
+};
+
+/** 2.0 page.tsx searchParams 중 서버가 다시 그리던 열쇠(면 · 세션 연도 · 연동 하위 탭). */
+const KEYS = ['tab', 'year', 'sub'] as const;
+const ACTOR_KEY = 'v2-host-actor:owner';
+const storedActor = () => { try { return localStorage.getItem(ACTOR_KEY); } catch { return null; } };
+
+function App() {
+  const qs = useHostSearch(), search = new URLSearchParams(qs);
+  const [viewer, setViewer] = useState<string | null>(storedActor);
+  const shownViewer = useRef<string | null>(null);
+  useEffect(() => {
+    const on = (e: MessageEvent) => {
+      if (e.origin !== location.origin || e.source !== window.parent) return;
+      const d = e.data as { type?: string; id?: unknown } | null;
+      if (d?.type !== 'v2-host-actor' || typeof d.id !== 'string') return;
+      const id = d.id;
+      setViewer((prev) => (prev === null && id === shownViewer.current ? prev : id));
+    };
+    addEventListener('message', on);
+    return () => removeEventListener('message', on);
+  }, []);
+  const sp: Record<string, string | undefined> = {};
+  const q = new URLSearchParams();
+  for (const k of KEYS) { const v = search.get(k); if (v !== null) { q.set(k, v); sp[k] = v; } }
+  if (viewer) q.set('viewer', viewer);
+  const key = q.toString();
+  const [state, setState] = useState<{ key?: string; data?: Data; error?: string }>({});
+  const [tick, setTick] = useState(0);
+  useEffect(() => onHostRefresh(() => setTick((n) => n + 1)), []);
+  useEffect(() => {
+    let live = true;
+    fetch(`/api/v2/owner${key ? `?${key}` : ''}`, { headers: { Accept: 'application/json' } })
+      .then(async (r) => { const body = await r.json().catch(() => null); if (!r.ok) throw new Error(body?.message || '학원 설정을 불러오지 못했습니다.'); return body as Data; })
+      .then((data) => live && setState({ key, data }))
+      .catch((e: Error) => live && setState({ key, error: e.message }));
+    return () => { live = false; };
+  }, [key, tick]);
+  const editors = state.data?.editors, resolvedViewer = state.data?.viewer?.id ?? null;
+  useEffect(() => { shownViewer.current = resolvedViewer; }, [resolvedViewer]);
+  useEffect(() => { if (editors) setHostEditors(editors); }, [editors]);
+  // 2.0 redirect(옛 설정 탭 · 권한 없는 면 → 맡은 면) — 주소를 바꿔 다시 읽는다.
+  const redirect = state.key === key && state.data?.route === 'redirect' ? state.data.redirect ?? null : null;
+  useEffect(() => { if (redirect) hostNavigate(redirect, 'replace'); }, [redirect]);
+  if (!state.data || state.key !== key) {
+    const failed = state.key === key && !!state.error;
+    return <HostMessage text={failed ? state.error! : '학원 설정을 불러오는 중…'} error={failed} />;
+  }
+  const d = state.data, ops = d.host.operations;
+  if (d.route === 'none') return <HostMessage text="학원 설정을 볼 수 있는 직원이 없습니다." />;
+  if (d.route === 'redirect') return <HostMessage text="이동 중…" />;
+  if (d.route === 'denied' || !d.page) return <HostMessage text="학원 설정을 볼 권한이 없습니다." error />;
+  return (
+    <OperationsProvider subjects={ops.subjects} gradeLevels={ops.gradeLevels} jobTitles={ops.jobTitles} jobTitlesByDepartment={ops.jobTitlesByDepartment} disabledModules={d.host.disabledModules}>
+      <OwnerHostPage d={d.page} sp={sp} />
+    </OperationsProvider>
+  );
+}
+
+createRoot(document.getElementById('root')!).render(<AppProviders><HostFrame screen="owner"><App /></HostFrame></AppProviders>);

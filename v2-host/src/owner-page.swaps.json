@@ -1,0 +1,46 @@
+[
+ [
+  "seatPinStatus={seatPinStatus(operationsSource)}",
+  "seatPinStatus={seatPin}"
+ ],
+ [
+  "holidays={operationsSource.holidays.map((h) => h.date)}",
+  "holidays={holidayDates}"
+ ],
+ [
+  "baselineToken={permissionsToken(permissionsSource)}",
+  "baselineToken={permissionsTok}"
+ ],
+ [
+  "<DashboardFace settings={settings} />",
+  "<OwnerServerFace face=\"dashboard\" />"
+ ],
+ [
+  "<PopupsFace />",
+  "<OwnerServerFace face=\"popups\" />"
+ ],
+ [
+  "        <IntegrationsFace\n          sub={sp.sub}\n          settings={settings}\n          modulesOn={{\n            makeedu: isModuleEnabled(settings.modules.disabled, \"makeedu\"),\n            // 구글 시트 = 기능(모듈) ∧ 지점 라이선스 — 라이선스가 꺼진 지점엔 탭이 없다(2026-09-30).\n            sheets: isModuleEnabled(settings.modules.disabled, \"sheet_sync\") && (await isFeatureLicensed(viewer.tenantId, \"google_sheets\")),\n          }}\n          page={page}\n          isEmbed={isEmbed}\n        />",
+  "        <OwnerServerFace face=\"sheets\" />"
+ ],
+ [
+  "<EvaluationFace />",
+  "<OwnerServerFace face=\"evaluation\" />"
+ ],
+ [
+  "<ContributionSettingsFace />",
+  "<OwnerServerFace face=\"contribution\" />"
+ ],
+ [
+  "          <DataFace canManage={canManageData} />\n          <DuplicatesFace page={page} isEmbed={isEmbed} canManage={canManageData} />\n          <SameNameFace />",
+  "          <OwnerServerFace face=\"data\" />"
+ ],
+ [
+  "<ImportHubFace />",
+  "<OwnerServerFace face=\"import\" />"
+ ],
+ [
+  "<AuditFace action={sp.action} q={sp.q} from={sp.from} to={sp.to} page={page} isEmbed={isEmbed} />",
+  "<OwnerServerFace face=\"audit\" />"
+ ]
+]
