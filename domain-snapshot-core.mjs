@@ -59,6 +59,21 @@ export function monthsBack(asOf, n) {
 }
 export const addDays = (date, days) => { const d = new Date(`${date}T12:00:00Z`); d.setUTCDate(d.getUTCDate() + days); return d.toISOString().slice(0, 10); };
 
+// KPI = 최근 변화 (원장 2026-10-28 *"전체 몇건인가 같은건 아무 도움이 안됨. 원하는건 추세. kpi로 표현하고 싶은건 최근 kpi 변화"*):
+// 지금 값 + 직전 기간 대비 + 추세선. 누적·전체 기간 건수는 KPI로 쓰지 않는다. 같은 지표가 2.0에 있으면 2.0 판정 그대로.
+// points = 오래된 → 최근 [{ label, value }]; 마지막 = 지금, 그 앞 = 비교 기간. better = 'up' | 'down' | null(오르면 좋은가).
+export function kpi(label, unit, points, { better = null, period = 'week', basis = '' } = {}) {
+  const series = points.map(p => ({ label: p.label, value: finite(p.value) }));
+  const value = series.at(-1)?.value ?? null, previous = series.at(-2)?.value ?? null;
+  return { kind: 'kpi', label, unit, period, basis, better, points: series, value, previous, delta: value === null || previous === null ? null : value - previous };
+}
+// Rolling 7-day windows ending at asOf, oldest first: full weeks compare with full weeks (the current calendar week is partial).
+export function weekWindows(asOf, n = 8) {
+  const md = d => `${Number(d.slice(5, 7))}/${Number(d.slice(8, 10))}`;
+  return Array.from({ length: n }, (_, i) => { const to = addDays(asOf, -7 * (n - 1 - i)), from = addDays(to, -6); return { from, to, label: `${md(from)}~${md(to)}` }; });
+}
+export const rate = (part, whole) => (whole > 0 ? Math.round((part / whole) * 1000) / 10 : null);
+
 // Real months only: starts at the first month (within the window) that has rows;
 // months after that with no rows are genuine zeros; nothing past asOf.
 export function monthlyTrend(label, unit, rows, asOf, maxMonths = 12) {
