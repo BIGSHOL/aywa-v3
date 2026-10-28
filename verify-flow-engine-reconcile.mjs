@@ -175,6 +175,30 @@ test('AX-H4 fact signal: reports close it without touching records; only a new r
   await svc.close();
 });
 
+test('메이크에듀 실패 신호는 일부 처리 뒤 열리고 전부 처리 뒤 닫히며 새 실패로 다시 열린다', async () => {
+  const makeSource = ids => {
+    const src = fixtureSource();
+    for (const id of ids) src.entities.set(`sync_run:${id}`, { type: 'sync_run', id, label: `동기화 실패 ${id}`, familyId: 'integrations', recordId: id });
+    src.signals.push({ familyId: 'integrations', signal: { id: 'makeedu-sync-problem', title: `메이크에듀 동기화 실패 ${ids.length}건`, summary: '최근 실패 기록', priority: '확인 필요', source: '메이크에듀 실행 기록', recordIds: ids, draft: { title: '연동 확인', body: '실행 기록을 확인해 주세요.' } }, refs: ids.map(id => `sync_run:${id}`) });
+    return src;
+  };
+  const first = makeSource(['sync1', 'sync2']);
+  const { svc } = await service({ source: first });
+  const id = 'src-sig-integrations-makeedu-sync-problem', original = JSON.stringify(first.signals.at(-1));
+  assert.equal(stored(svc, id).state, 'open');
+  await send(svc, { actorId: IDS.manager, kind: 'case.report', caseId: id, payload: { note: '첫 실행 확인', outcome: 'done', recordRefs: ['sync_run:sync1'] } });
+  assert.equal(stored(svc, id).state, 'open', '한 근거만 처리하면 열린 상태');
+  assert.equal(stored(svc, id).evidence.at(-1).coveredRefs.length, 1);
+  await send(svc, { actorId: IDS.manager, kind: 'case.report', caseId: id, payload: { note: '둘째 실행은 조치 불필요', outcome: 'not_needed', recordRefs: ['sync_run:sync2'] } });
+  assert.deepEqual([stored(svc, id).state, stored(svc, id).closedBy], ['done', 'handled']);
+  assert.equal(JSON.stringify(first.signals.at(-1)), original, '보고는 실패 원본을 바꾸지 않는다');
+  const reopened = await svc.reloadSource(makeSource(['sync1', 'sync2', 'sync3']));
+  assert.equal(reopened.reopened, 1);
+  assert.deepEqual([stored(svc, id).state, stored(svc, id).factClosed, stored(svc, id).sourceRecords.length], ['open', false, 3]);
+  assert.equal(stored(svc, id).evidence.length, 2, '이전 보고는 그대로 남는다');
+  await svc.close();
+});
+
 test('AX-H4 guards: a ref of another step covers nothing; a cleared fact case takes no report and keeps its state', async () => {
   const src = fixtureSource();
   assert.deepEqual(coveredRefs(src, ['attendance:a1'], [{ type: 'attendance', id: 'a2' }]), [], 'another step\'s record never widens to the whole step');
