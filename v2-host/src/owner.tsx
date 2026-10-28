@@ -42,6 +42,21 @@ registerHostHandler('features/sync-agent/server/actions.ts', 'getAgentDashboard'
 for (const name of ['issueAgentCode', 'issueAgentManagementCode', 'revokeAgentDevice', 'saveAgentSettings'])
   registerHostHandler('features/sync-agent/server/actions.ts', name, async () => ({ error: VIEW_ONLY }));
 
+async function makeeduLive() {
+  const q = new URLSearchParams({ tab: 'sheets', sub: 'makeedu' });
+  const actor = hostActor(); if (actor) q.set('viewer', actor);
+  const r = await fetch(`/api/v2/owner?${q}`, { headers: { Accept: 'application/json' } }).catch(() => null);
+  const body = r ? await r.json().catch(() => null) : null;
+  return r?.ok ? body?.page?.integrations?.makeedu ?? null : null;
+}
+registerHostHandler('features/integrations/server/actions.ts', 'checkMakeeduSyncLock', async () =>
+  (await makeeduLive())?.lock ?? { busyUntil: null, running: false });
+registerHostHandler('features/integrations/server/actions.ts', 'checkMakeeduSyncWorkers', async () => {
+  const data = await makeeduLive(); return { workers: data?.workers ?? [], nowMs: Date.now() };
+});
+for (const name of ['triggerMakeeduSyncNow', 'enqueueConsultationPush'])
+  registerHostHandler('features/integrations/server/actions.ts', name, async () => ({ error: VIEW_ONLY }));
+
 // 슬랙 API 조회·발송은 외부 서비스에 닿는다. 2.0 부품의 함수 호출을 이 화면에서 즉시 거절한다.
 for (const [module, names] of [
   ['features/slack/server/connection-actions.ts', ['saveSlackToken', 'resendSlackFailures', 'listSlackChannels']],

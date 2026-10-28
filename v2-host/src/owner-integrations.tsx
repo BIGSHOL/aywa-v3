@@ -15,17 +15,18 @@ import { OwnerVideoCard, type OwnerVideoData } from "./owner-video";
 import { TodaysMathCard } from "@/app/(shell)/owner/_components/todays-math-card";
 import { TodaysMathMenusCard } from "@/app/(shell)/owner/_components/todays-math-menus-card";
 import { AgentCard } from "@/app/(shell)/owner/_components/agent-card";
+import { OwnerMakeeduFace, type OwnerMakeeduData } from "./owner-makeedu";
 
 export type IntegrationSub = "slack" | "makeedu" | "sheets" | "video" | "agent" | "todaysMath";
 
 /** /api/v2/owner?tab=sheets — integrations-face.tsx가 계산하던 값(켜진 탭 · 고른 탭)과 sheets-face.tsx의 시트 상태. */
-export type OwnerIntegrationsData = { available: IntegrationSub[]; sheetStatuses: IntegrationStatus[]; saEmail: string | null; slack: import("@/features/slack/server/queries").SlackCardState | null; video: OwnerVideoData | null; agent: unknown };
+export type OwnerIntegrationsData = { available: IntegrationSub[]; sheetStatuses: IntegrationStatus[]; saEmail: string | null; slack: import("@/features/slack/server/queries").SlackCardState | null; video: OwnerVideoData | null; agent: unknown; makeedu: OwnerMakeeduData | null };
 
 const LABEL: Record<IntegrationSub, string> = { slack: "슬랙", makeedu: "makeedu 동기화", sheets: "구글 시트", video: "숙제영상 드라이브", agent: "연동 PC", todaysMath: "오늘 수학" };
 
 /** sheets-face.tsx `SheetsFace`의 그리기(makeedu 부분은 '아직'). */
-function OwnerSheetsFace({ subjects, makeeduOn, sheetsOn, sheetStatuses, saEmail }: {
-  subjects: Parameters<typeof buildSubjectMaps>[0]; makeeduOn: boolean; sheetsOn: boolean; sheetStatuses: IntegrationStatus[]; saEmail: string | null;
+function OwnerSheetsFace({ subjects, makeeduOn, sheetsOn, sheetStatuses, saEmail, makeedu }: {
+  subjects: Parameters<typeof buildSubjectMaps>[0]; makeeduOn: boolean; sheetsOn: boolean; sheetStatuses: IntegrationStatus[]; saEmail: string | null; makeedu: OwnerMakeeduData | null;
 }) {
   if (!makeeduOn && !sheetsOn) {
     return (
@@ -41,7 +42,7 @@ function OwnerSheetsFace({ subjects, makeeduOn, sheetsOn, sheetStatuses, saEmail
   return (
     <div className="w-full space-y-8">
       {/* makeedu 자동 동기화 — 외부 연동 면 상단: 토글/버튼 카드 + 담당 PC 상태(0073a) + 최근 실행 이력(0070a) */}
-      {makeeduOn ? <OwnerServerFace face="makeedu" /> : null}
+      {makeeduOn && makeedu ? <OwnerMakeeduFace data={makeedu} /> : null}
 
       {sheetsOn ? (
       <div className="space-y-5">
@@ -132,6 +133,7 @@ export function OwnerIntegrationsFace({ d, settings, sub, page, isMaster }: { d:
           sheetsOn={active === "sheets"}
           sheetStatuses={sheetStatuses}
           saEmail={saEmail}
+          makeedu={d.makeedu}
         />
       ) : null}
       {active === "video" ? <OwnerVideoCard view={d.video} /> : null}

@@ -6,7 +6,7 @@
   ],
   [
    "        <SheetsFace\n          subjects={settings.operations.subjects}\n          page={page}\n          isEmbed={isEmbed}\n          makeeduOn={active === \"makeedu\"}\n          sheetsOn={active === \"sheets\"}\n        />",
-   "        <OwnerSheetsFace\n          subjects={settings.operations.subjects}\n          makeeduOn={active === \"makeedu\"}\n          sheetsOn={active === \"sheets\"}\n          sheetStatuses={sheetStatuses}\n          saEmail={saEmail}\n        />"
+   "        <OwnerSheetsFace\n          subjects={settings.operations.subjects}\n          makeeduOn={active === \"makeedu\"}\n          sheetsOn={active === \"sheets\"}\n          sheetStatuses={sheetStatuses}\n          saEmail={saEmail}\n          makeedu={d.makeedu}\n        />"
   ],
   [
    "{active === \"video\" ? <VideoDriveCard /> : null}",
@@ -32,7 +32,7 @@
   ],
   [
    "      {makeeduOn && makeeduStatus ? (\n        <>\n          <MakeeduSyncCard status={makeeduStatus} initialLock={syncLock} />\n          <EmbedLink href=\"/owner?tab=sheets&sub=agent\" className=\"text-primary text-sm font-semibold underline underline-offset-2\">연동 PC 관리</EmbedLink>\n          <MakeeduSyncRunsList\n            runs={runsPage.runs}\n            page={page}\n            totalPages={runsTotalPages}\n            total={runsPage.total}\n            hrefForPage={runsHref}\n          />\n          {/* 역동기화 — QR 접수 상담을 makeedu로 보내기(항상 표시, 후보 0건이면 빈 상태로 발견성 유지) */}\n          <MakeeduPushCard candidates={pushCandidates} />\n        </>\n      ) : null}\n\n",
-   "      {makeeduOn ? <OwnerServerFace face=\"makeedu\" /> : null}\n\n"
+   "      {makeeduOn && makeedu ? <OwnerMakeeduFace data={makeedu} /> : null}\n\n"
   ]
  ]
 }

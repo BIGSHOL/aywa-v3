@@ -9,6 +9,7 @@ import { UUID } from './v2-mcs-core.mjs';
 import { loadOwnerSlack } from './v2-owner-slack.mjs';
 import { loadOwnerVideo } from './v2-owner-video.mjs';
 import { loadOwnerAgent } from './v2-owner-agent.mjs';
+import { loadOwnerMakeedu } from './v2-owner-makeedu.mjs';
 
 const bad = () => new V2Error(400, 'invalid_request', '입력 값을 확인해 주세요.');
 const plain = v => !!v && typeof v === 'object' && !Array.isArray(v);
@@ -50,7 +51,8 @@ export async function integrationsView(sql, t, R, settings, viewer, sp, importV2
   const slackState = active === 'slack' ? await loadOwnerSlack(sql, t, viewer, importV2) : null;
   const video = active === 'video' ? await loadOwnerVideo(sql, t, viewer).catch(() => null) : null;
   const agent = active === 'agent' && sp.read === 'agent_dashboard' ? await loadOwnerAgent(sql, t, sp, settings) : null;
-  return { available, sheetStatuses, saEmail: null, slack: slackState, video, agent };
+  const makeedu = active === 'makeedu' ? await loadOwnerMakeedu(sql, t, sp.page, importV2) : null;
+  return { available, sheetStatuses, saEmail: null, slack: slackState, video, agent, makeedu };
 }
 
 // ── integrations/server/actions.ts ─────────────────────────────────────────────────────────────────────────────────────
@@ -100,6 +102,18 @@ async function setSubjectSheetTarget(io, actor, [subject, spreadsheetId]) {
   return { ok: true };
 }
 
+async function setMakeeduSyncEnabled(io, actor, [enabled]) {
+  if (typeof enabled !== 'boolean') throw bad();
+  if (!actor) return { error: '로그인이 필요합니다' };
+  const level = actor.level('integration_settings');
+  if (level !== 'full' && level !== 'scoped') return { error: `${INTEG_LABEL} 변경 권한이 없습니다` };
+  if (io.settings.modules.disabled.includes('makeedu')) return { error: MODULE_OFF_MSG };
+  const error = await upsertAsUser(io.sql, actor, { tenant_id: io.t, provider: 'makeedu', sync_enabled: enabled }, 'sync_enabled');
+  if (error) return { error };
+  await audit(io.sql, io.t, actor, 'integration_sync_toggle', 'integration', { enabled }, 'makeedu 자동 동기화');
+  return { enabled };
+}
+
 const MODULE = 'features/integrations/server/actions.ts';
 export function integrationActions(makeIo) {
   const wrap = (run, arity) => ({
@@ -109,5 +123,6 @@ export function integrationActions(makeIo) {
     },
     run: async ({ sql, body, tenantId, importV2 }) => { const io = await makeIo(sql, tenantId, importV2); return run(io, io.viewers.find(v => v.id === body.actor) ?? null, body.args); },
   });
-  return { setSheetsExportEnabled: wrap(setSheetsExportEnabled, 2), setSubjectSheetTarget: wrap(setSubjectSheetTarget, 2) };
+  return { setSheetsExportEnabled: wrap(setSheetsExportEnabled, 2), setSubjectSheetTarget: wrap(setSubjectSheetTarget, 2),
+    setMakeeduSyncEnabled: wrap(setMakeeduSyncEnabled, 1) };
 }
