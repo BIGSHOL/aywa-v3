@@ -122,6 +122,7 @@ export const notApplicable = (id, title, coverageNote, summary = '지점 원장 
 
 const DATE = /^\d{4}-\d{2}(-\d{2})?$/;
 const SIGNAL_AT = /^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2}:\d{2}Z)?$/;
+const latestDay = asOf => { const today = new Date(Date.now() + 9 * 3600_000).toISOString().slice(0, 10); return asOf > today ? asOf : today; };
 // Throws on the first contract violation so a bad loader cannot ship silently.
 export function assertWorkspaces(ws, ids) {
   const fail = (id, why) => { throw new Error(`workspaces.${id}: ${why}`); };
@@ -137,7 +138,9 @@ export function assertWorkspaces(ws, ids) {
     }
     for (const s of f.signals) if (!s.id || !s.title || !Object.values(PRIORITY).includes(s.priority) || !s.draft?.title || !s.draft?.body) fail(id, `signal ${s.id}`);
     for (const s of f.signals) if (s.facet && !f.facets.some(x => x.id === s.facet)) fail(id, `signal ${s.id} facet ${s.facet} missing`);
-    for (const s of f.signals) if (s.at !== undefined && (!SIGNAL_AT.test(s.at) || s.at.slice(0, 10) > ws.asOf)) fail(id, `signal ${s.id} at ${s.at}`);
+    // 신호 시각은 기준일까지 — 단 복사본 연습 저장(2.0 화면)은 오늘 시각을 남기므로 기준일과 오늘(KST) 중 늦은 날까지 받는다
+    // (10-28 시험장: 퇴원 관리자 승인 뒤 신호 시각이 오늘이라 저장 뒤 자료 갱신이 네 번 연달아 거절됐다).
+    for (const s of f.signals) if (s.at !== undefined && (!SIGNAL_AT.test(s.at) || s.at.slice(0, 10) > latestDay(ws.asOf))) fail(id, `signal ${s.id} at ${s.at}`);
     const ids = new Set(f.records.map(r => r.id));
     for (const s of f.signals) for (const r of s.recordIds) if (!ids.has(r) && !(f[EVIDENCE] || []).some(e => e.id === r)) fail(id, `signal ${s.id} points outside evidence`);
     for (const x of f.facets) if (!x.id || !x.label || !Number.isInteger(x.count) || x.count < 1) fail(id, 'facet');
