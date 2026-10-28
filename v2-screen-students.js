@@ -9,7 +9,8 @@
   const ID = 'students', HOST = `/v2-host/${ID}.html`, S = window.V2Screens; if (!S) return;
   // 2.0 목록·상세 page.tsx가 읽는 주소 열쇠 그대로(이름이 같은 열쇠는 한 칸) + v2path(2.0 하위 경로 /students/<학생> …).
   const KEEP = ['v2path', 'status', 'subject', 'q', 'page', 'grade', 'teacher', 'field', 'sort', 'noenr', 'program', 'first', 'level', 'mix', 'from',
-    'contribution', 'month', 'view', 'entity', 'tab', 'video', 'back', 'jjFrom', 'jjTo', 'to', 'kind', 'dir', 'fScore', 'fDelta'];
+    'contribution', 'month', 'view', 'entity', 'tab', 'video', 'back', 'jjFrom', 'jjTo', 'to', 'kind', 'dir', 'fScore', 'fDelta',
+    'fc', 'fcMonth', 'fcFrom', 'fcTo', 'fcSpan', 'tr', 'trMonth', 'trFrom', 'trTo', 'trSpan'];
   let api = null, frame = null, requested = null, hostOk = null, wired = false, editors = [], actor = null;
   const ACTOR_KEY = `v2-host-actor:${ID}`, SEL = `[data-v2-screen="${ID}"]`;
   const esc = s => S.esc(s);
@@ -43,7 +44,7 @@
     frame.hidden = false;
   }
   // 이 화면이 그리는 2.0 하위 주소(새 학생 · 원생 상세 · 학생 수정) — 창 열기 알림이 와도 같은 화면에서 연다(조건 그대로).
-  const OWN = /^\/students(?:\/new|\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}(?:\/edit)?)?$/i;
+  const OWN = /^\/students(?:\/(?:new|stats)|\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}(?:\/edit)?)?$/i;
   /** 2.0 주소 → 이 화면(하위 주소) · 3.0에 있는 같은 2.0 화면(하위 경로는 v2path, 조건 그대로). 없으면 안내만(주소를 보이지 않는다). */
   function openFromHost(href) {
     const u = new URL(href || '/', location.origin), path = u.pathname;
@@ -63,7 +64,13 @@
     addEventListener('message', e => {
       if (e.origin !== location.origin || !frame || e.source !== frame.contentWindow) return;
       const d = e.data || {};
-      if (d.type === 'v2-host-nav' && d.screen === ID) {
+      if (d.type === 'v2-host-ready' && d.screen !== ID) {
+        const to = S.target(d.screen);
+        if (to) {
+          const q = new URLSearchParams(frame.contentWindow.location.search);
+          location.hash = `${to}${q.toString() ? `?${q}` : ''}`;
+        }
+      } else if (d.type === 'v2-host-nav' && d.screen === ID) {
         const query = queryOf(new URLSearchParams(String(d.query || '')));
         requested = query; // iframe은 이미 그 주소다 — 3.0이 다시 그려도 다시 읽지 않게 먼저 맞춘다
         const page = `#v2-${ID}${query ? `?${query}` : ''}`;

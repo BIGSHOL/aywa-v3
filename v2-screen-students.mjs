@@ -6,10 +6,13 @@
 //    고른 값은 주소에만 남는다(수업목록과 같은 판단).
 // 주소 열쇠 = 2.0 목록 page.tsx searchParams + 상세 page.tsx searchParams(이름이 같은 열쇠는 한 칸 — 두 화면의 값 모양을 모두 받는다) + v2path.
 import { UUID_BODY, studentsBase, readStudentEditors } from './v2-students-common.mjs';
+import { readStudentStats } from './v2-students-stats.mjs';
+import { statsActions } from './v2-students-stats-actions.mjs';
 
 const ID = 'students';
 const TEXT = /^[^\u0000-\u001f]{0,200}$/, DAY = /^\d{4}-\d{2}-\d{2}$/;
-const SUB = new RegExp(`^/students(?:/(new)|/(${UUID_BODY})(/edit)?)?$`);
+const SUB = new RegExp(`^/students(?:/(new|stats)|/(${UUID_BODY})(/edit)?)?$`);
+export const STATS_KEYS = Object.freeze(['fc', 'fcMonth', 'fcFrom', 'fcTo', 'fcSpan', 'tr', 'trMonth', 'trFrom', 'trTo', 'trSpan']);
 
 /** 없는 모듈이면 null(그 모듈 파일만 — 안의 import 실패는 그대로 던진다). */
 async function optional(file) {
@@ -32,7 +35,7 @@ const [saveHead, saveTabs, contributionRead, contributionActions, referralAction
   optional('v2-students-contribution-referral-actions.mjs'), optional('v2-students-contribution-settings.mjs'),
   optional('v2-students-contribution-refresh.mjs')]);
 const ACTIONS = { ...(saveHead?.studentsHeadActions ?? {}), ...(saveTabs?.studentsTabActions ?? {}),
-  ...(contributionActions?.actions ?? {}), ...(referralActions?.actions ?? {}), ...(settingsActions?.actions ?? {}), ...(refreshActions?.actions ?? {}) };
+  ...(contributionActions?.actions ?? {}), ...(referralActions?.actions ?? {}), ...(settingsActions?.actions ?? {}), ...(refreshActions?.actions ?? {}), ...statsActions };
 
 const pick = (params, keys) => Object.fromEntries(keys.flatMap((k) => (params[k] !== undefined ? [[k, params[k]]] : [])));
 
@@ -49,6 +52,7 @@ export const screen = {
     // 상세(탭 · 돌아갈 자리 · 탭 안 조회)
     tab: /^[a-z-]{1,20}$/, back: /^\/(?!\/)[^\u0000-\u001f\\]{0,199}$/, video: new RegExp(`^${UUID_BODY}$`), jjFrom: DAY, jjTo: DAY, to: DAY,
     kind: /^[a-z_]{1,30}$/, dir: /^(asc|desc)$/, fScore: TEXT, fDelta: TEXT, contribution: TEXT, month: /^\d{4}-\d{2}$/, view: /^[a-z_-]{1,20}$/, entity: TEXT,
+    ...Object.fromEntries(STATS_KEYS.map(k => [k, /^[a-z0-9-]{1,20}$/])),
   },
   // 2.0 원생목록 담임 필터는 다중 선택(uuid 여럿 · 쉼표) — 61명(37자씩)까지.
   paramMax: { teacher: 2300 },
@@ -59,6 +63,16 @@ export const screen = {
     const sub = SUB.exec(params.v2path ?? '/students');
     const viewerId = params.viewer ?? null;
     if (!sub) return { notFound: true };
+    if (sub[1] === 'stats') {
+      const base = await studentsBase({ sql, tenantId, importV2, viewerId });
+      if (!base.viewer || base.level('students') === 'none') return { notFound: true };
+      const [{ readPeriodParams }, { FIRST_CLASS_KEYS }, { TREND_KEYS }] = await Promise.all([
+        importV2('features/stats/period.ts'), importV2('features/students/stats/first-class-trend.ts'), importV2('features/students/stats/model.ts'),
+      ]);
+      const result = await readStudentStats({ tenantId, actorId: base.viewer.id, subject: params.subject,
+        firstParams: readPeriodParams(params, FIRST_CLASS_KEYS), trendParams: readPeriodParams(params, TREND_KEYS) });
+      return { ...result, editors: await readStudentEditors(base) };
+    }
     if (params.contributionRead) {
       if (!sub[2] || sub[3] || !contributionRead) return { notFound: true };
       return contributionRead.read({ sql, tenantId, importV2, viewerId, studentId: sub[2], kind: params.contributionRead,

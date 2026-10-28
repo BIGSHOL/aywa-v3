@@ -10,6 +10,7 @@ import { OperationsProvider } from "@/features/owner/operations-context";
 import { StudentsListPage, type StudentListData } from "./students-list";
 import { StudentDetailPage, type StudentDetailData } from "./students-detail";
 import { EditStudentPage, NewStudentPage, type StudentEditData, type StudentNewData } from "./students-form";
+import { StudentsStatsPage, type StudentStatsData } from "./students-stats-page";
 import { StudentTabDataProvider, setCopyDay } from "./students-shared";
 import { currentRoute, onHostRefresh } from "../shims/host-nav";
 import { registerHostHandler, setHostEditors } from "../shims/server-action";
@@ -106,6 +107,7 @@ function pending<T>(s: Loaded<T>, what: { loading: string; missing: string }): R
 }
 const LIST_TEXT = { loading: "원생목록을 불러오는 중…", missing: "원생목록은 연습 화면에서 아직 열 수 없습니다." };
 const STUDENT_TEXT = { loading: "학생 정보를 불러오는 중…", missing: "이 화면은 연습 화면에서 아직 열 수 없습니다." };
+const STATS_KEYS = ['view', 'subject', 'fc', 'fcMonth', 'fcFrom', 'fcTo', 'fcSpan', 'tr', 'trMonth', 'trFrom', 'trTo', 'trSpan'] as const;
 
 function pickQuery(search: URLSearchParams, keys: readonly string[], extra: Record<string, string> = {}) {
   const sp = Object.fromEntries(keys.flatMap((k) => (search.has(k) ? [[k, search.get(k) ?? ""]] : []))) as Record<string, string>;
@@ -117,6 +119,14 @@ function List() {
   const { sp, query } = useMemo(() => pickQuery(search, KEYS), [search]);
   const s = useScreenData<StudentListData & WithSettings>(query, "원생목록을 불러오지 못했습니다.");
   return pending(s, LIST_TEXT) ?? <Ops data={s.data!}><StudentsListPage data={s.data!} sp={sp} /></Ops>;
+}
+
+function Stats() {
+  const search = useSearchParams();
+  const { sp, query } = useMemo(() => pickQuery(search, STATS_KEYS, { v2path: '/students/stats' }), [search]);
+  const s = useScreenData<StudentStatsData & WithSettings>(query, '원생 통계를 불러오지 못했습니다.');
+  return pending(s, { loading: '원생 통계를 불러오는 중…', missing: '원생 통계를 열 수 없습니다.' })
+    ?? <Ops data={s.data!}><StudentsStatsPage data={s.data!} sp={sp} /></Ops>;
 }
 
 function Detail({ path, id }: { path: string; id: string }) {
@@ -148,6 +158,7 @@ function App() {
   const path = usePathname();
   const detail = DETAIL_PATH.exec(path), edit = EDIT_PATH.exec(path);
   if (path === HOST_ROUTE) return <List />;
+  if (path === '/students/stats') return <Stats />;
   if (detail) return <Detail key={path} path={path} id={detail[1]} />;
   if (edit) return <Form<StudentEditData> key={path} path={path} render={(d) => <EditStudentPage data={d} params={{ id: edit[1] }} />} />;
   if (path === "/students/new") return <Form<StudentNewData> key={path} path={path} render={(d) => <NewStudentPage data={d} />} />;
