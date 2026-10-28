@@ -14,6 +14,8 @@ import { createFlowRoute } from './flow-http.mjs';
 import { createExitRoute, startExitInsight } from './exit-http.mjs';
 import { createV2ScreenRoute, loadScreens, screenAsset } from './v2-screens.mjs';
 import { createV2HostRoute, ensureV2Host } from './v2-host-route.mjs';
+import { workspaceRecords } from './domain-snapshot.mjs';
+import { DATA_REVISION_PATH, createDataHolder, createDataRefresh, encodeData } from './data-refresh.mjs';
 
 const port=Number(process.env.OWNER_CONCEPT_PORT||4310);
 if(!Number.isInteger(port)||port<1024||port>65535)throw new Error('Invalid local dev port');
@@ -21,7 +23,8 @@ const root=new URL('./',import.meta.url);
 const hosts=new Set([`127.0.0.1:${port}`,`localhost:${port}`]);
 const origins=new Set([...hosts].map(h=>`http://${h}`));
 const snapshot=await loadSnapshot();
-const snapshotScript=Buffer.from(`window.AcademySnapshot=${JSON.stringify(snapshot).replaceAll('<','\\u003c')};`);
+// 첫 화면 자료(/snapshot.js · /snapshot.json) — 2.0 화면 저장 뒤 data-refresh.mjs가 같은 복사본에서 다시 만들어 바꿔 끼운다(AX-H2).
+const served=createDataHolder(encodeData(snapshot,workspaceRecords()));
 const routes=new Map([
  ['/', ['live.html','text/html; charset=utf-8']],
  ['/index.html',['live.html','text/html; charset=utf-8']],
@@ -68,8 +71,25 @@ const flowRoute=createFlowRoute({flow,origins,headers,enabled:flowEnabled});
 // '왜 줄었나' exit insight (INSIGHT-EXITS.md): code decomposition + case files; AI results beside the flow store, GET only.
 const insight=flowEnabled?startExitInsight({snapshot,dir:defaultStoreDir({dataRoot:fullDbRoot,identity:{tenantId,tenantSlug:'cs',capturedAt:snapshot.meta.importedAt}})}):{service:null,failure:null};
 const insightRoute=createExitRoute({insight,headers,enabled:flowEnabled});
-// 2.0 화면 (V2-SCREENS.md): 2.0 형태의 새 3.0 페이지, 복사본 DB 읽기 전용. v2-screen-<id>.mjs 파일마다 한 화면(공용 파일 수정 없음).
-const v2ScreenRoute=createV2ScreenRoute({screens:loadScreens(),headers});
+// 저장 뒤 자료 갱신(AX-H2, data-refresh.mjs): 2.0 화면 저장이 커밋되면 모아서 작업 스레드에서 다시 만들고, 첫 화면·기록·비서를 한 틱에,
+// 업무 흐름은 reloadSource로 맞춘다. 복사본이 시작 때와 다르면(복사 시각·기준일·지점) 바꾸지 않는다. 그동안 요청은 옛 자료로 답한다.
+const debounceMs=Math.min(60_000,Math.max(200,Number(process.env.OWNER_CONCEPT_REFRESH_DEBOUNCE_MS)||3000));
+const refresh=process.env.OWNER_CONCEPT_DATA_REFRESH==='off'?null:createDataRefresh({data:served,assistant,flow:flowEnabled?flow:null,expect:{importedAt:snapshot.meta.importedAt,asOf:snapshot.meta.asOf,tenant:snapshot.meta.tenant},scheduler:{debounceMs}});
+// 2.0 화면 (V2-SCREENS.md): 2.0 형태의 새 3.0 페이지, 복사본 DB. v2-screen-<id>.mjs 파일마다 한 화면(공용 파일 수정 없음).
+const v2ScreenRoute=createV2ScreenRoute({screens:loadScreens(),headers,onWrite:()=>refresh?.schedule()});
+// GET = 지금 자료의 개정 번호(열린 첫 화면이 30초마다·포커스 때 묻는다). POST = 지금 다시 읽기(복사본을 화면 밖에서 바꿨을 때 — §2.11 되돌리기 뒤 등).
+function dataRevision(req,res){
+ const send=(status,body)=>{const b=Buffer.from(JSON.stringify(body));res.writeHead(status,{...headers,'Content-Type':'application/json; charset=utf-8','Content-Length':b.length,...(status===405?{Allow:'GET, HEAD, POST'}:{})});res.end(req.method==='HEAD'?undefined:b);};
+ const info=()=>refresh?refresh.info():{revision:served.current.revision,etag:served.current.etag,asOf:snapshot.meta.asOf,refreshedAt:served.current.refreshedAt,refreshing:false,pending:false,stale:false};
+ if(req.method==='POST'){
+  const site=req.headers['sec-fetch-site'];req.resume();
+  if(site&&site!=='same-origin'||!/^application\/json\b/i.test(req.headers['content-type']||''))return send(403,{error:'forbidden',message:'이 화면에서만 요청할 수 있습니다.'});
+  if(!refresh)return send(409,{error:'refresh_off',message:'자료 갱신이 꺼져 있습니다.'});
+  refresh.schedule();return send(202,info());
+ }
+ if(!['GET','HEAD'].includes(req.method))return send(405,{error:'method_not_allowed',message:'조회와 다시 읽기만 할 수 있습니다.'});
+ send(200,info());
+}
 // 2.0 부품 호스트(v2-host/): 2.0 React 부품 그대로 — 3.0 화면 안의 같은 출처 iframe. 산출물이 없으면 시작할 때 한 번 짓는다.
 await ensureV2Host();
 const v2HostRoute=createV2HostRoute({headers});
@@ -94,12 +114,15 @@ const server=createServer(async(req,res)=>{
  if(insightRoute.handles(path)){try{insightRoute.handle(req,res);}catch{if(!res.headersSent)reject(500,'이탈 분석을 처리하지 못했습니다.');}return;}
  if(v2HostRoute.handles(path)){try{await v2HostRoute.handle(req,res,path);}catch{if(!res.headersSent)reject(500,'화면 파일을 읽지 못했습니다.');}return;}
  if(v2ScreenRoute.handles(path)){try{await v2ScreenRoute.handle(req,res,path);}catch{if(!res.headersSent)reject(500,'화면을 불러오지 못했습니다.');}return;}
+ if(path===DATA_REVISION_PATH){try{dataRevision(req,res);}catch{if(!res.headersSent)reject(500,'자료 상태를 읽지 못했습니다.');}return;}
  // JSON endpoints answer their own method errors; cross-site requests still fall through to the guards below.
  if(req.headers['sec-fetch-site']!=='cross-site'){try{if(handleWorkspaceRecords(req,res,headers))return;}catch{if(!res.headersSent)reject(500,'기록을 읽지 못했습니다.');return;}}
  if(!['GET','HEAD'].includes(req.method)){reject(405,'Read-only preview');return;}
  if(req.headers['sec-fetch-site']==='cross-site'&&path!=='/'){reject(403,'Local access only');return;}
  try{
-  if(path==='/snapshot.js'){res.writeHead(200,{'Content-Type':'text/javascript; charset=utf-8','Content-Length':snapshotScript.length,...headers});res.end(req.method==='HEAD'?undefined:snapshotScript);return;}
+  // 한 요청은 처음 잡은 자료로 끝까지(갱신이 도중에 바꿔 끼워도 머리글·본문이 같은 개정).
+  if(path==='/snapshot.js'){const d=served.current;res.writeHead(200,{'Content-Type':'text/javascript; charset=utf-8','Content-Length':d.script.length,...headers});res.end(req.method==='HEAD'?undefined:d.script);return;}
+  if(path==='/snapshot.json'){const d=served.current;res.writeHead(200,{'Content-Type':'application/json; charset=utf-8','Content-Length':d.json.length,...headers,ETag:d.etag,'X-Data-Revision':String(d.revision)});res.end(req.method==='HEAD'?undefined:d.json);return;}
   const documentMatch=path.match(/^\/files\/document\/([0-9a-f]{8}-[0-9a-f-]{27})$/i);
   if(documentMatch){
    const file=await documentFile(documentMatch[1]);if(!file){reject(404,'로컬 첨부파일을 아직 준비하지 못했습니다.');return;}
@@ -114,4 +137,4 @@ const server=createServer(async(req,res)=>{
  }catch{reject(500,'로컬 시안을 불러오지 못했습니다. DB와 파일 준비 상태를 확인해 주세요.');}
 });
 server.on('error',error=>{console.error(error.code||error.message);process.exitCode=1;});
-server.listen(port,'127.0.0.1',()=>console.log(`Owner concept: http://127.0.0.1:${port} (${snapshot.meta.tenant}, verified full local snapshot)`));
+server.listen(port,'127.0.0.1',()=>console.log(`Owner concept: http://127.0.0.1:${port} (${snapshot.meta.tenant}, verified full local snapshot) · 저장 뒤 자료 갱신 ${refresh?`켜짐(${debounceMs}ms 모음)`:'꺼짐'}`));

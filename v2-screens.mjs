@@ -6,6 +6,7 @@
 // GET /api/v2 lists the screens; GET /api/v2/<id>?… answers one read-only, repeatable-read transaction on the copy.
 // POST /api/v2/<id>/<action> (원장 2026-10-28 "일단은 docker. 연습용이므로 모두 docker") writes to the Docker copy only, one
 // write at a time, and rolls back any write that queued an outbound HTTP request — nothing leaves this PC.
+// onWrite({ screen, action }) runs after each committed write (serve-live.mjs: 첫 화면·기록·비서·업무 흐름 자료 갱신 예약, data-refresh.mjs).
 import { readdir, appendFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { openFullDatabase, tenantId } from './full-db.mjs';
@@ -70,7 +71,7 @@ async function queuedRequests(sql) {
 }
 const clip = (v, n) => { const t = JSON.stringify(v ?? null) ?? 'null'; return t.length > n ? `${t.slice(0, n)}…` : t; };
 
-export function createV2ScreenRoute({ screens, headers = {}, open = openFullDatabase, journal = JOURNAL }) {
+export function createV2ScreenRoute({ screens, headers = {}, open = openFullDatabase, journal = JOURNAL, onWrite = null }) {
   const send = (req, res, status, body) => { const data = Buffer.from(JSON.stringify(body)); res.writeHead(status, { ...headers, 'Content-Type': 'application/json; charset=utf-8', 'Content-Length': data.length, 'Cache-Control': 'no-store' }); res.end(req.method === 'HEAD' ? undefined : data); };
   const fail = (req, res, e) => send(req, res, e.status, { error: e.code, message: e.message });
   let chain = Promise.resolve(); // writes run one at a time, so the outbound-queue count belongs to this write
@@ -95,6 +96,7 @@ export function createV2ScreenRoute({ screens, headers = {}, open = openFullData
         return out;
       }));
       await record({ ...entry, ok: true, ms: Date.now() - started, result: clip(result, 1000) });
+      try { onWrite?.({ screen: id, action: name }); } catch (error) { console.error(`2.0 write hook failed: ${error?.message || error}`); } // 저장은 이미 끝났다 — 알림 실패로 답을 바꾸지 않는다
       return send(req, res, 200, { ok: true, result: result ?? null });
     } catch (error) {
       const r = refusal(error);

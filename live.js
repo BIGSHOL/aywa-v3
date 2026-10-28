@@ -540,5 +540,43 @@
   });
   document.addEventListener('keydown',event=>{if((event.ctrlKey||event.metaKey)&&event.key.toLowerCase()==='k'){event.preventDefault();showSearch();}if(event.key==='Escape')actions['close-menu']();});
   window.addEventListener('hashchange',()=>{state.page=location.hash.slice(1)||'home';if(!viewFor(state.page))state.page=PEEK?'':'home';document.querySelectorAll('dialog[open]').forEach(d=>d.close());closeMenu(false);render();window.scrollTo(0,0);});
+  /* 저장 뒤 자료 갱신(Codex 검수 10-28 AX-H2): 2.0 화면이 복사본에 저장하면 서버가 첫 화면 자료를 다시 만들고 개정 번호를 올린다
+     (GET /api/data-revision). 보이는 동안 30초마다·창에 포커스가 올 때 묻고, 바뀌었으면 /snapshot.json을 받아 같은 db 객체를 제자리에서
+     채운 뒤 다시 그린다(ax·작업 공간·업무 흐름 부품이 이 db 참조를 쥐고 있다). 열린 창·입력 칸·2.0 부품(iframe) 안에 있으면 끝날 때까지
+     미룬다. 이 화면에서 만든 미리보기 기록(local)은 남긴다. 2.0 화면 캐시는 V2Screens.dataChanged가 다시 읽는다. */
+  const fresh={revision:window.AcademySnapshotRevision?.revision||0,etag:window.AcademySnapshotRevision?.etag||'',next:null,busy:false,at:0};
+  // 쓰다 만 칸(포커스는 떠났어도 값이 처음과 다름)도 다시 그리면 지워진다 — 그런 칸이 본문에 있으면 미룬다.
+  const dirty=el=>el.type==='checkbox'||el.type==='radio'?el.checked!==el.defaultChecked:el.tagName==='SELECT'?[...el.options].some(o=>o.selected!==o.defaultSelected):!['hidden','button','submit','reset','file'].includes(el.type)&&el.value!==el.defaultValue;
+  const busyHere=()=>{const a=document.activeElement;return Boolean(document.querySelector('dialog[open]'))||Boolean(a&&a!==document.body&&(a.isContentEditable||/^(INPUT|TEXTAREA|SELECT|IFRAME)$/.test(a.tagName)))||[...document.querySelectorAll('#main input,#main textarea,#main select')].some(dirty);};
+  const plain=v=>v!==null&&typeof v==='object'&&!Array.isArray(v);
+  function refill(target,next,top){
+    for(const k of Object.keys(target))if(!(k in next))delete target[k];
+    for(const [k,v] of Object.entries(next)){
+      const old=target[k];
+      if(Array.isArray(v)&&Array.isArray(old)){const local=top?new Map(old.filter(x=>x?.local&&x.id).map(x=>[x.id,x])):null;const list=local?.size?[...[...local.values()].filter(x=>!v.some(y=>y?.id===x.id)),...v.map(y=>local.get(y?.id)||y)]:v;old.length=0;for(const x of list)old.push(x);}
+      else if(plain(v)&&plain(old))refill(old,v,false);else target[k]=v;
+    }
+  }
+  function applyFresh(){
+    if(!fresh.next||busyHere())return;
+    const {data,revision,etag}=fresh.next;fresh.next=null;
+    if(data){refill(db,data,true);fresh.etag=etag;const y=window.scrollY;render();window.scrollTo({top:y,behavior:'instant'});}
+    fresh.revision=revision;window.V2Screens?.dataChanged?.();dispatchEvent(new CustomEvent('aywa:data-revision',{detail:{revision}}));
+  }
+  async function checkFresh(){
+    if(fresh.busy||document.hidden||Date.now()-fresh.at<2000)return;fresh.busy=true;fresh.at=Date.now(); // 포커스가 잦아도 2초에 한 번
+    try{
+      const r=await fetch('/api/data-revision',{cache:'no-store',headers:{Accept:'application/json'}}),info=r.ok?await r.json():null;
+      const known=Math.max(fresh.revision,fresh.next?.revision||0);if(!Number.isInteger(info?.revision)||info.revision<=known)return;
+      if(info.etag===fresh.etag){fresh.next={data:null,revision:info.revision,etag:fresh.etag};return;} // 첫 화면 자료는 그대로 — 기록·2.0 화면만 바뀜
+      if(fresh.next?.data&&info.etag===fresh.next.etag){fresh.next={...fresh.next,revision:info.revision};return;}
+      const s=await fetch('/snapshot.json',{cache:'no-store',headers:{Accept:'application/json'}});if(!s.ok)return;
+      const data=await s.json(),revision=Number(s.headers.get('X-Data-Revision'))||info.revision;
+      if(data?.meta&&revision>known)fresh.next={data,revision,etag:s.headers.get('ETag')||''};
+    }catch{/* 다음 확인 때 다시 */}finally{fresh.busy=false;applyFresh();}
+  }
+  setInterval(()=>{if(!document.hidden)checkFresh();},30000);
+  window.addEventListener('focus',checkFresh);document.addEventListener('visibilitychange',()=>{if(!document.hidden)checkFresh();});
+  document.addEventListener('close',()=>setTimeout(applyFresh),true);document.addEventListener('focusout',()=>setTimeout(applyFresh));
   state.page=location.hash.slice(1)||'home';if(!viewFor(state.page))state.page=PEEK?'':'home';render();document.fonts.ready.then(()=>document.querySelectorAll('.nav-scroll,.live-scroll').forEach(fade));
 })();

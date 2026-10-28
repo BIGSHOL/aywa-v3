@@ -20,19 +20,24 @@ window.V2Screens = (() => {
   /** Read-only data for this screen and these params: cached; the first call fetches and re-renders the page on arrival. */
   function load(id, params = {}) {
     const qs = new URLSearchParams(Object.entries(params).filter(([, v]) => v !== undefined && v !== null && v !== '')).toString(), key = `${id}?${qs}`;
-    const hit = cache.get(key); if (hit) return hit;
+    const hit = cache.get(key);
+    if (hit) { if (hit.stale && !hit.refreshing) { hit.stale = false; hit.refreshing = true; fetchInto(id, qs, hit); } return hit; } // 다른 곳의 저장 뒤: 옛 값을 보이며 다시 읽는다
     const entry = { status: 'loading', data: null, error: null, refreshing: false }; cache.set(key, entry);
     fetchInto(id, qs, entry);
     return entry;
   }
   /** After a save: every cached view of the screen refetches in place (the old data stays on screen until the new arrives). */
-  const revalidate = id => { for (const [key, entry] of cache) if (key.startsWith(`${id}?`) && !entry.refreshing) { entry.refreshing = true; fetchInto(id, key.slice(id.length + 1), entry); } };
+  const revalidate = id => { for (const [key, entry] of cache) if (key.startsWith(`${id}?`) && !entry.refreshing) { entry.stale = false; entry.refreshing = true; fetchInto(id, key.slice(id.length + 1), entry); } };
+  /** 한 화면의 저장이 다른 화면 값도 바꿀 수 있다 — 나머지 화면의 자료는 다음에 열 때 다시 읽는다(그때까지 옛 값을 보인다). */
+  const staleExcept = id => { for (const [key, entry] of cache) if (!id || !key.startsWith(`${id}?`)) entry.stale = true; };
+  /** live.js: 서버 자료 개정 번호가 바뀌었을 때(다른 창·다른 화면의 저장) — 보이는 화면은 지금 제자리에서, 나머지는 다음에 열 때. */
+  const dataChanged = () => { const id = current()?.id; staleExcept(id); if (id && screens.has(id)) revalidate(id); };
   /** Save through the screen's action on the Docker copy. Resolves with the action's result; rejects with a Korean message. */
   async function act(id, action, body = {}) {
     const r = await fetch(`/api/v2/${encodeURIComponent(id)}/${encodeURIComponent(action)}`, { method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/json' }, body: JSON.stringify(body) });
     const data = await r.json().catch(() => null);
     if (!r.ok || !data?.ok) throw new Error(data?.message || '저장하지 못했습니다.');
-    revalidate(id);
+    revalidate(id); staleExcept(id);
     return data.result;
   }
   const go = (id, params = {}) => { const qs = new URLSearchParams(Object.entries(params).filter(([, v]) => v !== undefined && v !== null && v !== '')).toString(); api?.navigate(`v2-${id}${qs ? `?${qs}` : ''}`); };
@@ -74,5 +79,5 @@ window.V2Screens = (() => {
   /** A 3.0 workspace id → its 2.0 screen address when that screen is registered (workspace links open the 2.0 form first). */
   const WORKSPACE_ALIAS = { 'class-sheets': 'ecs' }; // the only workspace whose id differs from its 2.0 screen
   const target = wsId => { const id = WORKSPACE_ALIAS[wsId] || wsId; return screens.has(id) ? `#v2-${id}` : null; };
-  return { register, view, sidebar, bind, esc, target };
+  return { register, view, sidebar, bind, esc, target, dataChanged };
 })();

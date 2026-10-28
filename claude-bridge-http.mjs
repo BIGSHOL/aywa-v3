@@ -41,6 +41,7 @@ function readBody(req, max, timeoutMs) {
 }
 
 // destinations.list = 답 아래 바로 가기·요청 영역으로 고를 수 있는 곳(서버가 아는 목록), records() = 작업 영역 기록 저장소(요청안의 기록 확인).
+// context = 서버 컨텍스트, 또는 지금 것을 돌려주는 함수(저장 뒤 자료 갱신이 바꿔 끼운다 — 질문 하나는 시작할 때 잡은 것으로 끝까지).
 export function createAssistantRoute({ context, runner, readiness, origins, headers = {}, enabled = true, maxConcurrent = 1, rate = { max: 10, windowMs: 5 * 60_000 }, readTimeoutMs = 10_000, now = Date.now, log = () => {}, destinations = { list: [] }, records = null }) {
   let active = 0;
   const stamps = [];
@@ -66,8 +67,9 @@ export function createAssistantRoute({ context, runner, readiness, origins, head
     if (stamps.length >= rate.max) { fail(res, err('rate_limited', 429, '짧은 시간에 질문이 많았습니다. 잠시 후 다시 시도해 주세요.'), { 'Retry-After': String(Math.max(1, Math.ceil((rate.windowMs - (t - stamps[0])) / 1000))) }); return; }
     active += 1; stamps.push(t);
     try {
-      const facts = requestFacts(context, request), list = destinations.list;
-      const { output, meta } = await runner.ask({ input: buildInput(context, request, undefined, { facts, destinations: list }), signal });
+      const ctx = typeof context === 'function' ? context() : context;
+      const facts = requestFacts(ctx, request), list = destinations.list;
+      const { output, meta } = await runner.ask({ input: buildInput(ctx, request, undefined, { facts, destinations: list }), signal });
       const reply = normalizeAnswer(output, { facts, destinations: list, records });
       log(`assistant ok ${(meta.ms / 1000).toFixed(1)}s ${meta.models.join(',') || 'model?'}`);
       send(res, 200, reply);
@@ -109,13 +111,17 @@ export function createAssistantFromEnv({ snapshot, origins, headers, runtimeDefa
     return runner.checkAuth();
   });
   // 바로 가기 목록 — 작업 영역(스냅샷)은 바로, 연습 화면·확장 추세 지표는 서버가 이미 불러 둔 모듈에서 이어 붙인다.
-  const destinations = { list: areaDestinations(snapshot) };
+  // 컨텍스트와 작업 영역 목록은 저장 뒤 자료 갱신(data-refresh.mjs)이 route.use()로 바꿔 끼운다(연습 화면 목록은 그대로).
+  const live = { context: buildAssistantContext(snapshot), area: areaDestinations(snapshot), extra: [] };
+  const destinations = { get list() { return [...live.area, ...live.extra]; } };
   let store = null;
   if (enabled) {
-    extraDestinations().then(extra => { destinations.list = [...destinations.list, ...extra]; }).catch(e => log(`assistant destinations: ${e?.message || e}`));
-    import('./domain-snapshot.mjs').then(m => { store = m.workspaceRecords; }).catch(() => {});
+    extraDestinations().then(extra => { live.extra = extra; }).catch(e => log(`assistant destinations: ${e?.message || e}`));
+    import('./workspace-store.mjs').then(m => { store = m.currentWorkspaceStore; }).catch(() => {});
   }
-  const route = createAssistantRoute({ context: buildAssistantContext(snapshot), runner, readiness, origins, headers, enabled, log, destinations, records: () => store?.() ?? null });
+  const route = createAssistantRoute({ context: () => live.context, runner, readiness, origins, headers, enabled, log, destinations, records: () => store?.() ?? null });
+  /** { context, area } — 같은 스냅숏에서 만든 새 비서 컨텍스트와 작업 영역 목록. */
+  route.use = next => { if (next?.context) live.context = next.context; if (Array.isArray(next?.area)) live.area = next.area; };
   if (enabled) readiness.refresh().then(() => {
     const s = readiness.state;
     log(s.ok ? `Assistant: claude -p via ${s.info.authMethod} subscription (${s.info.subscriptionType}, ${s.info.apiProvider}) · ${ASSISTANT_PATH}` : `Assistant unavailable: ${s.error.code}`);

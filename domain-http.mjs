@@ -1,5 +1,5 @@
 // GET /api/workspaces/:familyId/records?q=&facet=&page=&pageSize= — read-only evidence pages
-// from the server-side store built with the verified startup snapshot (domain-snapshot.mjs).
+// from the server-side store of the data the server serves now (workspace-store.mjs — startup snapshot, then each refresh after a save).
 // GET …/records?id=<recordId> — one record of that family by its exact id (alone, never with search or paging; no
 // matching by name or date), so a link to a record outside the loaded page can open it.
 // GET …/records?ids=<id1,id2,…> — 같은 영역의 기록 여러 건을 한 번에(최대 100개 · 쉼표, 원장 10-28 '기록 보기'가 기록마다 요청 하나씩 보내던 것).
@@ -8,7 +8,8 @@
 // 영역을 고르지 않고 낱말로 모든 영역의 기록을 찾는다. 영역별로 묶어 영역마다 맞은 수와 앞쪽 limit건(기본 5 · 최대 20)만 준다.
 // first = 먼저 보일 영역(그 영역 화면에서 연 요청). 같은 낱말 규칙(모두 들어 있어야 맞음 · 영역 이름 낱말은 아래)·같은 기록 저장소 · 조회만.
 // Same-origin page only (serve-live.mjs host/origin/sec-fetch guards apply before this).
-import { FAMILY_IDS, workspaceRecords } from './domain-snapshot.mjs';
+import { FAMILY_IDS } from './domain-snapshot.mjs';
+import { currentWorkspaceStore } from './workspace-store.mjs';
 
 export const RECORDS_PATH = /^\/api\/workspaces\/([a-z][a-z-]{0,40})\/records$/;
 export const SEARCH_PATH = /^\/api\/workspaces\/records\/search$/;
@@ -101,7 +102,8 @@ export function handleWorkspaceRecords(req, res, headers) {
     res.end(req.method === 'HEAD' ? undefined : data);
   };
   if (!['GET', 'HEAD'].includes(req.method)) { send(405, { error: 'method_not_allowed', message: '조회만 할 수 있습니다.' }); return true; }
-  const { status, body } = search ? searchRecords(workspaceRecords(), url.searchParams) : queryRecords(workspaceRecords(), match[1], url.searchParams);
+  const store = currentWorkspaceStore();
+  const { status, body } = search ? searchRecords(store, url.searchParams) : queryRecords(store, match[1], url.searchParams);
   send(status, body);
   return true;
 }
