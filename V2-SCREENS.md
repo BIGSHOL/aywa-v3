@@ -17,7 +17,7 @@
 
 바뀌면 혼란을 주는 화면 전수는 `V2-CONFUSION-RISK.md`. 그 문서의 **상과 중 모두** 2.0 부품 그대로 3.0 안에 둔다. 하(재고·데이터베이스·고객센터·신규생·셔틀·이탈 방어·기여도·전자결재·지출결의서·보강관리·캘린더·도움말)는 지금의 3.0 작업 공간 그대로. 3.0이 새로 주는 기능(왜 줄었나·업무 흐름·요청·AI)은 2.0 화면을 바꾸지 않고 옆이나 위에 더한다.
 
-맡은 세션: **T** = 시간표 세션(`term_8c081f9a`, 부품 호스트 `v2-host/`도) · **O** = 원스크린 세션(`term_235e25c2`) · **L** = 팀장 세션(`term_3d5da021`, 작업자 최대 둘). 앞 줄이 끝나면 다음 줄로.
+맡은 세션: **T** = 시간표 세션(`term_8c081f9a`, 부품 호스트 `v2-host/`도) · **O** = 원스크린 세션(`term_235e25c2`) · **L** = 팀장 세션(`term_3d5da021`, 작업자 최대 둘). 앞 줄이 끝나면 다음 줄로. · **R** = 처리 화면 세션(10-28 메인이 띄움 — 업무 흐름 신호를 실제로 처리하는 화면: 퇴원보고서·전자결재·영상 제출 현황·퇴원관리. L에서 넘겨받음)
 
 | id | 화면 | 위험 | 2.0 원본(읽을 곳) | 맡음 |
 |---|---|---|---|---|
@@ -25,7 +25,7 @@
 | `onescreen` | 선생님 원스크린(보고서 작성·발송·공지, 격자 보기) | 상 | `src/app/(shell)/onescreen/**`, `src/features/onescreen/**`, `src/features/lesson-reports/**` | O |
 | `ecs` | 강사 시트 · 영어(목록·주간·월간·MP·레일·오늘) | 상 | `src/app/(shell)/ecs/**`, `src/features/class-sheets/**` | L |
 | `attendance` | 출석부(월별·출결 모드·오늘 출결·자리 출석부 메뉴) | 상 | `src/app/(shell)/attendance/**`, `src/features/attendance/**` | L |
-| `video-homework` | 영상 제출 현황(관리자 장부·강사 '내가 낸') | 상 | `src/app/(shell)/lesson-reports/video-homework/**`, `src/app/(shell)/onescreen/video-homework/**`, `src/features/video-homework/**` | L |
+| `video-homework` | 영상 제출 현황(관리자 장부·강사 '내가 낸') | 상 | `src/app/(shell)/lesson-reports/video-homework/**`, `src/app/(shell)/onescreen/video-homework/**`, `src/features/video-homework/**` | R |
 | `billing` | 수납관리 전체(수납·교재·지출·회차 확정·환불·계산기) | 상(교재·지출·회차) | `src/app/(shell)/billing/**`, `src/features/billing/**` | L |
 | `dashboard` | 운영실(KPI 9칸·카드·역할별 배치) | 상 | `src/app/(shell)/dashboard/**`, `src/features/dashboard/**` | O |
 | `students` | 원생목록 · 원생 상세(13탭) | 상 | `src/app/(shell)/students/**`, `src/features/students/**` | O |
@@ -39,7 +39,8 @@
 | `textbooks` · `textbook-requests` | 교재목록 · 교재 요청 | 중 | `src/app/(shell)/textbooks/**`, `src/app/(shell)/textbook-requests/**` | T |
 | `class-review` | 직원 평가(채점·포트폴리오) | 중 | `src/app/(shell)/class-review/**` | L |
 | `staff` | 직원관리 | 중 | `src/app/(shell)/staff/**`, `src/features/staff/**` | L |
-| `withdrawals` · `withdrawal-reports` | 퇴원관리 · 퇴원보고서 | 중 | `src/app/(shell)/withdrawals/**`, `src/app/(shell)/withdrawal-reports/**` | L |
+| `withdrawals` · `withdrawal-reports` | 퇴원관리 · 퇴원보고서 | 중 | `src/app/(shell)/withdrawals/**`, `src/app/(shell)/withdrawal-reports/**` | R |
+| `approvals` | 전자결재(결재함·기안·결재·결재선) | 중 | `src/app/(shell)/approvals/**`, `src/features/approvals/**` | R |
 | `owner` | 학원 설정(18면) | 중 | `src/app/(shell)/owner/**`, `src/features/owner/**` | T |
 
 **메인이 하는 공통 요소**(`V2-CONFUSION-RISK.md` §3): 3.0 사이드바를 2.0 메뉴 묶음·이름·순서로(3.0 새 기능은 별도 묶음), 강사 입구(수학 = 원스크린 · 영어 전담 = ECS), 숫자 정의는 2.0 함수로. 앱 밖 결과물(학부모 보고서 형식·공지·`/v`·자리 PIN·공유 링크·인쇄·엑셀)은 형식을 바꾸지 않는다.
