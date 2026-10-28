@@ -1,7 +1,8 @@
 // POST /api/flow/actions command layer: strict validation, idempotent commandId, revision check,
 // server-side actor eligibility, and the state transitions. AI is only reached through `ai`.
 import { scrub } from './domain-snapshot-core.mjs';
-import { FAMILY_IDS, workspaceRecords } from './domain-snapshot.mjs';
+import { FAMILY_IDS } from './domain-snapshot.mjs';
+import { currentWorkspaceStore } from './workspace-store.mjs'; // the record store of the data now served (refreshed after 2.0 saves)
 import { COMMAND_KINDS, COMMAND_ROLES, PRIORITIES, REPORT_OUTCOMES, SCENARIOS, TEMPLATES } from './flow-rules.mjs';
 import { actorMap, advance, entityRef, newEvent, refreshCase, resolveRole, step } from './flow-engine.mjs';
 import { signalStepRefs } from './flow-hierarchy.mjs';
@@ -61,7 +62,7 @@ const assignable = (actors, ids) => {
 function attachments(list, max = 20) {
   if (list === undefined) return [];
   if (!Array.isArray(list) || list.length > max) throw bad(`첨부 기록은 ${max}건까지 붙일 수 있습니다.`);
-  const store = workspaceRecords(); if (!store) throw new CommandError(503, 'records_unavailable', '기록 저장소가 아직 준비되지 않았습니다. 잠시 뒤 다시 시도해 주세요.');
+  const store = currentWorkspaceStore(); if (!store) throw new CommandError(503, 'records_unavailable', '기록 저장소가 아직 준비되지 않았습니다. 잠시 뒤 다시 시도해 주세요.');
   const out = new Map();
   for (const x of list) {
     const m = typeof x === 'string' ? /^([a-z][a-z-]{0,40})\|([A-Za-z0-9][A-Za-z0-9:._-]{0,99})$/.exec(x) : null;
