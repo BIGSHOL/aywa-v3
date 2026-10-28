@@ -60,6 +60,26 @@ test('contract checker rejects broken families', () => {
   assert.equal(metric('x', '12', '건').value, 12); assert.equal(metric('x', 'abc', '건').value, null);
 });
 
+test('연습 저장으로 생긴 오늘의 신호는 지난 기준일에도 유효하고 미래 시각은 거절한다', () => {
+  const today = new Date(Date.now() + 9 * 3600_000).toISOString().slice(0, 10);
+  const yesterday = new Date(`${today}T12:00:00Z`);
+  yesterday.setUTCDate(yesterday.getUTCDate() - 1);
+  const asOf = yesterday.toISOString().slice(0, 10);
+  const families = () => Object.fromEntries(FAMILY_IDS.map(id => [id, fam(id, {})]));
+  const withSignal = at => {
+    const f = families();
+    f['withdrawal-reports'] = fam('withdrawal-reports', {
+      evidence: ev,
+      signals: [signal({ id: 'withdrawal-report-pending', title: '퇴원보고서 승인 대기', summary: '승인 대기', priority: PRIORITY.decide, source: '퇴원보고서 상태', recordIds: ['a'], at, draft: { title: '검토', body: '승인 여부 결정' } })],
+    });
+    return { asOf, families: f };
+  };
+  assert.equal(assertWorkspaces(withSignal(`${today}T13:55:14Z`), FAMILY_IDS), true);
+  const tomorrow = new Date(`${today}T12:00:00Z`);
+  tomorrow.setUTCDate(tomorrow.getUTCDate() + 1);
+  assert.throws(() => assertWorkspaces(withSignal(`${tomorrow.toISOString().slice(0, 10)}T00:00:00Z`), FAMILY_IDS), /withdrawal-report-pending at/);
+});
+
 test('records endpoint: strict parameters, consistent facet counts, search and paging', () => {
   const f = fam('billing', { evidence: ev });
   const store = { families: new Map([['billing', { facets: f.facets, records: f[EVIDENCE] }], ['help', { facets: [], records: [] }]]) };
