@@ -209,7 +209,7 @@ window.createFlowUI = function createFlowUI(api) {
     return entityChips(c,refs).replace(/<\/div>$/,refs.length>4?`<span class="fl-entity-more">외 ${fmt(refs.length-4)}건</span></div>`:'</div>');
   }
   function entityChips(c,refs){
-    return `<div class="fl-entities" aria-label="관련 기록">${refs.slice(0,4).map(r=>{const fam=r.type==='task'?'tasks-notifications':r.familyId||'',ws=fam&&api.hasView(`workspace-${fam}`);return `<button type="button" class="fl-entity" data-fl="entity" data-family="${h(fam)}" data-record="${h(r.recordId||r.id||'')}" ${ws||api.canOpenRecord?.(r.recordId||r.id)?'':'disabled'}>${h(r.type==='task'&&r.label===c.title?'원본 할 일':r.label)}${fam?`<small>${h(api.familyLabel?.(fam)||'')}</small>`:''}</button>`;}).join('')}</div>`;
+    return `<div class="fl-entities" aria-label="관련 기록">${refs.slice(0,4).map(r=>{const fam=r.type==='task'?'tasks-notifications':r.familyId||'',ws=fam&&api.hasView(`workspace-${fam}`);return `<button type="button" class="fl-entity" data-fl="entity" data-family="${h(fam)}" data-record="${h(r.recordId||r.id||'')}" ${ws||api.canOpenRecord?.(r.recordId||r.id)?'':'disabled'}>${h(r.type==='task'&&r.label===c.title?'원본 할 일':refLabel(r))}${fam?`<small>${h(api.familyLabel?.(fam)||'')}</small>`:''}</button>`;}).join('')}</div>`;
   }
   function why(c){
     const t=c.trigger||{},s=stepOf(c),d=c.decision;
@@ -245,6 +245,10 @@ window.createFlowUI = function createFlowUI(api) {
   // 열 너비는 표 머리 한 곳(table-layout:fixed)이 정한다 — 줄마다 글 길이가 달라도 열이 흔들리지 않는다. 넘친 글은 말줄임(.fl-cut),
   // 마우스·초점이 오면 전부 보인다(fl-tip). 처리 화면 = 그 일을 처리하는 화면, 누르면 이 화면 위 엿보기 창으로 연다.
   const COLS=[['state','상태'],['title','일'],['rec','관련 기록'],['who','할 차례'],['due','기한'],['at','발생 시간'],['place','처리 화면'],['act','']];
+  // 관련 기록 이름 = 지금 원본의 이름(flow().entities, 읽을 때마다 원본에서 다시 풀린다). 업무에 저장된 이름은 그 일이 생길 때 적은 것이라
+  // 옛 모양('2026-10 청구')일 수 있다 — 없을 때만 쓴다(검수 10-28 H3).
+  let entSrc=null,entMap=new Map();
+  const refLabel=r=>{if(!r)return '';const list=flow().entities;if(list!==entSrc){entSrc=list;entMap=new Map((list||[]).map(e=>[`${e.type}:${e.id}`,e.label]));}return entMap.get(`${r.type}:${r.id}`)||r.label||'';};
   const refsOf=c=>(c.entityRefs||[]).filter(r=>r&&r.label&&!(r.type==='task'&&r.label===c.title));
   const placeOf=c=>c.familyId&&api.familyLabel?.(c.familyId)||'';
   const whoText=c=>{const s=myStep(c)||stepOf(c);return s?whoOf(s):'';};
@@ -252,9 +256,9 @@ window.createFlowUI = function createFlowUI(api) {
   const signalAt=c=>c.signalId?(db.workspaces?.families?.[c.familyId]?.signals||[]).find(x=>x.id===c.signalId)?.at||'':'';
   const atOf=c=>signalAt(c)||(c.trigger||{}).at||c.createdAt||'';
   // 열마다 걸러 보는 값(한 일이 값을 여럿 가질 수 있다 — 상태 표시·관련 기록·담당자)과 정렬 값. 빈 값은 '없음'으로 걸러지고 정렬에선 늘 맨 뒤.
-  const COLV={state:c=>flags(c).map(f=>f[0]),title:c=>[c.title||'제목 없음'],rec:c=>{const r=refsOf(c).map(x=>x.label);return r.length?[...new Set(r)]:['없음'];},who:c=>{const w=whoText(c);return w?w.split(', '):['없음'];},due:c=>[c.dueAt?md(kstDate(c.dueAt)):'없음'],at:c=>[md(kstDate(atOf(c)))||'없음'],place:c=>[placeOf(c)||'없음']};
+  const COLV={state:c=>flags(c).map(f=>f[0]),title:c=>[c.title||'제목 없음'],rec:c=>{const r=refsOf(c).map(refLabel);return r.length?[...new Set(r)]:['없음'];},who:c=>{const w=whoText(c);return w?w.split(', '):['없음'];},due:c=>[c.dueAt?md(kstDate(c.dueAt)):'없음'],at:c=>[md(kstDate(atOf(c)))||'없음'],place:c=>[placeOf(c)||'없음']};
   const FLAG_RANK=['기한 지남','담당 없음','결정 필요','오늘 처리','중요','검토 필요','검토 대기','진행 중','처리 전','연습 시나리오'];
-  const SORTV={state:c=>Math.min(...flags(c).map(f=>{const i=FLAG_RANK.indexOf(f[0]);return i<0?FLAG_RANK.length:i;})),title:c=>c.title||'',rec:c=>refsOf(c)[0]?.label||'',who:whoText,due:c=>c.dueAt?kstDate(c.dueAt):'',at:c=>Date.parse(atOf(c))||'',place:placeOf};
+  const SORTV={state:c=>Math.min(...flags(c).map(f=>{const i=FLAG_RANK.indexOf(f[0]);return i<0?FLAG_RANK.length:i;})),title:c=>c.title||'',rec:c=>refLabel(refsOf(c)[0]),who:whoText,due:c=>c.dueAt?kstDate(c.dueAt):'',at:c=>Date.parse(atOf(c))||'',place:placeOf};
   // 고르기(원장 10-28 "토글로 전체 선택같은거 해서 한번에 담당바꾸기 처리도 가능하게") — 원장·관리자만, 남은 단계가 있는 일만.
   // 고른 일은 쪽·정렬을 넘어 남고 보기를 바꾸면 비운다. 검색·필터로 목록에서 빠진 일은 고른 것에서도 뺀다(안 보이는 일을 바꾸지 않게).
   const canPick=c=>lead()&&c.state!=='done'&&activeSteps(c).length>0&&c.familyId!=='approvals';
@@ -376,7 +380,7 @@ window.createFlowUI = function createFlowUI(api) {
   const plain=x=>String(x||'').replace(/<[^>]*>/g,' ').replace(/&amp;/g,'&').replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&quot;/g,'"').replace(/&#39;/g,"'");
   function haystack(c){
     const s=stepOf(c),t=c.trigger||{};
-    return fold([c.title,c.summary,sumOf(c),kindLabel(c),plain(chips(c)),...(c.entityRefs||[]).map(r=>r?.label),...activeSteps(c).flatMap(st=>[st.label,whoOf(st)]),s?whoOf(s):'',c.dueAt?`${md(kstDate(c.dueAt))}까지`:'',when(t.at||c.createdAt),api.familyLabel?.(c.familyId)].filter(Boolean).join(' '));
+    return fold([c.title,c.summary,sumOf(c),kindLabel(c),plain(chips(c)),...(c.entityRefs||[]).flatMap(r=>[r?.label,refLabel(r)]),...activeSteps(c).flatMap(st=>[st.label,whoOf(st)]),s?whoOf(s):'',c.dueAt?`${md(kstDate(c.dueAt))}까지`:'',when(t.at||c.createdAt),api.familyLabel?.(c.familyId)].filter(Boolean).join(' '));
   }
   const matchCase=(c,q)=>{const hay=haystack(c);return q.split(/\s+/).filter(Boolean).every(w=>hay.includes(fold(w)));};
   // 열 필터: 열마다 고른 값 중 하나라도 가진 일만 남긴다. skip = 값 목록을 뽑는 그 열(자기 필터는 빼고 센다 — 엑셀과 같다).
@@ -736,7 +740,7 @@ window.createFlowUI = function createFlowUI(api) {
       return `<div class="fl-report-scope"><p><strong>보고 범위</strong> ${h(nodeLabel(n))}${nodeDetail(n)?` ${h(nodeDetail(n))}`:''}${cls?` · ${h(nodeLabel(cls))}`:''} · ${h(word)} ${fmt(recs.length)}건</p>${total!==null&&total>recs.length?`<p class="fl-tree-warn">${h(word)} ${fmt(total)}건 중 받은 ${fmt(recs.length)}건만 붙습니다.</p>`:''}<details><summary>붙는 기록 ${fmt(recs.length)}건</summary><ul>${recs.map(r=>`<li>${h(md(String(r.date||'날짜 미입력').slice(0,10)))} ${h(recLabel(r))}</li>`).join('')}</ul></details><p class="ax-note">이 학생의 이 반 기록에만 남습니다. 같은 단계의 다른 학생은 그대로입니다.</p><input type="hidden" name="scope" value="${h(n.id)}"></div>`;
     }
     if(relational(c))return `<div class="fl-report-scope"><p><strong>보고 범위</strong> ${h(s?whoOf(s):'')} 단계 전체</p><p class="ax-note">학생별 기록은 붙이지 않습니다.${tree?.status==='ready'?' 학생 한 명에 대한 보고는 선생님별 반·학생에서 학생을 골라 남깁니다.':''}</p></div>`;
-    return (c.entityRefs||[]).length?`<fieldset class="ws-multi"><legend>근거로 연결할 기록</legend>${c.entityRefs.map((r,i)=>`<label><input type="checkbox" name="ref" value="${i}" checked> ${h(r.label)}</label>`).join('')}</fieldset>`:'';
+    return (c.entityRefs||[]).length?`<fieldset class="ws-multi"><legend>근거로 연결할 기록</legend>${c.entityRefs.map((r,i)=>`<label><input type="checkbox" name="ref" value="${i}" checked> ${h(refLabel(r))}</label>`).join('')}</fieldset>`:'';
   }
   function openForm(kind,id,step='',node=''){
     const c=caseById(id);if(!c)return;const s=(step&&(c.steps||[]).find(x=>x.id===step))||myStep(c)||stepOf(c),sk=s?h(s.id):'';
@@ -967,7 +971,7 @@ window.createFlowUI = function createFlowUI(api) {
     const align=cols.map(k=>{const vs=facts.map(f=>new Map(f||[]).get(k)).filter(Boolean).map(String);if(!vs.length)return '';if(vs.every(v=>/^-?[\d,]+원$/.test(v)))return 'al-r';return Math.max(...vs.map(v=>v.length))<=8?'al-c':'';});
     const cls=i=>align[i]?` class="${align[i]}"`:'';
     const cell=(v,i)=>`<td${cls(i)}><span class="fl-cut">${h(v||'')}</span></td>`;
-    return `<table class="fl-rectable"><thead><tr><th scope="col">이름</th>${cols.map((k,i)=>`<th scope="col"${cls(i)}>${h(k)}</th>`).join('')}<th aria-hidden="true"></th></tr></thead><tbody>${list.map((r,i)=>{const fam=r.familyId||'',id=String(r.recordId||r.id||''),can=fam&&api.hasView(`workspace-${fam}`)||api.canOpenRecord?.(id),f=new Map(facts[i]||[]),at=`data-family="${h(fam)}" data-record="${h(id)}"`,name=recName.get(`${fam}:${id}`)||r.label;
+    return `<table class="fl-rectable"><thead><tr><th scope="col">이름</th>${cols.map((k,i)=>`<th scope="col"${cls(i)}>${h(k)}</th>`).join('')}<th aria-hidden="true"></th></tr></thead><tbody>${list.map((r,i)=>{const fam=r.familyId||'',id=String(r.recordId||r.id||''),can=fam&&api.hasView(`workspace-${fam}`)||api.canOpenRecord?.(id),f=new Map(facts[i]||[]),at=`data-family="${h(fam)}" data-record="${h(id)}"`,name=recName.get(`${fam}:${id}`)||refLabel(r);
       return `<tr ${can?`class="can" data-fl="rec-open" ${at}`:''}><th scope="row">${can?`<button type="button" class="fl-cut" data-fl="rec-open" ${at}>${h(name)}</button>`:`<span class="fl-cut">${h(name)}</span>`}</th>${facts[i]===null?`<td colspan="${cols.length||1}" class="fl-dim">정보를 읽지 못했습니다.</td>`:cols.map((k,i)=>cell(f.get(k),i)).join('')}<td class="fl-rec-go">${can?icon('chevron'):''}</td></tr>`;}).join('')}</tbody></table>`;
   }
   function fillFacts(root,refs){
