@@ -1,0 +1,313 @@
+/* 2.0 화면 — 강사 시트 · 영어(ECS). 2.0 class-sheets 컴포넌트(sheet-grid·period-block·plan-table·roster-table·landing-list·
+   month-*)의 치수·색·글씨를 옮긴다. 색은 2.0 globals.css 토큰 값(팔레트 v4) · 글씨는 타입 스케일 v5(xs 14 · sm 16) ·
+   열 폭은 2.0 상수(today-columns: 요일 칸 최소 420 · 최대 840, 계획 표 100/106/64, 로스터 116·60·40·83). */
+[data-v2-screen="ecs"]{
+  --e-ink:#121212;--e-soft:#e9edf4;--e-card:#fff;--e-line:rgba(29,29,31,.14);--e-line2:rgba(29,29,31,.26);--e-faintline:rgba(29,29,31,.1);
+  --e-primary:#153e75;--e-primary-s:rgba(21,62,117,.11);--e-blue:#2962ce;--e-blue-s:rgba(45,107,224,.12);--e-purple:#6c50c8;--e-purple-s:rgba(108,80,200,.12);
+  --e-rose:#b63767;--e-rose-s:rgba(194,58,110,.12);--e-amber:#995709;--e-amber-s:rgba(163,93,10,.13);--e-danger:#bc3838;--e-danger-s:rgba(211,63,63,.12);
+  --e-green:#0d7743;--e-green-s:rgba(14,124,70,.12);--e-gold:#82621a;--e-gold-s:rgba(138,104,28,.13);--e-weekend:#d3d3dc;--e-holi-ink:#7a1111;
+  color:var(--e-ink);letter-spacing:0;--amber:var(--e-amber)}
+[data-v2-screen="ecs"] .num{font-variant-numeric:tabular-nums}
+:where([data-v2-screen="ecs"]) a{color:inherit;text-decoration:none}
+:where([data-v2-screen="ecs"]) button{font:inherit;color:inherit}
+.ec{display:flex;flex-direction:column;gap:12px;min-width:0}
+
+/* 하부탭 · 머리 — 2.0 강사 시트(영어 · 수학) + PageHeader 한 줄 */
+.ec-subtabs{display:flex;gap:4px;border-bottom:1px solid var(--e-line)}
+.ec-subtabs>*{padding:6px 14px;font-size:15px;font-weight:700;border-bottom:2px solid transparent;margin-bottom:-1px}
+.ec-subtabs .on{border-color:var(--e-primary);color:var(--e-primary)}
+.ec-subtab-off{color:#8a8f98;cursor:not-allowed}
+.ec-pagehead{display:flex;flex-wrap:wrap;align-items:baseline;gap:6px 10px;min-width:0}
+.ec-pagehead h1{font-size:24px;line-height:1.3;letter-spacing:-.4px;margin:0;overflow-wrap:anywhere}
+.ec-eyebrow,.ec-desc{font-size:14px;font-weight:600;color:#4b5565}
+.ec-eyebrow:after,.ec-desc:before{content:'-';margin:0 0 0 10px;color:#9aa3b2}
+.ec-desc:before{margin:0 10px 0 0}
+
+/* 툴바 — 2.0 SHEET_BAR(카드 껍데기 없이 한 줄, 넘치면 접힘) */
+.ec-bar{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;min-width:0;padding:2px 2px}
+.ec-end{margin-left:auto;display:flex;flex-wrap:wrap;align-items:center;gap:8px}
+.ec-divider{width:1px;height:18px;background:var(--e-line)}
+.ec-chip{display:inline-flex;align-items:center;gap:4px;height:32px;padding:0 10px;border-radius:8px;border:1px solid var(--e-line2);background:var(--e-card);font-size:14px;font-weight:700;white-space:nowrap;cursor:pointer}
+.ec-chip.on{background:var(--e-primary);border-color:var(--e-primary);color:#fff}
+.ec-chip:disabled{cursor:not-allowed;opacity:.55}
+.ec-chip.small{height:26px;padding:0 8px;font-size:13px}
+.ec-chip.ghost{border-color:var(--e-line)}
+.ec-seg{display:inline-flex;align-items:center;gap:2px;height:32px;padding:2px;border:1px solid var(--e-line2);border-radius:8px;background:var(--e-card)}
+.ec-seg-label{padding:0 6px;font-size:13px;font-weight:700;color:#4b5565}
+.ec-seg-item{display:inline-flex;align-items:center;height:26px;padding:0 9px;border-radius:6px;font-size:14px;font-weight:700;white-space:nowrap;border:0;background:none;cursor:pointer}
+.ec-seg-item.on{background:var(--e-primary);color:#fff}
+.ec-seg-item:disabled{color:#8a8f98;cursor:not-allowed}
+.ec-count{margin-left:4px;opacity:.7}
+.ec-pick{display:inline-flex;align-items:center;gap:6px;font-size:13px;font-weight:700}
+.ec-pick .micro{color:#4b5565}
+.ec-pick select,.ec-class select{height:32px;border:1px solid var(--e-line2);border-radius:8px;background:var(--e-card);padding:0 8px;font-size:14px;font-weight:700;max-width:220px}
+.ec-period{display:inline-flex;align-items:center;gap:6px}
+.ec-period-box{display:inline-flex;align-items:center;height:32px;border:1px solid var(--e-line2);border-radius:8px;overflow:hidden;background:var(--e-card)}
+.ec-arrow{width:30px;height:100%;display:inline-grid;place-items:center;font-size:20px;line-height:1}
+.ec-arrow.lit{background:var(--e-primary);color:#fff}
+.ec-period-label{height:100%;display:inline-flex;align-items:center;padding:0 10px;border-inline:1px solid var(--e-faintline);font-size:15px;font-weight:700;white-space:nowrap;max-width:calc(100vw - 120px);overflow:hidden;text-overflow:ellipsis}
+.ec-rel{font-size:13px;font-weight:700;padding:2px 7px;border-radius:999px}
+.ec-rel.past{background:var(--e-amber-s);color:var(--e-amber)}.ec-rel.future{background:var(--e-blue-s);color:var(--e-blue)}
+.ec-classpick{display:inline-flex;flex-wrap:wrap;align-items:center;gap:6px;min-width:0}
+.ec-class{display:inline-flex;align-items:center;gap:6px;min-width:0}
+.ec-class select{background:#fff7d6;border-color:#c9a227;max-width:240px}
+.ec-class-teacher{font-size:14px;font-weight:700;white-space:nowrap}
+.ec-status{font-size:14px;font-weight:600;color:#4b5565;white-space:nowrap}
+.ec-dim{color:#4b5565}.ec-faint{color:#6f7682}.ec-bold{font-weight:700}.small{font-size:14px}
+.ec-amber{display:inline-flex;align-items:center;border:1px solid var(--e-amber);background:var(--e-amber-s);color:var(--e-amber);border-radius:999px;padding:0 6px;font-size:13px;font-weight:700;white-space:nowrap}
+.ec-amber-ink{color:var(--e-amber)}.ec-green-ink{color:var(--e-green)}
+.ec-offgoal{display:inline-flex;align-items:center;gap:6px;color:var(--e-amber);font-size:14px;font-weight:700}
+.ec-dotbox{display:inline-block;width:8px;height:8px;border:1px solid var(--e-amber);background:var(--e-amber-s);border-radius:2px}
+.ec-empty,.ec-card{background:var(--e-card);box-shadow:0 0 0 1px var(--e-line);border-radius:16px;padding:20px 16px;font-size:15px;color:#4b5565;margin:0}
+.ec-card.ec-foot{padding:12px 16px}
+.ec-footnote{font-size:13px;color:#4b5565;margin:0 4px}
+.ec-link{color:var(--e-primary);font-weight:700}
+
+/* 반 목록 — 2.0 landing-list.tsx: EiE / 인재원 영어 좌우 2단 · 담임별 묶음 · 행(이름 · Shouting · 작성률 · 막대 · 달력) */
+.ec-landing{background:var(--e-card);box-shadow:0 0 0 1px var(--e-line);border-radius:16px;padding:10px 12px}
+.ec-panels{display:grid;grid-template-columns:minmax(0,1fr);gap:16px}
+@media (min-width:768px){.ec-panels{grid-template-columns:repeat(2,minmax(0,1fr));column-gap:20px}.ec-panel.injaewon{border-left:1px solid var(--e-faintline);padding-left:20px}}
+.ec-panel-head{display:flex;align-items:baseline;gap:6px;border-bottom:1px solid var(--e-line);padding:0 4px 6px;margin-bottom:8px}
+.ec-program{margin:0;border:1px solid var(--e-primary);background:var(--e-primary-s);color:var(--e-primary);border-radius:999px;padding:1px 10px;font-size:18px;font-weight:800}
+.ec-flow{column-gap:20px}
+.ec-flow.full{columns:1}
+@media (min-width:640px){.ec-flow.full{columns:2}}
+@media (min-width:1024px){.ec-flow.full{columns:3}}
+/* 2.0은 창 폭 1280px부터 단 안 2열 — 3.0은 왼쪽 메뉴가 넓어 같은 뜻을 단의 폭(600px)으로 잰다(반 이름이 통째로 잘리지 않게). */
+.ec-panel{container-type:inline-size;min-width:0}
+@container (min-width:600px){.ec-flow.panel{columns:2}}
+.ec-group{break-inside:avoid;margin-bottom:12px}
+.ec-group-head{display:flex;align-items:baseline;gap:6px;border-bottom:1px solid var(--e-line2);padding:0 4px 2px}
+.ec-group-head h4{margin:0;font-size:16px;font-weight:800;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ec-group-head h4.unassigned{color:#4b5565}
+.ec-coltitles{margin-left:auto;display:flex;align-items:center;gap:8px;font-size:13px;font-weight:700;color:#6f7682;flex-shrink:0}
+.w52{width:52px;text-align:right;flex-shrink:0}.w92{width:92px;text-align:right;white-space:nowrap}
+.ec-ghost{visibility:hidden;border:1px solid;border-radius:999px;padding:0 6px;font-size:13px}
+.ec-rows{list-style:none;margin:0;padding:0}
+.ec-row{display:flex;align-items:center}
+.ec-row-link{display:flex;align-items:center;gap:8px;flex:1;min-width:0;border-radius:8px;padding:7px 6px}
+.ec-row-link:hover{background:var(--e-soft)}
+.ec-row-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:16px;font-weight:600}
+.ec-pill{border:1px solid var(--e-line2);border-radius:999px;padding:0 5px;font-size:13px;font-weight:700}
+.ec-pill.pos{border-color:var(--e-green);background:var(--e-green-s);color:var(--e-green)}.ec-pill.faint{border-color:var(--e-line);color:#6f7682}
+.ec-rate{width:44px;flex-shrink:0;text-align:right;font-size:14px;font-weight:700}
+.ec-rate.dim{font-weight:400;color:#4b5565}
+.ec-bar-track{width:40px;height:6px;flex-shrink:0;background:var(--e-soft);border-radius:999px;overflow:hidden}
+.ec-bar-track i{display:block;height:100%;background:var(--e-primary);border-radius:999px}
+.ec-cal-link{margin-left:4px;flex-shrink:0;border:1px solid var(--e-line2);border-radius:999px;padding:0 6px;font-size:13px;font-weight:700;color:#4b5565}
+.ec-cal-link:hover{background:var(--e-soft);color:var(--e-ink)}
+
+/* 반 주간 시트 — 계획 패널(300px) + 요일 격자(가로 스크롤). 폰은 패널을 위에 쌓는다(2.0 phone:flex-col). */
+.ec-body{display:flex;align-items:flex-start;gap:12px;min-width:0}
+@media (max-width:767px){.ec-body{flex-direction:column}.ec-panelbox{width:100%!important;max-height:35vh}}
+.ec-gridscroll{flex:1;min-width:0;max-width:100%;max-height:calc(100dvh - 190px);min-height:320px;overflow:auto;scrollbar-width:none;padding-bottom:8px}
+@media (max-width:767px){.ec-gridscroll{max-height:none;min-height:0;width:100%}}
+/* 넘치는 쪽 가장자리만 페이드(AGENTS.md 스크롤 원칙) — live.js가 --fade-* 를 잰다. 세로·가로 두 겹을 교집합으로. */
+.ec-calwrap.live-scroll,.ec-gridscroll.live-scroll,.ec-railwrap.live-scroll,.ec-mpwrap.live-scroll,.ec-todayslots.live-scroll{
+  -webkit-mask-image:linear-gradient(to bottom,transparent,#000 var(--fade-top,0px),#000 calc(100% - var(--fade-bottom,0px)),transparent),linear-gradient(to right,transparent,#000 var(--fade-left,0px),#000 calc(100% - var(--fade-right,0px)),transparent);
+  -webkit-mask-composite:source-in;mask-image:linear-gradient(to bottom,transparent,#000 var(--fade-top,0px),#000 calc(100% - var(--fade-bottom,0px)),transparent),linear-gradient(to right,transparent,#000 var(--fade-left,0px),#000 calc(100% - var(--fade-right,0px)),transparent);mask-composite:intersect}
+.ec-gridscroll::-webkit-scrollbar{display:none}
+.ec-panelbox{width:300px;flex-shrink:0;overflow-y:auto;background:var(--e-card);box-shadow:0 0 0 1px var(--e-line);border-radius:16px;padding:10px}
+.ec-goals summary{display:flex;align-items:center;gap:6px;list-style:none;cursor:pointer;padding:4px;border-radius:4px;user-select:none}
+.ec-goals summary::-webkit-details-marker{display:none}
+.ec-chev{display:inline-block;transition:transform .15s;color:#6f7682;font-weight:700}
+.ec-goals[open] .ec-chev,.ec-chev.open{transform:rotate(90deg)}
+.ec-goal-title{font-size:16px;font-weight:700}
+.ec-goal-when{margin-left:auto;font-size:14px;font-weight:700}
+.ec-goal-grid{display:grid;grid-template-columns:minmax(74px,max-content) 1fr 1fr;gap:4px;padding:4px 4px 8px}
+.ec-goal-headrow,.ec-goal-row{grid-column:1 / -1;display:grid;grid-template-columns:subgrid;align-items:center}
+.ec-goal-headrow{background:var(--e-soft);border-radius:6px;padding:2px 0;font-size:14px;font-weight:700}
+.ec-goal-headrow span:nth-child(2){padding-left:4px}
+.ec-memo{border-top:1px solid var(--e-line2);margin-top:6px;padding-top:6px;font-size:14px;font-weight:700}
+.ec-memo textarea{display:block;margin-top:4px;min-height:56px;width:100%;resize:vertical}
+.ec-input{width:100%;min-width:0;height:26px;border:1px solid var(--e-line2);border-radius:6px;background:var(--e-card);padding:0 4px;font:inherit;font-size:14px;font-weight:600;color:var(--e-ink)}
+textarea.ec-input{height:auto;padding:4px}
+.ec-input[readonly]{background:#fafbfc}
+.ec-input.center{text-align:center}
+.ec-area{display:inline-flex;align-items:center;justify-content:center;width:100%;max-width:96px;height:26px;border-radius:6px;border:1px solid var(--e-line2);padding:0 4px;font-size:14px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ec-area.small{height:20px;font-size:13px}
+.ec-area.w74{width:74px}
+.tone-primary{background:var(--e-primary-s);color:var(--e-primary)}.tone-green{background:var(--e-green-s);color:var(--e-green)}.tone-gold{background:var(--e-gold-s);color:var(--e-gold)}
+.tone-blue{background:var(--e-blue-s);color:var(--e-blue)}.tone-purple{background:var(--e-purple-s);color:var(--e-purple)}.tone-rose{background:var(--e-rose-s);color:var(--e-rose)}
+.tone-amber{background:var(--e-amber-s);color:var(--e-amber)}.tone-danger{background:var(--e-danger-s);color:var(--e-danger)}.tone-neutral{background:var(--e-soft);color:#4b5565}
+
+.ec-week{--gx:12px;width:100%;min-width:calc(var(--cols) * 420px + (var(--cols) - 1) * var(--gx));max-width:calc(var(--cols) * 840px + (var(--cols) - 1) * var(--gx))}
+.ec-band{position:sticky;top:0;z-index:2;display:grid;grid-template-columns:repeat(var(--cols),minmax(0,1fr));column-gap:var(--gx);background:var(--e-card);padding-bottom:8px}
+.ec-dayhead{display:flex;align-items:center;gap:8px;background:var(--e-card);box-shadow:0 0 0 1px var(--e-line);border-radius:16px;padding:8px 12px;min-width:0}
+.ec-dayhead.holiday{background:var(--e-weekend)}
+.ec-dow{display:inline-grid;place-items:center;width:28px;height:28px;border-radius:8px;background:var(--e-ink);color:#fff;font-size:17px;font-weight:700}
+.ec-dow.today{background:var(--e-primary)}
+.ec-daydate{font-size:16px;font-weight:600}
+.ec-dayhead.holiday .ec-daydate,.ec-holiname,.holi{color:var(--e-holi-ink)}
+.ec-holiname{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:14px;font-weight:700}
+.ec-todaybadge{border:1px solid var(--e-primary);color:var(--e-primary);border-radius:999px;padding:1px 6px;font-size:13px;font-weight:700}
+.ec-rows-grid{display:grid;grid-template-columns:repeat(var(--cols),minmax(0,1fr));column-gap:var(--gx);row-gap:0;align-content:start}
+.ec-cell{display:grid;grid-template-rows:subgrid;min-width:0}
+.ec-block{grid-row:span 3;display:grid;grid-template-rows:subgrid;background:var(--e-card);border:1px solid var(--e-ink);box-shadow:0 0 0 1px var(--e-line);border-radius:16px;padding:10px;min-width:0}
+.ec-blockhead{display:flex;flex-wrap:wrap;align-items:center;gap:4px 8px;border-bottom:1px solid var(--e-line2);padding-bottom:6px;font-weight:700}
+.ec-periodchip{background:var(--e-soft);border-radius:6px;padding:1px 6px;font-size:16px}
+.ec-time{font-size:16px;white-space:nowrap}
+.ec-teacher{border:1px solid var(--e-line2);border-radius:999px;padding:1px 8px;font-size:14px;white-space:nowrap}
+.ec-room{font-size:14px;white-space:nowrap}
+.ec-headend{margin-left:auto;display:flex;align-items:center;gap:8px}
+.ec-shout{display:flex;align-items:center;gap:4px;font-size:14px;color:#4b5565;opacity:.8}
+.ec-shout.on{color:var(--e-primary)}
+.ec-plan{display:flex;flex-direction:column;gap:4px;padding-top:4px}
+.ec-termhead{display:flex;flex-wrap:wrap;align-items:center;gap:6px;padding:2px 0}
+.ec-termchip{border:1px solid;border-radius:999px;padding:1px 8px;font-size:14px;font-weight:700}
+.ec-termchip.reg{background:var(--e-primary);border-color:var(--e-primary);color:#fff}
+.ec-termchip.exam{border-color:rgba(153,87,9,.6);background:var(--e-amber-s);color:var(--e-amber)}
+.ec-plantable,.ec-rostertable{width:100%;border-collapse:collapse;table-layout:fixed;font-size:16px}
+.ec-plantable th,.ec-rostertable th{background:var(--e-soft);font-size:14px;font-weight:700;text-align:left;padding:2px 4px;line-height:1.15;word-break:keep-all;overflow-wrap:normal;vertical-align:middle}
+.ec-plantable th:first-child,.ec-rostertable thead th:first-child{border-radius:6px 0 0 6px}
+.ec-plantable th:last-child,.ec-rostertable thead th:last-child{border-radius:0 6px 6px 0}
+.ec-plantable td{padding:2px 4px 2px 0;vertical-align:top}
+.ec-planempty{margin:0;padding:2px 4px;font-size:14px;font-weight:600;color:#4b5565}
+.ec-roster{border-top:1px solid var(--e-line2);margin-top:6px;padding-top:4px}
+.ec-rostertable th.c,.ec-rostertable td.c{text-align:center}
+.ec-rostertable tr>*:not(:first-child){border-left:1px solid var(--e-faintline)}
+.ec-rostertable tbody tr+tr{border-top:1px solid var(--e-line)}
+.ec-rostertable td{padding:1px 4px 1px 0;vertical-align:middle}
+.clamp2{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;line-height:1.15}
+.ec-glabel td,.ec-hist td{background:rgba(233,237,244,.4)}
+.ec-glabel td{font-size:14px;font-weight:700;padding:2px 4px}
+.ec-gtoggle{display:inline-flex;align-items:center;gap:4px;border:0;background:none;padding:0;cursor:pointer;font-weight:700;font-size:14px}
+.ec-namecell{display:flex;align-items:center;gap:4px;min-width:0}
+.ec-name{flex-shrink:0;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;border:0;background:none;padding:0;font-size:16px;font-weight:700;cursor:pointer;text-align:left}
+.ec-name:hover{text-decoration:underline}
+.ec-name.dim{color:#4b5565}
+.ec-sg{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:14px;font-weight:600;color:#4b5565}
+.ec-secondary{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:14px;font-weight:600;color:#4b5565;line-height:1.15}
+.ec-box{display:inline-flex;align-items:center;justify-content:center;gap:2px;width:100%;height:26px;border:1px solid var(--e-line2);border-radius:6px;font-size:14px;font-weight:600;padding:0 2px;overflow:hidden;white-space:nowrap}
+.ec-box.faint{color:#8a8f98}.ec-box.dim{color:#4b5565}
+.ec-box.att.ok{border-color:var(--e-green);background:var(--e-green-s);color:var(--e-green)}
+.ec-box.att.warn{border-color:var(--e-amber);background:var(--e-amber-s);color:var(--e-amber)}
+.ec-box.att.bad{border-color:var(--e-danger);background:var(--e-danger-s);color:var(--e-danger)}
+.ec-box.makeup{color:var(--e-purple);font-weight:700}
+.ec-box i{font-style:normal;font-size:12px}
+.ec-dot{font-size:8px}
+.ec-note{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:14px;font-weight:600;min-height:20px}
+.ec-wname{font-size:16px;font-weight:700;color:#4b5565;text-decoration:line-through;margin-right:6px}
+.ec-kept{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+/* 월간 — 목표 띠 · 메모 · 달력(그 반이 도는 요일만) · 진도표 · 계획(MP 종이 서식) */
+.ec-month{display:flex;flex-direction:column;gap:10px;min-width:0}
+.ec-strip{border:1px solid var(--e-line);border-radius:12px;overflow:hidden;background:var(--e-card)}
+.ec-striphead{display:flex;flex-wrap:wrap;align-items:center;gap:8px;background:var(--e-soft);padding:6px 10px;font-size:14px;font-weight:700}
+.ec-rolechips{display:flex;gap:4px}
+.ec-rolechip{border:1px solid var(--e-line2);border-radius:999px;padding:1px 8px;font-size:13px;font-weight:700;background:none;cursor:pointer;color:#4b5565}
+.ec-rolechip.on{background:var(--e-ink);border-color:var(--e-ink);color:#fff}
+.ec-strip-note{margin-left:auto;font-size:13px;font-weight:600;color:#6f7682}
+.ec-stripgrid{display:grid;gap:1px;background:var(--e-faintline);grid-template-columns:minmax(0,1fr)}
+@media (min-width:640px){.ec-stripgrid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media (min-width:1280px){.ec-stripgrid{grid-template-columns:repeat(3,minmax(0,1fr))}}
+.ec-stripcell{background:#fff;padding:6px 10px;display:flex;flex-direction:column;gap:4px}
+.ec-stripinputs{display:grid;grid-template-columns:74px minmax(0,4fr) minmax(0,6fr);gap:6px;align-items:center}
+.ec-stripinputs .ec-area{height:20px;font-size:13px}
+.ec-stripline{margin:0;padding-left:80px;font-size:13px;color:#6f7682}
+.ec-monthmemo{display:block;width:100%;min-height:72px;border:0;resize:vertical;padding:8px 10px;font:inherit;font-size:16px;font-weight:600;background:#fff}
+.ec-calwrap{overflow-x:auto;scrollbar-width:none;min-width:0}
+.ec-calwrap::-webkit-scrollbar{display:none}
+.ec-cal{display:grid;gap:6px;min-width:calc(44px + var(--n,3) * 180px)}
+.ec-calrow{display:grid;gap:6px;align-items:stretch}
+.ec-caldow{background:var(--e-soft);border-radius:8px;padding:4px 8px;font-size:14px;font-weight:700}
+.ec-calweek{display:flex;align-items:center;justify-content:center;border-right:1px solid var(--e-faintline);font-size:13px;font-weight:700;color:#6f7682}
+.ec-calnone{border:1px solid var(--e-line);border-radius:10px;background:#fafbfc;min-height:40px}
+.ec-calnone.dashed{border-style:dashed}
+.ec-calday{display:flex;flex-direction:column;gap:6px;min-width:0;border:1px solid var(--e-line);border-radius:10px;background:#fff;padding:6px 8px}
+.ec-calday:hover{border-color:var(--e-primary);box-shadow:0 0 0 1px var(--e-primary)}
+.ec-calday.holiday{background:var(--e-weekend)}
+.ec-calday.today{border-color:var(--e-primary);box-shadow:0 0 0 1px var(--e-primary)}
+.ec-calday.offgoal{border-color:var(--e-amber);box-shadow:0 0 0 1px var(--e-amber)}
+.ec-caldayhead{display:flex;align-items:center;gap:6px;font-size:16px;font-weight:700}
+.ec-calbadges{margin-left:auto;display:flex;gap:4px;flex-shrink:0}
+.ec-calbadge{border-radius:999px;padding:0 6px;font-size:13px;line-height:18px;font-weight:700}
+.ec-calbadge.today{background:var(--e-primary);color:#fff}
+.ec-calbadge.amber{border:1px solid rgba(153,87,9,.4);background:var(--e-amber-s);color:var(--e-amber)}
+.ec-calbadge.amberfill{background:var(--e-amber);color:#fff}
+.ec-calbadge.ok{border:1px solid rgba(13,119,67,.3);background:var(--e-green-s);color:var(--e-green)}
+.ec-calslot{display:grid;grid-template-columns:46px minmax(0,1fr);gap:6px;border-top:1px dashed var(--e-faintline);padding-top:4px}
+.ec-calslot:first-of-type{border-top:0;padding-top:0}
+.ec-calslottime{padding-top:2px;font-size:13px;font-weight:700;color:#6f7682}
+.ec-block-l{display:block}
+.ec-calslotbody{display:flex;flex-direction:column;gap:2px;min-width:0}
+.ec-unwritten{align-self:flex-start;border:1px dashed rgba(153,87,9,.45);color:var(--e-amber);border-radius:4px;padding:0 6px;font-size:13px;line-height:18px;font-weight:700}
+.ec-unwritten.holi{border-color:var(--e-line2);color:#6f7682}
+.ec-planned{display:flex;gap:4px;min-width:0;font-size:13px;color:#6f7682}
+.ec-plannedtag{flex-shrink:0;border:1px dashed var(--e-line2);border-radius:4px;padding:0 4px;font-weight:700}
+.ec-calline{display:grid;grid-template-columns:74px minmax(0,1fr);gap:6px;align-items:baseline;min-width:0}
+.ec-calline.off{background:var(--e-amber-s);border-radius:4px;margin:0 -4px;padding:0 4px}
+.ec-callinetext{min-width:0;font-size:13px;overflow-wrap:anywhere}
+.ec-bookonly{align-self:flex-start;border:1px dashed var(--e-line2);color:#6f7682;border-radius:4px;padding:0 6px;font-size:13px;font-weight:700}
+.ec-verdict{align-self:flex-start;border-radius:999px;padding:0 6px;font-size:13px;font-weight:700;background:var(--e-soft);color:#4b5565}
+.ec-railwrap{overflow-x:auto;scrollbar-width:none;border:1px solid var(--e-line);border-radius:12px}
+.ec-railwrap::-webkit-scrollbar{display:none}
+.ec-rail{width:max-content;min-width:100%;border-collapse:separate;border-spacing:0;font-size:13px}
+.ec-rail th,.ec-rail td{border-right:1px solid var(--e-faintline);border-bottom:1px solid var(--e-faintline);padding:6px 8px;vertical-align:top;text-align:left}
+.ec-rail thead th{background:var(--e-soft);font-weight:700;white-space:nowrap;padding:0}
+.ec-rail thead th a{display:block;padding:6px 8px}
+.ec-rail thead th.holiday{background:var(--e-weekend)}
+.ec-rail thead th.offgoal{background:var(--e-amber-s);color:var(--e-amber);box-shadow:inset 0 -2px 0 var(--e-amber)}
+.ec-railgoal{position:sticky;left:0;z-index:3;background:#fff;min-width:236px;box-shadow:1px 0 0 var(--e-line);font-weight:400}
+.ec-rail thead .ec-railgoal{background:var(--e-soft);z-index:4;padding:6px 8px;font-weight:700}
+.ec-railinputs{display:grid;grid-template-columns:minmax(0,1fr) 62px;gap:4px;margin-top:4px}
+.ec-rail td.empty{background:#fbfcfd}.ec-rail td.offday{background:rgba(163,93,10,.05)}
+.ec-railitem{display:flex;flex-direction:column;min-width:96px;max-width:138px;border-top:1px dashed var(--e-faintline);padding-top:4px}
+.ec-railitem:first-child{border-top:0;padding-top:0}
+.ec-railitem.seat{opacity:.7}
+.ec-railitem>span{overflow:hidden;text-overflow:ellipsis}
+.ec-jj{border:1px solid var(--e-line);border-radius:4px;padding:0 3px;margin-right:4px;font-size:12px;color:#6f7682}
+.ec-rail tfoot th,.ec-rail tfoot td{border-top:1px solid var(--e-line2)}
+.ec-tone{border-radius:999px;padding:1px 6px;font-size:13px;font-weight:700}
+.ec-tone.caution{background:var(--e-amber-s);color:var(--e-amber)}.ec-tone.inert{background:var(--e-soft);color:#4b5565}
+.ec-tone.positive{background:var(--e-green-s);color:var(--e-green)}.ec-tone.critical{background:var(--e-danger-s);color:var(--e-danger)}
+.ec-tone.info{background:var(--e-blue-s);color:var(--e-blue)}.ec-tone.special{background:var(--e-purple-s);color:var(--e-purple)}.ec-tone.brand{background:var(--e-primary-s);color:var(--e-primary)}
+.ec-calslotbody>.ec-tone{align-self:flex-start}
+.ec-mpwrap{overflow-x:auto;scrollbar-width:none;padding:12px}
+.ec-mpwrap::-webkit-scrollbar{display:none}
+.ec-mpdoc{width:fit-content;color:#000}
+.ec-mphead{display:flex;align-items:stretch}
+.ec-mplogo{display:flex;align-items:center;justify-content:center;flex-shrink:0;font:800 22px Arial,Helvetica,sans-serif;color:#4285f4}
+.ec-mptitlebox{display:flex;flex-direction:column;flex:1;min-width:0}
+.ec-mptitle{display:flex;flex-direction:column;align-items:center;justify-content:center;padding:0 8px;text-align:center;margin:0}
+.ec-mpnotices{display:flex;flex:1;flex-direction:column;justify-content:center;padding:4px 8px}
+.ec-mpnotices p{margin:0;text-align:center}
+.ec-mpside{display:flex;flex-direction:column;flex-shrink:0}
+.ec-mpteacher{display:flex;align-items:center;justify-content:center}
+.ec-mplegend{display:flex;align-items:center;justify-content:center;padding:0 2px;margin:0;text-align:center}
+.ec-mptable{border-collapse:separate;border-spacing:0}
+.ec-mptable th,.ec-mptable td{padding:4px}
+.ec-mptable td[style*="height"]{padding:0;vertical-align:top}
+.ec-mpsticky{position:sticky;left:0;z-index:3}
+.ec-mpdate{display:flex;flex-wrap:wrap;align-items:center;justify-content:center;gap:6px}
+.ec-mpvalue{display:flex;height:100%;width:100%;align-items:center;justify-content:center;overflow:hidden;padding:0 2px;white-space:pre-line}
+.ec-mpactual{color:rgba(0,0,0,.7)}.ec-mpnone{color:rgba(0,0,0,.4)}
+.ec-mpfooter{padding:8px 12px;text-align:center}
+.ec-mpfooter p{margin:0}
+.ec-mpfootertext{white-space:pre-line;padding:2px 4px}
+
+/* 오늘 — 반마다 카드 한 장, 그날 교시 카드를 가로로 */
+.ec-today{display:flex;flex-direction:column;gap:12px;min-width:0}
+.ec-weekhint{margin:0 4px;font-size:16px;line-height:1.6;color:#4b5565}
+.ec-holistrip{margin:0;border:1px solid rgba(188,56,56,.3);background:rgba(211,63,63,.05);border-radius:16px;padding:10px 16px;font-size:15px}
+.ec-holistrip b:first-child{color:var(--e-danger)}
+.ec-todayempty{padding:20px 16px}
+.ec-todaycard{background:var(--e-card);border:1px solid var(--e-ink);box-shadow:0 0 0 1px var(--e-line);border-radius:16px;overflow-x:auto;scrollbar-width:none;max-width:100%}
+.ec-todaycard::-webkit-scrollbar{display:none}
+.ec-todayinner{padding:8px}
+.ec-todayhead{display:flex;align-items:baseline;gap:8px;padding-bottom:6px;min-width:0}
+.ec-todaytitle{font-size:18px;font-weight:800;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+a.ec-todaytitle:hover{text-decoration:underline}
+.ec-todaytop{display:flex;align-items:flex-start}
+.ec-todayslot{flex-shrink:0;border-left:1px solid var(--e-line2);padding:0 6px;display:grid}
+.ec-block.flat{grid-row:auto;grid-template-rows:auto auto;border:0;box-shadow:none;border-radius:0;padding:0;background:none}
+.ec-todaysep{border-top:1px solid var(--e-line2);margin:6px -8px}
+.ec-rostertable .edge{border-left:1px solid var(--e-line2)!important}
+.ec-input:disabled{background:#fafbfc;color:#8a8f98}
+
+/* 2.0 시트 폭 게이트(globals.css .sheet-width-gate — SHEET_MIN_WIDTH 480) — 넓힐 수 있는 사람(마우스)에게만 */
+.ec-toonarrow{display:none}
+.ec-narrowcard{max-width:19rem;margin:24px auto;text-align:center;display:flex;flex-direction:column;gap:8px;align-items:center}
+.ec-narrowcard p{margin:0;font-size:14px;line-height:1.6}
+.ec-narrowtitle{font-size:17px!important;font-weight:700;color:var(--e-ink)}
+@media screen and (max-width:479.98px) and (pointer:fine){.ec-widthgate{display:none}.ec-toonarrow{display:block}}
