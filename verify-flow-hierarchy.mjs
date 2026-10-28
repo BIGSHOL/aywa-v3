@@ -162,7 +162,7 @@ test('uncertain leaves escalate their teacher; an invalid base answer escalates 
   await c.svc.hierarchyRuntime.idle();
   tree = c.svc.hierarchy(CASE);
   const leaf = studentIn(tree, 'c1', 's1').ai;
-  assert.deepEqual([leaf.status, leaf.reason, leaf.priority], ['error', '판정 키가 설정되지 않음', undefined], 'no fake leaf');
+  assert.deepEqual([leaf.status, leaf.reason, leaf.priority], ['error', '지금 AI를 쓸 수 없음', undefined], 'no fake leaf');
   assert.equal(p3.calls.jev.length, 28, 'a final error is not retried');
   assert.equal(nodeOf(tree, `teacher:${T.t1}`).ai.partial, true, 'teacher summarized explicitly as partial');
   assert.equal(tree.analysis.status, 'partial');
@@ -192,7 +192,7 @@ test('budget holds jobs visibly; disabled mode answers from cache only', async (
   await new Promise(r => setTimeout(r, 50));
   const tree = svc.hierarchy(CASE);
   assert.equal(providers.calls.jev.length, 3); assert.equal(providers.calls.claude.length, 0);
-  assert.equal(tree.analysis.status, 'running'); assert(nodes(tree).some(n => n.ai?.reason === '이 PC의 시간당 호출 한도에 걸려 기다립니다.'));
+  assert.equal(tree.analysis.status, 'running'); assert(nodes(tree).some(n => n.ai?.reason === '사용량이 많아 잠시 기다립니다.'));
   await svc.close();
   const off = await hierarchyService({ dir, providers: null });
   const t2 = off.svc.hierarchy(CASE);

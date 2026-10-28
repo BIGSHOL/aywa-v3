@@ -126,8 +126,8 @@ export async function createFlowAI({ env = process.env, dir = env.OWNER_CONCEPT_
     route: (c, source) => evaluate(c, source, AREA[c.scenario]),
     analyze: (c, source, opts) => evaluate(c, source, AREA[c.scenario] || TASK_AREA[c.taskKind] || FAMILY_AREA[c.familyId] || null, opts),
     status: () => ({ providers: [
-      { id: 'jev', label: 'Jev 판정', status: engine ? (keySource || env.TYPESAFE_API_KEY ? 'ready' : 'unavailable') : 'unavailable', ...(engine ? (keySource || env.TYPESAFE_API_KEY ? {} : { reason: '판정 키가 설정되지 않음' }) : { reason: '판정 모듈이 연결되지 않음' }) },
-      { id: 'claude-cli', label: 'Claude 초안', status: draftFn ? 'ready' : 'unavailable', ...(draftFn ? {} : { reason: '초안 모듈이 연결되지 않음' }) },
+      { id: 'jev', label: 'AI 판정', status: engine ? (keySource || env.TYPESAFE_API_KEY ? 'ready' : 'unavailable') : 'unavailable', ...(engine ? (keySource || env.TYPESAFE_API_KEY ? {} : { reason: '판정 키가 설정되지 않음' }) : { reason: '판정 모듈이 연결되지 않음' }) },
+      { id: 'claude-cli', label: 'AI 설명 초안', status: draftFn ? 'ready' : 'unavailable', ...(draftFn ? {} : { reason: '초안 모듈이 연결되지 않음' }) },
     ] }),
   };
 }

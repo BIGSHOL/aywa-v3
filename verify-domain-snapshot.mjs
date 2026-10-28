@@ -48,10 +48,10 @@ check('same facts as the base model and the AX issues', () => {
   assert.equal(metric('billing', '이번 달 할인 전 금액') - metric('billing', '이번 달 할인') - metric('billing', '이번 달 수납'), 329000, 'unpaid = gross − discount − paid');
   assert.equal(metric('students', '재원'), snapshot.students.filter(s => s.status === 'enrolled').length);
   assert.equal(metric('attendance', '이번 달 출결 칸'), snapshot.attendance.statuses.reduce((n, s) => n + s.count, 0));
-  assert.equal(metric('attendance', '결석'), snapshot.attendance.statuses.find(s => s.label === 'absent').count);
+  assert.equal(metric('attendance', '이번 달 결석'), snapshot.attendance.statuses.find(s => s.label === 'absent').count);
   const leads = snapshot.admissions.filter(a => a.date.startsWith(month));
   assert.equal(metric('enrollment', '이번 달 접수'), leads.length);
-  assert.equal(metric('enrollment', '상담·검토 단계'), leads.filter(a => ['scheduled', 'consulted', 'ai_done'].includes(a.outcome)).length);
+  assert.equal(metric('enrollment', '이번 달 접수 중 상담·검토 단계'), leads.filter(a => ['scheduled', 'consulted', 'ai_done'].includes(a.outcome)).length);
   assert.equal(metric('tasks-notifications', '늦은 할 일'), snapshot.tasks.filter(t => t.status === 'open' && t.due && t.due < asOf).length);
   assert.equal(metric('textbook-requests', '요청·주문 단계'), snapshot.textbooks.filter(t => ['requested', 'ordered'].includes(t.status)).length);
   assert.equal(metric('approvals', '결재 대기'), snapshot.approvals.filter(a => a.status === 'pending').length);
@@ -67,10 +67,13 @@ try {
   await db.begin('isolation level repeatable read read only', async sql => {
     const count = async table => (await sql`select count(*)::int c from ${sql(`public.${table}`)} where tenant_id=${tenantId}`)[0].c;
     // Families whose evidence is the whole tenant table — an independent count must match.
-    for (const [id, tables] of Object.entries({ onescreen: ['classnote_notices'], approvals: ['approval_documents'], documents: ['academy_documents'], calendar: ['calendar_events'], 'tasks-notifications': ['staff_tasks'], integrations: ['makeedu_sync_runs'], slack: ['slack_rules'], inventory: ['inventory_assets'], 'withdrawal-reports': ['withdrawal_reports', 'withdrawal_report_archives'], payroll: ['payslips'], 'class-sheets': ['class_sheet_plan_lines'], 'class-review': ['teacher_portfolio_months'], 'owner-settings': ['notice_popups', 'operating_periods', 'classrooms'] })) {
+    for (const [id, tables] of Object.entries({ onescreen: ['classnote_notices'], approvals: ['approval_documents'], documents: ['academy_documents'], calendar: ['calendar_events'], 'tasks-notifications': ['staff_tasks'], integrations: ['makeedu_sync_runs'], slack: ['slack_rules'], inventory: ['inventory_assets'], 'withdrawal-reports': ['withdrawal_reports', 'withdrawal_report_archives'], payroll: ['payslips'], 'class-sheets': ['class_sheet_plan_lines'], 'owner-settings': ['notice_popups', 'operating_periods', 'classrooms'] })) {
       let n = 0; for (const table of tables) n += await count(table);
       assert.equal(F[id].totalRecords, n, `${id} evidence = full ${tables.join('+')}`);
     }
+    // 직원 평가 = 포트폴리오 전체 + 만족도 확인 대기 글(원장 10-28 '만족도를 확인하러 가고 싶은데' — 근거로 함께 실었다).
+    const [{ c: pendingSatisfaction }] = await sql`select count(*)::int c from public.teacher_satisfaction_judgments where tenant_id=${tenantId} and state='pending'`;
+    assert.equal(F['class-review'].totalRecords, await count('teacher_portfolio_months') + pendingSatisfaction, 'class-review evidence = portfolio + pending satisfaction');
     done.push('whole-table families match independent counts');
 
     // Every evidence id is a row of its source table in this tenant, and of no other tenant.
@@ -78,9 +81,10 @@ try {
     for (const f of Object.values(F)) {
       const ids = (f[EVIDENCE] || []).map(r => r.id); if (!ids.length) continue;
       const sources = f.recordSource.split(','); for (const s of sources) assert(/^[a-z_]+$/.test(s) && tables.has(s), `${f.id} source ${s}`);
-      const composite = sources[0] === 'teacher_portfolio_months', keyed = sources[0] === 'tenant_settings';
       const found = new Set(), foreign = [];
       for (const s of sources) {
+        // 표마다 id 모양이 다르다(직원 평가 = 포트폴리오 '선생님:월' + 만족도 판정 id).
+        const composite = s === 'teacher_portfolio_months', keyed = s === 'tenant_settings';
         const idExpr = composite ? sql`teacher_id::text||':'||month` : keyed ? sql`tenant_id::text` : sql`id::text`;
         for (const r of await sql`select ${idExpr} as id, tenant_id = ${tenantId} as own from ${sql(`public.${s}`)} where ${idExpr} = any(${ids})`) { if (r.own) found.add(r.id); else foreign.push(r.id); }
       }

@@ -91,7 +91,7 @@ test('AI failure keeps the work visible with a review reason (no fake judgment)'
   const { svc } = await service({ mode: 'throws' });
   const r = await send(svc, { actorId: IDS.t2, kind: 'event.simulate', payload: { scenario: 'consultation' } });
   const c = caseOf(svc, r.caseId);
-  assert.deepEqual([c.decision.status, c.decision.reason, c.decision.codes, c.decision.probabilities, c.flags.needsReview], ['error', '판정 호출 실패', ['decision_call_failed'], null, true]);
+  assert.deepEqual([c.decision.status, c.decision.reason, c.decision.codes, c.decision.probabilities, c.flags.needsReview], ['error', '자동 판정을 받지 못함', ['decision_call_failed'], null, true]);
   assert.deepEqual(stepOf(c, 'counselor_followup').assigneeIds, [IDS.t2], 'routing is code: the counselor of that consultation');
   await send(svc, { actorId: IDS.t2, kind: 'case.report', caseId: c.id, payload: { note: '학부모 통화' } });
   assert.equal(stepOf(caseOf(svc, c.id), 'manager_review').status, 'ready', 'a failed judgment forces the review step');

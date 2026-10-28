@@ -244,7 +244,7 @@ window.AxCatalog = {
      "mode": "preview",
      "draft": {
       "title": "일정 미리보기",
-      "body": "학원 일정에 추가될 모습을 미리 봅니다. 구글 캘린더로는 보내지 않습니다."
+      "body": "학원 일정에 추가될 모습을 미리 봅니다."
      },
      "fields": [
       {
@@ -328,7 +328,7 @@ window.AxCatalog = {
    "facets": [
     {
      "id": "open",
-     "label": "열린 일",
+     "label": "남은 일",
      "kind": "filter"
     },
     {
@@ -374,7 +374,7 @@ window.AxCatalog = {
      "mode": "preview",
      "draft": {
       "title": "할 일 목록",
-      "body": "자동 할 일은 기록이 바뀌면 저절로 닫힙니다. 여기서는 종류와 상태로 거른 목록을 봅니다."
+      "body": "종류와 상태로 거른 할 일 목록을 봅니다."
      },
      "fields": [
       {
@@ -625,7 +625,7 @@ window.AxCatalog = {
      "mode": "preview",
      "draft": {
       "title": "AI 멘트 미리보기",
-      "body": "이 화면은 AI를 부르지 않습니다. 자동작성에 들어가는 입력 칸을 확인하는 양식입니다."
+      "body": "자동작성에 들어갈 원생과 선생님 특이사항을 확인합니다."
      },
      "fields": [
       {
@@ -642,7 +642,7 @@ window.AxCatalog = {
       }
      ],
      "result": {
-      "label": "입력 확인 — AI 호출 없음",
+      "label": "입력 확인",
       "liveWrite": false
      },
      "sourceOperationIds": [
@@ -658,7 +658,7 @@ window.AxCatalog = {
      "mode": "preview",
      "draft": {
       "title": "학부모 공지 미리보기",
-      "body": "반 학부모에게 보낼 공지 문구를 미리 봅니다. 실제 ClassNote 발송은 하지 않습니다."
+      "body": "반 학부모에게 보낼 공지 문구를 미리 봅니다."
      },
      "fields": [
       {
@@ -985,7 +985,7 @@ window.AxCatalog = {
      "mode": "preview",
      "draft": {
       "title": "반 배치 이동 미리보기",
-      "body": "반의 요일·시각을 옮긴 모습을 확인합니다. 운영 시간표는 바뀌지 않습니다."
+      "body": "반의 요일·시각을 옮긴 모습을 확인합니다."
      },
      "fields": [
       {
@@ -1425,7 +1425,7 @@ window.AxCatalog = {
      "mode": "preview",
      "draft": {
       "title": "출결 기록 미리보기",
-      "body": "출결 칸에 들어갈 상태와 사유를 확인합니다. 출석부는 바뀌지 않습니다."
+      "body": "출결 칸에 들어갈 상태와 사유를 확인합니다."
      },
      "fields": [
       {
@@ -1624,7 +1624,7 @@ window.AxCatalog = {
      "mode": "preview",
      "draft": {
       "title": "출결 요약",
-      "body": "기간의 출결 집계를 봅니다. 이 시안은 AI 요약을 부르지 않습니다."
+      "body": "기간의 출결 집계를 봅니다."
      },
      "fields": [
       {
@@ -1641,7 +1641,7 @@ window.AxCatalog = {
       }
      ],
      "result": {
-      "label": "집계 미리보기 — AI 호출 없음",
+      "label": "집계 미리보기",
       "liveWrite": false
      },
      "sourceOperationIds": [
@@ -1749,7 +1749,7 @@ window.AxCatalog = {
      },
      "draft": {
       "title": "반 목록 열기",
-      "body": "현재 시안의 수업·시간표 화면을 엽니다."
+      "body": "수업·시간표 화면을 엽니다."
      },
      "fields": [],
      "result": {
@@ -1986,7 +1986,7 @@ window.AxCatalog = {
      "mode": "preview",
      "draft": {
       "title": "강의실 자동배정 미리보기",
-      "body": "반마다 강의실을 자동으로 정했을 때 바뀌는 반만 확인합니다. 적용하지 않습니다."
+      "body": "반마다 강의실을 자동으로 정했을 때 바뀌는 반만 확인합니다."
      },
      "fields": [],
      "result": {
@@ -2637,7 +2637,7 @@ window.AxCatalog = {
      "mode": "preview",
      "draft": {
       "title": "수업보고서 미리보기",
-      "body": "학부모에게 보일 보고서 카드를 미리 봅니다. 발송하지 않습니다."
+      "body": "학부모에게 보일 보고서 카드를 미리 봅니다."
      },
      "fields": [
       {
@@ -2780,7 +2780,7 @@ window.AxCatalog = {
      "mode": "preview",
      "draft": {
       "title": "학부모 답글 미리보기",
-      "body": "학부모 글에 남길 답글을 미리 봅니다. 실제로 게시하지 않습니다."
+      "body": "학부모 글에 남길 답글을 미리 봅니다."
      },
      "fields": [
       {
@@ -2813,7 +2813,7 @@ window.AxCatalog = {
      },
      "draft": {
       "title": "학부모 소통 보기",
-      "body": "현재 시안의 학부모 소통 화면을 엽니다."
+      "body": "학부모 소통 화면을 엽니다."
      },
      "fields": [],
      "result": {
@@ -3065,7 +3065,7 @@ window.AxCatalog = {
      },
      "draft": {
       "title": "원생 화면 열기",
-      "body": "현재 시안의 원생 화면(검색·상세)을 엽니다."
+      "body": "원생 검색·상세 화면을 엽니다."
      },
      "fields": [],
      "result": {
@@ -3466,7 +3466,7 @@ window.AxCatalog = {
      "mode": "preview",
      "draft": {
       "title": "원생 기록 요약",
-      "body": "최근 기록을 모아 봅니다. 이 시안은 AI 요약을 부르지 않습니다."
+      "body": "최근 기록을 모아 봅니다."
      },
      "fields": [
       {
@@ -3477,7 +3477,7 @@ window.AxCatalog = {
       }
      ],
      "result": {
-      "label": "기록 모음 — AI 호출 없음",
+      "label": "기록 모음",
       "liveWrite": false
      },
      "sourceOperationIds": [
@@ -3668,7 +3668,7 @@ window.AxCatalog = {
      },
      "draft": {
       "title": "학습·성과 보기",
-      "body": "현재 시안의 학습·성과 화면을 엽니다."
+      "body": "학습·성과 화면을 엽니다."
      },
      "fields": [],
      "result": {
@@ -3850,7 +3850,7 @@ window.AxCatalog = {
      "mode": "preview",
      "draft": {
       "title": "녹음 상담",
-      "body": "녹음 업로드 후 전사·분석이 진행되는 흐름입니다. 이 시안은 파일을 올리거나 분석하지 않습니다."
+      "body": "녹음을 올리면 전사·분석으로 이어지는 흐름을 봅니다."
      },
      "fields": [
       {
@@ -3866,7 +3866,7 @@ window.AxCatalog = {
       }
      ],
      "result": {
-      "label": "흐름 안내 — 업로드 없음",
+      "label": "흐름 안내",
       "liveWrite": false
      },
      "sourceOperationIds": [
@@ -3944,7 +3944,7 @@ window.AxCatalog = {
      },
      "draft": {
       "title": "신규 상담 보기",
-      "body": "현재 시안의 신규 콜&상담 화면을 엽니다."
+      "body": "신규 콜&상담 화면을 엽니다."
      },
      "fields": [],
      "result": {
@@ -4131,7 +4131,7 @@ window.AxCatalog = {
      "mode": "preview",
      "draft": {
       "title": "상담 준비",
-      "body": "이전 상담과 같은 사람 기록을 모아 봅니다. 이 시안은 AI 분석을 부르지 않습니다."
+      "body": "이전 상담과 같은 사람의 기록을 모아 봅니다."
      },
      "fields": [
       {
@@ -4142,7 +4142,7 @@ window.AxCatalog = {
       }
      ],
      "result": {
-      "label": "기록 모음 — AI 호출 없음",
+      "label": "기록 모음",
       "liveWrite": false
      },
      "sourceOperationIds": [
@@ -4172,11 +4172,11 @@ window.AxCatalog = {
     },
     {
      "id": "enrollment.makeedu",
-     "label": "makeedu 전송 요청",
+     "label": "메이크에듀 전송 요청",
      "mode": "request",
      "draft": {
-      "title": "makeedu 상담 전송",
-      "body": "QR 접수 상담을 makeedu로 보내 주세요(연동 PC 필요)."
+      "title": "메이크에듀 상담 전송",
+      "body": "QR 접수 상담을 메이크에듀로 보내 주세요(연동 PC 필요)."
      },
      "fields": [
       {
@@ -4758,7 +4758,7 @@ window.AxCatalog = {
      "mode": "preview",
      "draft": {
       "title": "퇴원보고서 결정 미리보기",
-      "body": "보고서 단계가 바뀌는 내용을 확인합니다. 실제 퇴원 처리는 하지 않습니다."
+      "body": "보고서 단계가 바뀌는 내용을 확인합니다."
      },
      "fields": [
       {
@@ -4883,7 +4883,7 @@ window.AxCatalog = {
      },
      "draft": {
       "title": "직원 화면 열기",
-      "body": "현재 시안의 직원 화면을 엽니다."
+      "body": "직원 화면을 엽니다."
      },
      "fields": [],
      "result": {
@@ -5191,7 +5191,7 @@ window.AxCatalog = {
      "mode": "preview",
      "draft": {
       "title": "급여명세서 미리보기",
-      "body": "출석부 실급여 합계 기준 명세서 구성을 확인합니다. 발행하지 않습니다."
+      "body": "출석부 실급여 합계 기준 명세서 구성을 확인합니다."
      },
      "fields": [
       {
@@ -5344,7 +5344,7 @@ window.AxCatalog = {
      },
      "draft": {
       "title": "수납 화면 열기",
-      "body": "현재 시안의 수납·재무 화면을 엽니다."
+      "body": "수납·재무 화면을 엽니다."
      },
      "fields": [],
      "result": {
@@ -5399,7 +5399,7 @@ window.AxCatalog = {
      "mode": "preview",
      "draft": {
       "title": "수강료 견적",
-      "body": "회차 × 단가 − 할인으로 견적을 계산합니다. 저장하지 않습니다."
+      "body": "회차 × 단가 − 할인으로 견적을 계산합니다."
      },
      "fields": [
       {
@@ -5591,7 +5591,7 @@ window.AxCatalog = {
      "mode": "preview",
      "draft": {
       "title": "환불 요청서 미리보기",
-      "body": "환불 요청서 내용을 확인합니다. 계좌 정보는 이 시안에 적지 않습니다."
+      "body": "환불 요청서 내용을 확인합니다. 계좌 정보는 적지 않습니다."
      },
      "fields": [
       {
@@ -5672,7 +5672,7 @@ window.AxCatalog = {
      },
      "draft": {
       "title": "교재 흐름 보기",
-      "body": "현재 시안의 교재·재고·서식 화면을 엽니다."
+      "body": "교재·재고·서식 화면을 엽니다."
      },
      "fields": [],
      "result": {
@@ -5882,7 +5882,7 @@ window.AxCatalog = {
      },
      "draft": {
       "title": "셔틀 화면 열기",
-      "body": "현재 시안의 차량·안전 화면을 엽니다."
+      "body": "차량·안전 화면을 엽니다."
      },
      "fields": [],
      "result": {
@@ -6579,7 +6579,7 @@ window.AxCatalog = {
      },
      "draft": {
       "title": "결재 화면 열기",
-      "body": "현재 시안의 업무·결재 화면을 엽니다."
+      "body": "업무·결재 화면을 엽니다."
      },
      "fields": [],
      "result": {
@@ -6650,7 +6650,7 @@ window.AxCatalog = {
      "mode": "preview",
      "draft": {
       "title": "결재 결정 미리보기",
-      "body": "결정 내용을 확인합니다. 실제 결재 상태는 바뀌지 않습니다."
+      "body": "결정 내용을 확인합니다."
      },
      "fields": [
       {
@@ -6747,7 +6747,7 @@ window.AxCatalog = {
      },
      "draft": {
       "title": "문서 보기",
-      "body": "현재 시안의 교재·재고·서식 화면에서 문서를 봅니다."
+      "body": "교재·재고·서식 화면에서 문서를 봅니다."
      },
      "fields": [],
      "result": {
@@ -6860,7 +6860,7 @@ window.AxCatalog = {
      "mode": "preview",
      "draft": {
       "title": "개선요청 미리보기",
-      "body": "보낼 개선요청을 확인합니다. 실제로 접수하지 않습니다."
+      "body": "보낼 개선요청을 확인합니다."
      },
      "fields": [
       {
@@ -7052,7 +7052,7 @@ window.AxCatalog = {
      },
      "draft": {
       "title": "설정 화면 열기",
-      "body": "현재 시안의 학원 설정 화면을 엽니다."
+      "body": "학원 설정 화면을 엽니다."
      },
      "fields": [],
      "result": {
@@ -7067,7 +7067,7 @@ window.AxCatalog = {
      "mode": "preview",
      "draft": {
       "title": "학원 설정 면",
-      "body": "고른 설정 면의 항목을 봅니다. 저장하지 않습니다."
+      "body": "고른 설정 면의 항목을 봅니다."
      },
      "fields": [
       {
@@ -7404,7 +7404,7 @@ window.AxCatalog = {
      },
      "draft": {
       "title": "자동화 설정",
-      "body": "현재 시안의 자동화 화면을 엽니다."
+      "body": "자동화 화면을 엽니다."
      },
      "fields": [],
      "result": {
@@ -7421,7 +7421,7 @@ window.AxCatalog = {
      "mode": "preview",
      "draft": {
       "title": "슬랙 규칙 미리보기",
-      "body": "고른 범주의 알림이 어디로 가는지 확인합니다. 실제로 보내지 않습니다."
+      "body": "고른 범주의 알림이 어디로 가는지 확인합니다."
      },
      "fields": [
       {
@@ -7543,12 +7543,12 @@ window.AxCatalog = {
    "group": "연동·자동화",
    "groupId": "integration",
    "page": "workspace-integrations",
-   "summary": "makeedu·구글 시트·숙제영상 드라이브·연동 PC·오늘 수학 연결을 봅니다.",
+   "summary": "메이크에듀·구글 시트·숙제영상 드라이브·연동 PC·오늘 수학 연결을 봅니다.",
    "viewKind": "settings",
    "facets": [
     {
      "id": "makeedu",
-     "label": "makeedu 동기화",
+     "label": "메이크에듀 동기화",
      "kind": "face"
     },
     {
@@ -7579,7 +7579,7 @@ window.AxCatalog = {
      "mode": "preview",
      "draft": {
       "title": "연동 상태",
-      "body": "연동의 켜짐 여부와 최근 이력을 봅니다. 이 시안은 외부 연동을 실행하지 않습니다."
+      "body": "연동의 켜짐 여부와 최근 이력을 봅니다."
      },
      "fields": [
       {
@@ -7628,7 +7628,7 @@ window.AxCatalog = {
      "mode": "request",
      "draft": {
       "title": "연동 PC 점검",
-      "body": "연동 PC(AywaSync)의 상태를 확인하고 필요하면 다시 연결해 주세요."
+      "body": "연동 PC의 상태를 확인하고 필요하면 다시 연결해 주세요."
      },
      "fields": [
       {

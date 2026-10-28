@@ -11,7 +11,7 @@ window.createExitInsight = function createExitInsight(api) {
   const pill = (t, tone = '') => `<span class="ax-chip ${tone}">${h(t)}</span>`;
   const btn = (label, attrs, cls = '') => `<button type="button" class="xi-btn ${cls}" ${attrs}>${label}</button>`;
   const TABLE = { students: '원생', enrollments: '수강', attendance_records: '출결', student_consultations: '원생상담', withdrawal_reports: '퇴원보고서', withdrawal_report_archives: '퇴원보고서 시트', student_grades: '성적', invoices: '청구', classes: '반', class_schedules: '시간표 배치', audit_logs: '변경 기록', users: '직원' };
-  const STATUS = { disabled: ['자동 분석 꺼짐', ''], not_scheduled: ['코드 집계만', ''], queued: ['AI 분석 대기', 'blue'], running: ['AI 분석 중', 'blue'], partial: ['AI 분석 일부 완료', 'amber'], complete: ['AI 분석 완료', 'green'], error: ['AI 분석 오류', 'amber'] };
+  const STATUS = { disabled: ['자동 분석 꺼짐', ''], not_scheduled: ['기록 집계만', ''], queued: ['AI 분석 대기', 'blue'], running: ['AI 분석 중', 'blue'], partial: ['AI 분석 일부 완료', 'amber'], complete: ['AI 분석 완료', 'green'], error: ['AI 분석 오류', 'amber'] };
   const st = { index: null, data: null, ask: 0, timer: 0, from: null, to: null, stop: null };
 
   const loadIndex = () => (st.index ? Promise.resolve(st.index) : fetch(ENDPOINT, { headers: { Accept: 'application/json' } }).then(r => (r.ok ? r.json() : null)).catch(() => null).then(j => (st.index = j)));
@@ -83,7 +83,7 @@ window.createExitInsight = function createExitInsight(api) {
     const mark = n => `<sup class="xi-fn"><a href="#xi-n-${h(c.id)}-${n}" data-xi="fact" data-fn aria-label="근거 ${n}">[${n}]</a></sup>`;
     const chain = c.ai ? c.ai.chain.map(s => `<li><span>${rich(s.text)}</span>${[...new Set(s.facts.map(f => { const fact = factFor(f); return fact ? number(f.ref, f.key, fact) : 0; }).filter(Boolean))].map(mark).join('')}</li>`).join('') : '';
     for (const f of c.facts) number(c.id, f.key, f);
-    const ai = c.ai ? `<div class="xi-ai">${pill(`AI · ${c.ai.confidence}`, c.ai.confidence === '분명' ? 'green' : c.ai.confidence === '사람 확인' ? 'amber' : 'blue')}<p>${rich(c.ai.summary)}</p><ol class="xi-chain">${chain}</ol></div>` : '';
+    const ai = c.ai ? `<div class="xi-ai">${pill('AI 초안', 'blue')}${c.ai.confidence === '사람 확인' ? pill('사람 확인', 'amber') : ''}<p>${rich(c.ai.summary)}</p><ol class="xi-chain">${chain}</ol></div>` : '';
     const facts = `<ol class="xi-notes" aria-label="근거">${notes.map((f, n) => `<li id="xi-n-${h(c.id)}-${n + 1}"><span class="xi-n-no">[${n + 1}]</span><span class="xi-n-text">${f.label && f.label !== f.text ? `<b>${h(f.label)}</b> ` : ''}${h(f.text || '')}</span>${factSource(f)}${factOpen(f)}</li>`).join('')}</ol>`;
     return `<article class="xi-cluster" ${i >= 8 ? 'data-more hidden' : ''}><header><div>${pill(c.kindLabel)}<h4>${h(c.label)}</h4></div><strong>${fmt(c.members.length)}명 · ${signed(c.amount)}</strong></header>${ai}${facts}${btn(`이 묶음 학생 ${fmt(c.members.length)}명 보기`, `data-xi="filter" data-filter="cluster:${h(c.id)}"`, 'link')}</article>`;
   }
@@ -101,8 +101,8 @@ window.createExitInsight = function createExitInsight(api) {
   function view(d) {
     const a = d.analysis, more = d.clusters.length - 8;
     return `<div class="xi" data-filter="">${pairs(d)}<div class="xi-totals"><div><span>${ym(d.from)} 청구</span><strong>${won(d.totals.from)}</strong></div><div><span>${ym(d.to)} 청구</span><strong>${won(d.totals.to)}</strong></div><div><span>차이</span><strong class="${d.totals.delta < 0 ? 'neg' : d.totals.delta > 0 ? 'pos' : ''}">${signed(d.totals.delta)}</strong></div></div>
-      <section><h3>① 청구 변화 내역</h3><p class="xi-note">${h(d.basis.billing)}. 나눈 금액의 합이 차이와 ${d.check.exact ? '정확히 같습니다' : `다릅니다(합 ${signed(d.check.sum)})`}. ${h(d.basis.special)}.</p>${bars(d)}</section>
-      <section><h3>② 원인 묶음</h3>${aiLine(a)}${overall(d)}<p class="xi-note">묶음은 빠진 학생의 기록을 코드로 이어 만든 후보입니다. 한 학생이 여러 묶음에 들 수 있습니다. ${h(d.basis.teacher)}.</p><div class="xi-clusters">${d.clusters.map((c, i) => cluster(c, i, d)).join('')}</div>${more > 0 ? btn(`나머지 묶음 ${fmt(more)}개 보기`, 'data-xi="more"', 'link') : ''}</section>
+      <section><h3>① 청구 변화 내역</h3><p class="xi-note">${h(d.basis.billing)}.${d.check.exact ? '' : ` <strong>나눈 금액의 합이 차이와 다릅니다(합 ${signed(d.check.sum)}).</strong>`} ${h(d.basis.special)}.</p>${bars(d)}</section>
+      <section><h3>② 원인 묶음</h3>${aiLine(a)}${overall(d)}<p class="xi-note">묶음은 빠진 학생의 기록을 이어 만든 후보입니다(한 학생이 여러 묶음에 들 수 있음). ${h(d.basis.teacher)}.</p><div class="xi-clusters">${d.clusters.map((c, i) => cluster(c, i, d)).join('')}</div>${more > 0 ? btn(`나머지 묶음 ${fmt(more)}개 보기`, 'data-xi="more"', 'link') : ''}</section>
       <section id="xi-students"><h3>③ 빠진 학생별 기록 <span class="xi-count">${fmt(d.students.length)}명</span></h3><div class="xi-filter-line" hidden><span></span>${btn('전체 보기', 'data-xi="filter" data-filter=""', 'link')}</div><p class="xi-note">${h(d.basis.cleanup)}. ‘기록’은 퇴원 기록에 적힌 사유, ‘AI 추정’은 사유가 비어 있어 다른 기록으로 짐작한 것입니다.</p><ul class="xi-students">${d.students.map(student).join('')}</ul></section></div>`;
   }
   // In-dialog jumps glide inside the dialog body and brake into place (AGENTS.md scroll rule); any input stops them.

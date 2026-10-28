@@ -1,5 +1,5 @@
 // 수업 영역 패밀리 — 원스크린·영상 숙제·시간표·강사 시트(+ 두 번째 묶음).
-import { PRIORITY, addDays, countOf, family, field, md, metric, monthlyTrend, record, signal, sumOf } from './domain-snapshot-core.mjs';
+import { PRIORITY, addDays, countOf, family, field, md, metric, monthlyTrend, record, signal, sumOf, yymm } from './domain-snapshot-core.mjs';
 import { attendanceFamilies } from './domain-snapshot-academic2.mjs';
 import { teacherWorkWeekly } from './v2-teacher-work.mjs';
 import { importV2 } from './v2-bridge.mjs';
@@ -19,7 +19,6 @@ export async function academicFamilies(ctx) {
   // 2.0 판정을 불러오지 못하면(모듈·원본 파일) 이 KPI만 비우고 나머지 영역은 그대로 뜬다.
   let windows = null, osKpis = [];
   try { ({ windows, kpis: osKpis } = await teacherWorkWeekly({ sql, asOf, tenantId: t, importV2 })); } catch (e) { console.error(`workspaces.onescreen KPI: ${e.message}`); }
-  const shownPct = v => (v === null ? '기록 없음' : `${v.toFixed(1)}%`);
   // 공지마다 누가·어느 반·누구에게 보냈는지로 이름을 붙인다(원장 10-28 "전부 이름이 일치하는데 뭘 말하고 싶은건지 알 수가 없음"). 본문은 싣지 않는다.
   const notices = await sql`select n.id, n.status, to_char(n.created_at at time zone 'Asia/Seoul','YYYY-MM-DD') d, case when jsonb_typeof(n.targets)='array' then jsonb_array_length(n.targets) end targets,
     u.display_name sender, case when jsonb_typeof(n.targets)='array' then (select array_agg(distinct e->>'className') from jsonb_array_elements(n.targets) e where e->>'className' is not null) end class_names,
@@ -29,13 +28,13 @@ export async function academicFamilies(ctx) {
     return `${n.sender || '보낸 사람 모름'} → ${cls.length ? `${cls[0]}${cls.length > 1 ? ` 외 ${cls.length - 1}개 반` : ''} · ` : ''}${who}`; };
   const failedNotices = notices.filter(n => ['failed', 'partial'].includes(n.status) && n.d >= week);
   out.onescreen = family('onescreen', '선생님 수업보고서', {
-    summary: windows ? `최근 7일(${windows.at(-1).label}) ${osKpis.map(k => `${k.label} ${shownPct(k.value)}`).join(' · ')}.` : '수업보고서 KPI 추세를 계산하지 못했습니다.',
+    summary: `${windows ? '' : '수업보고서 지표를 계산하지 못했습니다. '}최근 7일${windows ? `(${windows.at(-1).label})` : ''} 학부모 공지 발송 실패 ${failedNotices.length}건.`,
     metrics: osKpis,
-    trend: monthlyTrend('월별 원스크린 학생 칸 기록', '건', await sql`select to_char(session_date,'YYYY-MM') as month, count(*)::int as value from public.onescreen_daily_sessions where tenant_id=${t} and session_date <= ${asOf} ${notTest} group by 1`, asOf),
+    trend: monthlyTrend('월별 수업보고서 학생 기록', '건', await sql`select to_char(session_date,'YYYY-MM') as month, count(*)::int as value from public.onescreen_daily_sessions where tenant_id=${t} and session_date <= ${asOf} ${notTest} group by 1`, asOf),
     evidence: notices.map(n => record({ id: n.id, label: noticeLabel(n), date: n.d, status: NOTICE[n.status] || '기타', fields: [field('대상', n.targets === null ? null : `${n.targets}명`), field('반', (n.class_names || []).join(', ') || null)], facets: [`status:${n.status}`] })),
     facetLabels: prefixed('status', NOTICE), recordSource: 'classnote_notices',
-    signals: failedNotices.length ? [signal({ id: 'onescreen-notice-failed', title: `공지 발송 실패 ${failedNotices.length}건`, summary: '최근 7일 공지 중 일부 또는 전체 발송에 실패한 기록입니다.', priority: PRIORITY.check, source: 'ClassNote 공지 발송 결과', recordIds: failedNotices.map(n => n.id), draft: { title: '공지 발송 실패 확인', body: '최근 7일 안에 발송에 실패한 공지가 있습니다. 대상과 결과를 확인하고 필요한 경우 다시 보내 주세요.' } })] : [],
-    sourceLabel: '원스크린 학생 칸 기록 · ClassNote 공지', coverageNote: `${os.last ? `원스크린 기록은 ${os.last}까지 있습니다.` : '원스크린 기록이 없습니다.'} 근거 목록은 ClassNote 공지 전체이며 공지 본문은 보여 주지 않습니다.`,
+    signals: failedNotices.length ? [signal({ id: 'onescreen-notice-failed', title: `최근 7일 학부모 공지 발송 실패 ${failedNotices.length}건`, summary: `보낸 선생님: ${Object.entries(Object.groupBy(failedNotices, n => n.sender || '보낸 사람 모름')).sort((a, b) => b[1].length - a[1].length).map(([k, v]) => `${k} ${v.length}`).join(' · ')}. 일부 실패 포함.`, priority: PRIORITY.check, source: 'ClassNote 공지 발송 결과', recordIds: failedNotices.map(n => n.id), draft: { title: '학부모 공지 발송 실패 확인', body: '최근 7일 안에 발송에 실패한 공지가 있습니다. 대상과 결과를 확인하고 필요한 경우 다시 보내 주세요.' } })] : [],
+    sourceLabel: '수업보고서 · 출결 · 영상 숙제 · 학부모 공지', coverageNote: `목록은 선생님이 보낸 학부모 공지입니다(최근 순).${!os.last ? ' 수업보고서 기록이 없습니다.' : os.last < asOf ? ` 수업보고서 기록은 ${md(os.last)}까지 있습니다.` : ''}`,
     sources: [{ table: 'onescreen_daily_sessions', rows: os.total }, { table: 'classnote_notices', rows: notices.length }],
   });
 
@@ -46,13 +45,13 @@ export async function academicFamilies(ctx) {
   const [links] = await sql`select count(*) filter (where revoked_at is null and expires_at > ${capturedAt}::timestamptz)::int active, count(*)::int total from public.homework_video_links where tenant_id=${t} ${notTest}`;
   const failedVideos = videos.filter(v => v.status === 'failed');
   out['video-homework'] = family('video-homework', '영상 숙제(제출 사이트·장부·AI 검토)', {
-    summary: `저장된 숙제 영상 ${videos.length - failedVideos.length}건(학생 ${new Set(videos.map(v => v.name)).size}명), ${month} 저장 ${videos.filter(v => v.up >= monthStart).length}건. 업로드 실패 ${failedVideos.length}건.`,
-    metrics: [metric('저장된 영상', videos.length - failedVideos.length, '건'), metric('이번 달 저장', videos.filter(v => v.up >= monthStart).length, '건', 'Drive 저장일 기준'), metric('업로드 실패', failedVideos.length, '건'), metric('이번 달 장부 완료', countOf(marks, 'submitted'), '칸', '선생님 검사 장부 · 숙제일 기준'), metric('이번 달 장부 미수행', countOf(marks, 'missing'), '칸'), metric('AI 참고 메모 완료', countOf(reviews, 'done'), '건', `실패 ${countOf(reviews, 'failed')}건`), metric('유효한 제출 링크', links.active, '개', `만료·해지 전 · 전체 발급 ${links.total}개`)],
-    trend: monthlyTrend('월별 영상 저장', '건', await sql`select to_char(uploaded_at at time zone 'Asia/Seoul','YYYY-MM') as month, count(*)::int as value from public.student_homework_videos where tenant_id=${t} and uploaded_at is not null ${notTest} group by 1`, asOf),
-    evidence: videos.map(r => record({ id: r.id, label: r.name, date: r.d, status: r.status === 'uploaded' ? '저장됨' : '업로드 실패', fields: [field('과목', subjectLabel(r.subject)), field('경로', r.source === 'link' ? '올리기 사이트' : 'ClassNote'), field('저장일', r.up)], facets: [`source:${r.source === 'link' ? 'link' : 'classnote'}`, `subject:${r.subject || 'none'}`, r.status === 'failed' && 'status:failed'] })),
+    summary: `영상을 올린 학생 ${new Set(videos.map(v => v.name)).size}명 · 이번 달 숙제 미수행 ${countOf(marks, 'missing')}칸(검사 장부).`,
+    metrics: [metric('저장된 숙제 영상', videos.length - failedVideos.length, '건', '전체 기간'), metric('이번 달 저장된 영상', videos.filter(v => v.up >= monthStart).length, '건', '저장일 기준'), metric('업로드 실패 영상', failedVideos.length, '건', '전체 기간'), metric('이번 달 숙제 검사 완료', countOf(marks, 'submitted'), '칸', '선생님 검사 장부 · 숙제일 기준'), metric('이번 달 숙제 미수행', countOf(marks, 'missing'), '칸'), metric('영상 AI 참고 메모', countOf(reviews, 'done'), '건', `실패 ${countOf(reviews, 'failed')}건`), metric('유효한 제출 링크', links.active, '개', `만료·해지 전 · 전체 발급 ${links.total}개`)],
+    trend: monthlyTrend('월별 저장된 숙제 영상', '건', await sql`select to_char(uploaded_at at time zone 'Asia/Seoul','YYYY-MM') as month, count(*)::int as value from public.student_homework_videos where tenant_id=${t} and uploaded_at is not null ${notTest} group by 1`, asOf),
+    evidence: videos.map(r => record({ id: r.id, label: r.name, date: r.d, status: r.status === 'uploaded' ? '저장됨' : '업로드 실패', fields: [field('과목', subjectLabel(r.subject)), field('경로', r.source === 'link' ? '올리기 사이트' : 'ClassNote'), field('저장일', md(r.up))], facets: [`source:${r.source === 'link' ? 'link' : 'classnote'}`, `subject:${r.subject || 'none'}`, r.status === 'failed' && 'status:failed'] })),
     facetLabels: { 'source:link': '올리기 사이트', 'source:classnote': 'ClassNote', 'status:failed': '업로드 실패', ...subjectFacets }, recordSource: 'student_homework_videos',
-    signals: failedVideos.length ? [signal({ id: 'video-upload-failed', title: `영상 업로드 실패 ${failedVideos.length}건`, summary: '저장에 실패한 숙제 영상입니다.', priority: PRIORITY.check, source: '숙제 영상 저장 상태', recordIds: failedVideos.map(r => r.id), draft: { title: '숙제 영상 업로드 실패 확인', body: '저장에 실패한 숙제 영상이 있습니다. 연동 PC 상태와 원본 영상을 확인해 주세요.' } })] : [],
-    sourceLabel: '숙제 영상 · 검사 장부 · AI 참고 메모', coverageNote: '근거 목록은 학생이 올린 숙제 영상 전체입니다. 영상 파일과 AI 메모 본문은 보여 주지 않습니다.',
+    signals: failedVideos.length ? [signal({ id: 'video-upload-failed', title: `숙제 영상 업로드 실패 ${failedVideos.length}건`, summary: `${failedVideos.slice(0, 3).map(v => `${v.name}(${subjectLabel(v.subject)}${v.d ? ` · ${v.d.slice(0, 4) === asOf.slice(0, 4) ? md(v.d) : yymm(v.d)}` : ''})`).join(', ')}${failedVideos.length > 3 ? ` 외 ${failedVideos.length - 3}건` : ''}. 영상이 저장되지 않았습니다.`, priority: PRIORITY.check, source: '숙제 영상 저장 상태', recordIds: failedVideos.map(r => r.id), draft: { title: '숙제 영상 업로드 실패 확인', body: '저장에 실패한 숙제 영상이 있습니다. 연동 PC 상태와 원본 영상을 확인해 주세요.' } })] : [],
+    sourceLabel: '숙제 영상 · 검사 장부 · AI 참고 메모', coverageNote: '목록은 학생이 올린 숙제 영상 전체입니다(최근 순).',
     sources: [{ table: 'student_homework_videos', rows: videos.length }, { table: 'video_homework_marks', rows: sumOf(marks) }, { table: 'homework_video_reviews', rows: sumOf(reviews) }, { table: 'homework_video_links', rows: links.total }],
   });
 
@@ -61,11 +60,11 @@ export async function academicFamilies(ctx) {
   const [tt] = await sql`select (select count(*)::int from public.class_schedules where tenant_id=${t}) rows_all, (select count(*)::int from public.timetable_import_logs where tenant_id=${t}) imports, (select max(to_char(created_at at time zone 'Asia/Seoul','YYYY-MM-DD')) from public.timetable_import_logs where tenant_id=${t}) last_import, (select count(*)::int from public.timetable_lab_drafts where tenant_id=${t}) drafts, (select count(*)::int from public.timetable_lab_apply_jobs where tenant_id=${t} and status='applied') applied`;
   const hours = Math.round(slots.reduce((n, r) => n + Number(r.minutes || 0), 0) / 60);
   out.timetable = family('timetable', '시간표(배치·가져오기·편집기·메모)', {
-    summary: `${asOf} 기준 수업 배치 ${slots.length}칸(반 ${new Set(slots.map(s => s.class_name)).size}개), 주간 수업 ${hours}시간. 시트 가져오기 ${tt.imports}회.`,
-    metrics: [metric('기준일 수업 배치', slots.length, '칸', '운영 중인 반 · 기준일에 유효한 배치'), metric('배치된 반', new Set(slots.map(s => s.class_name)).size, '개'), metric('주간 수업 시간', hours, '시간'), metric('시트 가져오기', tt.imports, '회', `마지막 ${tt.last_import || '기록 없음'}`), metric('연습실 초안', tt.drafts, '개'), metric('연습본 운영 반영', tt.applied, '회')],
-    evidence: slots.map(r => record({ id: r.id, label: `${r.class_name} · ${DAY[r.dow] || ''} ${r.st}`, detail: `${DAY[r.dow] || ''}요일 ${r.st}~${r.et}`, status: subjectLabel(r.subject), fields: [field('선생님', r.teacher), field('강의실', r.room)], facets: [`day:${r.dow}`, `subject:${r.subject || 'none'}`] })),
+    summary: `${md(asOf)} 기준 시간표 · 편집기 연습본 ${tt.drafts}개(운영 반영 ${tt.applied}회).`,
+    metrics: [metric('기준일 수업 배치', slots.length, '칸', '운영 중인 반만'), metric('배치된 반', new Set(slots.map(s => s.class_name)).size, '개'), metric('주간 수업 시간', hours, '시간'), metric('시간표 시트 가져오기', tt.imports, '회', `마지막 ${tt.last_import ? md(tt.last_import) : '기록 없음'}`), metric('편집기 연습본', tt.drafts, '개'), metric('연습본 운영 반영', tt.applied, '회')],
+    evidence: slots.map(r => record({ id: r.id, label: `${r.class_name} · ${DAY[r.dow] || ''} ${r.st}~${r.et}`, status: subjectLabel(r.subject), fields: [field('선생님', r.teacher), field('강의실', r.room)], facets: [`day:${r.dow}`, `subject:${r.subject || 'none'}`] })),
     facetOrder: [...Object.keys(DAY).map(d => `day:${d}`), ...Object.keys(subjectFacets)], facetLabels: { ...Object.fromEntries(Object.entries(DAY).map(([k, v]) => [`day:${k}`, `${v}요일`])), ...subjectFacets }, recordSource: 'class_schedules',
-    sourceLabel: '반 배치 · 시트 가져오기 · 연습실', coverageNote: '근거 목록은 기준일에 유효한 수업 배치 전체입니다. 이미 끝난 배치 이력과 예약된 미래 배치는 세지 않습니다.',
+    sourceLabel: '반 배치 · 시트 가져오기 · 편집기', coverageNote: '목록은 기준일에 유효한 수업 배치입니다(끝난 배치·예약된 배치 제외).',
     sources: [{ table: 'class_schedules', rows: tt.rows_all }, { table: 'timetable_import_logs', rows: tt.imports }, { table: 'timetable_lab_drafts', rows: tt.drafts }],
   });
 
@@ -74,11 +73,11 @@ export async function academicFamilies(ctx) {
   const [cs] = await sql`select (select count(*)::int from public.class_sheet_student_marks where tenant_id=${t}) marks, (select count(*)::int from public.class_sheet_student_marks where tenant_id=${t} and mark_date between ${monthStart} and ${asOf}) month_marks, (select count(*)::int from public.class_sheet_goals where tenant_id=${t}) goals, (select count(*)::int from public.math_learning_track_goals where tenant_id=${t}) track_goals, (select count(*)::int from public.math_month_goals where tenant_id=${t}) month_goals, (select count(*)::int from public.class_lesson_shifts where tenant_id=${t}) shifts`;
   const evidence = lines.map(r => record({ id: r.id, label: `${r.class_name} · ${md(r.d)}${r.textbook ? ` · ${r.textbook}` : ''}`, date: r.d, status: r.term_mode === 'exam' ? '시험 기간' : '정규', fields: [field('교재', r.textbook), field('범위', r.page_range)], facets: [`term:${r.term_mode === 'exam' ? 'exam' : 'regular'}`, `when:${r.d > asOf ? 'planned' : 'done'}`] }));
   out['class-sheets'] = family('class-sheets', '강사 시트(영어 ECS·수학 MCS)', {
-    summary: `${month} 영어 시트 계획 ${lines.filter(l => l.d >= monthStart && l.d <= asOf).length}줄·학생 기록 ${cs.month_marks}칸. 수학 전체 목표 ${cs.track_goals}건·월 목표 ${cs.month_goals}건.`,
-    metrics: [metric('이번 달 계획 줄', lines.filter(l => l.d >= monthStart && l.d <= asOf).length, '줄', '영어 시트 · 수업일 기준'), metric('미리 쓴 계획 줄', lines.filter(l => l.d > asOf).length, '줄', '기준일 이후 수업일'), metric('이번 달 학생 기록', cs.month_marks, '칸'), metric('수학 전체 목표', cs.track_goals, '건'), metric('수학 월 목표', cs.month_goals, '건'), metric('회차 미룸·당김', cs.shifts, '건')],
+    summary: `수학 월 학습 목표 ${cs.month_goals}건 · 회차 미룸·당김 ${cs.shifts}건(전체 기간).`,
+    metrics: [metric('이번 달 영어 수업계획', lines.filter(l => l.d >= monthStart && l.d <= asOf).length, '줄', '수업일 기준'), metric('앞으로의 영어 수업계획', lines.filter(l => l.d > asOf).length, '줄', '기준일 다음 수업일부터'), metric('이번 달 영어 학생 기록', cs.month_marks, '칸'), metric('수학 전체 학습 목표', cs.track_goals, '건'), metric('수학 월 학습 목표', cs.month_goals, '건'), metric('회차 미룸·당김', cs.shifts, '건', '전체 기간')],
     trend: monthlyTrend('월별 영어 시트 학생 기록', '칸', await sql`select to_char(mark_date,'YYYY-MM') as month, count(*)::int as value from public.class_sheet_student_marks where tenant_id=${t} and mark_date <= ${asOf} group by 1`, asOf),
     evidence, summaryRecords: evidence.filter(r => r.date <= asOf), facetLabels: { 'term:regular': '정규', 'term:exam': '시험 기간', 'when:done': '지난 수업', 'when:planned': '앞으로의 계획' }, recordSource: 'class_sheet_plan_lines',
-    sourceLabel: '영어 시트 계획·학생 기록 · 수학 목표', coverageNote: '근거 목록은 영어 시트 계획 줄 전체이며 앞으로의 계획도 들어 있습니다. 전체 목록을 불러오기 전에는 기준일까지의 계획만 보여 줍니다.',
+    sourceLabel: '영어 시트 계획·학생 기록 · 수학 목표', coverageNote: '목록은 영어 수업계획 줄입니다(앞으로의 계획 포함).',
     sources: [{ table: 'class_sheet_plan_lines', rows: lines.length }, { table: 'class_sheet_student_marks', rows: cs.marks }, { table: 'class_sheet_goals', rows: cs.goals }, { table: 'math_learning_track_goals', rows: cs.track_goals }, { table: 'math_month_goals', rows: cs.month_goals }, { table: 'class_lesson_shifts', rows: cs.shifts }],
   });
 

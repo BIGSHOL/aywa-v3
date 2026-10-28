@@ -147,7 +147,7 @@ ${AI.repairNote(plan.hint)}` : AI.COHORT_PROMPT, model, effort, timeoutMs: AI.ST
   // ── read model ──
   const userName = id => ix.userById.get(id)?.display_name || '담당 미지정';
   function analysis(p) {
-    if (!isScheduled(p.from, p.to)) return { status: 'not_scheduled', note: '자동 분석은 화면의 여섯 달 중 청구가 줄어든 연속한 두 달과 첫 달 → 마지막 달 비교만 합니다. 이 비교는 코드 집계만 보여 줍니다.' };
+    if (!isScheduled(p.from, p.to)) return { status: 'not_scheduled', note: 'AI 원인 설명은 청구가 줄어든 연속한 두 달과 첫 달 → 마지막 달 비교에만 붙습니다.' };
     const leaves = p.cases.filter(c => c.needsJev).map(c => ({ key: leafKey(c), r: data().results[leafKey(c)] }));
     const jev = { total: leaves.length, done: leaves.filter(l => l.r?.status === 'ready').length, failed: leaves.filter(l => l.r?.status === 'error' && !retryable(l.r)).length, pending: leaves.filter(l => !done(l.key, l.r)).length, review: leaves.filter(l => l.r?.output?.review).length };
     const plan = jev.pending ? null : cohortPlan(p), r = plan && data().results[plan.key], job = plan && jobs.get(plan.key);
@@ -164,7 +164,7 @@ ${AI.repairNote(plan.hint)}` : AI.COHORT_PROMPT, model, effort, timeoutMs: AI.ST
     const clusterOf = new Map(); for (const c of p.clusters) for (const m of c.members) (clusterOf.get(m) ?? clusterOf.set(m, []).get(m)).push(c.id);
     const groups = part => Object.values(part.groups).filter(g => g.students || g.amount).map(g => ({ id: g.id, label: g.label, students: g.students, amount: g.amount, studentIds: g.studentIds, ...(g.estimateAmount != null ? { estimateAmount: g.estimateAmount } : {}), ...(g.sessionsChecked != null ? { sessionsChecked: g.sessionsChecked, fewerSessions: g.fewerSessions } : {}) }));
     return { schemaVersion: 1, from, to, asOf, policy: { version: AI.POLICY_VERSION, fingerprint: AI.policyFingerprint() },
-      basis: { billing: '청구액은 할인 전 금액에서 할인을 뺀 값입니다. 무효·환불과 테스트 학생은 빼고(수납관리와 같은 계산), 그 달 유효한 청구가 있는 학생을 청구 대상으로 셉니다', subjects: '과목 수 = 그 달 정규 반 수강 기록(휴원·특강·보강 반 제외)', special: '특강·방학·교재 항목은 회차 확정으로 반이 이어진 줄이면 그 반으로, 아니면 청구 항목 설명 문구로 구분했습니다. 설명 문구로 구분한 금액은 추정입니다', teacher: '담당 선생님은 강사평가의 퇴원율 판정으로 정했습니다(퇴원관리 담당강사·시간표 X와 같은 계산)', cleanup: '일괄 정리 퇴원은 퇴원일 대신 마지막 청구·출석의 다음 달을 이탈 달로 추정했습니다' },
+      basis: { billing: '청구액 = 할인 뒤 금액(무효·환불·테스트 학생 제외, 수납관리와 같은 계산). 그 달 유효한 청구가 있는 학생만 셉니다', subjects: '과목 수 = 그 달 정규 반 수강 기록(휴원·특강·보강 반 제외)', special: '특강·방학·교재 항목은 회차 확정으로 이어진 반이 있으면 그 반으로, 없으면 청구 항목 설명으로 나눴습니다(설명으로 나눈 금액은 추정)', teacher: '담당 선생님은 강사평가 퇴원율 판정으로 정했습니다(퇴원관리 담당강사와 같은 계산)', cleanup: '일괄 정리 퇴원은 퇴원일 대신 마지막 청구·출석의 다음 달을 이탈 달로 추정했습니다' },
       totals: p.d.totals, check: p.d.check, parts: p.d.parts.map(x => ({ id: x.id, label: x.label, students: x.students, amount: x.amount, groups: groups(x) })),
       clusters: p.clusters.map(c => ({ id: c.id, kind: c.kind, kindLabel: KIND_LABEL[c.kind], label: c.label, members: c.members, amount: c.amount, teacherIds: c.teacherIds, classIds: c.classIds, facts: c.facts.map(f => ({ key: f.key, text: f.text, source: f.source || null, open: f.open || null, counts: f.counts || null })), ai: aiFor(c.id) })),
       overall: a.output ? { summary: render(a.output.overall.summary), reasons: a.output.overall.reasons.map(render), checks: a.output.overall.checks.map(render), clusterIds: a.output.overall.clusterIds.map(g => p.alias.reverse(g)).filter(Boolean) } : null,

@@ -92,8 +92,8 @@ try{
   assert.equal(await page.locator('#topbar').evaluate(n=>getComputedStyle(n).display),'none','No desktop header band');
   const fold=await page.evaluate(()=>innerHeight);
   assert((await page.locator('#fl-detail').evaluate(n=>n.getBoundingClientRect().top))>=fold-1,'Connected flow detail starts below the first screen');
-  assert.match(await page.locator('.fl-source').first().innerText(),new RegExp(`복사본 기준일 ${String(start.asOf).slice(0,10)}`),'Source date stays visible');
-  assert.match(await page.locator('.fl-source').first().innerText(),/Jev 판정|판정/,'AI provider state is the one the server returned');
+  assert.match(await page.locator('main .page-heading p').first().innerText(),new RegExp(`${Number(String(start.asOf).slice(5,7))}/${Number(String(start.asOf).slice(8,10))} 기준`),'Source date stays visible (once, in the page heading)');
+  assert.doesNotMatch(await page.locator('#fl-detail').innerText(),/Jev|Claude|변경 \d+회/,'No model names or revision counts on screen');
   await shot('owner-first-screen');
 
   // 2. Absence scenario from a real copied record (local, not counted as history); a repeat answers with the same case.
@@ -108,8 +108,8 @@ try{
   await expectText('#toast',/새 일은 만들지 않았습니다/);await close();
   const f2=await flow();assert.equal(f2.cases.filter(x=>x.scenarioKey&&x.scenarioKey===c.scenarioKey&&x.state!=='done').length,1,'No duplicate task');
   await page.locator('[data-fl="filter"][data-id="local"]').first().click();
-  await expectText(`.fl-case[data-case="${absenceId}"]`,/로컬 미리보기/);
-  assert.match(await page.locator('.fl-stages .ax-note').innerText(),new RegExp(`복사본 기록에서 시작된 일 ${realBefore}건`),'Local scenarios are counted separately from copied history');
+  await expectText(`.fl-case[data-case="${absenceId}"]`,/연습 시나리오/);
+  assert.match(await page.locator('.fl-stages .ax-note').innerText(),new RegExp(`학원 기록에서 생긴 일 ${realBefore}건`),'Local scenarios are counted separately from copied history');
 
   // 3. The first person sees trigger, why and related records, opens a workspace, acknowledges (one command) and reports.
   const firstStep=active(c)[0];assert(firstStep&&!firstStep.review,'The first step is open');

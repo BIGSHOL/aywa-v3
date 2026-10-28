@@ -4,12 +4,13 @@
 import { ATTENTION_LABEL, ORDER_LABEL, POLICY_VERSION, STAGES, attentionOf, policyFingerprint, renderText } from './flow-hierarchy-ai.mjs';
 import { modelLabel } from './flow-view.mjs';
 
-const ERROR = { no_key: '판정 키가 설정되지 않음', timeout: '응답 시간 초과', rate_limited: '사용 한도에 걸림', overloaded: '서버 혼잡', network: '연결 실패', http_error: '서버 오류', auth: '판정 키 인증 실패',
-  auth_required: 'Claude 구독 로그인이 필요함', subscription_required: 'Claude 구독 로그인으로만 실행함', cli_missing: 'Claude CLI를 찾지 못함', runtime_unsafe: 'Claude 실행 폴더가 안전하지 않음', cli_failed: 'Claude 실행 실패',
-  invalid_output: '출력이 검사에서 걸려 보여 주지 않음', invalid_response: '판정 답 형식 오류', request_rejected: '요청이 거절됨', busy: '대기열이 가득 참', cancelled: '중단됨', failed: '처리 실패' };
+const ERROR = { no_key: '지금 AI를 쓸 수 없음', timeout: '응답 시간 초과', rate_limited: '사용량이 많아 잠시 멈춤', overloaded: '사용량이 많아 잠시 멈춤', network: '연결 실패', http_error: '처리 실패', auth: '지금 AI를 쓸 수 없음',
+  auth_required: '지금 AI를 쓸 수 없음', subscription_required: '지금 AI를 쓸 수 없음', cli_missing: '지금 AI를 쓸 수 없음', runtime_unsafe: '지금 AI를 쓸 수 없음', cli_failed: '처리 실패',
+  invalid_output: '결과가 검사를 통과하지 못해 보여 주지 않음', invalid_response: '결과 형식이 맞지 않음', request_rejected: '요청이 거절됨', busy: '사용량이 많아 잠시 멈춤', cancelled: '중단됨', failed: '처리 실패' };
 const ISSUE = { number_in_text: '글에 숫자를 직접 씀', unknown_id: '입력에 없는 대상 언급', banned_claim: '사유·위험 단정 표현', raw_code: '영어 코드 노출', evidence_outside_input: '보내지 않은 근거 인용', teacher_set: '선생님 누락·중복', class_set: '반 누락·중복', schema: '형식 오류' };
-const errorReason = r => [ERROR[r.code] || '처리 실패', ...(r.issues || []).map(i => ISSUE[i] || '검사 실패')].join(' · ');
-const PROVIDER = { jev: 'Jev 판정', 'claude-cli': 'Claude 요약' };
+// 검사 항목 이름(ISSUE)은 개발자용이라 화면 사유에 싣지 않는다(원장 10-28). 결과에는 issues가 그대로 남는다.
+const errorReason = r => ERROR[r.code] || '처리 실패';
+const PROVIDER = { jev: 'AI 판정', 'claude-cli': 'AI 요약' };
 
 /** Status + stale + the result to show (current, or the last good one for older evidence). */
 function state(p, entry, opts, waitingReason) {
@@ -19,14 +20,14 @@ function state(p, entry, opts, waitingReason) {
   if (entry.skip === 'reported') return { shown: null, ai: { status: 'skipped', stale: false, reason: '이미 보고가 끝났습니다.' } };
   if (entry.skip === 'review') return { shown: null, ai: { status: 'review_needed', stale: false, reason: '담당자가 관리자 검토를 요청했습니다.' } };
   if (cur) return { shown, ai: { status: 'ready', ...base } };
-  if (entry.job) return { shown, ai: { status: entry.job.status === 'running' ? 'running' : 'queued', ...base, ...(entry.job.blocked === 'budget' ? { reason: '이 PC의 시간당 호출 한도에 걸려 기다립니다.' } : {}) } };
+  if (entry.job) return { shown, ai: { status: entry.job.status === 'running' ? 'running' : 'queued', ...base, ...(entry.job.blocked === 'budget' ? { reason: '사용량이 많아 잠시 기다립니다.' } : {}) } };
   if (entry.result?.status === 'error') return { shown, ai: { status: 'error', ...base, reason: errorReason(entry.result) } };
   if (!opts.enabled) return { shown, ai: { status: prev ? 'stale' : 'not_started', ...base, reason: opts.disabledReason || 'AI 정리가 꺼져 있습니다.' } };
   if (entry.waiting) return { shown, ai: { status: prev ? 'stale' : 'queued', ...base, reason: waitingReason } };
   return { shown, ai: { status: prev ? 'stale' : 'not_started', ...base } };
 }
 // Claude text is a draft for a person to check; it carries no numbers (counts and dates are the code facts).
-const meta = r => ({ ...(r.provider === 'claude-cli' ? { draft: true, note: 'AI 초안 — 건수·날짜는 코드 집계를 보세요' } : {}), origin: r.provider, provider: PROVIDER[r.provider] || null, model: r.model, modelLabel: modelLabel(r.model), effort: r.effort ?? null, tier: r.tier || null, partial: !!r.partial, updatedAt: r.at || null });
+const meta = r => ({ ...(r.provider === 'claude-cli' ? { draft: true, note: 'AI 초안 — 건수·날짜는 기록 집계를 보세요' } : {}), origin: r.provider, provider: PROVIDER[r.provider] || null, model: r.model, modelLabel: modelLabel(r.model), effort: r.effort ?? null, tier: r.tier || null, partial: !!r.partial, updatedAt: r.at || null });
 
 export function decorate(p, opts) {
   const { tree, index, alias } = p;
@@ -46,7 +47,7 @@ export function decorate(p, opts) {
       const o = shown.output, a = attentionOf(o.managerAttention);
       Object.assign(ai, { priority: o.priority, priorityLabel: ORDER_LABEL[o.priority], deprioritized: o.priority === 'routine', uncertain: !!o.uncertain, contradiction: !!o.contradiction,
         managerAttention: a, managerAttentionLabel: ATTENTION_LABEL[a], probabilities: { checkOrder: o.probabilities, checkOrderConcentration: o.confidence, managerAttention: o.managerAttention, note: '모델 추정값이며 측정된 정확도가 아닙니다.' },
-        reasons: [`Jev 확인 순서: ${ORDER_LABEL[o.priority]}`, `Jev 관리자 확인: ${ATTENTION_LABEL[a]}`, ...(o.uncertain ? ['확인 순서 판정이 애매하거나 기록과 어긋남'] : [])], evidenceIds: l.nodes.map(n => n.id), ...meta(shown) });
+        reasons: [`확인 순서: ${ORDER_LABEL[o.priority]}`, `관리자 확인: ${ATTENTION_LABEL[a]}`, ...(o.uncertain ? ['확인 순서 판정이 애매하거나 기록과 어긋남'] : [])], evidenceIds: l.nodes.map(n => n.id), ...meta(shown) });
       if (ai.status === 'ready' && o.uncertain) ai.status = 'review_needed';
     }
     count(ai);

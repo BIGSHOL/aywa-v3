@@ -159,8 +159,8 @@ try{
 
   // 5. Slack previews follow the issue and the request; the completed report comes back as a notification.
   await page.locator('[data-ax="request-slack"]').click();
-  assert.match(await page.locator('#modal').innerText(),/실제 발송되지 않았습니다/);
-  assert.match(await page.locator('#modal').innerText(),/연결 이슈: 수납 확인 14건/);
+  assert.match(await page.locator('#modal').innerText(),/실제 보내지 않았습니다/);
+  assert.match(await page.locator('#modal').innerText(),/연결 이슈: 남은 수납 14건/);
   await shot('slack-preview',false);
   await page.locator('#modal [data-ax="request-detail"]').click();
   await page.locator('[data-ax="request-start"]').click();
@@ -196,8 +196,8 @@ try{
   assistant.queue.push({status:503,json:{error:'auth_required',message:'Claude 로그인이 필요합니다. 로컬 터미널에서 로그인한 뒤 다시 시도해 주세요.'}});
   await page.locator('[data-ax="chat-retry"]').click();
   await page.waitForFunction(()=>/Claude 로그인이 필요합니다/.test(document.querySelector('.ax-chat-answer.error')?.innerText||''));
-  assert.equal(await page.locator('.ax-chat-answer.error [title]').count(),0,'No native tooltip on errors');await page.locator('.ax-chat-answer.error summary').click();
-  assert.match(await page.locator('.ax-chat-answer.error details').innerText(),/HTTP 503 · auth_required/);
+  assert.equal(await page.locator('.ax-chat-answer.error [title]').count(),0,'No native tooltip on errors');
+  assert.equal(await page.locator('.ax-chat-answer.error details').count(),0,'No HTTP status or error code on screen');
   assistant.queue.push({status:429,headers:{'Retry-After':'12'},json:{error:'busy',message:'다른 질문을 처리하고 있습니다.'}});
   await page.locator('[data-ax="chat-retry"]').click();
   await page.waitForFunction(()=>/약 12초 뒤/.test(document.querySelector('.ax-chat-answer.error')?.innerText||''));
@@ -207,7 +207,7 @@ try{
   assert.match(await page.locator('.ax-chat-text').innerText(),/<img src=x/,'Model text is escaped');
   assert.equal(await page.locator('.ax-chat-log img').count(),0);assert.equal(await page.evaluate(()=>window.__xss),undefined);
   assert.equal(await page.locator('.ax-chat-text strong').innerText(),'먼저 대조');
-  assert.match(await page.locator('.ax-chat-provider').innerText(),/Claude · 로컬 CLI/);
+  assert.match(await page.locator('.ax-chat-provider').innerText(),/AI 답변/);
   assert.equal(await page.locator('.ax-chat-answer [data-ax="open-issue"]').count(),1,'Unknown issue ids are ignored');
 
   // 7. One request at a time; explicit cancel aborts it; retry resends; history stays bounded.
@@ -255,8 +255,8 @@ try{
 
   // 9. Issue context is sent; an answer that lands while the drawer is closed is announced.
   await close();await page.locator('#ax-issue-attendance [data-ax="ask"]').click();
-  assert.match(await page.locator('[data-chat-context]').innerText(),/출결 특이사항/);
-  assert.match(await page.locator('#ax-chat-command').inputValue(),/출결 특이사항/);
+  assert.match(await page.locator('[data-chat-context]').innerText(),/결석 3회 이상/);
+  assert.match(await page.locator('#ax-chat-command').inputValue(),/결석 3회 이상/);
   const late=deferred();assistant.queue.push({hold:late.promise,...answer('결석 3회 이상 원생은 담임 확인이 먼저입니다.')});
   await page.locator('#ax-chat-command').press('Enter');await page.locator('.ax-chat-answer.pending').waitFor();
   assert.equal(assistant.calls.at(-1).contextIssueId,'attendance');
@@ -269,7 +269,7 @@ try{
   await close();await page.locator('#ax-archive-attendance').click();
   assert.equal(await page.locator('#ax-issue-attendance').count(),0);
   await go('inbox');await page.locator('main [data-ax=inbox-tab][data-id=archived]').click();
-  assert.match(await page.locator('main .ax-notifications').innerText(),/출결 특이사항/);
+  assert.match(await page.locator('main .ax-notifications').innerText(),/결석 3회 이상/);
   await page.locator('main [data-ax=open-issue][data-id=attendance]').click();await waitFocus('ax-issue-attendance');
   await go('automation');await page.locator('[data-ax-setting=slack]').uncheck();
   await page.locator('main [data-ax=digest]').click();assert.match(await page.locator('#modal').innerText(),/선택되지 않았습니다/);await close();

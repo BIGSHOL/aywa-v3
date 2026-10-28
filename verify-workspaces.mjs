@@ -118,7 +118,7 @@ try{
   const pform=page.locator('#modal form[data-ws-form="preview"]');
   await pform.locator('button[type=submit]').click();await expectText('#modal .ax-form-error',/입력해 주세요/,'Required fields are checked');
   await fill(pform,px.fields);await pform.locator('button[type=submit]').click();
-  await expectText('#toast',/2\.0에는 반영되지 않았습니다/);
+  await expectText('#toast',/저장되지는 않았습니다/);
   assert.equal(await page.locator('#ws-local article').count(),1);await expectText('#ws-local',new RegExp(esc(px.label)));
   await shot('preview-local');
   await page.locator('#ws-local [data-ws="local-request"]').click();
@@ -153,7 +153,7 @@ try{
     await go(`workspace-${nb.a.id}`);await sideAction(nb.a.id,nb.x.id).click();const nform=page.locator('#modal form[data-ws-form="preview"]');
     await fill(nform,nb.x.fields,{number:f=>f.id===nf.id?Number(nf.max)+1:undefined});await nform.locator('button[type=submit]').click();
     await expectText('#modal .ax-form-error',new RegExp(`${esc(String(nf.min??0))}~${esc(String(nf.max))} 사이`),'Out-of-range number is rejected with the catalog bounds');
-    await nform.locator(`[name="${nf.id}"]`).fill(String(nf.max));await nform.locator('button[type=submit]').click();await expectText('#toast',/2\.0에는 반영되지 않았습니다/);
+    await nform.locator(`[name="${nf.id}"]`).fill(String(nf.max));await nform.locator('button[type=submit]').click();await expectText('#toast',/저장되지는 않았습니다/);
   }
 
   // 4d. Navigation actions land on their target page (and the target 2.0 screen when there is one).
@@ -173,7 +173,7 @@ try{
     const sx=st.actions.find(x=>x.mode==='preview'&&x.target?.facet&&usable(st,x));
     await go(`workspace-${st.id}`);await page.locator(`.ws-faces [data-face="${sx.target.facet}"]`).click();
     const sform=page.locator(`.ws-face form[data-action="${sx.id}"]`);
-    if(await sform.count()){await fill(sform,sx.fields);await sform.locator('button[type=submit]').click();await expectText('#toast',/2\.0에는 반영되지 않았습니다/);}
+    if(await sform.count()){await fill(sform,sx.fields);await sform.locator('button[type=submit]').click();await expectText('#toast',/저장되지는 않았습니다/);}
     await shot('settings-faces');
   }
   const sf=cat.areas.find(a=>a.viewKind==='settings'&&(a.facets||[]).length>1);

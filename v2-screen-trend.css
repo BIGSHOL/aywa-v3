@@ -1,0 +1,33 @@
+/* 확장 추세(v2-screen-trend.js) — 3.0 고유 화면(.v3s): 앱 공통 머리글·탭·차트 팝오버·컨트롤 높이를 그대로 쓴다. 좋아짐 빨강 · 나빠짐 파랑(원장 10-28). */
+.tr{display:flex;flex-direction:column;gap:16px;min-width:0}
+.tr .page-heading .heading-actions .cpick{min-width:min(100%,280px)}
+.tr-bar{display:flex;flex-wrap:wrap;align-items:center;gap:8px 16px}
+.tr-seg{display:flex;flex-wrap:wrap;gap:4px}
+.tr-filter{display:inline-flex;align-items:center;gap:6px;padding:0 4px 0 10px;border:1px solid var(--ax-line);border-radius:999px;font-size:var(--ax-xs)}
+.tr-main{display:flex;flex-direction:column;gap:8px;padding:16px;border:1px solid var(--ax-line);border-radius:8px}
+.tr-now{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 12px}
+.tr-now span{font-size:var(--ax-xs)}
+.tr-now strong{font-size:var(--ax-xl);font-weight:700;color:var(--ax-primary);font-variant-numeric:tabular-nums}
+.tr-now small{font-size:var(--ax-xs);font-variant-numeric:tabular-nums}
+.tr .good{color:var(--ax-good)}.tr .bad{color:var(--ax-bad)}
+.tr .tr-now small.good,.tr .tr-now small.bad,.tr td.good,.tr td.bad{font-weight:600}
+.tr-chart svg{display:block;width:100%;height:auto}
+.tr-chart text{font-size:12px;fill:var(--ax-ink)}
+.tr-line polyline{fill:none;stroke:var(--ax-primary);stroke-width:2.5;stroke-linejoin:round;stroke-linecap:round}
+.tr-line.base polyline{stroke:#9aa7bf;stroke-width:2;stroke-dasharray:5 4}
+.tr-line .tr-solo{fill:var(--ax-primary)}.tr-line.base .tr-solo{fill:#9aa7bf}
+.tr-dot{fill:var(--ax-white);stroke:var(--ax-primary);stroke-width:2}
+.chart-col.active .tr-dot,.chart-col:hover .tr-dot{fill:var(--ax-primary)}
+.tr-break{display:flex;flex-direction:column;gap:8px}
+.tr-break h3{margin:0;font-size:var(--ax-sm)}.tr-break h3 span{font-weight:400;font-size:var(--ax-xs);margin-left:6px}
+.tr-table{width:100%;table-layout:fixed;border-collapse:collapse;font-size:var(--ax-xs)}
+.tr-table th,.tr-table td{padding:6px 8px;border-bottom:1px solid var(--ax-line);text-align:left;vertical-align:middle;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tr-table thead th{font-weight:600}
+.tr-table thead th button{all:unset;cursor:pointer;font:inherit}.tr-table thead th button:focus-visible{outline:2px solid var(--ax-primary);outline-offset:2px}
+.tr-table .num{text-align:right;font-variant-numeric:tabular-nums;width:7.5em}
+.tr-table tbody th{font-weight:500}
+.tr-table th:nth-last-child(2),.tr-table td.tr-spark{width:22%}
+.tr-table th:last-child,.tr-table td:last-child{width:7em;text-align:right}
+.tr-spark .chart-line{display:block;height:28px}
+.v3s-note{margin:0;font-size:var(--ax-sm)}
+@media (max-width:720px){.tr-table th:nth-last-child(2),.tr-table td.tr-spark{display:none}.tr-table .num{width:6em}}

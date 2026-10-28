@@ -67,10 +67,11 @@ export const addDays = (date, days) => { const d = new Date(`${date}T12:00:00Z`)
 // 지금 값 + 직전 기간 대비 + 추세선. 누적·전체 기간 건수는 KPI로 쓰지 않는다. 같은 지표가 2.0에 있으면 2.0 판정 그대로.
 // points = 오래된 → 최근 [{ label, value }]; 마지막 = 지금, 그 앞 = 비교 기간. better = 'up' | 'down' | null(오르면 좋은가).
 // span = 값이 덮는 기간(카드 제목 오른쪽, 원장 10-28 "제목 우측에 기한 적어놓을것") · basis = 무엇을 무엇으로 나눴는지(카드 아래).
-export function kpi(label, unit, points, { better = null, period = 'week', span = '', basis = '' } = {}) {
+// id = 확장 추세(#v2-trend?metric=<id>)에 등록된 지표면 그 id — 카드를 누르면 그 지표의 확장 추세로 간다.
+export function kpi(label, unit, points, { id = '', better = null, period = 'week', span = '', basis = '' } = {}) {
   const series = points.map(p => ({ label: p.label, value: finite(p.value) }));
   const value = series.at(-1)?.value ?? null, previous = series.at(-2)?.value ?? null;
-  return { kind: 'kpi', label, unit, period, span, basis, better, points: series, value, previous, delta: value === null || previous === null ? null : value - previous };
+  return { kind: 'kpi', ...(id ? { id } : {}), label, unit, period, span, basis, better, points: series, value, previous, delta: value === null || previous === null ? null : value - previous };
 }
 // Rolling 7-day windows ending at asOf, oldest first: full weeks compare with full weeks (the current calendar week is partial).
 export function weekWindows(asOf, n = 8) {

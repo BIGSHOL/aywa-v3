@@ -10,13 +10,15 @@ window.createWorkspaces = function createWorkspaces(api) {
   const PRIORITY_ORDER=['결정 필요','확인 필요','진행 확인'];
   const STATE_LABEL={available:'기록 있음',empty:'기록 없음','not-applicable':'해당 없음',unavailable:'읽지 못함',missing:'집계 연결 전'};
   const FACET_INTENT={flow:'이 단계에 있는 기록만 봅니다',sheet:'이 구분의 줄만 시트에 표시합니다',records:'이 구분의 기록만 봅니다',report:'이 구분의 문서만 목록에 표시합니다',settings:'이 설정 면의 현재 값과 미리보기 양식을 엽니다',timeline:'이 구분의 기록만 시간순으로 봅니다'};
-  const MODE={preview:{label:'로컬 미리보기',destination:'local-preview',status:'session-only'},request:{label:'요청 초안',destination:'owner-request-draft',status:'draft-only'},navigate:{label:'화면 이동',destination:'navigate',status:'navigation'}};
+  const MODE={preview:{label:'미리보기 · 저장 안 됨',destination:'local-preview',status:'session-only'},request:{label:'요청 초안',destination:'owner-request-draft',status:'draft-only'},navigate:{label:'화면 이동',destination:'navigate',status:'navigation'}};
   const PAGE_SIZE=20;
   const state={screen:{},face:{},query:'',active:-1,open:new Set(),closed:new Set(),recent:[],facet:{},q:{},page:{},sel:{},remote:{},local:{},edits:{},recipient:''};
   const pill=(text,tone='')=>`<span class="ax-chip ${tone}">${h(text)}</span>`;
   const btn=(text,action,attrs='',primary=false)=>`<button type="button" class="button ${primary?'primary':''}" data-ws="${action}" ${attrs}>${h(text)}</button>`;
   const norm=t=>String(t??'').toLowerCase().replace(/\s+/g,'');
-  const caption=()=>`${(db.workspaces?.asOf||db.meta.asOf).replaceAll('-','.')} 복사본 기준`;
+  const caption=()=>{const d=String(db.workspaces?.asOf||db.meta.asOf);return `${Number(d.slice(5,7))}/${Number(d.slice(8,10))} 기준`;};
+  // 기록 날짜는 M/D(연월은 yy.mm)로 보인다(원장 10-28). 다른 모양의 값은 그대로.
+  const dateText=v=>{const s=String(v??'');return /^\d{4}-\d{2}-\d{2}$/.test(s)?`${Number(s.slice(5,7))}/${Number(s.slice(8,10))}`:/^\d{4}-\d{2}$/.test(s)?api.yymm(s):s;};
 
   /* ---------- catalog + data access ---------- */
   const areas=()=>Array.isArray(window.AxCatalog?.areas)?window.AxCatalog.areas.filter(a=>a&&a.id&&a.label):[];
@@ -30,9 +32,10 @@ window.createWorkspaces = function createWorkspaces(api) {
   const resolvePage=page=>api.hasView(page)?page:has(familyOf(page)||page)?`workspace-${familyOf(page)||page}`:'';
   const resultLabel=x=>String(x.result?.label||`‘${x.label}’ 미리보기`);
   function dataState(id){
-    const d=data(id);if(!d)return {key:'missing',note:'이 작업 공간의 기록 집계는 아직 이 화면에 연결되지 않았습니다.'};
+    const d=data(id);if(!d)return {key:'missing',note:''};
     const key=STATE_LABEL[d.dataState]?d.dataState:'unavailable';
-    return {key,note:d.coverageNote||(key==='empty'?'복사본에 이 영역의 기록이 없습니다.':key==='not-applicable'?'이 지점의 운영에 해당하지 않는 영역입니다.':key==='unavailable'?'이 영역의 기록을 읽지 못했습니다.':'')};
+    // 상태 알약('기록 없음'·'읽지 못함')과 같은 말을 되풀이하지 않는다 — 알약에 없는 사정만 덧붙인다.
+    return {key,note:d.coverageNote||(key==='not-applicable'?'이 지점의 운영에 해당하지 않는 영역입니다.':'')};
   }
   // Record filters come only from the data facets (ids the records endpoint accepts). Catalog facets are the 2.0
   // screen's tabs/boxes/stages/faces: entry points to related actions, never sent to the records endpoint.
@@ -83,18 +86,21 @@ window.createWorkspaces = function createWorkspaces(api) {
     return `<div class="ws" data-family="${h(id)}" data-view="${kind}"><div class="page-heading ws-heading"><div><p class="ws-group">${h(a.group||'')}</p><h1>${h(a.label)}</h1><p>${h(d?.summary||a.summary||'')}</p></div><div class="heading-actions">${btn('이 화면으로 대화','ask',`data-id="${h(id)}"`)}${btn('업무 요청','request',`data-id="${h(id)}"`,true)}</div></div><p class="ws-state">${pill(STATE_LABEL[st.key],st.key==='available'?'blue':st.key==='missing'||st.key==='unavailable'?'amber':'')}<span>${h(d?.sourceLabel||'')}${d?.sourceLabel?' · ':''}${caption()}</span>${st.note?`<span>${h(st.note)}</span>`:''}</p>${critical(a)}${signalList(a)}<div class="ws-body"><section class="ws-main" id="ws-main" aria-label="${h(a.label)} 기록">${mainHtml(a)}</section><aside class="ws-side">${actionPanel(a)}<div id="ws-local">${localLog(a)}</div>${linkedRequests(a)}${relations(a)}</aside></div></div>`;
   }
   // KPI = 최근 변화(원장 10-28 "원하는건 추세"): 지금 값 · 직전 기간 대비(좋아짐/나빠짐 색) · 추세선(기간마다 값은 마우스·키보드로).
-  // 작업 공간 카드와 원장 첫 화면 '운영 상태'가 같은 함수로 그린다. 기간(span)은 제목 오른쪽(원장 10-28 "제목 우측에 기한 적어놓을것"), sharedBasis와 같은 설명은 카드 아래에 따로 한 번만 적는다.
-  function kpiCard(m,sharedBasis=''){const pct=m.unit==='%',shown=v=>v===null?'기록 없음':`${pct?v.toFixed(1):fmt(v)}${m.unit||''}`,d=m.delta,dir=d===null||d===0?0:d>0?1:-1,good=m.better==='up'?dir>0:m.better==='down'?dir<0:null,per=m.period==='month'?'전월':'7일 전';
+  // 작업 공간 카드와 원장 첫 화면 '운영 상태'가 같은 함수로 그린다. 기간(span)은 제목 오른쪽(원장 10-28 "제목 우측에 기한 적어놓을것").
+  // 카드 아래 설명(basis)은 그리지 않는다 — 제목이 무엇을 세는지 말한다(원장 10-28 "밑에 부연설명도 필요없어보임. 위에 제목을 잘 정해놓으면 굳이 안써도 되기 때문에 삭제").
+  function kpiCard(m){const pct=m.unit==='%',shown=v=>v===null?'기록 없음':`${pct?v.toFixed(1):fmt(v)}${m.unit||''}`,d=m.delta,dir=d===null||d===0?0:d>0?1:-1,good=m.better==='up'?dir>0:m.better==='down'?dir<0:null,per=m.period==='month'?'전월':'7일 전';
     const change=d===null?'비교할 기간 기록 없음':dir===0?`${per} 대비 변화 없음`:`${per} 대비 ${dir>0?'▲':'▼'} ${pct?`${Math.abs(d).toFixed(1)}%p`:`${fmt(Math.abs(d))}${m.unit||''}`}${!pct&&m.previous>0?` (${Math.round(Math.abs(d)/m.previous*100)}%)`:''}`;
-    return `<div class="ws-metric ws-kpi"><span class="ws-kpi-title"><span>${h(m.label)}</span>${m.span?`<em>${h(m.span)}</em>`:''}</span><strong>${h(shown(m.value))}</strong><small class="ws-kpi-change${dir===0||good===null?'':good?' good':' bad'}">${h(change)}</small><span class="ws-kpi-spark">${api.lineChart(m.points,{key:'value',label:m.label,unit:m.unit||'',basis:m.basis||''})}</span>${m.basis&&m.basis!==sharedBasis?`<small>${h(m.basis)}</small>`:''}</div>`;}
+    // id가 있는 지표 = 확장 추세가 있다 — 카드 어디를 눌러도 그 지표의 확장 추세로(원장 10-28 "추세를 눌렀을때 확장 추세로 이동"). 클릭은 v2-screen-trend.js가 받는다.
+    const href=m.id?`#v2-trend?metric=${encodeURIComponent(m.id)}&grain=week`:'';
+    return `<div class="ws-metric ws-kpi"${m.id?` data-trend="${h(m.id)}"`:''}><span class="ws-kpi-title">${href?`<a href="${href}">${h(m.label)}</a>`:`<span>${h(m.label)}</span>`}${m.span?`<em>${h(m.span)}</em>`:''}</span><strong>${h(shown(m.value))}</strong><small class="ws-kpi-change${dir===0||good===null?'':good?' good':' bad'}">${h(change)}</small><span class="ws-kpi-spark">${api.lineChart(m.points,{key:'value',label:m.label,unit:m.unit||'',compare:per})}</span></div>`;}
   function critical(a){
     // KPI 추세 카드가 있으면 6개까지, 누적 건수 막대는 그리지 않는다(원장 10-28 "전체 몇건 … 아무 도움이 안됨"). 공통 설명은 카드 아래 한 번.
-    const all=d0=>d0?.metrics||[],d=data(a.id),isKpi=all(d).some(m=>m.kind==='kpi'),metrics=all(d).slice(0,isKpi?6:4),trend=isKpi?null:d?.trend,bases=[...new Set(metrics.filter(m=>m.kind==='kpi').map(m=>m.basis||''))],sharedBasis=bases.length===1?bases[0]:'';
+    const all=d0=>d0?.metrics||[],d=data(a.id),isKpi=all(d).some(m=>m.kind==='kpi'),metrics=all(d).slice(0,isKpi?6:4),trend=isKpi?null:d?.trend;
     if(!metrics.length&&!trend?.points?.length)return '';
     const value=m=>m.value===null||m.value===undefined?'기록 없음':`${fmt(m.value)}${m.unit||''}`;
     const points=(trend?.points||[]).map(p=>trend.granularity==='day'?{date:p.date,value:p.value}:{month:p.date,value:p.value});
     const chartHtml=!points.length?'':trend.granularity==='day'?`<div class="ws-line">${api.lineChart(points,{key:'value',label:trend.label,unit:trend.unit||''})}</div>`:api.chart(points.map(p=>({...p,label:api.yymm(p.month)})),'value',trend.unit==='원'?'만원':trend.unit||'',{label:trend.label});
-    return `<section class="ws-critical" aria-label="핵심 지표">${metrics.length?`<div class="ws-metrics">${metrics.map(m=>m.kind==='kpi'?kpiCard(m,sharedBasis):`<div class="ws-metric"><span>${h(m.label)}</span><strong>${h(value(m))}</strong>${m.detail?`<small>${h(m.detail)}</small>`:''}</div>`).join('')}</div>`:''}${sharedBasis?`<p class="ws-kpi-basis">${h(sharedBasis)}</p>`:''}${chartHtml?`<div class="ws-trend"><h2>${h(trend.label||'추이')}</h2>${chartHtml}</div>`:''}</section>`;
+    return `<section class="ws-critical" aria-label="핵심 지표">${metrics.length?`<div class="ws-metrics"${isKpi?` style="--kpi-n:${metrics.length};--kpi-half:${Math.ceil(metrics.length/2)}"`:''}>${metrics.map(m=>m.kind==='kpi'?kpiCard(m):`<div class="ws-metric"><span>${h(m.label)}</span><strong>${h(value(m))}</strong>${m.detail?`<small>${h(m.detail)}</small>`:''}</div>`).join('')}</div>`:''}${chartHtml?`<div class="ws-trend"><h2>${h(trend.label||'추이')}</h2>${chartHtml}</div>`:''}</section>`;
   }
   const byPriority=(x,y)=>(PRIORITY_ORDER.indexOf(x.priority)+1||9)-(PRIORITY_ORDER.indexOf(y.priority)+1||9);
   function signalCard(id,s,withFamily=false){
@@ -110,13 +116,13 @@ window.createWorkspaces = function createWorkspaces(api) {
     const screenRow=screens.length&&kind!=='settings'?`<div class="ws-screens" role="group" aria-label="화면 구성"><span>화면</span>${screens.map(sc=>screenActions(a,sc.id).length?`<button type="button" data-ws="screen" data-id="${h(id)}" data-screen="${h(sc.id)}" aria-pressed="${screen===sc.id}">${h(sc.label)}</button>`:`<span class="ws-screen">${h(sc.label)}</span>`).join('')}</div>`:'';
     const tabs=facets.length?`<div class="ws-facets" role="group" aria-label="기록 구분">${[{id:'',label:'전체',count:Number(data(id)?.totalRecords)||null},...facets].map(f=>`<button type="button" data-ws="facet" data-id="${h(id)}" data-facet="${h(f.id)}" aria-pressed="${facet===f.id}">${h(f.label)}${f.count!==null&&f.count!==undefined?` <b>${fmt(f.count)}</b>`:''}</button>`).join('')}</div>`:'';
     const search=data(id)&&kind!=='settings'?`<div class="ws-search"><input type="search" id="ws-q-${h(id)}" data-ws-q="${h(id)}" value="${h(state.q[id]||'')}" maxlength="100" aria-label="${h(a.label)} 기록 검색" placeholder="이름·내용·상태 검색" autocomplete="off"><span>${rec.source==='full'?`${fmt(rec.filtered)}건 · 전체 ${fmt(rec.total)}건`:`${fmt(rec.items.length)}건 표시 · 전체 ${fmt(rec.total)}건`}</span></div>`:'';
-    const note=rec.source==='preview'&&rec.total>previews(id).length?`<p class="ax-note">${slot?.status==='loading'?'전체 기록을 불러오는 중입니다.':slot?.status==='error'?h(slot.message):'전체 기록 조회가 아직 이 서버에 연결되지 않아 최근 기록만 표시합니다.'}${slot?.status==='error'?` ${btn('다시 시도','reload',`data-id="${h(id)}"`)}`:''}</p>`:'';
+    const note=rec.source==='preview'&&rec.total>previews(id).length?`<p class="ax-note">${slot?.status==='loading'?'전체 기록을 불러오는 중입니다.':slot?.status==='error'?h(slot.message):'전체 목록을 아직 불러올 수 없어 최근 기록만 보입니다.'}${slot?.status==='error'?` ${btn('다시 시도','reload',`data-id="${h(id)}"`)}`:''}</p>`:'';
     let body;
     if(!data(id))body=`<div class="live-empty"><strong>기록 집계 연결 전</strong><p>‘할 수 있는 일’에서 미리보기를 만들거나 담당자에게 요청할 수 있습니다.</p></div>`;
-    else if(!rec.items.length)body=`<div class="live-empty"><strong>${st.key==='empty'?'복사본에 기록이 없습니다':'이 조건의 기록이 없습니다'}</strong><p>${st.key==='empty'?'없는 기록을 만들어 보여 주지 않습니다. ‘할 수 있는 일’에서 첫 기록을 미리 작성하거나 담당자에게 요청할 수 있습니다.':'구분이나 검색어를 바꿔 보세요.'}</p></div>`;
+    else if(!rec.items.length)body=`<div class="live-empty"><strong>${st.key==='empty'?'기록이 없습니다':'이 조건의 기록이 없습니다'}</strong><p>${st.key==='empty'?'‘할 수 있는 일’에서 첫 기록을 미리 써 보거나 담당자에게 요청할 수 있습니다.':'구분이나 검색어를 바꿔 보세요.'}</p></div>`;
     else body={flow:flowView,sheet:sheetView,records:recordsView,report:reportView,settings:recordsView,timeline:timelineView}[kind](a,rec.items,facets);
     const pager=rec.source==='full'&&rec.pageCount>1?`<div class="live-pager">${btn('이전','page',`data-id="${h(id)}" data-page="${(state.page[id]||1)-1}" ${(state.page[id]||1)<=1?'disabled':''}`)}<span>${state.page[id]||1} / ${rec.pageCount}</span>${btn('다음','page',`data-id="${h(id)}" data-page="${(state.page[id]||1)+1}" ${(state.page[id]||1)>=rec.pageCount?'disabled':''}`)}</div>`:'';
-    return `${id==='teacher-workspace'?recipientPreview():''}${kind==='settings'?settingsView(a):screenRow}${kind==='settings'&&data(id)?`<h3 class="ws-records-title">복사본에서 읽은 설정 기록</h3>`:''}${tabs}${search}${note}${body}${pager}`;
+    return `${id==='teacher-workspace'?recipientPreview():''}${kind==='settings'?settingsView(a):screenRow}${kind==='settings'&&data(id)?`<h3 class="ws-records-title">현재 설정 값</h3>`:''}${tabs}${search}${note}${body}${pager}`;
   }
   // Teacher workspace: what a selected staff member receives. Owner requests can be acknowledged and completion-reported
   // here (session only); automatic 2.0 tasks are listed separately and only open their source record.
@@ -131,12 +137,12 @@ window.createWorkspaces = function createWorkspaces(api) {
     const owners=ax.recipient?.owners()||[],staffId=state.recipient||owners[0]||db.staff[0]?.id||'',person=db.staff.find(s=>s.id===staffId);
     const list=ax.recipient?.list(staffId)||[],auto=person?db.tasks.filter(t=>t.status==='open'&&!t.local&&t.owners.includes(person.name)):[];
     const status={requested:'확인 대기',working:'진행 중',done:'완료 보고'};
-    return `<section class="ws-recipient" aria-labelledby="ws-recipient-title"><div class="ax-section-head"><h2 id="ws-recipient-title">받는 사람 수신함 미리보기</h2>${recipientPicker(staffId,owners)}</div><p class="ax-note">원장님이 보낸 요청을 이 직원이 받는 화면을 미리 봅니다. 확인과 완료 보고는 이 시안에서만 반영되고 원장 알림으로 돌아옵니다.</p>${list.length?list.map(r=>`<article class="ws-inbox-item"><header>${pill(status[r.status],r.status==='done'?'green':'blue')}<strong>${h(r.title)}</strong><small>${h(r.due)}까지 · ${h(r.priority)}${r.context?.familyLabel?` · ${h(r.context.familyLabel)}`:''}</small></header><p class="live-pre">${h(r.body)}</p>${r.status==='requested'?btn('확인했습니다','recipient-ack',`data-request="${h(r.id)}"`,true):r.status==='working'?`<form class="ws-form" data-ws-form="recipient-report" data-request="${h(r.id)}" novalidate><label>완료 보고<textarea name="result" rows="2" maxlength="3000" required></textarea></label><p class="ax-form-error" role="alert"></p><div class="ws-form-foot"><span class="ax-note">보고는 원장 알림으로 갑니다(시안).</span><button class="button primary" type="submit">완료 보고</button></div></form>`:`<p class="ax-note">보고 내용: ${h(r.result)}</p>`}</article>`).join(''):`<p class="live-empty">이 직원에게 보낸 원장 요청이 없습니다. 업무 요청에서 이 직원을 담당자로 고르면 여기에 표시됩니다.</p>`}<section class="ws-auto"><h3>자동 할 일 ${auto.length}건</h3><p class="ax-note">원본 기록을 보고 저절로 열리고 닫히는 할 일입니다. 여기서 완료 처리하지 않습니다.</p>${auto.slice(0,6).map(t=>`<button type="button" class="ws-record" data-task="${h(t.id)}"><span><strong>${h(t.title)}</strong><small>${h(t.detail||'')}</small></span><span class="ws-record-meta">${t.due?`<small>${h(t.due)}까지</small>`:''}</span>${icon('chevron')}</button>`).join('')}${auto.length>6?`<p class="ax-note">나머지 ${auto.length-6}건은 할 일 목록에서 확인합니다.</p>`:''}</section></section>`;
+    return `<section class="ws-recipient" aria-labelledby="ws-recipient-title"><div class="ax-section-head"><h2 id="ws-recipient-title">받는 사람 수신함 미리보기</h2>${recipientPicker(staffId,owners)}</div><p class="ax-note">확인·완료 보고를 남기면 원장 알림으로 돌아옵니다.</p>${list.length?list.map(r=>`<article class="ws-inbox-item"><header>${pill(status[r.status],r.status==='done'?'green':'blue')}<strong>${h(r.title)}</strong><small>${h(r.due)}까지 · ${h(r.priority)}${r.context?.familyLabel?` · ${h(r.context.familyLabel)}`:''}</small></header><p class="live-pre">${h(r.body)}</p>${r.status==='requested'?btn('확인했습니다','recipient-ack',`data-request="${h(r.id)}"`,true):r.status==='working'?`<form class="ws-form" data-ws-form="recipient-report" data-request="${h(r.id)}" novalidate><label>완료 보고<textarea name="result" rows="2" maxlength="3000" required></textarea></label><p class="ax-form-error" role="alert"></p><div class="ws-form-foot"><span class="ax-note">보고는 원장 알림으로 갑니다.</span><button class="button primary" type="submit">완료 보고</button></div></form>`:`<p class="ax-note">보고 내용: ${h(r.result)}</p>`}</article>`).join(''):`<p class="live-empty">이 직원에게 보낸 원장 요청이 없습니다.</p>`}<section class="ws-auto"><h3>자동 할 일 ${auto.length}건</h3><p class="ax-note">원본 기록을 보고 저절로 열리고 닫히는 할 일입니다. 여기서 완료 처리하지 않습니다.</p>${auto.slice(0,6).map(t=>`<button type="button" class="ws-record" data-task="${h(t.id)}"><span><strong>${h(t.title)}</strong><small>${h(t.detail||'')}</small></span><span class="ws-record-meta">${t.due?`<small>${h(t.due)}까지</small>`:''}</span>${icon('chevron')}</button>`).join('')}${auto.length>6?`<p class="ax-note">나머지 ${auto.length-6}건은 할 일 목록에서 확인합니다.</p>`:''}</section></section>`;
   }
   const localCount=(id,rid)=>(state.local[id]||[]).filter(e=>e.recordId===String(rid)).length;
   function recordButton(id,r){
     const n=localCount(id,r.id);
-    return `<button type="button" class="ws-record" data-ws="record" data-id="${h(id)}" data-record="${h(r.id)}"><span><strong>${h(r.label)}</strong>${r.detail?`<small>${h(r.detail)}</small>`:''}</span><span class="ws-record-meta">${r.status?pill(r.status):''}${r.date?`<small>${h(r.date)}</small>`:''}${n?pill(`미리보기 ${n}`,'green'):''}</span>${icon('chevron')}</button>`;
+    return `<button type="button" class="ws-record" data-ws="record" data-id="${h(id)}" data-record="${h(r.id)}"><span><strong>${h(r.label)}</strong>${r.detail?`<small>${h(r.detail)}</small>`:''}</span><span class="ws-record-meta">${r.status?pill(r.status):''}${r.date?`<small>${h(dateText(r.date))}</small>`:''}${n?pill(`미리보기 ${n}`,'green'):''}</span>${icon('chevron')}</button>`;
   }
   function recordsView(a,items){return `<div class="ws-records">${items.map(r=>recordButton(a.id,r)).join('')}</div>`;}
   function timelineView(a,items){
@@ -152,14 +158,14 @@ window.createWorkspaces = function createWorkspaces(api) {
   function sheetView(a,items){
     const cols=[...new Set(items.flatMap(r=>(r.fields||[]).map(f=>f.label)))].slice(0,7),edits=state.edits[a.id]||{},changed=Object.values(edits).reduce((n,row)=>n+Object.keys(row).length,0);
     const cell=(r,c)=>{const original=(r.fields||[]).find(f=>f.label===c)?.value??'—',value=edits[r.id]?.[c];return `<td><button type="button" class="ws-cell ${value!==undefined?'changed':''}" data-ws="cell" data-id="${h(a.id)}" data-record="${h(r.id)}" data-col="${h(c)}" aria-label="${h(r.label)} ${h(c)} ${h(value??original)} · Enter로 수정">${h(value??original)}</button></td>`;};
-    return `<p class="ax-note">칸을 누르거나 Enter로 값을 고쳐 보세요. 바꾼 칸은 이 화면에만 표시되고, ‘변경분 미리보기 저장’으로 기록을 남깁니다.</p><div class="ws-sheet live-scroll" data-scroll-key="sheet-${h(a.id)}" tabindex="0"><table><thead><tr><th scope="col">항목</th>${cols.map(c=>`<th scope="col">${h(c)}</th>`).join('')}<th scope="col">상태</th></tr></thead><tbody>${items.map(r=>`<tr><th scope="row"><button type="button" class="ws-row-head" data-ws="record" data-id="${h(a.id)}" data-record="${h(r.id)}">${h(r.label)}</button></th>${cols.map(c=>cell(r,c)).join('')}<td>${r.status?pill(r.status):'—'}</td></tr>`).join('')}</tbody></table></div><div class="ws-sheet-bar"><span>${changed?`바뀐 칸 ${changed}개`:'바뀐 칸 없음'}</span>${btn('되돌리기','sheet-reset',`data-id="${h(a.id)}" ${changed?'':'disabled'}`)}${btn('변경분 미리보기 저장','sheet-save',`data-id="${h(a.id)}" ${changed?'':'disabled'}`,true)}</div>`;
+    return `<p class="ax-note">칸을 누르거나 Enter로 고칩니다. 바꾼 값은 시트에 저장되지 않습니다.</p><div class="ws-sheet live-scroll" data-scroll-key="sheet-${h(a.id)}" tabindex="0"><table><thead><tr><th scope="col">항목</th>${cols.map(c=>`<th scope="col">${h(c)}</th>`).join('')}<th scope="col">상태</th></tr></thead><tbody>${items.map(r=>`<tr><th scope="row"><button type="button" class="ws-row-head" data-ws="record" data-id="${h(a.id)}" data-record="${h(r.id)}">${h(r.label)}</button></th>${cols.map(c=>cell(r,c)).join('')}<td>${r.status?pill(r.status):'—'}</td></tr>`).join('')}</tbody></table></div><div class="ws-sheet-bar"><span>${changed?`바뀐 칸 ${changed}개`:'바뀐 칸 없음'}</span>${btn('되돌리기','sheet-reset',`data-id="${h(a.id)}" ${changed?'':'disabled'}`)}${btn('변경분 미리보기 저장','sheet-save',`data-id="${h(a.id)}" ${changed?'':'disabled'}`,true)}</div>`;
   }
   function documentHtml(a,r){
-    return `<article class="ws-document" aria-label="${h(r.label)} 미리보기"><header><p>${h(a.label)}</p><h3>${h(r.label)}</h3><p>${[r.date,r.status].filter(Boolean).map(h).join(' · ')}</p></header>${r.detail?`<p class="live-pre">${h(r.detail)}</p>`:''}${(r.fields||[]).length?`<dl>${r.fields.map(f=>`<dt>${h(f.label)}</dt><dd>${h(f.value)}</dd>`).join('')}</dl>`:''}<footer>${btn('이 문서로 요청','record-request',`data-id="${h(a.id)}" data-record="${h(r.id)}"`)}${btn('상세 보기','record',`data-id="${h(a.id)}" data-record="${h(r.id)}"`)}</footer></article>`;
+    return `<article class="ws-document" aria-label="${h(r.label)} 미리보기"><header><p>${h(a.label)}</p><h3>${h(r.label)}</h3><p>${[dateText(r.date),r.status].filter(Boolean).map(h).join(' · ')}</p></header>${r.detail?`<p class="live-pre">${h(r.detail)}</p>`:''}${(r.fields||[]).length?`<dl>${r.fields.map(f=>`<dt>${h(f.label)}</dt><dd>${h(f.value)}</dd>`).join('')}</dl>`:''}<footer>${btn('이 문서로 요청','record-request',`data-id="${h(a.id)}" data-record="${h(r.id)}"`)}${btn('상세 보기','record',`data-id="${h(a.id)}" data-record="${h(r.id)}"`)}</footer></article>`;
   }
   function reportView(a,items){
     const sel=items.find(r=>String(r.id)===String(state.sel[a.id]))||items[0];
-    return `<div class="ws-report"><div class="ws-report-list live-scroll" data-scroll-key="report-${h(a.id)}" tabindex="0" aria-label="문서 목록">${items.map(r=>`<button type="button" data-ws="select" data-id="${h(a.id)}" data-record="${h(r.id)}" aria-pressed="${r===sel}"><strong>${h(r.label)}</strong><small>${[r.date,r.status].filter(Boolean).map(h).join(' · ')}</small></button>`).join('')}</div>${documentHtml(a,sel)}</div>`;
+    return `<div class="ws-report"><div class="ws-report-list live-scroll" data-scroll-key="report-${h(a.id)}" tabindex="0" aria-label="문서 목록">${items.map(r=>`<button type="button" data-ws="select" data-id="${h(a.id)}" data-record="${h(r.id)}" aria-pressed="${r===sel}"><strong>${h(r.label)}</strong><small>${[dateText(r.date),r.status].filter(Boolean).map(h).join(' · ')}</small></button>`).join('')}</div>${documentHtml(a,sel)}</div>`;
   }
   // Settings faces are the catalog's faces (2.0 setting surfaces); their forms are the actions that target the face.
   function settingsView(a){
@@ -173,8 +179,8 @@ window.createWorkspaces = function createWorkspaces(api) {
   // Preview and navigate actions carry their own one-line description in draft.body; a request's draft.body is the request text itself.
   const actionIntent=x=>{
     const note=x.mode!=='request'&&typeof x.draft?.body==='string'?x.draft.body.trim():'',fields=(Array.isArray(x.fields)?x.fields:[]).some(f=>f&&f.id&&f.label);
-    if(x.mode==='preview')return note||(fields?`‘${x.label}’ 입력 칸을 채워 봅니다. 미리보기라 저장되지 않습니다.`:'메모를 남겨 이 화면에 미리보기로 기록합니다. 저장되지 않습니다.');
-    return x.mode==='navigate'?note||'관련 화면으로 이동합니다.':`담당자에게 보낼 ‘${x.label}’ 초안을 엽니다. 등록 전까지 전달되지 않습니다.`;
+    if(x.mode==='preview')return note||(fields?'입력 칸을 채워 기록합니다.':'메모로 기록합니다.');
+    return x.mode==='navigate'?note||'관련 화면으로 이동합니다.':'담당자에게 보낼 요청 초안을 엽니다.';
   };
   function actionPanel(a){
     const list=actionsOf(a),screen=screensOf(a).find(sc=>sc.id===state.screen[a.id]),focus=screen?screenActions(a,screen.id):[];
@@ -228,13 +234,13 @@ window.createWorkspaces = function createWorkspaces(api) {
   function previewForm(a,x,recordId='',inline=false,kind='preview'){
     const fields=Array.isArray(x.fields)?x.fields.filter(f=>f&&f.id&&f.label):[];
     if(!window.ContextPicker&&fields.some(f=>f.type==='student')&&!document.getElementById('ws-students'))document.body.insertAdjacentHTML('beforeend',`<datalist id="ws-students">${db.students.filter(s=>s.status==='enrolled').map(s=>`<option value="${h(`${s.name} · ${s.school} ${s.grade}`)}"></option>`).join('')}</datalist>`);
-    return `<form class="ws-form" data-ws-form="${kind}" data-id="${h(a.id)}" data-action="${h(x.id)}" ${inline?'data-inline="1"':''} novalidate>${fields.map(f=>fieldHtml(a,x,f,recordId,inline?'i':'m')).join('')||'<p class="ax-note">입력할 항목이 없는 작업입니다. 실행 내용을 메모로 남겨 미리보기를 기록합니다.</p><label>메모<textarea name="__note" rows="2" maxlength="500"></textarea></label>'}<p class="ax-form-error" role="alert"></p><div class="ws-form-foot"><span class="ax-note">${kind==='request'?'담당자와 기한은 다음 단계에서 고릅니다. 등록 전까지 전달되지 않습니다.':'미리보기 · 저장되지 않습니다.'}</span><button class="button primary" type="submit">${kind==='request'?'요청서로 이어 쓰기':'미리보기로 기록'}</button></div></form>`;
+    return `<form class="ws-form" data-ws-form="${kind}" data-id="${h(a.id)}" data-action="${h(x.id)}" ${inline?'data-inline="1"':''} novalidate>${fields.map(f=>fieldHtml(a,x,f,recordId,inline?'i':'m')).join('')||'<label>메모<textarea name="__note" rows="2" maxlength="500"></textarea></label>'}<p class="ax-form-error" role="alert"></p><div class="ws-form-foot"><span class="ax-note">${kind==='request'?'담당자와 기한은 다음 단계에서 고릅니다. 등록 전까지 전달되지 않습니다.':'저장되지 않습니다.'}</span><button class="button primary" type="submit">${kind==='request'?'요청서로 이어 쓰기':'미리보기로 기록'}</button></div></form>`;
   }
   const FIRST_CONTROL='#modal .ws-form :is(input:not([type=hidden]):not([data-cpick-search]),select,textarea,.cpick-trigger)';
   function openAction(familyId,actionId,recordId=''){
     const a=area(familyId),x=a&&actionsOf(a).find(y=>y.id===actionId);if(!x)return;
     if(x.mode==='navigate'){const {page,facet}=targetOf(x),dest=resolvePage(page);if(!dest){toast('이동할 화면을 찾지 못했습니다.');return;}const fam=familyOf(dest),tgt=fam&&area(fam);if(tgt&&facet){if(facetsOf(tgt).some(f=>f.id===facet)){state.facet[fam]=facet;state.page[fam]=1;}else if(screensOf(tgt).some(f=>f.id===facet)){if(viewKind(tgt)==='settings')state.face[fam]=facet;else state.screen[fam]=facet;}}navigate(dest);return;}
-    if(x.mode==='preview'){dialog('modal',x.label,`${a.label} · 로컬 미리보기`,`${recordId?`<p class="ws-context">기록: ${h(recordById(familyId,recordId)?.label||'')}</p>`:''}<p class="ax-note">${h(actionIntent(x))}</p>${previewForm(a,x,recordId)}`);$(FIRST_CONTROL)?.focus();return;}
+    if(x.mode==='preview'){dialog('modal',x.label,`${a.label} · 미리보기`,`${recordId?`<p class="ws-context">기록: ${h(recordById(familyId,recordId)?.label||'')}</p>`:''}<p class="ax-note">${h(actionIntent(x))}</p>${previewForm(a,x,recordId)}`);$(FIRST_CONTROL)?.focus();return;}
     const r=recordId?recordById(familyId,recordId):null;
     if((x.fields||[]).some(f=>f&&f.id&&f.label)){dialog('modal',x.label,`${a.label} · 요청에 담을 내용`,`${r?`<p class="ws-context">기록: ${h(r.label)}</p>`:''}<p class="ax-note">${h(actionIntent(x))}</p>${previewForm(a,x,recordId,false,'request')}`);$(FIRST_CONTROL)?.focus();return;}
     requestFrom(a,{title:x.draft?.title||x.label,body:x.draft?.body||`${a.label}에서 ‘${x.label}’ 작업을 처리하고 결과를 보고해 주세요.`,action:x.id,records:r?[r]:[]});
@@ -271,7 +277,7 @@ window.createWorkspaces = function createWorkspaces(api) {
   }
   function localLog(a){
     const list=state.local[a.id]||[];if(!list.length)return '';
-    return `<section class="ws-local" aria-label="이 화면에서 만든 미리보기"><h2>이 화면에서 만든 미리보기 ${list.length}건</h2><p class="ax-note">세션에만 남는 기록입니다. 새로고침하면 사라지고 저장되지 않습니다.</p>${list.map(e=>`<article><header><strong>${h(e.label)}</strong><small>${h(e.at)}</small></header><dl>${e.values.map(v=>`<dt>${h(v.label)}</dt><dd>${h(v.value)}</dd>`).join('')}</dl><div class="ax-actions">${btn('이 내용으로 요청','local-request',`data-id="${h(a.id)}" data-entry="${e.id}"`)}${btn('지우기','local-remove',`data-id="${h(a.id)}" data-entry="${e.id}"`)}</div></article>`).join('')}</section>`;
+    return `<section class="ws-local" aria-label="이 화면에서 만든 미리보기"><h2>이 화면에서 만든 미리보기 ${list.length}건</h2><p class="ax-note">새로고침하면 사라집니다.</p>${list.map(e=>`<article><header><strong>${h(e.label)}</strong><small>${h(e.at)}</small></header><dl>${e.values.map(v=>`<dt>${h(v.label)}</dt><dd>${h(v.value)}</dd>`).join('')}</dl><div class="ax-actions">${btn('이 내용으로 요청','local-request',`data-id="${h(a.id)}" data-entry="${e.id}"`)}${btn('지우기','local-remove',`data-id="${h(a.id)}" data-entry="${e.id}"`)}</div></article>`).join('')}</section>`;
   }
   function linkedRequests(a){
     const list=ax.requestsFor?.(a.id)||[];if(!list.length)return '';
@@ -289,7 +295,7 @@ window.createWorkspaces = function createWorkspaces(api) {
     if(r){recordAsk++;renderRecord(a,familyId,r);return Promise.resolve('shown');}
     const ask=++recordAsk,view=()=>{const d=document.getElementById('detail');return [d?.open?d.querySelector('h2')?.textContent??'':null,location.hash,Boolean(document.querySelector('#modal[open]'))];},before=view();
     const same=()=>ask===recordAsk&&view().every((x,i)=>x===before[i]);
-    const fail=missing=>{toast(missing?'이 기록을 찾지 못했습니다. 이 업무 영역의 복사본에 없는 기록입니다.':'기록을 불러오지 못했습니다. 잠시 뒤 다시 시도해 주세요.');return missing?'missing':'failed';};
+    const fail=missing=>{toast(missing?'이 기록을 찾지 못했습니다.':'기록을 불러오지 못했습니다. 잠시 뒤 다시 시도해 주세요.');return missing?'missing':'failed';};
     return fetch(`/api/workspaces/${encodeURIComponent(familyId)}/records?id=${encodeURIComponent(recordId)}`,{headers:{Accept:'application/json'}})
       .then(async res=>{const j=await res.json().catch(()=>null);if(!same())return 'stale';
         if(res.ok&&j?.item&&String(j.item.id)===String(recordId)){(exact[familyId]||(exact[familyId]=new Map())).set(String(j.item.id),j.item);renderRecord(a,familyId,j.item);return 'shown';}
@@ -298,7 +304,7 @@ window.createWorkspaces = function createWorkspaces(api) {
   }
   function renderRecord(a,familyId,r){
     const recordId=String(r.id),local=(state.local[familyId]||[]).filter(e=>e.recordId===recordId),open=api.openRecord&&api.canOpenRecord?.(recordId);
-    dialog('detail',r.label,`${a.label}${r.date?` · ${r.date}`:''}`,`<div class="ax-issue-meta">${r.status?pill(r.status):''}${(r.facetIds||[]).map(f=>pill(facetsOf(a).find(x=>x.id===f)?.label||f)).join('')}</div>${r.detail?`<p class="live-pre">${h(r.detail)}</p>`:''}${(r.fields||[]).length?`<dl>${r.fields.map(f=>`<dt>${h(f.label)}</dt><dd>${h(f.value)}</dd>`).join('')}</dl>`:''}<div class="ax-actions">${btn('이 기록으로 요청','record-request',`data-id="${h(familyId)}" data-record="${h(r.id)}"`,true)}${open?btn('상세 화면 열기','record-open',`data-record="${h(r.id)}"`):''}</div>${local.length?`<section class="ax-evidence"><h3>이 기록의 미리보기 ${local.length}건</h3>${local.map(e=>`<p><strong>${h(e.label)}</strong> · ${h(e.values.map(v=>`${v.label} ${v.value}`).join(' · '))}</p>`).join('')}</section>`:''}<section class="ws-record-actions"><h3>이 기록으로 할 수 있는 일</h3>${actionsOf(a).map(x=>`<button type="button" class="ws-action" data-ws="action" data-id="${h(familyId)}" data-action="${h(x.id)}" data-record="${h(r.id)}"><strong>${h(x.label)}</strong><small>${h(MODE[x.mode]?.label||'요청 초안')}</small></button>`).join('')}</section>`);
+    dialog('detail',r.label,`${a.label}${r.date?` · ${dateText(r.date)}`:''}`,`<div class="ax-issue-meta">${r.status?pill(r.status):''}${(r.facetIds||[]).map(f=>pill(facetsOf(a).find(x=>x.id===f)?.label||f)).join('')}</div>${r.detail?`<p class="live-pre">${h(r.detail)}</p>`:''}${(r.fields||[]).length?`<dl>${r.fields.map(f=>`<dt>${h(f.label)}</dt><dd>${h(f.value)}</dd>`).join('')}</dl>`:''}<div class="ax-actions">${btn('이 기록으로 요청','record-request',`data-id="${h(familyId)}" data-record="${h(r.id)}"`,true)}${open?btn('상세 화면 열기','record-open',`data-record="${h(r.id)}"`):''}</div>${local.length?`<section class="ax-evidence"><h3>이 기록의 미리보기 ${local.length}건</h3>${local.map(e=>`<p><strong>${h(e.label)}</strong> · ${h(e.values.map(v=>`${v.label} ${v.value}`).join(' · '))}</p>`).join('')}</section>`:''}<section class="ws-record-actions"><h3>이 기록으로 할 수 있는 일</h3>${actionsOf(a).map(x=>`<button type="button" class="ws-action" data-ws="action" data-id="${h(familyId)}" data-action="${h(x.id)}" data-record="${h(r.id)}"><strong>${h(x.label)}</strong><small>${h(MODE[x.mode]?.label||'요청 초안')}</small></button>`).join('')}</section>`);
   }
   // Partial refresh of the records region; keeps focus and the horizontal/vertical position of inner scrollers.
   function refreshMain(id){
@@ -343,7 +349,7 @@ window.createWorkspaces = function createWorkspaces(api) {
   function homeSignals(){
     const list=areas().flatMap(a=>(data(a.id)?.signals||[]).map(s=>({a,s}))).sort((x,y)=>byPriority(x.s,y.s));
     if(!list.length)return '';
-    return `<section class="ws-home-signals" aria-labelledby="ws-home-signals-title"><div class="ax-section-head"><h2 id="ws-home-signals-title">작업 공간에서 올라온 신호 ${list.length}건</h2><span>기록에서 찾은 신호입니다. 근거를 열거나 담당자에게 요청할 수 있습니다.</span></div><div class="ws-signal-grid">${list.slice(0,6).map(({a,s})=>signalCard(a.id,s,true)).join('')}</div>${list.length>6?`<p class="ax-note">나머지 ${list.length-6}건은 각 작업 공간에서 확인할 수 있습니다.</p>`:''}</section>`;
+    return `<section class="ws-home-signals" aria-labelledby="ws-home-signals-title"><div class="ax-section-head"><h2 id="ws-home-signals-title">작업 공간에서 올라온 신호 ${list.length}건</h2></div><div class="ws-signal-grid">${list.slice(0,6).map(({a,s})=>signalCard(a.id,s,true)).join('')}</div>${list.length>6?`<p class="ax-note">나머지 ${list.length-6}건은 각 작업 공간에서 확인할 수 있습니다.</p>`:''}</section>`;
   }
 
   /* ---------- runtime coverage map (where each catalog action lands — distinct from production wiring) ---------- */
@@ -433,7 +439,7 @@ window.createWorkspaces = function createWorkspaces(api) {
   function attachField(scope,fam=''){const CP=window.ContextPicker;if(!CP)return '';const start=has(fam)?fam:'';
     const areaPick=CP.html({id:`${scope}-attach-area`,name:'attachArea',label:'기록 첨부 · 영역',clearable:false,selected:start?[start]:[],attrs:{'data-attach-area':scope},
       ...CP.lists.choices({noun:'영역',columns:[{key:'name',label:'영역'},{key:'group',label:'묶음'},{key:'count',label:'기록',w:'6em'}],items:areas().filter(a=>Number(data(a.id)?.totalRecords)).map(a=>({value:a.id,title:a.label,cells:{group:a.group||'',count:`${fmt(Number(data(a.id)?.totalRecords)||0)}건`}}))})});
-    return `<div class="ws-attach" data-attach-scope="${h(scope)}">${areaPick}<div class="ws-attach-records">${start?attachRecordPicker(scope,start):''}</div><small>복사본 DB의 기록을 고르면, 저장할 때 그 기록의 이름·날짜·상태가 함께 남습니다. 영역을 바꾸면 고른 기록은 비워집니다.</small></div>`;}
+    return `<div class="ws-attach" data-attach-scope="${h(scope)}">${areaPick}<div class="ws-attach-records">${start?attachRecordPicker(scope,start):''}</div><small>고른 기록의 이름·날짜·상태가 함께 남습니다. 영역을 바꾸면 고른 기록이 비워집니다.</small></div>`;}
   document.addEventListener('change',event=>{const root=event.target.closest?.('[data-attach-area]');if(!root)return;const scope=root.dataset.attachArea,fam=root.querySelector('input[type=hidden]')?.value||'',box=document.querySelector(`.ws-attach[data-attach-scope="${CSS.escape(scope)}"] .ws-attach-records`);if(box)box.innerHTML=attachRecordPicker(scope,fam);});
   /** Opens a family's workspace, optionally on one record facet (일 카드의 '○○ 열기'). */
   function openFamily(id,facet=''){if(!has(id))return false;state.facet[id]=facet||'';state.page[id]=1;api.navigate(`workspace-${id}`);return true;}

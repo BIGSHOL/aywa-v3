@@ -49,13 +49,14 @@ window.V2Screens = (() => {
     return () => {
       const writable = !!(index || []).find(s => s.id === def.id)?.writable;
       const ctx = { api, query: p.query, esc, writable, copyNote: COPY_NOTE, load: params => load(def.id, params), act: (action, body) => act(def.id, action, body), go: params => go(def.id, params), refresh: () => { for (const k of [...cache.keys()]) if (k.startsWith(`${def.id}?`)) cache.delete(k); api?.render(); } };
-      try { return `<div class="v2s" data-v2-screen="${esc(def.id)}">${def.render(ctx)}</div>`; }
+      // native = 3.0 고유 화면(확장 추세 등) — 2.0 모양을 지키는 .v2s 예외 없이 3.0 컨트롤 규칙을 그대로 받는다.
+      try { return `<div class="${def.native ? 'v3s' : 'v2s'}" data-v2-screen="${esc(def.id)}">${def.render(ctx)}</div>`; }
       catch (error) { console.error(error); return `<div class="v2s"><p class="v2s-note">이 화면을 그리지 못했습니다.</p></div>`; }
     };
   }
   /** live.js sidebar hook: the '2.0 화면' group, in the order the server lists. */
   function sidebar(page) {
-    const list = (index || []).filter(s => screens.has(s.id)); if (!list.length) return '';
+    const list = (index || []).filter(s => screens.has(s.id) && screens.get(s.id).nav !== false); if (!list.length) return ''; // nav:false = 카드·링크로만 들어오는 화면(확장 추세)
     const active = parse(page)?.id;
     return `<div class="nav-group">업무 화면</div>${list.map(s => `<a class="nav-item ${active === s.id ? 'active' : ''}" href="#v2-${esc(s.id)}" ${active === s.id ? 'aria-current="page"' : ''}><span>${esc(s.label)}</span></a>`).join('')}`;
   }

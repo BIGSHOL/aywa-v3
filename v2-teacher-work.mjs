@@ -36,11 +36,11 @@ async function unreadWindowDays() {
   return unreadWindowP;
 }
 
-/** 2.0 loadTeacherWork 머리의 창 계산(같은 식). */
-function windowOf(R, today, unreadDays) {
-  const range = { reportFrom: R.addDays(today, -6), videoFrom: R.addDays(today, -6), to: today };
+/** 2.0 loadTeacherWork 머리의 창 계산(같은 식). `days` = 창 길이(2.0은 7) — 확장 추세가 하루·한 달·한 해 창에 같은 식을 쓴다. */
+function windowOf(R, today, unreadDays, days = 7) {
+  const range = { reportFrom: R.addDays(today, -(days - 1)), videoFrom: R.addDays(today, -(days - 1)), to: today };
   const unreadFrom = R.addDays(today, -(unreadDays - 1));
-  return { today, range, attendanceFrom: R.addDays(today, -7), attendanceTo: R.addDays(today, -1), unreadFrom,
+  return { today, range, attendanceFrom: R.addDays(today, -days), attendanceTo: R.addDays(today, -1), unreadFrom,
     reportFetchFrom: unreadFrom < range.videoFrom ? unreadFrom : range.videoFrom, months: [today.slice(0, 7), R.shiftMonth(today.slice(0, 7), -1)] };
 }
 /** 기준일의 '지금' — `now`(Date · ms · 날짜를 받는 함수)가 있으면 그것, 없으면 복사본을 뜬 순간 또는 그날의 끝. */
@@ -161,8 +161,13 @@ function sliceWindow(R, raw, w, scope, cutMs = null) {
     counselRows: raw.counselRows.filter((r) => w.months.includes(r.month)) };
 }
 
-/** 2.0 loadTeacherWork의 판정부(조회 다음) — 같은 순서·같은 순수 함수. */
-function judge(R, settings, d, w, nowMs, counselShown, unreadGraceHours) {
+/** 확장 추세의 묶음 — 2.0 teacherWork는 '선생님:과목' 줄로 묶고 열람·출결은 반→줄 대응으로 붙인다. 반·과목으로 묶을 땐 그 키를 선생님 자리에 넣어
+ * 같은 판정을 반·과목 줄로 받는다(보고서 담당 판정·미분류 보고서 연결은 진짜 선생님으로 끝낸 뒤에만 바꾼다). */
+const GROUP = { teacher: null, class: (c) => ({ teacherId: `class:${c.id}`, teacherName: c.name }), subject: (c) => ({ teacherId: `subject:${c.subject}`, teacherName: c.subject }) };
+
+/** 2.0 loadTeacherWork의 판정부(조회 다음) — 같은 순서·같은 순수 함수. `groupBy` = 'teacher'(2.0) | 'class' | 'subject'. */
+function judge(R, settings, d, w, nowMs, counselShown, unreadGraceHours, groupBy = 'teacher') {
+  if (!(groupBy in GROUP)) throw new Error(`묶음 기준이 아닙니다: ${groupBy}`);
   const { today, range, attendanceFrom, attendanceTo, unreadFrom } = w;
   const deliveryShown = R.classnoteModuleOn(settings);
   if (!d.classIds.length) return R.withTeacherWorkExtras(R.teacherWork([], [], [], range, []), { unread: [], attendance: [], counsel: new Map(),
@@ -187,7 +192,8 @@ function judge(R, settings, d, w, nowMs, counselShown, unreadGraceHours) {
   const obligations = R.reportWorkObligations({ classes: workClasses, reports: workReports, schedules, enrollments, attendance,
     posts: posts.map((p) => ({ boardName: p.board_name, postedOn: p.posted_on })), from: range.reportFrom, to: today,
     nowMinutes: R.kstMinutesOfDay(new Date(nowMs)), holidays: settings.operations.holidays.map((h) => h.date) });
-  const work = R.teacherWork(workClasses, workReports, outcomes.map((r) => ({ classId: r.class_id, studentId: r.student_id, date: r.homework_date, status: r.status, observedAt: r.observed_at })),
+  const regroup = GROUP[groupBy], groupClasses = regroup ? workClasses.map((c) => ({ ...c, ...regroup(c) })) : workClasses;
+  const work = R.teacherWork(groupClasses, workReports, outcomes.map((r) => ({ classId: r.class_id, studentId: r.student_id, date: r.homework_date, status: r.status, observedAt: r.observed_at })),
     range, obligations, extraIssues.filter((x) => { const student = extraStudentOf.get(x.studentId); return !x.kept && !!student && !student.is_test
       && R.isVideoHomeworkEnabled(settings.report.videoHomeworkPolicy, { classId: x.classId, subjectKey: subjects.get(x.classId) ?? '', grade: student.grade }); }));
   const cutoffMs = nowMs - unreadGraceHours * 3_600_000;
@@ -202,7 +208,7 @@ function judge(R, settings, d, w, nowMs, counselShown, unreadGraceHours) {
       const meets = schedules.some((s) => s.class_id === c.id && s.day_of_week === R.dowOf(date) && !!s.valid_from && s.valid_from <= date && (!s.valid_to || s.valid_to >= date));
       if (!meets) return [];
       const judged = R.judgeClassAttendanceDay({ enrollments: enrollmentsOf.get(c.id) ?? [], recorded: recordedOf.get(`${c.id}|${date}`) ?? new Set(), date, dayKey: R.dowOf(date) });
-      return judged.expected > 0 ? [{ classId: c.id, teacherId: c.teacher_id, subject: c.subject, unrecorded: judged.unrecorded }] : [];
+      return judged.expected > 0 ? [{ classId: c.id, teacherId: regroup ? regroup({ id: c.id, name: c.class_name, subject: c.subject }).teacherId : c.teacher_id, subject: c.subject, unrecorded: judged.unrecorded }] : [];
     }));
   const counselPick = R.pickCounselMonth(counselRows, today.slice(0, 7));
   const counsel = new Map(counselPick.rows.map((r) => [r.teacher_id, typeof r.counsel === 'number' ? r.counsel : null]));
@@ -211,7 +217,7 @@ function judge(R, settings, d, w, nowMs, counselShown, unreadGraceHours) {
     counselMonth: counselPick.month, deliveryShown, counselShown });
 }
 
-async function prepare(tx, tenantId, todays, settings, importV2) {
+async function prepare(tx, tenantId, todays, settings, importV2, spans = null) {
   const sql = queryGate(tx);
   const [R, clock, unreadDays] = await Promise.all([rules(importV2), copyClock(), unreadWindowDays()]);
   const s = settings ?? (await tenantSettings(sql, tenantId, importV2));
@@ -219,7 +225,9 @@ async function prepare(tx, tenantId, todays, settings, importV2) {
   const counselShown = R.isModuleEnabled(s.modules.disabled, 'class_review')
     ? await laboratoryMenuAvailable(sql, R, tenantId, 'class_review', clock.at).catch(() => false) : false;
   for (const d of todays) if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) throw new Error(`기준일 형식이 아닙니다: ${d}`);
-  return { sql, R, clock, settings: s, counselShown, wins: todays.map((d) => windowOf(R, d, unreadDays)) };
+  // spans가 있으면(확장 추세) 창마다 그 길이 — 학부모 열람도 같은 창의 보고서로 센다.
+  if (spans && (spans.length !== todays.length || spans.some((n) => !Number.isInteger(n) || n < 1 || n > 366))) throw new Error('창 길이가 올바르지 않습니다');
+  return { sql, R, clock, settings: s, counselShown, wins: todays.map((d, i) => (spans ? windowOf(R, d, spans[i], spans[i]) : windowOf(R, d, unreadDays))) };
 }
 
 /**
@@ -235,17 +243,18 @@ export async function loadTeacherWork({ sql, tenantId, today, scope = null, sett
  * 여러 기준일(예: 8개 주 창의 끝 날)을 한 번에 — 가장 넓은 범위를 한 번 읽고 창마다 2.0 조건으로 걸러 2.0 판정을 돌린다(B4 · 창마다 따로 읽지 않는다).
  * 돌려줌 = `todays` 순서의 결과 배열. 창마다 결과 = 그 날짜로 `loadTeacherWork`를 따로 부른 결과(시험이 잠근다).
  */
-export async function loadTeacherWorkWindows({ sql: tx, tenantId, todays, scope = null, settings, importV2, now, asOfCut = true }) {
+export async function loadTeacherWorkWindows({ sql: tx, tenantId, todays, scope = null, settings, importV2, now, asOfCut = true, spans = null, groupBy = 'teacher' }) {
   if (!todays?.length) return [];
-  const { sql, R, clock, settings: s, counselShown, wins } = await prepare(tx, tenantId, todays, settings, importV2);
+  const { sql, R, clock, settings: s, counselShown, wins } = await prepare(tx, tenantId, todays, settings, importV2, spans);
   const raw = await fetchRaw(sql, R, tenantId, s, wins, scope, counselShown);
   return wins.map((w) => { const nowMs = nowOf(w.today, clock, now);
-    return judge(R, s, sliceWindow(R, raw, w, scope, asOfCut ? nowMs : null), w, nowMs, counselShown, R.UNREAD_GRACE_HOURS); });
+    return judge(R, s, sliceWindow(R, raw, w, scope, asOfCut ? nowMs : null), w, nowMs, counselShown, R.UNREAD_GRACE_HOURS, groupBy); });
 }
 
 // ── 3.0 KPI: 최근 7일 창 8개(원장 10-28 "원하는건 추세") ─────────────────────────────────────────────────────────────
 // 원장 첫 화면 '운영 상태'와 선생님 수업보고서 영역이 같은 값을 쓴다 — 같은 트랜잭션 안에서는 한 번만 계산한다.
-// 창마다 그 창 마지막 날의 같은 시각 기준(as-of) — 같은 조건끼리 견준다(마감 전 영상 숙제도 창마다 같은 정도로 섞인다).
+// 지난 창은 그 창이 끝난 상태(그날 수업은 모두 마감 대상 · 늦게 쓴 보고서도 셈), 지금 창은 복사본을 뜬 순간 — 확장 추세(teacherWorkTrend)의 주별과
+// 같은 판정이라 카드의 '7일 전 대비'와 확장 추세의 '직전 대비'가 같은 숫자다(원장 10-28 카드 ▲7.4%p ↔ 확장 추세 ▼1.7%p가 갈렸던 것).
 const SUMS = ['reports', 'reportTarget', 'sent', 'recalled', 'unread', 'unreadJudged', 'attendanceUnrecorded', 'attendanceDays', 'videoIssuedReports', 'reportsWritten', 'videoSubmitted', 'videoAssigned'];
 const weeklyMemo = new WeakMap();
 /**
@@ -260,10 +269,7 @@ export function teacherWorkWeekly({ sql, asOf, tenantId = COPY_TENANT, importV2,
 }
 async function weekly({ sql, asOf, tenantId: t, importV2, n }) {
   const [{ kpi, rate, weekWindows }, load] = await Promise.all([import('./domain-snapshot-core.mjs'), importV2 ?? import('./v2-bridge.mjs').then((m) => m.importV2)]);
-  // 모든 창을 같은 시각에 자른다 — 마지막 창은 복사본을 뜬 순간이니, 지난 창도 그 날의 같은 시각(14:34면 14:34). 그날 끝으로 자르면
-  // 지난 창만 저녁 수업·저녁에 쓴 보고서까지 들어가 같은 조건 비교가 아니다(2.0 reportWorkObligations의 오늘 판정은 시각을 본다).
-  const clock = await copyClock(), at = (d) => clock.at.getTime() - (Date.parse(`${asOf}T00:00:00Z`) - Date.parse(`${d}T00:00:00Z`));
-  const windows = weekWindows(asOf, n), works = await loadTeacherWorkWindows({ sql, tenantId: t, todays: windows.map((w) => w.to), importV2: load, now: at });
+  const windows = weekWindows(asOf, n), works = await loadTeacherWorkWindows({ sql, tenantId: t, todays: windows.map((w) => w.to), importV2: load, asOfCut: false });
   // 영상 숙제 값이 처음 생긴 날 — 그 전에 끝난 창은 영상 지표가 '기록 없음'(0%가 아니다).
   const [{ first: videoFrom }] = await sql`select min(report_date)::text first from public.lesson_reports where tenant_id=${t} and video_homework is not null`;
   const sum = (rows) => Object.fromEntries(SUMS.map((k) => [k, rows.reduce((s, r) => s + (Number(r[k]) || 0), 0)]));
@@ -271,18 +277,55 @@ async function weekly({ sql, asOf, tenantId: t, importV2, n }) {
   const totals = works.map((w) => sum(w.rows)), lessonTotals = works.map((w) => sum(w.rows.filter((r) => r.reportSource === 'lesson')));
   // 학부모 열람률의 기간·유예 = 판정이 쓰는 그 값(UNREAD_WINDOW_DAYS · UNREAD_GRACE_HOURS) — 문구가 계산과 어긋나지 않게.
   const [{ UNREAD_GRACE_HOURS: graceHours }, unreadDays] = await Promise.all([rules(load), unreadWindowDays()]);
-  // 이름은 무엇을 세는지 그대로(원장 10-28 "무엇을 발송했다는것의 확인율인지 명확하지 않음"), 기간은 span(제목 오른쪽), basis = 분자 ÷ 분모를 말로.
   // 화면 문구에 '2.0'을 적지 않는다(원장 10-28 "2.0과 관련된 멘트는 일단 제거") — 판정이 2.0 함수라는 것은 이 파일의 주석이 말한다.
-  const of = (label, span, f, basis, videoOnly = false) => kpi(label, '%', windows.map((w, i) => ({ label: w.label,
-    value: videoOnly && (!videoFrom || w.to < videoFrom) ? null : f(totals[i], lessonTotals[i]) })), { better: 'up', span, basis });
-  const kpis = [
-    of('수업보고서 작성률', '최근 7일', (a) => rate(a.reports, a.reportTarget), '써야 할 수업보고서 중 쓴 것'),
-    of('수업보고서 발송률', '최근 7일', (a, l) => rate(l.sent, l.reports - l.recalled), '쓴 수업보고서 중 학부모에게 보낸 것(회수한 보고서 제외)'),
-    of('학부모 열람률', `최근 ${unreadDays}일`, (a, l) => rate(l.unreadJudged - l.unread, l.unreadJudged), `보낸 수업보고서 중 학부모가 읽은 것 · 보낸 지 ${graceHours}시간이 안 된 것은 빼고 셈`),
-    of('출결 입력률', '어제까지 7일', (a) => rate(a.attendanceDays - a.attendanceUnrecorded, a.attendanceDays), '수업한 날 출결 칸 중 입력된 것'),
-    of('영상 숙제 출제율', '최근 7일', (a, l) => rate(l.videoIssuedReports, l.reportsWritten), '쓴 수업보고서 중 영상 숙제를 낸 것', true),
-    // 원장 10-28: '영상 업로드가 숙제 출제에 비해 잘되고 있냐 안되고 있냐'
-    of('영상 제출률', '최근 7일', (a) => rate(a.videoSubmitted, a.videoAssigned), '낸 영상 숙제 중 학생이 영상을 올린 것', true),
-  ];
+  const SPAN = { 'parent-read': `최근 ${unreadDays}일`, 'attendance-input': '어제까지 7일' };
+  const kpis = TEACHER_WORK_METRICS.map((m) => kpi(m.label, '%', windows.map((w, i) => ({ label: w.label,
+    value: m.video && (!videoFrom || w.to < videoFrom) ? null : rate(...m.part(totals[i], lessonTotals[i])) })), { id: m.id, better: 'up', span: SPAN[m.id] ?? '최근 7일', basis: m.basis(graceHours) }));
   return { windows, totals, lessonTotals, kpis, basis: '변화 = 7일 전 값과 비교 · 날마다 같은 시각까지 셈' };
+}
+
+/**
+ * 지표 정의 한 벌 — 카드(weekly)와 확장 추세(teacherWorkTrend)가 같이 쓴다. part(a, l) = [분자, 분모](a = 줄 합 · l = 수업보고서 줄 합).
+ * 이름은 무엇을 세는지 그대로(원장 10-28 "무엇을 발송했다는것의 확인율인지 명확하지 않음").
+ * 발송·학부모 확인·영상 출제는 2.0 카드처럼 수업보고서 줄(reportSource 'lesson')만 — 알림장(영어)·작성 제외 줄은 그 칸이 '—'(teacher-work-card.tsx).
+ */
+export const TEACHER_WORK_METRICS = Object.freeze([
+  { id: 'report-written', label: '수업보고서 작성률', part: (a) => [a.reports, a.reportTarget], basis: () => '써야 할 수업보고서 중 쓴 것' },
+  { id: 'report-sent', label: '수업보고서 발송률', part: (a, l) => [l.sent, l.reports - l.recalled], basis: () => '쓴 수업보고서 중 학부모에게 보낸 것(회수한 보고서 제외)' },
+  { id: 'parent-read', label: '학부모 보고서 열람률', part: (a, l) => [l.unreadJudged - l.unread, l.unreadJudged], basis: (g) => `보낸 수업보고서 중 학부모가 읽은 것 · 보낸 지 ${g}시간이 안 된 것은 빼고 셈` },
+  { id: 'attendance-input', label: '출결 입력률', part: (a) => [a.attendanceDays - a.attendanceUnrecorded, a.attendanceDays], basis: () => '수업한 날 출결 칸 중 입력된 것', attendance: true },
+  { id: 'video-issued', label: '영상 숙제 출제율', part: (a, l) => [l.videoIssuedReports, l.reportsWritten], basis: () => '쓴 수업보고서 중 영상 숙제를 낸 것', video: true },
+  // 원장 10-28: '영상 업로드가 숙제 출제에 비해 잘되고 있냐 안되고 있냐'
+  { id: 'video-submitted', label: '영상 숙제 제출률', part: (a) => [a.videoSubmitted, a.videoAssigned], basis: () => '낸 영상 숙제 중 학생이 영상을 올린 것', video: true },
+]);
+
+/**
+ * 확장 추세(원장 10-28 "일별 월별 연별 추세를 자세하게 … 학생별, 선생님별, 반별, 과목별") — 아무 창(`windows` = [{from, to}])과 묶음(`by`)으로
+ * 같은 2.0 판정을 돌려 합계와 줄별 [분자, 분모]를 낸다. 지난 창은 그 창 마지막 날이 끝난 때로 판정하고(그날 수업은 모두 마감 대상) 늦게 쓴 보고서도 센다 —
+ * 카드가 7일 창 안의 지난 날을 세는 방식과 같다. 지금 창(마지막 날 = 복사본 기준일)은 복사본을 뜬 순간이라 카드 값과 같다.
+ * (카드의 추세선은 비교를 공정하게 하려고 지난 창도 오늘과 같은 시각에 자른다 — 하루 창에선 오후 수업이 빠져 쓸 수 없다.) 학부모 열람은 같은 창의 보고서로 센다.
+ * 출결은 2.0처럼 '기준일 전날까지'다 — 출결 창은 어제까지로 끝나게 받고(trend-metrics의 endsYesterday) 기준일은 창 끝 다음 날로 잡아
+ * 창 안의 날을 그대로 센다(주별 = 카드의 '어제까지 7일' 창 그대로 · 창끼리 겹치지 않는다).
+ * `scope` = 2.0 TeacherScope({ classIds }) — 필터(선생님·반·과목)를 반 목록으로 좁힌다. 학생 묶음은 아직 없다.
+ */
+export async function teacherWorkTrend({ sql, asOf, tenantId: t = COPY_TENANT, importV2, metric, windows, by = 'teacher', scope = null }) {
+  const m = TEACHER_WORK_METRICS.find((x) => x.id === metric);
+  if (!m) throw new Error(`지표가 아닙니다: ${metric}`);
+  const load = importV2 ?? (await import('./v2-bridge.mjs')).importV2, R = await rules(load);
+  const day = (d) => Date.parse(`${d}T00:00:00Z`) / 86_400_000;
+  const todays = windows.map((w) => (m.attendance ? R.addDays(w.to, 1) : w.to));
+  const spans = windows.map((w) => day(w.to) - day(w.from) + 1);
+  const works = await loadTeacherWorkWindows({ sql, tenantId: t, todays, spans, groupBy: by, scope, importV2: load, asOfCut: false });
+  const [{ first: videoFrom }] = await sql`select min(report_date)::text first from public.lesson_reports where tenant_id=${t} and video_homework is not null`;
+  // 써야 할 보고서·출결 대상은 시간표 배치에서 나온다 — 배치가 처음 생기기 전의 창은 들어온 보고서만 대상이 되어 100%로 보인다(옮겨 온 옛 보고서). 그 날을 알린다.
+  const [{ first: since }] = await sql`select min(valid_from)::text first from public.class_schedules where tenant_id=${t}`;
+  const sum = (rows) => Object.fromEntries(SUMS.map((k) => [k, rows.reduce((s, r) => s + (Number(r[k]) || 0), 0)]));
+  const point = (rows, w) => (m.video && (!videoFrom || w.to < videoFrom) ? null : m.part(sum(rows), sum(rows.filter((r) => r.reportSource === 'lesson'))));
+  const keyOf = (r) => r.teacherId ?? 'unassigned', groups = new Map();
+  works.forEach((wk, i) => { for (const r of wk.rows) { const k = keyOf(r), g = groups.get(k) ?? groups.set(k, { key: k, label: r.teacherName, perWindow: windows.map(() => []) }).get(k); g.perWindow[i].push(r); } });
+  return {
+    since: m.video ? videoFrom ?? since : since,
+    total: works.map((wk, i) => point(wk.rows, windows[i])),
+    rows: [...groups.values()].map((g) => ({ key: by === 'teacher' ? g.key : g.key.slice(g.key.indexOf(':') + 1), label: g.label, points: g.perWindow.map((rows, i) => (rows.length ? point(rows, windows[i]) : null)) })),
+  };
 }

@@ -59,7 +59,7 @@ export function createFlowMock(db){
     refresh(c);
   }
   // Same shape the backend records without a configured judgment key (Korean reason; technical codes kept apart).
-  const unavailable=()=>({id:`dec-${state.seq+1}`,status:'unavailable',reason:'판정 키가 설정되지 않음',route:'human_review',routeLabel:'사람 검토',area:null,provider:'none',providerLabel:null,model:null,modelLabel:null,probabilities:null,elapsedMs:0,usage:null,at:now(),claudeRecommended:false,draft:null,codes:['jev_not_configured']});
+  const unavailable=()=>({id:`dec-${state.seq+1}`,status:'unavailable',reason:'자동 판정을 받지 못함',route:'human_review',routeLabel:'사람 검토',area:null,provider:'none',providerLabel:null,model:null,modelLabel:null,probabilities:null,elapsedMs:0,usage:null,at:now(),claudeRecommended:false,draft:null,codes:['jev_not_configured']});
   const base=(id,fields)=>({id,closure:'manual',origin:'dev',priority:'normal',state:'open',trigger:null,entityRefs:[],steps:[],currentStepId:null,assigneeIds:[],dueAt:null,createdAt:now(),updatedAt:now(),evidence:[],decision:null,history:[],linkedCaseIds:[],flags:{},watchers:[],...fields});
 
   // Seed: open automatic 2.0 tasks become fact-closed source cases (deterministic ids, once).
@@ -77,7 +77,7 @@ export function createFlowMock(db){
   // Same paging as the backend: 500 cases per page (?casePage=N), the newest 200 events (?eventsBefore=<event number>).
   const flow=(query={})=>{const size=500,page=Math.max(1,Number(query.casePage)||1),older=Number(query.eventsBefore)||0,events=older?state.events.filter(e=>Number(e.id.slice(4))<older):state.events;
     return {schemaVersion:1,asOf:db.meta.asOf,revision:state.revision,mode:'local-preview',actors,entities:[],relations:[],cases:state.cases.slice((page-1)*size,page*size),casesTotal:state.cases.length,casePage:page,casePageSize:size,casePageCount:Math.max(1,Math.ceil(state.cases.length/size)),events:events.slice(-200),eventsTotal:state.events.length,
-    metrics:{cases:{total:state.cases.length},bottlenecks:[]},aiStatus:{providers:[{id:'jev',label:'Jev 판정',status:'unavailable',reason:'판정 키가 설정되지 않음'},{id:'claude-cli',label:'Claude 초안',status:'unavailable',reason:'초안 모듈 연결 전'}]}};};
+    metrics:{cases:{total:state.cases.length},bottlenecks:[]},aiStatus:{providers:[{id:'jev',label:'AI 판정',status:'unavailable',reason:'판정 키가 설정되지 않음'},{id:'claude-cli',label:'AI 설명 초안',status:'unavailable',reason:'초안 모듈 연결 전'}]}};};
   // Test-only bulk: n open fact cases (one event each) assigned to one person, so a store passes one case page and the
   // first cases' history falls outside the newest 200 events.
   function seedBulk(n,assigneeId){
@@ -114,7 +114,7 @@ export function createFlowMock(db){
         if(dup)return {caseId:dup.id,duplicate:true};
         const student=db.students.find(s=>s.id===rid),bill=db.invoices.find(i=>i.id===rid),cls=student&&db.classes.find(k=>k.students.includes(student.id)),teacher=cls&&byId.get(cls.teacherId)?cls.teacherId:null;
         const refs=p.scenario==='absence'?[{type:'student',id:student.id,label:student.name,familyId:'students',recordId:student.id},...(cls?[{type:'class',id:cls.id,label:cls.name,familyId:'classes',recordId:cls.id}]:[])]:[{type:'invoice',id:bill.id,label:`${bill.period} 청구`,familyId:'billing',recordId:bill.id},...(db.students.find(s=>s.id===bill.studentId)?[{type:'student',id:bill.studentId,label:db.students.find(s=>s.id===bill.studentId).name,familyId:'students',recordId:bill.studentId}]:[])];
-        const id=`loc-${state.cases.length+1}`,n=base(id,{kind:'scenario',scenario:p.scenario,scenarioKey:key,familyId:tpl.familyId,title:`${tpl.title} — ${student?.name||bill?.name||'기록'}`,summary:`${refs[0].label} 기록으로 만든 로컬 시나리오입니다. 원본 기록은 바뀌지 않습니다.`,entityRefs:refs,watchers:[actor.id]});
+        const id=`loc-${state.cases.length+1}`,n=base(id,{kind:'scenario',scenario:p.scenario,scenarioKey:key,familyId:tpl.familyId,title:`${tpl.title} — ${student?.name||bill?.name||'기록'}`,summary:`${refs[0].label} 기록으로 만든 연습 시나리오입니다. 원본 기록은 바뀌지 않습니다.`,entityRefs:refs,watchers:[actor.id]});
         n.steps=tpl.steps.map((d,i)=>step(id,i+1,d,resolve(d.role,{teacher}),i+1));state.cases.push(n);
         const e=evt(n,tpl.trigger[0],tpl.trigger[1],actor.id);n.trigger={eventId:e.id,type:tpl.trigger[0],label:tpl.trigger[1],actorId:actor.id,at:e.at};
         evt(n,'decision.requested','판정 요청',actor.id);advance(n,actor.id);
@@ -129,7 +129,7 @@ export function createFlowMock(db){
         const allowed=new Set(c.entityRefs.map(r=>`${r.type}:${r.id}`));if((p.recordRefs||[]).some(k=>!allowed.has(k)))return fail(400,'record_ref_not_allowed','이 업무와 관련된 기록만 근거로 붙일 수 있습니다.');
         const ev={id:`ev-${state.seq+1}`,note:p.note.trim(),recordRefs:(p.recordRefs||[]).map(k=>c.entityRefs.find(r=>`${r.type}:${r.id}`===k)),actorId:actor.id,at:now(),stepId:s.id,outcome:p.outcome||'done'};
         if(c.closure==='fact'){
-          const id=`loc-${state.cases.length+1}`,f=base(id,{kind:'request',scenario:null,familyId:c.familyId,title:`${c.title} — 후속 보고`,summary:'원본 할 일은 원본 기록이 바뀔 때 닫힙니다. 이 보고는 로컬 기록입니다.',entityRefs:c.entityRefs.slice(0,10),linkedCaseIds:[c.id],evidence:[ev],watchers:[actor.id]});
+          const id=`loc-${state.cases.length+1}`,f=base(id,{kind:'request',scenario:null,familyId:c.familyId,title:`${c.title} — 후속 보고`,summary:'원본 할 일은 원본 기록이 바뀔 때 닫힙니다. 이 보고는 따로 남는 후속 기록입니다.',entityRefs:c.entityRefs.slice(0,10),linkedCaseIds:[c.id],evidence:[ev],watchers:[actor.id]});
           f.steps=[{...step(id,1,{key:'followup_report',label:'후속 보고',role:'source',evidenceRequired:true},{assigneeIds:[actor.id],queue:null,rule:'원본 할 일 담당'},1),status:'done'}];state.cases.push(f);
           c.linkedCaseIds.push(id);c.evidence.push({...ev,followupCaseId:id});evt(c,'followup.linked','원본 할 일의 후속 보고',actor.id,{stepId:s.id});evt(f,'step.reported','결과 보고',actor.id,{stepId:f.steps[0].id});advance(f,actor.id);refresh(c);
           return {caseId:id};
@@ -171,7 +171,7 @@ export function createFlowMock(db){
     state.calls.push(body);
     if(!body||typeof body!=='object'||!/^[A-Za-z0-9_-]{8,80}$/.test(body.commandId||''))return fail(400,'invalid_request','요청 형식이 올바르지 않습니다.');
     const seen=state.commands.get(body.commandId);if(seen)return {status:200,body:{...seen,replayed:true}};
-    const actor=byId.get(body.actorId);if(!actor)return fail(403,'actor_not_allowed','미리보기 직원 목록에 없는 사람입니다.');
+    const actor=byId.get(body.actorId);if(!actor)return fail(403,'actor_not_allowed','직원 목록에 없는 사람입니다.');
     if(!ROLES[body.kind]?.includes(actor.role))return fail(403,'action_not_allowed','이 역할로는 할 수 없는 작업입니다.');
     if(body.expectedRevision!==state.revision)return fail(409,'revision_conflict','다른 사람이 먼저 바꿨습니다. 새로 고친 뒤 다시 시도해 주세요.',{revision:state.revision});
     const out=apply(body,actor);if(out.status&&out.body)return out;

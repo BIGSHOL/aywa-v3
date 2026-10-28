@@ -26,10 +26,10 @@ export const ADAPTERS = Object.freeze({
     familyId: 'attendance', recordType: 'attendance', threshold: 3, area: 'attendance', statusLabel: { absent: '결석' },
     record: e => ({ studentId: e.studentId || null, classId: e.classId || null, date: e.date || null, status: 'absent' }),
     basis: ({ asOf, capturedAt }) => ({
-      asOf, capturedAt, label: `이번 달(${asOf.slice(0, 7)}-01~${asOf}) 결석 기록 3회 이상 재원생`,
+      asOf, capturedAt, label: `이번 달(${Number(asOf.slice(5, 7))}/1~${Number(asOf.slice(5, 7))}/${Number(asOf.slice(8, 10))}) 결석 3회 이상`,
       window: { from: `${asOf.slice(0, 7)}-01`, to: asOf }, threshold: { count: 3, unit: '결석 기록(수업별 출결 칸, 정정 반영)' },
       cohort: '재원(enrolled) 원생 · 테스트 원생 제외 · 정정 전 기록 제외',
-      interpretation: '수업별 출결 건수이며 결석 사유·위험을 단정하지 않습니다.',
+      interpretation: '결석은 수업마다 따로 셉니다.',
       note2_0: '2.0 반복 결석 알림은 최근 14일 3/5/10회 단계로 기준이 다릅니다. 이 화면은 복사본 신호의 이번 달 기준을 그대로 씁니다.',
     }),
   },
@@ -193,7 +193,7 @@ export function buildHierarchy(source, state, caseId) {
   const unmapped = recordIds.length - rows.length;
   const notes = [];
   const truncated = { entityRefs: c.entityRefs.filter(r => r.type === adapter.recordType).length, stepRefs: c.steps.reduce((n, s) => n + (s.refs || []).length, 0) };
-  if (truncated.stepRefs < rows.length) notes.push(`원본 업무는 단계마다 근거를 50건까지만 저장했습니다(${truncated.stepRefs}건). 이 화면은 신호의 근거 ${rows.length}건 전부를 같은 기준(반의 담임)으로 다시 묶었습니다.`);
+  if (truncated.stepRefs < rows.length) notes.push(`단계 목록에는 근거가 ${truncated.stepRefs}건만 보이지만, 이 정리는 근거 ${rows.length}건 전부를 반의 담임 기준으로 묶었습니다.`);
   if (unmapped) notes.push(`신호 근거 ${unmapped}건은 원생 기록으로 이어지지 않아 이 화면에서 빠졌습니다.`);
   if (unknown.teacherRecords || unknown.classRecords) notes.push(`반 또는 담임을 알 수 없는 기록 ${Math.max(unknown.teacherRecords, unknown.classRecords)}건은 '관계 모름' 묶음에 따로 둡니다.`);
   if (root.facts.managerQueueRecords) notes.push(`재직 중이 아닌 담임의 기록 ${root.facts.managerQueueRecords}건은 원본 업무에서 관리자 대기열 단계에 있습니다.`);

@@ -39,10 +39,10 @@ export function validateCommand(body, actors) {
   if (!body || typeof body !== 'object' || Array.isArray(body)) throw bad('요청 형식이 올바르지 않습니다.');
   for (const k of Object.keys(body)) if (!TOP.has(k)) throw bad('허용하지 않는 항목이 있습니다.');
   if (!/^[A-Za-z0-9_-]{8,80}$/.test(body.commandId || '')) throw bad('요청 번호 형식이 올바르지 않습니다.');
-  if (!Number.isInteger(body.expectedRevision) || body.expectedRevision < 0) throw bad('마지막으로 본 변경 번호가 필요합니다.');
+  if (!Number.isInteger(body.expectedRevision) || body.expectedRevision < 0) throw bad('화면을 새로 불러온 뒤 다시 시도해 주세요.');
   if (!COMMAND_KINDS.includes(body.kind)) throw bad('지원하지 않는 작업입니다.');
   const actor = actors.get(body.actorId);
-  if (!actor) throw new CommandError(403, 'actor_not_allowed', '미리보기 직원 목록에 없는 사람입니다.');
+  if (!actor) throw new CommandError(403, 'actor_not_allowed', '직원 목록에 없는 사람입니다.');
   if (!COMMAND_ROLES[body.kind].includes(actor.role)) throw new CommandError(403, 'action_not_allowed', '이 역할로는 할 수 없는 작업입니다.');
   if (body.caseId !== undefined && !/^[A-Za-z0-9_-]{1,120}$/.test(body.caseId)) throw bad('업무 번호 형식이 올바르지 않습니다.');
   const payload = body.payload ?? {};
@@ -66,7 +66,7 @@ function attachments(list, max = 20) {
     const m = typeof x === 'string' ? /^([a-z][a-z-]{0,40})\|([A-Za-z0-9][A-Za-z0-9:._-]{0,99})$/.exec(x) : null;
     if (!m) throw bad('첨부 기록 값이 올바르지 않습니다.');
     const r = store.families.get(m[1])?.records.find(y => y.id === m[2]);
-    if (!r) throw new CommandError(400, 'attachment_not_found', '복사본에서 찾을 수 없는 기록입니다.');
+    if (!r) throw new CommandError(400, 'attachment_not_found', '찾을 수 없는 기록입니다.');
     out.set(`${m[1]}|${r.id}`, { familyId: m[1], recordId: r.id, label: r.label, date: r.date || '', status: r.status || '', detail: r.detail || '', fields: (r.fields || []).slice(0, 6) });
   }
   return [...out.values()];
@@ -146,7 +146,7 @@ export async function applyCommand(state, source, cmd, { now, inFlight = new Map
       if (dup) return { caseId: dup.id, eventIds: [], duplicate: true };
       const refs = [key, ...source.relations.filter(r => `${r.from.type}:${r.from.id}` === key).map(r => `${r.to.type}:${r.to.id}`)].map(k => entityRef(source, k)).filter(Boolean);
       const steps = tpl.steps.map((def, i) => step(`s${i + 1}`, def, resolveRole(source, def.role, [key]), i + 1));
-      const c = local({ kind: 'scenario', scenario: payload.scenario, scenarioKey: key, familyId: tpl.familyId, title: `${tpl.title} — ${refs.find(r => r.type === 'student')?.label || refs[0].label}`, summary: `${refs[0].label} 기록으로 만든 로컬 시나리오입니다. 원본 기록은 바뀌지 않습니다.`, entityRefs: refs }, steps);
+      const c = local({ kind: 'scenario', scenario: payload.scenario, scenarioKey: key, familyId: tpl.familyId, title: `${tpl.title} — ${refs.find(r => r.type === 'student')?.label || refs[0].label}`, summary: `${refs[0].label} 기록으로 만든 연습 시나리오입니다. 원본 기록은 바뀌지 않습니다.`, entityRefs: refs }, steps);
       c.steps.forEach(s => { s.id = `${c.id}-${s.id}`; });
       const trigger = emit({ caseId: c.id, type: tpl.trigger, data: { scenario: payload.scenario, record: key } });
       c.trigger = { eventId: trigger.id, type: tpl.trigger, label: trigger.label, actorId: actor.id, at };
@@ -174,7 +174,7 @@ export async function applyCommand(state, source, cmd, { now, inFlight = new Map
       const evidence = { id: `ev-${state.seq + 1}`, note: scrub(payload.note.trim()), recordRefs: refs, actorId: actor.id, at, stepId: s.id, outcome: payload.outcome || 'done', ...(atts.length ? { attachments: atts } : {}) };
       if (c.closure === 'fact') {
         // Source facts never close locally: the report becomes a linked local follow-up case.
-        const f = local({ kind: 'request', scenario: null, familyId: c.familyId, title: `${c.title} — 후속 보고`, summary: '원본 할 일은 원본 기록이 바뀔 때 닫힙니다. 이 보고는 로컬 기록입니다.', entityRefs: c.entityRefs.slice(0, 10), linkedCaseIds: [c.id], evidence: [evidence] }, [step('f1', { key: 'followup_report', label: '후속 보고', role: 'source', evidenceRequired: true }, { assigneeIds: [actor.id], queue: null, rule: '원래 할 일 담당', ruleSource: 'staff_task_assignees.user_id' }, 1, { status: 'done' })]);
+        const f = local({ kind: 'request', scenario: null, familyId: c.familyId, title: `${c.title} — 후속 보고`, summary: '원본 할 일은 원본 기록이 바뀔 때 닫힙니다. 이 보고는 따로 남는 후속 기록입니다.', entityRefs: c.entityRefs.slice(0, 10), linkedCaseIds: [c.id], evidence: [evidence] }, [step('f1', { key: 'followup_report', label: '후속 보고', role: 'source', evidenceRequired: true }, { assigneeIds: [actor.id], queue: null, rule: '원래 할 일 담당', ruleSource: 'staff_task_assignees.user_id' }, 1, { status: 'done' })]);
         f.steps[0].id = `${f.id}-f1`; c.linkedCaseIds.push(f.id); c.evidence.push({ ...evidence, followupCaseId: f.id });
         const linked = emit({ caseId: c.id, type: 'followup.linked', stepId: s.id, data: { followupCaseId: f.id } });
         emit({ caseId: f.id, type: 'step.reported', stepId: f.steps[0].id, causeId: linked.id });
@@ -213,7 +213,7 @@ export async function applyCommand(state, source, cmd, { now, inFlight = new Map
       keys(payload, ['stepId', 'assigneeIds']);
       const c = getCase(), who = assignable(actors, payload.assigneeIds);
       const s = c.steps.find(x => (payload.stepId ? x.id === payload.stepId : true) && (x.status === 'ready' || x.status === 'working'));
-      if (!s) throw new CommandError(409, 'step_not_ready', '담당을 바꿀 열린 단계가 없습니다.');
+      if (!s) throw new CommandError(409, 'step_not_ready', '담당을 바꿀 남은 단계가 없습니다.');
       const from = s.assigneeIds; s.assigneeIds = who; s.queue = null; s.unassignedReason = null; s.status = 'ready'; s.rule = '관리자가 직접 다시 지정'; s.ruleSource = 'case.reassign';
       emit({ caseId: c.id, type: 'step.reassigned', stepId: s.id, targetActorIds: who, causeId: c.history.at(-1), data: { from, to: who } });
       refreshCase(c, at); return { caseId: c.id, eventIds: ids };

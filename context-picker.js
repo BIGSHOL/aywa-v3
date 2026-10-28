@@ -286,9 +286,10 @@ window.ContextPicker = (function () {
         const s = staff.get(String(a.id)), duty = (a.duties || []).includes('desk') ? '결석 확인 담당' : '';
         const homeroom = (db.classes || []).filter(c => String(c.teacherId) === String(a.id));
         const subjects = (s?.subjects || []).map(label).filter(Boolean);
-        const role = [a.roleLabel || '', duty].filter(Boolean).join(' · ');
-        return { value: a.id, title: a.name, sub: duty, chip: a.roleLabel || s?.title || '', context: [role, s ? [s.title, s.department].filter(Boolean).join(' · ') : ''].filter(Boolean).join(' · '),
-          cells: { role: a.roleLabel || '', title: s ? [s.title, s.department].filter(Boolean).join(' · ') : '', subjects: subjects.join(', '), classes: homeroom.length ? `${homeroom.length}개` : '' },
+        // 같은 말('원장 · 원장')과 빈칸 표시('부서 미입력')는 한 번도 적지 않는다.
+        const tidy = list => [...new Set(list.filter(x => x && !/미입력$/.test(String(x))))].join(' · ');
+        return { value: a.id, title: a.name, sub: duty, chip: a.roleLabel || s?.title || '', context: tidy([a.roleLabel, duty, s?.title, s?.department]),
+          cells: { role: a.roleLabel || '', title: tidy([s?.title, s?.department]), subjects: subjects.join(', '), classes: homeroom.length ? `${homeroom.length}개` : '' },
           search: [duty, homeroom.map(c => c.name).join(' ')].join(' ') };
       });
       return { noun: '직원', unit: '명', columns: [{ key: 'name', label: '이름', w: 'minmax(0,1.15fr)' }, { key: 'role', label: '역할', w: 'minmax(4.5em,.7fr)', cend: true }, { key: 'title', label: '직급·부서', w: 'minmax(0,1.1fr)' }, { key: 'subjects', label: '담당 과목', w: 'minmax(0,.8fr)' }, { key: 'classes', label: '담임 반', w: '4.8em', align: 'end' }],

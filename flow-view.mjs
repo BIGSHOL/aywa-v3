@@ -7,18 +7,18 @@ const PRIORITY_ORDER = { high: 0, normal: 1, low: 2 }, STATE_ORDER = { review: 0
 // Judgment display (UX contract): status ok|pending|unavailable|error|skipped + Korean reason.
 // The typed record stays in the store; reason codes travel as a separate technical field.
 const REASON = {
-  decision_module_unavailable: '판정 모듈이 연결되지 않음', no_key: '판정 키가 설정되지 않음', jev_not_configured: '판정 키가 설정되지 않음', jev_key_error: '판정 키를 읽지 못함',
-  local_rate_limit: '이 PC의 판정 횟수 한도에 걸림', adapter_busy: '판정 대기열이 가득 참', jev_auth_failed: '판정 키 인증 실패', jev_timeout: '판정 시간 초과',
-  jev_rate_limited: '판정 요청 한도 초과', jev_overloaded: '판정 서버 혼잡', jev_unavailable: '판정 서버에 연결하지 못함', jev_circuit_open: '판정 서버 오류가 이어져 잠시 멈춤',
-  jev_invalid_answer: '판정 답 형식 오류', jev_request_rejected: '판정 요청이 거절됨', jev_config: '판정 설정 오류', decision_call_failed: '판정 호출 실패',
-  decision_interrupted: '서버가 다시 시작되어 판정이 중단됨', cancelled: '판정이 취소됨', uncertain_action: '할 일인지 확실하지 않음', uncertain_area: '업무 영역이 확실하지 않음',
+  decision_module_unavailable: '자동 판정을 받지 못함', no_key: '자동 판정을 받지 못함', jev_not_configured: '자동 판정을 받지 못함', jev_key_error: '자동 판정을 받지 못함',
+  local_rate_limit: '자동 판정을 받지 못함', adapter_busy: '자동 판정을 받지 못함', jev_auth_failed: '자동 판정을 받지 못함', jev_timeout: '판정 시간 초과',
+  jev_rate_limited: '자동 판정을 받지 못함', jev_overloaded: '자동 판정을 받지 못함', jev_unavailable: '자동 판정을 받지 못함', jev_circuit_open: '자동 판정을 받지 못함',
+  jev_invalid_answer: '자동 판정을 받지 못함', jev_request_rejected: '자동 판정을 받지 못함', jev_config: '자동 판정을 받지 못함', decision_call_failed: '자동 판정을 받지 못함',
+  decision_interrupted: '판정이 중간에 멈춤', cancelled: '판정이 취소됨', uncertain_action: '할 일인지 확실하지 않음', uncertain_area: '업무 영역이 확실하지 않음',
   safety_signal: '안전·법적 확인이 필요해 보임', manager_review_signal: '관리자 확인이 필요해 보임', manager_review: '관리자 확인이 필요해 보임', insufficient_context: '판단할 정보가 부족함',
-  area_unclear: '업무 영역을 알 수 없음', no_eligible_staff: '맡길 직원을 찾지 못함', no_eligible_manager: '맡길 관리자를 찾지 못함', no_action: '할 일이 없어 보임', no_open_task: '열린 할 일이 없음', no_content: '판단할 내용이 없음',
+  area_unclear: '업무 영역을 알 수 없음', no_eligible_staff: '맡길 직원을 찾지 못함', no_eligible_manager: '맡길 관리자를 찾지 못함', no_action: '할 일이 없어 보임', no_open_task: '남은 할 일이 없음', no_content: '판단할 내용이 없음',
 };
 const UNAVAILABLE = new Set(['decision_module_unavailable', 'no_key', 'jev_not_configured', 'jev_key_error', 'local_rate_limit', 'adapter_busy']);
 const FAILURE = code => UNAVAILABLE.has(code) || code.startsWith('jev_') || code.startsWith('invalid_context') || code === 'decision_call_failed' || code === 'decision_interrupted';
 const ROUTE_LABEL = { auto_route: '정해진 담당자에게 바로 배정', no_action: '할 일 없음으로 판단', manager_review: '관리자 검토로 보냄', human_review: '사람이 판단하도록 보냄', insufficient_context: '정보가 부족해 사람이 되묻도록 보냄' };
-const PROVIDER_LABEL = { typesafe: 'Jev 판정', 'claude-cli': 'Claude 초안' };
+const PROVIDER_LABEL = { typesafe: 'AI 판정', 'claude-cli': 'AI 설명 초안' };
 /** Friendly model label; unknown raw ids are not shown. */
 export function modelLabel(model) {
   const jev = /^jev-(\d+)\.(\d+)/.exec(model || ''); if (jev) return `Jev ${jev[1]}.${jev[2]}`;
@@ -31,7 +31,7 @@ function friendlyDecision(r) {
   const codes = String(r.reason || '').split(',').filter(Boolean);
   let status = { decided: 'ok', review_needed: 'ok', unavailable: 'unavailable', error: 'error', cancelled: 'skipped' }[r.status] || 'error';
   if (status === 'ok' && codes.some(FAILURE)) status = codes.some(c => UNAVAILABLE.has(c)) ? 'unavailable' : 'error';
-  const reason = codes.map(c => REASON[c] || (c.startsWith('invalid_context') ? '판정에 보낼 내용 검사에서 걸림' : null)).find(Boolean) || (status === 'ok' ? ROUTE_LABEL[r.route] || '판정 완료' : '판정하지 못함');
+  const reason = codes.map(c => REASON[c] || (c.startsWith('invalid_context') ? '자동 판정을 받지 못함' : null)).find(Boolean) || (status === 'ok' ? ROUTE_LABEL[r.route] || '판정 완료' : '판정하지 못함');
   const d = r.draft;
   return {
     status, reason, route: r.route, routeLabel: ROUTE_LABEL[r.route] || null, area: r.area || null,
@@ -48,7 +48,7 @@ function friendlyDecision(r) {
 export function decisionView(c, inFlight) {
   if (c.pendingDecision) {
     const live = !!inFlight?.has(c.pendingDecision.id);
-    return { status: live ? 'pending' : 'error', reason: live ? '판정 중' : '판정 결과를 저장하지 못해 다시 받아야 함', requestedAt: c.pendingDecision.at, previous: c.decision ? friendlyDecision(c.decision) : null, codes: live ? [] : ['decision_not_saved'] };
+    return { status: live ? 'pending' : 'error', reason: live ? '판정 중' : '판정 결과가 남지 않아 다시 받아야 함', requestedAt: c.pendingDecision.at, previous: c.decision ? friendlyDecision(c.decision) : null, codes: live ? [] : ['decision_not_saved'] };
   }
   return c.decision ? friendlyDecision(c.decision) : null;
 }
@@ -100,7 +100,7 @@ export function buildView(state, source, { aiStatus, now = new Date().toISOStrin
   };
   return {
     schemaVersion: 1, asOf: source.identity.asOf, revision: state.revision, mode: 'local-preview', scenarioCandidates,
-    source: { tenant: tenantName, capturedAt: source.identity.capturedAt, asOf: source.identity.asOf, note: '원본은 복사 시점의 기록이며, 이 화면의 처리·요청은 로컬 미리보기(origin dev)입니다.' },
+    source: { tenant: tenantName, capturedAt: source.identity.capturedAt, asOf: source.identity.asOf, note: '원본은 기준일의 학원 기록이며, 이 화면에서 만든 처리·요청은 따로 남습니다.' },
     actors, entities, relations, cases: cases.map(c => caseView(c, inFlight)), casesTotal: all.length, casePage, casePageSize: LIMITS.cases, casePageCount: Math.max(1, Math.ceil(all.length / LIMITS.cases)),
     // Newest events (chronological); older ones via ?eventsBefore=<event number>.
     events: (eventsBefore ? state.events.filter(e => Number(e.id.slice(4)) < eventsBefore) : state.events).slice(-LIMITS.events), eventsTotal: state.events.length,

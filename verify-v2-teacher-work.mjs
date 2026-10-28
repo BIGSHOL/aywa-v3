@@ -3,7 +3,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import { loadTeacherWork, loadTeacherWorkWindows, teacherWorkWeekly } from './v2-teacher-work.mjs';
+import { loadTeacherWork, loadTeacherWorkWindows, teacherWorkWeekly, teacherWorkTrend, TEACHER_WORK_METRICS } from './v2-teacher-work.mjs';
 
 let db = null;
 try { const { openFullDatabase } = await import('./full-db.mjs'); db = await openFullDatabase(); await db`select 1`; } catch { db = null; }
@@ -13,7 +13,7 @@ if (db) {
   var { tenantId: t } = await import('./full-db.mjs');
   var { importV2 } = await import('./v2-bridge.mjs');
   var { copyClock } = await import('./v2-onescreen-roster.mjs');
-  var { weekWindows } = await import('./domain-snapshot-core.mjs');
+  var { weekWindows, addDays: R_addDays } = await import('./domain-snapshot-core.mjs');
   var W = Object.assign({}, await importV2('features/dashboard/overview/work-targets.ts'), await importV2('features/dashboard/unrecorded-attendance.ts'));
   var ro = (fn) => db.begin('isolation level repeatable read read only', fn);
   var clock = await copyClock(), asOf = clock.day;
@@ -169,14 +169,12 @@ test('teacherWorkWeekly: six KPIs over 8 weekly windows — 2.0 card scope (less
     assert.equal(teacherWorkWeekly({ sql, asOf, importV2 }), first, 'same transaction, tenant by default = same computation');
     const { windows, kpis } = await first;
     assert.equal(windows.length, 8); assert.equal(windows.at(-1).to, asOf);
-    assert.deepEqual(kpis.map((k) => k.label), ['수업보고서 작성률', '수업보고서 발송률', '학부모 열람률', '출결 입력률', '영상 숙제 출제율', '영상 제출률']);
+    assert.deepEqual(kpis.map((k) => k.label), ['수업보고서 작성률', '수업보고서 발송률', '학부모 보고서 열람률', '출결 입력률', '영상 숙제 출제율', '영상 숙제 제출률']);
     assert(kpis.every((k) => k.kind === 'kpi' && k.unit === '%' && k.better === 'up' && k.points.length === 8));
     assert.equal(kpis[3].span, '어제까지 7일'); assert.match(kpis[2].span, /^최근 \d+일$/); assert.match(kpis[2].basis, /\d+시간이 안 된 것/);
     for (const k of kpis) assert.doesNotMatch(`${k.label} ${k.span} ${k.basis}`, /2\.0/,'화면 문구에 2.0을 적지 않는다(원장 10-28)');
-    // Every window is cut at the same time of day as the copy (the last window ends at the capture).
-    const at = (d) => clock.at.getTime() - (Date.parse(`${asOf}T00:00:00Z`) - Date.parse(`${d}T00:00:00Z`));
-    assert(windows.every((w) => new Date(at(w.to) + 9 * 3600000).toISOString().slice(11, 19) === new Date(clock.at.getTime() + 9 * 3600000).toISOString().slice(11, 19)));
-    const works = await loadTeacherWorkWindows({ sql, tenantId: t, todays: windows.map((w) => w.to), importV2, now: at });
+    // Past windows are judged as they ended (no as-of cut), the last one at the capture — the same judgment as the expanded trend (원장 10-28).
+    const works = await loadTeacherWorkWindows({ sql, tenantId: t, todays: windows.map((w) => w.to), importV2, asOfCut: false });
     const sum = (rows, k) => rows.reduce((n, r) => n + (Number(r[k]) || 0), 0), pct = (a, b) => (b > 0 ? Math.round((a / b) * 1000) / 10 : null);
     const [{ first: videoFrom }] = await sql`select min(report_date)::text first from public.lesson_reports where tenant_id=${t} and video_homework is not null`;
     let differs = false;
@@ -214,6 +212,29 @@ test('as-of: a past window counts only what existed when it ended (late sends, r
   for (const k of ['attendanceDays', 'attendanceUnrecorded']) assert.equal(total(cutRes, k), total(noCut, k), k);
   // The copy's own day: nothing is after the capture, so the cut changes nothing.
   assert.deepEqual(await load({ today: asOf }), await load({ today: asOf, asOfCut: false }));
+});
+
+// 확장 추세(원장 10-28 "완전한 확장 추세 툴을 하나 만들고 … 기준만 바꿔서 필터링") — 카드와 같은 판정 · 기준별 합 = 전체 · 필터 = 그 줄.
+test('teacherWorkTrend: week windows = card (30일 열람률 제외) · 선생님·반·과목별 합 = 전체 · 선생님 필터 = 그 선생님 줄', { skip: SKIP }, async () => {
+  await ro(async (sql) => {
+    const { kpis } = await teacherWorkWeekly({ sql, asOf, tenantId: t, importV2 }), windows = weekWindows(asOf, 8);
+    const pct = (p) => (p && p[1] > 0 ? Math.round((p[0] / p[1]) * 1000) / 10 : null);
+    for (const m of TEACHER_WORK_METRICS) {
+      // 출결은 '어제까지' 창으로 받는다(화면이 그렇게 준다) — 카드의 '어제까지 7일'과 같은 날들.
+      const mw = m.attendance ? weekWindows(R_addDays(asOf, -1), 8) : windows;
+      const byTeacher = await teacherWorkTrend({ sql, asOf, tenantId: t, importV2, metric: m.id, windows: mw, by: 'teacher' });
+      if (m.id !== 'parent-read') assert.deepEqual(byTeacher.total.map(pct), kpis.find((k) => k.id === m.id).points.map((p) => p.value), `${m.id}: 확장 추세 주별 = 카드`);
+      for (const by of ['teacher', 'class', 'subject']) {
+        const d = by === 'teacher' ? byTeacher : await teacherWorkTrend({ sql, asOf, tenantId: t, importV2, metric: m.id, windows: mw, by });
+        d.total.forEach((p, i) => { if (!p) return; const s = d.rows.reduce((a, r) => [a[0] + (r.points[i]?.[0] ?? 0), a[1] + (r.points[i]?.[1] ?? 0)], [0, 0]); assert.deepEqual(s, p, `${m.id} ${by} 창 ${i}: 줄 합 = 전체`); });
+      }
+    }
+    const d = await teacherWorkTrend({ sql, asOf, tenantId: t, importV2, metric: 'report-written', windows, by: 'teacher' });
+    const one = d.rows.find((r) => r.key !== 'unassigned' && r.points.at(-1)?.[1] > 0);
+    const classIds = (await sql`select id from public.classes where tenant_id=${t} and teacher_id=${one.key}`).map((c) => c.id);
+    const f = await teacherWorkTrend({ sql, asOf, tenantId: t, importV2, metric: 'report-written', windows, by: 'class', scope: { classIds } });
+    assert.deepEqual(f.total, one.points, '선생님 필터(그 선생님 반) 합계 = 선생님별 줄');
+  });
 });
 
 test.after(() => db?.end());
