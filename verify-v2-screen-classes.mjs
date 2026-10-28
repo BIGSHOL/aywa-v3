@@ -19,11 +19,12 @@ const src = p => readFile(new URL(`../../src/${p}`, import.meta.url), 'utf8');
 const here = p => readFile(new URL(p, import.meta.url), 'utf8');
 const PAGE = 'app/(shell)/classes/page.tsx';
 
-await check('조회 조건 = 2.0 page.tsx searchParams 열쇠 그대로(호스트 진입점·3.0 감싸개도 같은 열쇠)', async () => {
+await check('조회 조건 = 2.0 page.tsx searchParams 열쇠 그대로 + 하위 주소 v2path(호스트 진입점·3.0 감싸개도 같은 열쇠)', async () => {
   const page = await src(PAGE), block = /searchParams: Promise<\{([\s\S]*?)\}>/.exec(page)?.[1] ?? '';
   const keys = [...block.matchAll(/(\w+)\?: string;/g)].map(m => m[1]);
   assert.ok(keys.length >= 9, '2.0 열쇠를 찾지 못함');
-  assert.deepEqual(Object.keys(C.screen.params).sort(), [...keys].sort());
+  assert.deepEqual(Object.keys(C.screen.params).sort(), ['v2path', ...keys].sort(), '2.0 열쇠 + 하위 주소(v2path)');
+  assert.ok(C.screen.params.v2path.test('/classes') && C.screen.params.v2path.test('/classes/e4a2c026-8992-4211-a5fe-b9e93be8a0f3') && !C.screen.params.v2path.test('/students/x'));
   const entry = await here('./v2-host/src/classes.tsx'), wrap = await here('./v2-screen-classes.js');
   assert.deepEqual(JSON.parse(/const KEYS = (\[[^\]]*\])/.exec(entry)[1].replace(/'/g, '"')).sort(), [...keys].sort());
   assert.deepEqual(JSON.parse(/const KEEP = (\[[^\]]*\])/.exec(wrap)[1].replace(/'/g, '"')).sort(), ['v2path', ...keys].sort());
@@ -40,6 +41,24 @@ await check('그리기 = 2.0 page.tsx 그대로 — 주소·머리 칸·본문(�
   for (const r of removed) { assert.ok(body.includes(r), r); body = body.replace(r, ''); }
   assert.equal(flat(seg(mine, '  const listParams', 'type HeadCells')), flat(body));
   assert.equal(seg(mine, 'type HeadCells = {'), seg(orig, 'type HeadCells = {'));
+});
+
+await check('반 상세 그리기 = 2.0 [id]/page.tsx 본문 그대로(서버 호출 자리만 swaps.json 짝) · Card·Stat · 예약 변경 문구 · 이력 조립(getClassHistory 뒷부분)도 글자 그대로', async () => {
+  const lf = s => s.replace(/\r\n/g, '\n');
+  const mine = lf(await here('./v2-host/src/classes-detail.tsx')), swaps = JSON.parse(await here('./v2-host/src/classes-detail.swaps.json'));
+  const page = lf(await src('app/(shell)/classes/[id]/page.tsx'));
+  let body = page.slice(page.indexOf('  if (!klass) notFound();\n'), page.indexOf('\nfunction Card('));
+  for (const [from, to] of swaps.page) { assert.equal(body.split(from).length, 2, from); body = body.replace(from, to); }
+  assert.ok(mine.includes(body), '본문');
+  assert.ok(mine.includes(page.slice(page.indexOf('\nfunction Card(') + 1).trimEnd()), 'Card · Stat');
+  assert.ok(mine.includes(page.slice(page.indexOf('function todayIso(): string {'), page.indexOf('export default async function'))), 'todayIso');
+  const sched = lf(await src('features/timetable/server/scheduled-class-change.ts'));
+  assert.ok(mine.includes(sched.slice(sched.indexOf('export function scheduledClassChangeLabel(')).replace('export function', 'function').trimEnd()), 'scheduledClassChangeLabel');
+  const hq = lf(await src('features/classes/server/history-queries.ts'));
+  let hist = hq.slice(hq.indexOf('  const nameOf = new Map((nameRows.data'), hq.lastIndexOf('\n}'));
+  for (const [from, to] of swaps.history) { assert.equal(hist.split(from).length, 2, from); hist = hist.replace(from, to); }
+  assert.ok(mine.includes(hist), '이력 조립');
+  assert.doesNotMatch(mine.slice(mine.indexOf('export function ClassDetailPage')), /\bawait\b|getCurrentUser|createClient|supabase\./, '서버 호출이 남지 않는다');
 });
 
 const db = await openFullDatabase();
@@ -98,6 +117,32 @@ try {
     for (const h of holders) assert.ok(ids.has(h.id), `지금 담임 ${h.id}`);
     assert.deepEqual(Object.keys(base.viewer), ['canManageClasses', 'scopedTeacherId']);
     assert.equal(base.lang, 'ko');
+  });
+
+  await check('반 상세 숫자 = 독립 SQL — 명단(끝나지 않은 수강 · 재원생 수는 시작한 것만) · 30일 출결(정정 줄은 최신 하나) · 배정 후보 · 예정 변동 · 없는 반', async () => {
+    const [busy] = await q1`select metadata->>'classId' id from public.audit_logs where tenant_id=${tenantId} and target_type='class' and metadata->>'classId' is not null group by 1 order by count(*) desc limit 1`;
+    const [sched] = await q1`select class_id::text id from public.enrollments where tenant_id=${tenantId} and start_date > ${today}::date group by 1 order by count(*) desc limit 1`;
+    for (const id of [busy.id, sched.id]) {
+      const d = await load({ v2path: `/classes/${id}` });
+      const alive = await q1`select start_date::text s from public.enrollments where tenant_id=${tenantId} and class_id=${id}
+        and (end_date is null or (is_transferred and end_date > ${today}::date) or (not coalesce(is_transferred, false) and end_date >= ${today}::date))`;
+      assert.equal(d.students.length, alive.length, '명단 = 끝나지 않은 수강(예정 포함)');
+      assert.equal(d.klass.studentCount, alive.filter(r => r.s <= today).length, '재원생 = 이미 시작한 수강');
+      assert.equal(d.students.filter(s => s.phase === 'upcoming').length, d.klass.upcomingCount);
+      const eff = await q1`select status::text st, count(*)::int n from (select distinct on (student_id, class_id, session_date, coalesce(slot_start::text, '')) status
+          from public.attendance_records where tenant_id=${tenantId} and class_id=${id} and session_date >= ${today}::date - 30
+          order by student_id, class_id, session_date, coalesce(slot_start::text, ''), recorded_at desc, id desc) x group by 1`;
+      const n = st => eff.find(r => r.st === st)?.n ?? 0;
+      assert.deepEqual([d.stats.total, d.stats.present, d.stats.absent, d.stats.late, d.stats.excused], [eff.reduce((a, r) => a + r.n, 0), n('present'), n('absent'), n('late'), n('excused')]);
+      const [c] = await q1`select count(*)::int n from public.students where tenant_id=${tenantId} and status::text='enrolled'`;
+      assert.equal(d.allEnrolledStudents.length, c.n, '배정 후보 = 재원 상태 학생 전부');
+      assert.ok(d.historyParts.auditRows.every(l => /^\d{4}-\d{2}-\d{2}T/.test(l.created_at)), '감사 시각 = PostgREST 글자 모양');
+      assert.ok(d.historyParts.enrollmentRows.every(r => r.students && typeof r.students.name === 'string'), '수강 이력 = students!inner(name) 모양');
+      assert.deepEqual(Object.values(d.viewer), [{ allowed: true, classIds: null }, true, 'full', true, true, true, false], '원장 보기(JJ실 바로가기는 연동 설정 없음)');
+    }
+    const s = await load({ v2path: `/classes/${sched.id}` });
+    assert.ok(s.scheduledRoster.some(c => c.kind === 'join' && c.date > today), '미래 시작 수강 = 예정 합류');
+    assert.deepEqual(await load({ v2path: '/classes/00000000-0000-0000-0000-000000000000' }), { notFound: true });
   });
 } finally { await db.end(); }
 

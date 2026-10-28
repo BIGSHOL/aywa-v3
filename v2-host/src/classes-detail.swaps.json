@@ -1,0 +1,50 @@
+{
+ "page": [
+  [
+   "  if (!klass) notFound();\n",
+   ""
+  ],
+  [
+   "canEditEnrollmentDateClass(await getEnrollmentDateAccess(), id)",
+   "canEditEnrollmentDateClass(data.viewer.dateAccess, id)"
+  ],
+  [
+   "const canEditSchedule = await canManageTenant(user.systemRole, \"classes\");",
+   "const canEditSchedule = data.viewer.classesFull;"
+  ],
+  [
+   "const [scheduledClass, scheduledRoster, labSeparateIds] = await Promise.all([\n    getScheduledClassChanges(klass.id, {\n      teacherId: klass.teacherId,\n      classroomId: klass.classroomId,\n      className: klass.className,\n    }),\n    getScheduledForClass(klass.id),\n    showLabSeparate ? getClassLabSeparateEnrollmentIds(klass.id) : Promise.resolve(null),\n  ]);",
+   "const [scheduledClass, scheduledRoster, labSeparateIds] = [\n    data.scheduledClass,\n    data.scheduledRoster,\n    showLabSeparate && data.labSeparateIds ? new Set(data.labSeparateIds) : null,\n  ];"
+  ],
+  [
+   "const classLevel = await accessLevelTenant(user.systemRole, \"classes\");",
+   "const classLevel = data.viewer.classLevel;"
+  ],
+  [
+   "const canEditClass = await canWriteLoadedClass(klass.teacherId);",
+   "const canEditClass = data.viewer.canEditClass;"
+  ],
+  [
+   "const canManageStudents = await canManageTenant(user.systemRole, \"students\");",
+   "const canManageStudents = data.viewer.studentsFull;"
+  ],
+  [
+   "const canManageStatus = await canManageStudentStatusNow();",
+   "const canManageStatus = data.viewer.canManageStatus;"
+  ],
+  [
+   "    !!ijwConfigFor(user.tenantId) &&\n    (await accessLevelTenant(user.systemRole, \"exams\")) !== \"none\";",
+   "    data.viewer.jjLink;"
+  ]
+ ],
+ "history": [
+  [
+   "  const roomRes = await supabase.from(\"classrooms\").select(\"id, name\");",
+   "  const roomRes = parts.roomRes;"
+  ],
+  [
+   "  const subjects = buildSubjectMaps((await getTenantSettings()).operations.subjects);",
+   "  const subjects = buildSubjectMaps(parts.subjects);"
+  ]
+ ]
+}

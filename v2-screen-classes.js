@@ -61,7 +61,7 @@
       if (hostOk === null) fetch(HOST, { method: 'HEAD' }).then(r => r.ok, () => false).then(ok => { if (hostOk === null) { hostOk = ok; api?.render?.(); } });
       else if (hostOk) requestAnimationFrame(() => { ensureFrame(query); place(); });
       const wait = hostOk === false ? '수업목록을 열지 못했습니다. 잠시 후 새로고침해 주세요.' : hostOk === null ? '수업목록을 여는 중…' : '';
-      return `<div class="v2h-note" role="note"><p><b>연습 화면</b> 수업목록은 아직 보기만 할 수 있습니다. 반 만들기·수정·엑셀 내보내기와 가져오기는 다음 단계에서 엽니다.</p></div>
+      return `<div class="v2h-note" role="note"><p><b>연습 화면</b> 수업목록과 반 상세는 아직 보기만 할 수 있습니다. 반 만들기·수정·학생 배정 같은 저장과 엑셀은 다음 단계에서 엽니다.</p></div>
         <div class="v2h-slot" data-v2-host-slot>${wait ? `<p class="v2h-wait">${wait}</p>` : ''}</div>`;
     },
   });
