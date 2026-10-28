@@ -1,20 +1,39 @@
 // 호스트 안 이동 — 2.0 부품이 부르는 주소(`/timetable?…`·`/students/<id>`)를 호스트 규칙으로 옮긴다.
 //  · 같은 화면(`/<id>` = 호스트가 그리는 화면)은 iframe 문서를 다시 읽지 않고 주소만 바꾼다(history) — 화면이 그 주소로 다시 그린다.
 //    3.0(부모)에도 알려 3.0 주소(#v2-<id>?…)가 같은 화면을 가리키게 한다.
+//  · 화면 주소의 하위 경로(`/ecs/<반id>/month` = HOST_ROUTE + '/…')도 같은 화면이다 — iframe 주소에 `v2path=<2.0 경로>`를
+//    맨 앞에 싣고(나머지는 원래 쿼리), usePathname()은 v2path를, useSearchParams()는 v2path를 뺀 쿼리를 돌려준다.
+//    3.0(부모)에 가는 v2-host-nav의 query에도 v2path가 그대로 실린다.
 //  · 그 밖의 2.0 주소(학생·반 상세 등)는 iframe에서 열지 않는다 — 3.0(부모)에 넘겨 3.0 기록 창으로 연다. 2.0 운영 사이트로는 가지 않는다.
 // 2.0 주소 → 호스트 화면 id. 빌드가 진입점마다(HOST_ROUTE) 채운다(build.mjs define).
 declare const __V2_HOST_ROUTES__: Record<string, string>;
 const ROUTES: Record<string, string> = typeof __V2_HOST_ROUTES__ === 'object' ? __V2_HOST_ROUTES__ : {};
 export type HostTarget = { kind: 'host'; screen: string; query: string } | { kind: 'parent'; href: string };
 
+export const V2PATH = 'v2path';
+/** 하위 경로를 가진 화면 주소 — 가장 긴 HOST_ROUTE부터 본다(`/a`와 `/a/b`가 둘 다 진입점이면 `/a/b/…`는 뒤쪽). */
+const routeOf = (pathname: string) =>
+  Object.hasOwn(ROUTES, pathname) ? { route: pathname, sub: false }
+    : Object.keys(ROUTES).sort((a, b) => b.length - a.length).filter((r) => pathname.startsWith(`${r}/`)).map((route) => ({ route, sub: true }))[0] ?? null;
+
 export function hostTarget(href: string): HostTarget {
   const u = new URL(href, 'http://2.0.local/');
-  const screen = Object.hasOwn(ROUTES, u.pathname) ? ROUTES[u.pathname] : null;
-  if (screen) return { kind: 'host', screen, query: u.searchParams.toString() };
+  const hit = routeOf(u.pathname);
+  if (hit) {
+    const q = new URLSearchParams(u.searchParams);
+    q.delete(V2PATH); // 2.0 주소에는 없는 칸 — 쿼리를 이어 쓴 주소에 딸려 와도 경로는 이 주소의 것이다
+    const query = hit.sub ? new URLSearchParams([[V2PATH, u.pathname], ...q]).toString() : q.toString();
+    return { kind: 'host', screen: ROUTES[hit.route], query };
+  }
   return { kind: 'parent', href: `${u.pathname}${u.search}` };
 }
-/** 지금 화면의 2.0 주소(usePathname) — 진입점의 HOST_ROUTE. */
-export const currentRoute = () => Object.keys(ROUTES).find((r) => ROUTES[r] === currentScreen()) ?? `/${currentScreen()}`;
+/** 진입점의 HOST_ROUTE. */
+const baseRoute = () => Object.keys(ROUTES).find((r) => ROUTES[r] === currentScreen()) ?? `/${currentScreen()}`;
+/** 지금 화면의 2.0 주소(usePathname) — 하위 경로(v2path)가 이 화면의 것이면 그것, 아니면 HOST_ROUTE. */
+export const currentRoute = () => {
+  const base = baseRoute(), sub = new URLSearchParams(location.search).get(V2PATH);
+  return sub && sub.startsWith(`${base}/`) && !/[?#]/.test(sub) ? sub : base;
+};
 
 /** 호스트 화면 주소(iframe 안). */
 export function hostHref(t: { screen: string; query: string }): string {
