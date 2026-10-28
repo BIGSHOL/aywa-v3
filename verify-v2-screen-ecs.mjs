@@ -623,4 +623,45 @@ test('복사본(되돌림): 교재 배정 미리보기(previewTextbookFill) = 2.
   });
 });
 
+test('복사본(되돌림): 교재 배정 기입(applyTextbookFill) = 배정 저장 + 미리보기가 말한 칸만 실제에 + 되돌리기 기록 + 2.0 감사로그 · 다시 누르면 배정 갱신·빈 칸 0', { skip: !db && 'local database not running' }, async () => {
+  const [owner] = await db`select u.id::text id from public.users u where u.tenant_id=${TENANT} and u.status='active' and u.system_role='master' and not exists (select 1 from public.super_admins s where s.id=u.id) order by u.display_name limit 1`;
+  const before = await db`select (select count(*)::int from public.audit_logs) audits, (select count(*)::int from net.http_request_queue) net, (select count(*)::int from public.class_textbook_plans) plans`;
+  await inRollback(async ({ sql, run }) => {
+    await sql`update public.class_schedules set valid_to=null where class_id=${T_CLASS}`; // 시험용(되돌림): 테스트 반 수업을 기준일 뒤로
+    const R = await C.loadRules(importV2), env = await C.readSettings(sql, TENANT, R), viewer = (await C.readViewers(sql, TENANT, R, env)).find(v => v.id === owner.id), today = await C.copyDay();
+    const { readSlotChoices } = await import('./v2-ecs-textbooks.mjs');
+    const chips = await readSlotChoices({ sql, t: TENANT, R, env, user: viewer, today }, T_CLASS);
+    const chip = chips.rows.find(c => !c.seat);
+    const [book] = await sql`select id::text id, title from public.textbooks where tenant_id=${TENANT} and subject='english' and session_count between 3 and 40 and skill_area is not null
+      and not exists (select 1 from public.class_textbook_plans p where p.class_id=${T_CLASS} and p.textbook_id=textbooks.id) order by title limit 1`;
+    const input = { classId: T_CLASS, textbookId: book.id, slotPicks: chip.picks, pace: 'period', termMode: 'regular', startDate: today, startLessonNo: 1 };
+    const pv = await run(sql, 'previewTextbookFill', owner.id, input);
+    assert.equal(pv.ok, true);
+    const want = pv.preview.rows.filter(r => r.outcome === 'add' || r.outcome === 'fill').length;
+    const res = await run(sql, 'applyTextbookFill', owner.id, input);
+    assert.equal(res.ok, true, JSON.stringify(res).slice(0, 300));
+    assert.deepEqual(Object.keys(res).sort(), ['importError', 'ok', 'result', 'undoBatchId']);
+    assert.equal(res.importError, null);
+    assert.equal(res.result.added + res.result.filled, want, '미리보기가 말한 칸 수 = 실제로 넣은 칸 수');
+    assert.equal(res.result.planned, pv.preview.rows.filter(r => r.date >= today).length);
+    const [plan] = await sql`select id::text id, slot_picks, start_date::text start_date, created_by::text created_by from public.class_textbook_plans where class_id=${T_CLASS} and textbook_id=${book.id} and is_active`;
+    assert.ok(plan && plan.start_date === today && plan.created_by === owner.id && plan.slot_picks.length === chip.picks.length);
+    const [{ n }] = await sql`select count(*)::int n from public.class_sheet_plan_lines where class_id=${T_CLASS} and textbook=${book.title} and plan_date >= ${today}`;
+    assert.ok(n >= want, `실제 줄 ${n} ≥ ${want}`);
+    const [batch] = await sql`select rows, row_count from public.class_plan_import_batches where id=${res.undoBatchId}`;
+    assert.ok(batch && batch.rows[0].kind === 'plan' && batch.rows[0].planId === plan.id, '되돌리기 기록에 배정');
+    const logs = await sql`select action, metadata from public.audit_logs where tenant_id=${TENANT} and action in ('textbook_plan_create', 'textbook_plan_apply', 'textbook_plan_update') and metadata->>'via'='3.0 연습 복사본'`;
+    assert.deepEqual(logs.map(l => l.action).sort(), ['textbook_plan_apply', 'textbook_plan_create']);
+    assert.equal(logs.find(l => l.action === 'textbook_plan_apply').metadata.planId, plan.id);
+    const again = await run(sql, 'applyTextbookFill', owner.id, input);
+    assert.equal(again.ok, true); assert.equal(again.result.added + again.result.filled, 0, '이미 적은 칸은 덮지 않는다');
+    assert.equal((await sql`select count(*)::int n from public.class_textbook_plans where class_id=${T_CLASS} and textbook_id=${book.id} and is_active`)[0].n, 1, '겹치는 교시 = 같은 배정 갱신');
+    assert.ok((await sql`select 1 from public.audit_logs where action='textbook_plan_update' and metadata->>'id'=${plan.id}`).length === 1);
+    assert.deepEqual(await run(sql, 'applyTextbookFill', T_ACTOR, { ...input, classId: MATH }), { ok: false, error: '담당 반이 아닙니다' });
+    assert.equal((await sql`select count(*)::int n from net.http_request_queue`)[0].n, before[0].net, '바깥 요청 없음');
+  });
+  const after = await db`select (select count(*)::int from public.audit_logs) audits, (select count(*)::int from public.class_textbook_plans) plans`;
+  assert.deepEqual([after[0].audits, after[0].plans], [before[0].audits, before[0].plans], '되돌렸다');
+});
+
 test.after(async () => { await db?.end(); });

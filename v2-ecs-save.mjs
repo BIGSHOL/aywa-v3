@@ -419,7 +419,7 @@ export const ACTIONS = {
     if (noteOnly && !noteProvided) return { error: '메모가 없습니다' };
     if (!noteOnly && status !== null && !['present', 'absent', 'late', 'excused', 'makeup', 'early_leave'].includes(status)) return { error: '잘못된 상태입니다' };
     if (!input.slotStart || !R.HHMM_RE.test(String(input.slotStart).slice(0, 5)) || input.source || input.onlyIfEmpty || input.ghostTransfer || input.scopeTeacherId != null) {
-      throw new V2Error(409, 'not_in_copy', '이 저장 방식(그날 전체 칸·당일 출결·다른 선생님 교시)은 이 연습 화면에 없습니다 — 출석부 화면에서 하세요. 바뀐 것은 없습니다.');
+      throw new V2Error(409, 'not_in_copy', '이 저장 방식(그날 전체 칸·당일 출결·다른 선생님 교시)은 연습 화면에서 아직 지원하지 않습니다. 바뀐 것은 없습니다.');
     }
     const unitsProvided = input.units !== undefined;
     let unitsVal = null;

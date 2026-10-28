@@ -36,8 +36,9 @@
 //   class-sheets/server/month-memo-actions.ts  saveMonthMemo     class_sheet_month_memos                          (commitSheetEdits가)
 //   attendance/server/actions.ts               setAttendanceCell attendance_records(교시 칸 갈래)                attendance_cell · attendance_note · attendance_clear
 //   class-sheets/server/goals-board-actions.ts setMyEcsGoalsRole · setMyEcsGoalsView  users.ui_prefs.ecs            (없음 — 2.0과 같다)
-//   textbooks/server/plan-actions.ts           previewTextbookFill(저장 없음 — 교재 배정 창 미리보기) · loadClassSlotChoices · loadClassTextbookPlans ·
-//                                              loadAssignableTextbooks(읽기 — 호스트는 GET)   applyTextbookFill 등 저장은 아직
+//   textbooks/server/plan-actions.ts           applyTextbookFill  class_textbook_plans · class_sheet_plan_lines(ecs_apply_textbook_lessons ·  textbook_plan_create|update ·
+//                                              ecs_create_plan_line) · class_plan_import_batches(되돌리기 기록)          textbook_plan_apply
+//                                              previewTextbookFill(저장 없음) · loadClassSlotChoices · loadClassTextbookPlans · loadAssignableTextbooks(읽기 — 호스트는 GET)
 //   students/server/english-name.ts            updateStudentEnglishName students.english_name(CAS · 지점 중복)   student_english_name_update
 //   보강 추가(v2-ecs-makeup.mjs): attendance/server/actions.ts searchMakeupStudents(읽기) · makeup-actions.ts fetchMakeupAbsences(읽기) ·
 //     setAttendanceCell(status makeup · allowMakeup — 칸과 시수) · makeup-note-action.ts noteMakeupAgainstAbsence  attendance_records.note   attendance_makeup_link
@@ -47,7 +48,7 @@
 //   copySlotFromPrevious · commitSheetEdits · getSlotPlanCompare(screen.actions.<이름> — 모듈 경로까지 2.0과 같아야 받는다).
 //   반환 모양이 { ok, error }가 아닌 셋(searchMakeupStudents · fetchMakeupAbsences · fetchMakeupHostClasses)은 저장이 안 될 때 ecs.tsx가 2.0 실패 모양을 정한다.
 //   아직 잇지 않은 2.0 서버 액션(호스트가 '복사본 보기 전용'으로 거절):
-//   class-sheets/server/memorized-actions.ts pullEcsMemorizedWords · textbooks/server/plan-actions.ts(교재 배정·미룸/당김 setLessonShift …) ·
+//   class-sheets/server/memorized-actions.ts pullEcsMemorizedWords · textbooks/server/plan-actions.ts(배정 삭제 deleteClassTextbookPlan · 미룸/당김 setLessonShift) ·
 //   textbooks/server/{import-undo,plan-delete,shift-undo}-actions.ts(되돌리기) · attendance/server/actions.ts setAttendanceBulk(오늘 면) ·
 //   attendance/server/makeup-actions.ts fetchMakeupHostClasses(원스크린 보강 반 고르기 — ECS 흐름은 안 부른다).
 //

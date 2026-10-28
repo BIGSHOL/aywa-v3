@@ -399,7 +399,7 @@ export function EcsNotYetPage({ route, scoped, lang }: { route: 'today' | 'room'
         <div className="flex flex-wrap items-center gap-3 px-1 py-1"><EcsFaceTabs face={face} showToday={scoped} lang={lang} /></div>
       ) : null}
       <p className="bg-card shadow-card text-text-dim rounded-2xl px-4 py-6 text-sm">
-        {what}은(는) 이 연습 화면에 아직 옮기지 않았습니다. <Link href="/ecs?view=week" className="text-primary font-bold underline underline-offset-2">주간 반 목록</Link>에서 반을 열어 주간 시트·월간을 볼 수 있습니다.
+        {what}은(는) 연습 화면에서 아직 지원하지 않습니다. <Link href="/ecs?view=week" className="text-primary font-bold underline underline-offset-2">주간 반 목록</Link>에서 반을 열어 주간 시트·월간을 볼 수 있습니다.
       </p>
     </div>
   );

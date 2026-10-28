@@ -32,7 +32,7 @@ export const MODULES = [
   'features/timetable/lib/week.ts', 'features/timetable/lib/periods.ts', 'features/timetable/lib/teacher-label.ts',
   'features/classes/english-track.ts', 'features/classes/class-name-as-of.ts', 'features/owner/defaults.ts', 'features/owner/preset.ts',
   'features/owner/month-plan-texts.ts', 'features/owner/lesson-profile.ts', 'features/periods/resolve.ts', 'features/enrollments/eligibility.ts',
-  'features/textbooks/plan-expand.ts', 'features/textbooks/plan-compare.ts', 'features/textbooks/lesson-schedule.ts', 'features/textbooks/shift-key.ts', 'features/textbooks/import-undo.ts', 'features/class-sheets/lib/carry-marks.ts',
+  'features/textbooks/plan-expand.ts', 'features/textbooks/plan-compare.ts', 'features/textbooks/lesson-schedule.ts', 'features/textbooks/plan-siblings.ts', 'features/textbooks/cell-lessons.ts', 'features/textbooks/shift-key.ts', 'features/textbooks/import-undo.ts', 'features/class-sheets/lib/carry-marks.ts',
   'features/teacher-view/i18n.ts', 'features/teacher-view/view-prefs.ts', 'features/teacher-view/teacher-name.ts', 'lib/modules.ts', 'lib/date-kst.ts',
 ];
 

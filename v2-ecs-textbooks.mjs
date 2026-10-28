@@ -4,7 +4,8 @@
 // ctx = { sql, t, R, env, user, today } — screen.load가 만든다(읽기 전용 트랜잭션).
 import { classAccess, readNames } from './v2-ecs-core.mjs';
 import { visibleClassFilter } from './v2-ecs-props.mjs';
-import { serverFn } from './v2-ecs-save.mjs';
+import { audit, serverFn } from './v2-ecs-save.mjs';
+import { planMaterials } from './v2-ecs-gap.mjs';
 
 const str = v => (typeof v === 'string' ? v : '');
 
@@ -167,6 +168,159 @@ export async function previewLoaded(ctx, loaded, planId) {
   return { ok: true, preview: { planId, className: gate.access.className, textbookTitle: computed.title, rows, unplaced: computed.unplaced, skippedHolidays: computed.skippedHolidays } };
 }
 
+// ── 교재 배정 기입 — 2.0 applyTextbookFill = saveClassTextbookPlan(배정 저장) + getClassImportLines(그 배정의 일정) + writePlannedCells(실제 빈 칸) ──
+const TEXTBOOKS_NOT_READY = '교재목록 표가 아직 만들어지지 않았습니다 — 마이그레이션 0266a를 적용해 주세요';
+const SAME_BOOK_NOT_READY = '같은 교재를 한 반에 여러 개 거는 기능은 DB 업데이트(0436a) 뒤에 열립니다 — 지금은 한 반에 한 개만 걸 수 있습니다';
+/** 2.0 friendlyTextbookError(access.ts) — 표 없음 · 유니크 · 참조 · CHECK. 그 밖은 같은 자리의 기본 문구(2.0 explainDbError의 제약별 문장은 옮기지 않았다). */
+function friendlyTextbookError(error, fallback, duplicate) {
+  const msg = String(error?.message ?? ''), code = error?.code;
+  if (code === '42P01' || (/textbooks|textbook_lessons|class_textbook_plans|ecs_apply_textbook_lessons/.test(msg) && /not find|does not exist|schema cache/i.test(msg))) return TEXTBOOKS_NOT_READY;
+  if (code === '23505') return duplicate ?? '이미 같은 이름의 교재가 있습니다';
+  if (code === '23503') return '다른 기록이 참조하고 있어 처리할 수 없습니다';
+  if (code === '23514') return '입력 값이 규칙에 맞지 않습니다(길이·형식을 확인하세요)';
+  return fallback;
+}
+/** DB가 거절하면 트랜잭션을 깨지 않고 2.0처럼 오류를 돌려받는다 — 저장점 안에서. */
+async function tryWrite(sql, fn) { try { return { value: await sql.savepoint(fn) }; } catch (error) { return { error }; } }
+const isPaceRejected = e => e?.code === '23514' && /pace_chk/.test(String(e?.message ?? ''));
+
+/** 2.0 saveClassTextbookPlan(input) — 같은 (반, 교재) 배정은 3개까지(placeSameBookPlan), 지난 시작일은 이번에 바뀐 때만 거절. */
+export async function saveClassTextbookPlan(ctx, input) {
+  const { sql, t, R, env, user, today } = ctx;
+  const gate = await classAccess(sql, t, R, env, user, str(input.classId), { write: true });
+  if (!gate.ok) return { ok: false, error: gate.error };
+  if (!env.textbooksOn) return { ok: false, error: '이 학원은 교재목록 기능이 꺼져 있습니다' };
+  if (!R.YMD_RE.test(str(input.startDate))) return { ok: false, error: '시작일을 골라 주세요' };
+  const slotPicks = R.normalizeSlotPicks(input.slotPicks);
+  if ((input.slotPicks ?? []).length > 0 && slotPicks.length === 0) return { ok: false, error: '교시를 다시 골라 주세요' };
+  if (slotPicks.length > MAX_SLOT_PICKS) return { ok: false, error: `한 배정에 교시를 ${MAX_SLOT_PICKS}칸까지 고를 수 있습니다` };
+  const axis = input.slotAxis === 'jj' ? 'jj' : 'class', pace = R.normalizeLessonPace(input.pace), termMode = input.termMode === 'exam' ? 'exam' : 'regular';
+  const startLessonNo = Math.max(1, Math.min(200, Math.trunc(Number(input.startLessonNo) || 1))), classId = gate.access.classId;
+  if (input.startDate < today) {
+    const prev = input.id && UUID_RE.test(input.id) ? (await sql`select start_date::text start_date from public.class_textbook_plans where tenant_id=${t} and id=${input.id}`)[0]?.start_date ?? null : null;
+    if (String(prev ?? '') !== input.startDate) return { ok: false, error: '시작일을 지난 날짜로 잡을 수 없습니다 — 지난 날짜에 기입하면 그 달 작성률이 뒤늦게 바뀝니다' };
+  }
+  const [book] = UUID_RE.test(str(input.textbookId)) ? await sql`select id::text id, title, skill_area, session_count from public.textbooks where tenant_id=${t} and id=${input.textbookId}` : [];
+  if (!book) return { ok: false, error: '교재를 찾을 수 없습니다' };
+  if (!book.skill_area) return { ok: false, error: '이 교재에 구분이 없어 반에 배정할 수 없습니다 — 교재목록에서 구분을 먼저 정하세요' };
+  if (Number(book.session_count ?? 0) < 1) return { ok: false, error: '이 교재에 차수가 없습니다 — 교재목록에서 차수를 먼저 정하세요' };
+  const payload = { class_id: classId, textbook_id: input.textbookId, slot_axis: axis, pace, term_mode: termMode, start_date: input.startDate, start_lesson_no: startLessonNo };
+  const withSlots = slotPicks.length > 0 ? { ...payload, slot_picks: slotPicks } : payload;
+  const siblings = (await sql`select id::text id, slot_picks from public.class_textbook_plans where tenant_id=${t} and class_id=${classId} and textbook_id=${input.textbookId} and is_active order by created_at`)
+    .map(r => ({ id: r.id, slotPicks: Array.isArray(r.slot_picks) && r.slot_picks.length > 0 ? r.slot_picks.map(String) : null }));
+  const placement = R.placeSameBookPlan({ picks: slotPicks.length > 0 ? slotPicks : null, siblings, selfId: input.id ?? null });
+  if (placement.kind === 'error') return { ok: false, error: placement.error };
+  if (placement.kind === 'update') {
+    const targetId = placement.id, update = row => tryWrite(sql, s => s`update public.class_textbook_plans set ${s(row)} where tenant_id=${t} and id=${targetId}`);
+    let res = await update(withSlots);
+    if (isPaceRejected(res.error) && pace === 'min25') res = await update({ ...withSlots, pace: 'period' });
+    if (res.error) return { ok: false, error: friendlyTextbookError(res.error, '배정을 수정하지 못했습니다', '이 반에 같은 교재가 이미 배정돼 있습니다') };
+    await audit(sql, t, user, 'textbook_plan_update', 'class', gate.access.className, { id: targetId, textbookId: input.textbookId, slots: slotPicks });
+    return { ok: true, id: targetId };
+  }
+  const insert = row => tryWrite(sql, s => s`insert into public.class_textbook_plans ${s({ ...row, tenant_id: t, created_by: user.id })} returning id::text id`);
+  let res = await insert(withSlots);
+  if (isPaceRejected(res.error) && pace === 'min25') res = await insert({ ...withSlots, pace: 'period' });
+  if (res.error || !res.value?.[0]) return { ok: false, error: friendlyTextbookError(res.error ?? {}, '배정을 만들지 못했습니다', SAME_BOOK_NOT_READY) };
+  const id = res.value[0].id;
+  await audit(sql, t, user, 'textbook_plan_create', 'class', gate.access.className, { id, textbookId: input.textbookId, axis, pace, slots: slotPicks });
+  return { ok: true, id };
+}
+
+/** 2.0 snapshotPlanLines — 되돌리기 기록용 그 기간 줄(IMPORT_FIELDS). */
+const snapshotPlanLines = (sql, t, classId, from, to) => sql`select id::text id, updated_by::text updated_by, textbook, page_range, progress, homework from public.class_sheet_plan_lines
+  where tenant_id=${t} and class_id=${classId} and plan_date >= ${from} and plan_date <= ${to} order by id`;
+/** 2.0 recordImportBatch — 앞뒤 차이(diffImport) + 배정 표식을 class_plan_import_batches 한 줄로. 바뀐 게 없고 배정도 없으면 null. */
+async function recordImportBatch(ctx, { classId, from, to, before, plan }) {
+  const { sql, t, R, user } = ctx;
+  const after = await snapshotPlanLines(sql, t, classId, from, to);
+  const rows = R.diffImport(new Map(before.map(r => [r.id, r])), after, user.id);
+  if (rows.length === 0 && !plan) return null;
+  const meta = plan ? [{ kind: 'plan', planId: plan.id, title: plan.title }] : [];
+  const [row] = await sql`insert into public.class_plan_import_batches (tenant_id, class_id, period_from, period_to, rows, row_count, created_by)
+    values (${t}, ${classId}, ${from}, ${to}, ${sql.json([...meta, ...rows])}, ${rows.length}, ${user.id}) returning id::text id`;
+  return row?.id ?? null;
+}
+/** 2.0 applyCellLessons — 칸마다 첫 차수는 RPC(ecs_apply_textbook_lessons, 100칸씩), 한 칸 여러 차수는 planCellExtras로 채움·새 줄. */
+async function applyCellLessons(ctx, { classId, termMode, book, cells: rawCells }) {
+  const { sql, t, R, user } = ctx;
+  const cells = rawCells.filter(c => c.lessons.length > 0), total = { applied: 0, filled: 0, added: 0, skipped: 0, truncated: 0 };
+  const firsts = cells.map(c => ({ date: c.date, slot: c.slot, ...c.lessons[0] }));
+  for (let i = 0; i < firsts.length; i += 100) {
+    const [{ r }] = await sql`select public.ecs_apply_textbook_lessons(${t}::uuid, ${user.id}::uuid, ${classId}::uuid, ${termMode}::text, ${book.skillArea}::text, ${book.title}::text, ${book.pageTime}::text, ${sql.json(firsts.slice(i, i + 100))}::jsonb) r`;
+    for (const k of Object.keys(total)) total[k] += Number(r?.[k] ?? 0);
+  }
+  const sameTitle = (a, b) => String(a ?? '').trim().toLowerCase() === b.trim().toLowerCase();
+  for (const c of cells) {
+    if (c.lessons.length < 2) continue;
+    const rows = await sql`select id::text id, skill_area, line_no, textbook, page_range, progress, homework from public.class_sheet_plan_lines
+      where tenant_id=${t} and class_id=${classId} and plan_date=${c.date} and slot_start=${c.slot} and term_mode=${termMode} order by line_no`;
+    const lines = rows.filter(r => r.skill_area === book.skillArea && sameTitle(r.textbook, book.title)).map(r => ({ id: r.id, textbook: r.textbook ?? null, pageRange: r.page_range ?? null, progress: r.progress ?? null, homework: r.homework ?? null }));
+    const plan = R.planCellExtras({ lessons: c.lessons, lines, title: book.title, pageTime: book.pageTime });
+    for (const u of plan.updates) { await sql`update public.class_sheet_plan_lines set ${sql({ ...u.patch, updated_by: user.id, updated_at: new Date() })} where tenant_id=${t} and id=${u.id}`; total.filled += 1; total.applied += 1; }
+    for (const want of plan.creates) {
+      const created = await tryWrite(sql, s => s`select * from public.ecs_create_plan_line(${t}::uuid, ${user.id}::uuid, ${classId}::uuid, ${c.date}::date, ${c.slot}::time, ${termMode}::text, ${book.skillArea}::text)`);
+      if (created.error) { if (String(created.error.message ?? '').includes('ECS_MAX_LINES')) { total.truncated += 1; continue; } throw created.error; }
+      const fresh = created.value.filter(r => r.term_mode === termMode && r.skill_area === book.skillArea && ![r.textbook, r.page_range, r.progress, r.homework].some(v => String(v ?? '').trim() !== ''))
+        .sort((a, b) => Number(b.line_no) - Number(a.line_no))[0];
+      if (!fresh) { total.skipped += 1; continue; }
+      await sql`update public.class_sheet_plan_lines set textbook=${book.title.trim()}, page_range=${book.pageTime?.trim() || null}, progress=${want.progress}, homework=${want.homework}, updated_by=${user.id}, updated_at=now()
+        where tenant_id=${t} and id=${String(fresh.id)}`;
+      total.added += 1; total.applied += 1;
+    }
+  }
+  return total;
+}
+/** 2.0 writePlannedCells — 교재마다(시기·구분·교재명) 따로 · 되돌리기 기록에 배정을 함께 싣는다. */
+async function writePlannedCells(ctx, { classId, from, to, byCell, plan }) {
+  const { sql, t, R } = ctx;
+  const cells = Object.keys(byCell).sort(), lines = cells.flatMap(k => byCell[k]), groups = new Map();
+  for (const l of lines) { const key = `${l.termMode}|${l.skillArea}|${l.title.trim().toLowerCase()}`; groups.set(key, [...(groups.get(key) ?? []), l]); }
+  const before = await snapshotPlanLines(sql, t, classId, from, to);
+  const total = { applied: 0, filled: 0, added: 0, skipped: 0, truncated: 0 };
+  for (const group of groups.values()) {
+    const head = group[0];
+    const out = await tryWrite(sql, s => applyCellLessons({ ...ctx, sql: s }, { classId, termMode: head.termMode, book: { skillArea: head.skillArea, title: head.title, pageTime: head.pageTime }, cells: R.groupCellLessons(group) }));
+    if (out.error) return { ok: false, error: friendlyTextbookError(out.error, '가져오지 못했습니다') };
+    for (const k of Object.keys(total)) total[k] += out.value[k];
+  }
+  const undoBatchId = total.added + total.filled > 0 || plan ? await recordImportBatch(ctx, { classId, from, to, before, plan }) : null;
+  return { ok: true, result: total, cells: cells.length, undoBatchId };
+}
+/** 2.0 getClassImportLines — 그 배정 하나의 일정(미루기 반영)을 from부터 끝 차수까지 + 실제로 닿은 마지막 날. */
+async function importLines(ctx, { classId, from, to, planId }) {
+  const { sql, t, R, env } = ctx;
+  if (!from || !to || from > to) return { status: 'ok', byCell: {}, lastDate: to };
+  const horizon = R.addDays(to, R.MAX_LOOKAHEAD_DAYS), materials = await planMaterials(sql, t, R, env, [classId], horizon), m = materials.byClass.get(classId);
+  const plans = m?.plans.filter(p => String(p.id) === planId);
+  if (!m || !plans || plans.length === 0) return { status: 'ok', byCell: {}, lastDate: to };
+  const byCell = R.expandPlans({ plans, books: materials.books, lessonsByBook: materials.lessonsByBook, schedules: m.schedules, holidays: materials.holidays, shifts: m.shifts, from, to: horizon });
+  return { status: 'ok', byCell, lastDate: Object.keys(byCell).reduce((max, k) => (k.slice(0, 10) > max ? k.slice(0, 10) : max), to) };
+}
+/** 2.0 applyTextbookFill(input) — 계산이 되는지 먼저 → 배정 저장 → 오늘(또는 시작일)부터 그 배정의 차수를 실제 빈 칸에 → textbook_plan_apply. */
+export async function applyTextbookFill(ctx, input) {
+  const loaded = await loadFillInput(ctx, input);
+  if ('error' in loaded) return { ok: false, error: loaded.error };
+  const computed = await computeTargets(ctx, loaded);
+  if ('error' in computed) return { ok: false, error: computed.error };
+  const { today, sql, t, user } = ctx, upcoming = computed.targets.filter(x => x.date >= today);
+  if (upcoming.length === 0) return { ok: false, error: '배정할 칸이 없습니다 — 고른 교시에 남은 수업일이 없습니다' };
+  const saved = await saveClassTextbookPlan(ctx, { classId: loaded.plan.classId, textbookId: loaded.plan.textbookId, slotAxis: 'class', slotPicks: loaded.plan.slotPicks ?? [],
+    pace: loaded.plan.pace, termMode: loaded.plan.termMode, startDate: loaded.plan.startDate, startLessonNo: loaded.plan.startLessonNo });
+  if (!saved.ok) return { ok: false, error: saved.error };
+  const importFrom = loaded.plan.startDate > today ? loaded.plan.startDate : today;
+  const planned = await importLines(ctx, { classId: loaded.plan.classId, from: importFrom, to: importFrom, planId: saved.id });
+  const written = planned.status === 'ok' && Object.keys(planned.byCell).length > 0
+    ? await writePlannedCells(ctx, { classId: loaded.plan.classId, from: importFrom, to: planned.lastDate, byCell: planned.byCell, plan: { id: saved.id, title: computed.title } }) : null;
+  await audit(sql, t, user, 'textbook_plan_apply', 'class', loaded.gate.access.className, { planId: saved.id, textbook: computed.title, planned: upcoming.length, from: today,
+    ...(written?.ok ? { imported: written.result.added + written.result.filled, through: planned.lastDate } : {}) });
+  if (!written || !written.ok) {
+    const importError = written && !written.ok ? written.error : planned.status === 'ok' ? null : '월간계획을 읽지 못했습니다';
+    return { ok: true, result: { applied: 0, filled: 0, added: 0, skipped: 0, truncated: 0, planned: upcoming.length }, importError, undoBatchId: null };
+  }
+  return { ok: true, result: { ...written.result, planned: upcoming.length }, importError: null, undoBatchId: written.undoBatchId };
+}
+
 /** 2.0 plan-actions.ts의 저장 아닌 함수 — previewTextbookFill(input): 시트에서 고른 그대로 미리보기(저장 없음, 그 반 ECS 쓰기 게이트). */
 export const TEXTBOOK_ACTIONS = {
   previewTextbookFill: serverFn('features/textbooks/server/plan-actions.ts', 1, async (ctx, input) => {
@@ -174,4 +328,6 @@ export const TEXTBOOK_ACTIONS = {
     if ('error' in loaded) return { ok: false, error: loaded.error };
     return previewLoaded(ctx, loaded, '');
   }),
+  /** applyTextbookFill(input) — 배정 저장 + 실제 빈 칸 기입 + 되돌리기 기록 · textbook_plan_create|update · textbook_plan_apply. */
+  applyTextbookFill: serverFn('features/textbooks/server/plan-actions.ts', 1, (ctx, input) => applyTextbookFill(ctx, input)),
 };
