@@ -46,6 +46,15 @@ registerHostHandler('features/enrollment/server/actions.ts', 'regenerateConsulta
 registerHostHandler('features/enrollment/server/prep-actions.ts', 'generatePrepBrief', notSupported);
 registerHostHandler('features/media/server/upload-actions.ts', 'issueAudioUploadTicket', notSupported);
 
+/**
+ * 통계 보기의 계정 보기 설정(학교별 점유율 정렬 · 추이 카드 보기 방식 · 끈 선) — 3.0엔 계정이 없어 저장하지 않는다(보기는 그 화면 안에서만 · 기간은 주소로).
+ * 2.0 부품은 결과를 기다리지 않고(void) 부른다 — 쓰기 요청을 보내지 않고 그 자리에서 { ok:false } 로 돌려준다.
+ */
+const noAccountPrefs = async () => ({ ok: false, error: '연습 화면에서는 보기 설정을 계정에 저장하지 않습니다' });
+for (const name of ['saveIntakeChartKind', 'saveIntakeTrendMode', 'saveProgressTrendOff', 'saveProgressTrendMode', 'saveEnrollmentViewPref'])
+  registerHostHandler('features/enrollment/server/view-pref-actions.ts', name, noAccountPrefs);
+registerHostHandler('features/enrollment/server/school-prefs-actions.ts', 'saveSchoolStatsPrefs', noAccountPrefs);
+
 const ACTOR_KEY = `v2-host-actor:${SCREEN}`;
 /** 저장하는 사람 — 3.0 띠가 고른 값(같은 출처 저장소 + v2-host-actor 알림). 바뀌면 다시 읽는다(끌기·칸 수정 권한이 그 사람의 것). */
 function useActor() {

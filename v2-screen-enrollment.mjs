@@ -1,6 +1,7 @@
 // 2.0 화면 — 신규 콜&상담(칸반 · 목록 · 통계 · 상세 · 새 상담 · 수정) (V2-SCREENS.md `enrollment`, 팀장 세션 L · 작업자 v2-enrollment).
 // 그리기는 2.0의 실제 React 부품(v2-host/src/enrollment.tsx). 이 모듈은 2.0 서버가 하던 일을 Docker 복사본에서 같은 결과로:
 //  · 칸반·목록 = v2-enrollment-list.mjs(2.0 server/queries.ts 목록 함수들) — 2.0 page.tsx가 부품에 넘기던 props 그대로.
+//  · 통계 = v2-enrollment-stats.mjs(2.0 server/stats-queries.ts · intake-trend · management-attending · 매일 기록 · 퇴원 창) · 상세·수정 = v2-enrollment-detail.mjs · 저장 = v2-enrollment-save.mjs.
 //  · 저장하는 사람 = 3.0 띠에서 고른 직원(GET ?actor=) — 2.0 requireAccess('enrollment')를 지나는 사람(신규 콜&상담 메뉴가 열린 재직 직원).
 //    칸반 끌기·목록 칸 수정(canWrite) · 엑셀 가져오기(full) · 수강료 계산기(수납 열람)는 그 사람의 권한으로(2.0과 같은 판정 — v2-proc-people.mjs).
 //  · 계정 보기 설정(ui_prefs)은 쓰지 않는다 — 3.0엔 계정이 없어 보기는 주소(view=)로만 · 기본은 칸반(2.0 savedEnrollmentView({})).
@@ -14,7 +15,8 @@
 //  | createEnrollmentConsultation(server/actions.ts) — 새 상담        | actions.createEnrollmentConsultation |
 //  | setEnrollmentOutcome(server/actions.ts) — 칸반 끌기·상태 칸·상태 변경 | actions.setEnrollmentOutcome |
 //  | patchConsultationCells(server/actions.ts) — 목록 칸 수정        | actions.patchConsultationCells |
-//  | 그 밖의 저장(삭제·수업 배정·병합·보고서 섹션·요약 붙이기·보기 설정) | 아직 없음 — 2.0 실패 모양으로 거절 |
+//  | 통계의 보기 설정(view-pref-actions 다섯 · saveSchoolStatsPrefs) — 계정 저장 | 호스트가 보내지 않고 { ok:false }(3.0엔 계정이 없다 · 부품은 결과를 기다리지 않는다) |
+//  | 그 밖의 저장(삭제·수업 배정·병합·보고서 섹션·요약 붙이기) | 아직 없음 — 2.0 실패 모양으로 거절 |
 //
 // 호스트에 붙일 때(의존)
 //  · Next 전용: next/link · next/navigation(useRouter — enrollment-kanban · column-cards · sheet-editable-cells · new-consultation-watcher · month-picker) ·
@@ -28,6 +30,7 @@ import { UUID, deepMerge, readPeople, serverCall } from './v2-proc-people.mjs';
 import { buildList, getConsultationTotalCount, listRules } from './v2-enrollment-list.mjs';
 import { activeClasses, canViewClasses, detailRules, findMergeSuccessor, getAssignedClasses, getEnrollmentConsultationById, getSiblingConsultations,
   listReferrerOptions, loadConsultationReferrer, referrerCandidatesFor } from './v2-enrollment-detail.mjs';
+import { buildStats } from './v2-enrollment-stats.mjs';
 import { createEnrollmentConsultation, formDataOf, patchConsultationCells, setEnrollmentOutcome, updateEnrollmentConsultation } from './v2-enrollment-save.mjs';
 
 const ID = 'enrollment', MENU = 'enrollment', ACTIONS = 'features/enrollment/server/actions.ts';
@@ -102,14 +105,16 @@ async function load({ sql, params, tenantId: t, importV2 }) {
   const uiPrefs = {};
   const view = R.view.parseEnrollmentView(params.view) ?? R.view.savedEnrollmentView(uiPrefs);
   const list = await buildList({ sql, R, t, sp: params, view, subjects: operations.subjects });
+  // 통계 보기(page.tsx view=stats) — 연도·두 추이 카드·관리현황('등록 후 퇴원'은 퇴원관리를 열 수 있는 사람에게만 · 2.0 canSeeExits).
+  const stats = view === 'stats' ? await buildStats({ sql, importV2, t, sp: params, subjects: operations.subjects, actorId: v.u.id, canSeeExits: v.canExits }) : null;
   return {
     ...base, page: 'list',
     canWriteEnrollment: v.canWrite, canOpenCalculator: v.canBilling, canImportExcel: v.canManage,
     // makeedu 보내기 = 바깥 전송(makeedu 큐) — 연습 화면에서는 단추째 없다(2.0도 권한이 없으면 자리째 없다).
     canPushMakeedu: false, uiPrefs,
     ...list,
-    // 통계 보기 자료(4단계)
     statsYears: [], schoolPrefs: null, progressRows: null, intake: null, stats: null, dist: null, withdrawals: null,
+    ...stats,
   };
 }
 

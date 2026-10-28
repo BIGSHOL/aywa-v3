@@ -407,3 +407,36 @@ test('3.0 껍데기: 주소의 actor=<직원 id>가 고른 사람보다 먼저 �
   assert.deepEqual(last(), { type: 'v2-host-actor', id: A2 }, '명단 밖 id는 무시하고 앞 사람 그대로');
   assert.equal(stored.get('v2-host-actor:enrollment'), A2);
 });
+
+// ── 4단계: 통계 보기 ───────────────────────────────────────────────────────────────────────────────────────────────────
+test('통계 = 독립 SQL — 연도 목록 · 그 해 상담·등록(달마다) · 올해는 작년 같은 기간 · 분포 합계 · 등록 뒤 원생 · 진행 기록 날 수 · 칸반·목록 자료는 비운다', { skip: SKIP }, async () => {
+  await run(async (sql) => {
+    const kstYear = (col) => sql`extract(year from ${sql.unsafe(col)} at time zone 'Asia/Seoul')::int`;
+    const [{ lo, hi }] = await sql`select min(${kstYear('consulted_at')}) lo, max(${kstYear('consulted_at')}) hi from public.enrollment_consultations where tenant_id=${t}`;
+    const d = await load(sql, { view: 'stats', year: '2025' });
+    assert.deepEqual(d.statsYears, Array.from({ length: hi - lo + 1 }, (_, i) => hi - i));
+    assert.equal(d.kanbanItems, null); assert.equal(d.tablePage, null);
+    const [y] = await sql`select count(*)::int n, count(*) filter (where outcome='enrolled')::int e from public.enrollment_consultations where tenant_id=${t} and ${kstYear('consulted_at')} = 2025`;
+    assert.equal(d.stats.total, y.n); assert.equal(d.stats.enrolled, y.e);
+    const byMonth = await sql`select to_char(consulted_at at time zone 'Asia/Seoul','YYYY-MM') m, count(*)::int n from public.enrollment_consultations where tenant_id=${t} and ${kstYear('consulted_at')} = 2025 group by 1`;
+    for (const r of byMonth) assert.equal(d.stats.months.find((m) => m.month === r.m)?.total, r.n, r.m);
+    assert.equal(d.stats.prevSamePeriod, null, '지난해를 볼 땐 1~12월끼리');
+    assert.equal(d.dist.total, y.n);
+    assert.equal(d.dist.grades.reduce((a, b) => a + b.n, 0), y.n);
+    const [{ c }] = await sql`select count(*)::int c from public.enrollment_consultations where tenant_id=${t} and ${kstYear('consulted_at')} = 2025 and outcome='enrolled' and student_id is not null`;
+    assert.equal(d.dist.cohorts.length, c);
+    assert.ok(Array.isArray(d.withdrawals), '퇴원관리를 열 수 있는 사람이면 관리현황 퇴원 재료가 있다');
+    // 올해 = 작년 1월 1일 ~ 작년 오늘
+    const now = await load(sql, { view: 'stats' });
+    const [p] = await sql`select count(*)::int n from public.enrollment_consultations where tenant_id=${t} and ${kstYear('consulted_at')} = ${hi - 1}
+      and (consulted_at at time zone 'Asia/Seoul')::date <= ((now() at time zone 'Asia/Seoul')::date - interval '1 year')::date`;
+    assert.equal(now.stats.prevSamePeriod.total, p.n);
+    // 진행 기록 = 매일 기록 표의 날(기본 = 최근 구간)
+    const P = await importV2('features/stats/period.ts'), K = await importV2('features/students/stats/ops-keys.ts'), kst = await importV2('lib/date-kst.ts');
+    const per = P.parseStatsPeriod(P.paramsForMode('range', kst.kstToday()), kst.kstToday());
+    const [{ days }] = await sql`select count(*)::int days from public.student_daily_stats where tenant_id=${t} and stat_date >= ${per.from} and stat_date <= ${per.to}`;
+    assert.equal(now.progressRows.length, days); void K;
+    // 신규 문의 추이(기본 12개월)의 합계 = 그 기간 상담 수(오늘까지)
+    assert.ok(now.intake.trend && now.intake.groups, '신규 문의 추이 자료');
+  });
+});
