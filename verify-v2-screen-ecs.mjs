@@ -483,4 +483,44 @@ test('복사본(되돌림): 반 계획 보기 보기 설정(setMyEcsGoalsRole ·
   });
 });
 
+test('복사본: 계획 대비 현황(/ecs/plan-gap) = 2.0 PlanGapResult 칸 그대로 · 배정 반 수(독립 SQL) · 원래 계획 칸 = 한 반 조회와 같다 · 칸 판정 = [계획 비교] 답', { skip: !db && 'local database not running' }, async () => {
+  const pg = await src('features/textbooks/server/plan-gap.ts');
+  const okKeys = (() => { const t = pg.replace(/\r\n/g, '\n'), i = t.indexOf('export type PlanGapResult'), j = t.indexOf('| {', i) + 3, k = t.indexOf('}\n  | { ok: false', j); return keysAtTop(t.slice(j, k)); })();
+  assert.match(pg, /export const UNKNOWN_TEACHER = "__unknown__";/);
+  assert.match(await here('v2-host/src/ecs-page.tsx'), /const UNKNOWN_TEACHER = '__unknown__';/);
+  const g = (await load({ v2path: '/ecs/plan-gap', month: '2026-10' })).gap;
+  assert.equal(g.res.ok, true); sameShape(g.res, okKeys, 'PlanGapResult');
+  for (const row of g.res.teachers) { sameShape(row, typeKeys(pg, 'PlanGapTeacherRow'), 'PlanGapTeacherRow'); for (const c of row.classes) sameShape(c, typeKeys(pg, 'PlanGapClassRow'), 'PlanGapClassRow'); }
+  const [{ n }] = await db`select count(distinct class_id)::int n from public.class_textbook_plans where tenant_id=${TENANT} and is_active`;
+  assert.equal(g.res.classCount, n, '배정이 있는 반 수(원장 = 스코프 없음)');
+  const sum = k => g.res.teachers.reduce((s, r) => s + r.tally[k], 0);
+  for (const k of ['due', 'match', 'behind', 'ahead', 'differ', 'unwritten']) assert.equal(g.res.total[k], sum(k), `합계 ${k}`);
+  // 여러 반 한 번에 읽은 재료(planMaterials)와 한 반 조회(plannedLines — 월간 화면이 쓰는 것)가 같은 원래 계획을 낸다.
+  const { planMaterials, planCellsOf } = await import('./v2-ecs-gap.mjs'), { plannedLines } = await import('./v2-ecs-props.mjs');
+  const R = await C.loadRules(importV2);
+  await db.begin('isolation level repeatable read read only', async sql => {
+    const env = await C.readSettings(sql, TENANT, R);
+    const [{ class_id: cid }] = await sql`select class_id::text class_id from public.class_textbook_plans where tenant_id=${TENANT} and is_active group by class_id order by count(*) desc limit 1`;
+    const many = planCellsOf(R, await planMaterials(sql, TENANT, R, env, null, '2026-10-31'), cid, '2026-10-01', '2026-10-31');
+    const one = await plannedLines(sql, TENANT, R, env, cid, '2026-10-01', '2026-10-31');
+    assert.deepEqual(Object.keys(many.baselineByCell).sort(), Object.keys(one.baselineByCell).sort(), '원래 계획 칸');
+    assert.deepEqual(many.lessonIndex, one.lessonIndex);
+    // 칸 하나의 판정 = getSlotPlanCompare(같은 compareCell)의 답.
+    const [owner] = await sql`select u.id::text id from public.users u where u.tenant_id=${TENANT} and u.status='active' and u.system_role='master' and not exists (select 1 from public.super_admins s where s.id=u.id) order by u.display_name limit 1`;
+    const key = Object.keys(many.baselineByCell).sort().find(k => k <= '2026-10-27|99');
+    if (key) {
+      const [date, slot] = key.split('|');
+      const cmp = await screen.load({ sql, params: { read: 'compare', class: cid, date, slot, viewer: owner.id }, tenantId: TENANT, importV2 });
+      const row = g.res.teachers.flatMap(x => x.classes).filter(c => c.classId === cid);
+      const miss = row.flatMap(c => c.misses).find(m => m.date === date && m.slotStart === slot);
+      if (cmp.compare.verdict === 'match' || cmp.compare.verdict === 'upcoming' || cmp.compare.verdict === 'noPlan') assert.equal(miss, undefined, `${key}: 어긋남 목록에 없다`);
+      else assert.deepEqual(miss && [miss.verdict, miss.lag], [cmp.compare.verdict, cmp.compare.lag], `${key}: 같은 판정`);
+    }
+  });
+  // 강사는 볼 수 있는 반만(스코프) — 원장보다 적거나 같다.
+  const [t] = await db`select u.id::text id from public.users u join public.classes c on c.teacher_id=u.id where u.tenant_id=${TENANT} and u.status='active' and u.system_role='teacher' and c.subject='english' and c.is_active group by u.id order by count(*) desc limit 1`;
+  const tg = (await load({ v2path: '/ecs/plan-gap', month: '2026-10', viewer: t.id })).gap.res;
+  assert.ok(tg.ok && tg.classCount <= g.res.classCount);
+});
+
 test.after(async () => { await db?.end(); });
