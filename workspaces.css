@@ -32,7 +32,7 @@
 .ws-signal h3{font-size:var(--ax-sm)}
 .ws-signal>p{font-size:var(--ax-sm)}
 .ws-signal .ax-actions{margin-top:auto}
-.ws-signal .button,.ws-local .button,.ws-document footer .button,.ws-sheet-bar .button,.live-pager .button{font-size:var(--ax-control-sm);height:var(--ax-control-h-sm);min-height:var(--ax-control-h-sm)}
+.ws-signal .button,.ws-local .button,.ws-sheet-bar .button{font-size:var(--ax-control-sm);height:var(--ax-control-h-sm);min-height:var(--ax-control-h-sm)}
 .ws-home-signals{margin:8px 0 32px}
 /* 2.0 type for shared empty states inside workspaces (no small gray copy). */
 .ws .live-empty{color:var(--ax-ink);border-color:var(--ax-line);background:#fff}
@@ -47,26 +47,81 @@
 .ws-facets button[aria-pressed=true]{background:var(--ax-primary);border-color:var(--ax-primary);color:#fff}
 .ws-search{display:flex;align-items:center;flex-wrap:wrap;gap:8px 12px;font-size:var(--ax-xs)}
 .ws-search input{flex:1 1 220px;height:38px}
-/* 기록 목록 = 열을 맞춘 표(원장 10-28 "항상 열정렬하는거 잊지마") — 줄마다 같은 열(--ws-cols), 넘친 칸은 말줄임(마우스를 올리면 전부). */
-.ws-rows{display:flex;flex-direction:column;border-top:1px solid var(--ax-line)}
-.ws-row{display:grid;grid-template-columns:var(--ws-cols);align-items:center;gap:12px;width:100%;min-height:44px;padding:8px 6px;border-bottom:1px solid var(--ax-line);font-size:var(--ax-xs);text-align:left;color:var(--ax-ink)}
-.ws-row:not(.ws-rows-head):hover{background:var(--ax-soft)}
-.ws-rows-head{min-height:0;padding-top:6px;padding-bottom:6px;font-weight:650}
-.ws-rc{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.ws-row>strong.ws-rc{font-size:var(--ax-sm);font-weight:500}
-.ws-row .icon{width:16px;flex-shrink:0}
-/* 상세를 연 기록 = 은은한 바탕만(펄스·흐림·왼쪽 띠 없음 — 원장 10-28). */
-:is(.ws-row,.ws-record)[aria-current=true],.ws-sheet tr[aria-current=true]>*{background:#f4f7fc}
-.ws-record{display:flex;align-items:center;gap:12px;width:100%;padding:12px 4px;border-bottom:1px solid var(--ax-line);font-size:var(--ax-sm);text-align:left}
-.ws-record:hover{background:var(--ax-soft)}
-.ws-record>span:first-child{display:flex;flex:1;flex-direction:column;min-width:0}
-.ws-record strong{font-weight:500;overflow-wrap:anywhere}
-.ws-record small{font-size:var(--ax-xs);overflow-wrap:anywhere}
-.ws-record-meta{display:flex;align-items:center;flex-wrap:wrap;justify-content:flex-end;gap:6px;max-width:50%}
-.ws-record .icon{width:16px;flex-shrink:0}
-.ws-timeline{display:flex;flex-direction:column;gap:16px;margin:0;padding:0;list-style:none}
-.ws-timeline>li{padding-left:16px;border-left:2px solid var(--ax-soft)}
-.ws-timeline h3{margin-bottom:4px;font-size:var(--ax-sm)}
+/* 공통 리스트(원장 10-28 "카드로 보여주지말고 리스트로 … 우리가 사용하는 리스트 서식을 공통으로") = 업무 흐름 표와 같은 규칙:
+   열마다 정해진 너비(table-layout:fixed · 너비는 그리는 쪽이 colgroup으로) · 칸 글은 한 줄, 넘치면 말줄임(마우스·초점이 오면 전부 — .ws-att-tip) ·
+   금액 오른쪽 · 짧은 값 가운데 · 긴 글 왼쪽(머리도 같은 쪽) · 열 머리 = 정렬·값 거르기 단추. 창이 좁아 다 못 담으면 가로로 밀어 본다(스크롤바 없이 가장자리 흐림). */
+.ws-tablewrap{min-width:0;overflow-x:auto;overflow-y:hidden;-webkit-mask-image:linear-gradient(to right,transparent,#000 var(--fade-left,0px),#000 calc(100% - var(--fade-right,0px)),transparent);mask-image:linear-gradient(to right,transparent,#000 var(--fade-left,0px),#000 calc(100% - var(--fade-right,0px)),transparent)}
+.ws-table{width:100%;table-layout:fixed;border-collapse:collapse;font-size:var(--ax-xs)}
+.ws-table th,.ws-table td{padding:7px 8px;border-bottom:1px solid var(--ax-line);background:transparent;color:var(--ax-ink);font-size:var(--ax-xs);font-weight:400;text-align:left;vertical-align:middle;overflow:hidden;white-space:nowrap}
+.ws-table thead th{padding:2px 2px;font-weight:650;border-top:1px solid var(--ax-line);border-bottom-color:rgba(29,29,31,.3)}
+.ws-table thead th>.ws-cut{padding:0 6px}
+.ws-table:not(.ws-mini) tbody tr:last-child>*{border-bottom:1px solid var(--ax-line)} /* styles.css가 마지막 줄 아래선을 지운다 — 목록 끝선은 둔다 */
+.ws-table :is(th,td).al-c{text-align:center}
+.ws-table :is(th,td).al-r{text-align:right;font-variant-numeric:tabular-nums}
+.ws-table td{font-variant-numeric:tabular-nums}
+.ws-cut{display:block;min-width:0;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ws-table .ax-chip.ws-cut{display:inline-block;vertical-align:middle;line-height:1.45}
+.ws-table tbody tr:has(.ws-rowmain){cursor:pointer}
+.ws-table tbody tr:has(.ws-rowmain):hover{background:var(--ax-soft)}
+.ws-table tbody tr[aria-current=true]>*{background:#f4f7fc}
+.ws-namecell{display:flex;align-items:center;gap:6px;min-width:0}
+.ws-namecell>.ax-chip{flex:none}
+.ws-rowmain{all:unset;box-sizing:border-box;flex:0 1 auto;min-width:0;max-width:100%;cursor:pointer;font-size:var(--ax-sm);font-weight:600;color:var(--ax-ink)}
+.ws-rowmain:focus-visible{outline:2px solid var(--ax-primary);outline-offset:1px}
+.ws-table tbody tr:hover .ws-rowmain{color:var(--ax-primary);text-decoration:underline;text-underline-offset:3px}
+.ws-table .ws-band th{padding:12px 8px 4px;border-bottom-color:rgba(29,29,31,.3);font-size:var(--ax-sm);font-weight:700;background:transparent;cursor:default}
+.ws-table .ws-fill{padding:0}
+/* 열 머리 단추 = 이름 · 정렬 표시(▲▼) · 거르는 중(●) · 펼침 표시. 가운데·오른쪽 열은 머리도 그쪽. */
+.ws-th{display:flex;align-items:center;gap:4px;width:100%;min-height:var(--ax-control-h-sm);padding:2px 6px;border-radius:6px;font:inherit;font-weight:650;color:var(--ax-ink);text-align:left}
+.ws-th>span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ws-th:hover,.ws-th[aria-expanded=true]{background:var(--ax-soft)}
+.ws-th.on{color:var(--ax-primary)}
+.ws-th-mark{font-size:10px;line-height:1}
+.ws-th-caret{display:inline-flex;margin-left:auto;opacity:.4}.ws-th-caret .icon{width:14px;height:14px}
+.ws-th:hover .ws-th-caret,.ws-th[aria-expanded=true] .ws-th-caret,.ws-th:focus-visible .ws-th-caret{opacity:1}
+th.al-c .ws-th{justify-content:center}th.al-r .ws-th{justify-content:flex-end}
+th:is(.al-c,.al-r) .ws-th-caret{margin-left:0}
+/* 칸반 칸 안 = 같은 공통 리스트의 줄(머리 없이). */
+.ws-mini{font-size:var(--ax-xs)}
+.ws-mini tbody tr:last-child>*{border-bottom:0}
+.ws-mini td,.ws-mini th{padding:8px 4px}
+/* 걸러 보는 조건 칩 · 쪽 번호 · 보기(단계별/목록) */
+.ws-colchips{display:flex;flex-wrap:wrap;gap:6px}
+.ws-colchips button{display:inline-flex;align-items:center;gap:6px;max-width:100%;padding:3px 8px 3px 10px;border:1px solid #bccce0;border-radius:6px;background:#f4f7fc;color:var(--ax-primary);font-size:var(--ax-xs)}
+.ws-colchips button>span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ws-colchips .icon{width:14px;height:14px;flex:none}
+.ws-colchips button:hover{border-color:var(--ax-primary)}
+.ws-pager{display:flex;justify-content:center;align-items:center;gap:4px;min-height:48px}
+.ws-pager button{min-width:var(--ax-control-h-sm);height:var(--ax-control-h-sm);padding:0 8px;border-radius:6px;font-size:var(--ax-xs);font-variant-numeric:tabular-nums}
+.ws-pager button:hover:not(:disabled){background:var(--ax-soft)}
+.ws-pager button:disabled{opacity:.4;cursor:default}
+.ws-pager button[aria-current=page]{background:var(--ax-primary);color:#fff;font-weight:700}
+.ws-pager span{padding:0 4px}
+.ws-viewtoggle{display:inline-flex;flex:none;border:1px solid var(--ax-line);border-radius:6px;overflow:hidden}
+.ws-viewtoggle button{height:38px;padding:0 12px;font-size:var(--ax-xs)}
+.ws-viewtoggle button+button{border-left:1px solid var(--ax-line)}
+.ws-viewtoggle button[aria-pressed=true]{background:var(--ax-primary);color:#fff;font-weight:600}
+/* 열 머리 메뉴(정렬 · 값 거르기) — 업무 흐름 표의 메뉴와 같은 모양. */
+.ws-colpop{position:fixed;z-index:60;display:flex;flex-direction:column;gap:8px;width:17rem;max-width:calc(100vw - 16px);padding:10px;border:1px solid var(--ax-line);border-radius:8px;background:#fff;box-shadow:0 10px 30px rgba(23,33,62,.16);font-size:var(--ax-xs)}
+.ws-colpop-sort{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+.ws-colpop-sort button{height:var(--ax-control-h-sm);border:1px solid var(--ax-line);border-radius:6px;font-size:var(--ax-xs)}
+.ws-colpop-sort button:hover:not(:disabled){background:var(--ax-soft)}
+.ws-colpop-sort button:disabled{opacity:.4;cursor:default}
+.ws-colpop-sort button[aria-pressed=true]{border-color:var(--ax-primary);background:var(--ax-soft);color:var(--ax-primary);font-weight:700}
+.ws-colpop-q{height:var(--ax-control-h-sm);padding:0 10px;border:1px solid var(--ax-line);border-radius:6px;font-size:var(--ax-xs)}
+.ws-colpop-list{display:flex;flex-direction:column;max-height:16rem}
+.ws-colpop-list label{display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:8px;padding:5px 4px;border-radius:4px;cursor:pointer}
+.ws-colpop-list label:hover{background:var(--ax-soft)}
+.ws-colpop-list label>span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ws-colpop-list b{font-weight:500;font-variant-numeric:tabular-nums}
+.ws-colpop-list input{width:16px;height:16px;margin:0}
+.ws-colpop-list .ws-colpop-all{grid-template-columns:auto minmax(0,1fr);border-bottom:1px solid var(--ax-line);border-radius:0;font-weight:650}
+.ws-colpop-note{padding:6px 4px;line-height:1.5}
+.ws-colpop-foot{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.ws-colpop-foot .button{height:var(--ax-control-h-sm);min-height:var(--ax-control-h-sm);padding:0 12px;font-size:var(--ax-xs)}
+.ws-colpop-foot [data-wsc=clear]:disabled{opacity:.4;cursor:default;text-decoration:none}
+/* 시트(칸 고치기) 줄 중 상세를 연 줄 = 은은한 바탕만(펄스·흐림·왼쪽 띠 없음 — 원장 10-28). */
+.ws-sheet tr[aria-current=true]>*{background:#f4f7fc}
 /* 칸반 = 넓이에 맞춰 줄을 바꾼다(가로로 넘치지 않는다 — 엿보기 창 1180px에서 가로 스크롤이 생겼다, 원장 10-28). */
 .ws-flow{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;align-items:start}
 .ws-stage{display:flex;flex-direction:column;min-width:0;padding:12px;border:1px solid var(--ax-line);border-radius:8px}
@@ -77,8 +132,6 @@
 .ws-stage>p{font-size:var(--ax-xs)}
 .ws-stage-more{align-self:flex-start;margin-top:6px;padding:4px 2px;color:var(--ax-primary);font-size:var(--ax-xs);font-weight:600}
 .ws-stage-more:hover{text-decoration:underline}
-.ws-stage .ws-record{padding:10px 2px}
-.ws-stage .ws-record-meta{display:none}
 .ws-sheet{overflow-x:auto;border:1px solid var(--ax-line);border-radius:8px;-webkit-mask-image:linear-gradient(to right,transparent,#000 var(--fade-left,0px),#000 calc(100% - var(--fade-right,0px)),transparent);mask-image:linear-gradient(to right,transparent,#000 var(--fade-left,0px),#000 calc(100% - var(--fade-right,0px)),transparent)}
 .ws-sheet table{width:100%;border-collapse:collapse;font-size:var(--ax-sm)}
 .ws-sheet th,.ws-sheet td{padding:0;border-bottom:1px solid var(--ax-line);background:#fff;color:var(--ax-ink);font-size:var(--ax-sm);font-weight:400;text-align:left;white-space:nowrap}
@@ -92,19 +145,8 @@
 .ws-cell-input{width:100%;min-width:96px;height:36px;border-radius:0}
 .ws-sheet-bar{display:flex;align-items:center;justify-content:flex-end;flex-wrap:wrap;gap:8px 12px;font-size:var(--ax-xs)}
 .ws-sheet-bar span{margin-right:auto}
-.ws-report{display:grid;grid-template-columns:minmax(260px,1fr) minmax(0,1.3fr);gap:14px;align-items:start}
-.ws-report-list{display:flex;flex-direction:column;max-height:520px;border:1px solid var(--ax-line);border-radius:8px}
-.ws-report-list button{display:grid;grid-template-columns:var(--ws-cols);align-items:center;gap:10px;padding:10px 12px;border-bottom:1px solid var(--ax-line);text-align:left;font-size:var(--ax-xs)}
-.ws-report-list button>strong{font-size:var(--ax-sm);font-weight:500}
-.ws-report-list button[aria-pressed=true]{background:#f4f7fc;box-shadow:inset 0 0 0 1px var(--ax-primary)}
-.ws-document{display:flex;flex-direction:column;gap:14px;min-width:0;padding:22px;border:1px solid var(--ax-line);border-radius:8px;background:#fff}
-.ws-document header{padding-bottom:12px;border-bottom:1px solid var(--ax-line)}
-.ws-document .ax-issue-meta{margin-top:-4px}
-.ws-document header p{font-size:var(--ax-xs)}
-.ws-document h3{margin:4px 0;font-size:var(--ax-lg)}
-.ws-document dl,.ws-local dl,.ws .ax-evidence dl{display:grid;grid-template-columns:minmax(90px,.4fr) 1fr;gap:8px 12px;margin:0;font-size:var(--ax-sm)}
-.ws-document dd,.ws-local dd{margin:0;overflow-wrap:anywhere;white-space:pre-line}
-.ws-document footer{display:flex;flex-wrap:wrap;gap:8px}
+.ws-local dl,.ws .ax-evidence dl{display:grid;grid-template-columns:minmax(90px,.4fr) 1fr;gap:8px 12px;margin:0;font-size:var(--ax-sm)}
+.ws-local dd{margin:0;overflow-wrap:anywhere;white-space:pre-line}
 .ws-settings{display:grid;grid-template-columns:minmax(180px,.6fr) minmax(0,1.7fr);gap:16px;align-items:start}
 .ws-faces{display:flex;flex-direction:column;max-height:560px;border:1px solid var(--ax-line);border-radius:8px}
 .ws-faces button{padding:10px 12px;border-bottom:1px solid var(--ax-line);text-align:left;font-size:var(--ax-sm)}
@@ -157,8 +199,8 @@
 .ws-groups summary:hover{background:var(--ax-soft)}
 .ws-groups summary .nav-count{margin-left:auto}
 .ws-groups .ws-nav{padding-left:30px;min-height:36px}
-@media(max-width:1050px){.ws-body,.ws-critical{grid-template-columns:minmax(0,1fr)}.ws-report,.ws-settings{grid-template-columns:minmax(0,1fr)}.ws-report-list,.ws-faces{max-height:260px}}
-@media(max-width:760px){.ws{gap:16px}.ws-document{padding:16px}.ws-flow{grid-template-columns:minmax(0,1fr)}.ws-record-meta{max-width:45%}.ws-document dl,.ws-local dl{grid-template-columns:minmax(0,1fr)}.ws-current{grid-template-columns:minmax(0,1fr)}}
+@media(max-width:1050px){.ws-body,.ws-critical{grid-template-columns:minmax(0,1fr)}.ws-settings{grid-template-columns:minmax(0,1fr)}.ws-faces{max-height:260px}}
+@media(max-width:760px){.ws{gap:16px}.ws-flow{grid-template-columns:minmax(0,1fr)}.ws-local dl{grid-template-columns:minmax(0,1fr)}.ws-current{grid-template-columns:minmax(0,1fr)}}
 @media(prefers-reduced-motion:reduce){.ws-groups summary::before{transition:none}}
 .ws-recipient{display:flex;flex-direction:column;gap:12px;padding:18px;border:1px solid #9bb3d3;border-radius:8px}
 .ws-recipient h2{font-size:var(--ax-base)}
