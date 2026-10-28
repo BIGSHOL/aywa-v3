@@ -64,7 +64,7 @@ test('대응표 = 2.0 서버 함수 이름 그대로(그 파일이 내보내는 
   assert.match(entry, /연습 복사본이라 실제로 보내지지 않습니다 — 발송 대기로만 남습니다/);
   // 직접 발송·공지·답글 등은 아직 받지 않는다(진입점이 그 자리에서 거절).
   assert.ok('saveAdminReport' in lessonReportsActions);
-  for (const n of ['sendBulkAdminReports', 'editQueuedNotice', 'deleteQueuedNotice', 'requestParentReply', 'requestParentReaction'])
+  for (const n of ['editQueuedNotice', 'deleteQueuedNotice', 'requestParentReply', 'requestParentReaction'])
     { assert.ok(refuse.includes(`"${n}"`), n); assert.ok(!(n in lessonReportsActions), n); }
   assert.match(entry, /"requestClassnoteBoardSync", async \(\) => \(\{ ok: false, error: VIEW_ONLY \}\)/);
   assert.match(entry, /"testPrompt", async \(\) =>/);
@@ -307,6 +307,41 @@ test('관리자 직접 발송 = 일반 학생 새 보고서를 Docker queued까�
   const after = await db`select id from public.lesson_reports where tenant_id=${t} and student_id=${target.student_id}
     and class_id=${target.class_id} and report_date=${target.report_date}`;
   assert.equal(after.length, 0, '보고서와 발송 요청 되돌림');
+});
+
+test('반별 대량 직접 발송 = 일반 학생 보고서만 Docker queued · 대상·제외 집계 · 바깥 요청 0 · 시험 뒤 되돌림', { skip: SKIP }, async () => {
+  const { t, run, net } = await setup();
+  const [target] = await db`select c.id::text class_id, ((now() at time zone 'Asia/Seoul')::date)::text report_date
+    from public.classes c
+    join public.classnote_class_boards b on b.class_id=c.id and b.tenant_id=${t}
+    join public.classnote_class_board_members m on m.class_id=c.id and m.tenant_id=${t} and m.status='ok'
+    join public.enrollments e on e.class_id=c.id and e.student_id=m.student_id and e.end_date is null
+    join public.students s on s.id=e.student_id and s.status='enrolled' and not coalesce(s.is_test,false)
+    where c.tenant_id=${t} and c.is_active and c.subject='math' and not c.report_optout
+      and not exists (select 1 from public.lesson_reports r where r.tenant_id=${t} and r.student_id=s.id
+        and r.class_id=c.id and r.report_date=(now() at time zone 'Asia/Seoul')::date)
+    limit 1`;
+  assert.ok(target, '대량 발송 가능한 일반 학생이 있는 반');
+  const before = await db`select id::text id from public.lesson_reports where tenant_id=${t}
+    and class_id=${target.class_id} and report_date=${target.report_date} order by id`;
+  const out = await run([{ module: `${RA}compose-actions.ts`, fn: 'sendBulkAdminReports', args: [{
+    classIds: [target.class_id], reportDate: target.report_date, notes: '연습 복사본 반별 직접 발송 시험', test: false,
+  }] }], [
+    { text: `select id::text id, classnote_status from public.lesson_reports where tenant_id=$1
+      and class_id=$2 and report_date=$3 and source='admin' and notes=$4`,
+    params: [t, target.class_id, target.report_date, '연습 복사본 반별 직접 발송 시험'] },
+    { text: `select metadata->>'via' via from public.audit_logs where tenant_id=$1 and action='classnote_bulk_send' and created_at=now()`, params: [t] },
+    { text: NET },
+  ]);
+  const result = out.results[0].value;
+  assert.equal(result.ok, true, JSON.stringify(result));
+  assert.ok(result.queued > 0, '확인된 반 원아가 대기열에 오른다');
+  assert.equal(out.probes[0].filter((row) => row.classnote_status === 'queued').length, result.queued);
+  assert.ok(out.probes[1].some((row) => row.via === VIA));
+  assert.equal(out.probes[2][0].n, net);
+  const after = await db`select id::text id from public.lesson_reports where tenant_id=${t}
+    and class_id=${target.class_id} and report_date=${target.report_date} order by id`;
+  assert.deepEqual([...after], [...before], '대량 작성과 발송 요청 되돌림');
 });
 
 test('저장하는 사람 = 보고서 관리 · 보고서 설정 · AI 멘트 중 하나라도 쓰기인 재직 직원(운영자 계정 제외 · 원장 먼저) · 목록 밖 = 로그인 없음', { skip: SKIP }, async () => {
