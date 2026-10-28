@@ -73,7 +73,7 @@ export function createExitInsight({ source, v2, asOf, months, overlay, providers
     const { model, effort } = AI.STAGES.cohort.tiers[plan.tier];
     const r = await providers.claude.ask({ schema: AI.COHORT_SCHEMA, prompt: AI.COHORT_PROMPT, model, effort, timeoutMs: AI.STAGES.cohort.timeoutMs, input: plan.built.input }, { signal });
     const v = AI.validateCohort(r.output, plan.built);
-    return v.ok ? ok(r.output, r, { stage: 'cohort', provider: 'claude-cli', tier: plan.tier, effort }) : { status: 'error', code: 'invalid_output', issues: v.issues, numbers: v.numbers, model: r.model || null, stage: 'cohort', tier: plan.tier, effort };
+    return v.ok ? ok(r.output, r, { stage: 'cohort', provider: 'claude-cli', tier: plan.tier, effort }) : { status: 'error', code: 'invalid_output', issues: v.issues, numbers: v.numbers, samples: v.samples, model: r.model || null, stage: 'cohort', tier: plan.tier, effort };
   }
   const used = kind => { const t = clock(); starts[kind] = starts[kind].filter(x => t - x < HOUR); return starts[kind].length; };
   function pump() {
@@ -117,7 +117,7 @@ export function createExitInsight({ source, v2, asOf, months, overlay, providers
     const plan = jev.pending ? null : cohortPlan(p), r = plan && data().results[plan.key], job = plan && jobs.get(plan.key);
     if (plan && !plan.built.clusterIds.length) return { status: 'complete', note: '설명할 원인 묶음이 없습니다(빠진 학생이 없거나 묶음 조건에 맞는 기록이 없음).', jev, claude: { status: 'skipped' }, output: null, plan };
     const claude = !plan ? { status: 'waiting' } : job ? { status: job.status === 'running' ? 'running' : 'queued', blocked: job.blocked || null } : r?.status === 'ready' ? { status: 'ready', model: r.model, modelLabel: modelLabel(r.model), tier: r.tier, effort: r.effort, at: r.at, elapsedMs: r.elapsedMs }
-      : r?.status === 'error' ? { status: 'error', code: r.code, issues: r.issues || [], retryAt: retryable(r) ? r.retryAt : null } : { status: providers ? 'queued' : 'disabled' };
+      : r?.status === 'error' ? { status: 'error', code: r.code, issues: r.issues || [], samples: r.samples || null, retryAt: retryable(r) ? r.retryAt : null } : { status: providers ? 'queued' : 'disabled' };
     const status = !providers && claude.status !== 'ready' ? 'disabled' : claude.status === 'ready' ? (jev.failed ? 'partial' : 'complete') : claude.status === 'error' && !claude.retryAt ? 'error' : jev.pending || ['queued', 'waiting'].includes(claude.status) ? 'queued' : 'running';
     return { status, disabledReason: providers ? null : disabledReason, jev, claude, output: claude.status === 'ready' ? r.output : null, plan };
   }

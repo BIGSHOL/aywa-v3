@@ -108,6 +108,9 @@ test('AI output check: ids inside the input, no digits, counts, months or guesse
   bad(o => { o.overall.summary = 'S-99999999 학생'; }, 'unknown_id');
   bad(o => { o.clusters[0].chain[0].factIds = ['F-99999999']; }, 'fact_outside_cluster');
   bad(o => { o.clusters = []; }, 'cluster_set');
+  // Not counts: '전부터'·'일부러' and the phrases '다시 한 번'·'한 번 더'; failing fragments are kept for diagnosis.
+  const fine = structuredClone(good); fine.overall.summary = '담당 교체 전부터 결석이 있었고 일부러 다시 한 번 확인한 기록은 없습니다'; assert.equal(AI.validateCohort(fine, built).ok, true);
+  const kept = structuredClone(good); kept.overall.summary = '그 반 학생 전원과 Jev 판정'; assert.deepEqual(AI.validateCohort(kept, built).samples, { count_word: ['생 전원과 '], raw_code: ['과 Jev 판'] });
 });
 
 function fakeProviders({ invalid = false, unsure = false } = {}) {
