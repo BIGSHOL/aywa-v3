@@ -71,6 +71,8 @@ function App() {
   const known = path === HOST_ROUTE || path === '/meetings/new' || DETAIL.test(path);
   const q = new URLSearchParams(search.toString());
   q.delete('actor');
+  // 창 표식(embed=1) — 2.0 부품의 창 안 이동(WindowLink · withEmbed)이 싣는다. 서버가 보는 열쇠가 아니라 뺀다(실으면 조회가 400).
+  q.delete('embed');
   if (path !== HOST_ROUTE) q.set('v2path', path);
   if (actor) q.set('actor', actor);
   const query = q.toString();
@@ -97,7 +99,7 @@ function App() {
   if (data.page === 'missing') return <HostMessage text="이 회의록을 찾을 수 없습니다. 지워졌을 수 있습니다." error />;
   const ops = data.operations as unknown as Parameters<typeof OperationsProvider>[0];
   // 주소 열쇠는 그 자료를 받은 주소의 것(다음 자료가 오기 전 잠깐 옛 자료 + 새 주소로 어긋나 그리지 않게).
-  const sp = Object.fromEntries([...new URLSearchParams(state.query ?? '').entries()].filter(([k]) => k !== 'actor' && k !== 'v2path'));
+  const sp = Object.fromEntries([...new URLSearchParams(state.query ?? '').entries()].filter(([k]) => k !== 'actor' && k !== 'v2path' && k !== 'embed'));
   return (
     <OperationsProvider subjects={ops.subjects} gradeLevels={ops.gradeLevels} jobTitles={ops.jobTitles} jobTitlesByDepartment={ops.jobTitlesByDepartment}
       disabledModules={data.modules.disabled as never} licenses={data.licenses}>

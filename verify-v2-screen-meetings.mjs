@@ -160,6 +160,8 @@ test('화면 글자 — 2.0·내부 이름이 보이지 않는다 · 껍데기�
   // 진입점의 쓰기 요청은 삭제 하나뿐(2.0 redirect를 호스트 이동으로 받으려고 직접 보낸다) — 보기 경로엔 없다.
   assert.equal((entry.match(/method:\s*['"]POST/g) ?? []).length, 1, '진입점 쓰기 요청 = 삭제 하나');
   assert.ok(/fetch\(`\/api\/v2\/\$\{SCREEN\}\/deleteMeeting`/.test(entry));
+  // 창 표식(embed=1)은 조회에 싣지 않는다 — 2.0 WindowLink로 행을 누르면 붙어 온다(실으면 400 — 실제로 났다).
+  assert.match(entry, /q\.delete\('embed'\);/);
   assert.match(code(screen.load.toString()), /readCall/); // 보기는 러너 읽기(read only)로만
 });
 
