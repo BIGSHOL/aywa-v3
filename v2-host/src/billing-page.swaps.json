@@ -105,6 +105,26 @@
   [
    "  const [monthRows, periods, students, syncState, canWriteBilling] = await Promise.all([\n    getInvoicesForPeriod({ period, sort, desc }),\n    getAvailablePeriods(),\n    getStudentOptions(),\n    getMakeeduSyncState(\"invoices\"),\n    // 수동 청구서 '완납'·'취소'(감사 N15)를 세울지 — 서버 액션이 같은 게이트를 다시 본다.\n    getCurrentUser().then((u) => (u ? canWriteTenant(u.systemRole, \"billing\") : false)),\n  ]);\n",
    "  // 수동 청구서 '완납'·'취소'(감사 N15)를 세울지 — 서버 액션이 같은 게이트를 다시 본다.\n  const { monthRows, periods, students, syncState, canWriteBilling } = data;\n"
+  ],
+  [
+   "  period?: string;\n",
+   "  period?: string;\n  /** 업무 흐름의 청구 1건 — 기존 표와 저장 동작을 그대로 쓴다. */\n  invoice?: string;\n"
+  ],
+  [
+   "  const q = sp.q ?? \"\";\n",
+   "  const q = sp.invoice ? \"\" : sp.q ?? \"\";\n"
+  ],
+  [
+   "  const overdueOnly = sp.overdue === \"1\";\n  const missingOnly = sp.missing === \"1\";\n",
+   "  const overdueOnly = !sp.invoice && sp.overdue === \"1\";\n  const missingOnly = !sp.invoice && sp.missing === \"1\";\n"
+  ],
+  [
+   "  const page = Math.max(1, Number(sp.page) || 1);\n",
+   "  const page = sp.invoice ? 1 : Math.max(1, Number(sp.page) || 1);\n"
+  ],
+  [
+   "  const filtered = missingOnly ? afterOverdue.filter(missingFromMakeedu) : afterOverdue;\n",
+   "  const filtered = sp.invoice ? monthRows.filter((r) => r.id === sp.invoice) : missingOnly ? afterOverdue.filter(missingFromMakeedu) : afterOverdue;\n"
   ]
  ],
  "badge": [

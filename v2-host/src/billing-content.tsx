@@ -62,6 +62,8 @@ function currentPeriod(): string {
 
 type Sp = {
   period?: string;
+  /** 업무 흐름의 청구 1건 — 기존 표와 저장 동작을 그대로 쓴다. */
+  invoice?: string;
   q?: string;
   sort?: SortKey;
   desc?: string;
@@ -75,13 +77,13 @@ type Sp = {
 /** `canImport` = 엑셀 가져오기(청구서) 권한 — 페이지가 billing full(`canManageTenant`)로 정한 값. */
 export function BillingContent({ sp, canImport = false, data }: { sp: Sp; canImport?: boolean; data: BillingFaceData }) {
   const period = sp.period ?? currentPeriod();
-  const q = sp.q ?? "";
+  const q = sp.invoice ? "" : sp.q ?? "";
   const sort: SortKey = (sp.sort as SortKey) ?? "status";
   const desc = sp.desc === "1";
-  const overdueOnly = sp.overdue === "1";
-  const missingOnly = sp.missing === "1";
+  const overdueOnly = !sp.invoice && sp.overdue === "1";
+  const missingOnly = !sp.invoice && sp.missing === "1";
   const PAGE_SIZE = 50;
-  const page = Math.max(1, Number(sp.page) || 1);
+  const page = sp.invoice ? 1 : Math.max(1, Number(sp.page) || 1);
 
   // 수동 청구서 '완납'·'취소'(감사 N15)를 세울지 — 서버 액션이 같은 게이트를 다시 본다.
   const { monthRows, periods, students, syncState, canWriteBilling } = data;
@@ -123,7 +125,7 @@ export function BillingContent({ sp, canImport = false, data }: { sp: Sp; canImp
   // '목록 보기'(overdue=1) = **진짜 필터**. 예전엔 sort=due_date만 바꿔서, 401건 중 396건의 납부기한이
   // 같은 달(2026-07)에선 기본 정렬로 1페이지에 모여 있던 연체 38건을 9페이지에 흩뿌렸다(정반대 효과).
   const afterOverdue = overdueOnly ? searched.filter((r) => isOverdue(r, today)) : searched;
-  const filtered = missingOnly ? afterOverdue.filter(missingFromMakeedu) : afterOverdue;
+  const filtered = sp.invoice ? monthRows.filter((r) => r.id === sp.invoice) : missingOnly ? afterOverdue.filter(missingFromMakeedu) : afterOverdue;
 
   const total = filtered.length;
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));

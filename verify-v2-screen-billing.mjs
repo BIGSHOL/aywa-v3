@@ -30,11 +30,11 @@ await check('주소 열쇠 = 2.0 page.tsx · 수납관리 부품이 읽는 칸(s
   const dir = new URL('../../src/app/(shell)/billing/_components/', import.meta.url), keys = new Set();
   for (const f of [...(await readdir(dir)).filter(n => n.endsWith('.tsx')).map(n => new URL(n, dir)), new URL('../../src/app/(shell)/billing/page.tsx', import.meta.url)])
     for (const m of (await readFile(f, 'utf8')).matchAll(/\bsp\.([a-zA-Z]+)/g)) keys.add(m[1]);
-  assert.deepEqual(Object.keys(M.screen.params).filter(k => !['viewer', 'v2path', 'ment', 'refundOptions', 'prefill', 'months', 'call', 'args', ...STATS_KEYS].includes(k)).sort(), [...keys].sort());
+  assert.deepEqual(Object.keys(M.screen.params).filter(k => !['viewer', 'v2path', 'invoice', 'ment', 'refundOptions', 'prefill', 'months', 'call', 'args', ...STATS_KEYS].includes(k)).sort(), [...keys].sort());
   const host = await here('./v2-host/src/billing.tsx'), shell = await here('./v2-screen-billing.js');
   const listOf = text => JSON.parse(`[${/KEYS = \[([^\]]+)\]|KEEP = \[([^\]]+)\]/.exec(text).slice(1).find(Boolean).replace(/'/g, '"')}]`);
-  assert.deepEqual(listOf(host).sort(), ['v2path', ...keys, ...STATS_KEYS].sort());
-  assert.deepEqual(listOf(shell).sort(), ['v2path', ...keys, ...STATS_KEYS].sort());
+  assert.deepEqual(listOf(host).sort(), ['v2path', 'invoice', ...keys, ...STATS_KEYS].sort());
+  assert.deepEqual(listOf(shell).sort(), ['v2path', 'invoice', ...keys, ...STATS_KEYS].sort());
   // 수납 통계 열쇠 = 2.0 PERIOD_KEYS · EXPENSE_TREND_KEYS 값 그대로
   const per = await importV2('features/stats/period.ts'), ex = await importV2('features/billing/stats/expense-trend.ts');
   assert.deepEqual([...Object.values(per.PERIOD_KEYS), ...Object.values(ex.EXPENSE_TREND_KEYS)].sort(), [...STATS_KEYS].sort());
@@ -165,8 +165,19 @@ try {
 
   await check('매개변수 거절 · 없는 달은 빈 표(2.0 eq(period)와 같다)', async () => {
     for (const [k, v] of [['viewer', 'x'], ['tab', 'A B'], ['desc', '2'], ['v2path', '/students/1'], ['hy', '26']]) assert.equal(M.screen.params[k].test(v), false, `${k}=${v}`);
+    assert.equal(M.screen.params.invoice.test('x'), false);
     const odd = await load({ period: '2026-13' });
     assert.deepEqual(odd.billing.monthRows, []);
+  });
+
+  await check('업무 흐름 청구 id = 그 청구의 실제 월·정확한 행으로 진입 · 없는 id는 안내', async () => {
+    const [invoice] = await db`select id::text id, period from public.invoices where tenant_id=${tenantId} and status <> 'void' order by period desc, id limit 1`;
+    assert.ok(invoice, '시험할 청구가 있다');
+    const d = await load({ invoice: invoice.id, period: '1999-01' });
+    assert.equal(d.invoicePeriod, invoice.period);
+    assert.ok(d.billing.monthRows.some((r) => r.id === invoice.id));
+    const missing = await load({ invoice: '00000000-0000-4000-8000-000000000000' });
+    assert.equal(missing.page, 'invoiceMissing');
   });
 
   await check('교재 면(목록) = 교재신청 전부(체크 적은 것 → 신청일 최신) · 상태 필터 · 검색 · 쪽 · 카드 숫자 = 독립 SQL · 동기화 = textbook_checks', async () => {

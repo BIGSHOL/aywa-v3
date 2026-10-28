@@ -53,7 +53,7 @@ const PERIOD = /^\d{4}-(0[1-9]|1[0-2])$/;
 const WORD = /^[a-z0-9_-]{1,40}$/;
 /** 면들이 읽는 주소 열쇠(2.0 page.tsx · 각 면의 sp.*) — 지금 쓰지 않는 열쇠도 받아 둔다(주소가 400이 되지 않게). */
 const PARAMS = {
-  viewer: UUID, v2path: /^\/billing(?:\/[a-z0-9-]{1,40}){0,2}$/,
+  viewer: UUID, v2path: /^\/billing(?:\/[a-z0-9-]{1,40}){0,2}$/, invoice: UUID,
   tab: WORD, period: /^[0-9-]{1,10}$/, q: /^[^\u0000-\u001f]{0,100}$/, sort: WORD, desc: /^[01]$/, page: /^\d{1,4}$/,
   overdue: /^1$/, missing: /^1$/, subject: WORD, only: /^[a-z0-9_,-]{1,80}$/, allocation: WORD, confirmation: WORD, panel: WORD, status: WORD,
   active: WORD, cactive: WORD, cat: WORD, cpage: /^\d{1,4}$/, cpmode: WORD, csub: WORD, grade: /^[^\u0000-\u001f]{0,40}$/,
@@ -111,17 +111,21 @@ export const screen = {
     // 하위 주소 — 수납 통계(2.0 stats/page.tsx: requireAccess('billing') → loadBillingStats).
     if (sp.v2path === '/billing/stats') return access.billing ? { ...common, route: 'page', access, page: 'stats', stats: await readBillingStats(t, importV2, viewer, sp) }
       : { ...common, route: 'page', access, page: 'noAccess' };
-    const tab = resolveBillingTab(sp.tab), sessionOn = R.modules.isModuleEnabled(env.disabled, 'session_billing');
+    const tab = resolveBillingTab(sp.invoice ? null : sp.tab), sessionOn = R.modules.isModuleEnabled(env.disabled, 'session_billing');
     const effectiveTab = (tab === 'payroll' && !access.readSalary) || (!sessionOn && ['sessions', 'verify', 'payroll'].includes(tab)) ? 'billing' : tab;
     const denied = !(tab === 'payroll' ? access.payrollMenu : access.billing) || (effectiveTab !== 'payroll' && !access.billing);
     if (denied) return { ...common, route: 'page', access, sync: {}, billing: null, textbooks: null, expenses: null, refunds: null, calculator: null, sessions: null, payroll: null };
     // 동기화 배지(수납 · 교재 면만) — 면이 고르는 도메인.
     const domain = effectiveTab === 'billing' ? 'invoices' : effectiveTab === 'textbooks' ? 'textbook_checks' : null;
     const sync = domain ? { [domain]: await readSyncState(sql, t, R, env, domain) } : {};
-    let billing = null, textbooks = null, expenses = null, refunds = null, calculator = null, sessions = null, payroll = null;
+    let billing = null, textbooks = null, expenses = null, refunds = null, calculator = null, sessions = null, payroll = null, invoicePeriod = null;
     if (effectiveTab === 'billing') {
       // billing-content.tsx — period = sp.period ?? 이번 달(2.0 currentPeriod) · sort = sp.sort ?? 'status' · desc = sp.desc === '1'.
-      const period = sp.period ?? R.calc.currentPeriod();
+      // 업무 흐름의 청구 id는 실제 청구월을 기준으로 열어야 한다. 다른 지점·무효 청구는 조회하지 않는다.
+      const [target] = sp.invoice ? await sql`select period from public.invoices where tenant_id=${t} and id=${sp.invoice} and status <> 'void'` : [];
+      if (sp.invoice && !target) return { ...common, route: 'page', access, page: 'invoiceMissing' };
+      const period = target?.period ?? sp.period ?? R.calc.currentPeriod();
+      invoicePeriod = target?.period ?? null;
       const [monthRows, periods, students] = await Promise.all([
         PERIOD.test(period) ? readInvoicesForPeriod(sql, t, R, { period, sort: sp.sort ?? 'status', desc: sp.desc === '1' }) : [],
         readAvailablePeriods(sql, t, R), readStudentOptions(sql, t),
@@ -136,6 +140,6 @@ export const screen = {
     else if (effectiveTab === 'sessions') sessions = await readSessionsFace(t, R, env, viewer, sp);
     // 강사 정산 = 2.0 서버 함수 그대로(급여 열람 게이트를 못 지나면 자료 없음).
     else if (effectiveTab === 'payroll') payroll = await readPayrollFace(t, R, viewer, sp);
-    return { ...common, route: 'page', access, sync, billing, textbooks, expenses, refunds, calculator, sessions, payroll };
+    return { ...common, route: 'page', access, sync, billing, textbooks, expenses, refunds, calculator, sessions, payroll, invoicePeriod };
   },
 };

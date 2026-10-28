@@ -110,11 +110,11 @@ type Ops = Parameters<typeof OperationsProvider>[0];
 type Data = { editors: HostEditor[]; viewer: { id: string; name: string; role: string } | null; route: 'none' | 'page' }
   & Partial<Omit<BillingPageData, 'host'>> & { host: { operations: Ops; disabledModules: Ops['disabledModules'] } }
   // 하위 주소 — 지출결의서 상세(expenses/[id]/page.tsx) · 2.0 requireAccess · notFound 자리.
-  & { page?: 'expense' | 'notFound' | 'noAccess' | 'refundNew' | 'refund' | 'redirect' | 'stats'; expense?: ExpenseRow | null; refund?: RefundDetail | null; canWrite?: boolean; to?: string;
-    stats?: Parameters<typeof BillingStatsPage>[0]['stats'] };
+  & { page?: 'expense' | 'notFound' | 'noAccess' | 'refundNew' | 'refund' | 'redirect' | 'stats' | 'invoiceMissing'; expense?: ExpenseRow | null; refund?: RefundDetail | null; canWrite?: boolean; to?: string;
+    stats?: Parameters<typeof BillingStatsPage>[0]['stats']; invoicePeriod?: string | null };
 
 /** 2.0 page.tsx · 각 면의 searchParams — 서버가 다시 그리던 열쇠(v2path = 하위 주소). */
-const KEYS = ['v2path', 'tab', 'period', 'q', 'sort', 'desc', 'page', 'overdue', 'missing', 'subject', 'only', 'allocation', 'confirmation', 'panel', 'status',
+const KEYS = ['v2path', 'tab', 'period', 'q', 'sort', 'desc', 'page', 'overdue', 'missing', 'invoice', 'subject', 'only', 'allocation', 'confirmation', 'panel', 'status',
   'active', 'cactive', 'cat', 'cpage', 'cpmode', 'csub', 'grade', 'hm', 'hy', 'qid', 'qpage', 'tsub',
   'grain', 'month', 'from', 'to', 'span', 'ex', 'exMonth', 'exFrom', 'exTo', 'exSpan'] as const;
 
@@ -164,6 +164,7 @@ function App() {
   if (d.route === 'none' || !d.access) return <HostMessage text="수납관리를 볼 수 있는 직원이 없습니다." />;
   if (d.page === 'noAccess') return <HostMessage text="고른 사람은 이 화면을 볼 수 없습니다." />;
   if (d.page === 'notFound') return <HostMessage text="이 주소의 화면이 없습니다." />;
+  if (d.page === 'invoiceMissing') return <HostMessage text="이 청구를 찾을 수 없습니다." error />;
   // 2.0 expenses/[id]/page.tsx — 본문은 부품 하나(ExpenseDocument)라 그대로 그린다.
   if (d.page === 'expense' && d.expense) return <ExpenseDocument expense={d.expense} />;
   // 2.0 refunds/new · refunds/[id] — 수납 쓰기가 아니면 목록으로(redirect) · userId = 보는 사람.
@@ -192,7 +193,7 @@ function App() {
   return (
     <EmbedProvider embed>
       <OperationsProvider subjects={ops.subjects} gradeLevels={ops.gradeLevels} jobTitles={ops.jobTitles} jobTitlesByDepartment={ops.jobTitlesByDepartment} disabledModules={d.host.disabledModules}>
-        <BillingPage d={d as BillingPageData} sp={sp} />
+        <BillingPage d={d as BillingPageData} sp={d.invoicePeriod ? { ...sp, tab: 'billing', period: d.invoicePeriod } : sp} />
       </OperationsProvider>
     </EmbedProvider>
   );
