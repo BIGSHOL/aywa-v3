@@ -822,9 +822,10 @@ test('자리: 옮긴 본문이 2.0 원문과 같다(영역 설정 기본값 · �
   assert.deepEqual(SEAT.resolveSkillAreas({ key: 'math' }), []); assert.deepEqual(SEAT.resolveSkillAreas({ key: 'english', skillAreas: [{ key: 'x', label: 'X' }] }), [{ key: 'x', label: 'X' }]);
 });
 
-test('자리: 하위 주소·날짜·교시 매개변수는 정해진 값만 받는다', () => {
+test('자리: 하위 주소·날짜·교시 매개변수는 정해진 값만 받는다', async () => {
   const ok = (k, v) => screen.params[k].test(v);
-  for (const v of ['/attendance', '/attendance/seat', '/attendance/seat/lab', '/attendance/seat/jj/month']) assert.ok(ok('v2path', v), v);
+  for (const v of ['/attendance', '/attendance/seat', '/attendance/seat/lab', '/attendance/seat/jj/month', '/attendance/units-master']) assert.ok(ok('v2path', v), v);
+  assert.deepEqual(await screen.load({ params: { v2path: '/attendance/units-master' } }), { page: 'unitsMasterUnavailable' });
   for (const v of ['/attendance/seat/lab/print', '/attendance/livex', '/attendance/live/x', '/attendance/seat/lab/month/x', '/timetable', '/attendance/seat/LAB']) assert.ok(!ok('v2path', v), v);
   assert.ok(ok('date', '2026-10-27') && !ok('date', '2026-10-27x') && ok('start', '14:20') && ok('start', 'all') && !ok('start', '1420'));
 });

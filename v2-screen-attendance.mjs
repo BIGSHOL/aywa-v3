@@ -620,7 +620,7 @@ export const screen = {
   params: {
     month: /^\d{4}-(0[1-9]|1[0-2])$/, subject: /^[a-z][a-z0-9_]{0,30}$/, teacher: /^(?:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|seat:[a-z]{2,8})$/,
     class: UUID, mode: /^[a-z]{1,12}$/, q: /^[^\u0000-\u001f]{1,80}$/u, viewer: UUID,
-    v2path: /^\/attendance(?:\/seat(?:\/[a-z]{1,8}(?:\/month)?)?|\/quick|\/live)?$/, date: /^\d{4}-\d{2}-\d{2}$/, start: /^(?:\d{2}:\d{2}|all)$/,
+    v2path: /^\/attendance(?:\/seat(?:\/[a-z]{1,8}(?:\/month)?)?|\/quick|\/live|\/units-master)?$/, date: /^\d{4}-\d{2}-\d{2}$/, start: /^(?:\d{2}:\d{2}|all)$/,
     // `/attendance/live` — 탭(좌석표·확인 필요·어제 출결) · 요약 기간 시작 · 화면 폴링(2.0 getLiveRecordedCount·getRecapStatus 자리 — 읽기라 GET).
     tab: /^(?:seating|desk|recap)$/, from: /^\d{4}-\d{2}-\d{2}$/, poll: /^(?:live|recap)$/,
   },
@@ -629,6 +629,7 @@ export const screen = {
    * 그룹마다 `matrix`는 2.0 `AttendanceMatrix` 그대로다(단, 표가 안 읽는 `classes` 목록은 그룹마다 싣지 않고 맨 위 `base.classes` 한 벌만).
    */
   async load({ sql, params, tenantId: t, importV2 }) {
+    if (params.v2path === '/attendance/units-master') return { page: 'unitsMasterUnavailable' };
     if (params.v2path === '/attendance/quick') return quickLoad({ sql, params, t, importV2 });
     if (params.v2path === '/attendance/live') return liveLoad({ sql, params, t, importV2 });
     if (params.v2path && params.v2path !== '/attendance') return seatLoad({ sql, params, t, importV2 });

@@ -21,6 +21,7 @@ import { AttendanceLivePage, type LiveData } from './attendance-live-page';
 /** 하위 주소의 값 — 자리 하루(seatDay) · 2.0 redirect · 2.0 notFound. 월별 출석부(`/attendance`)는 page 칸이 없다. */
 type Host = { lang: 'ko' | 'en'; host: AttendanceData['host'] };
 type Data = (AttendanceData & { page?: undefined }) | (SeatDayData & Host) | (SeatMonthData & Host) | (QuickData & Host) | (LiveData & Host) | (Host & { page: 'seatMonthClosed'; seatName: string })
+  | { page: 'unitsMasterUnavailable' }
   | (Host & { page: 'redirect'; to: string }) | (Host & { page: 'notFound' });
 
 /** 진입점 표식(build.mjs가 찾는다) — 창 제목과 이 화면의 2.0 주소. */
@@ -74,7 +75,7 @@ function App() {
       .then(async (r) => { const body = await r.json().catch(() => null); if (!r.ok) throw new Error(body?.message || '출석부를 불러오지 못했습니다.'); return body as Data; })
       .then((data) => {
         if (!live) return;
-        if (data.page === 'redirect' || data.page === 'notFound' || data.page === 'seatMonthClosed') { setState({ key, data }); return; }
+        if (data.page === 'redirect' || data.page === 'notFound' || data.page === 'seatMonthClosed' || data.page === 'unitsMasterUnavailable') { setState({ key, data }); return; }
         setHostEditors(data.editors);
         // 띠에 남아 있던 사람(같은 출처 저장소)이 서버가 고른 사람과 다르면 그 사람으로 한 번 더 받는다.
         const picked = hostActor();
@@ -101,6 +102,7 @@ function App() {
   if (redirectTo || d.page === 'redirect') return <HostMessage text="출석부를 불러오는 중…" />;
   // 2.0 notFound — 자리 기능이 꺼진 학원·없는 자리(2.0은 없는 주소와 똑같이 다룬다).
   if (d.page === 'notFound') return <HostMessage text="이 주소의 화면이 없습니다." />;
+  if (d.page === 'unitsMasterUnavailable') return <HostMessage text="연습 화면에서는 아직 열 수 없습니다." />;
   if (d.page === 'seatMonthClosed') return <EmbedProvider embed><AttendanceSeatMonthClosed seatName={d.seatName} /></EmbedProvider>;
   if (!d.editors.length) return <HostMessage text={d.page === 'seatDay' || d.page === 'seatMonth' ? '이 자리 출석부를 입력할 수 있는 직원이 없습니다.' : '출결을 저장할 수 있는 직원이 없습니다.'} />;
   const ops = d.host.operations;
