@@ -1,0 +1,24 @@
+{
+ "page": {
+  "src": "app/(shell)/staff/page.tsx",
+  "start": "/** 페이지 번호 나열",
+  "swaps": [
+   [
+    "export default async function StaffPage({\n  searchParams,\n}: {\n  searchParams: Promise<{",
+    "export function StaffPage({\n  data,\n  searchParams,\n}: {\n  data: StaffListData;\n  searchParams: {"
+   ],
+   [
+    "    page?: string;\n  }>;\n}) {\n  const user = await requireAccess(\"staff\");\n  const sp = await searchParams;",
+    "    page?: string;\n  };\n}) {\n  const user = data.user;\n  const sp = searchParams;"
+   ],
+   [
+    "  const [prefsLoaded, rawAll, superAdminIds, settings, canManage, isSuperAdmin, jar, canImport] = await Promise.all([\n    loadStaffListPrefs(),\n    getStaffList(),\n    getSuperAdminIds(),\n    getTenantSettings(),\n    canWriteTenant(user.systemRole, \"staff\"),\n    // 연차 관리 버튼 노출 판정용 — 판정 단일 소스(super-admin.ts)를 그대로 쓴다(요청 캐시 1회).\n    isCurrentUserSuperAdmin(),\n    cookies(),\n    // 엑셀로 넣기 = 직원 계정을 한꺼번에 만드는 관리 작업 → full만(올리기 주소 `gateImport`와 같은 판정).\n    canManageTenant(user.systemRole, \"staff\"),\n  ]);",
+    "  const [prefsLoaded, rawAll, superAdminIds, settings, canManage, isSuperAdmin, jar, canImport] = [\n    data.prefs,\n    data.rows,\n    new Set<string>(),\n    data.settings,\n    data.canManage,\n    data.isSuperAdmin,\n    HOST_COOKIES,\n    data.canImport,\n  ] as const;"
+   ],
+   [
+    "{canManage ? <StaffQrSection tenantId={user.tenantId} /> : null}",
+    "{canManage ? <StaffQrPanel tokens={data.qrTokens} /> : null}"
+   ]
+  ]
+ }
+}

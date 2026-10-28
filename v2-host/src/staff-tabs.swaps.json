@@ -1,0 +1,72 @@
+{
+ "info": {
+  "src": "app/(shell)/staff/[id]/_tabs/basic-info-tab.tsx",
+  "start": "function Field({",
+  "swaps": [
+   [
+    "export async function BasicInfoTab({\n  staff,",
+    "export function BasicInfoTab({\n  data,\n  staff,"
+   ],
+   [
+    "}: {\n  staff: StaffDetail;",
+    "}: {\n  data: StaffInfoData;\n  staff: StaffDetail;"
+   ],
+   [
+    "  const [settings, homeroomClasses, contracts, contractFiles, handoverTeachers, assistClasses, protection] = await Promise.all([\n    getTenantSettings(),\n    canManageThis ? getActiveHomeroomClasses(staff.id) : Promise.resolve([]),\n    getStaffContracts(staff.id),\n    getStaffContractFiles(staff.id),\n    canManageThis ? getClassTeacherOptions() : Promise.resolve([]),\n    canManageThis ? getActiveAssistSlotClasses(staff.id) : Promise.resolve([]),\n    // 보호 계정이면 역할·퇴사·삭제 버튼을 세우지 않는다 — 막는 건 서버 액션·DB(0309a)가 한다.\n    canManageThis ? protectionStatus(staff.id) : Promise.resolve(\"clear\" as const),\n  ]);",
+    "  const [settings, homeroomClasses, contracts, contractFiles, handoverTeachers, assistClasses, protection] = [\n    data.settings,\n    data.homeroomClasses,\n    data.contracts,\n    data.contractFiles,\n    data.handoverTeachers,\n    data.assistClasses,\n    data.protection,\n  ] as const;"
+   ]
+  ]
+ },
+ "monthly": {
+  "src": "app/(shell)/staff/[id]/_tabs/monthly-schedule-tab.tsx",
+  "start": "export async function MonthlyScheduleTab({",
+  "swaps": [
+   [
+    "export async function MonthlyScheduleTab({\n  staffId,",
+    "export function MonthlyScheduleTab({\n  initialData,\n  staffId,"
+   ],
+   [
+    "}: {\n  staffId: string;",
+    "}: {\n  initialData: MonthlyTasksResult;\n  staffId: string;"
+   ],
+   [
+    "  const user = await getCurrentUser();\n  // 연동 학원이 아니면(또는 세션이 없으면) API를 부르지 않고 'not_configured' — 다른 학원의 Notion을 비추지 않는다.\n  const initial = user\n    ? await resolveMonthlyTasks(staffId, month, user.tenantId)\n    : ({ ok: true, state: \"not_configured\" } as const);",
+    "  const initial = initialData; // 서버(v2-staff-read.mjs monthlyData) — 노션 호출 없이 연결 여부만"
+   ]
+  ]
+ },
+ "classes": {
+  "src": "app/(shell)/staff/[id]/_tabs/classes-tab.tsx",
+  "start": "const DAY_LABEL",
+  "swaps": [
+   [
+    "export async function ClassesTab({ staffId }: { staffId: string }) {\n  const [classes, settings] = await Promise.all([getStaffClasses(staffId), getTenantSettings()]);",
+    "export function ClassesTab({ classes, settings, staffId }: { classes: StaffClassRow[]; settings: { operations: { subjects: SubjectSetting[] } }; staffId: string }) {\n  void staffId;"
+   ]
+  ]
+ },
+ "activity": {
+  "src": "app/(shell)/staff/[id]/_tabs/activity-log-tab.tsx",
+  "start": "const OP_COLOR",
+  "swaps": [
+   [
+    "export async function ActivityLogTab({ userId, page }: { userId: string; page: number }) {",
+    "export function ActivityLogTab({ data, userId, page }: { data: StaffActivityData; userId: string; page: number }) {"
+   ],
+   [
+    "  const [{ rows, total }, sessions, logins] = await Promise.all([\n    getStaffActivityLog(userId, page),\n    getStaffRecentAccess(userId),\n    getStaffLoginEvents(userId),\n  ]);",
+    "  const [{ rows, total }, sessions, logins] = [data.log, data.sessions, data.logins] as const;"
+   ]
+  ]
+ },
+ "salary": {
+  "src": "app/(shell)/staff/[id]/payroll/_salary-scope.tsx",
+  "start": "/** 같은 개인별 비율표를 연다",
+  "swaps": [
+   [
+    "export async function PersonalSalaryScope({ teacherId, teacherName, period }: {\n  teacherId: string; teacherName: string; period: string;\n}) {\n  const admin = await attendanceSalaryAdminOrNull(false);\n  if (!admin) return null;\n  const month = /^\\d{4}-(0[1-9]|1[0-2])$/.test(period) ? period : kstMonth();\n  const { from, to } = monthRange(month);\n  const config = await (async () => {\n    try {\n      const [loaded, canEdit] = await Promise.all([\n        loadAttendanceSalaryRates(admin.tenantId, teacherId),\n        canManageTenant(admin.systemRole, \"attendance_salary_settings\"),\n      ]);\n      if (!loaded) return null;\n      const classes = canEdit ? (await loadClassAxisRows(from, to))\n        .filter((c) => c.taughtBy.includes(teacherId)).map((c) => ({ id: c.id, name: c.className })) : [];\n      return { rates: loaded.rates, canEdit, classes, mixed: loaded.mixed };\n    } catch {\n      return { unavailable: true as const };\n    }\n  })();",
+    "export function PersonalSalaryScope({ data, teacherId, teacherName, period }: {\n  data: StaffSalaryData | null; teacherId: string; teacherName: string; period: string;\n}) {\n  void period;\n  if (!data) return null;\n  const month = data.month;\n  const config = \"unavailable\" in data ? { unavailable: true as const } : data;"
+   ]
+  ]
+ }
+}

@@ -1,0 +1,64 @@
+{
+ "page": {
+  "src": "app/(shell)/staff/[id]/page.tsx",
+  "start": "export default async function StaffDetailPage({",
+  "swaps": [
+   [
+    "export default async function StaffDetailPage({\n  params,\n  searchParams,\n}: {\n  params: Promise<{ id: string }>;\n  searchParams: Promise<{ tab?: string; page?: string; period?: string }>;\n}) {\n  await requireAccess(\"staff\");\n  const { id } = await params;\n  const { tab: tabParam, page: pageParam, period } = await searchParams;",
+    "export function StaffDetailPage({\n  data,\n  params,\n  searchParams,\n}: {\n  data: StaffDetailData;\n  params: { id: string };\n  searchParams: { tab?: string; page?: string; period?: string };\n}) {\n  const { id } = params;\n  const { tab: tabParam, page: pageParam, period } = searchParams;"
+   ],
+   [
+    "  const [staff, viewer, superAdminIds, settings] = await Promise.all([\n    getStaffById(id),\n    getCurrentUser(),\n    getSuperAdminIds(),\n    getTenantSettings(),\n  ]);",
+    "  const [staff, viewer, superAdminIds, settings] = [data.staff, data.user, new Set<string>(), data.settings];\n  void id;"
+   ],
+   [
+    "  const canManage = !!viewer && (await canWriteTenant(viewer.systemRole, \"staff\"));",
+    "  const canManage = data.canManage;"
+   ],
+   [
+    "  const showSalarySettings = hasFreelancePart(staff.employmentType) && !!(await attendanceSalaryAdminOrNull(false));",
+    "  const showSalarySettings = data.showSalarySettings;"
+   ],
+   [
+    "  const canManageThis = canManage && !!viewer && canManageStaffMember(viewer.systemRole, staff.systemRole);",
+    "  const canManageThis = data.canManageThis; // 판정은 서버가 실제 역할로(화면의 역할은 표시 역할)"
+   ],
+   [
+    "  const resumeAccess = tab === \"info\" && !!viewer && (await canViewResume(viewer, staff.id));",
+    "  const resumeAccess = data.resumeAccess;"
+   ],
+   [
+    "  const resume = resumeAccess ? await getResumeByStaffUser(staff.id) : null;",
+    "  const resume = data.resume;"
+   ],
+   [
+    "  const resumeCanWrite = resumeAccess && !!viewer && (await canWriteTenant(viewer.systemRole, \"staff\"));",
+    "  const resumeCanWrite = data.resumeCanWrite;"
+   ],
+   [
+    "  const resumePhotoUrls =\n    resume && viewer && resume.data.photos.length > 0\n      ? await (async () => {\n          const map = await resolveTenantReadUrls(resume.data.photos, \"document\", viewer.tenantId);\n          return resume.data.photos.map((p) => map[p] ?? null);\n        })()\n      : [];",
+    "  const resumePhotoUrls = data.resumePhotoUrls;"
+   ],
+   [
+    "          <BasicInfoTab\n            staff={staff}",
+    "          <BasicInfoTab\n            data={{ ...data.info!, settings: data.settings }}\n            staff={staff}"
+   ],
+   [
+    "<MonthlyScheduleTab staffId={staff.id}",
+    "<MonthlyScheduleTab initialData={data.monthly!} staffId={staff.id}"
+   ],
+   [
+    "<ClassesTab staffId={staff.id} />",
+    "<ClassesTab classes={data.classes!} settings={data.settings} staffId={staff.id} />"
+   ],
+   [
+    "<PersonalSalaryScope teacherId={staff.id}",
+    "<PersonalSalaryScope data={data.salary ?? null} teacherId={staff.id}"
+   ],
+   [
+    "<ActivityLogTab userId={staff.id} page={activityPage} />",
+    "<ActivityLogTab data={data.activity!} userId={staff.id} page={activityPage} />"
+   ]
+  ]
+ }
+}

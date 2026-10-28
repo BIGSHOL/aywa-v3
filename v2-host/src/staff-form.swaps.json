@@ -1,0 +1,26 @@
+{
+ "edit": {
+  "src": "app/(shell)/staff/[id]/edit/page.tsx",
+  "start": "export default async function EditStaffPage({",
+  "swaps": [
+   [
+    "export default async function EditStaffPage({\n  params,\n}: {\n  params: Promise<{ id: string }>;\n}) {\n  await requireAccess(\"staff\");\n  const user = await getCurrentUser();\n  if (!user || !(await canWriteTenant(user.systemRole, \"staff\"))) {\n    redirect(\"/staff\");\n  }\n\n  const { id } = await params;\n  const staff = await getStaffById(id);\n  if (!staff) notFound();\n  const settings = await getTenantSettings();\n  // 이메일 칸은 근무 설정에 없다 — 로그인 이메일 창구는 **이력서 인적사항 E-mail**과 **계정 관리** 둘이고\n  // 둘 다 applyStaffEmailChange(단일 구현)를 탄다. 옛 판정(canEditLoginEmail + auth 왕복)이 사라져\n  // 이 창이 한 번 덜 왕복한다.\n  // '강사뷰 접근' 토글(0224a) — master(+super_admin)에게만 노출(서버 액션이 같은 자격으로 이중 게이트).\n  // 강사·학생 역할에겐 소비처가 없어(풀셸 전용) 숨긴다 — 서버도 같은 조건으로 거절(이중 게이트).\n  const canAssignDashboard = user.systemRole === \"master\" || (await isCurrentUserSuperAdmin());\n  const canAssignTarget = canAssignDashboard && (await protectionStatus(staff.id)) === \"clear\";\n  const canGrantTeacherView = canAssignTarget &&\n    isFullShellRole(staff.systemRole);",
+    "export function EditStaffPage({\n  data,\n  params,\n}: {\n  data: StaffEditData;\n  params: { id: string };\n}) {\n  const { id } = params;\n  const staff = data.staff;\n  const settings = data.settings;\n  const canAssignTarget = data.canAssignTarget;\n  const canGrantTeacherView = data.canGrantTeacherView;"
+   ]
+  ]
+ },
+ "new": {
+  "src": "app/(shell)/staff/new/page.tsx",
+  "start": "export default async function NewStaffPage() {",
+  "swaps": [
+   [
+    "export default async function NewStaffPage() {\n  await requireAccess(\"staff\");\n  const user = await getCurrentUser();\n  if (!user || !(await canWriteTenant(user.systemRole, \"staff\"))) {\n    redirect(\"/staff\");\n  }\n\n  const roleOptions = assignableRoles(user.systemRole);\n  const { operations } = await getTenantSettings();",
+    "export function NewStaffPage({ data }: { data: StaffNewData }) {\n  const user = data.user;\n  const roleOptions = data.roleOptions;\n  const operations = { jobTitles: data.jobTitles };"
+   ],
+   [
+    "canGrantTeacherView={user.systemRole === \"master\" || (await isCurrentUserSuperAdmin())}",
+    "canGrantTeacherView={data.canGrantTeacherView && !!user}"
+   ]
+  ]
+ }
+}
