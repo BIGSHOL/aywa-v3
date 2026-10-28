@@ -406,3 +406,5 @@
 /* 이슈 확인 대상 = 업무 흐름과 같은 종류별 표(flow-ui .fl-rectable) — 길면 상자 안에서 넘긴다. 종류가 하나면 그 머리는 위 '확인 대상'과 같은 말이라 숨긴다. */
 .ax-recs-box{max-height:26rem}
 .ax-recs-box .fl-recgroup:only-child .fl-recgroup-head{display:none}
+/* 첫 화면 운영 상태: 1240px보다 좁으면 반씩 두 줄(1440 화면에서 6칸 한 줄은 칸이 181px라 '학부모 보고서 열람률' 같은 제목이 꺾인다). 작업 공간 KPI 줄(workspaces.css 1060px)은 그대로. */
+@container (max-width:1240px){.ax-first .ax-kpi .ax-kpi-row{grid-template-columns:repeat(var(--kpi-half,3),minmax(0,1fr))}}
