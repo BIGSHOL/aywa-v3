@@ -57,6 +57,9 @@ export function monthsBack(asOf, n) {
     const d = new Date(`${asOf.slice(0, 7)}-01T12:00:00Z`); d.setUTCMonth(d.getUTCMonth() - (n - 1) + i); return d.toISOString().slice(0, 7);
   });
 }
+// 연월 yy.mm · 날짜 M/D — 목록 줄 이름이 서로 구분되게 붙이는 짧은 표기(원장 10-28 "항상 yy.mm" · "전부 이름이 일치하는데 뭘 말하고 싶은건지 알 수가 없음").
+export const yymm = m => (/^\d{4}-\d{2}/.test(String(m ?? '')) ? `${String(m).slice(2, 4)}.${String(m).slice(5, 7)}` : String(m ?? ''));
+export const md = d => (/^\d{4}-\d{2}-\d{2}/.test(String(d ?? '')) ? `${Number(String(d).slice(5, 7))}/${Number(String(d).slice(8, 10))}` : String(d ?? ''));
 export const addDays = (date, days) => { const d = new Date(`${date}T12:00:00Z`); d.setUTCDate(d.getUTCDate() + days); return d.toISOString().slice(0, 10); };
 
 // KPI = 최근 변화 (원장 2026-10-28 *"전체 몇건인가 같은건 아무 도움이 안됨. 원하는건 추세. kpi로 표현하고 싶은건 최근 kpi 변화"*):

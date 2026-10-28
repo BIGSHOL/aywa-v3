@@ -1,5 +1,5 @@
 // 수업 영역 패밀리 — 원스크린·영상 숙제·시간표·강사 시트(+ 두 번째 묶음).
-import { PRIORITY, addDays, countOf, family, field, metric, monthlyTrend, record, signal, sumOf } from './domain-snapshot-core.mjs';
+import { PRIORITY, addDays, countOf, family, field, md, metric, monthlyTrend, record, signal, sumOf } from './domain-snapshot-core.mjs';
 import { attendanceFamilies } from './domain-snapshot-academic2.mjs';
 
 const DAY = { mon: '월', tue: '화', wed: '수', thu: '목', fri: '금', sat: '토', sun: '일' };
@@ -57,7 +57,7 @@ export async function academicFamilies(ctx) {
   out.timetable = family('timetable', '시간표(배치·가져오기·편집기·메모)', {
     summary: `${asOf} 기준 수업 배치 ${slots.length}칸(반 ${new Set(slots.map(s => s.class_name)).size}개), 주간 수업 ${hours}시간. 시트 가져오기 ${tt.imports}회.`,
     metrics: [metric('기준일 수업 배치', slots.length, '칸', '운영 중인 반 · 기준일에 유효한 배치'), metric('배치된 반', new Set(slots.map(s => s.class_name)).size, '개'), metric('주간 수업 시간', hours, '시간'), metric('시트 가져오기', tt.imports, '회', `마지막 ${tt.last_import || '기록 없음'}`), metric('연습실 초안', tt.drafts, '개'), metric('연습본 운영 반영', tt.applied, '회')],
-    evidence: slots.map(r => record({ id: r.id, label: r.class_name, detail: `${DAY[r.dow] || ''}요일 ${r.st}~${r.et}`, status: subjectLabel(r.subject), fields: [field('선생님', r.teacher), field('강의실', r.room)], facets: [`day:${r.dow}`, `subject:${r.subject || 'none'}`] })),
+    evidence: slots.map(r => record({ id: r.id, label: `${r.class_name} · ${DAY[r.dow] || ''} ${r.st}`, detail: `${DAY[r.dow] || ''}요일 ${r.st}~${r.et}`, status: subjectLabel(r.subject), fields: [field('선생님', r.teacher), field('강의실', r.room)], facets: [`day:${r.dow}`, `subject:${r.subject || 'none'}`] })),
     facetOrder: [...Object.keys(DAY).map(d => `day:${d}`), ...Object.keys(subjectFacets)], facetLabels: { ...Object.fromEntries(Object.entries(DAY).map(([k, v]) => [`day:${k}`, `${v}요일`])), ...subjectFacets }, recordSource: 'class_schedules',
     sourceLabel: '반 배치 · 시트 가져오기 · 연습실', coverageNote: '근거 목록은 기준일에 유효한 수업 배치 전체입니다. 이미 끝난 배치 이력과 예약된 미래 배치는 세지 않습니다.',
     sources: [{ table: 'class_schedules', rows: tt.rows_all }, { table: 'timetable_import_logs', rows: tt.imports }, { table: 'timetable_lab_drafts', rows: tt.drafts }],
@@ -66,7 +66,7 @@ export async function academicFamilies(ctx) {
   // 강사 시트 — 영어 시트 계획(근거)·학생 기록, 수학 학습 목표, 회차 미룸·당김.
   const lines = await sql`select p.id, c.class_name, p.plan_date::text d, p.textbook, p.page_range, p.term_mode from public.class_sheet_plan_lines p join public.classes c on c.id=p.class_id and c.tenant_id=${t} where p.tenant_id=${t} order by p.plan_date desc, c.class_name, p.line_no`;
   const [cs] = await sql`select (select count(*)::int from public.class_sheet_student_marks where tenant_id=${t}) marks, (select count(*)::int from public.class_sheet_student_marks where tenant_id=${t} and mark_date between ${monthStart} and ${asOf}) month_marks, (select count(*)::int from public.class_sheet_goals where tenant_id=${t}) goals, (select count(*)::int from public.math_learning_track_goals where tenant_id=${t}) track_goals, (select count(*)::int from public.math_month_goals where tenant_id=${t}) month_goals, (select count(*)::int from public.class_lesson_shifts where tenant_id=${t}) shifts`;
-  const evidence = lines.map(r => record({ id: r.id, label: r.class_name, date: r.d, status: r.term_mode === 'exam' ? '시험 기간' : '정규', fields: [field('교재', r.textbook), field('범위', r.page_range)], facets: [`term:${r.term_mode === 'exam' ? 'exam' : 'regular'}`, `when:${r.d > asOf ? 'planned' : 'done'}`] }));
+  const evidence = lines.map(r => record({ id: r.id, label: `${r.class_name} · ${md(r.d)}${r.textbook ? ` · ${r.textbook}` : ''}`, date: r.d, status: r.term_mode === 'exam' ? '시험 기간' : '정규', fields: [field('교재', r.textbook), field('범위', r.page_range)], facets: [`term:${r.term_mode === 'exam' ? 'exam' : 'regular'}`, `when:${r.d > asOf ? 'planned' : 'done'}`] }));
   out['class-sheets'] = family('class-sheets', '강사 시트(영어 ECS·수학 MCS)', {
     summary: `${month} 영어 시트 계획 ${lines.filter(l => l.d >= monthStart && l.d <= asOf).length}줄·학생 기록 ${cs.month_marks}칸. 수학 전체 목표 ${cs.track_goals}건·월 목표 ${cs.month_goals}건.`,
     metrics: [metric('이번 달 계획 줄', lines.filter(l => l.d >= monthStart && l.d <= asOf).length, '줄', '영어 시트 · 수업일 기준'), metric('미리 쓴 계획 줄', lines.filter(l => l.d > asOf).length, '줄', '기준일 이후 수업일'), metric('이번 달 학생 기록', cs.month_marks, '칸'), metric('수학 전체 목표', cs.track_goals, '건'), metric('수학 월 목표', cs.month_goals, '건'), metric('회차 미룸·당김', cs.shifts, '건')],

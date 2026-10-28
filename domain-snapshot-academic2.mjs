@@ -1,5 +1,5 @@
 // 수업 영역 두 번째 묶음 — 출석부·수업목록·보강·교재·수업보고서·직원 평가.
-import { PRIORITY, addDays, countOf, family, field, metric, monthlyTrend, record, signal, sumOf } from './domain-snapshot-core.mjs';
+import { PRIORITY, addDays, countOf, family, field, md, metric, monthlyTrend, record, signal, sumOf } from './domain-snapshot-core.mjs';
 
 const ATT = { present: '출석', late: '지각', absent: '결석', early_leave: '조퇴', makeup: '보강' };
 const SEND = { success: '발송 완료', failed: '발송 실패', recalled: '회수', too_old: '기한 지남', none: '미발송' };
@@ -18,7 +18,7 @@ export async function attendanceFamilies(ctx) {
   const repeat = new Set([...absentBy].filter(([, n]) => n >= 3).map(([id]) => id));
   const attended = rows.filter(r => ['present', 'late'].includes(r.st)).length;
   const rate = rows.length ? Math.round(attended / rows.length * 1000) / 10 : null;
-  const evidence = rows.map(r => record({ id: r.id, label: r.name, date: r.d, status: ATT[r.st] || '기타', fields: [field('수업', r.class_name)], facets: [`status:${r.st}`, repeat.has(r.student_id) && 'repeat-absence'] }));
+  const evidence = rows.map(r => record({ id: r.id, label: `${r.name} · ${r.class_name || '반 없음'} · ${md(r.d)}`, date: r.d, status: ATT[r.st] || '기타', fields: [field('수업', r.class_name)], facets: [`status:${r.st}`, repeat.has(r.student_id) && 'repeat-absence'] }));
   out.attendance = family('attendance', '출석부(월별·오늘·출결 모드·자리·키오스크)', {
     summary: `${month} 출결 ${rows.length}칸, 출석률 ${rate === null ? '—' : `${rate}%`}. 최근 결석 3회 이상 ${repeat.size}명.`,
     metrics: [metric('이번 달 출결 칸', rows.length, '칸', '정정 반영 · 기준일까지'), metric('출석률', rate, '%', '(출석+지각) ÷ 기록 칸 전부 · 보강은 출석이 아님'), metric('결석', rows.filter(r => r.st === 'absent').length, '칸'), metric('최근 결석 3회 이상', repeat.size, '명', '이번 달 · 수업 칸마다 셈'), metric('이번 달 결석 후속 처리', aux.month_followups, '건', `전체 ${aux.followups}건`), metric('키오스크 기기', aux.kiosks, '대', `사용 중 ${aux.active_kiosks}대 · 체크인 ${aux.checkins}건`)],
@@ -49,7 +49,7 @@ export async function attendanceFamilies(ctx) {
   out.makeups = family('makeups', '보강관리', {
     summary: `보강 예약 ${res.length}건(예정 ${upcoming.length}·완료 ${res.filter(r => r.status === 'done').length}). ${month} 보강 출결 ${mk.month_makeup}칸.`,
     metrics: [metric('보강 예약', res.length, '건'), metric('다가오는 보강', upcoming.length, '건'), metric('보강일이 지난 예약', overdue.length, '건', '보강일 출결이 저장되지 않은 예약'), metric('이번 달 보강 출결', mk.month_makeup, '칸'), metric('보강 처리 기록', mk.cases, '건', mk.cases ? '' : '기록 없음')],
-    evidence: res.map(r => record({ id: r.id, label: r.name, date: r.makeup, status: r.status === 'done' ? '완료' : '예약', detail: `결석 ${r.absence}`, fields: [field('수업', r.class_name)], facets: [`status:${r.status}`, overdue.includes(r) && 'overdue'] })),
+    evidence: res.map(r => record({ id: r.id, label: `${r.name} · ${r.class_name || '반 없음'} · ${md(r.makeup)} 보강`, date: r.makeup, status: r.status === 'done' ? '완료' : '예약', detail: `결석 ${r.absence}`, fields: [field('수업', r.class_name)], facets: [`status:${r.status}`, overdue.includes(r) && 'overdue'] })),
     facetLabels: { 'status:reserved': '예약', 'status:done': '완료', overdue: '보강일 지남' }, recordSource: 'makeup_reservations',
     signals: overdue.length ? [signal({ id: 'makeup-overdue', title: `보강일이 지난 예약 ${overdue.length}건`, summary: '보강일이 지났는데 보강 출결이 저장되지 않은 예약입니다.', priority: PRIORITY.check, source: '보강 예약', recordIds: overdue.map(r => r.id), draft: { title: '지난 보강 예약 확인', body: '보강일이 지난 예약의 실제 보강 여부를 확인하고 출결을 정리해 주세요.' } })] : [],
     sourceLabel: '보강 예약 · 보강 출결', coverageNote: '근거 목록은 보강 예약 전체입니다. 예약 없이 바로 기록한 보강은 이번 달 보강 출결 수에만 들어갑니다.',

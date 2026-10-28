@@ -1,5 +1,5 @@
 // 직원·수납 영역 — 직원관리·급여·수납관리·교재 요청·지출결의서. 급여 금액·계약 조건·계좌는 싣지 않는다.
-import { PRIORITY, family, field, metric, monthlyTrend, record, signal } from './domain-snapshot-core.mjs';
+import { PRIORITY, family, field, metric, monthlyTrend, record, signal, yymm } from './domain-snapshot-core.mjs';
 
 // src/lib/auth/role-hierarchy.ts ROLE_LABEL과 같은 표.
 export const ROLE_LABEL = { master: '원장', admin: '관리자', manager: '매니저', accountant: '회계', counselor: '상담사', teacher: '강사', viewer: '참관', student: '학생' };
@@ -32,8 +32,8 @@ export async function peopleFamilies({ sql, t, asOf, month, monthStart }) {
   out.payroll = family('payroll', '급여·명세서·강사 정산', {
     summary: `급여명세서 ${slips.length}건(발급 ${slips.filter(s => s.status === 'issued').length}건·작성 중 ${slips.filter(s => s.status === 'draft').length}건), 최근 기간 ${slips[0]?.period || '없음'}.`,
     metrics: [metric('급여명세서', slips.length, '건'), metric('발급 완료', slips.filter(s => s.status === 'issued').length, '건'), metric('작성 중', slips.filter(s => s.status === 'draft').length, '건'), metric('단가 구간', pr.tiers, '개'), metric('급여 지급 기록', pr.records, '건', pr.records ? '' : '기록 없음 · 명세서 발급과 실제 송금은 구분')],
-    evidence: slips.map(s => record({ id: s.id, label: s.display_name, detail: s.period, date: s.issued, status: s.status === 'issued' ? '발급 완료' : '작성 중', fields: [], facets: [`status:${s.status}`, `period:${s.period}`] })),
-    facetLabels: { 'status:issued': '발급 완료', 'status:draft': '작성 중', ...Object.fromEntries([...new Set(slips.map(s => s.period))].map(p => [`period:${p}`, p])) }, recordSource: 'payslips',
+    evidence: slips.map(s => record({ id: s.id, label: `${s.display_name} · ${yymm(s.period)}`, detail: '', date: s.issued, status: s.status === 'issued' ? '발급 완료' : '작성 중', fields: [], facets: [`status:${s.status}`, `period:${s.period}`] })),
+    facetLabels: { 'status:issued': '발급 완료', 'status:draft': '작성 중', ...Object.fromEntries([...new Set(slips.map(s => s.period))].map(p => [`period:${p}`, yymm(p)])) }, recordSource: 'payslips',
     sourceLabel: '급여명세서 · 단가 구간', coverageNote: '근거 목록은 급여명세서 전체이며 금액·공제·근거 메모는 보여 주지 않습니다. 명세서 발급은 실제 송금과 다릅니다.',
     sources: [{ table: 'payslips', rows: slips.length }, { table: 'payroll_records', rows: pr.records }, { table: 'salary_tiers', rows: pr.tiers }],
   });
@@ -63,7 +63,7 @@ export async function peopleFamilies({ sql, t, asOf, month, monthStart }) {
     summary: `교재 요청 ${orders.length}건 중 요청·주문 단계 ${waiting.length}건(${won(sum(waiting, 'price'))}). ${month} 요청 ${orders.filter(o => o.d >= monthStart).length}건.`,
     metrics: [metric('요청·주문 단계', waiting.length, '건', '전달 기한이 없어 지연으로 보지 않음'), metric('요청·주문 금액', sum(waiting, 'price'), '원'), metric('이번 달 요청', orders.filter(o => o.d >= monthStart && o.d <= asOf).length, '건'), metric('교재 단가표', cat.c, '항목')],
     trend: monthlyTrend('월별 교재 요청', '건', Object.entries(Object.groupBy(orders.filter(o => o.d && o.d <= asOf), o => o.d.slice(0, 7))).map(([m, rows]) => ({ month: m, value: rows.length })), asOf),
-    evidence: orders.map(o => record({ id: o.id, label: o.book_name, detail: o.student || '', date: o.d, status: BOOK[o.status] || '기타', fields: [field('요청 선생님', o.teacher_name), field('가격', o.price ? won(o.price) : null)], facets: [`status:${o.status}`] })),
+    evidence: orders.map(o => record({ id: o.id, label: `${o.student ? `${o.student} · ` : ''}${o.book_name}`, detail: o.teacher_name ? `${o.teacher_name} 요청` : '', date: o.d, status: BOOK[o.status] || '기타', fields: [field('요청 선생님', o.teacher_name), field('가격', o.price ? won(o.price) : null)], facets: [`status:${o.status}`] })),
     facetLabels: pre('status', BOOK), recordSource: 'textbook_orders',
     signals: waiting.length ? [signal({ id: 'textbook-waiting', title: `교재 진행 확인 ${waiting.length}건`, summary: '요청 또는 주문 단계의 교재입니다. 전달 기한이 없어 지연으로 판단하지 않습니다.', priority: PRIORITY.progress, source: '교재 요청 · 주문·전달 상태', recordIds: waiting.map(o => o.id), draft: { title: '교재 주문 및 전달 확인', body: '요청·주문 단계인 교재의 주문 내역과 전달 여부를 확인하고, 미전달 사유가 있으면 알려 주세요.' } })] : [],
     sourceLabel: '교재 요청 · 교재 단가표', coverageNote: '근거 목록은 교재 요청 전체(요청 단계 먼저)입니다. 요청 메모는 보여 주지 않습니다.',
