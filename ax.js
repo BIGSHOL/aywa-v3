@@ -95,8 +95,8 @@ window.createOwnerWorkspace = function createOwnerWorkspace(api) {
     const kpis=id=>(workspaces?.data?.(id)?.metrics||[]).filter(m=>m.kind==='kpi'),TEACHER_KPI=new Set(['makeups']);
     const kpiRow=(title,list)=>list.length&&workspaces?.kpiCard?`<div class="ax-kpi"><div class="ax-kpi-head"><h3>${h(title)}</h3></div><div class="ax-kpi-row" style="--kpi-n:4;--kpi-half:4">${list.map(m=>workspaces.kpiCard(m)).join('')}</div></div>`:'';
     const kpiBlock=kpiRow('운영실',kpis('dashboard').filter(m=>!TEACHER_KPI.has(m.id)))+kpiRow('선생님 업무',[...kpis('onescreen'),...kpis('dashboard').filter(m=>TEACHER_KPI.has(m.id))]);
-    if(flowCards)return `<section class="ax-first" aria-labelledby="ax-first-title"><div class="ax-first-head"><h2 id="ax-first-title">지금 확인할 일</h2><span>이슈 ${all.length}건과 근거는 아래 전체 목록에 있습니다.</span></div>${kpiBlock}<div class="ax-signals">${reports.length?reportSignal(reports):''}${flowCards}</div>${changeStrip(all)}${commandForm()}</section>`;
-    return `<section class="ax-first" aria-labelledby="ax-first-title"><div class="ax-first-head"><h2 id="ax-first-title">지금 확인할 일</h2>${rest>0?`<span>그 밖의 이슈 ${rest}건은 아래 전체 목록에 있습니다.</span>`:''}</div>${kpiBlock}<div class="ax-signals">${reports.length?reportSignal(reports):''}${top.map(issueSignal).join('')||'<p>지금 확인할 이슈가 없습니다.</p>'}</div>${changeStrip(all)}${commandForm()}</section>`;
+    if(flowCards)return `<section class="ax-first" aria-labelledby="ax-first-title"><h2 id="ax-first-title" class="ax-visually-hidden">지금 확인할 일</h2>${kpiBlock}<div class="ax-signals">${reports.length?reportSignal(reports):''}${flowCards}</div>${changeStrip(all)}${commandForm()}</section>`;
+    return `<section class="ax-first" aria-labelledby="ax-first-title"><h2 id="ax-first-title" class="ax-visually-hidden">지금 확인할 일</h2>${kpiBlock}<div class="ax-signals">${reports.length?reportSignal(reports):''}${top.map(issueSignal).join('')||'<p>지금 확인할 이슈가 없습니다.</p>'}</div>${changeStrip(all)}${commandForm()}</section>`;
   }
   function recordList(issue){
     if(!issue.records.length)return '';
