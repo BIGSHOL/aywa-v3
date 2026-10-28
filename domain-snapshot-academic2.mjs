@@ -69,7 +69,7 @@ export async function attendanceFamilies(ctx) {
   return out;
 }
 
-async function reportFamilies({ sql, t, asOf, month, monthStart, notTest, subjectLabel, subjectFacets }) {
+async function reportFamilies({ sql, t, asOf, month, monthStart, notTest, subjectLabel, subjectFacets, skillAreaLabel }) {
   const out = {};
   // 교재목록 — 사용 중인 교재(근거)·차수·반 배정 계획.
   const books = await sql`select b.id, b.title, b.subject, b.skill_area, b.session_count, (select count(*)::int from public.textbook_lessons l where l.tenant_id=${t} and l.textbook_id=b.id) lessons, (select count(*)::int from public.class_textbook_plans p where p.tenant_id=${t} and p.textbook_id=b.id and p.is_active) plans from public.textbooks b where b.tenant_id=${t} and b.is_active order by plans desc, b.subject, b.title`;
@@ -77,7 +77,7 @@ async function reportFamilies({ sql, t, asOf, month, monthStart, notTest, subjec
   out.textbooks = family('textbooks', '교재목록(커리큘럼·반 배정)', {
     summary: `사용 중인 교재 중 반에 배정된 교재 ${books.filter(b => b.plans).length}권.`,
     metrics: [metric('사용 중인 교재', books.length, '권'), metric('교재 차수', books.reduce((n, b) => n + b.lessons, 0), '차', '사용 중인 교재'), metric('반 배정 계획', tb.plans, '건'), metric('영어 시트에 반영된 배정', tb.applied, '건'), metric('반에 배정된 교재', books.filter(b => b.plans).length, '권')],
-    evidence: books.map(r => record({ id: r.id, label: r.title, status: subjectLabel(r.subject), detail: r.skill_area || '', fields: [field('차수', r.lessons), field('배정된 반', r.plans)], facets: [`subject:${r.subject || 'none'}`, r.plans ? 'assigned' : 'unassigned'] })),
+    evidence: books.map(r => record({ id: r.id, label: r.title, status: subjectLabel(r.subject), detail: r.skill_area ? skillAreaLabel(r.subject, r.skill_area) : '', fields: [field('차수', r.lessons), field('배정된 반', r.plans)], facets: [`subject:${r.subject || 'none'}`, r.plans ? 'assigned' : 'unassigned'] })),
     facetOrder: [...Object.keys(subjectFacets), 'assigned', 'unassigned'], facetLabels: { ...subjectFacets, assigned: '반 배정 있음', unassigned: '반 배정 없음' }, recordSource: 'textbooks',
     sourceLabel: '교재 마스터 · 차수 · 반 배정', coverageNote: '목록은 사용 중인 교재입니다(반 배정 많은 순).',
     sources: [{ table: 'textbooks', rows: tb.rows_all }, { table: 'class_textbook_plans', rows: tb.plans }],

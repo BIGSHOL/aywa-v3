@@ -13,6 +13,8 @@ export const FAMILY_IDS = Object.freeze(['dashboard', 'calendar', 'tasks-notific
 export const AUDIT_ONLY = Object.freeze(['auth-session', 'platform-console', 'recording-transcription', 'shell-infrastructure', 'demo-tenant', 'dev-tools']);
 // src/features/owner/subjects.ts — 학원 설정 과목이 단일 소스, 미등록 키는 옛 라벨로만 표시.
 const LEGACY_SUBJECTS = { math: '수학', english: '영어' };
+/** 2.0 DEFAULT_ENGLISH_SKILL_AREAS(src/features/owner/skill-areas.ts)의 키·라벨 — 설정이 비었을 때만. */
+const ENGLISH_SKILL_AREAS = [['vocab', 'Vocab'], ['listening', 'Listening'], ['reading', 'Reading'], ['grammar', 'Grammar'], ['writing', 'Writing'], ['speaking', 'Speaking']].map(([key, label]) => ({ key, label }));
 
 let store = null;
 /** Server-side evidence store from the latest verified snapshot load (never serialized). */
@@ -20,12 +22,17 @@ export const workspaceRecords = () => store;
 
 export async function loadWorkspaces(sql, { tenantId, asOf, capturedAt }) {
   const month = asOf.slice(0, 7), monthStart = `${month}-01`;
-  const subjects = await sql`select x->>'key' as key, x->>'label' as label from public.tenant_settings, jsonb_array_elements(case when jsonb_typeof(data->'operations'->'subjects')='array' then data->'operations'->'subjects' else '[]'::jsonb end) x where tenant_id=${tenantId}`;
+  const subjects = await sql`select x->>'key' as key, x->>'label' as label, x->'skillAreas' as areas from public.tenant_settings, jsonb_array_elements(case when jsonb_typeof(data->'operations'->'subjects')='array' then data->'operations'->'subjects' else '[]'::jsonb end) x where tenant_id=${tenantId}`;
   const labels = { ...LEGACY_SUBJECTS, ...Object.fromEntries(subjects.filter(s => s.key && s.label).map(s => [s.key, s.label])) };
+  // 교재·수업계획 '구분' = 2.0 resolveSkillAreas·skillAreaLabelOf(src/features/owner/skill-areas.ts)와 같은 규칙:
+  // 과목 설정의 skillAreas → 영어는 비었으면 기본 6영역 → 목록에 없는 키는 원문 그대로.
+  const areasOf = Object.fromEntries(subjects.filter(s => s.key).map(s => [s.key, Array.isArray(s.areas) ? s.areas.filter(a => a?.key && a?.label) : []]));
+  if (!areasOf.english?.length) areasOf.english = ENGLISH_SKILL_AREAS;
   const ctx = {
     sql, t: tenantId, asOf, month, monthStart, capturedAt,
     notTest: sql`and student_id not in (select id from public.students where tenant_id=${tenantId} and coalesce(is_test,false))`,
     subjectLabel: key => labels[key] || (key ? '기타 과목' : '과목 미지정'),
+    skillAreaLabel: (subject, key) => (areasOf[subject] || []).find(a => a.key === key)?.label || key,
     // 상담처럼 과목을 글로 적는 칸: 알려진 키만 라벨로 바꾸고 사람이 쓴 글은 그대로.
     subjectText: text => text ? text.split(/\s*,\s*/).map(s => labels[s] || labels[s.toLowerCase()] || s).join(', ') : null,
     subjectFacets: { ...Object.fromEntries(Object.entries(labels).map(([k, v]) => [`subject:${k}`, v])), 'subject:none': '과목 미지정' },
