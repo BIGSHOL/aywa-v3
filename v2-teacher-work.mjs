@@ -72,14 +72,15 @@ async function laboratoryMenuAvailable(sql, R, t, menu, at) {
  * 창들이 쓰는 원자료를 **한 번에** — 가장 넓은 범위(창 경계의 최솟값·최댓값)로 읽는다. 조건은 2.0 조회와 같고, 창마다 `sliceWindow`가 2.0 조건 그대로 다시 거른다.
  * 2.0이 `fetchInChunks`·`fetchAllPaged`로 던지는 조회는 그대로 실패, `.catch`로 삼키는 조회는 저장점 + 같은 폴백.
  */
-async function fetchRaw(sql, R, t, settings, wins, scope, counselShown) {
+async function fetchRaw(sql, R, t, settings, wins, scope, counselShown, period = false) {
   const attendanceFrom = minOf(wins.map((w) => w.attendanceFrom)), maxToday = maxOf(wins.map((w) => w.today)), minToday = minOf(wins.map((w) => w.today));
   const reportFetchFrom = minOf(wins.map((w) => w.reportFetchFrom)), reportFrom = minOf(wins.map((w) => w.range.reportFrom)), videoFrom = minOf(wins.map((w) => w.range.videoFrom));
   const months = [...new Set(wins.flatMap((w) => w.months))];
+  // period(확장 추세) = 종강일이 있는 반은 비활성이어도 읽는다 — 창마다 sliceWindow가 '창 안에 있었나'로 거른다. 종강일 없는 비활성 반은 언제까지 있었는지 몰라 뺀다.
   const classes = await sql`select id, class_name, subject, english_track, teacher_id, report_optout, closed_at::text closed_at from public.classes
-    where tenant_id=${t} and is_active = true and (closed_at is null or closed_at >= ${attendanceFrom}) order by id`;
+    where tenant_id=${t} and (is_active = true or (${period}::boolean and closed_at is not null)) and (closed_at is null or closed_at >= ${attendanceFrom}) order by id`;
   const inScope = classes.filter((c) => !R.isTestClass(c.class_name) && (!scope || scope.classIds.includes(c.id)));
-  const visible = inScope.filter((c) => c.report_optout !== true && (!c.closed_at || c.closed_at >= minToday));
+  const visible = inScope.filter((c) => c.report_optout !== true && (!c.closed_at || c.closed_at >= (period ? reportFrom : minToday)));
   const classIds = visible.map((c) => c.id), scopedIds = inScope.map((c) => c.id);
   if (!classIds.length) return { classes };
   const teacherIds = [...new Set(visible.flatMap((c) => (c.teacher_id ? [c.teacher_id] : [])))];
@@ -130,13 +131,29 @@ function asOfReport(r, cut) {
   const sentLate = after(r.classnote_sent_at, cut), readLate = sentLate || after(r.classnote_read_at, cut);
   return sentLate ? { ...r, classnote_status: null, classnote_sent_at: null, classnote_read_at: null } : readLate ? { ...r, classnote_read_at: null } : r;
 }
-/** 한 창의 원자료 — 2.0 조회 조건을 그대로 걸고, 보고서는 2.0의 덩어리 순서(그 창의 반 목록 100개씩)로 다시 늘어놓는다. `cutMs` = as-of 시각(null이면 자르지 않음). */
-function sliceWindow(R, raw, w, scope, cutMs = null) {
+/**
+ * 종강 반은 종강일까지만 있었다(period) — 종강일 뒤로 열린 시간표·수강(복사본 기준 시간표 62줄 · 수강 118줄)이 종강 뒤 날에 쓰지 않은 작성 의무를 만들지 않게 끊는다.
+ * 2.0은 종강일이 지난 반을 아예 안 보여서(현재 담당 반 기준) 이 끊기가 필요 없다. 종강일은 수업한 마지막 날(2.0 출결 판정이 그날까지 센다).
+ */
+function closedCut(raw) {
+  const closedOf = new Map(raw.classes.filter((c) => c.closed_at).map((c) => [c.id, c.closed_at]));
+  return {
+    schedules: raw.schedules.map((s) => { const end = closedOf.get(s.class_id); return end && (s.valid_to == null || s.valid_to > end) ? { ...s, valid_to: end } : s; }),
+    // 종강일을 넣어 끝낸다(반이동 표시는 끝 날을 빼는 규칙이라 같이 내린다).
+    enrollments: raw.enrollments.map((e) => { const end = closedOf.get(e.class_id); return end && (e.end_date == null || e.end_date > end) ? { ...e, end_date: end, is_transferred: false } : e; }),
+  };
+}
+/**
+ * 한 창의 원자료 — 2.0 조회 조건을 그대로 걸고, 보고서는 2.0의 덩어리 순서(그 창의 반 목록 100개씩)로 다시 늘어놓는다. `cutMs` = as-of 시각(null이면 자르지 않음).
+ * `period`(확장 추세 · 원장 10-28 "기간내에 존재하는 항목들로만 … 종강된 반이 기간내에 있으면 넣고 없으면 뺄것") = 창 안에 하루라도 있었던 반(종강일 ≥ 창 첫날) ·
+ * 2.0(카드)은 창 끝 날에도 있는 반만(종강일 ≥ 기준일 — 현재 담당 반 기준).
+ */
+function sliceWindow(R, raw, w, scope, cutMs = null, period = false) {
   const classes = raw.classes.filter((c) => !c.closed_at || c.closed_at >= w.attendanceFrom);
   const inScope = classes.filter((c) => !R.isTestClass(c.class_name) && (!scope || scope.classIds.includes(c.id)));
-  const visible = inScope.filter((c) => c.report_optout !== true && (!c.closed_at || c.closed_at >= w.today));
+  const visible = inScope.filter((c) => c.report_optout !== true && (!c.closed_at || c.closed_at >= (period ? w.range.reportFrom : w.today)));
   const classIds = visible.map((c) => c.id), scoped = new Set(inScope.map((c) => c.id));
-  const base = { inScope, visible, classIds };
+  const base = { inScope, visible, classIds, period };
   if (!classIds.length) return base;
   const chunkOf = new Map(classIds.map((id, i) => [id, Math.floor(i / CHUNK)]));
   const { today, range, attendanceFrom } = w;
@@ -207,7 +224,9 @@ function judge(R, settings, d, w, nowMs, counselShown, unreadGraceHours, groupBy
   const subjects = new Map(d.visible.map((c) => [c.id, c.subject]));
   const programs = R.programSubjectsOf(Object.fromEntries(settings.operations.subjects.map((s) => [s.key, s.label])));
   const retired = new Set(d.teachers.filter((u) => u.status === 'inactive').map((u) => u.id));
-  const workClasses = d.visible.filter((c) => !c.teacher_id || !retired.has(c.teacher_id)).map((c) => {
+  // 2.0은 퇴사한 선생님의 반을 줄째 뺀다(현재 담당 반 기준). period(확장 추세)는 종강일이 있는 반이면 종강일까지 있었던 것으로 넣는다 —
+  // 종강 처리가 안 된 반은 언제까지 있었는지 기록이 없어(users에 퇴사일 칸 없음) 넣으면 떠난 뒤 날에 쓰지 않은 의무가 쌓이므로 2.0처럼 뺀다.
+  const workClasses = d.visible.filter((c) => !c.teacher_id || !retired.has(c.teacher_id) || (d.period && !!c.closed_at)).map((c) => {
     const teacherName = c.teacher_id ? names.get(c.teacher_id) ?? '이름 확인 필요' : '담당 미지정';
     const english = R.subjectGroupOf(c.subject, programs) === 'english';
     return { id: c.id, name: c.class_name, teacherId: c.teacher_id, teacherName, subject: c.subject, track: c.english_track,
@@ -278,12 +297,14 @@ export async function loadTeacherWork({ sql, tenantId, today, scope = null, sett
  * 여러 기준일(예: 8개 주 창의 끝 날)을 한 번에 — 가장 넓은 범위를 한 번 읽고 창마다 2.0 조건으로 걸러 2.0 판정을 돌린다(B4 · 창마다 따로 읽지 않는다).
  * 돌려줌 = `todays` 순서의 결과 배열. 창마다 결과 = 그 날짜로 `loadTeacherWork`를 따로 부른 결과(시험이 잠근다).
  */
-export async function loadTeacherWorkWindows({ sql: tx, tenantId, todays, scope = null, settings, importV2, now, asOfCut = true, spans = null, groupBy = 'teacher' }) {
+export async function loadTeacherWorkWindows({ sql: tx, tenantId, todays, scope = null, settings, importV2, now, asOfCut = true, spans = null, groupBy = 'teacher', period = false }) {
   if (!todays?.length) return [];
   const { sql, R, clock, settings: s, counselShown, wins } = await prepare(tx, tenantId, todays, settings, importV2, spans);
-  const raw = await fetchRaw(sql, R, tenantId, s, wins, scope, counselShown);
+  const fetched = await fetchRaw(sql, R, tenantId, s, wins, scope, counselShown, period);
+  // period = 종강 반의 시간표·수강을 종강일에서 한 번 끊고(closedCut) 창마다 같은 원자료를 쓴다(반이 없으면 끊을 것도 없다).
+  const raw = period && fetched.schedules ? { ...fetched, ...closedCut(fetched) } : fetched;
   return wins.map((w) => { const nowMs = nowOf(w.today, clock, now);
-    return judge(R, s, sliceWindow(R, raw, w, scope, asOfCut ? nowMs : null), w, nowMs, counselShown, R.UNREAD_GRACE_HOURS, groupBy); });
+    return judge(R, s, sliceWindow(R, raw, w, scope, asOfCut ? nowMs : null, period), w, nowMs, counselShown, R.UNREAD_GRACE_HOURS, groupBy); });
 }
 
 // ── 3.0 KPI: 최근 7일 창 8개(원장 10-28 "원하는건 추세") ─────────────────────────────────────────────────────────────
@@ -339,6 +360,8 @@ export const TEACHER_WORK_METRICS = Object.freeze([
  * 확장 추세(원장 10-28 "일별 월별 연별 추세를 자세하게 … 학생별, 선생님별, 반별, 과목별") — 아무 창(`windows` = [{from, to}])과 묶음(`by`)으로
  * 같은 2.0 판정을 돌려 합계와 줄별 [분자, 분모]를 낸다. 지난 창은 그 창 마지막 날이 끝난 때로 판정하고(그날 수업은 모두 마감 대상) 늦게 쓴 보고서도 센다 —
  * 카드가 7일 창 안의 지난 날을 세는 방식과 같다. 지금 창(마지막 날 = 복사본 기준일)은 복사본을 뜬 순간이라 카드 값과 같다.
+ * 단 반은 '창 안에 있었나'로 고른다(period · 원장 10-28 "기간내에 존재하는 항목들로만") — 창 중간에 종강한 반과 퇴사 선생님의 종강 반이 걸린 창은
+ * 카드(2.0 = 창 끝 날의 현재 담당 반)와 다르다(복사본 8주: 작성률 9/29·10/06 창 등).
  * (카드의 추세선은 비교를 공정하게 하려고 지난 창도 오늘과 같은 시각에 자른다 — 하루 창에선 오후 수업이 빠져 쓸 수 없다.) 학부모 열람은 같은 창의 보고서로 센다.
  * 출결은 2.0처럼 '기준일 전날까지'다 — 출결 창은 어제까지로 끝나게 받고(trend-metrics의 endsYesterday) 기준일은 창 끝 다음 날로 잡아
  * 창 안의 날을 그대로 센다(주별 = 카드의 '어제까지 7일' 창 그대로 · 창끼리 겹치지 않는다).
@@ -356,7 +379,8 @@ export async function teacherWorkTrend({ sql, asOf, tenantId: t = COPY_TENANT, i
   const spans = windows.map((w) => day(w.to) - day(w.from) + 1);
   const studentBy = by === 'student', studentRows = studentBy && !!scope && m.byStudent !== false;
   // 학생 줄을 못 내는 경우(필터 없음 · 학생 기준 없는 지표)는 선생님 묶음으로 합계만 — 줄은 비운다(오류 아님).
-  const works = await loadTeacherWorkWindows({ sql, tenantId: t, todays, spans, groupBy: studentBy && !studentRows ? 'teacher' : by, scope, importV2: load, asOfCut: false });
+  // period = 창 안에 있었던 반·학생만(원장 10-28 "기간내에 존재하는 항목들로만") — 종강한 반·퇴원한 학생도 창 안에 기록이 있으면 든다(sliceWindow).
+  const works = await loadTeacherWorkWindows({ sql, tenantId: t, todays, spans, groupBy: studentBy && !studentRows ? 'teacher' : by, scope, importV2: load, asOfCut: false, period: true });
   const [{ first: videoFrom }] = await sql`select min(report_date)::text first from public.lesson_reports where tenant_id=${t} and video_homework is not null`;
   // 써야 할 보고서·출결 대상은 시간표 배치에서 나온다 — 배치가 처음 생기기 전의 창은 들어온 보고서만 대상이 되어 100%로 보인다(옮겨 온 옛 보고서). 그 날을 알린다.
   const [{ first: since }] = await sql`select min(valid_from)::text first from public.class_schedules where tenant_id=${t}`;
