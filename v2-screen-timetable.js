@@ -18,7 +18,7 @@
   function ensureFrame(query) {
     if (!frame) {
       frame = document.createElement('iframe');
-      frame.className = 'v2h-frame'; frame.title = '시간표(2.0 화면)'; frame.dataset.v2Host = ID; frame.hidden = true;
+      frame.className = 'v2h-frame'; frame.title = '시간표'; frame.dataset.v2Host = ID; frame.hidden = true;
       document.body.append(frame);
     }
     if (query !== requested) { requested = query; frame.src = `${HOST}${query ? `?${query}` : ''}`; }
@@ -38,7 +38,7 @@
   function openFromHost(href) {
     const m = /^\/(students|classes)\/([0-9a-f-]{36})(?:[/?#]|$)/i.exec(href || '');
     if (m && api?.canOpenRecord?.(m[2])) return m[1] === 'students' ? api.showStudent(m[2]) : api.openRecord(m[2]);
-    api?.toast?.('이 화면은 3.0 연습본에 아직 없습니다.');
+    api?.toast?.('이 화면은 연습 화면에서 아직 열 수 없습니다.');
   }
   /** 저장하는 사람 — 고른 값이 목록에 없으면 첫 사람(원장 먼저). 호스트(shims/server-action.ts)와 같은 규칙. */
   function currentActor() {
@@ -87,8 +87,8 @@
       const query = queryOf(ctx.query);
       if (hostOk === null) fetch(HOST, { method: 'HEAD' }).then(r => r.ok, () => false).then(ok => { if (hostOk === null) { hostOk = ok; api?.render?.(); } });
       else if (hostOk) requestAnimationFrame(() => { ensureFrame(query); place(); });
-      const wait = hostOk === false ? '2.0 부품 화면이 이 서버에 아직 연결되지 않았습니다.' : hostOk === null ? '시간표를 여는 중…' : '';
-      return `<div class="v2h-note" role="note"><p><b>연습 복사본(Docker)</b> 2.0 시간표 부품 그대로입니다. 저장은 이 PC의 복사본에만 됩니다(복사본 — 실제 발송 없음). 학생 반 이동·등원 요일·대기와 퇴원(수강 종료)으로 보내기·메모 시트는 저장되고, 아직 잇지 않은 저장은 같은 자리에서 '복사본 보기 전용'으로 거절됩니다.</p><span data-v2h-actor-slot>${actorPicker()}</span></div>
+      const wait = hostOk === false ? '시간표를 열지 못했습니다. 잠시 후 새로고침해 주세요.' : hostOk === null ? '시간표를 여는 중…' : '';
+      return `<div class="v2h-note" role="note"><p><b>연습 화면</b> 여기서 저장한 내용은 이 PC의 연습 자료에만 남고, 실제 발송은 없습니다. 학생 반 이동·등원 요일·대기와 퇴원(수강 종료)·메모 시트를 저장할 수 있고, 그 밖의 저장은 아직 지원하지 않습니다.</p><span data-v2h-actor-slot>${actorPicker()}</span></div>
         <div class="v2h-slot" data-v2-host-slot>${wait ? `<p class="v2h-wait">${wait}</p>` : ''}</div>`;
     },
   });

@@ -6,7 +6,9 @@
 // registerHostFallback으로 그 함수의 모양을 정하거나, setHostRefusal('throw')로 던지게 한다(부품이 실패를 catch로 받는 화면).
 import { currentScreen } from './host-nav';
 
-export const VIEW_ONLY = '복사본 보기 전용 — 이 화면의 저장은 아직 열지 않았습니다';
+export const VIEW_ONLY = '연습 화면에서는 아직 지원하지 않는 저장입니다';
+/** 저장이 아닌 것(내려받기 링크 등)을 막을 때 — 호스트 틀이 쓴다. */
+export const NOT_SUPPORTED = '연습 화면에서는 아직 지원하지 않는 기능입니다';
 const UNREACHABLE = '연습 서버에 닿지 못했습니다 — 바뀐 것은 없습니다';
 const NOT_SAVED = '저장하지 못했습니다 — 바뀐 것은 없습니다';
 

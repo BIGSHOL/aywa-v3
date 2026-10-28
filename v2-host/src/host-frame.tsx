@@ -4,7 +4,7 @@
 //  · 2.0이 부모 워크스페이스에 창을 열어 달라는 신호(eywa-open-window)는 3.0(부모)에 그대로 넘긴다(3.0이 자기 기록 창으로 연다).
 import { useEffect, type ReactNode } from 'react';
 import { toast } from 'sonner';
-import { VIEW_ONLY } from '../shims/server-action';
+import { NOT_SUPPORTED } from '../shims/server-action';
 
 export function HostFrame({ screen, children }: { screen: string; children: ReactNode }) {
   useEffect(() => {
@@ -12,7 +12,7 @@ export function HostFrame({ screen, children }: { screen: string; children: Reac
       const a = (e.target as Element | null)?.closest?.('a[href]') as HTMLAnchorElement | null;
       if (!a) return;
       const href = a.getAttribute('href') ?? '';
-      if (/^\/api\//.test(href) || /^https?:/i.test(href)) { e.preventDefault(); toast.info(VIEW_ONLY); }
+      if (/^\/api\//.test(href) || /^https?:/i.test(href)) { e.preventDefault(); toast.info(NOT_SUPPORTED); }
     };
     document.addEventListener('click', onClick, true);
     window.parent.postMessage({ type: 'v2-host-ready', screen }, window.location.origin);
