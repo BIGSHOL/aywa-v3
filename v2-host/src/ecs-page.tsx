@@ -6,12 +6,15 @@
 import Link from 'next/link';
 import type { ComponentProps } from 'react';
 import { PageHeader } from '@/components/page-header';
-import { ToolbarButton } from '@/components/toolbar';
-import { addDays } from '@/lib/date-kst';
+import { BigStat } from '@/components/atoms/big-stat';
+import { Toolbar, ToolbarButton } from '@/components/toolbar';
+import { addDays, formatKoreanDate } from '@/lib/date-kst';
+import { mondayOf } from '@/features/timetable/lib/week';
+import { countGoalCells, GOAL_STATE_DOT } from '@/features/class-sheets/lib/goals-board';
 import { monthDay } from '@/features/timetable/scheduled-import';
 import { WeekNav } from '@/app/(shell)/timetable/_components/week-nav';
 import { ENGLISH_TRACK_FILTER_LABEL } from '@/features/classes/english-track';
-import { sheetT, sheetWeekLabel, type SheetLang } from '@/features/teacher-view/i18n';
+import { sheetDateLabelEn, sheetMonthLabel, sheetT, sheetTf, sheetWeekLabel, type SheetLang } from '@/features/teacher-view/i18n';
 import { SheetClient } from '@/features/class-sheets/components/sheet-client';
 import { MonthClient } from '@/features/class-sheets/components/month-client';
 import { SheetWidthGate } from '@/features/class-sheets/components/sheet-width-gate';
@@ -20,6 +23,9 @@ import { EcsLandingList } from '@/app/(shell)/ecs/_components/landing-list';
 import { EcsTeacherFilter } from '@/app/(shell)/ecs/_components/teacher-filter';
 import { EcsTrackFilter } from '@/app/(shell)/ecs/_components/track-filter';
 import { EcsFaceTabs } from '@/app/(shell)/ecs/_components/today-nav';
+import { GoalsPeriodBar } from '@/app/(shell)/ecs/goals/_components/goals-period-bar';
+import { GoalsRoleSwitch } from '@/app/(shell)/ecs/goals/_components/goals-role-switch';
+import { GoalsTable } from '@/app/(shell)/ecs/goals/_components/goals-table';
 
 type SheetProps = ComponentProps<typeof SheetClient>;
 type MonthProps = ComponentProps<typeof MonthClient>;
@@ -146,6 +152,83 @@ export function EcsMonthPage({ month }: { month: MonthData }) {
             initialView={month.initialView ?? d.view} initialDisplay={d.display} fromWeek={month.fromWeek ?? null} textbooksOn={month.textbooksOn ?? false} />
         </TextbookOptionsProvider>
       </SheetWidthGate>
+    </div>
+  );
+}
+
+type GoalsTableProps = ComponentProps<typeof GoalsTable>;
+/** 2.0 `getGoalsBoard`의 반환(goals-board.ts) — 부품 props에서 거꾸로 읽는다(서버 모듈이라 타입도 불러오지 않는다). */
+export type GoalsData = {
+  res: Fail | {
+    ok: true; date: string; weekMonday: string; weekLabel: string; monthStart: string; today: string; role: GoalsTableProps['role']; canEdit: boolean;
+    view: ComponentProps<typeof GoalsPeriodBar>['view']; areas: GoalsTableProps['areas']; rows: GoalsTableProps['rows'];
+  };
+  names: GoalsTableProps['teacherNames'];
+};
+
+/** 2.0 ecs/goals/page.tsx — 반 계획 보기. 원문 JSX 순서 그대로. */
+export function EcsGoalsPage({ goals, lang }: { goals: GoalsData; lang: SheetLang }) {
+  const res = goals.res;
+  const title = sheetT(lang, 'goals.title');
+  if (!res.ok) {
+    return (
+      <div className="space-y-4">
+        <PageHeader eyebrow={sheetT(lang, 'landing.title')} title={title} />
+        <p className="bg-card shadow-card rounded-2xl px-4 py-6 text-sm">{res.error}</p>
+      </div>
+    );
+  }
+  const weekText = sheetWeekLabel(res.weekMonday, res.weekLabel, lang);
+  const monthText = sheetMonthLabel(res.monthStart.slice(0, 7), `${Number(res.monthStart.slice(5, 7))}월`, lang);
+  const counts = countGoalCells(res.rows.flatMap((r) => r.cells.map((c) => c.state)));
+  const cells = (n: number) => sheetTf(lang, 'goals.cells', { n });
+  const dayLabel = (d: string) => (lang === 'en' ? sheetDateLabelEn(d) : formatKoreanDate(d));
+  return (
+    <div className="space-y-4">
+      <PageHeader eyebrow={sheetT(lang, 'landing.title')} title={title} description={sheetT(lang, 'goals.desc')} embedLabel={`${title} · ${weekText}`} />
+      <Toolbar>
+        <ToolbarButton href={`/ecs?view=week&week=${res.weekMonday}`}>{sheetT(lang, 'goals.back')}</ToolbarButton>
+        <GoalsPeriodBar
+          view={res.view}
+          date={res.date}
+          isToday={res.date === res.today}
+          navLabel={res.view === 'day' ? dayLabel(res.date) : weekText}
+          prevHref={`/ecs/goals?date=${addDays(res.date, res.view === 'day' ? -1 : -7)}`}
+          nextHref={`/ecs/goals?date=${addDays(res.date, res.view === 'day' ? 1 : 7)}`}
+          relation={
+            res.view === 'day'
+              ? res.date === res.today ? 'current' : res.date < res.today ? 'past' : 'future'
+              : res.weekMonday === mondayOf(res.today) ? 'current' : res.weekMonday < res.today ? 'past' : 'future'
+          }
+        />
+        <GoalsRoleSwitch value={res.role} />
+        <span className="text-sm">{sheetTf(lang, 'goals.caption', { month: monthText, week: weekText })}</span>
+      </Toolbar>
+      {res.areas.length === 0 ? (
+        <p className="bg-card shadow-card rounded-2xl px-4 py-6 text-sm">{sheetT(lang, 'goals.noAreas')}</p>
+      ) : res.rows.length === 0 ? (
+        <p className="bg-card shadow-card rounded-2xl px-4 py-6 text-sm">{sheetT(lang, 'goals.empty')}</p>
+      ) : (
+        <>
+          <div className="grid grid-cols-4 gap-3">
+            <BigStat label={sheetT(lang, 'goals.stat.same')} value={cells(counts.same)} tone="green" valueClass="text-green" />
+            <BigStat label={sheetT(lang, 'goals.stat.diff')} value={cells(counts.diff)} tone="amber" valueClass="text-amber" />
+            <BigStat label={sheetT(lang, 'goals.stat.weekEmpty')} value={cells(counts.weekEmpty)} />
+            <BigStat label={sheetT(lang, 'goals.stat.none')} value={cells(counts.none)} />
+          </div>
+          <p className="flex flex-wrap items-center gap-x-4 gap-y-1 px-1 text-sm">
+            {(['same', 'diff', 'weekEmpty'] as const).map((s) => (
+              <span key={s} className="inline-flex items-center gap-1.5">
+                <span className={`size-2.5 rounded-full ${GOAL_STATE_DOT[s]}`} aria-hidden />
+                {sheetT(lang, s === 'same' ? 'goals.stat.same' : s === 'diff' ? 'goals.stat.diff' : 'goals.stat.weekEmpty')}
+              </span>
+            ))}
+            {res.role === 'all' ? <span className="text-text-dim">{sheetT(lang, 'goals.legend.role')}</span> : null}
+          </p>
+          <GoalsTable rows={res.rows} areas={res.areas} weekMonday={res.weekMonday} monthStart={res.monthStart} date={res.date} lang={lang} role={res.role}
+            showDay={res.view === 'day'} canEdit={res.canEdit} teacherNames={goals.names} />
+        </>
+      )}
     </div>
   );
 }

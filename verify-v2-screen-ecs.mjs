@@ -441,4 +441,46 @@ test('복사본(되돌림): 보강 추가 = 학생 찾기 → 결석 후보 → 
   assert.deepEqual([after[0].audits, after[0].rec], [before[0].audits, before[0].rec], '되돌렸다');
 });
 
+test('복사본: 반 계획 보기(/ecs/goals) = 2.0 GoalsBoardResult 칸 그대로 · 반 = 그 주에 도는 인재원 영어 반(독립 SQL, 반 목록과 같은 수) · 강사는 담당 반만', { skip: !db && 'local database not running' }, async () => {
+  const gb = await src('features/class-sheets/server/goals-board.ts');
+  const okKeys = (() => { const t = gb.replace(/\r\n/g, '\n'), i = t.indexOf('export type GoalsBoardResult'), j = t.indexOf('| {', i) + 3, k = t.indexOf('}\n  | { ok: false', j); return keysAtTop(t.slice(j, k)); })();
+  const g = (await load({ v2path: '/ecs/goals', date: '2026-10-27' })).goals;
+  assert.equal(g.res.ok, true); sameShape(g.res, okKeys, 'GoalsBoardResult');
+  for (const r of g.res.rows) { sameShape(r, typeKeys(gb, 'GoalsBoardRow'), 'GoalsBoardRow'); for (const c of r.cells) sameShape(c, typeKeys(gb, 'GoalsBoardCell'), 'GoalsBoardCell'); }
+  assert.deepEqual([g.res.date, g.res.weekMonday, g.res.monthStart], ['2026-10-27', '2026-10-26', '2026-10-01']);
+  const landing = (await load({ week: '2026-10-26' })).landing.res;
+  assert.equal(g.res.rows.length, landing.trackCounts.injaewon, "반 목록의 '인재원 영어 N'과 같은 반 수");
+  const [{ n }] = await db`select count(distinct c.id)::int n from public.classes c join public.class_schedules s on s.class_id=c.id
+    cross join generate_series('2026-10-26'::date, '2026-11-01'::date, '1 day') d(day)
+    where c.tenant_id=${TENANT} and c.subject='english' and c.is_active and (c.closed_at is null or c.closed_at >= '2026-10-26') and coalesce(c.english_track, '') <> 'eie'
+      and s.day_of_week::text = lower(to_char(d.day, 'dy')) and s.valid_from <= d.day and (s.valid_to is null or s.valid_to >= d.day)`;
+  assert.equal(g.res.rows.length, n, '그 주에 도는 인재원 영어 반(독립 SQL)');
+  assert.equal(g.res.areas.length, 6); assert.ok(g.res.rows.every(r => r.cells.length === 6));
+  // 주간 목표가 있는 칸의 상태 = 2.0 goalCellStateOf(독립: 같은 반·영역의 담임 주간 목표 행이 있으면 'none'이 아니면서 'weekEmpty'도 아니다).
+  const weekGoals = new Set((await db`select class_id::text || '|' || skill_area k from public.class_sheet_goals where tenant_id=${TENANT} and scope='week' and role = any(${g.res.role === 'all' ? ['homeroom', 'assistant'] : [g.res.role]}::text[]) and period_start='2026-10-26'
+    and (coalesce(btrim(textbook), '') <> '' or coalesce(btrim(target_progress), '') <> '')`).map(r => r.k));
+  for (const r of g.res.rows) for (const c of r.cells) if (c.state === 'same' || c.state === 'diff') assert.ok(weekGoals.has(`${r.classId}|${c.area}`), `${r.className} ${c.area}`);
+  const [t] = await db`select u.id::text id from public.users u join public.classes c on c.teacher_id=u.id where u.tenant_id=${TENANT} and u.status='active' and u.system_role='teacher' and c.subject='english' and c.is_active group by u.id order by count(*) desc limit 1`;
+  const tg = (await load({ v2path: '/ecs/goals', date: '2026-10-27', viewer: t.id })).goals.res;
+  assert.ok(tg.ok && tg.rows.length > 0 && tg.rows.length < g.res.rows.length, '강사는 담당 반만');
+});
+
+test('복사본(되돌림): 반 계획 보기 보기 설정(setMyEcsGoalsRole · setMyEcsGoalsView) = 그 사람 ui_prefs.ecs만 · 기본값이면 키를 지움', { skip: !db && 'local database not running' }, async () => {
+  await inRollback(async ({ sql, run }) => {
+    const prefs = async () => (await sql`select ui_prefs from public.users where id=${T_ACTOR}`)[0].ui_prefs ?? {};
+    const p0 = await prefs();
+    assert.deepEqual(await run(sql, 'setMyEcsGoalsRole', T_ACTOR, 'all'), { ok: true });
+    assert.deepEqual(await run(sql, 'setMyEcsGoalsView', T_ACTOR, 'week'), { ok: true });
+    const p1 = await prefs();
+    assert.deepEqual([p1.ecs.goalsRole, p1.ecs.goalsView], ['all', 'week']);
+    for (const k of Object.keys(p0).filter(k => k !== 'ecs')) assert.deepEqual(p1[k], p0[k], `형제 키 ${k}`);
+    const g = (await sql.savepoint(s => screen.load({ sql: s, params: { v2path: '/ecs/goals', date: '2026-10-27', viewer: T_ACTOR }, tenantId: TENANT, importV2 }))).goals.res;
+    assert.deepEqual([g.role, g.view], ['all', 'week'], '저장한 보기로 다시 그린다');
+    assert.deepEqual(await run(sql, 'setMyEcsGoalsRole', T_ACTOR, 'boss'), { ok: false, error: '잘못된 값입니다' });
+    await run(sql, 'setMyEcsGoalsRole', T_ACTOR, 'homeroom'); await run(sql, 'setMyEcsGoalsView', T_ACTOR, 'day');
+    const p2 = await prefs();
+    assert.ok(!('goalsRole' in (p2.ecs ?? {})) && !('goalsView' in (p2.ecs ?? {})), '기본값이면 키를 지운다');
+  });
+});
+
 test.after(async () => { await db?.end(); });

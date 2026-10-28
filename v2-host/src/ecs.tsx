@@ -16,7 +16,7 @@ import { onHostRefresh } from '../shims/host-nav';
 import { useHostSearch } from '../shims/next-navigation';
 import { hostActor, registerHostFallback, registerHostHandler, setHostEditors, type HostEditor } from '../shims/server-action';
 import { HostFrame, HostMessage } from './host-frame';
-import { EcsLandingPage, EcsMonthPage, EcsNotYetPage, EcsSheetPage, type LandingData, type MonthData, type SheetData } from './ecs-page';
+import { EcsGoalsPage, EcsLandingPage, EcsMonthPage, EcsNotYetPage, EcsSheetPage, type GoalsData, type LandingData, type MonthData, type SheetData } from './ecs-page';
 
 /** 진입점 표식(build.mjs가 찾는다) — 창 제목과 이 화면의 2.0 주소. */
 export const HOST_TITLE = '강사 시트';
@@ -59,6 +59,7 @@ type Data = {
   landing?: LandingData;
   sheet?: SheetData;
   month?: MonthData;
+  goals?: GoalsData;
 };
 
 /** 서버를 다시 부르는 주소 열쇠 — 2.0에서 서버가 다시 그리던 것(주소·주·면·달·기간·날짜·읽기 전용). `day`는 2.0 시트가 주소만 바꾸는 값이라 뺀다. */
@@ -113,6 +114,7 @@ function App() {
   const body = d.route === 'landing' && d.landing ? <EcsLandingPage landing={d.landing} scoped={!!d.scoped} lang={lang} />
     : d.route === 'sheet' && d.sheet ? <EcsSheetPage sheet={d.sheet} />
       : d.route === 'month' && d.month ? <EcsMonthPage month={d.month} />
+        : d.route === 'goals' && d.goals ? <EcsGoalsPage goals={d.goals} lang={lang} />
         : <EcsNotYetPage route={d.route === 'room' || d.route === 'goals' || d.route === 'gap' ? d.route : 'today'} scoped={!!d.scoped} lang={lang} />;
   return (
     <SheetLangProvider lang={lang}>

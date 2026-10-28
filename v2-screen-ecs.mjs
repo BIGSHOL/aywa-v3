@@ -5,7 +5,8 @@
 //   /ecs                    → 2.0 `ecs/page.tsx`         getSheetLanding(week)            → EcsLandingList · EcsTrackFilter · EcsTeacherFilter · WeekNav
 //   /ecs/<반>               → 2.0 `[classId]/page.tsx`   getClassSheetWeek(반, week)      → SheetClient(data · classOptions · userId · tenantId) + TextbookOptionsProvider
 //   /ecs/<반>/month         → 2.0 `month/page.tsx`       getClassSheetMonth + getMonthPlanChrome → MonthClient(data · mpChrome · classOptions · initialView · initialDisplay · fromWeek · textbooksOn)
-//   /ecs (강사 · 오늘 면) · ?view=room(JJ실) · /ecs/goals(반 계획 보기) · /ecs/plan-gap(계획 대비 현황) → 아직 옮기지 않음(route만 알려 준다)
+//   /ecs/goals              → 2.0 `goals/page.tsx`       getGoalsBoard(date) + 강사 영어 이름 → GoalsPeriodBar · GoalsRoleSwitch · GoalsTable(v2-ecs-goals.mjs)
+//   /ecs (강사 · 오늘 면) · ?view=room(JJ실) · /ecs/plan-gap(계획 대비 현황) → 아직 옮기지 않음(route만 알려 준다)
 //   공통: editors(저장·보는 사람 = ECS 권한이 있는 재직 직원, 운영자 계정 제외) · viewer · host(OperationsProvider 값 · 화면 언어 · 영어 이름 편집 권한)
 //   읽기 서버 액션(?read=dayPlan&class&date · ?read=compare&class&date&slot) → 2.0 getEcsDayPlan · getSlotPlanCompare의 반환 그대로.
 //   호스트가 이 둘을 저장 경로(POST)가 아니라 여기(GET, 읽기 전용 트랜잭션)로 묻는다 — 보기는 쓰기 기록에 남지 않는다(시간표 loadExitOverlay와 같다).
@@ -31,6 +32,7 @@
 //   class-sheets/server/month-plan-actions.ts  saveMonthPlanCells class_month_plan_cells                          ecs_month_plan_edit(구조 변경)
 //   class-sheets/server/month-memo-actions.ts  saveMonthMemo     class_sheet_month_memos                          (commitSheetEdits가)
 //   attendance/server/actions.ts               setAttendanceCell attendance_records(교시 칸 갈래)                attendance_cell · attendance_note · attendance_clear
+//   class-sheets/server/goals-board-actions.ts setMyEcsGoalsRole · setMyEcsGoalsView  users.ui_prefs.ecs            (없음 — 2.0과 같다)
 //   students/server/english-name.ts            updateStudentEnglishName students.english_name(CAS · 지점 중복)   student_english_name_update
 //   보강 추가(v2-ecs-makeup.mjs): attendance/server/actions.ts searchMakeupStudents(읽기) · makeup-actions.ts fetchMakeupAbsences(읽기) ·
 //     setAttendanceCell(status makeup · allowMakeup — 칸과 시수) · makeup-note-action.ts noteMakeupAgainstAbsence  attendance_records.note   attendance_makeup_link
@@ -57,6 +59,7 @@ import { DAY, UUID, canWriteLevel, copyDay, editorsOf, loadRules, readSettings, 
 import { classOptionsOf, landingData, monthData, sheetWeekData, textbookOptions } from './v2-ecs-props.mjs';
 import { ACTIONS, readDayPlan, readSlotCompare } from './v2-ecs-save.mjs';
 import { MAKEUP_ACTIONS } from './v2-ecs-makeup.mjs';
+import { GOALS_ACTIONS, goalsData } from './v2-ecs-goals.mjs';
 
 /** 2.0 주소 — /ecs · /ecs/<반> · /ecs/<반>/month · /ecs/goals · /ecs/plan-gap. */
 const ROUTE = /^\/ecs(?:\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})(\/month)?|\/(goals|plan-gap))?$/;
@@ -67,7 +70,7 @@ export const screen = {
     period: /^(month|session)$/, day: DAY, readonly: /^1$/,
     // 읽기 서버 액션(호스트 registerHostHandler) — 그 2.0 함수의 인자 칸만.
     read: /^(dayPlan|compare)$/, class: UUID, slot: /^\d{2}:\d{2}(?::\d{2})?$/ },
-  actions: { ...ACTIONS, ...MAKEUP_ACTIONS },
+  actions: { ...ACTIONS, ...MAKEUP_ACTIONS, ...GOALS_ACTIONS },
   async load({ sql, params: q, tenantId: t, importV2 }) {
     const R = await loadRules(importV2), today = await copyDay(), env = await readSettings(sql, t, R);
     const viewers = await readViewers(sql, t, R, env);
@@ -85,7 +88,12 @@ export const screen = {
         disabledModules: env.disabled, lang: viewer?.lang ?? 'ko', englishNameEnabled: !!viewer && canWriteLevel(viewer.levels.englishName) } };
     if (!viewer) return { ...common, route: 'none' };
     const m = ROUTE.exec(q.v2path || '/ecs') ?? [];
-    if (m[3]) return { ...common, route: m[3] === 'goals' ? 'goals' : 'gap' };
+    if (m[3] === 'goals') {
+      // 2.0 goals/page.tsx — getGoalsBoard(date) + 화면 언어의 강사 영어 이름(GoalsTable teacherNames).
+      const [res, names] = await Promise.all([goalsData(sql, t, R, env, viewer, q.date ?? null, today), teacherEnglishNames(sql, t, viewer.lang)]);
+      return { ...common, route: 'goals', goals: { res, names } };
+    }
+    if (m[3]) return { ...common, route: 'gap' };
     const classId = m[1];
     if (classId && m[2]) {
       // 2.0 month/page.tsx — 반 전환 옵션은 이번 주 목록(getSheetLanding(null)), 교재 제안·교재목록 모듈 여부를 같은 묶음으로.

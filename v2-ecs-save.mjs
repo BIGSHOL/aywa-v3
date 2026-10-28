@@ -120,7 +120,7 @@ async function makeupAnchorDeleteBlock(sql, t, studentId, classId, date) {
     : "이 칸은 보강 보고서가 가리키는 반입니다 — 원스크린에서 '보강 빼기'로 보고서와 함께 지우거나, 보강 반을 바꿔 주세요";
 }
 /** 2.0 `patchMyUiPrefs("ecs", patch)` — 내 계정의 ecs 칸만 갈아끼운다(형제 키 보존, undefined = 키 지움). */
-async function patchMyEcsPrefs(sql, t, user, patch) {
+export async function patchMyEcsPrefs(sql, t, user, patch) {
   const [row] = await sql`select ui_prefs from public.users where tenant_id=${t} and id=${user.id}`;
   const raw = row?.ui_prefs && typeof row.ui_prefs === 'object' && !Array.isArray(row.ui_prefs) ? row.ui_prefs : {};
   const scope = raw.ecs && typeof raw.ecs === 'object' && !Array.isArray(raw.ecs) ? { ...raw.ecs } : {};

@@ -23,7 +23,7 @@ export const MODULES = [
   'features/class-sheets/lib/plan-codec.ts', 'features/class-sheets/lib/goal-areas.ts', 'features/class-sheets/lib/week.ts',
   'features/class-sheets/lib/holiday.ts', 'features/class-sheets/lib/roster-form.ts', 'features/class-sheets/lib/roster-order.ts',
   'features/class-sheets/lib/month.ts', 'features/class-sheets/lib/month-assemble.ts', 'features/class-sheets/lib/month-plan.ts',
-  'features/class-sheets/lib/plan-line.ts', 'features/class-sheets/lib/save-keys.ts', 'features/class-sheets/lib/edit-audit.ts',
+  'features/class-sheets/lib/plan-line.ts', 'features/class-sheets/lib/save-keys.ts', 'features/class-sheets/lib/edit-audit.ts', 'features/class-sheets/lib/goals-board.ts',
   'features/class-sheets/shouting.ts', 'features/class-sheets/landing-teacher.ts', 'features/class-sheets/face-nav.ts',
   'features/class-sheets/view-prefs.ts', 'features/class-sheets/today-order.ts', 'features/class-sheets/font-size.ts',
   'features/attendance/effective-records.ts', 'features/attendance/calendar.ts', 'features/attendance/live/seating-floors.ts',

@@ -11,7 +11,7 @@
 import { DAY, assistantClassIds, classAccess, copyDay, delegatedClassIds, isoAt, isoDay, readClassNameAsOf, readNames, roomOf, shown, teacherScopeOf } from './v2-ecs-core.mjs';
 
 /** 2.0 `ecsVisibleClassFilter(weekMonday)` — 스코프가 없으면 전체(null). */
-async function visibleClassFilter(sql, t, R, viewer, weekMonday, today) {
+export async function visibleClassFilter(sql, t, R, viewer, weekMonday, today) {
   const scope = await teacherScopeOf(sql, t, viewer);
   if (!scope) return { classIds: null, hasScopeAnyWeek: true };
   const [week, any, delegated] = await Promise.all([assistantClassIds(sql, t, R, scope.teacherId, weekMonday), assistantClassIds(sql, t, R, scope.teacherId), delegatedClassIds(sql, t, R, scope.teacherId, today)]);
