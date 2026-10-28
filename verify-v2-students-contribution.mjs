@@ -36,6 +36,20 @@ test('기여도 월별 점수 본문 = 2.0 본문 그대로', async () => {
     '<Link href="/students" className="mt-5 inline-block text-sm text-primary underline">원생 목록으로</Link>');
   assert.equal(host.slice(host.lastIndexOf('  if (!data)')), expected);
 });
+test('학생 기록 연결의 월별·현재 관점을 원본 Docker 읽기 함수로 받는다', async () => {
+  const [student] = await db`select id::text id from public.students where tenant_id=${tenantId}
+    and status='enrolled' and not coalesce(is_test,false) order by id limit 1`;
+  const load = (extra) => db.begin('read only', (sql) => buildStudentDetail({ sql, tenantId, id: student.id,
+    sp: { tab: 'contribution', contribution: 'ontology', ...extra }, importV2 }));
+  const monthly = await load({ month: '2026-10' });
+  assert.equal(monthly.tab.data.ontologyMode, 'monthly');
+  assert.equal(monthly.tab.data.ontology.month, '2026-10');
+  assert.ok(Object.keys(monthly.tab.data.ontology.views).length > 0);
+  const current = await load({ view: 'current' });
+  assert.equal(current.tab.data.ontologyMode, 'current');
+  assert.equal(current.tab.data.currentScope.state, 'ready');
+  assert.equal(current.tab.data.currentScope.request.kind, 'academy');
+});
 test('확장 근거 조회는 원본 함수를 Docker 읽기 경로로 호출한다', async () => {
   const [student] = await db`select id::text id from public.students where tenant_id=${tenantId}
     and status='enrolled' and not coalesce(is_test,false) order by id limit 1`;

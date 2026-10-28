@@ -2,6 +2,19 @@
 import { runV2Server } from './v2-server-runner.mjs';
 
 export async function loadTab({ base, id, sp }) {
+  if (sp.contribution === 'ontology') {
+    if (sp.view === 'current') {
+      const { results: [r] } = await runV2Server({ steps: [{ module: 'features/student-contribution/server/live-scope-query.ts',
+        fn: 'getCurrentOntologyScope', args: [sp] }], actorId: base.viewer.id, tenantId: base.t, mode: 'read' });
+      return { ontologyMode: 'current', currentScope: r.value ?? null };
+    }
+    const { isMonth } = await base.load('features/student-contribution/model/dates.ts');
+    const month = isMonth(sp.month) ? sp.month : base.today.slice(0, 7);
+    const { results: [r] } = await runV2Server({ steps: [{ module: 'features/student-contribution/server/ontology-query.ts',
+      fn: 'getContributionOntology', args: [month, sp] }], actorId: base.viewer.id, tenantId: base.t, mode: 'read' });
+    return { ontologyMode: 'monthly', ontology: r.value ?? null };
+  }
+  if (sp.contribution && sp.contribution !== 'student') return { missing: true };
   const { results: [result, live, summary] } = await runV2Server({
     steps: [
       { module: 'features/student-contribution/server/student-query.ts', fn: 'getContributionStudent', args: [id, sp.month] },

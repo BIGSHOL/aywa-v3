@@ -16,23 +16,34 @@ import { EyIcon } from "@/components/icons/aywa-icons";
 import type { LiveConnections } from "@/features/students/ontology/live-contract";
 import type { getStudentRecordSummary } from "@/features/student-contribution/server/summary-query";
 import { MissingTab, useStudentTab } from "./students-shared";
+import { ContributionHeader } from "./students-contribution-header";
+import { OntologyExplorer } from "./students-contribution-ontology-explorer";
+import { CurrentScopeExplorer } from "./students-contribution-current-explorer";
+import { liveScopeRequest } from "@/features/students/ontology/live-scope";
+import type { getContributionOntology } from "@/features/student-contribution/server/ontology-query";
+import type { getCurrentOntologyScope } from "@/features/student-contribution/server/live-scope-query";
 
 type ContributionData = Awaited<ReturnType<typeof getContributionStudent>>;
-type ContributionTabData = { contribution: ContributionData; live: LiveConnections | null;
-  summary: Awaited<ReturnType<typeof getStudentRecordSummary>> };
-function ContributionHeader({ title, description }: { title: string; description: string }) {
-  return <header className="space-y-5">
-    <div className="space-y-2"><h1 className="text-xl font-bold tracking-tight">{title}</h1><p className="max-w-3xl text-sm leading-relaxed">{description}</p></div>
-  </header>;
-}
+type ContributionTabData = { contribution?: ContributionData; live?: LiveConnections | null;
+  summary?: Awaited<ReturnType<typeof getStudentRecordSummary>>;
+  ontologyMode?: "monthly" | "current";
+  ontology?: Awaited<ReturnType<typeof getContributionOntology>>;
+  currentScope?: Awaited<ReturnType<typeof getCurrentOntologyScope>> };
 
 export function StudentContributionView({ studentId, params }: { studentId: string; params: Record<string, string | undefined> }) {
-  const { contribution: data, live, summary } = useStudentTab<ContributionTabData>();
+  const tab = useStudentTab<ContributionTabData>();
+  if (params.contribution === "ontology") return <StudentContributionScope studentId={studentId} back={params.back}>
+    {tab.ontologyMode === "current" ? tab.currentScope
+      ? <CurrentScopeExplorer studentId={studentId} view={tab.currentScope} embed /> : <p>학생 기록 연결을 열람할 수 없습니다.</p>
+      : tab.ontology ? <OntologyExplorer studentId={studentId} data={tab.ontology} initialScope={liveScopeRequest(params, tab.ontology.tenant)} />
+        : <p>학생 기록 연결을 열람할 수 없습니다.</p>}
+  </StudentContributionScope>;
   if (params.contribution && params.contribution !== "student") return <MissingTab />;
+  const { contribution: data, live, summary } = tab;
   if (!data) return <p>기여도 기록을 열람할 수 없습니다.</p>;
   return <StudentContributionScope studentId={studentId} back={params.back}>
     <div className="w-full min-w-0 space-y-5 pb-6">
-      <ContributionHeader title={`${data.student.name}의 기여도와 기록`} description="월별 점수와 계산 근거를 확인하세요." />
+      <ContributionHeader studentId={studentId} title={`${data.student.name}의 기여도와 기록`} description="월별 점수와 계산 근거를 확인하세요." active="students" />
       <ContributionStudentPanel studentId={studentId} month={params.month} data={data} />
       <details key={studentId} id={`current-connections-${studentId}`} tabIndex={-1} className="group rounded-xl border border-line" aria-label="현재 연결">
         <summary className="flex cursor-pointer list-none items-center justify-between gap-4 px-5 py-4 focus-visible:outline-primary [&::-webkit-details-marker]:hidden">
