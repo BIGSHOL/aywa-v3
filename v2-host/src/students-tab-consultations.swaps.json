@@ -1,0 +1,7 @@
+{
+ "body": [
+  ["type Consult = Awaited<ReturnType<typeof getStudentConsultationHistory>>[number];", "type Consult = StudentConsultationRow;"],
+  ["export async function ConsultationsTab({", "export function ConsultationsTab({"],
+  ["  const [consults, enrollResult, settings] = await Promise.all([\n    getStudentConsultationHistory(studentId),\n    canSeeEnrollment ? getStudentEnrollmentConsultations(studentId) : Promise.resolve(null),\n    canSeeEnrollment ? getTenantSettings() : Promise.resolve(null),\n  ]);", "  const { consults, enrollResult, settings } = useStudentTab<ConsultationsTabData>();"]
+ ]
+}

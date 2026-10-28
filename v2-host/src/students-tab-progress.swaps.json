@@ -1,0 +1,11 @@
+{
+ "panel": [
+  ["export async function ProgressContainerPanel({ studentId }: { studentId: string }) {\n  const data = await getStudentProgressAnalytics(studentId);", "function ProgressContainerPanel({ studentId }: { studentId: string }) {\n  const data = useStudentTab<ProgressTabData>().analytics;"],
+  ["  const user = await getCurrentUser();\n  const level = user ? await accessLevelTenant(user.systemRole, \"students\") : \"none\";\n  const supabase = await createClient();\n  const owns =\n    user && level === \"scoped\" ? await teacherOwnsStudent(supabase, user.id, studentId) : false;", "  const { level, owns } = useStudentTab<ProgressTabData>().anomalyGate;"]
+ ],
+ "tab": [
+  ["export async function ProgressTab({", "function ProgressTabBody({"],
+  ["  // 과목 라벨은 학원설정 단일 소스(하드코딩 금지). 보고서 조회와 독립이라 병렬(B4).\n  const [first, settings] = await Promise.all([\n    getStudentLessonReportsPage(studentId, { page, from, to }),\n    getTenantSettings(),\n  ]);", "  const data = useStudentTab<ProgressTabData>();\n  if (isMissingTab(data)) return <MissingTab />;\n  // 과목 라벨은 학원설정 단일 소스(하드코딩 금지). 보고서 조회와 독립이라 병렬(B4).\n  const [first, settings] = [data.first, data.settings];"],
+  ["    shownPage !== page ? await getStudentLessonReportsPage(studentId, { page: shownPage, from, to }) : first;", "    shownPage !== page ? data.shown! : first;"]
+ ]
+}

@@ -1,0 +1,20 @@
+{
+ "page": [
+  ["export default async function StudentsPage({\n  searchParams,\n}: {\n  searchParams: Promise<{", "export function StudentsListPage({\n  data,\n  sp: searchParams,\n}: {\n  data: StudentListData;\n  sp: {"],
+  ["    from?: string;\n  }>;\n}) {", "    from?: string;\n  };\n}) {"],
+  ["  const user = await requireAccess(\"students\");", "  const user = data.viewer;"],
+  ["  const canManageStudent = (await accessLevelTenant(user.systemRole, \"students\")) === \"full\";", "  const canManageStudent = data.canManageStudent;"],
+  ["  const sp = await searchParams;", "  const sp = searchParams;"],
+  ["  const [scope, prefsLoaded] = await Promise.all([effectiveTeacherScope({ includeScheduled: true }), loadStudentListPrefs()]);", "  const [scope, prefsLoaded] = [data.scope, data.prefsLoaded];"],
+  ["  const restrictPromise = restrictIdsFor(program, firstDay, { levels, mixes });", "  const restrictPromise = null;"],
+  ["  const teacherOptionsPromise: Promise<{ id: string; displayName: string }[]> = axis\n    ? getScopedTeacherOptions().then((r) => r ?? [])\n    : getTeacherOptions();", "  const teacherOptionsPromise: { id: string; displayName: string }[] = data.teachers;"],
+  ["  const settingsPromise = getTenantSettings();", "  const settingsPromise = data.settings;"],
+  ["  const statCountsPromise = getEnrolledStatCounts();\n  void statCountsPromise.catch(() => undefined);\n  const optionsPromise = Promise.all([teacherOptionsPromise, settingsPromise]);", "  const statCountsPromise = data.counts;\n  const optionsPromise = [teacherOptionsPromise, settingsPromise] as const;"],
+  ["    const [teachersEarly, settingsEarly] = await optionsPromise;", "    const [teachersEarly, settingsEarly] = optionsPromise;"],
+  ["  const [{ rows, total, hiddenNotStarted }, counts, [teachers, settings]] = await Promise.all([\n    restrictPromise.then((restrictIds) =>\n      getStudentsPage(\n        { status, subject, q, grade, teacherId, searchField: field, sort, excludeNoEnrollment, restrictIds },\n        page,\n        PAGE_SIZE,\n      ),\n    ),\n    statCountsPromise,\n    optionsPromise,\n  ]);\n  const [lang, teacherNames] = await Promise.all([\n    getTeacherViewLang(),\n    getTeacherEnglishNames(),\n  ]);", "  const [{ rows, total, hiddenNotStarted }, counts, [teachers, settings]] = [data.page, statCountsPromise, optionsPromise];\n  const [lang, teacherNames] = [data.lang, data.teacherNames];"]
+ ],
+ "removed": [
+  "      {prefsLoaded && !fromDashboard ? (\n        <RememberPrefs current={current} saved={prefsLoaded} save={saveStudentListPrefs} />\n      ) : null}\n",
+  "            <MakeeduSyncBadge domain=\"students\" />\n"
+ ]
+}

@@ -1,0 +1,6 @@
+{
+ "tab": [
+  ["export async function AttendanceTab({ studentId }: { studentId: string }) {\n  const today = kstToday();\n  const [records, enrollments, upcoming] = await Promise.all([\n    getStudentAttendanceFull(studentId),\n    getStudentEnrollments(studentId),\n    // fail-soft — 표가 없거나 실패하면 빈 목록(출결 탭은 종전 그대로).\n    getStudentUpcomingReservations(studentId, today),\n  ]);", "export function AttendanceTab({ studentId }: { studentId: string }) {\n  const data = useStudentTab<AttendanceTabData>();\n  if (isMissingTab(data)) return <MissingTab />;\n  const today = kstToday();\n  const [records, enrollments, upcoming] = [\n    data.records,\n    data.enrollments,\n    // fail-soft — 표가 없거나 실패하면 빈 목록(출결 탭은 종전 그대로).\n    data.upcoming,\n  ];"],
+  ["    const supabase = await createClient();\n    const rows = await fetchInChunks<{ id: string; class_name: string }>(\n      [...new Set(upcoming.map((r) => r.classId))],\n      (chunk) => supabase.from(\"classes\").select(\"id, class_name\").in(\"id\", chunk),\n    ).catch(() => [] as { id: string; class_name: string }[]);", "    const rows = data.classRows;"]
+ ]
+}

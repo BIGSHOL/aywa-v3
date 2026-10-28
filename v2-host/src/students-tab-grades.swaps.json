@@ -1,0 +1,7 @@
+{
+ "body": [
+  ["export async function GradesTab({ studentId, query, back, embed }: {", "export function GradesTab({ studentId, query, back, embed }: {"],
+  ["  const [rows, grades, levelTests, settings, goals, comments] = await Promise.all([\n    getStudentUnifiedRows(studentId),\n    getStudentGrades(studentId),\n    getStudentLevelTests(studentId),\n    getTenantSettings(),\n    getStudentGradeGoals(studentId),\n    getStudentGradeComments(studentId),\n  ]);", "  const { rows, grades, levelTests, settings, goals, comments, goalViews: rowGoalViews } = useStudentTab<GradesTabData>();"],
+  ["  const goalViews = await goalViewsForRows(pageRows);", "  const goalViews = rowGoalViews;"]
+ ]
+}

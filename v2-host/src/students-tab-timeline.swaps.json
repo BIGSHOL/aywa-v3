@@ -1,0 +1,6 @@
+{
+ "body": [
+  ["export async function TimelineTab({ studentId }: { studentId: string }) {", "export function TimelineTab({ studentId }: { studentId: string }) {"],
+  ["  const events = await getStudentTimeline(studentId);", "  const { events } = useStudentTab<TimelineTabData>();"]
+ ]
+}

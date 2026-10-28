@@ -1,0 +1,7 @@
+{
+ "body": [
+  ["export async function ClassesTab({\n  student,", "function ClassesTabBody({\n  student,"],
+  ["  const [rows, allActiveClasses, settings] = await Promise.all([\n    getStudentClassesDetail(student.id),\n    getClassesList({ active: \"active\" }),\n    getTenantSettings(),\n  ]);", "  const { rows, allActiveClasses, settings, pastTeacherList } = useStudentTab<ClassesTabData>();"],
+  ["  const pastTeachers = await getPastClassTeachers(past.flatMap(r => {\n    const lastDate = enrollmentLastDate(r.endDate, r.isTransferred);\n    return lastDate ? [{ enrollmentId: r.enrollmentId, classId: r.classId, startDate: r.startDate, lastDate }] : [];\n  }));", "  const pastTeachers = new Map(pastTeacherList);"]
+ ]
+}

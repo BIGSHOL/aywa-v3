@@ -1,0 +1,6 @@
+{
+ "body": [
+  ["export async function OverviewTab({ student, canSeeBilling }: { student: StudentDetail; canSeeBilling: boolean }) {", "function OverviewTabBody({ student, canSeeBilling }: { student: StudentDetail; canSeeBilling: boolean }) {"],
+  ["  const [attendance, enrollments, grades, invoices, consultations, memos, settings, lang, teacherNames, siblings] = await Promise.all([\n    getStudentAttendanceStats(sid, 30),\n    getStudentEnrollments(sid),\n    // 성적 탭·통합 성적관리와 같은 기록(수업보고서 일일·확인테스트 포함 — 원장 2026-09-24).\n    getStudentUnifiedRows(sid),\n    canSeeBilling ? getStudentInvoices(sid) : Promise.resolve([]),\n    getStudentConsultationHistory(sid),\n    getStudentMemos(sid),\n    getTenantSettings(),\n    getTeacherViewLang(),\n    getTeacherEnglishNames(),\n    getStudentSiblings(student),\n  ]);", "  const { attendance, enrollments, grades, invoices, consultations, memos, settings, lang, teacherNames, siblings } = useStudentTab<OverviewTabData>();"]
+ ]
+}

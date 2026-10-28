@@ -40,7 +40,7 @@ async function tenantSettings(sql, t, RR) {
  * 보는 사람 — 재직 중인 원장(master) 가운데 `viewerId`, 없거나 맞지 않으면 복사본을 뜨기 전 30일 동안 감사로그 활동이 가장 많은 사람(같으면 이름 순).
  * 플랫폼 운영 계정(super_admins)은 고르지 않는다(2.0 지점 화면에서 그 계정은 관리자로 보인다 — 원장 첫 화면의 주인이 아니다).
  */
-async function pickViewer(sql, t, viewerId, at) {
+export async function pickViewer(sql, t, viewerId, at) {
   const rows = await sql`select u.id::text id, u.display_name name, u.system_role::text role, u.subjects, u.ui_prefs,
       exists(select 1 from public.super_admins sa where sa.id = u.id) super,
       (select count(*)::int from public.audit_logs a where a.tenant_id=${t} and a.actor_id = u.id and a.created_at > ${new Date(at.getTime() - 30 * 86400000)} and a.created_at <= ${at}) recent

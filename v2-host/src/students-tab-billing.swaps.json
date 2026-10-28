@@ -1,0 +1,5 @@
+{
+ "body": [
+  ["export async function BillingTab({ studentId }: { studentId: string }) {\n  const invoices = await getStudentInvoices(studentId);", "export function BillingTab({ studentId }: { studentId: string }) {\n  const { invoices } = useStudentTab<BillingTabData>();"]
+ ]
+}

@@ -1,0 +1,5 @@
+{
+ "body": [
+  ["export async function MemosTab({ studentId }: { studentId: string }) {\n  const memos = await getStudentMemos(studentId);", "export function MemosTab({ studentId }: { studentId: string }) {\n  const { memos } = useStudentTab<MemosTabData>();"]
+ ]
+}

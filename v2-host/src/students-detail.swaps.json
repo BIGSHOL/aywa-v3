@@ -1,0 +1,24 @@
+{
+ "page": [
+  ["export default async function StudentDetailPage({\n  params,\n  searchParams,\n}: {\n  params: Promise<{ id: string }>;", "export function StudentDetailPage({\n  data,\n  params,\n  searchParams,\n}: {\n  data: StudentDetailData;\n  params: { id: string };"],
+  ["  searchParams: Promise<{\n    contribution?: string;", "  searchParams: {\n    contribution?: string;"],
+  ["    embed?: string;\n  }>;\n}) {", "    embed?: string;\n  };\n}) {"],
+  ["  const user = await requireAccess(\"students\");\n  const lang = await getTeacherViewLang();\n  const { id } = await params;\n  const sp = await searchParams;", "  const user = data.viewer;\n  const lang = data.lang;\n  const { id } = params;\n  const sp = searchParams;"],
+  ["const canSeeBilling = await canAccessTenant(user.systemRole, \"billing\");", "const canSeeBilling = data.gates.canSeeBilling;"],
+  ["const showContribution = !!(await getContributionGate());", "const showContribution = data.gates.showContribution;"],
+  ["  const jjAccess = await getJjAccess();\n  const showSrs = !!jjAccess && !!ijwConfigFor(jjAccess.tenantId) && (await hasIjwLink(jjAccess.tenantId, id));", "  const showSrs = data.gates.showSrs;"],
+  ["const mathClasses = (await isFeatureOptedIn(user.tenantId, \"todays_math\")) ? await getCurrentMathClasses(id) : undefined;", "const mathClasses = data.gates.showTodaysMath ? data.mathClasses : undefined;"],
+  ["const student = await getStudentById(id);", "const student = data.student;"],
+  ["if ((await accessLevelTenant(user.systemRole, \"students\")) === \"scoped\") {", "if (data.gates.studentsLevel === \"scoped\") {"],
+  ["const canManageStudent = (await accessLevelTenant(user.systemRole, \"students\")) === \"full\";", "const canManageStudent = data.gates.studentsLevel === \"full\";"],
+  ["const canManageStatus = await canManageStudentStatusNow();", "const canManageStatus = data.gates.canManageStatus;"],
+  ["const allEnrollments = canManageStatus ? await getStudentEnrollments(student.id) : [];", "const allEnrollments = canManageStatus ? data.enrollments : [];"],
+  ["const canDeleteStudent = await canWriteTenant(user.systemRole, \"admin\");", "const canDeleteStudent = data.gates.canDeleteStudent;"],
+  ["const dateAccess = await getEnrollmentDateAccess();", "const dateAccess = data.gates.dateAccess;"],
+  ["const canEditSchedule = await canManageTenant(user.systemRole, \"classes\");", "const canEditSchedule = data.gates.canEditSchedule;"],
+  ["const canDeleteEnrollment = (await accessLevelTenant(user.systemRole, \"owner\")) === \"full\" || (await isCurrentUserSuperAdmin());", "const canDeleteEnrollment = data.gates.canDeleteEnrollment;"],
+  ["const enrollmentAccess = (await accessLevelTenant(user.systemRole, \"enrollment\")) !== \"none\";", "const enrollmentAccess = data.gates.enrollmentAccess;"],
+  ["const canSeeEnrollment = await canSeeStudentEnrollment(user.systemRole, student.id);", "const canSeeEnrollment = data.gates.canSeeEnrollment;"],
+  ["const [scheduled, canManageScheduled, upcomingMakeups, canSeeWithdrawals, reportInfo] = await Promise.all([\n    getScheduledForStudent(student.id),\n    canManageTenant(user.systemRole, \"classes\"),\n    getStudentUpcomingReservations(student.id, kstToday()),\n    // 퇴원생이면 퇴원 기록(사유·사후 상담)으로 바로 가는 링크(감사 N6) — 퇴원관리를 못 여는 사람에겐 안 선다.\n    student.status === \"withdrawn\" ? canAccessTenant(user.systemRole, \"withdrawals\") : Promise.resolve(false),\n    reportable ? studentReportEntry(student.id).catch(() => null) : Promise.resolve(null),\n  ]);", "const [scheduled, canManageScheduled, upcomingMakeups, canSeeWithdrawals, reportInfo] = [\n    data.scheduled,\n    data.gates.canManageScheduled,\n    data.upcomingMakeups,\n    // 퇴원생이면 퇴원 기록(사유·사후 상담)으로 바로 가는 링크(감사 N6) — 퇴원관리를 못 여는 사람에겐 안 선다.\n    data.gates.canSeeWithdrawals,\n    reportable ? data.reportInfo : null,\n  ];"]
+ ]
+}

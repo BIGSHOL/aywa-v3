@@ -1,0 +1,15 @@
+{
+ "edit": [
+  ["export default async function EditStudentPage({\n  params,\n}: {\n  params: Promise<{ id: string }>;\n}) {", "export function EditStudentPage({\n  data,\n  params,\n}: {\n  data: StudentEditData;\n  params: { id: string };\n}) {"],
+  ["  const user = await requireAccess(\"students\");\n  const { id } = await params;", "  const { id } = params;"],
+  ["  if ((await accessLevelTenant(user.systemRole, \"students\")) !== \"full\") redirect(`/students/${id}`);", "  if (data.studentsLevel !== \"full\") redirect(`/students/${id}`);"],
+  ["  const [student, { operations, modules }] = await Promise.all([getStudentById(id), getTenantSettings()]);", "  const [student, { operations, modules }] = [data.student, data.settings];"],
+  ["  const sib = await getStudentSiblings(student);", "  const sib = data.siblings;"],
+  ["        canManageStatus={await canManageStudentStatusNow()}", "        canManageStatus={data.canManageStatus}"]
+ ],
+ "new": [
+  ["export default async function NewStudentPage() {\n  const user = await requireAccess(\"students\");", "export function NewStudentPage({ data }: { data: StudentNewData }) {"],
+  ["  if ((await accessLevelTenant(user.systemRole, \"students\")) !== \"full\") redirect(\"/students\");\n  const { operations, modules } = await getTenantSettings();", "  if (data.studentsLevel !== \"full\") redirect(\"/students\");\n  const { operations, modules } = data.settings;"],
+  ["        canManageStatus={await canManageStudentStatusNow()}", "        canManageStatus={data.canManageStatus}"]
+ ]
+}

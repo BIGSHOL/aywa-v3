@@ -1,0 +1,9 @@
+{
+ "tab": [
+  ["export async function HomeworkVideosTab({ studentId, videoId = null }: { studentId: string; videoId?: string | null }) {\n  const [result, settings, uploadLog] = await Promise.all([getStudentHomeworkVideos(studentId), getTenantSettings(), getStudentUploadLog(studentId)]);", "export function HomeworkVideosTab({ studentId, videoId = null }: { studentId: string; videoId?: string | null }) {\n  const data = useStudentTab<HomeworkTabData>();\n  if (isMissingTab(data)) return <MissingTab />;\n  const [result, settings, uploadLog] = [data.videos, data.settings, data.uploadLog];"],
+  ["return <div className=\"space-y-6\"><HomeworkVideosView", "return <div className=\"space-y-6\"><p className=\"text-text-dim text-sm\">연습 화면에서는 영상을 재생하지 않습니다. 목록과 상태만 볼 수 있습니다.</p><HomeworkVideosView"]
+ ],
+ "links": [
+  ["export async function HomeworkVideoLinks({ studentId }: { studentId: string }) {\n  const loaded = await loadRows(studentId);", "export function HomeworkVideoLinks({ studentId }: { studentId: string }) {\n  const data = useStudentTab<HomeworkTabData>();\n  const loaded = isMissingTab(data) ? null : data.links;"]
+ ]
+}
