@@ -5,7 +5,7 @@
 //  · 3.0엔 로그인이 없다 — 화면 주인 = 원장(v2-students-common.mjs). 계정 보기 설정(users.ui_prefs.students)은 없는 것으로 본다(기본값) —
 //    고른 값은 주소에만 남는다(수업목록과 같은 판단).
 // 주소 열쇠 = 2.0 목록 page.tsx searchParams + 상세 page.tsx searchParams(이름이 같은 열쇠는 한 칸 — 두 화면의 값 모양을 모두 받는다) + v2path.
-import { UUID_BODY } from './v2-students-common.mjs';
+import { UUID_BODY, studentsBase, readStudentEditors } from './v2-students-common.mjs';
 
 const ID = 'students';
 const TEXT = /^[^\u0000-\u001f]{0,200}$/, DAY = /^\d{4}-\d{2}-\d{2}$/;
@@ -25,6 +25,11 @@ export const LIST_KEYS = Object.freeze(['status', 'subject', 'q', 'page', 'grade
 export const DETAIL_KEYS = Object.freeze(['contribution', 'month', 'view', 'entity', 'status', 'grade', 'q', 'tab', 'video', 'back', 'jjFrom', 'jjTo', 'page', 'from', 'to',
   'subject', 'kind', 'sort', 'dir', 'fScore', 'fDelta']);
 
+// 저장(2단계) — 머리·폼 저장(v2-students-save-head.mjs)과 탭 안 저장(v2-students-save-tabs.mjs). 모듈이 없으면 그 저장은 아직 없다
+// (호스트의 공용 저장 자리가 '아직 지원하지 않는 저장'으로 거절). 각 모듈은 { 2.0 함수 이름: { validate, run } }을 export한다.
+const [saveHead, saveTabs] = await Promise.all([optional('v2-students-save-head.mjs'), optional('v2-students-save-tabs.mjs')]);
+const ACTIONS = { ...(saveHead?.studentsHeadActions ?? {}), ...(saveTabs?.studentsTabActions ?? {}) };
+
 const pick = (params, keys) => Object.fromEntries(keys.flatMap((k) => (params[k] !== undefined ? [[k, params[k]]] : [])));
 
 export const screen = {
@@ -41,20 +46,24 @@ export const screen = {
   },
   // 2.0 원생목록 담임 필터는 다중 선택(uuid 여럿 · 쉼표) — 61명(37자씩)까지.
   paramMax: { teacher: 2300 },
+  ...(Object.keys(ACTIONS).length ? { actions: ACTIONS } : {}),
   load: async ({ sql, params, tenantId, importV2 }) => {
     const sub = SUB.exec(params.v2path ?? '/students');
     const viewerId = params.viewer ?? null;
     if (!sub) return { notFound: true };
+    // 저장하는 사람(학생 관리 '전체') — 저장이 있을 때만 싣는다(3.0 띠가 이 목록에서 고른다 · 수업목록과 같은 신호).
+    const withEditors = async (data) => (data && !data.notFound && !data.missing && Object.keys(ACTIONS).length
+      ? { ...data, editors: await readStudentEditors(await studentsBase({ sql, tenantId, importV2, viewerId })) } : data);
     if (!sub[1] && !sub[2]) {
       const list = await optional('v2-students-list.mjs');
-      return list ? list.buildStudentList({ sql, tenantId, importV2, sp: pick(params, LIST_KEYS), viewerId }) : { missing: true };
+      return withEditors(list ? await list.buildStudentList({ sql, tenantId, importV2, sp: pick(params, LIST_KEYS), viewerId }) : { missing: true });
     }
     if (sub[1] || sub[3]) {
       const form = await optional('v2-students-form.mjs');
       if (!form) return { missing: true };
-      return sub[1] ? form.buildStudentNew({ sql, tenantId, importV2, viewerId }) : form.buildStudentEdit({ sql, tenantId, importV2, id: sub[2], viewerId });
+      return withEditors(sub[1] ? await form.buildStudentNew({ sql, tenantId, importV2, viewerId }) : await form.buildStudentEdit({ sql, tenantId, importV2, id: sub[2], viewerId }));
     }
     const { buildStudentDetail } = await import('./v2-students-detail.mjs');
-    return buildStudentDetail({ sql, tenantId, id: sub[2], sp: pick(params, DETAIL_KEYS), importV2, viewerId });
+    return withEditors(await buildStudentDetail({ sql, tenantId, id: sub[2], sp: pick(params, DETAIL_KEYS), importV2, viewerId }));
   },
 };

@@ -134,7 +134,8 @@ test('화면 글자에 "2.0"·개발자용 말이 없다(주석 뺀 코드 · �
   for (const f of files) {
     const code = lf(await here(f)).split('\n').filter((l) => !/^\s*(\/\/|\/\*|\*)/.test(l)).join('\n').replace(/\/\*[\s\S]*?\*\//g, '');
     const strings = [...code.matchAll(/(["'`])((?:(?!\1)[^\\\n]|\\.)*)\1/g)].map((m) => m[2]).filter((x) => /[가-힣]/.test(x));
-    for (const s of strings) assert.ok(!/2\.0|v2|복사본|Docker|API|tenant|함수/.test(s), `${f}: ${s}`);
+    // 'v2'는 낱말일 때만(속성·클래스 이름 data-v2h-* · v2h-*는 화면 글자가 아니다).
+    for (const s of strings) assert.ok(!/2\.0|(^|[^\w-])v2([^\w-]|$)|복사본|Docker|API|tenant|함수/.test(s.replace(/<[^>]*>/g, ' ')), `${f}: ${s}`);
   }
 });
 

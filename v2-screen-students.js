@@ -10,7 +10,18 @@
   // 2.0 목록·상세 page.tsx가 읽는 주소 열쇠 그대로(이름이 같은 열쇠는 한 칸) + v2path(2.0 하위 경로 /students/<학생> …).
   const KEEP = ['v2path', 'status', 'subject', 'q', 'page', 'grade', 'teacher', 'field', 'sort', 'noenr', 'program', 'first', 'level', 'mix', 'from',
     'contribution', 'month', 'view', 'entity', 'tab', 'video', 'back', 'jjFrom', 'jjTo', 'to', 'kind', 'dir', 'fScore', 'fDelta'];
-  let api = null, frame = null, requested = null, hostOk = null, wired = false;
+  let api = null, frame = null, requested = null, hostOk = null, wired = false, editors = [], actor = null;
+  const ACTOR_KEY = `v2-host-actor:${ID}`, SEL = `[data-v2-screen="${ID}"]`;
+  const esc = s => S.esc(s);
+  /** 저장하는 사람 — 고른 값이 목록에 없으면 첫 사람(원장 먼저). 호스트(shims/server-action.ts)와 같은 규칙(수업목록과 같다). */
+  function currentActor() {
+    let stored = null;
+    try { stored = localStorage.getItem(ACTOR_KEY); } catch { /* 저장소를 못 쓰면 이 창에서만 */ }
+    for (const id of [actor, stored]) if (id && editors.some(e => e.id === id)) return id;
+    return editors[0]?.id ?? null;
+  }
+  const actorPicker = () => (editors.length ? `<label class="v2h-actor"><span>저장하는 사람</span><select data-v2h-actor aria-label="저장하는 사람">${editors.map(e => `<option value="${esc(e.id)}"${e.id === currentActor() ? ' selected' : ''}>${esc(e.role ? `${e.name} · ${e.role}` : e.name)}</option>`).join('')}</select></label>` : '');
+  const tellHost = () => { const id = currentActor(); if (id && frame?.contentWindow) frame.contentWindow.postMessage({ type: 'v2-host-actor', id }, location.origin); };
   const queryOf = q => { const o = new URLSearchParams(); for (const k of KEEP) { const v = q.get(k); if (v) o.set(k, v); } return o.toString(); };
 
   function ensureFrame(query) {
@@ -58,6 +69,20 @@
         const page = `#v2-${ID}${query ? `?${query}` : ''}`;
         if (location.hash !== page) location.replace(page);
       } else if (d.type === 'v2-host-open' || d.type === 'eywa-open-window') openFromHost(String(d.href || ''));
+      else if (d.type === 'v2-host-editors' && d.screen === ID && Array.isArray(d.editors)) {
+        editors = d.editors.filter(x => x && typeof x.id === 'string' && typeof x.name === 'string').map(x => ({ id: x.id, name: x.name, role: typeof x.role === 'string' ? x.role : '' }));
+        const at = document.querySelector(`${SEL} [data-v2h-actor-slot]`);
+        if (at) at.innerHTML = actorPicker();
+        tellHost();
+      }
+    });
+    addEventListener('change', e => {
+      const t = e.target;
+      // 이 화면 안의 선택만 — 다른 화면의 '저장하는 사람'과 섞이지 않게.
+      if (!(t instanceof HTMLSelectElement) || !t.matches(`${SEL} [data-v2h-actor]`)) return;
+      actor = t.value;
+      try { localStorage.setItem(ACTOR_KEY, t.value); } catch { /* 이 창에서만 기억 */ }
+      tellHost();
     });
     const later = () => requestAnimationFrame(place);
     addEventListener('resize', later); addEventListener('scroll', place, { passive: true }); addEventListener('hashchange', later);
@@ -68,11 +93,18 @@
     id: ID, label: '원생목록',
     render(ctx) {
       api = ctx.api; wire();
+      // 업무 흐름이 '이 직원으로' 열 때(&actor=<직원 id>) — 저장하는 사람으로 미리 고른다(목록에 없는 사람이면 저장 때 첫 사람). 주소에는 남기지 않는다.
+      const asked = ctx.query.get('actor');
+      if (asked && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(asked) && asked !== actor) {
+        actor = asked;
+        try { localStorage.setItem(ACTOR_KEY, asked); } catch { /* 이 창에서만 기억 */ }
+        tellHost();
+      }
       const query = queryOf(ctx.query);
       if (hostOk === null) fetch(HOST, { method: 'HEAD' }).then(r => r.ok, () => false).then(ok => { if (hostOk === null) { hostOk = ok; api?.render?.(); } });
       else if (hostOk) requestAnimationFrame(() => { ensureFrame(query); place(); });
       const wait = hostOk === false ? '원생목록을 열지 못했습니다. 잠시 후 새로고침해 주세요.' : hostOk === null ? '원생목록을 여는 중…' : '';
-      return `<div class="v2h-note" role="note"><p><b>연습 화면</b> 이 PC의 연습 자료로 보는 원생목록입니다. 학생 정보 저장과 엑셀 내보내기·가져오기는 아직 지원하지 않습니다.</p></div>
+      return `<div class="v2h-note" role="note"><p><b>연습 화면</b> 여기서 저장한 내용은 이 PC의 연습 자료에만 남고, 실제 발송은 없습니다. 엑셀 내보내기·가져오기는 아직 지원하지 않습니다.</p><span data-v2h-actor-slot>${actorPicker()}</span></div>
         <div class="v2h-slot" data-v2-host-slot>${wait ? `<p class="v2h-wait">${wait}</p>` : ''}</div>`;
     },
   });

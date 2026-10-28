@@ -12,6 +12,7 @@ import { StudentDetailPage, type StudentDetailData } from "./students-detail";
 import { EditStudentPage, NewStudentPage, type StudentEditData, type StudentNewData } from "./students-form";
 import { StudentTabDataProvider, setCopyDay } from "./students-shared";
 import { onHostRefresh } from "../shims/host-nav";
+import { setHostEditors } from "../shims/server-action";
 import { usePathname, useSearchParams } from "../shims/next-navigation";
 import { HostFrame, HostMessage } from "./host-frame";
 
@@ -37,7 +38,12 @@ function useScreenData<T>(query: string, failed: string): Loaded<T> {
     let live = true;
     fetch(`/api/v2/students${query ? `?${query}` : ""}`, { headers: { Accept: "application/json" } })
       .then(async (r) => { const body = await r.json().catch(() => null); if (!r.ok) throw new Error(body?.message || failed); return body; })
-      .then((body) => live && setState(body?.notFound ? { key: query, notFound: true } : body?.missing ? { key: query, missing: true } : { key: query, data: body as T }))
+      .then((body) => {
+        if (!live) return;
+        // 저장하는 사람(학생 관리 '전체') — 3.0 띠가 이 목록에서 고른다(수업목록과 같은 신호).
+        if (Array.isArray(body?.editors)) setHostEditors(body.editors);
+        setState(body?.notFound ? { key: query, notFound: true } : body?.missing ? { key: query, missing: true } : { key: query, data: body as T });
+      })
       .catch((e: Error) => live && setState({ key: query, error: e.message }));
     return () => { live = false; };
   }, [query, tick, failed]);

@@ -13,7 +13,8 @@ export const UUID = new RegExp(`^${UUID_BODY}$`);
 
 /** 상세·목록이 함께 쓰는 2.0 순수 함수(roster 규칙 묶음에 없는 것만). */
 const EXTRA = { statusAccess: 'features/students/status-access.ts', dateAccess: 'features/enrollments/date-access.ts', merged: 'features/students/status/merged.ts',
-  special: 'features/classes/special-lecture.ts', siblings: 'features/students/siblings.ts', samePerson: 'features/enrollment/same-person.ts' };
+  special: 'features/classes/special-lecture.ts', siblings: 'features/students/siblings.ts', samePerson: 'features/enrollment/same-person.ts',
+  roles: 'lib/auth/role-hierarchy.ts' };
 let extraP = null;
 export function studentsRules(importV2) {
   extraP ??= Promise.all(Object.entries(EXTRA).map(async ([k, p]) => [k, await importV2(p)])).then(Object.fromEntries).catch((e) => { extraP = null; throw e; });
@@ -40,6 +41,27 @@ export function studentsBase({ sql: tx, tenantId: t, importV2, viewerId = null }
     return { sql, tx, t, load, RR, X, clock, today: clock.day, settings, viewer, matrix, level, lang: 'ko' };
   })().catch((e) => { m.delete(key); throw e; }));
   return m.get(key);
+}
+
+// ── 저장하는 사람 ──────────────────────────────────────────────────────────────────────────────────────────────────────
+const RANK = ['master', 'admin', 'manager', 'counselor'];
+/**
+ * 원생 화면에서 저장할 수 있는 사람 = 학생 관리 '전체'(2.0 canManageStudentRecords — 등록·수정·상태 전환의 게이트)인 재직 직원.
+ * 학원 설정의 역할 재정의 + 개인 예외까지(2.0 권한표와 같은 함수) · 플랫폼 운영 계정은 빼고 원장 먼저. 3.0엔 로그인이 없어 3.0 띠에서 고른다.
+ * 저장마다 고른 사람이 이 목록에 있는지 다시 본다(저장 모듈 몫) · 그 사람의 세부 권한(원생 상태·영구 삭제 …)은 각 저장이 2.0 판정 그대로 다시 본다.
+ */
+export async function readStudentEditors(base) {
+  const { sql, t, RR, X, settings } = base;
+  const [users, supers] = await Promise.all([
+    sql`select id::text id, display_name, system_role::text role from public.users where tenant_id=${t} and status::text='active' and display_name is not null`,
+    sql`select id::text id from public.super_admins`]);
+  const operators = new Set(supers.map((s) => s.id));
+  const matrix = RR.resolveMatrix(settings.permissions.overrides ?? []), userOverrides = settings.permissions.userOverrides ?? [];
+  const level = (u, menu) => RR.accessLevel(u.role, menu, RR.applyUserOverrides(matrix, u.id, u.role, userOverrides));
+  return users.filter((u) => !operators.has(u.id) && level(u, 'students') === 'full')
+    .map((u) => ({ id: u.id, name: u.display_name, role: X.roles.ROLE_LABEL[u.role] ?? '', rank: RANK.includes(u.role) ? RANK.indexOf(u.role) : RANK.length }))
+    .sort((a, b) => a.rank - b.rank || a.name.localeCompare(b.name, 'ko'))
+    .map(({ rank, ...u }) => u);
 }
 
 // ── getStudentSiblings(features/students/server/siblings.ts) — 개요 탭 '형제' · 학생 수정의 형제 칸이 함께 쓴다 ─────────────
