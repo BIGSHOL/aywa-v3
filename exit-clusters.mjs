@@ -24,24 +24,38 @@ export function buildClusters(cases, ix, { amountOf = () => 0 } = {}) {
     const members = left.filter(c => c.classes.some(k => closedClasses.has(k.classId))), facts = [];
     const lastSlot = [...ix.schedulesBy.values()].flat().filter(s => s.teacher_id === tid).map(s => s.valid_to || s.valid_from).filter(Boolean).sort().at(-1);
     facts.push(fact(`teacher:${tid}`, `${name(tid)} 선생님 현재 재직 아님${lastSlot ? ` · 마지막 수업 배치 ${lastSlot}` : ''}`, '이 선생님은 현재 재직 중이 아님', { source: { table: 'users', id: tid }, open: { family: 'staff', id: tid }, ids: { teacherId: tid } }));
+    const allRoster = new Set(), allGone = new Set();
     for (const [cid, closed] of closedClasses) {
       const roster = uniq((ix.enrollmentsByClass.get(cid) || []).filter(e => ix.real(e.student_id) && e.start_date && e.start_date <= closed && (!e.end_date || e.end_date >= shift(closed, -30))).map(e => e.student_id));
       const gone = roster.filter(sid => { const e = ix.exitOf(sid); if (!e?.month || !LEFT.has(e.kind)) return false; const d = e.date || `${e.month}-01`; return d >= shift(closed, -31) && d <= shift(closed, 46); });
+      roster.forEach(s => allRoster.add(s)); gone.forEach(s => allGone.add(s));
       const stayed = roster.filter(sid => !gone.includes(sid) && (ix.enrollmentsBy.get(sid) || []).some(e => e.class_id !== cid && ix.classById.get(e.class_id)?.subject === ix.classById.get(cid)?.subject && (!e.end_date || e.end_date > closed)));
       facts.push(fact(`closed:${cid}`, `${cname(cid)} 반 폐강 ${closed} · 폐강 무렵 수강 ${roster.length}명 중 ${gone.length}명 퇴원${stayed.length ? ` · ${stayed.length}명은 같은 과목 다른 반으로` : ''}`,
-        `이 선생님의 반이 폐강되었고 그 무렵 그 반 학생들이 퇴원함${stayed.length ? ' · 일부는 같은 과목 다른 반으로 옮김' : ''}`, { source: { table: 'classes', id: cid }, open: null, counts: { roster: roster.length, left: gone.length, moved: stayed.length }, ids: { classId: cid } }));
+        `이 선생님의 반이 폐강되었고 그 무렵 그 반 학생들이 퇴원함${stayed.length ? ' · 같은 과목 다른 반으로 옮긴 학생도 있음' : ''}`, { source: { table: 'classes', id: cid }, open: null, counts: { roster: roster.length, left: gone.length, moved: stayed.length }, ids: { classId: cid } }));
     }
+    // Rosters of several closed classes can overlap (the same students in two classes) — the per-class counts must not be added up.
+    const reasonOf = s => cases.find(c => c.studentId === s)?.reasonKey ?? ix.studentById.get(s)?.withdrawal_metadata?.reason; // case files carry 2.0's normalised key
+    const graduated = [...allGone].filter(s => ['graduated', 'career'].includes(reasonOf(s))).length;
+    if (closedClasses.size > 1 || graduated) facts.push(fact(`closed-all:${tid}`, `${closedClasses.size > 1 ? `폐강 반 ${closedClasses.size}개 합쳐 서로 다른 학생 ${allRoster.size}명 중 ${allGone.size}명 퇴원(반별 숫자는 겹치는 학생을 두 번 셈)` : `폐강 무렵 퇴원 ${allGone.size}명`}${graduated ? ` · 그중 진로·졸업 사유 ${graduated}명` : ''}`,
+      `${closedClasses.size > 1 ? '폐강된 반들은 수강생이 겹침' : '폐강된 반의 퇴원 기록이 있음'}${graduated ? ' · 퇴원한 학생 가운데 진로나 졸업이 사유인 학생이 있음' : ''}`, { counts: { roster: allRoster.size, left: allGone.size, graduated } }));
     add('teacher_left', tid, `${name(tid)} 선생님 퇴직 → 반 폐강 → 퇴원`, members, facts, { teacherIds: [tid], classIds: [...closedClasses.keys()] });
   }
-  // 2 hand-over just before leaving (≤60 days) or a recorded teacher-change reason, per subject
+  // 2 hand-over just before leaving (≤60 days) or a recorded teacher-change reason, per subject. A student joins a subject's
+  // group only for a hand-over in a class of that subject, or for a teacher-change reason with a class of that subject at the
+  // exit (the reason names no subject) — never because a hand-over in another subject happened to the same student.
   const recent = c => c.handovers.filter(hv => exitDay(c) && Date.parse(exitDay(c)) - Date.parse(hv.date) <= 60 * 86_400_000);
-  const handed = left.filter(c => recent(c).length || ['teacher_changes', 'teacher_reassigned', 'teacher_left'].includes(c.detailKey));
-  for (const subject of uniq(handed.flatMap(c => c.classes.map(k => k.subject)))) {
-    const members = handed.filter(c => c.classes.some(k => k.subject === subject)), changes = uniq(members.flatMap(c => recent(c).filter(hv => ix.classById.get(hv.classId)?.subject === subject).map(hv => `${hv.classId}|${hv.date}|${hv.to}`)));
+  const byReason = c => ['teacher_changes', 'teacher_reassigned', 'teacher_left'].includes(c.detailKey), subjectOf = id => ix.classById.get(id)?.subject;
+  const handedIn = (c, subject) => recent(c).some(hv => subjectOf(hv.classId) === subject) || (byReason(c) && c.classes.some(k => k.subject === subject));
+  for (const subject of uniq(left.flatMap(c => [...recent(c).map(hv => subjectOf(hv.classId)), ...(byReason(c) ? c.classes.map(k => k.subject) : [])]).filter(Boolean))) {
+    const members = left.filter(c => handedIn(c, subject)), changes = uniq(members.flatMap(c => recent(c).filter(hv => subjectOf(hv.classId) === subject).map(hv => `${hv.classId}|${hv.date}|${hv.to}`)));
     const facts = changes.map(k => { const [cid, date, to] = k.split('|'); return fact(`handover:${k}`, `${cname(cid)} · ${date} ${name(to)} 선생님으로 담당 변경${inactive(to) ? '(그 선생님 현재 재직 아님)' : ''}`, '퇴원 전에 이 반 담당 선생님이 바뀜', { source: { table: 'class_schedules', id: cid }, open: null, ids: { classId: cid, teacherId: to } }); });
-    const byReason = members.filter(c => ['teacher_changes', 'teacher_reassigned', 'teacher_left'].includes(c.detailKey)).length;
-    if (byReason) facts.push(fact(`handover-reason:${subject}`, `퇴원 사유에 담당 변경·강사 퇴사가 적힌 학생 ${byReason}명`, '퇴원 사유에 담당 변경이나 강사 퇴사가 적혀 있음', { counts: { students: byReason } }));
-    add('handover', subject, `${ix.subjectLabel(subject)} 담당 교체 직후 퇴원`, members, facts, { classIds: changes.map(k => k.split('|')[0]), teacherIds: changes.map(k => k.split('|')[2]) });
+    // Scope words matter: when only part of the group has the reason, the statement says '학생 가운데 … 있음', not the whole group.
+    const reasoned = members.filter(byReason).length;
+    if (reasoned) facts.push(fact(`handover-reason:${subject}`, `퇴원 사유에 담당 변경·강사 퇴사가 적힌 학생 ${reasoned}명(이 묶음 ${members.length}명 중 · 사유에 과목이 없어, 그만둘 때 이 과목 반이 있던 학생)`,
+      reasoned === members.length ? '이 묶음 학생들의 퇴원 사유에 담당 변경이나 강사 퇴사가 적혀 있음' : '이 묶음 학생 가운데 퇴원 사유에 담당 변경이나 강사 퇴사가 적힌 학생이 있음', { counts: { students: reasoned, cohort: members.length } }));
+    // No hand-over row in this subject → the group rests on the recorded reason only; its name must not claim a hand-over.
+    if (changes.length) add('handover', subject, `${ix.subjectLabel(subject)} 담당 교체 직후 퇴원`, members, facts, { classIds: changes.map(k => k.split('|')[0]), teacherIds: changes.map(k => k.split('|')[2]) });
+    else add('teacher_reason', subject, `${ix.subjectLabel(subject)} 퇴원 사유에 담당 교체·강사 퇴사`, members, facts);
   }
   // 3 one teacher (2.0 churn judge for real exits) carrying many exits
   const perTeacher = new Map();
@@ -85,6 +99,6 @@ export function buildClusters(cases, ix, { amountOf = () => 0 } = {}) {
   // Causal chains first (a teacher left / a hand-over), then concentrations, then patterns; clean-ups last. Amount within a tier.
   return unique.sort((a, b) => TIER[a.kind] - TIER[b.kind] || a.amount - b.amount || b.members.length - a.members.length || a.id.localeCompare(b.id));
 }
-const TIER = { teacher_left: 0, handover: 0, teacher: 1, reason: 1, same_day: 1, competitor: 2, distance: 2, siblings: 2, classmates: 2, grade: 3, cleanup: 4, not_left: 4 };
-export const PRIORITY = ['teacher_left', 'handover', 'teacher', 'reason', 'same_day', 'classmates', 'siblings', 'competitor', 'distance', 'grade', 'cleanup', 'not_left'];
-export const KIND_LABEL = { teacher_left: '선생님 퇴직 뒤 반 폐강', handover: '담당 교체 직후 퇴원', teacher: '특정 선생님 담당 집중', reason: '같은 사유 집중', same_day: '같은 날 집중', classmates: '같은 반 연쇄 퇴원', siblings: '형제 동반 퇴원', competitor: '다른 학원으로 이동', distance: '이사·거리', grade: '같은 학년 집중', cleanup: '일괄 정리', not_left: '퇴원 아님' };
+const TIER = { teacher_left: 0, handover: 0, teacher_reason: 0, teacher: 1, reason: 1, same_day: 1, competitor: 2, distance: 2, siblings: 2, classmates: 2, grade: 3, cleanup: 4, not_left: 4 };
+export const PRIORITY = ['teacher_left', 'handover', 'teacher_reason', 'teacher', 'reason', 'same_day', 'classmates', 'siblings', 'competitor', 'distance', 'grade', 'cleanup', 'not_left'];
+export const KIND_LABEL = { teacher_left: '선생님 퇴직 뒤 반 폐강', handover: '담당 교체 직후 퇴원', teacher_reason: '퇴원 사유에 담당 교체·강사 퇴사', teacher: '특정 선생님 담당 집중', reason: '같은 사유 집중', same_day: '같은 날 집중', classmates: '같은 반 연쇄 퇴원', siblings: '형제 동반 퇴원', competitor: '다른 학원으로 이동', distance: '이사·거리', grade: '같은 학년 집중', cleanup: '일괄 정리', not_left: '퇴원 아님' };

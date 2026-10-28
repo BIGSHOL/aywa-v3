@@ -45,6 +45,12 @@ export function buildExitIndex(src, v2, { asOf }) {
   const phoneKey = new Map(src.phones.map(p => [p.id, p.phone_key]));
   const people = src.students.filter(s => real(s.id)).map(s => ({ id: s.id, name: s.name, parent_name: s.parent_name, phoneKey: phoneKey.get(s.id) || null }));
   const linkOf = new Map(src.links.map(l => [[l.student_a, l.student_b].sort().join('|'), l.linked]));
+  // A schedule row may carry a teacher only as a free-text label (often the English name) before it is tied to an account:
+  // the label names that account when it matches one person's name, English name or the first word of either (never two people).
+  const labelKey = t => String(t ?? '').toLowerCase().replace(/\s+/g, ''), labelIndex = new Map(), firstWord = t => String(t ?? '').trim().split(/\s+/)[0];
+  for (const u of src.users) for (const k of new Set([u.display_name, u.english_name, firstWord(u.english_name), firstWord(u.display_name)].map(labelKey).filter(k => k.length >= 2)))
+    labelIndex.set(k, labelIndex.has(k) && labelIndex.get(k) !== u.id ? null : u.id);
+  const teacherOfLabel = label => (label ? labelIndex.get(labelKey(label)) ?? null : null);
   const owner = v2.buildHomeroomOwner(src.classes, toTransitions(src.transitions));
 
   /** Regular subjects a student was enrolled in during a month (not on hold, no special/makeup classes). */
@@ -101,7 +107,7 @@ export function buildExitIndex(src, v2, { asOf }) {
   }
 
   return { asOf, thisMonth, studentById, userById, classById, subjectLabel, regular, reasonLabel: k => v2.REASON_LABEL[k] || '미기재', detailLabel: k => v2.reasonDetailOf(k)?.label || '세부 미기재', real, enrollmentsBy, attendanceBy, lastAttended, lastBilled, monthly, owner,
-    subjectsOf, sessionsOf: (sid, month) => sessions.get(`${sid}|${month}`) ?? null, exitOf, siblingsOf, teacherJudge,
+    subjectsOf, sessionsOf: (sid, month) => sessions.get(`${sid}|${month}`) ?? null, exitOf, siblingsOf, teacherJudge, teacherOfLabel,
     consultationsBy: group(src.consultations, 'student_id'), gradesBy: group(src.grades, 'student_id'), reportsBy: group(src.reports, 'student_id'), archivesBy: group(src.archives, 'student_id'),
     schedulesBy: group(src.schedules, 'class_id'), transitions: toTransitions(src.transitions), enrollmentsByClass: group(src.enrollments, 'class_id') };
 }

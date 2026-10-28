@@ -10,6 +10,7 @@ import { loadV2 } from './v2-bridge.mjs';
 import { decompose, monthlyBilling } from './exit-billing.mjs';
 import { buildExitIndex } from './exit-index.mjs';
 import { buildCaseFile, makeMasker } from './exit-cases.mjs';
+import { buildClusters } from './exit-clusters.mjs';
 import * as AI from './exit-ai.mjs';
 import { createExitInsight, openInsightStore } from './exit-runtime.mjs';
 import { createExitRoute } from './exit-http.mjs';
@@ -94,6 +95,40 @@ test('case file: reasons by 2.0 labels, teacher left and class closed, sources a
   assert.equal(c.needsJev, true); assert.equal(c.cause.code, 'teacher_change'); assert.equal(c.cause.origin, 'record');
 });
 
+test('hand-over clusters: a subject only for a hand-over in that subject, or a teacher-change reason with a class of it', () => {
+  const src = fixture();
+  src.classes.push({ id: 'c3', class_name: '중2 영어', subject: 'english', english_track: null, teacher_id: 't2', is_active: true, closed_at: null, report_optout: false, is_makeup_pool: false, is_special: false });
+  const x = ix(src), base = { exit: { kind: 'withdrawn', date: '2026-07-28' }, ref: '2026-07-28', churn: [], siblingsLeft: [], classmatesLeft: [], facts: [], absenceUp: false, grade: null, reasonKey: null, detailKey: null };
+  // s6: grades reason, an English period-teacher change and a math class too → English only (the 10-28 review case).
+  const english = { ...base, studentId: 's6', reasonKey: 'grades', classes: [{ classId: 'c2', subject: 'math' }, { classId: 'c3', subject: 'english' }], handovers: [{ classId: 'c3', date: '2026-07-03', to: 't2', type: 'period' }] };
+  // s1: recorded teacher-change reason, a math class at the exit, no hand-over row → math.
+  const reasoned = { ...base, studentId: 's1', reasonKey: 'dissatisfaction', detailKey: 'teacher_reassigned', classes: [{ classId: 'c2', subject: 'math' }], handovers: [] };
+  const out = buildClusters([english, reasoned], x);
+  // A subject group resting only on the recorded reason must not be named a hand-over (the AI then claimed hand-over rows).
+  assert.equal(out.find(c => c.id === 'handover:math'), undefined);
+  assert.deepEqual(out.find(c => c.id === 'teacher_reason:math')?.members, ['s1']);
+  assert.deepEqual(out.find(c => c.id === 'handover:english')?.members, ['s6']);
+  // Code facts handed to Claude must themselves pass the output check (a fact with '일부' made faithful answers fail).
+  for (const c of out) for (const f of c.facts) if (f.claude) assert.deepEqual(AI.checkTexts([f.claude], new Set()), [], f.claude);
+});
+
+test('hand-over facts: not a new class\'s first rows, not the same person under a label; a real change counts', () => {
+  const src = fixture(), row = (id, cls, from, teacher, label = null, to = null) => ({ id, class_id: cls, day_of_week: 'wed', start_time: '17:00:00', end_time: '18:00:00', teacher_id: teacher, slot_teacher_label: label, lab_separate: false, valid_from: from, valid_to: to });
+  src.users.push({ id: 't3', display_name: '이강사', english_name: 'Kay Lee', status: 'active' });
+  src.classes.push({ id: 'c4', class_name: '새 반', subject: 'math', english_track: null, teacher_id: 't2', is_active: true, closed_at: null, report_optout: false, is_makeup_pool: false, is_special: false });
+  // c2 (running since March): Kay taught as a label until 7/2, then the same person as an account from 7/3; 김선생 joins on 7/9.
+  src.schedules.push(row('k1', 'c2', '2026-03-01', null, 'Kay', '2026-07-02'), row('k2', 'c2', '2026-07-03', 't3'), row('k3', 'c2', '2026-07-09', 't1'));
+  // c4 opens on 7/3 with two teachers at once — its first rows, not a change.
+  src.schedules.push(row('n1', 'c4', '2026-07-03', 't2'), row('n2', 'c4', '2026-07-03', 't3'));
+  src.enrollments.push({ id: 'e9', student_id: 's6', class_id: 'c4', start_date: '2026-07-03', end_date: '2026-07-28', on_hold: false, attendance_days: null, is_transferred: false, is_transferred_in: false, withdrawal_reason: null });
+  // c5 ran since March with blank teacher cells; the 7/3 import filled 김선생 in — first recorded, not a change.
+  src.classes.push({ id: 'c5', class_name: '빈칸 반', subject: 'math', english_track: null, teacher_id: 't2', is_active: true, closed_at: null, report_optout: false, is_makeup_pool: false, is_special: false });
+  src.schedules.push(row('b1', 'c5', '2026-03-01', null, null, '2026-07-02'), row('b2', 'c5', '2026-07-03', 't1'));
+  src.enrollments.push({ id: 'e10', student_id: 's6', class_id: 'c5', start_date: '2026-03-02', end_date: '2026-07-28', on_hold: false, attendance_days: null, is_transferred: false, is_transferred_in: false, withdrawal_reason: null });
+  const x = ix(src), c = buildCaseFile(x, v2, 's6', { mask: makeMasker(src), at: '2026-08' });
+  assert.deepEqual(c.handovers.map(h => `${h.classId}|${h.date}|${h.to}`), ['c2|2026-07-09|t1']);
+});
+
 test('AI output check: ids inside the input, no digits, counts, months or guesses', () => {
   const built = { input: { 묶음: [{ id: 'G-aaaaaaaa', 사실: [{ id: 'F-11111111' }] }], 학생: [{ id: 'S-22222222' }] }, clusterIds: ['G-aaaaaaaa'], factsOf: new Map([['G-aaaaaaaa', new Set(['F-11111111'])]]) };
   const good = { clusters: [{ id: 'G-aaaaaaaa', chain: [{ text: 'T 선생님이 아니라 S-22222222 학생의 반이 폐강된 뒤 퇴원했습니다', factIds: ['F-11111111'] }], summary: '반 폐강 뒤 퇴원이 이어졌습니다', confidence: '분명' }], overall: { summary: '폐강이 퇴원과 이어졌습니다', reasons: [], checks: ['확인이 필요합니다'], clusterIds: ['G-aaaaaaaa'] } };
@@ -110,6 +145,8 @@ test('AI output check: ids inside the input, no digits, counts, months or guesse
   bad(o => { o.clusters = []; }, 'cluster_set');
   // Not counts: '전부터'·'일부러' and the phrases '다시 한 번'·'한 번 더'; failing fragments are kept for diagnosis.
   const fine = structuredClone(good); fine.overall.summary = '담당 교체 전부터 결석이 있었고 일부러 다시 한 번 확인한 기록은 없습니다'; assert.equal(AI.validateCohort(fine, built).ok, true);
+  // '일부' narrows the scope (a fact true of part of a group) — allowed, so the model is not pushed to over-generalise (10-28).
+  fine.overall.summary = '일부 학생의 퇴원 사유에 담당 변경이 적혀 있습니다'; assert.equal(AI.validateCohort(fine, built).ok, true);
   const kept = structuredClone(good); kept.overall.summary = '그 반 학생 전원과 Jev 판정'; assert.deepEqual(AI.validateCohort(kept, built).samples, { count_word: ['생 전원과 '], raw_code: ['과 Jev 판'] });
 });
 
@@ -118,7 +155,7 @@ function fakeProviders({ invalid = false, unsure = false } = {}) {
   const answer = { main_cause: { type: 'choice', choice: 'teacher_change', confidence: unsure ? 0.2 : 0.7, probabilities: {} }, needs_person: { type: 'noul', probability: 0.2 } };
   return { calls, transport: 'cli',
     jev: { model: 'jev-1.14.0', status: async () => 'ready', decide: async () => { calls.jev += 1; return { answers: answer, model: 'jev-1.14.0' }; } },
-    claude: { status: async () => 'ready', ask: async ({ input, effort }) => { calls.claude += 1; calls.tiers.push(effort);
+    claude: { status: async () => 'ready', ask: async ({ input, effort, prompt }) => { calls.claude += 1; calls.tiers.push(effort); (calls.prompts ??= []).push(prompt);
       const out = { clusters: input.묶음.map(g => ({ id: g.id, chain: [{ text: invalid ? '학생 2명이 퇴원' : '담당 선생님이 바뀐 뒤 학생이 퇴원했습니다', factIds: g.사실.slice(0, 1).map(f => f.id) }], summary: '기록으로 이어지는 사실입니다', confidence: '일부 근거' })), overall: { summary: '선생님 변화와 퇴원이 이어집니다', reasons: [], checks: [], clusterIds: input.묶음.map(g => g.id) } };
       return { output: out, model: 'claude-sonnet-5-5', elapsedMs: 5 }; } } };
 }
@@ -152,7 +189,9 @@ test('AI queue: an invalid answer escalates once, then stays an error (no fake s
   const src = fixture(), p = fakeProviders({ invalid: true }), overlay = await openInsightStore({ dir, identity: src.identity });
   const s = createExitInsight({ source: src, v2, asOf: '2026-10-27', months: MONTHS, overlay, providers: p });
   s.start(); await s.idle();
-  assert.deepEqual(p.calls.tiers, ['low', 'low', 'medium', 'medium'], 'each pair: base, then one escalation');
+  assert.deepEqual(p.calls.tiers, ['low', 'low', 'medium', 'medium', 'medium', 'medium'], 'each pair: base, one escalation, one repair');
+  // The escalation and the repair are told which phrase failed; the base call is not.
+  assert.doesNotMatch(p.calls.prompts[0], /검사에 걸린 표현/); assert(p.calls.prompts.slice(2).every(x => /검사에 걸린 표현.*2명/.test(x)), 'repair note names the failing fragment');
   const v = s.view('2026-07', '2026-08');
   assert.equal(v.analysis.status, 'error'); assert.equal(v.overall, null); assert(v.clusters.every(c => c.ai === null));
   assert.deepEqual(v.analysis.claude.issues, ['number_in_text']);

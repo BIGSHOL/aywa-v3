@@ -92,11 +92,16 @@ export function buildCaseFile(ix, v2, sid, { mask, at = null }) {
       handovers.push({ classId: c.classId, date: t.date, from: t.previous_teacher_id, to: t.teacher_id, type: 'homeroom' });
       push({ kind: 'handover', label: '담임 변경', text: `${t.date} 담임 변경 ${t.previous_teacher_id ? `${name(t.previous_teacher_id)} → ` : ''}${name(t.teacher_id)}`, date: t.date, source: { table: 'audit_logs', id: `${c.classId}:${t.date}` }, open: null, claude: '퇴원 전에 이 반 담임이 바뀜', ids: { classId: c.classId, teacherId: t.teacher_id } });
     }
-    const slots = (ix.schedulesBy.get(c.classId) || []).filter(x => x.teacher_id && x.valid_from && x.valid_from <= c.last && (!x.valid_to || x.valid_to >= lo));
-    const first = new Map(); for (const x of slots) if (!first.has(x.teacher_id) || x.valid_from < first.get(x.teacher_id)) first.set(x.teacher_id, x.valid_from);
-    for (const [tid, from] of first) if (from > lo && first.size > 1 && tid !== ix.owner(ix.classById.get(c.classId), lo)) {
+    // A period teacher (an account on the row) counts as a change only when the class's earlier rows already named teachers
+    // and this person was not among them. Earlier rows that named nobody (before 7/3 most slots were blank, the import then
+    // filled them) say nothing about a change, and a new class's first rows are not one. A free-text label never makes a new
+    // person; it only names who was there before (an English name → that account, when it matches exactly one person).
+    const all = (ix.schedulesBy.get(c.classId) || []).filter(x => x.valid_from), first = new Map();
+    for (const x of all) if (x.teacher_id && (!first.has(x.teacher_id) || x.valid_from < first.get(x.teacher_id))) first.set(x.teacher_id, x.valid_from);
+    const before = d => new Set(all.filter(x => x.valid_from < d).map(x => x.teacher_id || ix.teacherOfLabel(x.slot_teacher_label)).filter(Boolean));
+    for (const [tid, from] of first) if (from > lo && from <= c.last && tid !== ix.owner(ix.classById.get(c.classId), lo) && before(from).size && !before(from).has(tid)) {
       handovers.push({ classId: c.classId, date: from, to: tid, type: 'period' });
-      push({ kind: 'handover', label: '교시 담당 변경', text: `${from}부터 교시 담당 ${name(tid)}`, date: from, source: { table: 'class_schedules', id: slots.find(x => x.teacher_id === tid && x.valid_from === from).id }, open: null, claude: '퇴원 전에 이 반 교시 담당 선생님이 새로 들어옴', ids: { classId: c.classId, teacherId: tid } });
+      push({ kind: 'handover', label: '교시 담당 변경', text: `${from}부터 교시 담당 ${name(tid)}`, date: from, source: { table: 'class_schedules', id: all.find(x => x.teacher_id === tid && x.valid_from === from).id }, open: null, claude: '퇴원 전에 이 반 교시 담당 선생님이 새로 들어옴', ids: { classId: c.classId, teacherId: tid } });
     }
   }
   // 5 attendance, eight weeks before the exit

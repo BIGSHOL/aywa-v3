@@ -78,8 +78,11 @@ export function createExitInsight({ source, v2, asOf, months, overlay, providers
     const base = AI.inputKey('cohort', 'base', built.input), b = data().results[base];
     // 'medium' from the start when the evidence is ambiguous (a third or more of the Jev picks need a person), else after an invalid low answer.
     const leaves = cases.filter(c => c.needsJev), ambiguous = leaves.length > 0 && leaves.filter(c => c.ai?.review).length * 3 >= leaves.length;
-    const tier = ambiguous || (b?.status === 'error' && b.code === 'invalid_output') ? 'escalated' : 'base';
-    return { built, tier, key: tier === 'base' ? base : AI.inputKey('cohort', 'escalated', built.input) };
+    // After an invalid medium answer: one repair try at medium that is told which of its phrases failed, then a final error.
+    const failed = r => r?.status === 'error' && r.code === 'invalid_output', escalated = AI.inputKey('cohort', 'escalated', built.input), e = data().results[escalated];
+    const tier = !(ambiguous || failed(b)) ? 'base' : failed(e) ? 'repair' : 'escalated', from = tier === 'repair' ? e : tier === 'escalated' && failed(b) ? b : null;
+    const hint = from?.samples ? [...new Set(Object.values(from.samples).flat())].slice(0, 8) : [];
+    return { built, tier, hint, key: tier === 'base' ? base : tier === 'escalated' ? escalated : AI.inputKey('cohort', 'repair', built.input) };
   }
 
   function schedule() {
@@ -99,7 +102,8 @@ export function createExitInsight({ source, v2, asOf, months, overlay, providers
   }
   async function runCohort(plan, signal) {
     const { model, effort } = AI.STAGES.cohort.tiers[plan.tier];
-    const r = await providers.claude.ask({ schema: AI.COHORT_SCHEMA, prompt: AI.COHORT_PROMPT, model, effort, timeoutMs: AI.STAGES.cohort.timeoutMs, input: plan.built.input }, { signal });
+    const r = await providers.claude.ask({ schema: AI.COHORT_SCHEMA, prompt: plan.hint.length ? `${AI.COHORT_PROMPT}
+${AI.repairNote(plan.hint)}` : AI.COHORT_PROMPT, model, effort, timeoutMs: AI.STAGES.cohort.timeoutMs, input: plan.built.input }, { signal });
     const v = AI.validateCohort(r.output, plan.built);
     return v.ok ? ok(r.output, r, { stage: 'cohort', provider: 'claude-cli', tier: plan.tier, effort }) : { status: 'error', code: 'invalid_output', issues: v.issues, numbers: v.numbers, samples: v.samples, model: r.model || null, stage: 'cohort', tier: plan.tier, effort };
   }

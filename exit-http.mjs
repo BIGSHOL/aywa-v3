@@ -3,7 +3,7 @@
 import { loadExitSource } from './exit-source.mjs';
 import { loadV2 } from './v2-bridge.mjs';
 import { tenantId } from './full-db.mjs';
-import { createExitInsight, openInsightStore } from './exit-runtime.mjs';
+import { createExitInsight, openInsightStore, BUDGET } from './exit-runtime.mjs';
 import { createHierarchyProviders } from './flow-hierarchy-providers.mjs';
 
 export const INSIGHT_PATH = '/api/insight/exits';
@@ -15,6 +15,12 @@ export function exitProviders(env = process.env) {
   try { return { providers: createHierarchyProviders({ env }), reason: null }; } catch (error) { console.error(`Exit insight AI unavailable: ${error.code || 'error'}`); return { providers: null, reason: '자동 분석 전송 설정 오류' }; }
 }
 
+/** Hourly call caps: the defaults in exit-runtime.mjs; OWNER_CONCEPT_EXIT_CLAUDE_PER_HOUR / _JEV_PER_HOUR raise them for one run (1–2000). */
+export function exitBudget(env = process.env) {
+  const cap = k => { const n = Number(env[k]); return Number.isInteger(n) && n >= 1 && n <= 2000 ? n : null; };
+  return { ...BUDGET, claudePerHour: cap('OWNER_CONCEPT_EXIT_CLAUDE_PER_HOUR') ?? BUDGET.claudePerHour, jevPerHour: cap('OWNER_CONCEPT_EXIT_JEV_PER_HOUR') ?? BUDGET.jevPerHour };
+}
+
 export function startExitInsight({ snapshot, dir, env = process.env, load = loadExitSource }) {
   let service = null, failure = null;
   const ready = (async () => {
@@ -22,7 +28,7 @@ export function startExitInsight({ snapshot, dir, env = process.env, load = load
     source.identity = { tenantId, tenantSlug: 'cs', capturedAt: snapshot.meta.importedAt };
     const overlay = await openInsightStore({ dir, identity: source.identity });
     const { providers, reason } = exitProviders(env);
-    service = createExitInsight({ source, v2, asOf: snapshot.meta.asOf, months: snapshot.months, overlay, providers, disabledReason: reason, log: m => console.log(m) });
+    service = createExitInsight({ source, v2, asOf: snapshot.meta.asOf, months: snapshot.months, overlay, providers, disabledReason: reason, budget: exitBudget(env), log: m => console.log(m) });
     service.index(); // computes the scheduled pairs once so the first screen request does not wait
     service.start();
     return service;
