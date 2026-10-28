@@ -172,6 +172,7 @@
   const spot={off:null};
   function clearSpotlight(){
     spot.off?.();spot.off=null;
+    document.querySelectorAll('.spot-on').forEach(n=>n.classList.remove('spot-on'));
     document.querySelectorAll('.spot-dim').forEach(n=>{n.classList.remove('spot-dim');n.classList.add('spot-back');});
     setTimeout(()=>document.querySelectorAll('.spot-back:not(.spot-dim)').forEach(n=>n.classList.remove('spot-back')),400);
   }
@@ -181,6 +182,8 @@
     if(!keep.length)return;
     const path=new Set();keep.forEach(n=>{for(let x=n;x&&x!==document.body;x=x.parentElement)path.add(x);});
     path.forEach(x=>{for(const sib of x.parentElement?.children||[])if(!path.has(sib)&&!sib.matches('script,style,dialog,#chart-tip,.chart-live,#toast,.skip-link,.sidebar-scrim'))sib.classList.add('spot-dim');});
+    // The destination's border is highlighted with a pulse (.spot-on) until the fade ends; a reflow restarts it when the same node is spotlit again.
+    void keep[0].offsetWidth;keep[0].classList.add('spot-on');
     const y=window.scrollY,end=()=>clearSpotlight();
     const outside=event=>{if(!keep.some(n=>n.contains(event.target)))end();};
     const keys=event=>{if(['ArrowUp','ArrowDown','PageUp','PageDown','Home','End',' ','Tab','Escape'].includes(event.key))end();};

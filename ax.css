@@ -394,4 +394,7 @@
 /* Spotlight after '아래에서 보기' (live.js spotlight): the rest of the page steps back a little until the reader moves. */
 .spot-dim,.spot-back{transition:opacity .28s ease,filter .28s ease}
 .spot-dim{opacity:.42;filter:blur(1.2px)}
-@media (prefers-reduced-motion:reduce){.spot-dim,.spot-back{transition:none}}
+/* The destination keeps a primary border with a soft pulse for as long as the rest is faded; both end together. */
+.spot-on{border-color:var(--ax-primary)!important;animation:spot-pulse 1.6s ease-out infinite}
+@keyframes spot-pulse{0%{box-shadow:0 0 0 0 rgba(21,62,117,.4)}70%{box-shadow:0 0 0 9px rgba(21,62,117,0)}100%{box-shadow:0 0 0 0 rgba(21,62,117,0)}}
+@media (prefers-reduced-motion:reduce){.spot-dim,.spot-back{transition:none}.spot-on{animation:none;box-shadow:0 0 0 2px var(--ax-primary)}}
