@@ -22,6 +22,19 @@ registerHostHandler("features/enrollments/server/movable-actions.ts", "listMovab
   const body = r ? ((await r.json().catch(() => null)) as { ok?: unknown } | null) : null;
   return r?.ok && body && typeof body.ok === "boolean" ? body : { ok: false, error: MOVABLE_FAILED };
 });
+const contributionRead = async (studentId: unknown, kind: "video" | "parent", extra: Record<string, string>) => {
+  if (typeof studentId !== "string" || !/^[0-9a-f-]{36}$/i.test(studentId)) return { error: "학생을 확인할 수 없습니다." };
+  const query = new URLSearchParams({ v2path: `/students/${studentId}`, contributionRead: kind, ...extra });
+  const response = await fetch(`/api/v2/students?${query}`, { headers: { Accept: "application/json" } }).catch(() => null);
+  const body = response ? await response.json().catch(() => null) : null;
+  return response?.ok && body?.result ? body.result : { error: "기여도 근거를 불러오지 못했습니다. 다시 시도해 주세요." };
+};
+registerHostHandler("features/student-contribution/server/video-check-action.ts", "readContributionVideoCheck", (input) => {
+  const value = input as { studentId?: unknown; month?: unknown } | null;
+  return contributionRead(value?.studentId, "video", { month: String(value?.month ?? "") });
+});
+registerHostHandler("features/student-contribution/server/parent-event-evidence.ts", "getParentEventEvidence", (sourceId, studentId) =>
+  contributionRead(studentId, "parent", { sourceId: String(sourceId ?? "") }));
 import { usePathname, useSearchParams } from "../shims/next-navigation";
 import { HostFrame, HostMessage } from "./host-frame";
 
