@@ -29,6 +29,8 @@ window.createOwnerWorkspace = function createOwnerWorkspace(api) {
   const labels={home:'브리핑',flow:'업무 흐름',inbox:'알림',requests:'요청한 업무',automation:'자동화',students:'원생목록',admissions:'신규 콜&상담',classes:'수업목록 · 시간표',learning:'성적관리 · 수업보고서',finance:'수납관리',staff:'직원관리',parents:'학부모 소통',shuttle:'셔틀',approvals:'전자결재 · 할 일',resources:'교재 요청 · 재고관리 · 데이터베이스',calendar:'캘린더',settings:'학원 설정'};
   const pill=(text,tone='')=>`<span class="ax-chip ${tone}">${h(text)}</span>`;
   const button=(text,action,id='',primary=false,attrs='')=>`<button type="button" class="button ${primary?'primary':''}" data-ax="${action}" data-id="${h(id)}" ${attrs}>${h(text)}</button>`;
+  // AI 업무 지원 답 그리기(ax-chat.js) — 서식·근거 미주·바로 가기·요청안. 없으면 예전처럼 평문으로 그린다.
+  const axChat=window.createAxChat?.({h,pill,button,toast,navigate,workspaces:()=>workspaces})||null;
   const caption=`${Number(db.meta.asOf.slice(5,7))}/${Number(db.meta.asOf.slice(8,10))} 기준`;
   const names=ids=>ids.map(id=>staffById.get(id)?.name||'담당자').join(', ');
   const clip=(text,limit)=>String(text??'').slice(0,limit);
@@ -248,13 +250,13 @@ window.createOwnerWorkspace = function createOwnerWorkspace(api) {
     if(chat.pending){toast('이전 질문의 응답을 기다리고 있습니다. 취소하거나 응답 후 다시 보내 주세요.');return;}
     const controller=new AbortController(),pending={turn,controller,started:Date.now()};
     pending.ticker=setInterval(tickChat,1000);pending.timeout=setTimeout(()=>{turn.timedOut=true;controller.abort();},ASSISTANT.timeoutMs);
-    chat.pending=pending;Object.assign(turn,{status:'pending',answer:'',provider:'',issueIds:[],suggestedTask:null,error:null,timedOut:false});updateChat();
+    chat.pending=pending;Object.assign(turn,{status:'pending',answer:'',provider:'',issueIds:[],suggestedTask:null,rich:null,task:null,error:null,timedOut:false});updateChat();
     try{
       const response=await fetch(ASSISTANT.endpoint,{method:'POST',headers:{'Content-Type':'application/json',Accept:'application/json'},body:JSON.stringify({prompt:turn.prompt,contextIssueId:turn.context||null,history:historyFor(turn)}),signal:controller.signal});
       let payload=null;try{payload=await response.json();}catch(e){if(controller.signal.aborted)throw e;}
       if(!response.ok)throw {kind:'http',status:response.status,code:typeof payload?.error==='string'?payload.error:'',message:typeof payload?.message==='string'?payload.message.trim():'',retryAfter:Number(response.headers.get('Retry-After'))||0};
       const {value,problems}=validateAssistant(payload);if(!value)throw {kind:'invalid',detail:problems.join(' ')};
-      Object.assign(turn,{status:'done'},value);
+      Object.assign(turn,{status:'done'},value,{rich:axChat?.validate(payload)||null,task:axChat?.taskExtras(payload)||null});
     }catch(e){
       if(controller.signal.aborted&&!turn.timedOut)turn.status='cancelled';
       else{turn.status='error';turn.error=errorFor(turn.timedOut?{kind:'timeout'}:e);}
@@ -280,6 +282,7 @@ window.createOwnerWorkspace = function createOwnerWorkspace(api) {
     if(t.status==='cancelled')return `${question}<div class="ax-chat-answer muted"><p>질문을 취소했습니다.</p>${button('다시 보내기','chat-retry',t.id)}</div>`;
     if(t.status==='error')return `${question}<div class="ax-chat-answer error"><strong>응답을 받지 못했습니다</strong><p>${h(t.error?.message||'')}</p>${button('다시 시도','chat-retry',t.id,true)}</div>`;
     const linked=t.issueIds.map(findIssue).filter(Boolean);
+    if(axChat&&t.rich)return `${question}${axChat.answer(t,{issues:linked.length?`<div class="ax-actions"><span class="ax-note">관련 근거</span>${linked.map(i=>button(`${i.category} 근거`,'open-issue',i.id)).join('')}</div>`:''})}`;
     return `${question}<div class="ax-chat-answer"><div class="ax-chat-provider">${pill(providerLabel(t.provider),'blue')}<span>내용을 확인한 뒤 사용하세요</span></div><div class="ax-chat-text">${answerHtml(t.answer)}</div>${linked.length?`<div class="ax-actions"><span class="ax-note">관련 근거</span>${linked.map(i=>button(`${i.category} 근거`,'open-issue',i.id)).join('')}</div>`:''}${t.suggestedTask?`<div class="ax-chat-task"><span class="ax-note">요청안 제안</span><strong>${h(t.suggestedTask.title)}</strong><p class="live-pre">${h(t.suggestedTask.body)}</p><div class="ax-actions">${button('요청안 검토','chat-task',t.id,true)}<span class="ax-note">담당자·기한을 지정해 등록하기 전에는 전달되지 않습니다.</span></div></div>`:''}</div>`;
   }
   function chatLog(){return chat.turns.map(turnView).join('')||'<p class="ax-chat-empty">이슈의 근거를 묻거나, 누구에게 무엇을 요청할지 정리해 달라고 입력하세요.</p>';}
@@ -360,7 +363,7 @@ window.createOwnerWorkspace = function createOwnerWorkspace(api) {
     if(action==='chat-cancel'){if(chat.pending?.turn.id===id)chat.pending.controller.abort();return;}
     if(action==='chat-retry'){const turn=chat.turns.find(t=>t.id===id);if(turn)sendTurn(turn);return;}
     if(action==='chat-context-clear'){chat.context=null;chat.topic='';updateChat();return;}
-    if(action==='chat-task'){const t=chat.turns.find(x=>x.id===id);if(!t?.suggestedTask)return;showRequest({issues:[...new Set([t.context,...t.issueIds].filter(x=>x&&findIssue(x)))],title:t.suggestedTask.title,body:t.suggestedTask.body,source:'chat',draftKey:`chat:${t.id}`});return;}
+    if(action==='chat-task'){const t=chat.turns.find(x=>x.id===id);if(!t?.suggestedTask)return;showRequest({issues:[...new Set([t.context,...t.issueIds].filter(x=>x&&findIssue(x)))],title:t.suggestedTask.title,body:t.suggestedTask.body,source:'chat',draftKey:`chat:${t.id}`,context:t.task?{family:t.task.area,familyLabel:t.task.areaLabel}:undefined});axChat?.attachTo(document.querySelector('#modal form[data-ax-form="request"]'),t.task);return;}
     if(action==='launcher'){launcher();return;}
   },true);
   document.addEventListener('keydown',event=>{

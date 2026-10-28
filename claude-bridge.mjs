@@ -15,15 +15,15 @@ export class BridgeError extends Error {
 }
 const fail = (code, status, message) => new BridgeError(code, status, message);
 export const FAILURES = {
-  missing: () => fail('cli_missing', 503, '이 PC에서 Claude CLI를 찾지 못했습니다.'),
-  auth: () => fail('auth_required', 503, 'Claude 구독 로그인이 필요합니다. 터미널에서 claude에 로그인한 뒤 서버를 다시 실행해 주세요.'),
-  subscription: () => fail('subscription_required', 503, 'Claude 구독 로그인으로만 사용할 수 있습니다. API 키 방식은 사용하지 않습니다.'),
-  rate: () => fail('rate_limited', 429, 'Claude 사용 한도에 도달했습니다. 잠시 후 다시 시도해 주세요.'),
+  missing: () => fail('cli_missing', 503, '이 PC에서 AI 답변을 아직 쓸 수 없습니다. 관리자에게 알려 주세요.'),
+  auth: () => fail('auth_required', 503, 'AI 답변을 쓰려면 이 PC에서 다시 로그인해야 합니다. 관리자에게 알려 주세요.'),
+  subscription: () => fail('subscription_required', 503, 'AI 답변 연결 방식이 맞지 않습니다. 관리자에게 알려 주세요.'),
+  rate: () => fail('rate_limited', 429, 'AI 사용 한도에 도달했습니다. 잠시 후 다시 시도해 주세요.'),
   timeout: () => fail('timeout', 504, '답변 시간이 초과되었습니다. 질문을 줄여 다시 시도해 주세요.'),
   cancelled: () => fail('cancelled', 499, '요청이 취소되었습니다.'),
   output: () => fail('invalid_output', 502, '답변 형식을 확인하지 못했습니다. 다시 시도해 주세요.'),
-  failed: () => fail('cli_failed', 502, 'Claude 실행에 실패했습니다. 잠시 후 다시 시도해 주세요.'),
-  runtime: () => fail('runtime_unsafe', 503, 'Claude 실행 폴더를 안전하게 준비하지 못했습니다.'),
+  failed: () => fail('cli_failed', 502, 'AI 답변을 만들지 못했습니다. 잠시 후 다시 시도해 주세요.'),
+  runtime: () => fail('runtime_unsafe', 503, 'AI 답변을 준비하지 못했습니다. 관리자에게 알려 주세요.'),
 };
 
 export const SYSTEM_PROMPT = [
@@ -34,15 +34,37 @@ export const SYSTEM_PROMPT = [
   '3. 당신은 아무것도 실행할 수 없다. 메시지·알림 발송, 업무 요청 전송, 결재 처리, 데이터 수정을 했다거나 하겠다고 말하지 않는다. 필요하면 원장이 화면에서 직접 보낼 수 있는 업무 요청 초안만 suggestedTask로 제안한다.',
   '4. 미납·남은 금액 = 할인 전 금액 − 할인액 − 수납액이다. 할인은 미납이 아니다. 월별 청구 대상 원생 수와 현재 재원생 수는 다른 지표이므로 섞지 않는다.',
   '5. 개인 이름·연락처는 컨텍스트에 없다. 만들거나 추측하지 않으며, 질문받지 않았으면 언급하지 않는다.',
-  '출력: answer = 한국어 답변(핵심부터 3~8문장, 금액은 쉼표와 원, 필요하면 기준일 명시). issueIds = 답변이 다룬 이슈 ID(billing, admissions, attendance, approval, tasks, books, enrollment 중에서만). suggestedTask = 업무 요청 초안이 도움이 될 때만 {title: 40자 안팎의 요청 제목, body: 담당자에게 확인을 부탁하는 정중한 본문}, 아니면 null.',
+  '6. 서버 컨텍스트의 줄마다 [F번호]가 붙어 있다. 근거로 쓴 줄의 번호(숫자만)를 refs·ref에 단다. 번호가 없는 내용은 쓰지 않는다.',
+  '출력(화면이 서식을 입힌다 — HTML·마크다운 기호를 쓰지 않는다):',
+  '- headline = 결론 한 문장(60자 안팎).',
+  '- keyFacts = 핵심 숫자 0~5개 {label: 짧은 이름, value: 숫자와 단위(금액은 쉼표와 원), change: 컨텍스트에 비교값이 있을 때만 "−7명"·"+3건"처럼 차이, 없으면 "", tone: 학원 운영에 좋아진 변화면 "good", 나빠졌으면 "bad", 판단할 수 없으면 "none", ref: 근거 줄 번호(없으면 0)}.',
+  '- points = 근거 1~6개 {text: 한 문장, refs: 근거 줄 번호 배열}. 이름·숫자는 ⟦ ⟧로 감싸 굵게 보이게 한다. 해석의 한계·예외는 "다만 …"으로 시작하는 문장으로 따로 쓴다.',
+  '- checks = 원장이나 담당자가 확인할 일 0~4개(짧은 문장, ⟦ ⟧ 가능).',
+  '- table = 여러 달·여러 항목을 견주는 것이 답의 핵심일 때만 {columns: 2~4개 머리, rows: 1~8줄(칸 수 = 머리 수)}, 아니면 null.',
+  '- links = 답과 관련된 화면 0~4개. "이동할 수 있는 화면" 목록의 id만 그대로 쓴다.',
+  '- issueIds = 답변이 다룬 이슈 ID(billing, admissions, attendance, approval, tasks, books, enrollment 중에서만).',
+  '- suggestedTask = 업무 요청 초안이 도움이 될 때만 {title: 40자 안팎의 요청 제목, body: 담당자에게 확인을 부탁하는 정중한 본문, area: 그 일을 볼 화면의 ws: id(목록에 없으면 ""), recordQueries: 질문에 원장이 직접 적은 학생·반 이름만(최대 5개, 없으면 [])}, 아니면 null.',
 ].join('\n');
 
+const LINK_ID = '^(ws|v2|trend):[a-z0-9-]{1,40}$';
 export const ANSWER_SCHEMA = Object.freeze({
-  type: 'object', additionalProperties: false, required: ['answer', 'issueIds', 'suggestedTask'],
+  type: 'object', additionalProperties: false, required: ['headline', 'keyFacts', 'points', 'checks', 'table', 'links', 'issueIds', 'suggestedTask'],
   properties: {
-    answer: { type: 'string', minLength: 1, maxLength: 3000 },
+    headline: { type: 'string', minLength: 1, maxLength: 200 },
+    keyFacts: { type: 'array', maxItems: 5, items: { type: 'object', additionalProperties: false, required: ['label', 'value', 'change', 'tone', 'ref'], properties: {
+      label: { type: 'string', minLength: 1, maxLength: 40 }, value: { type: 'string', minLength: 1, maxLength: 40 }, change: { type: 'string', maxLength: 40 },
+      tone: { type: 'string', enum: ['good', 'bad', 'none'] }, ref: { type: 'integer', minimum: 0 } } } },
+    points: { type: 'array', maxItems: 6, items: { type: 'object', additionalProperties: false, required: ['text', 'refs'], properties: {
+      text: { type: 'string', minLength: 1, maxLength: 400 }, refs: { type: 'array', maxItems: 4, items: { type: 'integer', minimum: 1 } } } } },
+    checks: { type: 'array', maxItems: 4, items: { type: 'string', minLength: 1, maxLength: 200 } },
+    table: { anyOf: [{ type: 'null' }, { type: 'object', additionalProperties: false, required: ['columns', 'rows'], properties: {
+      columns: { type: 'array', minItems: 2, maxItems: 4, items: { type: 'string', minLength: 1, maxLength: 30 } },
+      rows: { type: 'array', minItems: 1, maxItems: 8, items: { type: 'array', minItems: 1, maxItems: 4, items: { type: 'string', maxLength: 40 } } } } }] },
+    links: { type: 'array', maxItems: 4, uniqueItems: true, items: { type: 'string', pattern: LINK_ID } },
     issueIds: { type: 'array', maxItems: ASSISTANT_ISSUE_IDS.length, uniqueItems: true, items: { type: 'string', enum: [...ASSISTANT_ISSUE_IDS] } },
-    suggestedTask: { anyOf: [{ type: 'null' }, { type: 'object', additionalProperties: false, required: ['title', 'body'], properties: { title: { type: 'string', minLength: 1, maxLength: 80 }, body: { type: 'string', minLength: 1, maxLength: 1500 } } }] },
+    suggestedTask: { anyOf: [{ type: 'null' }, { type: 'object', additionalProperties: false, required: ['title', 'body', 'area', 'recordQueries'], properties: {
+      title: { type: 'string', minLength: 1, maxLength: 80 }, body: { type: 'string', minLength: 1, maxLength: 1500 }, area: { type: 'string', maxLength: 60 },
+      recordQueries: { type: 'array', maxItems: 5, items: { type: 'string', minLength: 1, maxLength: 30 } } } }] },
   },
 });
 

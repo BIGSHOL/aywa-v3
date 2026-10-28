@@ -156,3 +156,39 @@ export function contextText(context, issueId) {
   const domain = context.domain ? (issueId ? context.domain.byIssue[issueId] : context.domain.all) : null;
   return [context.overview, ...ids.map(id => context.issues[id].text), domain].filter(Boolean).join('\n\n');
 }
+
+// ── 근거 미주 · 이동 목적지(원장 10-28 "서식등을 동원해서 정리해서 나열", "실제로 해당 메뉴로 갈 수도 있게") ──────────────
+
+// 미주에 보일 글 — 사람이 볼 필요 없는 출처 설명(복사본·스냅샷·서버 계산)은 뗀다. 숫자·기준은 그대로.
+const plainFact = text => text.replace(/\s*\((?:[^()]*?(?:복사본|스냅샷|서버)[^()]*)\)/g, '').replace(/^\[[a-z-]+\]\s*/, '').replace(/^\[업무 영역 집계\]\s*/, '업무 영역 집계: ').trim();
+
+/**
+ * 서버 컨텍스트를 줄마다 번호(F1…)로 — 모델은 이 번호로 근거를 단다. 미주에는 모델이 쓴 글이 아니라 **이 줄 그대로**를
+ * 보인다(사실 원칙: 근거는 서버가 계산한 것뿐). text = 프롬프트에 넣는 번호 붙은 컨텍스트, facts = 번호 → 미주 글.
+ */
+export function contextFacts(context, issueId) {
+  const ids = issueId ? [issueId] : ASSISTANT_ISSUE_IDS;
+  const domain = context.domain ? (issueId ? context.domain.byIssue[issueId] : context.domain.all) : null;
+  const facts = [], lines = [];
+  for (const block of [context.overview, ...ids.map(id => context.issues[id].text), domain].filter(Boolean)) {
+    for (const raw of block.split('\n')) {
+      const line = raw.replace(/^- /, '').trim();
+      if (!line) continue;
+      facts.push({ n: facts.length + 1, text: plainFact(line) });
+      lines.push(`[F${facts.length}] ${line}`);
+    }
+  }
+  return { text: lines.join('\n'), facts };
+}
+
+/**
+ * 답 아래 '바로 가기'와 요청안의 영역으로 고를 수 있는 곳 — 서버가 아는 목록뿐(모델이 주소를 짓지 않는다).
+ * id = ws:<작업 영역> · v2:<화면> · trend:<확장 추세 지표>. 작업 영역은 기록이 있는 곳만(감사 전용·해당 없음 제외).
+ */
+export function areaDestinations(db) {
+  const families = db.workspaces?.families || {};
+  return Object.entries(families)
+    .filter(([, f]) => f && f.dataState !== 'not-applicable' && f.dataState !== 'unavailable')
+    .map(([id, f]) => Object.freeze({ id: `ws:${id}`, label: shortTitle(f), area: id }));
+}
+export const destinationText = list => list.map(d => `- ${d.id} ${d.label}`).join('\n');

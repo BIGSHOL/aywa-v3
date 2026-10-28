@@ -36,6 +36,9 @@ process.stdin.on('end', () => {
     case 'loose': answer({ answer: '정리했습니다만 확인이 필요합니다.', issueIds: ['billing', 'evil', 'billing', 'tasks'], suggestedTask: { title: '가'.repeat(200), body: '확인 부탁드립니다.' }, extra: 'drop me' }); return;
     case 'english': answer({ answer: 'OK', issueIds: [], suggestedTask: null }); return;
     case 'slow': setTimeout(() => answer({ answer: '천천히 답했습니다. 10월 잔액은 기록 기준입니다.', issueIds: [], suggestedTask: null }), 400); return;
-    default: answer({ answer: '10월 남은 금액은 서버 기록 기준으로 확인했습니다.', issueIds: ['billing'], suggestedTask: { title: '수납 잔액 확인', body: '남은 금액이 있는 청구를 확인해 주세요.' } });
+    // 정리된 답(머리말·핵심 숫자·근거·확인할 일·바로 가기) — 없는 근거 번호(99)·없는 목적지(ws:evil)는 서버가 걸러야 한다.
+    default: answer({ headline: '10월 남은 금액은 ⟦50,000원⟧입니다.', keyFacts: [{ label: '남은 금액', value: '50,000원', change: '+50,000원', tone: 'bad', ref: 5 }],
+      points: [{ text: '남은 금액이 있는 청구는 ⟦1건⟧입니다. 다만 수납액은 누적 금액입니다.', refs: [6, 99] }], checks: ['남은 청구 ⟦1건⟧ 확인'], table: null,
+      links: ['ws:billing', 'ws:evil'], issueIds: ['billing'], suggestedTask: { title: '수납 잔액 확인', body: '남은 금액이 있는 청구를 확인해 주세요.', area: 'ws:billing', recordQueries: ['홍길동'] } });
   }
 });

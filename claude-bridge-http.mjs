@@ -1,10 +1,11 @@
 // POST /api/assistant for the local dev server. Only a same-origin JSON POST
 // from the loopback page can start a (subscription-billed) Claude call; one call
 // runs at a time, calls per window are capped, and a closed request kills it.
+import { readdir } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { BridgeError, FAILURES, claudeArgs, cliAvailable, createClaudeRunner, defaultCliPath, prepareRuntimeDir } from './claude-bridge.mjs';
-import { buildAssistantContext } from './claude-bridge-context.mjs';
-import { LIMITS, buildInput, normalizeAnswer, validateRequest } from './claude-bridge-prompt.mjs';
+import { areaDestinations, buildAssistantContext } from './claude-bridge-context.mjs';
+import { LIMITS, buildInput, normalizeAnswer, requestFacts, validateRequest } from './claude-bridge-prompt.mjs';
 
 export const ASSISTANT_PATH = '/api/assistant';
 const JSON_TYPE = /^application\/json\s*(?:;\s*charset\s*=\s*"?utf-8"?\s*)?$/i;
@@ -39,7 +40,8 @@ function readBody(req, max, timeoutMs) {
   });
 }
 
-export function createAssistantRoute({ context, runner, readiness, origins, headers = {}, enabled = true, maxConcurrent = 1, rate = { max: 10, windowMs: 5 * 60_000 }, readTimeoutMs = 10_000, now = Date.now, log = () => {} }) {
+// destinations.list = 답 아래 바로 가기·요청 영역으로 고를 수 있는 곳(서버가 아는 목록), records() = 작업 영역 기록 저장소(요청안의 기록 확인).
+export function createAssistantRoute({ context, runner, readiness, origins, headers = {}, enabled = true, maxConcurrent = 1, rate = { max: 10, windowMs: 5 * 60_000 }, readTimeoutMs = 10_000, now = Date.now, log = () => {}, destinations = { list: [] }, records = null }) {
   let active = 0;
   const stamps = [];
   const send = (res, status, body, extra = {}) => {
@@ -64,8 +66,9 @@ export function createAssistantRoute({ context, runner, readiness, origins, head
     if (stamps.length >= rate.max) { fail(res, err('rate_limited', 429, '짧은 시간에 질문이 많았습니다. 잠시 후 다시 시도해 주세요.'), { 'Retry-After': String(Math.max(1, Math.ceil((rate.windowMs - (t - stamps[0])) / 1000))) }); return; }
     active += 1; stamps.push(t);
     try {
-      const { output, meta } = await runner.ask({ input: buildInput(context, request), signal });
-      const reply = normalizeAnswer(output);
+      const facts = requestFacts(context, request), list = destinations.list;
+      const { output, meta } = await runner.ask({ input: buildInput(context, request, undefined, { facts, destinations: list }), signal });
+      const reply = normalizeAnswer(output, { facts, destinations: list, records });
       log(`assistant ok ${(meta.ms / 1000).toFixed(1)}s ${meta.models.join(',') || 'model?'}`);
       send(res, 200, reply);
     } catch (error) {
@@ -105,10 +108,33 @@ export function createAssistantFromEnv({ snapshot, origins, headers, runtimeDefa
     await prepareRuntimeDir(runtime);
     return runner.checkAuth();
   });
-  const route = createAssistantRoute({ context: buildAssistantContext(snapshot), runner, readiness, origins, headers, enabled, log });
+  // 바로 가기 목록 — 작업 영역(스냅샷)은 바로, 연습 화면·확장 추세 지표는 서버가 이미 불러 둔 모듈에서 이어 붙인다.
+  const destinations = { list: areaDestinations(snapshot) };
+  let store = null;
+  if (enabled) {
+    extraDestinations().then(extra => { destinations.list = [...destinations.list, ...extra]; }).catch(e => log(`assistant destinations: ${e?.message || e}`));
+    import('./domain-snapshot.mjs').then(m => { store = m.workspaceRecords; }).catch(() => {});
+  }
+  const route = createAssistantRoute({ context: buildAssistantContext(snapshot), runner, readiness, origins, headers, enabled, log, destinations, records: () => store?.() ?? null });
   if (enabled) readiness.refresh().then(() => {
     const s = readiness.state;
     log(s.ok ? `Assistant: claude -p via ${s.info.authMethod} subscription (${s.info.subscriptionType}, ${s.info.apiProvider}) · ${ASSISTANT_PATH}` : `Assistant unavailable: ${s.error.code}`);
   });
   return route;
+}
+
+/** 연습 화면(v2-screen-<id>.mjs의 id·이름)과 확장 추세 지표 — 이동 단추가 고를 수 있는 곳. 확장 추세 화면 자체는 지표로만 들어간다. */
+export async function extraDestinations(dir = new URL('./', import.meta.url)) {
+  const out = [];
+  for (const name of (await readdir(dir)).filter(n => /^v2-screen-[a-z-]+\.mjs$/.test(n)).sort()) {
+    try {
+      const { screen } = await import(new URL(name, dir).href);
+      if (screen?.id && screen.id !== 'trend' && typeof screen.label === 'string') out.push(Object.freeze({ id: `v2:${screen.id}`, label: screen.label }));
+    } catch { /* 불러오지 못한 화면은 목록에서 뺀다 */ }
+  }
+  try {
+    const { TREND_METRICS } = await import(new URL('trend-metrics.mjs', dir).href);
+    for (const m of TREND_METRICS || []) if (/^[a-z0-9-]{1,40}$/.test(m.id)) out.push(Object.freeze({ id: `trend:${m.id}`, label: `${m.label} 추세` }));
+  } catch { /* 추세 지표 없음 */ }
+  return out;
 }

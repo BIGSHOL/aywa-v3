@@ -7,9 +7,9 @@ import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { ASSISTANT_ISSUE_IDS, buildAssistantContext, contextText } from './claude-bridge-context.mjs';
+import { ASSISTANT_ISSUE_IDS, buildAssistantContext, contextFacts, contextText } from './claude-bridge-context.mjs';
 import { BridgeError, childEnv, claudeArgs, createClaudeRunner, prepareRuntimeDir } from './claude-bridge.mjs';
-import { DRAFT_NOTICE, buildInput, normalizeAnswer, validateRequest } from './claude-bridge-prompt.mjs';
+import { DRAFT_NOTICE, buildInput, normalizeAnswer, requestFacts, validateRequest } from './claude-bridge-prompt.mjs';
 import { db, startRoute, call, waitDead, waitFor, readCalls } from './verify-claude-helpers.mjs';
 
 const fake = fileURLToPath(new URL('./verify-claude-fake-cli.mjs', import.meta.url));
@@ -80,12 +80,53 @@ test('untrusted text cannot close or forge the trusted context block', () => {
 });
 
 test('answers are normalized to the contract and never pass an action claim unmarked', () => {
-  assert.deepEqual(Object.keys(normalizeAnswer({ answer: '확인했습니다.', issueIds: [], suggestedTask: null })), ['answer', 'issueIds', 'suggestedTask', 'provider']);
+  // 옛 모양(한 덩어리 답)도 받는다 — 본문은 body로.
+  assert.deepEqual(Object.keys(normalizeAnswer({ answer: '확인했습니다.', issueIds: [], suggestedTask: null })), ['answer', 'issueIds', 'suggestedTask', 'provider', 'body']);
   const loose = normalizeAnswer({ answer: '정리', issueIds: ['billing', 'evil', 'billing'], suggestedTask: { title: '가'.repeat(200), body: '본문' } });
   assert.deepEqual(loose.issueIds, ['billing']); assert.equal(loose.suggestedTask.title.length, 80); assert.equal(loose.provider, 'claude-cli');
   assert(normalizeAnswer({ answer: '문자를 발송했습니다.', issueIds: [], suggestedTask: null }).answer.endsWith(DRAFT_NOTICE));
   assert(!normalizeAnswer({ answer: '확인이 필요합니다.', issueIds: [], suggestedTask: null }).answer.includes(DRAFT_NOTICE));
   assert.throws(() => normalizeAnswer({ answer: 'OK', issueIds: [], suggestedTask: null }), error => error.code === 'invalid_output');
+});
+
+test('facts: every server line is numbered, footnotes show the line without copy/server wording, destinations sit in the trusted block', () => {
+  const { text, facts } = contextFacts(context, null);
+  assert.equal(text.split('\n').length, facts.length); assert.match(text, /^\[F1\] 기준일/);
+  facts.forEach((f, i) => assert.equal(f.n, i + 1));
+  assert(!facts.some(f => /복사본|스냅샷|서버 계산|^\[[a-z]/.test(f.text)), 'footnote text has no copy/server wording or issue keys');
+  assert(facts.some(f => f.text.startsWith('수납 확인 1건')), 'issue titles become plain facts');
+  const dest = [{ id: 'ws:billing', label: '수납관리', area: 'billing' }];
+  const input = buildInput(context, validateRequest({ prompt: '잔액' }), 'n1', { destinations: dest });
+  assert(input.indexOf('- ws:billing 수납관리') < input.indexOf('<<<사용자 입력 n1'), 'destination list is server-side');
+});
+
+test('structured answers: footnotes renumbered from server facts only, links and areas from the server list, records checked against the store', () => {
+  const facts = requestFacts(context, { contextIssueId: null });
+  const dest = [{ id: 'ws:billing', label: '수납관리', area: 'billing' }, { id: 'v2:timetable', label: '시간표' }];
+  const store = { families: new Map([['billing', { records: [{ id: 'inv-1', label: '홍길동 · 10월 수강료', date: '2026-10-01', status: '부분납부' }, { id: 'inv-2', label: '김비밀 · 10월 수강료' }, { id: 'x1', label: '이민 A' }, { id: 'x2', label: '이민 B' }, { id: 'x3', label: '이민 C' }, { id: 'x4', label: '이민 D' }] }]]) };
+  const out = normalizeAnswer({
+    headline: '10월 남은 금액은 ⟦50,000원⟧입니다.', keyFacts: [{ label: '남은 금액', value: '50,000원', change: '+50,000원', tone: 'bad', ref: 7 }, { label: '빈칸', value: '', change: '', tone: 'none', ref: 0 }],
+    points: [{ text: '청구 ⟦1건⟧이 남았습니다.', refs: [9, 7, 999] }, { text: '  ', refs: [] }], checks: ['확인 ⟦1건⟧', ''],
+    table: { columns: ['월', '남은 금액'], rows: [['10월'], ['9월', '0원', '넘침']] }, links: ['ws:billing', 'ws:evil', 'v2:timetable', 'trend:x'],
+    issueIds: ['billing'], suggestedTask: { title: '확인', body: '부탁드립니다.', area: 'ws:billing', recordQueries: ['홍길동', '이민', '없는이름', 'x'] },
+  }, { facts, destinations: dest, records: () => store });
+  assert.deepEqual(out.notes.map(n => n.n), [1, 2], 'first cited fact = 1, unknown refs dropped');
+  assert.equal(out.notes[0].text, facts.facts[6].text); assert.equal(out.keyFacts[0].note, 1); assert.deepEqual(out.points[0].notes, [2, 1]);
+  assert.equal(out.keyFacts.length, 1); assert.equal(out.keyFacts[0].tone, 'bad'); assert.equal(out.points.length, 1); assert.deepEqual(out.checks, ['확인 ⟦1건⟧']);
+  assert.deepEqual(out.table, { columns: ['월', '남은 금액'], rows: [['10월', ''], ['9월', '0원']] });
+  assert.deepEqual(out.links, [{ id: 'ws:billing', label: '수납관리' }, { id: 'v2:timetable', label: '시간표' }]);
+  assert.deepEqual(out.suggestedTask.attach, [{ value: 'billing|inv-1', label: '홍길동 · 10월 수강료', meta: '2026-10-01 · 부분납부' }], 'four different labels (이민 A~D) and unknown names attach nothing');
+  // 같은 이름의 기록(한 학생의 달마다 청구)은 한 사람 — 최근 3건. 질문과 똑같은 이름이 있으면 부분 일치(김가윤B)는 빼고 그 사람만.
+  const monthly = { families: new Map([['billing', { records: [...['01', '02', '03', '04'].map(m => ({ id: `k-${m}`, label: '김가윤', date: `2026-${m}-01` })), { id: 'kb', label: '김가윤B', date: '2026-05-01' }]}]]) };
+  const picked = normalizeAnswer({ headline: '정리', keyFacts: [], points: [], checks: [], table: null, links: [], issueIds: [], suggestedTask: { title: '확인', body: '본문', area: 'ws:billing', recordQueries: ['김가윤'] } }, { facts, destinations: dest, records: () => monthly });
+  assert.deepEqual(picked.suggestedTask.attach.map(a => a.value), ['billing|k-04', 'billing|k-03', 'billing|k-02']);
+  assert.equal(out.suggestedTask.areaLabel, '수납관리');
+  assert(!out.answer.includes('⟦'), 'history text has no markers'); assert.match(out.answer, /^10월 남은 금액은 50,000원입니다\./);
+  const noArea = normalizeAnswer({ headline: '정리', keyFacts: [], points: [], checks: [], table: null, links: [], issueIds: [], suggestedTask: { title: '확인', body: '본문', area: 'ws:evil', recordQueries: ['홍길동'] } }, { facts, destinations: dest, records: () => store });
+  assert.deepEqual(Object.keys(noArea.suggestedTask), ['title', 'body'], 'unknown area = no area, no records');
+  const claim = normalizeAnswer({ headline: '안내 문자를 발송했습니다.', keyFacts: [], points: [], checks: [], table: null, links: [], issueIds: [], suggestedTask: null }, { facts });
+  assert.equal(claim.notice, DRAFT_NOTICE); assert(claim.answer.endsWith(DRAFT_NOTICE));
+  assert.throws(() => normalizeAnswer({ headline: 'OK', keyFacts: [], points: [], checks: [], table: null, links: [], issueIds: [], suggestedTask: null }, { facts }), error => error.code === 'invalid_output');
 });
 
 test('subprocess: prompt only via stdin, stripped env, fixed argv', async () => {
@@ -139,7 +180,7 @@ test('auth preflight accepts only a claude.ai subscription and exposes no identi
 });
 
 test('HTTP: only a same-origin JSON POST can start a call', async t => {
-  const cwd = await fresh('http-guard'), server = await startRoute(runnerIn(cwd));
+  const cwd = await fresh('http-guard'), server = await startRoute(runnerIn(cwd), { destinations: { list: [{ id: 'ws:billing', label: '수납관리', area: 'billing' }] } });
   t.after(() => server.close());
   const ok = { origin: server.origin, 'content-type': 'application/json' };
   const cases = [
@@ -154,8 +195,10 @@ test('HTTP: only a same-origin JSON POST can start a call', async t => {
   assert.equal(await readCalls(cwd), 0, 'no rejected request reached the CLI');
   const res = await call(server, { method: 'POST', headers: ok, body: JSON.stringify({ prompt: '잔액 알려줘', contextIssueId: 'billing', history: [{ role: 'user', content: '이전 질문' }] }) });
   assert.equal(res.status, 200);
-  assert.deepEqual(Object.keys(res.json), ['answer', 'issueIds', 'suggestedTask', 'provider']);
+  for (const key of ['answer', 'issueIds', 'suggestedTask', 'provider', 'headline', 'keyFacts', 'points', 'notes', 'checks', 'table', 'links']) assert(key in res.json, key);
   assert.equal(res.json.provider, 'claude-cli');
+  assert.deepEqual(res.json.links, [{ id: 'ws:billing', label: '수납관리' }], 'unknown destination dropped');
+  assert.equal(res.json.notes.length, 2, 'refs 5 and 6 kept as footnotes 1·2, 99 dropped'); assert.equal(res.json.suggestedTask.area, 'billing');
 });
 
 test('HTTP: one call at a time, a window cap, and disconnect kills the child', async t => {
