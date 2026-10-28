@@ -52,7 +52,10 @@ export function decisionView(c, inFlight) {
   }
   return c.decision ? friendlyDecision(c.decision) : null;
 }
-const caseView = (c, inFlight) => { const { pendingDecision, ...rest } = c; return { ...rest, decision: decisionView(c, inFlight), decisionPending: !!pendingDecision }; };
+// The full record keys of a signal (sourceRecords) and what each report covered (coveredRefs) stay in the store for
+// re-judging (flow-reconcile.mjs); the view carries counts only, so /api/flow does not grow with them.
+const evidenceView = e => { if (!Array.isArray(e.coveredRefs)) return e; const { coveredRefs, ...rest } = e; return { ...rest, coveredCount: coveredRefs.length }; };
+const caseView = (c, inFlight) => { const { pendingDecision, sourceRecords, ...rest } = c; return { ...rest, evidence: (c.evidence || []).map(evidenceView), decision: decisionView(c, inFlight), decisionPending: !!pendingDecision }; };
 
 export function buildView(state, source, { aiStatus, now = new Date().toISOString(), tenantName = '', casePage = 1, eventsBefore = null, inFlight = null } = {}) {
   const all = Object.values(state.cases).sort((a, b) => STATE_ORDER[a.state] - STATE_ORDER[b.state] || PRIORITY_ORDER[a.priority] - PRIORITY_ORDER[b.priority] || (a.dueAt || '9').localeCompare(b.dueAt || '9') || b.updatedAt.localeCompare(a.updatedAt));

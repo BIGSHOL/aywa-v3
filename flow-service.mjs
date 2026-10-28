@@ -2,7 +2,7 @@
 import { basename, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { openStore, namespaceDir, StoreError } from './flow-store.mjs';
-import { seedSource } from './flow-engine.mjs';
+import { changedCount, reconcileSource } from './flow-reconcile.mjs';
 import { buildView } from './flow-view.mjs';
 import { failedDecision, recordDecision, runCommand } from './flow-commands.mjs';
 import { createHierarchyRuntime, openOverlay } from './flow-hierarchy-runtime.mjs';
@@ -25,13 +25,15 @@ export function defaultStoreDir({ dataRoot, identity, env = process.env }) {
 
 export async function createFlowService({ source, dir, ai, tenantName = '', lock = true, now = () => new Date().toISOString(), waitMs, hierarchy, env = process.env }) {
   const store = await openStore({ dir, identity: source.identity, lock });
-  // Seeding is idempotent per stable source key; it only writes when something new appears.
-  const seeded = await store.transact(async draft => {
-    const created = seedSource(draft, source);
-    if (!created) return { next: null, result: 0 };
+  // Seed + re-judge the stored source cases (flow-reconcile.mjs, AX-H1). Idempotent; writes only when something changed.
+  const reconcile = next => store.transact(async draft => {
+    const summary = reconcileSource(draft, next, { at: next.loadedAt || now() });
+    if (!changedCount(summary)) return { next: null, result: summary };
     draft.revision += 1;
-    return { next: draft, result: created };
+    return { next: draft, result: summary };
   });
+  const reconciled = await reconcile(source);
+  const seeded = changedCount(reconciled);
   // A judgment still pending on disk belonged to a process that is gone: record it as interrupted
   // (visible, review kept). No case judgment is re-run on start (the hierarchy queue below is separate).
   const interrupted = await store.transact(async draft => {
@@ -54,11 +56,26 @@ export async function createFlowService({ source, dir, ai, tenantName = '', lock
   const runtime = createHierarchyRuntime({ getSource: () => source, getState: () => store.state, overlay, providers, disabledReason: reason, budget: hierarchy?.budget, clock: hierarchy?.clock, log: hierarchy?.log || (m => console.log(m)) });
   runtime.start();
   return {
-    store, seeded, interrupted, hierarchyRuntime: runtime,
+    store, seeded, reconciled, interrupted, hierarchyRuntime: runtime,
+    get source() { return source; },
+    /**
+     * AX-H2 contract: re-reads come in as a whole new source (loadFlowSource of the same copy). Under the store's write
+     * queue the stored source cases are re-judged against it and saved; then it becomes the source every view, command
+     * and the hierarchy use. Returns { created, updated, closed, reopened, unchanged, changes, revision }. The same
+     * source twice changes nothing (no write, same revision). Another tenant or copy (capturedAt) is refused: the store
+     * folder is keyed by the copy, so a reload never moves or resets it.
+     */
+    reloadSource: async next => {
+      if (!next?.identity || next.identity.tenantId !== source.identity.tenantId || next.identity.capturedAt !== source.identity.capturedAt) throw new StoreError('flow_state_mismatch', '다른 지점 또는 다른 복사본의 원본입니다. 섞지 않고 멈췄습니다.');
+      const summary = await reconcile(next);
+      source = next;
+      runtime.notify();
+      return { ...summary, revision: store.state.revision };
+    },
     view: (params = {}) => buildView(store.state, source, { aiStatus: ai.status(), tenantName, inFlight: jobs, ...params }),
     hierarchy: caseId => runtime.view(caseId),
     hierarchyTag: caseId => { runtime.check(caseId); return runtime.etag(caseId); },
-    command: async body => { const result = await runCommand(store, source, body, { ai, now, jobs, waitMs }); runtime.notify(); return result; },
+    command: async body => { const result = await runCommand(store, () => source, body, { ai, now, jobs, waitMs }); runtime.notify(); return result; },
     /** Resolves when every judgment started so far has settled (tests, shutdown). */
     settled: () => Promise.all([...jobs.values()]),
     close: async () => { await runtime.close(); await overlay.close(); await store.close(); },

@@ -13,6 +13,7 @@ import { decisionView } from './flow-view.mjs';
 import { validateContext } from './decision-questions.mjs';
 import { createFlowRoute } from './flow-http.mjs';
 import { CLOSE_REASON, TASK_KINDS } from './flow-rules.mjs';
+import './verify-flow-engine-reconcile.mjs'; // source re-judging (AX-H1·H4·H5) runs with this suite
 
 const fails = async (p, status, code) => { await assert.rejects(p, e => e.status === status && e.code === code, `${status} ${code}`); };
 const caseOf = (svc, id) => svc.view().cases.find(c => c.id === id);

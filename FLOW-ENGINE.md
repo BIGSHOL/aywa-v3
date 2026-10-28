@@ -13,7 +13,8 @@
 |---|---|
 | `flow-source.mjs` | 복사본에서 한 번 읽기: 실제 직원(actors), 엔티티, **외래키 관계만**(`relation.source = "표.열"`), 2.0 `staff_tasks` 전부와 이력, 작업 공간 신호, 시나리오 후보 |
 | `flow-rules.mjs` | 2.0 의미(할 일 종류 11개·마감 규칙·마감 사유), 역할 라벨, 이벤트 목록(구현됨/예정), 흐름 템플릿, 명령별 허용 역할 |
-| `flow-engine.mjs` | 역할 → 실제 사람 해석(코드), 단계 진행, 원본 시드 |
+| `flow-engine.mjs` | 역할 → 실제 사람 해석(코드), 단계 진행, 신호 기록의 담당자(외래키) |
+| `flow-reconcile.mjs` (+`-signals`) | 원본 시드 + **재대조**: 원본을 읽을 때마다 저장된 원본 업무를 다시 판정(닫힘·다시 열림·담당·근거 기록), 사실이 남는 신호의 처리 완료 |
 | `flow-commands.mjs` | `POST /api/flow/actions` 검증·권한·상태 전이, 멱등·revision, AI 2단계 처리 |
 | `flow-decision.mjs` | AI 작업자 모듈(`decision-engine.mjs`·`decision-claude.mjs`·`decision-key.mjs`)과의 연결, 가명 맥락 |
 | `flow-store.mjs` | 저장소: 배타 잠금, 직렬화된 원자적 쓰기 |
@@ -32,7 +33,10 @@
 
 ## 업무(case) 종류와 닫힘
 
-- `kind:'source'`, `closure:'fact'`: 원본에서 온 일. **원본 기록이 바뀔 때만 닫힙니다**(다음 복사본). 여기서 보고하면 원본은 열린 채로 두고 연결된 로컬 후속 업무(`kind:'request'`, 완료)를 만듭니다. 원본에서 이미 닫힌 할 일은 `factClosed`·`closedReason`(2.0 마감 사유)으로 보여 주고 다시 열 수 없습니다.
+- `kind:'source'`, `closure:'fact'`: 원본에서 온 일. **원본을 다시 읽을 때마다 재대조**합니다(`flow-reconcile.mjs` — 서버 시작 + `reloadSource`). 사건은 모두 `origin:'snapshot'`.
+  - 원본 할 일: 2.0에서 처리·취소·기한 지남이 되면 `sourceStatus`·`factClosed`·`closedReason`·`closedAt`을 고치고 남은 단계를 닫습니다(`source.task_closed`, 시각 = 원본의 닫힌 시각). 다시 열리면 다시 엽니다(`source.task_reopened`). 원본 담당이 바뀌면 단계 담당이 따라갑니다(`source.task_reassigned`) — **관리자가 바꾼 단계(`case.reassign`)·'확인'한 단계는 그대로**. 원본에서 사라진 할 일은 닫습니다(빈 목록이면 아무것도 닫지 않음). 여기서 보고하면 원본은 열린 채로 두고 연결된 로컬 후속 업무(`kind:'request'`, 완료)를 만듭니다 — 원본 할 일은 2.0에서 처리돼야 끝납니다.
+  - 원본 신호: 신호가 원본에서 빠지면 닫고(`source.signal_cleared`, 시각 = 원본을 읽은 시각 `source.loadedAt`), 다시 나타나면 엽니다(`source.signal_reopened`). 근거 기록이 바뀌면 제목·요약·근거·단계를 새로 맞추고 건수를 남깁니다(`source.signal_changed`). 단계는 기록의 담당자마다 하나이고 **기록 순서대로 번호를 다시 매깁니다**(계층 화면과 같은 번호) — 같은 담당 = 같은 단계(사람의 담당 변경·확인 유지, 보고는 단계를 따라감), 새 담당 = 새 단계, 기록이 없어진 담당 = `retired`(기록 0, 이력용). 읽지 못한 영역의 신호는 닫지 않습니다(`signalFamilies`).
+  - **사실이 남는 신호**(`FACT_SIGNALS`, `flow-rules.mjs` 한 곳 — 반복 결석·메이크에듀 동기화 문제): 보고가 후속 업무를 만들지 않고 이 업무에 남으며, 그 순간 그 단계의 근거 기록(기록·원생·반으로 좁힘)을 `coveredRefs`로 함께 저장합니다. 기록마다 가장 최근 보고가 '처리함'·'해당 없음'이면 처리 완료 — 단계의 기록이 모두 처리되면 단계가, 모든 단계가 처리되면 업무가 닫힙니다(`source.signal_handled`). **처리한 기록에 없는 새 기록**이 생기거나 더 새 보고가 '검토 필요'·'연락 안 됨'이면 다시 엽니다. 원본 기록(결석 등)은 바꾸지 않습니다.
 - `kind:'scenario'`: 실제 복사본 기록 하나에 묶은 로컬 시나리오(`event.simulate`). 같은 기록의 열린 시나리오가 있으면 새로 만들지 않습니다(`duplicate:true`).
 - `kind:'request'`: 원장·관리자의 요청. 지정한 사람 모두가 보고해야 관리자 검토로 넘어갑니다.
 - 단계는 `group` 순서로 열립니다(`waiting → ready → working → done`). `when:'needsReview'` 단계는 검토가 필요할 때만 열리고, 아니면 `skipped`로 남습니다.
@@ -74,6 +78,8 @@
 결과 `{ revision, caseId, eventIds, duplicate?, decision?:'pending'|'ok'|'unavailable'|'error'|'skipped', replayed? }`. 오류는 `{ error, message }`(한글): 400 `invalid_request`·`evidence_required`·`assignee_not_allowed`·`record_ref_not_allowed`, 403 `actor_not_allowed`·`action_not_allowed`·`not_assignee`·`forbidden_origin`, 404 `case_not_found`, 409 `revision_conflict`(+`revision`)·`command_conflict`·`step_not_ready`·`fact_case`, 413, 415, 503 `flow_starting`·저장소 오류, 500 `store_write_failed`.
 
 - 같은 `commandId` + 같은 내용 = 처음 결과(`replayed:true`), 다른 내용 = 409. 재시작해도 유지됩니다.
+- **`service.reloadSource(newSource)`**(AX-H2 계약, HTTP 없음): 같은 복사본(`identity.tenantId`·`capturedAt` 같음 — 다르면 `flow_state_mismatch`)을 다시 읽은 `loadFlowSource` 결과를 받아, 저장소 쓰기 줄 안에서 재대조·저장한 뒤 그 원본을 화면·명령·계층이 쓰게 합니다. 반환 `{ created, updated, closed, reopened, unchanged, changes:[{caseId,title,outcome,tags,events}], revision }`. 같은 원본을 두 번 넣으면 아무것도 바뀌지 않고 개정도 그대로입니다. 저장소 폴더는 복사본 시각으로 정해져 바뀌지 않습니다.
+- 응답의 업무에는 신호 근거 전체 목록(`sourceRecords`)과 보고가 덮은 기록 목록이 빠지고 건수(`evidence[].coveredCount`)만 실립니다.
 - 가드: `sec-fetch-site`가 cross-site면 403, POST는 정확히 같은 출처(`origin`)만, JSON만, 16KB 상한, 10초 수신 제한. 저장소 폴더·환경 파일은 어떤 경로로도 내보내지 않습니다.
 
 ## 저장소
@@ -102,11 +108,20 @@
 
 ## 검증 (2026-10-27)
 
+- (10-28 재대조 추가 뒤) `verify-flow-engine.mjs` → **23/23**(재대조 8건 = `verify-flow-engine-reconcile.mjs`), `verify-flow-hierarchy.mjs` 9/9, `verify-flow-engine-live.mjs` 10/10.
 - `node --test experiments/owner-concept/verify-flow-engine.mjs` → **15/15**: 시드 1:1·한 번만·원본 닫힘, 결석 흐름 원인 사슬과 업무 문구, 확실한 판정의 검토 건너뜀·수납 항상 사람, AI 실패 시 일 유지, **느린 AI 동안 다른 처리 저장**, 재시작 시 판정 중단 기록, 다중 담당 요청·보완 요청·다시 열기, 원본 업무 → 로컬 후속, 멱등·revision·중복 시나리오·재시작 유지, 다른 지점/복사본/형식 거부, **잠금(동시 열기 하나만·쓰기 중 닫기·막 만들어진 빈 잠금 존중·죽은 잠금 회수·남의 잠금 보존·검증 실패 시 반납)**, `v3.0.0` 이름(끝 점 거부), 가명 맥락, **신뢰 날짜만 기한으로·AI 모듈 검증기 통과·코드 기한이 모델 긴급도보다 우선**, HTTP 가드·`assignable`.
 - `node experiments/owner-concept/verify-flow-engine-live.mjs --http=http://127.0.0.1:4312` → **11/11**: 읽기 전용 트랜잭션, 할 일 238건 담당자 1:1(SQL 재대조), 관계 종류별 외래키 재대조, 직원 = 재직·플랫폼 제외, 시드 수, 실제 직원으로 결석·수납·원장 요청·원본 후속·대기열 재배정, 재시작 유지, **원본 표 지문(할 일·배정·이력·출결·수납·상담) 전후 동일**, 4312 가드(출처·잘못된 요청은 저장소 불변·작업 공간 POST는 JSON 405·assistant 유지·비공개 경로 404). 다른 사람이 같은 서버에 POST하는 중에는 "저장소 불변" 확인이 흔들릴 수 있습니다.
 - 실제 판정 1회(`--ai`, 판정 규칙 r1 시점): 실제 결석 기록의 가명 맥락 → Jev 1.14 `auto_route`(할 일 0.97 · 관리자 0.03 · 안전 0.02), 332ms. 이어진 `case.analyze`는 캐시 적중(Jev 추가 0회) + Claude Sonnet 5.5 초안 7.97초. 사용량 = Jev 1 + Claude 1(조정자 승인 2 + 1 안).
 
+## 근거 연결 (AX-H5)
+
+- 신호마다 근거 기록이 어느 표의 번호인지 `flow-source.mjs` `SIGNAL_RECORD_TABLE`에 적습니다(영역의 첫 표로 짐작하지 않음 — 직원 평가 = 포트폴리오 + 만족도 판정). 기본 읽기에 없는 기록(만족도 판정·보강 예약·메이크에듀 동기화·반 공지·연동, 다른 달 청구 등)은 번호로 따로 읽습니다.
+- `signalWiring()` = 신호별 기록 수·연결 수·상태(연결됨·일부만·연결 0건·기록 종류 모름·근거 번호 없음). 'ok'가 아니면 서버 로그·드라이런에 '배선 누락'으로 남기고, 화면의 그 단계 사유(`unassignedReason`)는 '근거 기록을 이 업무에 잇지 못해'·'이어 줄 근거 기록이 없어'로 적습니다.
+- 담당: 결석·보강 예약 = 반 담당 강사, 원생상담 = 상담자, 수업보고서 = 쓴 선생님, 반 공지 = 보낸 사람, 만족도 판정·연동·동기화 = 관리자 대기열(강사평가는 그 강사에게 보내지 않음).
+- 미리 보기: `node work/owner-concept/flow-reconcile-dryrun.mjs [--h4]` — 실제 저장소를 **읽기만** 해서 임시 사본에 재대조한 결과(닫힘·열림·바뀜·사건·근거 연결·계층 번호 대조·멱등)를 냅니다.
+
 ## 남은 것
+- 구글 시트 연동 오류 신호(`sheet-sync-error`)는 근거 기록 번호가 없어 '배선 누락'으로 보입니다(연동 영역 근거가 메이크에듀 동기화뿐이라 신호가 가리킬 기록이 없음).
 
 - 실제 판정 1회는 기한 연결(`requestedActionDate`) 전, 판정 규칙 r1 시점에 돌렸습니다. 조정자 지시대로 유료 호출은 다시 하지 않았고, 기한 연결은 AI 모듈의 맥락 검증기와 가짜 판정으로만 확인했습니다.
 - 시나리오 업무의 `dueAt`은 비어 있습니다(지어내지 않음). 재원생 상담 기록에는 "요청된 상담일" 칸이 없어 상담 시나리오는 기한을 보내지 않습니다.

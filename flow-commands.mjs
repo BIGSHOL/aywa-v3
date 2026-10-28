@@ -5,6 +5,7 @@ import { FAMILY_IDS, workspaceRecords } from './domain-snapshot.mjs';
 import { COMMAND_KINDS, COMMAND_ROLES, PRIORITIES, REPORT_OUTCOMES, SCENARIOS, TEMPLATES } from './flow-rules.mjs';
 import { actorMap, advance, entityRef, newEvent, refreshCase, resolveRole, step } from './flow-engine.mjs';
 import { signalStepRefs } from './flow-hierarchy.mjs';
+import { coveredRefs, isFactSignal, settleFact, stepRecords } from './flow-reconcile.mjs';
 
 export class CommandError extends Error { constructor(status, code, message, extra = {}) { super(message); this.status = status; this.code = code; this.extra = extra; } }
 const bad = (message, code = 'invalid_request') => new CommandError(400, code, message);
@@ -177,12 +178,22 @@ export async function applyCommand(state, source, cmd, { now, inFlight = new Map
     case 'case.report': {
       keys(payload, ['stepId', 'note', 'recordRefs', 'outcome', 'attachments']);
       const atts = attachments(payload.attachments);
-      const c = getCase(), s = pickStep(c, payload, x => (x.status === 'ready' || x.status === 'working') && !x.review, actor);
+      // 사실이 남는 신호(FACT_SIGNALS)는 처리한 단계에도 다시 보고할 수 있다 — 고쳐 보고(검토 필요 등)하면 그 기록이 다시 열린다.
+      const c = getCase(), fact = isFactSignal(c);
+      const s = pickStep(c, payload, x => !x.review && !x.retired && (x.status === 'ready' || x.status === 'working' || (fact && x.status === 'done' && x.handled && c.closedBy !== 'source')), actor);
       if (!str(payload.note, 2, 2000)) throw new CommandError(400, 'evidence_required', '처리 결과를 2자 이상 적어 주세요.');
       if (payload.outcome !== undefined && !REPORT_OUTCOMES[payload.outcome]) throw bad('결과 값이 올바르지 않습니다.');
       // A hierarchy student cell sends all of its records (one class, real max 18): 60 there, 20 everywhere else.
       const refs = recordRefs(source, payload.recordRefs, reportRefKeys(source, c, s), signalStepRefs(source, c) ? 60 : 20);
       const evidence = { id: `ev-${state.seq + 1}`, note: scrub(payload.note.trim()), recordRefs: refs, actorId: actor.id, at, stepId: s.id, outcome: payload.outcome || 'done', ...(atts.length ? { attachments: atts } : {}) };
+      if (fact) {
+        // AX-H4: the report stays on this case and records what it covered (this step's records at this moment,
+        // narrowed by its record refs); the case closes when every record is handled. Source records are not touched.
+        c.evidence.push({ ...evidence, coveredRefs: coveredRefs(source, stepRecords(source, c).get(s.id) || [], refs) });
+        let cause = emit({ caseId: c.id, type: 'step.reported', stepId: s.id, causeId: c.history.at(-1), data: { outcome: evidence.outcome, covered: c.evidence.at(-1).coveredRefs.length } });
+        for (const e of settleFact(source, c, { at, origin: 'dev', actorId: actor.id })) cause = emit({ caseId: c.id, type: e.type, label: e.label, causeId: cause.id, data: e.data || null, targetActorIds: e.reopen ? [...new Set(c.steps.filter(x => x.status === 'ready' || x.status === 'working').flatMap(x => x.assigneeIds))] : c.watchers || [] });
+        refreshCase(c, at); return { caseId: c.id, eventIds: ids };
+      }
       if (c.closure === 'fact') {
         // Source facts never close locally: the report becomes a linked local follow-up case.
         const f = local({ kind: 'request', scenario: null, familyId: c.familyId, title: `${c.title} — 후속 보고`, summary: '원본 할 일은 원본 기록이 바뀔 때 닫힙니다. 이 보고는 따로 남는 후속 기록입니다.', entityRefs: c.entityRefs.slice(0, 10), linkedCaseIds: [c.id], evidence: [evidence] }, [step('f1', { key: 'followup_report', label: '후속 보고', role: 'source', evidenceRequired: true }, { assigneeIds: [actor.id], queue: null, rule: '원래 할 일 담당', ruleSource: 'staff_task_assignees.user_id' }, 1, { status: 'done' })]);
@@ -257,8 +268,10 @@ const DECISION_STATE = { decided: 'ok', review_needed: 'ok', unavailable: 'unava
  * command; a judgment it asked for runs afterwards outside the write queue, and a second write
  * settles it on the case. The caller waits up to waitMs for that, otherwise gets decisionPending.
  */
-export async function runCommand(store, source, body, { ai, now = () => new Date().toISOString(), jobs = new Map(), waitMs = 1500 }) {
-  const actors = actorMap(source);
+export async function runCommand(store, sourceOf, body, { ai, now = () => new Date().toISOString(), jobs = new Map(), waitMs = 1500 }) {
+  // sourceOf = the current source (a getter, so a command queued behind reloadSource runs on the reloaded facts).
+  const current = typeof sourceOf === 'function' ? sourceOf : () => sourceOf;
+  const actors = actorMap(current());
   const cmd = validateCommand(body, actors);
   // The job is registered inside the write, so no later command can see its request as abandoned.
   let settle = null, registered = null;
@@ -270,7 +283,7 @@ export async function runCommand(store, source, body, { ai, now = () => new Date
       return { next: null, result: { result: { ...seen.result, replayed: true }, job: null } };
     }
     if (cmd.expectedRevision !== draft.revision) throw new CommandError(409, 'revision_conflict', '다른 사람이 먼저 바꿨습니다. 화면을 새로 불러온 뒤 다시 시도해 주세요.', { revision: draft.revision });
-    const out = await applyCommand(draft, source, cmd, { now, inFlight: jobs });
+    const out = await applyCommand(draft, current(), cmd, { now, inFlight: jobs });
     if (!out.duplicate) draft.revision += 1; // a duplicate changes nothing but the command log
     const result = { revision: draft.revision, caseId: out.caseId, eventIds: out.eventIds, ...(out.duplicate ? { duplicate: true } : {}), ...(out.job || out.pending ? { decision: 'pending' } : {}) };
     draft.commands[cmd.commandId] = { fingerprint: fingerprint(cmd), result, at: now() };
@@ -279,7 +292,7 @@ export async function runCommand(store, source, body, { ai, now = () => new Date
   }).catch(error => { if (registered) { jobs.delete(registered); settle(null); } throw error; });
   if (!first.job) return first.result;
   const job = first.job;
-  settleDecision(store, source, job, { ai, now }).then(settle, () => settle(null)).finally(() => jobs.delete(job.id));
+  settleDecision(store, current(), job, { ai, now }).then(settle, () => settle(null)).finally(() => jobs.delete(job.id));
   let timer;
   const final = await Promise.race([done, new Promise(r => { timer = setTimeout(r, waitMs, null); })]);
   clearTimeout(timer);

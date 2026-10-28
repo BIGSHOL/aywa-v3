@@ -169,7 +169,7 @@ await check('restart keeps the overlay; source tables unchanged', async () => {
   svc = await createFlowService({ source, dir, ai: unavailable, lock: true, tenantName: snapshot.meta.tenant });
   assert.deepEqual([svc.view().revision, svc.view().casesTotal, svc.seeded], [rev, total, 0]);
   assert.deepEqual(await fingerprint(), before);
-  assert.deepEqual((await readdir(dir)).sort(), ['state.json', 'state.lock']);
+  assert.deepEqual((await readdir(dir)).sort(), ['hierarchy-ai', 'state.json', 'state.lock'], 'the flow state + the hierarchy overlay folder (FLOW-HIERARCHY.md), nothing else');
 });
 
 if (WITH_AI) {

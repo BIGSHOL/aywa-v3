@@ -3,7 +3,7 @@ import { ISO_AT, PRIORITY, addDays, family, field, latest, md, metric, monthlyTr
 
 const RUN = { ok: '완료', partial: '일부 실패', error: '실패' };
 const TRIGGER = { scheduled: '정기 실행', relay: '연동 PC 요청', button: '직접 실행' };
-const PROVIDER = { makeedu: '메이크에듀', google_sheets: '구글 시트', 'google_sheets:english': '구글 시트(영어)' };
+export const PROVIDER = { makeedu: '메이크에듀', google_sheets: '구글 시트', 'google_sheets:english': '구글 시트(영어)' };
 
 export async function supportFamilies({ sql, t, asOf, month, monthStart, subjectLabel }) {
   const out = {};

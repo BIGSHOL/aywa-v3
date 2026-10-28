@@ -31,6 +31,15 @@ export const EVENT_TYPES = {
   'source.task_opened': { label: '할 일 생김(원본 기록)', implemented: true },
   'source.task_event': { label: '할 일 이력(원본 기록)', implemented: true },
   'source.signal': { label: '확인할 상태 발견(원본 기록)', implemented: true },
+  // 원본 재대조(AX-H1·H4 — flow-reconcile.mjs): 원본을 다시 읽을 때마다 저장된 원본 업무를 다시 판정한 결과.
+  'source.task_closed': { label: '원본에서 할 일이 닫힘', implemented: true },
+  'source.task_reopened': { label: '원본에서 할 일이 다시 열림', implemented: true },
+  'source.task_reassigned': { label: '원본 할 일 담당이 바뀜', implemented: true },
+  'source.task_changed': { label: '원본 할 일 내용이 바뀜', implemented: true },
+  'source.signal_cleared': { label: '원본에서 확인할 상태가 풀림', implemented: true },
+  'source.signal_changed': { label: '확인할 근거 기록이 바뀜', implemented: true },
+  'source.signal_reopened': { label: '확인할 상태가 다시 생김', implemented: true },
+  'source.signal_handled': { label: '처리 완료(근거 기록 모두 처리 보고)', implemented: true },
   'absence.reported': { label: '결석 보고', implemented: true },
   'billing.flagged': { label: '수납 확인 요청', implemented: true },
   'consultation.followup_requested': { label: '상담 후속 요청', implemented: true },
@@ -98,3 +107,16 @@ export const COMMAND_ROLES = {
 export const COMMAND_KINDS = Object.keys(COMMAND_ROLES);
 export const PRIORITIES = ['high', 'normal', 'low'];
 export const REPORT_OUTCOMES = { done: '처리함', needs_review: '검토 필요', unreachable: '연락 안 됨', not_needed: '해당 없음' };
+
+// 원본 신호 업무가 닫히는 법(AX-H1·H4). 보통 신호는 원본에서 그 상태가 풀릴 때(근거 기록이 신호에서 빠질 때) 닫힌다.
+export const SIGNAL_DONE_RULE = '원본에서 이 상태가 풀리면(근거 기록이 신호에서 빠지면) 자동으로 닫힙니다.';
+// 처리해도 사실이 그대로 남는 신호(AX-H4) — 담당자가 처리 결과를 보고하면 그때의 근거 기록을 '처리한 기록'으로 남기고 닫는다.
+// 다시 읽을 때 처리한 기록에 없는 새 기록이 생길 때만 다시 연다. 원본 기록(결석 등)은 바꾸지 않는다. 여기 한 곳에서만 고른다.
+export const FACT_SIGNALS = Object.freeze({
+  // 이번 달 결석 횟수는 지난 출결 사실 — 보호자 연락·보강 계획을 마쳐도 결석 3회 이상은 그대로다(domain-snapshot-academic2.mjs).
+  'attendance-repeat-absence': { doneRule: '담당 선생님이 결석 사유·연락·보강 계획을 보고하면 닫힙니다(결석 기록은 그대로). 보고 뒤 새 결석이 생기면 다시 열립니다.' },
+  // 최근 7일 동기화 실패·일부 실패는 이미 끝난 실행의 결과 — 연동 PC를 확인해도 그 실행 기록은 바뀌지 않는다(domain-snapshot-support.mjs).
+  'makeedu-sync-problem': { doneRule: '연동 PC 상태를 확인해 보고하면 닫힙니다(지난 실행 기록은 그대로). 보고 뒤 새 실패가 생기면 다시 열립니다.' },
+});
+// 처리 완료로 치는 보고 결과. '검토 필요'·'연락 안 됨'은 아직 남은 일이라 닫지 않는다.
+export const HANDLED_OUTCOMES = Object.freeze(['done', 'not_needed']);
