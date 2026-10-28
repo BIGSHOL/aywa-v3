@@ -11,7 +11,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { screen, READS, WRITES, runWrite } from './v2-screen-class-review.mjs';
 import { hideNames, listRow } from './v2-class-review-load.mjs';
-import { stopV2Server } from './v2-server-runner.mjs';
+import { runV2Server, stopV2Server } from './v2-server-runner.mjs';
 
 const src = (p) => readFile(new URL(`../../src/${p}`, import.meta.url), 'utf8');
 const here = (p) => readFile(new URL(p, import.meta.url), 'utf8');
@@ -102,6 +102,26 @@ test('2.0이 보내지 않던 것은 보내지 않는다 — 실명 열람이 �
   const r = listRow({ ...doc, areas: [], templateName: 'x', submittedCount: 1, observerSlots: 2, averages: null }, false);
   assert.ok(!('finalReview' in r) && !('areas' in r) && !('comment' in r.submissions.a)); assert.equal(r.submissions.a.by.name, '');
   assert.equal(listRow({ ...doc, submittedCount: 1, observerSlots: 2, averages: null }, true).submissions.a.by.name, '갑');
+});
+
+test('강사 자기 평가 = 본인 슬롯 한 장만 남고 타인 채점·평가자·총평은 빠진다', { skip: SKIP }, async () => {
+  const [teacher] = await db`select id::text id from public.users where tenant_id=${t} and status::text='active' and system_role::text='teacher' limit 1`;
+  assert.ok(teacher);
+  const selfOnly = await importV2('features/class-review/self-only.ts');
+  assert.equal(selfOnly.isSelfOnlyReviewer('teacher'), true);
+  const doc = { id: 'd', header: { teacherId: teacher.id, observerMode: 'open', observerLimit: 3 },
+    evaluators: [{ id: teacher.id, name: '본인', kind: 'self' }, { id: master.id, name: '관찰자', kind: 'observer' }],
+    submissions: { self: { scores: [3], comment: '본인 기록' }, [master.id]: { scores: [4], comment: '타인 기록' } },
+    finalReview: { text: '총평', by: { id: master.id, name: '관찰자' } } };
+  const safe = selfOnly.redactForSelfOnly(doc);
+  assert.deepEqual(Object.keys(safe.submissions), ['self']);
+  assert.deepEqual(safe.evaluators.map((e) => e.kind), ['self']);
+  assert.equal(safe.finalReview, undefined);
+  assert.equal(safe.header.observerMode, 'assigned');
+  const { results: [mine] } = await runV2Server({ steps: [{ module: 'features/class-review/server/queries.ts', fn: 'myScoreSlot', args: [safe, teacher.id] }], actorId: teacher.id, tenantId: t, mode: 'read' });
+  assert.deepEqual(mine.value, { slot: 'self', submitted: true });
+  const score = await here('./v2-host/src/class-review-score.tsx');
+  assert.match(score, /mine\.slot === "self" \? "본인 평가" : "채점"/);
 });
 
 // ── ③ 보기 ───────────────────────────────────────────────────────────────────────────────────────────────────────────────
