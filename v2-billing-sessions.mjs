@@ -40,7 +40,8 @@ async function viewerId(sql, t, importV2, actor) {
   const R = await loadBillingRules(importV2), env = await readSettings(sql, t, R);
   return (await readBillingViewers(sql, t, R, env)).some(v => v.id === actor) ? actor : null;
 }
-export const sessionActions = Object.fromEntries(Object.entries(SESSION_WRITES).flatMap(([module, names]) => names.map(name => [name, {
+/** 2.0 서버 함수 이름 = actions 이름 · 쓰기는 러너 write(동작 하나 = 트랜잭션 하나). writes = { 모듈: [함수…] } — 강사 정산(v2-billing-payroll.mjs)도 같은 통로. */
+export const v2ServerActions = writes => Object.fromEntries(Object.entries(writes).flatMap(([module, names]) => names.map(name => [name, {
   validate: raw => {
     if (!raw || typeof raw !== 'object' || raw.module !== module || !Array.isArray(raw.args) || raw.args.length > 6) throw badRequest();
     if (raw.actor != null && (typeof raw.actor !== 'string' || !UUID.test(raw.actor))) throw badRequest();
@@ -54,6 +55,7 @@ export const sessionActions = Object.fromEntries(Object.entries(SESSION_WRITES).
     } catch (e) { throw refused(e); }
   },
 }])));
+export const sessionActions = v2ServerActions(SESSION_WRITES);
 /** GET 읽기(call=함수 · args=JSON 배열). */
 export async function readSessionCall(sql, t, importV2, viewer, call, argsText) {
   const module = SESSION_READS[call];

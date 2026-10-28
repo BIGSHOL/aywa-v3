@@ -49,21 +49,23 @@ await check('그리기 = 2.0 billing/page.tsx · billing-content.tsx · makeedu-
   }
   // 아직 옮기지 않은 면은 자리표시 — 면 탭은 2.0 그대로.
   const page = lf(await here('./v2-host/src/billing-page.tsx'));
-  assert.equal(page.split('<HostFaceNotReady />').length - 1, 1, '강사 정산');
+  assert.equal(page.split('<HostFaceNotReady />').length - 1, 0, '모든 면이 옮겨졌다');
   // 교재 면 = textbooks-face · textbooks-panel · catalog-panel 글자 그대로(billing-textbooks.swaps.json)
   const tb = JSON.parse(await here('./v2-host/src/billing-textbooks.swaps.json'));
   for (const [key, file, mineFile] of [['face', 'textbooks-face.tsx', 'billing-textbooks-face.tsx'], ['panel', 'textbooks-panel.tsx', 'billing-textbooks-panel.tsx'],
     ['catalog', 'catalog-panel.tsx', 'billing-catalog-panel.tsx'], ['expenses', 'expenses-panel.tsx', 'billing-expenses-panel.tsx'], ['rf.face', 'refunds-face.tsx', 'billing-refunds-face.tsx'],
     ['rf.newPage', '../refunds/new/page.tsx', 'billing-refund-new.tsx'], ['rf.viewPage', '../refunds/[id]/page.tsx', 'billing-refund-view.tsx'],
     ['cs.panel', 'calculator-panel.tsx', 'billing-calculator-panel.tsx'], ['cs.prices', 'tuition-prices-panel.tsx', 'billing-tuition-prices-panel.tsx'], ['cs.quotes', 'saved-quotes-panel.tsx', 'billing-saved-quotes-panel.tsx'],
-    ['ss.terms', 'session-terms-face.tsx', 'billing-session-terms-face.tsx'], ['ss.verify', 'session-verification-face.tsx', 'billing-session-verification-face.tsx']]) {
+    ['ss.terms', 'session-terms-face.tsx', 'billing-session-terms-face.tsx'], ['ss.verify', 'session-verification-face.tsx', 'billing-session-verification-face.tsx'],
+    ['ps.face', 'teacher-settlement-face.tsx', 'billing-teacher-settlement-face.tsx']]) {
     const rf = JSON.parse(await here('./v2-host/src/billing-refunds.swaps.json'));
     const swaps = key === 'expenses' ? JSON.parse(await here('./v2-host/src/billing-expenses.swaps.json')).panel : key.startsWith('rf.') ? rf[key.slice(3)] : key.startsWith('cs.') ? JSON.parse(await here('./v2-host/src/billing-calculator.swaps.json'))[key.slice(3)]
-      : key.startsWith('ss.') ? JSON.parse(await here('./v2-host/src/billing-sessions.swaps.json'))[key.slice(3)] : tb[key];
+      : key.startsWith('ss.') ? JSON.parse(await here('./v2-host/src/billing-sessions.swaps.json'))[key.slice(3)]
+      : key.startsWith('ps.') ? JSON.parse(await here('./v2-host/src/billing-payroll.swaps.json'))[key.slice(3)] : tb[key];
     const want = applySwaps(lf(await src(`app/(shell)/billing/_components/${file}`)), swaps, key), mine = lf(await here(`./v2-host/src/${mineFile}`));
     assert.ok(mine.endsWith(want), `${mineFile} = 2.0 ${file} + 짝`);
     assert.ok(mine.slice(0, mine.length - want.length).split('\n').filter(Boolean).every(l => l.startsWith('//')), `${mineFile} 앞에는 주석만`);
-    assert.doesNotMatch(want.split('\n').filter(l => !/^\s*(\/\/|\*|\/\*)/.test(l)).join('\n'), /\bawait\b|getCurrentUser|getTenantSettings|resolveBrandingSrc|summarizeExpenses\(|requireAccess|getRefundRequests\(|getTuitionCatalog|getQuote|getSessionTermsView\(|loadSeatShareSummary\(|getSessionVerificationView\(|getTeacherSplitsStatus\(/, `${mineFile}: 서버 호출이 남지 않는다`);
+    assert.doesNotMatch(want.split('\n').filter(l => !/^\s*(\/\/|\*|\/\*)/.test(l)).join('\n'), /\bawait\b|getCurrentUser|getTenantSettings|resolveBrandingSrc|summarizeExpenses\(|requireAccess|getRefundRequests\(|getTuitionCatalog|getQuote|getSessionTermsView\(|loadSeatShareSummary\(|getSessionVerificationView\(|getTeacherSplitsStatus\(|getTeacherTuitionView\(|getClassSalaryRows\(|canReadSalary\(|canManageSalary\(/, `${mineFile}: 서버 호출이 남지 않는다`);
   }
 });
 
@@ -103,9 +105,10 @@ try {
     assert.equal(d.access.readSalary, false, '관리자는 급여 열람 게이트를 못 지난다(기본 표)');
     assert.equal(d.access.payrollMenu, false);
     assert.equal(d.billing, null, '강사 정산 권한이 없으면 2.0 requireAccess가 막는다 — 자료를 싣지 않는다');
+    assert.ok(!JSON.stringify(d).match(/hourly_rate|monthly_base|hourlyRate|monthlyBase|commission/i), '급여 열람 게이트 밖 = 급여 칸이 실리지 않는다');
     const p = await load({ tab: 'payroll' });
-    assert.equal(p.billing, null, '강사 정산 면 자료는 다음 단계(지금은 자리표시)');
-    assert.ok(!JSON.stringify(p).match(/hourly_rate|monthly_base|hourlyRate|monthlyBase/), '급여 칸이 실리지 않는다');
+    assert.equal(p.billing, null, '강사 정산 면엔 수납 면 자료를 싣지 않는다');
+    assert.equal(p.payroll.canRead, true, '원장 = 급여 열람 게이트를 지나 강사 정산 자료가 실린다(2.0과 같은 사람)');
     assert.ok(!base.host.disabledModules.includes('session_billing'), '침산 = 회차 정산 켜짐');
   });
 
@@ -705,6 +708,46 @@ try {
     const pre = await load({ call: 'getSessionTermDeletePreview', args: JSON.stringify([row.id, '2026-09']) });
     assert.ok(pre.value && ('preview' in pre.value || 'error' in pre.value));
     await assert.rejects(async () => { await load({ call: 'confirmSessionTerm', args: '[]' }); }, '읽기 목록 밖 함수');
+  });
+
+  await check('강사 정산 = 2.0 canReadSalary 게이트 · getTeacherTuitionView · getClassSalaryRows 그대로 — 급여 열람 게이트를 못 지나면 자료를 싣지 않는다 · 시험 출력에 금액 없음', async () => {
+    const d = (await load({ tab: 'payroll', period: '2026-09' })).payroll;
+    assert.equal(d.canRead, true, '원장 = 급여 열람');
+    assert.ok(Array.isArray(d.view.rows) && d.view.rows.length > 0, '강사 줄');
+    assert.ok(plainDeep(d));
+    assert.equal(typeof d.view.total, 'number'); assert.ok(d.classRows.length > 0, '반별 급여 줄(2.0 getClassSalaryRows)');
+    // 관리자(기본 표 = 급여 열람 없음) — 면이 수납으로 떨어지고 급여 자료는 실리지 않는다.
+    const admin = base.editors.find(e => e.role === '관리자');
+    const a = await load({ viewer: admin.id, tab: 'payroll' });
+    assert.equal(a.payroll ?? null, null); assert.ok(!JSON.stringify(a).includes('hourly_rate') && !('payroll' in a && a.payroll));
+    const P2 = await import('./v2-billing-payroll.mjs');
+    const R = await importV2('features/billing/calc.ts');
+    const direct = await P2.readPayrollFace(tenantId, { calc: R }, { id: admin.id }, { period: '2026-09' });
+    assert.deepEqual(direct, { period: '2026-09', canRead: false, canEdit: false, view: null, classRows: null, canPayslip: false }, '2.0 canReadSalary가 거짓이면 조회 자체를 하지 않는다');
+  });
+
+  await check('강사 정산 저장(되돌림) = 2.0 saveClassSalary 그대로(테스트 반) · 급여 설정 권한이 없는 사람은 2.0 거절 문구 · 바깥 요청 0', async () => {
+    const { runV2Server } = await import('./v2-server-runner.mjs');
+    const [cls] = await db`select id::text id from public.classes where tenant_id=${tenantId} and class_name like '학원이(테스트)%' limit 1`;
+    assert.ok(cls, '테스트 반');
+    const fd = pairs => ({ $formData: Object.entries(pairs) });
+    const beforeN = (await db`select count(*)::int n from public.class_salary_settings where tenant_id=${tenantId} and class_id=${cls.id}`)[0].n;
+    const { results, probes } = await runV2Server({ actorId: base.viewer.id, tenantId, mode: 'write', rollback: true, steps: [
+      { module: 'features/payroll/server/class-salary-actions.ts', fn: 'saveClassSalary', args: [null, fd({ classId: cls.id, salaryGroup: '', commissionRate: '150' })] },
+      { module: 'features/payroll/server/class-salary-actions.ts', fn: 'saveClassSalary', args: [null, fd({ classId: cls.id, salaryGroup: '', commissionRate: '45' })] },
+    ], probes: [
+      { text: 'select count(*)::int n from public.class_salary_settings where tenant_id = $1 and class_id = $2', params: [tenantId, cls.id] },
+      { text: `select action, metadata->>'via' via from public.audit_logs where tenant_id = $1 and created_at = now()`, params: [tenantId] },
+    ] });
+    assert.deepEqual(results[0].value, { error: '배분율은 0~100 사이여야 합니다' });
+    assert.equal(results[1].value?.error, undefined, '저장됨');
+    assert.equal(probes[0][0].n, 1, '그 반의 급여 설정 한 줄');
+    assert.ok(probes[1].length >= 1 && probes[1].every(l => l.via === '3.0 연습 복사본'));
+    assert.equal((await db`select count(*)::int n from public.class_salary_settings where tenant_id=${tenantId} and class_id=${cls.id}`)[0].n, beforeN, '되돌린 뒤 그대로');
+    const admin = base.editors.find(e => e.role === '관리자');
+    const { results: [denied] } = await runV2Server({ actorId: admin.id, tenantId, mode: 'write', rollback: true, steps: [
+      { module: 'features/payroll/server/class-salary-actions.ts', fn: 'saveClassSalary', args: [null, fd({ classId: cls.id, commissionRate: '10' })] }] });
+    assert.deepEqual(denied.value, { error: '급여 설정 변경 권한이 없습니다' });
   });
 } finally { await db.end(); await (await import('./v2-server-runner.mjs')).stopV2Server(); }
 

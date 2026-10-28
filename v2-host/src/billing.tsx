@@ -61,6 +61,9 @@ const SESSION_WRITES: [string, string[]][] = [
   ['splits-actions.ts', ['saveTeacherSplits']], ['delete-actions.ts', ['deleteSessionTerm']], ['note-actions.ts', ['updateSessionTermNote']],
 ];
 for (const [file, names] of SESSION_WRITES) for (const name of names) saving(SESSION + file, name, true);
+// 강사 정산 — 강사 보수 · 반별 급여(2.0 함수 그대로 · 게이트도 2.0 코드가 다시 본다).
+saving('features/payroll/server/comp-actions.ts', 'saveTeacherComp', true);
+saving('features/payroll/server/class-salary-actions.ts', 'saveClassSalary', true);
 const sessionRead = (file: string, name: string) => registerHostHandler(SESSION + file, name, async (...args: unknown[]) => {
   const body = (await readBillingLater({ call: name, args: JSON.stringify(args.map((a) => (a === undefined ? null : a))) }, null)) as { value?: unknown } | null;
   return body && 'value' in body ? body.value : { error: NOT_SAVED };

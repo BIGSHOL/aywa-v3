@@ -9,8 +9,9 @@ import { ExpensesPanel } from "./billing-expenses-panel";
 import { RefundsFace } from "./billing-refunds-face";
 import { CalculatorPanel } from "./billing-calculator-panel";
 import { SessionTermsFace } from "./billing-session-terms-face";
-import type { CalculatorFaceData, ExpensesPanelData, RefundsFaceData, SessionsFaceData, TextbooksFaceData } from "./billing-types";
-import { HostFaceNotReady, HostNoAccess, HostRedirect } from "./billing-host-parts";
+import { TeacherSettlementFace } from "./billing-teacher-settlement-face";
+import type { CalculatorFaceData, ExpensesPanelData, PayrollFaceData, RefundsFaceData, SessionsFaceData, TextbooksFaceData } from "./billing-types";
+import { HostNoAccess, HostRedirect } from "./billing-host-parts";
 import type { MakeeduSyncState } from "@/features/integrations/server/makeedu-sync";
 import { FaceTabs, type Face } from "@/components/face-tabs";
 import { MakeeduSyncBadge } from "./billing-sync-badge";
@@ -64,6 +65,7 @@ export type BillingPageData = {
   refunds: RefundsFaceData | null;
   calculator: CalculatorFaceData | null;
   sessions: SessionsFaceData | null;
+  payroll: PayrollFaceData | null;
 };
 
 export function BillingPage({ d, sp }: { d: BillingPageData; sp: Sp }) {
@@ -115,7 +117,7 @@ export function BillingPage({ d, sp }: { d: BillingPageData; sp: Sp }) {
       ) : effectiveTab === "sessions" ? (
         <SessionTermsFace period={sp.period} subject={sp.subject} q={sp.q} page={sp.page} only={sp.only} allocation={sp.allocation} confirmation={sp.confirmation} panel={sp.panel} status={sp.status} params={sp} data={d.sessions!} />
       ) : effectiveTab === "payroll" ? (
-        <HostFaceNotReady />
+        <TeacherSettlementFace period={sp.period} data={d.payroll!} />
       ) : (
         <BillingContent sp={sp} canImport={canImport} data={d.billing!} />
       )}

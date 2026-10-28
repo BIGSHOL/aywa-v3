@@ -8,7 +8,7 @@
 //  · 환불 요청서(refunds-face.tsx · refunds/new · refunds/[id]) — v2-billing-refunds.mjs(restricted 문서라 보는 사람 신분 + RLS로만)
 //  · 수강료 계산기(calculator-panel.tsx · tuition-prices-panel.tsx · saved-quotes-panel.tsx · 교재 단가표는 catalog-panel 같은 것) — v2-billing-calculator.mjs
 //  · 회차 확정(session-terms-face.tsx · session-verification-face.tsx) — v2-billing-sessions.mjs(2.0 서버 함수 그대로 · 공용 러너)
-//  · 다른 면(강사 정산)은 다음 단계 — 지금은 '아직 지원하지 않는 기능'.
+//  · 강사 정산(teacher-settlement-face.tsx) — v2-billing-payroll.mjs(2.0 서버 함수 그대로 · 급여 열람 게이트 = 2.0 canReadSalary)
 // 사람마다 보이는 것이 다르다 — '보는 사람'을 고르고(운영자 계정 제외 · 원장 먼저) 그 사람의 권한 표로 2.0과 같게 낸다(v2-billing-common.mjs).
 // 🔴 급여(강사 정산)는 급여 열람 게이트(payroll_settings · 급여 기능 켜짐)를 지난 사람에게만 싣는다.
 //
@@ -43,6 +43,7 @@ import { readExpensesFace, readExpenseById, loadExpenseRules, expenseActions } f
 import { readCalculatorFace, calculatorActions } from './v2-billing-calculator.mjs';
 import { invoiceActions } from './v2-billing-invoice-save.mjs';
 import { readSessionsFace, sessionActions, readSessionCall } from './v2-billing-sessions.mjs';
+import { readPayrollFace, payrollActions } from './v2-billing-payroll.mjs';
 import { readRefundRequests, readRefundById, loadRefundRules, loadRefundStudentOptions, loadRefundPrefill, refundActions } from './v2-billing-refunds.mjs';
 
 const ID = 'billing';
@@ -66,7 +67,7 @@ const PARAMS = {
 export const screen = {
   id: ID, label: '수납관리', order: 9,
   params: PARAMS,
-  actions: { ...invoiceActions, ...textbookFaceActions, ...expenseActions, ...refundActions, ...calculatorActions, ...sessionActions },
+  actions: { ...invoiceActions, ...textbookFaceActions, ...expenseActions, ...refundActions, ...calculatorActions, ...sessionActions, ...payrollActions },
   paramMax: { args: 400 },
   load: async ({ sql, params: sp, tenantId: t, importV2 }) => {
     const R = await loadBillingRules(importV2);
@@ -106,11 +107,11 @@ export const screen = {
     const tab = resolveBillingTab(sp.tab), sessionOn = R.modules.isModuleEnabled(env.disabled, 'session_billing');
     const effectiveTab = (tab === 'payroll' && !access.readSalary) || (!sessionOn && ['sessions', 'verify', 'payroll'].includes(tab)) ? 'billing' : tab;
     const denied = !(tab === 'payroll' ? access.payrollMenu : access.billing) || (effectiveTab !== 'payroll' && !access.billing);
-    if (denied) return { ...common, route: 'page', access, sync: {}, billing: null, textbooks: null, expenses: null, refunds: null, calculator: null, sessions: null };
+    if (denied) return { ...common, route: 'page', access, sync: {}, billing: null, textbooks: null, expenses: null, refunds: null, calculator: null, sessions: null, payroll: null };
     // 동기화 배지(수납 · 교재 면만) — 면이 고르는 도메인.
     const domain = effectiveTab === 'billing' ? 'invoices' : effectiveTab === 'textbooks' ? 'textbook_checks' : null;
     const sync = domain ? { [domain]: await readSyncState(sql, t, R, env, domain) } : {};
-    let billing = null, textbooks = null, expenses = null, refunds = null, calculator = null, sessions = null;
+    let billing = null, textbooks = null, expenses = null, refunds = null, calculator = null, sessions = null, payroll = null;
     if (effectiveTab === 'billing') {
       // billing-content.tsx — period = sp.period ?? 이번 달(2.0 currentPeriod) · sort = sp.sort ?? 'status' · desc = sp.desc === '1'.
       const period = sp.period ?? R.calc.currentPeriod();
@@ -126,6 +127,8 @@ export const screen = {
     else if (effectiveTab === 'calculator') calculator = await readCalculatorFace(sql, t, R, env, importV2, sp);
     // 회차 확정 = 2.0 서버 함수 그대로(공용 러너) — 확정·배분 | 청구 시수 대조.
     else if (effectiveTab === 'sessions') sessions = await readSessionsFace(t, R, env, viewer, sp);
-    return { ...common, route: 'page', access, sync, billing, textbooks, expenses, refunds, calculator, sessions };
+    // 강사 정산 = 2.0 서버 함수 그대로(급여 열람 게이트를 못 지나면 자료 없음).
+    else if (effectiveTab === 'payroll') payroll = await readPayrollFace(t, R, viewer, sp);
+    return { ...common, route: 'page', access, sync, billing, textbooks, expenses, refunds, calculator, sessions, payroll };
   },
 };

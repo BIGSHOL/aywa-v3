@@ -10,6 +10,8 @@ import type { SessionTermsView } from "@/features/billing/session-terms/server/q
 import type { getSessionVerificationView } from "@/features/billing/session-terms/server/verification-queries";
 import type { SplitsSnapshotStatus } from "@/features/billing/session-terms/server/splits-queries";
 import type { SeatShareSummary } from "@/features/attendance/server/seat-share-summary";
+import type { getTeacherTuitionView } from "@/features/payroll/server/tuition-view";
+import type { ClassSalaryRow } from "@/features/payroll/server/class-salary-queries";
 
 /** textbooks-panel.tsx가 서버에서 받던 값 — getTextbookOrdersPage · getTextbookStats · getStudentOptions · getCatalogOptions · 학원 설정(이름 · 로고 · 계좌). */
 export type TextbooksPanelData = {
@@ -50,6 +52,12 @@ export type SessionsFaceData = {
   settings: Pick<TenantSettings, "operations">;
   confirm: { view: SessionTermsView; seatShare: SeatShareSummary | null } | null;
   verification: { view: Awaited<ReturnType<typeof getSessionVerificationView>>; savedSplits: SplitsSnapshotStatus | null } | null;
+};
+
+/** teacher-settlement-face.tsx — 2.0 canReadSalary · canManageSalary · getTeacherTuitionView · getClassSalaryRows · canViewPayslipNow 결과(열람 게이트를 못 지나면 view · classRows = null). */
+export type PayrollFaceData = {
+  period: string; canRead: boolean; canEdit: boolean; canPayslip: boolean;
+  view: Awaited<ReturnType<typeof getTeacherTuitionView>> | null; classRows: ClassSalaryRow[] | null;
 };
 
 /** textbooks-face.tsx — 내부탭(목록 | 교재 단가표)이 고르는 쪽만 실린다. */

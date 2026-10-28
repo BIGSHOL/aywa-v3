@@ -1,0 +1,36 @@
+{
+ "face": [
+  [
+   "import { canManageSalary, canReadSalary } from \"@/features/payroll/server/salary-access\";\n",
+   ""
+  ],
+  [
+   "import { getTeacherTuitionView } from \"@/features/payroll/server/tuition-view\";\nimport { getClassSalaryRows } from \"@/features/payroll/server/class-salary-queries\";\nimport { ClassSalaryRowForm } from \"./class-salary-row\";\n",
+   "import { ClassSalaryRowForm } from \"@/app/(shell)/billing/_components/class-salary-row\";\nimport type { PayrollFaceData } from \"./billing-types\";\n"
+  ],
+  [
+   "import { getCurrentUser } from \"@/lib/auth/current-user\";\nimport { canViewPayslipNow } from \"@/features/payroll/server/payslip-gate\";\nimport { TeacherCompEditor } from \"./teacher-comp-editor\";\n",
+   "import { TeacherCompEditor } from \"@/app/(shell)/billing/_components/teacher-comp-editor\";\n"
+  ],
+  [
+   "import { BillingMonthNav } from \"./billing-month-nav\";\nimport { FaceNote } from \"./face-note\";\n",
+   "import { BillingMonthNav } from \"@/app/(shell)/billing/_components/billing-month-nav\";\nimport { FaceNote } from \"@/app/(shell)/billing/_components/face-note\";\n"
+  ],
+  [
+   "export async function TeacherSettlementFace({ period }: { period?: string }) {",
+   "export function TeacherSettlementFace({ period, data }: { period?: string; data: PayrollFaceData }) {"
+  ],
+  [
+   "  if (!(await canReadSalary())) {",
+   "  if (!data.canRead) {"
+  ],
+  [
+   "  const canEdit = await canManageSalary();",
+   "  const canEdit = data.canEdit;"
+  ],
+  [
+   "  const user = await getCurrentUser();\n  const [view, classRows, canPayslip] = await Promise.all([\n    getTeacherTuitionView(p),\n    getClassSalaryRows(),\n    // 명세서는 원장 역할 · 학원 설정에서 지정한 사람 + super_admin만(급여명세서 열람 결정) — 못 여는 사람에겐 링크를 안 세운다.\n    user ? canViewPayslipNow(user) : Promise.resolve(false),\n  ]);\n",
+   "  // 서버가 2.0 getTeacherTuitionView(p) · getClassSalaryRows() · canViewPayslipNow(user)를 그대로 돌려 낸 값(급여 열람 게이트를 지난 사람만).\n  const [view, classRows, canPayslip] = [data.view!, data.classRows!, data.canPayslip];\n"
+  ]
+ ]
+}
