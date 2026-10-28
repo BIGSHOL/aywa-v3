@@ -12,7 +12,7 @@
 .tr .good{color:var(--ax-good)}.tr .bad{color:var(--ax-bad)}
 .tr .tr-now small.good,.tr .tr-now small.bad,.tr td.good,.tr td.bad{font-weight:600}
 .tr-chart svg{display:block;width:100%;height:auto}
-.tr-chart text{font-size:12px;fill:var(--ax-ink)}
+.tr-chart text{font-size:var(--ax-xs);fill:var(--ax-ink)}
 .tr-line polyline{fill:none;stroke:var(--ax-primary);stroke-width:2.5;stroke-linejoin:round;stroke-linecap:round}
 .tr-line.base polyline{stroke:#9aa7bf;stroke-width:2;stroke-dasharray:5 4}
 .tr-line .tr-solo{fill:var(--ax-primary)}.tr-line.base .tr-solo{fill:#9aa7bf}
@@ -31,3 +31,10 @@
 .tr-spark .chart-line{display:block;height:28px}
 .v3s-note{margin:0;font-size:var(--ax-sm)}
 @media (max-width:720px){.tr-table th:nth-last-child(2),.tr-table td.tr-spark{display:none}.tr-table .num{width:6em}}
+/* 전역 규칙(styles.css th 10px 회색 · td 12px 회색 · .tab 밑줄 탭 11~12px 회색)을 이 화면에선 쓰지 않는다 — 글자 14px · #121212(재리뷰 10-28 N1). */
+.tr-table th,.tr-table td{font-size:var(--ax-xs);color:var(--ax-ink);background:transparent}
+.tr-table thead th{font-weight:650}
+.tr-table tbody tr:last-child>*{border-bottom:1px solid var(--ax-line)}
+.tr-seg .tab{min-height:var(--ax-control-h-sm);padding:0 12px;border:1px solid var(--ax-line);border-radius:6px;background:#fff;font-size:var(--ax-xs);color:var(--ax-ink);white-space:nowrap}
+.tr-seg .tab:hover{background:var(--ax-soft)}
+.tr-seg .tab.active{border-color:var(--ax-primary);background:var(--ax-soft);color:var(--ax-primary);font-weight:650}

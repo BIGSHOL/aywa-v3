@@ -17,24 +17,33 @@
     const good = better === 'up' ? d > 0 : better === 'down' ? d < 0 : null;
     return { text: `${d > 0 ? '▲' : '▼'} ${unit === '%' ? `${Math.abs(d).toFixed(1)}%p` : fmt(Math.abs(d))}`, tone: good === null ? '' : good ? 'good' : 'bad' };
   };
-  const ratio = p => (p && p.den != null ? `${fmt(p.num)} / ${fmt(p.den)}` : '');
+  // 분자 / 분모는 비율 지표만(건수 지표는 분모가 1이라 '333 / 1'로 보였다).
+  const ratio = (p, unit = '%') => (unit === '%' && p && p.den != null ? `${fmt(p.num)} / ${fmt(p.den)}` : '');
   const tip = (title, rows, meta) => esc(JSON.stringify({ title, rows, meta: meta.filter(Boolean) }));
 
-  // 큰 추세: 비율은 0~100 고정, 건수는 딱 떨어지는 눈금. 기록이 없는 기간은 선을 잇지 않는다. 점마다 앱 팝오버(마우스·키보드·터치).
+  // 큰 추세: 비율은 0~100 고정, 건수는 딱 떨어지는 눈금 — 값이 0에서 멀면(가장 작은 값이 가장 큰 값의 30%를 넘으면) 값 범위에 맞춰
+  // 변화가 보이게 한다(재원생 402→333이 0~600 축에선 평평했다). 기록이 없는 기간은 선을 잇지 않는다. 점마다 앱 팝오버(마우스·키보드·터치).
+  // 그림 폭 = 화면에 놓일 실제 폭(글자가 화면 폭에 비례해 커지지 않게 — 760 폭을 1,400px로 늘리면 축 글자가 20px을 넘었다).
+  const nice = raw => { const mag = 10 ** Math.floor(Math.log10(raw)), k = raw / mag; return Math.max((k <= 1 ? 1 : k <= 2 ? 2 : k <= 2.5 ? 2.5 : k <= 5 ? 5 : 10) * mag, 1); };
   function bigChart(d, base) {
-    const W = 760, H = 260, L = 44, R = 16, T = 18, B = 34, n = d.windows.length, pct = d.metric.unit === '%';
+    const room = document.querySelector('[data-v2-screen="trend"] .tr-main')?.clientWidth || document.querySelector('#main')?.clientWidth || 800;
+    const W = Math.max(560, Math.round(room - 34)), H = 280, L = 52, R = 16, T = 18, B = 34, n = d.windows.length, pct = d.metric.unit === '%';
     const vals = [...d.total, ...(base?.total || [])].map(p => p?.value).filter(v => v != null);
-    let max = 100, tick = 20;
-    if (!pct) { const top = Math.max(...vals, 1), raw = top / 4, mag = 10 ** Math.floor(Math.log10(raw)), k = raw / mag; tick = Math.max((k <= 1 ? 1 : k <= 2 ? 2 : k <= 2.5 ? 2.5 : k <= 5 ? 5 : 10) * mag, 1); max = tick * Math.ceil(top / tick); }
-    const x = i => L + (n === 1 ? (W - L - R) / 2 : (W - L - R) * i / (n - 1)), y = v => T + (H - T - B) * (1 - v / max), step = (W - L - R) / Math.max(n - 1, 1);
-    const grid = Array.from({ length: Math.round(max / tick) + 1 }, (_, i) => { const v = tick * i; return `<line class="grid-line" x1="${L}" x2="${W - R}" y1="${y(v)}" y2="${y(v)}"/><text x="${L - 8}" y="${y(v) + 4}" text-anchor="end">${pct ? `${v}%` : fmt(v)}</text>`; }).join('');
+    let min = 0, max = 100, tick = 20;
+    if (!pct) {
+      const top = Math.max(...vals, 1), low = vals.length ? Math.min(...vals) : 0;
+      if (low > top * 0.3 && top > low) { tick = nice((top - low) / 4); min = Math.max(0, tick * Math.floor((low - tick / 2) / tick)); max = tick * Math.ceil((top + tick / 4) / tick); }
+      else { tick = nice(top / 4); max = tick * Math.ceil(top / tick); }
+    }
+    const x = i => L + (n === 1 ? (W - L - R) / 2 : (W - L - R) * i / (n - 1)), y = v => T + (H - T - B) * (1 - (v - min) / (max - min)), step = (W - L - R) / Math.max(n - 1, 1);
+    const grid = Array.from({ length: Math.round((max - min) / tick) + 1 }, (_, i) => { const v = min + tick * i; return `<line class="grid-line" x1="${L}" x2="${W - R}" y1="${y(v)}" y2="${y(v)}"/><text x="${L - 8}" y="${y(v) + 4}" text-anchor="end">${pct ? `${v}%` : fmt(v)}</text>`; }).join('');
     const path = series => { const runs = []; series.forEach((p, i) => { if (p?.value == null) return; if (i && series[i - 1]?.value != null) runs.at(-1).push(i); else runs.push([i]); });
       return runs.map(r => (r.length === 1 ? `<circle class="tr-solo" cx="${x(r[0])}" cy="${y(series[r[0]].value)}" r="3"/>` : `<polyline points="${r.map(i => `${x(i)},${y(series[i].value)}`).join(' ')}"/>`)).join(''); };
     const every = Math.ceil(n / 12), name = d.filter?.label ? `${d.filter.label} · ${d.metric.label}` : d.metric.label;
     const cols = d.windows.map((w, i) => {
       const p = d.total[i], q = i ? d.total[i - 1] : null, b = base?.total?.[i], c = changeOf(p, q, d.metric.unit, d.metric.better);
       const rows = [{ label: name, value: shown(p?.value, d.metric.unit), tone: 'primary' }, ...(base ? [{ label: '학원 전체', value: shown(b?.value, d.metric.unit), tone: 'secondary' }] : [])];
-      return `<g class="chart-col" data-point data-tip="${tip(w.from === w.to ? w.label : `${w.label} (${w.from} ~ ${w.to})`, rows, [i ? `직전 대비 ${c.text}` : '', ratio(p)])}">`
+      return `<g class="chart-col" data-point data-tip="${tip(w.from === w.to ? w.label : `${w.label} (${w.from} ~ ${w.to})`, rows, [i ? `직전 대비 ${c.text}` : '', ratio(p, d.metric.unit)])}">`
         + `<rect class="chart-hit" x="${x(i) - step / 2}" y="${T - 8}" width="${step}" height="${H - B - T + 8}"/>`
         + (p?.value == null ? `<text data-anchor x="${x(i)}" y="${H - B - 6}" text-anchor="middle">—</text>` : `<circle class="tr-dot" data-anchor cx="${x(i)}" cy="${y(p.value)}" r="4"/>`)
         + (i % every === 0 || i === n - 1 ? `<text x="${x(i)}" y="${H - 10}" text-anchor="middle">${esc(w.label)}</text>` : '') + '</g>';
@@ -79,7 +88,7 @@
     return `<div class="tr"><div class="page-heading"><div><p class="ws-group">확장 추세</p><h1>${esc(d.metric.label)}</h1></div><div class="heading-actions">${picker}</div></div>`
       + `<div class="tr-bar"><div class="tr-seg" role="group" aria-label="기간 단위">${seg('data-tr-grain', d.grains, d.grain)}</div><div class="tr-seg" role="group" aria-label="기준">${seg('data-tr-by', d.metric.dims.filter(x => x.id !== d.filter?.dim), d.by)}</div>`
       + (d.filter ? `<span class="tr-filter"><strong>${esc(d.filter.label)}</strong>만 보는 중<button type="button" class="icon-button" data-tr-unfilter aria-label="필터 풀기">×</button></span>` : '') + '</div>'
-      + `<section class="tr-main"><div class="tr-now"><span>${esc(d.windows[li]?.label || '')}</span><strong>${shown(p?.value, d.metric.unit)}</strong><small class="${c.tone}">${li ? `직전 대비 ${c.text}` : ''}</small><small>${ratio(p)}</small></div>${bigChart(d, base)}</section>`
+      + `<section class="tr-main"><div class="tr-now"><span>${esc(d.windows[li]?.label || '')}</span><strong>${shown(p?.value, d.metric.unit)}</strong><small class="${c.tone}">${li ? `직전 대비 ${c.text}` : ''}</small><small>${ratio(p, d.metric.unit)}</small></div>${bigChart(d, base)}</section>`
       + (d.rows.length ? table(d, ctx.api) : '<p class="v3s-note">이 조건의 기록이 없습니다.</p>') + '</div>';
   }
 
@@ -90,7 +99,7 @@
     const t = ev.target;
     // KPI 카드(어디를 눌러도) → 그 지표의 확장 추세. 카드 안의 링크·단추는 제 일을 한다.
     const card = t.closest?.('.ws-kpi[data-trend]');
-    if (card && !t.closest('a,button')) { location.hash = `v2-trend?metric=${encodeURIComponent(card.dataset.trend)}&grain=week`; return; }
+    if (card && !t.closest('a,button')) { location.hash = `v2-trend?metric=${encodeURIComponent(card.dataset.trend)}&grain=${encodeURIComponent(card.dataset.grain || 'week')}`; return; }
     if (!t.closest?.('[data-v2-screen="trend"]')) return;
     const b = t.closest('[data-tr-grain],[data-tr-by],[data-tr-filter],[data-tr-unfilter],[data-tr-sort],[data-tr-more]'); if (!b) return;
     if (b.dataset.trGrain) go({ grain: b.dataset.trGrain });

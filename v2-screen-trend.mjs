@@ -36,7 +36,8 @@ export const screen = {
   params: { metric: /^[a-z][a-z0-9-]{0,40}$/, grain: /^(day|week|month|year)$/, by: /^[a-z]{1,20}$/, f: /^[a-z]{1,20}:[A-Za-z0-9:._|-]{1,100}$/ },
   async load({ sql, params, tenantId, importV2 }) {
     const metric = TREND_METRICS.find((m) => m.id === params.metric) ?? TREND_METRICS[0];
-    const grain = GRAINS.some((g) => g.id === params.grain) ? params.grain : 'week';
+    const grains = metric.grains ? GRAINS.filter((g) => metric.grains.includes(g.id)) : GRAINS;
+    const grain = grains.some((g) => g.id === params.grain) ? params.grain : grains.some((g) => g.id === 'week') ? 'week' : grains[0].id;
     const dims = metric.dims, fdim = params.f?.slice(0, params.f.indexOf(':'));
     const filter = params.f && dims.some((d) => d.id === fdim) ? { dim: fdim, key: params.f.slice(fdim.length + 1) } : null;
     // 필터를 건 기준으로 다시 나눠 봐야 줄이 하나뿐이다 — 필터와 다른 기준이 기본(선생님을 골랐으면 반별).
@@ -47,15 +48,21 @@ export const screen = {
     const has = (p) => !!p && (metric.unit === '%' ? p.den > 0 : p.num != null);
     // 앞쪽의 '분자 0' 창 = 이 기록을 쓰기 시작하기 전(대상만 있고 기록이 없다) — 0%로 그리지 않고 잘라 낸다.
     // raw.since = 그 지표를 믿을 수 있는 첫날(지표가 알려 줄 때) — 그보다 앞서 끝난 창도 잘라 낸다.
-    const total = raw.total.map(pt), start = Math.max(0, total.findIndex((p, i) => has(p) && p.num > 0 && (!raw.since || windows[i].to >= raw.since)));
+    const total = raw.total.map(pt), start = Math.max(0, raw.since ? windows.findIndex((w) => w.to >= raw.since) : total.findIndex((p) => has(p) && p.num > 0));
     const subjects = by === 'subject' || filter?.dim === 'subject' ? new Map(((await sql`select data->'operations'->'subjects' s from public.tenant_settings where tenant_id=${tenantId}`)[0]?.s ?? []).map((s) => [s.key, s.label])) : new Map();
     const label = (dim, key, fallback) => (dim === 'subject' ? subjects.get(key) ?? fallback ?? key : fallback);
+    const filterName = async () => {
+      const named = await nameOf(sql, tenantId, filter.dim, filter.key);
+      if (named !== filter.key || filter.dim === 'subject') return named;
+      const whole = await remember(`${tenantId}|${asOf}|${metric.id}|${grain}|${filter.dim}|`, () => metric.series({ sql, asOf, tenantId, importV2, windows, by: filter.dim, filter: null }));
+      return whole.rows.find((r) => r.key === filter.key)?.label ?? '이름 확인 필요';
+    };
     return {
       asOf, grain, by,
       metric: { id: metric.id, label: metric.label, unit: metric.unit, better: metric.better, dims },
       metrics: TREND_METRICS.map((m) => ({ id: m.id, label: m.label, group: m.group })),
-      grains: GRAINS,
-      filter: filter ? { ...filter, label: label(filter.dim, filter.key, await nameOf(sql, tenantId, filter.dim, filter.key)) } : null,
+      grains,
+      filter: filter ? { ...filter, label: label(filter.dim, filter.key, await filterName()) } : null,
       windows: windows.slice(start),
       total: total.slice(start),
       rows: raw.rows.map((r) => ({ key: r.key, label: label(by, r.key, r.label), points: r.points.map(pt).slice(start) })).filter((r) => r.points.some(has)),

@@ -145,16 +145,16 @@ window.createWorkspaces = function createWorkspaces(api) {
   function kpiCard(m){const pct=m.unit==='%',shown=v=>v===null?'기록 없음':`${pct?v.toFixed(1):fmt(v)}${m.unit||''}`,d=m.delta,dir=d===null||d===0?0:d>0?1:-1,good=m.better==='up'?dir>0:m.better==='down'?dir<0:null,per=m.period==='month'?'전월':'7일 전';
     const change=d===null?'비교할 기간 기록 없음':dir===0?`${per} 대비 변화 없음`:`${per} 대비 ${dir>0?'▲':'▼'} ${pct?`${Math.abs(d).toFixed(1)}%p`:`${fmt(Math.abs(d))}${m.unit||''}`}${!pct&&m.previous>0?` (${Math.round(Math.abs(d)/m.previous*100)}%)`:''}`;
     // id가 있는 지표 = 확장 추세가 있다 — 카드 어디를 눌러도 그 지표의 확장 추세로(원장 10-28 "추세를 눌렀을때 확장 추세로 이동"). 클릭은 v2-screen-trend.js가 받는다.
-    const href=m.id?`#v2-trend?metric=${encodeURIComponent(m.id)}&grain=week`:'';
-    return `<div class="ws-metric ws-kpi"${m.id?` data-trend="${h(m.id)}"`:''}><span class="ws-kpi-title">${href?`<a href="${href}">${h(m.label)}</a>`:`<span>${h(m.label)}</span>`}${m.span?`<em>${h(m.span)}</em>`:''}</span><strong>${h(shown(m.value))}</strong><small class="ws-kpi-change${dir===0||good===null?'':good?' good':' bad'}">${h(change)}</small><span class="ws-kpi-spark">${api.lineChart(m.points,{key:'value',label:m.label,unit:m.unit||'',compare:per})}</span></div>`;}
+    const grain=m.period==='month'?'month':'week',href=m.id?`#v2-trend?metric=${encodeURIComponent(m.id)}&grain=${grain}`:'';
+    return `<div class="ws-metric ws-kpi"${m.id?` data-trend="${h(m.id)}" data-grain="${grain}"`:''}><span class="ws-kpi-title">${href?`<a href="${href}">${h(m.label)}</a>`:`<span>${h(m.label)}</span>`}${m.span?`<em>${h(m.span)}</em>`:''}</span><strong>${h(shown(m.value))}</strong><small class="ws-kpi-change${dir===0||good===null?'':good?' good':' bad'}">${h(change)}</small><span class="ws-kpi-spark">${api.lineChart(m.points,{key:'value',label:m.label,unit:m.unit||'',compare:per})}</span></div>`;}
   function critical(a){
     // KPI 추세 카드가 있으면 6개까지, 누적 건수 막대는 그리지 않는다(원장 10-28 "전체 몇건 … 아무 도움이 안됨"). 공통 설명은 카드 아래 한 번.
-    const all=d0=>d0?.metrics||[],d=data(a.id),isKpi=all(d).some(m=>m.kind==='kpi'),metrics=all(d).slice(0,isKpi?6:4),trend=isKpi?null:d?.trend;
+    const all=d0=>d0?.metrics||[],d=data(a.id),isKpi=all(d).some(m=>m.kind==='kpi'),metrics=isKpi?all(d).filter(m=>m.kind==='kpi'):all(d).slice(0,4),trend=isKpi?null:d?.trend;
     if(!metrics.length&&!trend?.points?.length)return '';
     const value=m=>m.value===null||m.value===undefined?'기록 없음':`${fmt(m.value)}${m.unit||''}`;
     const points=(trend?.points||[]).map(p=>trend.granularity==='day'?{date:p.date,value:p.value}:{month:p.date,value:p.value});
     const chartHtml=!points.length?'':trend.granularity==='day'?`<div class="ws-line">${api.lineChart(points,{key:'value',label:trend.label,unit:trend.unit||''})}</div>`:api.chart(points.map(p=>({...p,label:api.yymm(p.month)})),'value',trend.unit==='원'?'만원':trend.unit||'',{label:trend.label});
-    return `<section class="ws-critical" aria-label="핵심 지표">${metrics.length?`<div class="ws-metrics"${isKpi?` style="--kpi-n:${metrics.length};--kpi-half:${Math.ceil(metrics.length/2)}"`:''}>${metrics.map(m=>m.kind==='kpi'?kpiCard(m):`<div class="ws-metric"><span>${h(m.label)}</span><strong>${h(value(m))}</strong>${m.detail?`<small>${h(m.detail)}</small>`:''}</div>`).join('')}</div>`:''}${chartHtml?`<div class="ws-trend"><h2>${h(trend.label||'추이')}</h2>${chartHtml}</div>`:''}</section>`;
+    return `<section class="ws-critical" aria-label="핵심 지표">${metrics.length?`<div class="ws-metrics"${isKpi?` style="--kpi-n:${metrics.length<=6?metrics.length:Math.ceil(metrics.length/2)};--kpi-half:${metrics.length<=6?Math.ceil(metrics.length/2):3}"`:''}>${metrics.map(m=>m.kind==='kpi'?kpiCard(m):`<div class="ws-metric"><span>${h(m.label)}</span><strong>${h(value(m))}</strong>${m.detail?`<small>${h(m.detail)}</small>`:''}</div>`).join('')}</div>`:''}${chartHtml?`<div class="ws-trend"><h2>${h(trend.label||'추이')}</h2>${chartHtml}</div>`:''}</section>`;
   }
   const byPriority=(x,y)=>(PRIORITY_ORDER.indexOf(x.priority)+1||9)-(PRIORITY_ORDER.indexOf(y.priority)+1||9);
   function signalCard(id,s,withFamily=false){
