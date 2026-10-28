@@ -9,7 +9,7 @@
   'use strict';
   const ID = 'onescreen', HOST = `/v2-host/${ID}.html`, S = window.V2Screens; if (!S) return;
   const h = S.esc, KEEP = ['teacher', 'date', 'all', 'view', 'class', 'student'];
-  let api = null, frame = null, requested = null, hostOk = null, wired = false, last = null;
+  let api = null, frame = null, requested = null, hostOk = null, checking = false, wired = false, last = null;
   const queryOf = q => { const o = new URLSearchParams(); for (const k of KEEP) { const v = q.get(k); if (v) o.set(k, v); } return o.toString(); };
 
   function ensureFrame(query) {
@@ -71,7 +71,8 @@
       if (!ctx.query.toString() && requested) { location.replace(`#v2-${ID}?${requested}`); return ''; }
       const q = ctx.query, list = ctx.load({ list: 'teachers' }), teachers = list.status === 'ready' ? list.data.teachers : [];
       const pick = q.get('teacher') || '';
-      if (hostOk === null) fetch(HOST, { method: 'HEAD' }).then(r => r.ok, () => false).then(ok => { if (hostOk === null) { hostOk = ok; api?.render?.(); } });
+      // One check of the host page — renders before its answer do not ask again.
+      if (hostOk === null) { if (!checking) { checking = true; fetch(HOST, { method: 'HEAD' }).then(r => r.ok, () => false).then(ok => { if (hostOk === null) { hostOk = ok; api?.render?.(); } }); } }
       else if (hostOk) { const query = queryOf(q); requestAnimationFrame(() => { ensureFrame(query); place(); }); }
       const wait = hostOk === false ? '2.0 부품 화면이 이 서버에 아직 연결되지 않았습니다.' : hostOk === null ? '선생님 수업보고서를 여는 중…' : '';
       const picker = `<label class="osh-pick"><span>보는 선생님</span><select data-osh="teacher" aria-label="보는 선생님">${pick ? '' : '<option value="" selected>최근 보고서가 가장 많은 선생님</option>'}${teachers.map(t => `<option value="${h(t.id)}" ${t.id === pick ? 'selected' : ''}>${h(t.name)} · 반 ${h(t.classes)}</option>`).join('')}</select></label>`;
