@@ -63,7 +63,7 @@ test('대응표 = 2.0 서버 함수 이름 그대로(그 파일이 내보내는 
   for (const n of Object.values(LR_READS).flat()) assert.ok(n in lessonReportsActions, `${n}을 원본 읽기로 연결`);
   assert.match(entry, /연습 복사본이라 실제로 보내지지 않습니다 — 발송 대기로만 남습니다/);
   // 직접 발송·공지·답글 등은 아직 받지 않는다(진입점이 그 자리에서 거절).
-  for (const n of ['saveAndQueueAdminReport', 'sendBulkAdminReports', 'editPostedNotice', 'cancelOnescreenNotice', 'requestParentReply', 'requestParentReaction'])
+  for (const n of ['saveAndQueueAdminReport', 'sendBulkAdminReports', 'editQueuedNotice', 'deleteQueuedNotice', 'requestParentReply', 'requestParentReaction'])
     { assert.ok(refuse.includes(`"${n}"`), n); assert.ok(!(n in lessonReportsActions), n); }
   assert.match(entry, /"requestClassnoteBoardSync", async \(\) => \(\{ ok: false, error: VIEW_ONLY \}\)/);
   assert.match(entry, /"testPrompt", async \(\) =>/);
@@ -212,6 +212,40 @@ test('공지 미리보기와 원생별·반 단체 발송 = 2.0 함수 · Docker
   assert.equal(wide.probes[2][0].n, net);
   const [{ n: afterWide }] = await db`select count(*)::int n from public.classnote_class_notices where tenant_id=${t} and title=${title}`;
   assert.equal(afterWide, beforeWide, '반 단체 대기열과 감사로그 되돌림');
+});
+
+test('게시된 공지 수정·회수 = 2.0 요청 상태까지만 · 바깥 요청 0 · 시험 뒤 되돌림', { skip: SKIP }, async () => {
+  const { t, run, net } = await setup();
+  const [target] = await db`select id::text id, body, status from public.classnote_notices
+    where tenant_id=${t} and status='success' and results is not null
+      and results::text like '%"reports"%' and targets::text not like '%"attachments"%'
+    order by created_at desc limit 1`;
+  assert.ok(target, '게시글 정보가 있는 수정·회수 가능 공지');
+  const module = 'features/onescreen/server/notice-actions.ts';
+  const editBody = '연습 복사본 공지 수정 요청 시험';
+  const edit = await run([{ module, fn: 'editPostedNotice', args: [target.id, editBody] }], [
+    { text: 'select status, body from public.classnote_notices where id=$1', params: [target.id] },
+    { text: `select metadata->>'via' via from public.audit_logs where tenant_id=$1 and action='classnote_notice_edit' and created_at=now()`, params: [t] },
+    { text: NET },
+  ]);
+  assert.deepEqual(edit.results[0].value, { ok: true });
+  assert.deepEqual([...edit.probes[0]], [{ status: 'edit_requested', body: editBody }]);
+  assert.ok(edit.probes[1].some((row) => row.via === VIA));
+  assert.equal(edit.probes[2][0].n, net);
+  const [afterEdit] = await db`select status, body from public.classnote_notices where id=${target.id}`;
+  assert.deepEqual({ ...afterEdit }, { status: target.status, body: target.body }, '수정 요청 되돌림');
+
+  const revoke = await run([{ module, fn: 'cancelOnescreenNotice', args: [target.id] }], [
+    { text: 'select status from public.classnote_notices where id=$1', params: [target.id] },
+    { text: `select metadata->>'via' via from public.audit_logs where tenant_id=$1 and action='classnote_notice_revoke' and created_at=now()`, params: [t] },
+    { text: NET },
+  ]);
+  assert.deepEqual(revoke.results[0].value, { ok: true });
+  assert.deepEqual([...revoke.probes[0]], [{ status: 'revoke_requested' }]);
+  assert.ok(revoke.probes[1].some((row) => row.via === VIA));
+  assert.equal(revoke.probes[2][0].n, net);
+  const [afterRevoke] = await db`select status from public.classnote_notices where id=${target.id}`;
+  assert.equal(afterRevoke.status, target.status, '회수 요청 되돌림');
 });
 
 test('저장하는 사람 = 보고서 관리 · 보고서 설정 · AI 멘트 중 하나라도 쓰기인 재직 직원(운영자 계정 제외 · 원장 먼저) · 목록 밖 = 로그인 없음', { skip: SKIP }, async () => {
