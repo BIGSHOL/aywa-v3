@@ -60,7 +60,9 @@
     const label=v=>unit==='만원'?fmt(v/10000):fmt(Math.round(v));
     const name=x=>x.label||(x.month?mlabel(x.month):shortDate(x.date));
     const monthly=items.every(x=>isMonth(x.month));
-    const grid=Array.from({length:ticks+1},(_,i)=>{const val=tick*i;return `<line class="grid-line" x1="${L}" x2="${W-R}" y1="${y(val)}" y2="${y(val)}"/><text x="${L-9}" y="${y(val)+4}" text-anchor="end">${label(val)}</text>`;}).join('');
+    const grid=Array.from({length:ticks+1},(_,i)=>{const val=tick*i;return `<line class="grid-line" x1="${L}" x2="${W-R}" y1="${y(val)}" y2="${y(val)}"/><text x="${L-9}" y="${y(val)+4}" text-anchor="end">${label(val)}</text>`;}).join('')
+      // 구간마다 흐린 점선 세로선(원장 10-28 "구간마다 점선 세로선을 그어서 쉽게 위치 파악") — 막대 뒤에.
+      +items.map((_,i)=>`<line class="col-line" x1="${L+step*(i+.5)}" x2="${L+step*(i+.5)}" y1="${T}" y2="${H-B}"/>`).join('');
     const cols=items.map((x,i)=>{
       const cx=L+step*(i+.5),v=x[key],sv=secondary?x[secondary]:null,width=Math.min(36,step*.48),prev=i?items[i-1][key]:null;
       const rows=[{label:options.label||'',value:exact(v,unit),tone:'primary'},...(secondary?[{label:options.secondaryLabel||'',value:exact(sv,unit),tone:'secondary'}]:[])];
@@ -84,7 +86,7 @@
     const tone=(v,prev)=>v===null||prev===null||v===prev?'':better==='up'?(v>prev?'good':'bad'):better==='down'?(v<prev?'good':'bad'):'';
     const point=(r,i)=>{const e=edges(i),v=values[i],prev=i?values[i-1]:null,delta=v===null||prev===null?'':compare?(v===prev?`${compare} 대비 변화 없음`:`${compare} 대비 ${v>prev?'▲':'▼'} ${unit==='%'?`${Math.abs(v-prev).toFixed(1)}%p`:text(Math.abs(v-prev))}`):`${monthly?`전월(${mlabel(rows[i-1].month)})`:'이전'} 대비 ${v>prev?'+':v<prev?'−':'±'}${text(Math.abs(v-prev))}`;
       return `<span class="chart-pt${solo.has(i)?' solo':''}" data-point data-tip="${tipData(periodTitle(r),[{label,value:text(v),tone:'primary'}],[delta&&tone(v,prev)?{text:delta,tone:tone(v,prev)}:delta,basis])}" style="left:${e.left}%;width:${e.width}%;--x:${e.at}%;--y:${v===null?100:yv(v)/40*100}%"><i data-anchor></i></span>`;};
-    return `<span class="chart-line" data-chart tabindex="0" role="group" aria-label="${h(label)} — 화살표 키로 기간을 옮기며 수치를 확인합니다"><svg viewBox="0 0 100 40" preserveAspectRatio="none" role="img" aria-label="${h(label)} ${rows.map((r,i)=>`${periodTitle(r)} ${text(values[i])}`).join(', ')}"><line x1="0" x2="100" y1="39" y2="39" vector-effect="non-scaling-stroke"/>${runs.filter(r=>r.length>1).map(r=>`<polyline points="${r.map(i=>`${x(i)},${yv(values[i])}`).join(' ')}" vector-effect="non-scaling-stroke"/>`).join('')}</svg>${rows.map(point).join('')}</span>`;
+    return `<span class="chart-line" data-chart tabindex="0" role="group" aria-label="${h(label)} — 화살표 키로 기간을 옮기며 수치를 확인합니다"><svg viewBox="0 0 100 40" preserveAspectRatio="none" role="img" aria-label="${h(label)} ${rows.map((r,i)=>`${periodTitle(r)} ${text(values[i])}`).join(', ')}"><line x1="0" x2="100" y1="39" y2="39" vector-effect="non-scaling-stroke"/>${rows.map((_,i)=>`<line class="col-line" x1="${x(i)}" x2="${x(i)}" y1="2" y2="39" vector-effect="non-scaling-stroke"/>`).join('')}${runs.filter(r=>r.length>1).map(r=>`<polyline points="${r.map(i=>`${x(i)},${yv(values[i])}`).join(' ')}" vector-effect="non-scaling-stroke"/>`).join('')}</svg>${rows.map(point).join('')}</span>`;
   }
   // Shared chart popover: one per document, moved into an open dialog so it renders above it. Never takes pointer events.
   // The same point is never re-rendered on pointermove; keyboard moves are announced once through a polite live region.

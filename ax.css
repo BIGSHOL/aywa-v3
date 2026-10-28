@@ -310,6 +310,9 @@
 .ax-enabled .live-chart rect.chart-bar:not([fill="#a7cbbb"]){fill:#557aaa}
 /* 격자 점선이 보이게(원장 10-28 "점선이 거의 안보이고") */
 .ax-enabled .live-chart .grid-line{stroke:#aab4c3;stroke-dasharray:4 4;stroke-width:1}
+/* 구간마다 흐린 점선 세로선(원장 10-28) — 가로 눈금선보다 한 단계 흐리게 */
+.live-chart .col-line{stroke:#d3dae5;stroke-dasharray:3 4;stroke-width:1}
+.chart-line svg .col-line{stroke:#dde3ec;stroke-dasharray:2 3}
 .ax-enabled .live-card{transform:none;border-radius:8px}
 .ax-enabled .live-card:hover{transform:none;border-color:var(--ax-primary)}
 .ax-enabled .live-panel{border-radius:8px}

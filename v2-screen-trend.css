@@ -12,6 +12,8 @@
 .tr .good{color:var(--ax-good)}.tr .bad{color:var(--ax-bad)}
 .tr .tr-now small.good,.tr .tr-now small.bad,.tr td.good,.tr td.bad{font-weight:600}
 .tr-chart svg{display:block;width:100%;height:auto}
+.tr-chart .col-line{stroke:#cfd6e1;stroke-width:1;stroke-dasharray:3 4}
+.tr-spark .chart-line .col-line{display:none}
 .tr-chart text{font-size:var(--ax-xs);fill:var(--ax-ink)}
 .tr-line polyline{fill:none;stroke:var(--ax-primary);stroke-width:2.5;stroke-linejoin:round;stroke-linecap:round}
 .tr-line.base polyline{stroke:#9aa7bf;stroke-width:2;stroke-dasharray:5 4}
