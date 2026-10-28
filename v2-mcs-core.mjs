@@ -33,8 +33,8 @@ export async function readSettings(sql, t, R) {
 }
 
 const RANK = ['master', 'admin', 'manager'];
-/** 볼 수 있는 사람 — MCS 권한이 '없음'이 아닌 재직 직원(2.0 requireAccess("mcs")와 같은 권한 표 · 역할 재정의 + 개인 예외). 운영자 계정은 뺀다. */
-export async function readViewers(sql, t, R, env) {
+/** 볼 수 있는 사람 — 그 메뉴(기본 MCS) 권한이 '없음'이 아닌 재직 직원(2.0 requireAccess("mcs")와 같은 권한 표 · 역할 재정의 + 개인 예외). 운영자 계정은 뺀다. */
+export async function readViewers(sql, t, R, env, menu = 'mcs') {
   const [users, supers] = await Promise.all([
     sql`select id::text id, display_name, system_role::text role from public.users where tenant_id=${t} and status::text='active' and display_name is not null`,
     sql`select id::text id from public.super_admins`.catch(() => []),
@@ -43,7 +43,7 @@ export async function readViewers(sql, t, R, env) {
   const matrix = R.perms.resolveMatrix(Array.isArray(env.permissions.overrides) ? env.permissions.overrides : []);
   const userOverrides = Array.isArray(env.permissions.userOverrides) ? env.permissions.userOverrides : [];
   return users.filter(u => !operators.has(u.id)).map(u => {
-    const level = R.perms.accessLevel(u.role, 'mcs', R.perms.applyUserOverrides(matrix, u.id, u.role, userOverrides));
+    const level = R.perms.accessLevel(u.role, menu, R.perms.applyUserOverrides(matrix, u.id, u.role, userOverrides));
     return { id: u.id, name: u.display_name, systemRole: u.role, roleLabel: R.ROLE_LABEL[u.role] ?? '', level };
   }).filter(u => u.level !== 'none')
     .sort((a, b) => (RANK.includes(a.systemRole) ? RANK.indexOf(a.systemRole) : RANK.length) - (RANK.includes(b.systemRole) ? RANK.indexOf(b.systemRole) : RANK.length) || a.name.localeCompare(b.name, 'ko'));
