@@ -20,11 +20,11 @@ export async function attendanceFamilies(ctx) {
   const rate = rows.length ? Math.round(attended / rows.length * 1000) / 10 : null;
   const evidence = rows.map(r => record({ id: r.id, label: r.name, date: r.d, status: ATT[r.st] || '기타', fields: [field('수업', r.class_name)], facets: [`status:${r.st}`, repeat.has(r.student_id) && 'repeat-absence'] }));
   out.attendance = family('attendance', '출석부(월별·오늘·출결 모드·자리·키오스크)', {
-    summary: `${month} 출결 ${rows.length}칸, 출석률 ${rate === null ? '—' : `${rate}%`}. 결석 3회 이상 재원생 ${repeat.size}명.`,
-    metrics: [metric('이번 달 출결 칸', rows.length, '칸', '정정 반영 · 기준일까지'), metric('출석률', rate, '%', '(출석+지각) ÷ 기록 칸 전부 · 보강은 출석이 아님'), metric('결석', rows.filter(r => r.st === 'absent').length, '칸'), metric('결석 3회 이상 재원생', repeat.size, '명'), metric('이번 달 결석 후속 처리', aux.month_followups, '건', `전체 ${aux.followups}건`), metric('키오스크 기기', aux.kiosks, '대', `사용 중 ${aux.active_kiosks}대 · 체크인 ${aux.checkins}건`)],
+    summary: `${month} 출결 ${rows.length}칸, 출석률 ${rate === null ? '—' : `${rate}%`}. 최근 결석 3회 이상 ${repeat.size}명.`,
+    metrics: [metric('이번 달 출결 칸', rows.length, '칸', '정정 반영 · 기준일까지'), metric('출석률', rate, '%', '(출석+지각) ÷ 기록 칸 전부 · 보강은 출석이 아님'), metric('결석', rows.filter(r => r.st === 'absent').length, '칸'), metric('최근 결석 3회 이상', repeat.size, '명', '이번 달 · 수업 칸마다 셈'), metric('이번 달 결석 후속 처리', aux.month_followups, '건', `전체 ${aux.followups}건`), metric('키오스크 기기', aux.kiosks, '대', `사용 중 ${aux.active_kiosks}대 · 체크인 ${aux.checkins}건`)],
     trend: monthlyTrend('월별 출석률', '%', monthly, asOf), evidence,
-    facetOrder: [...Object.keys(ATT).map(k => `status:${k}`), 'repeat-absence'], facetLabels: { ...status('status', ATT), 'repeat-absence': '결석 3회 이상 재원생의 출결' }, recordSource: 'attendance_records',
-    signals: repeat.size ? [signal({ id: 'attendance-repeat-absence', title: `결석 3회 이상 재원생 ${repeat.size}명`, summary: `${month} 결석이 3회 이상 기록된 재원생입니다. 결석은 수업 칸마다 따로 셉니다.`, priority: PRIORITY.check, source: '출석부 · 정정 반영 출결', recordIds: rows.filter(r => r.st === 'absent' && repeat.has(r.student_id)).map(r => r.id), draft: { title: '결석 사유 및 보강 계획 확인', body: '이번 달 결석이 3회 이상인 원생의 결석 사유와 보호자 연락 여부, 보강 계획을 확인해 주세요.' } })] : [],
+    facetOrder: [...Object.keys(ATT).map(k => `status:${k}`), 'repeat-absence'], facetLabels: { ...status('status', ATT), 'repeat-absence': '최근 결석 3회 이상 원생의 출결' }, recordSource: 'attendance_records',
+    signals: repeat.size ? [signal({ id: 'attendance-repeat-absence', title: `최근 결석 3회 이상 ${repeat.size}명`, summary: `${month} 결석이 3회 이상 기록된 재원생입니다. 결석은 수업 칸마다 따로 셉니다.`, priority: PRIORITY.check, source: '출석부 · 정정 반영 출결', recordIds: rows.filter(r => r.st === 'absent' && repeat.has(r.student_id)).map(r => r.id), draft: { title: '결석 사유 및 보강 계획 확인', body: '이번 달 결석이 3회 이상인 원생의 결석 사유와 보호자 연락 여부, 보강 계획을 확인해 주세요.' } })] : [],
     sourceLabel: '출석부 · 결석 후속 · 키오스크', coverageNote: `근거 목록은 ${monthStart}부터 기준일까지의 출결 칸 전체이며 결석을 먼저 보여 줍니다. 정정 전 기록·미래 수업일·테스트 학생은 빼고, 메모는 보여 주지 않습니다.`,
     sources: [{ table: 'attendance_records', rows: aux.raw }, { table: 'attendance_followups', rows: aux.followups }, { table: 'kiosk_devices', rows: aux.kiosks }],
   });
