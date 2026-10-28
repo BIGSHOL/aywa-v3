@@ -224,10 +224,12 @@ async function editFixture(sql, cols = {}) {
 }
 /** 시험 트랜잭션 — 끝나면 통째로 되돌린다(남는 행 0) · 바깥 요청 대기열이 늘면 실패. */
 const rollback = (fn) => db.begin(async (sql) => {
-  const [{ q }] = await sql`select count(*)::int q from net.http_request_queue`;
+  const [{ q, claims, role }] = await sql`select count(*)::int q, coalesce(current_setting('request.jwt.claims', true), '') claims, current_user role from net.http_request_queue`;
   await fn(sql);
-  const [{ q: q2 }] = await sql`select count(*)::int q from net.http_request_queue`;
+  const [{ q: q2, claims: claims2, role: role2 }] = await sql`select count(*)::int q, coalesce(current_setting('request.jwt.claims', true), '') claims, current_user role from net.http_request_queue`;
   assert.equal(q2, q, '바깥 요청 대기열이 늘었다');
+  // 저장은 고른 사람 신분으로 쓴다(2.0 세션 클라이언트) — 끝나면 같은 트랜잭션의 신분 설정·역할이 원래대로.
+  assert.equal(claims2, claims, '사용자 신분 쓰기 뒤 request.jwt.claims가 원래 값'); assert.equal(role2, role, '역할이 원래대로');
   throw Object.assign(new Error('rollback'), { rollback: true });
 }).catch((e) => { if (!e.rollback) throw e; });
 
@@ -558,5 +560,17 @@ test('수업 배정 = 2.0 convertConsultationToStudent — 반 필수 · 남의 
     const [{ id: gone }] = await sql`insert into public.students (tenant_id, name, school, grade, status, withdrawn_at, is_test) values (${t}, '시험퇴원생', '침산중', '중1', 'withdrawn', now(), true) returning id::text id`;
     const stop = await call(sql, 'convertConsultationToStudent', w.owner.id, [null, { $formData: [['consultationId', w.id], ['classIds', klass.id]] }]);
     assert.equal(stop.withdrawnMatch, true); assert.equal(stop.existingStudentId, gone);
+  });
+});
+
+test('저장 신분 = 2.0 세션 클라이언트와 같다 — 쓰기 문장은 고른 사람(authenticated · 그 지점 RLS) · 끝나면 원래대로', { skip: SKIP }, async () => {
+  const { asViewer } = await import('./v2-enrollment-save.mjs');
+  await rollback(async (sql) => {
+    const d = await load(sql, { view: 'table' });
+    const r = await asViewer(sql, d.editors[0].id, (s) => s`select current_user who, auth_tenant_id()::text tenant`);
+    assert.deepEqual(r.data[0], { who: 'authenticated', tenant: t });
+    // 다른 지점 줄은 RLS가 막는다(0행) — 3.0이 tenant 조건을 빠뜨려도 새지 않는다.
+    const [other] = await sql`select id::text id from public.enrollment_consultations where tenant_id <> ${t} limit 1`;
+    if (other) assert.equal((await asViewer(sql, d.editors[0].id, (s) => s`update public.enrollment_consultations set updated_at = now() where id = ${other.id} returning id`)).data.length, 0);
   });
 });

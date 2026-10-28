@@ -52,6 +52,16 @@ async function referrerLabelOf(sql, t, cols) {
   return null;
 }
 
+/**
+ * 2.0 저장은 세션 클라이언트(createClient — RLS·트리거가 그 사람을 본다)로 쓴다 — 쓰기 문장은 고른 사람 신분으로(asViewer: 저장점 안 · 끝나면 역할·claims 복원).
+ * 실패는 던진다(부르는 쪽 try/catch가 2.0 문구로 바꾼다 · 저장점째 되돌아간다).
+ */
+async function viewerSave(sql, actorId, fn) {
+  const r = await asViewer(sql, actorId, fn);
+  if (r.error) throw r.error;
+  return r.data;
+}
+
 /** 칸 → SET 조각(jsonb는 sql.json — 글자로 두 번 싸지 않게). */
 function setList(sql, row) {
   return Object.entries(row).map(([k, v]) => sql`${sql(k)} = ${JSONB.has(k) && v !== null && v !== undefined ? sql.json(v) : v ?? null}`)
@@ -130,7 +140,7 @@ export async function updateEnrollmentConsultation(ctx, formData) {
   const write = { ...row, learning_history: Object.keys(lh).length > 0 ? lh : null, ...(outcomeTo ? { outcome: outcomeTo } : {}), updated_at: new Date().toISOString() };
   let saved;
   try {
-    [saved] = await sql.savepoint((sp) => sp`update public.enrollment_consultations set ${setList(sp, write)}
+    [saved] = await viewerSave(sql, user.id, (sp) => sp`update public.enrollment_consultations set ${setList(sp, write)}
       where tenant_id = ${t} and id = ${id} and ${stampSql(sp)} = ${found.stamp} returning id`);
   } catch (error) {
     return { error: S.dbError.describeDbError({ code: error?.code, message: error?.message ?? '', details: error?.detail ?? null, hint: error?.hint ?? null },
@@ -174,7 +184,7 @@ export async function setEnrollmentOutcome(ctx, formData) {
   if (assignedClassCount > 0 && S.board.stageOfOutcome(outcome) !== 'enrolled') return { error: S.board.ASSIGNED_DRAG_BLOCKED };
   if (cur.outcome === 'enrolled' && outcome !== 'enrolled' && outcome !== 'declined') return { error: S.board.ENROLLED_REVERT_BLOCKED };
   try {
-    await sql.savepoint((sp) => sp`update public.enrollment_consultations set outcome = ${outcome}, updated_at = ${new Date().toISOString()} where tenant_id = ${t} and id = ${id}`);
+    await viewerSave(sql, user.id, (sp) => sp`update public.enrollment_consultations set outcome = ${outcome}, updated_at = ${new Date().toISOString()} where tenant_id = ${t} and id = ${id}`);
   } catch (error) { return { error: dbWhy(S, error, '상담 상태를 바꾸지 못했습니다. 잠시 후 다시 시도해 주세요.') }; }
   if (cur.outcome !== outcome) {
     await audit(sql, t, user.row, 'enrollment_consultation_outcome', 'enrollment_consultations', cur.prospect_name ?? null, { consultationId: id, from: cur.outcome, to: outcome });
@@ -248,7 +258,7 @@ export async function patchConsultationCells(ctx, id, patch) {
   if (account !== undefined) row.consultant_id = account;
   let updated;
   try {
-    [updated] = await sql.savepoint((sp) => sp`update public.enrollment_consultations set ${setList(sp, { ...row, updated_at: new Date().toISOString() })}
+    [updated] = await viewerSave(sql, user.id, (sp) => sp`update public.enrollment_consultations set ${setList(sp, { ...row, updated_at: new Date().toISOString() })}
       where tenant_id = ${t} and id = ${id} and ${stampSql(sp)} = ${found.stamp} returning id`);
   } catch (error) { return { error: dbWhy(S, error, '상담 칸을 저장하지 못했습니다. 잠시 후 다시 시도해 주세요.') }; }
   if (!updated) return { error: '상담을 찾을 수 없습니다' };
@@ -290,7 +300,7 @@ export async function createEnrollmentConsultation(ctx, formData) {
   };
   let data;
   try {
-    [data] = await sql.savepoint((sp) => {
+    [data] = await viewerSave(sql, user.id, (sp) => {
       const cols = Object.keys(insert);
       const vals = cols.map((k) => sp`${JSONB.has(k) && insert[k] !== null && insert[k] !== undefined ? sp.json(insert[k]) : insert[k] ?? null}`).reduce((a, b) => sp`${a}, ${b}`);
       return sp`insert into public.enrollment_consultations (${sp(cols)}) values (${vals}) returning id::text id`;
@@ -321,7 +331,7 @@ export async function deleteEnrollmentConsultation(ctx, formData) {
   if (!c) return { error: '상담을 찾을 수 없습니다' };
   const [{ n: recCount }] = await sql`select count(*)::int n from public.consultation_recordings where consultation_id = ${id}`;
   try {
-    await sql.savepoint((sp) => sp`delete from public.enrollment_consultations where tenant_id = ${t} and id = ${id}`);
+    await viewerSave(sql, user.id, (sp) => sp`delete from public.enrollment_consultations where tenant_id = ${t} and id = ${id}`);
   } catch (error) { return { error: dbWhy(S, error, '상담을 삭제하지 못했습니다. 잠시 후 다시 시도해 주세요.', 'delete') }; }
   await audit(sql, t, user.row, 'enrollment_consultation_delete', 'enrollment_consultations', c.prospect_name ?? null,
     { consultationId: id, studentId: c.student_id ?? null, hadRecording: !!c.audio_path || recCount > 0 });
@@ -352,7 +362,7 @@ export async function updateConsultationReportSection(ctx, formData) {
   const audioReport = pp.audioReport && typeof pp.audioReport === 'object' ? pp.audioReport : {};
   const now = new Date().toISOString();
   try {
-    await sql.savepoint((sp) => sp`update public.consultation_ai_analysis set print_payload = ${sp.json({ ...pp, audioReport: { ...audioReport, [key]: content.trim() } })},
+    await viewerSave(sql, user.id, (sp) => sp`update public.consultation_ai_analysis set print_payload = ${sp.json({ ...pp, audioReport: { ...audioReport, [key]: content.trim() } })},
       report_edited_by = ${user.displayName}, report_edited_at = ${now} where id = ${analysisId}`);
   } catch (error) { return { error: dbWhy(S, error, '분석 내용을 저장하지 못했습니다. 잠시 후 다시 시도해 주세요.') }; }
   await audit(sql, t, user.row, 'enrollment_consultation_report_edit', 'enrollment_consultations', row.prospect_name ?? null,
@@ -380,7 +390,7 @@ export async function appendAiSummaryToConsultationContent(ctx, consultationId) 
   const next = existing ? `${existing}\n\n— AI 상담 요약 —\n${summary}` : summary;
   let appended;
   try {
-    [appended] = await sql.savepoint((sp) => sp`update public.enrollment_consultations set parent_request = ${next}, updated_at = ${new Date().toISOString()}
+    [appended] = await viewerSave(sql, user.id, (sp) => sp`update public.enrollment_consultations set parent_request = ${next}, updated_at = ${new Date().toISOString()}
       where tenant_id = ${t} and id = ${consultationId} returning prospect_name`);
   } catch (error) { return { error: dbWhy(S, error, '상담 내용에 요약을 붙이지 못했습니다. 잠시 후 다시 시도해 주세요.') }; }
   if (appended) {
@@ -415,7 +425,7 @@ export async function asViewer(sql, actorId, fn) {
       await s`select set_config('request.jwt.claims', ${prev}, true)`;
       return out;
     }), error: null };
-  } catch (e) { return { data: null, error: { code: e?.code ?? null, message: e?.message ?? '' } }; }
+  } catch (e) { return { data: null, error: { code: e?.code ?? null, message: e?.message ?? '', detail: e?.detail ?? null, hint: e?.hint ?? null } }; }
 }
 
 /** loadRows — 대상 행(PostgREST select('*')와 같은 JSON) + 자식 개수 + 대기 중 makeedu 전송 + 분석 모델. */
