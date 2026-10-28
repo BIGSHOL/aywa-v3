@@ -161,3 +161,141 @@ test('화면 글자 — 2.0·내부 이름이 보이지 않는다 · 껍데기�
   assert.ok(!/https?:\/\//.test(code(shell)), '껍데기에 바깥 주소');
   assert.ok(!/method:\s*['"]POST/.test(shell) && !/method:\s*['"]POST/.test(entry), '보기 경로에서 쓰기 요청');
 });
+
+// ── 2단계: 상세 · 수정 · updateEnrollmentConsultation ─────────────────────────────────────────────────────────────────
+const swapCheck = async (srcPath, minePath, swapsPath, start, gone, mineStart = start) => {
+  const orig = lf(await src(srcPath)), mine = lf(await here(minePath)), swaps = JSON.parse(await here(swapsPath));
+  let body = orig.slice(orig.indexOf(start));
+  for (const [from, to] of swaps.page) { assert.equal(body.split(from).length, 2, from); body = body.replace(from, () => to); }
+  assert.equal(swaps.removed.length, 0);
+  assert.ok(mine.includes(mineStart), mineStart);
+  assert.equal(mine.slice(mine.indexOf(mineStart)), body);
+  assert.ok(!/\bawait\b/.test(code(body)), '본문 코드에 await가 남았다');
+  for (const name of gone) assert.ok(!new RegExp(`\\b${name}\\b`).test(code(body)), `${name}이 남았다`);
+};
+test('상세·수정 그리기 = 2.0 page.tsx 본문 그대로(swaps 짝만)', async () => {
+  await swapCheck('app/(shell)/enrollment/[id]/page.tsx', './v2-host/src/enrollment-detail.tsx', './v2-host/src/enrollment-detail.swaps.json', '// outcome 배지 = [outcomeBadge]',
+    ['requireAccess', 'getEnrollmentConsultationById', 'getClassesList', 'getTenantSettings', 'getSiblingConsultations', 'canWriteTenant', 'loadConsultationReferrer', 'createClient',
+      'findMergeSuccessor', 'notFound', 'redirect', 'getAssignedClasses', 'accessLevelTenant', 'canViewClassDetail']);
+  await swapCheck('app/(shell)/enrollment/[id]/edit/page.tsx', './v2-host/src/enrollment-edit.tsx', './v2-host/src/enrollment-edit.swaps.json', 'export default async function EditEnrollmentPage',
+    ['requireAccess', 'getEnrollmentConsultationById', 'loadConsultationReferrer', 'referrerCandidatesFor', 'createClient', 'notFound'], 'export function EditEnrollmentPage');
+});
+
+test('상세 = 독립 SQL — 상담 칸 · AI 분석 · 녹음 · 배정 반 · 수업 목록 · 같은 학생(자기 제외) · 없는 상담', { skip: SKIP }, async () => {
+  await run(async (sql) => {
+    const [{ id, sid }] = await sql`select c.id::text id, c.student_id::text sid from public.enrollment_consultations c where c.tenant_id=${t} and c.outcome='enrolled' and c.student_id is not null
+      and exists(select 1 from public.enrollments e where e.student_id=c.student_id and e.end_date is null) order by c.consulted_at desc limit 1`;
+    const d = await load(sql, { v2path: `/enrollment/${id}` });
+    assert.equal(d.page, 'detail');
+    const [raw] = await sql`select prospect_name, parent_phone, subject, consultation_date::text cd, follow_up_date::text fu from public.enrollment_consultations where id=${id}`;
+    assert.equal(d.consult.prospectName, raw.prospect_name); assert.equal(d.consult.parentPhone, raw.parent_phone);
+    assert.equal(d.consult.fields.subject, raw.subject); assert.equal(d.consult.fields.consultationDate, raw.cd); assert.equal(d.consult.fields.followUpDate, raw.fu);
+    const [{ ai, rec }] = await sql`select exists(select 1 from public.consultation_ai_analysis where consultation_id=${id}) ai, (select count(*)::int from public.consultation_recordings where consultation_id=${id}) rec`;
+    assert.equal(d.consult.hasAiAnalysis, ai); assert.equal(d.consult.recordings.length, rec);
+    const [{ n }] = await sql`select count(*)::int n from public.classes where tenant_id=${t} and is_active`;
+    assert.equal(d.allClasses.length, n);
+    assert.equal(d.siblings.some((x) => x.id === id), false, '같은 학생 목록에 자기 자신이 없다');
+    const sameStudent = await sql`select id::text id from public.enrollment_consultations where tenant_id=${t} and student_id=${sid} and id<>${id}`;
+    for (const r of sameStudent) assert.ok(d.siblings.some((x) => x.id === r.id), '같은 원생 상담은 같은 학생');
+    assert.ok(d.assigned?.ok && d.assigned.rows.length === d.consult.assignedClassCount, '배정 반 수 = 카드 줄 수');
+    assert.equal((await load(sql, { v2path: '/enrollment/00000000-0000-4000-8000-000000000000' })).page, 'missing');
+  });
+});
+
+/** 시험용 상담 한 줄(이 트랜잭션 안에서만) + 수정 화면 자료 + 저장 함수. */
+async function editFixture(sql, cols = {}) {
+  const row = { prospect_name: '시험상담', prospect_grade: '중1', prospect_school: '침산중', outcome: 'consulted', ...cols };
+  const [{ id }] = await sql`insert into public.enrollment_consultations ${sql({ tenant_id: t, consulted_at: new Date(), ...row })} returning id::text id`;
+  const d = await load(sql, { v2path: `/enrollment/${id}/edit` });
+  assert.equal(d.page, 'edit');
+  const c = d.consult;
+  const base = { id: c.id, prospectName: c.prospectName, prospectGrade: c.prospectGrade ?? '', prospectSchool: c.prospectSchool ?? '', parentPhone: c.parentPhone ?? '',
+    counselor: c.fields.counselor ?? '', followUpDate: c.fields.followUpDate ?? '', followUpResult: '' };
+  const save = async (actor, values, { editBase = base } = {}) => {
+    const fd = Object.entries(values).map(([k, v]) => [k, String(v)]);
+    if (editBase) fd.push(['editBase', JSON.stringify(editBase)]);
+    const body = screen.actions.updateEnrollmentConsultation.validate({ module: 'features/enrollment/server/actions.ts', actor, args: [null, { $formData: fd }] });
+    return screen.actions.updateEnrollmentConsultation.run({ sql, body, tenantId: t, importV2 });
+  };
+  return { id, d, base, save, owner: d.editors[0] };
+}
+/** 시험 트랜잭션 — 끝나면 통째로 되돌린다(남는 행 0) · 바깥 요청 대기열이 늘면 실패. */
+const rollback = (fn) => db.begin(async (sql) => {
+  const [{ q }] = await sql`select count(*)::int q from net.http_request_queue`;
+  await fn(sql);
+  const [{ q: q2 }] = await sql`select count(*)::int q from net.http_request_queue`;
+  assert.equal(q2, q, '바깥 요청 대기열이 늘었다');
+  throw Object.assign(new Error('rollback'), { rollback: true });
+}).catch((e) => { if (!e.rollback) throw e; });
+
+test('수정 저장 = 2.0 updateEnrollmentConsultation — 바꾼 칸만(그사이 남이 바꾼 상담자 보존) · 감사로그 · 동시 저장 판정(마이크로초 시각)', { skip: SKIP }, async () => {
+  await rollback(async (sql) => {
+    const f = await editFixture(sql);
+    await sql`update public.enrollment_consultations set counselor='다른 사람', updated_at='2026-10-28 01:02:03.123456+00' where id=${f.id}`;
+    const res = await f.save(f.owner.id, { ...f.base, parentPhone: '01012345678', followUpResult: 'consulted' });
+    assert.deepEqual(res, { ok: true });
+    const [r] = await sql`select parent_phone, counselor, outcome::text o, to_char(updated_at at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US') st from public.enrollment_consultations where id=${f.id}`;
+    assert.equal(r.parent_phone, '01012345678'); assert.equal(r.counselor, '다른 사람', '안 바꾼 칸(상담자)은 그사이 저장된 값 그대로'); assert.equal(r.o, 'consulted');
+    assert.notEqual(r.st, '2026-10-28T01:02:03.123456', '마이크로초까지 같은 시각으로 찾아 저장했다');
+    const logs = await sql`select action, actor_id::text actor_id, target_type, target_label, metadata from public.audit_logs where tenant_id=${t} and metadata->>'consultationId'=${f.id}`;
+    assert.equal(logs.length, 1);
+    assert.equal(logs[0].action, 'enrollment_consultation_update'); assert.equal(logs[0].actor_id, f.owner.id); assert.equal(logs[0].target_type, 'enrollment_consultations');
+    assert.equal(logs[0].target_label, '시험상담'); assert.deepEqual(logs[0].metadata.changed, ['보호자 연락처']); assert.equal(logs[0].metadata.via, '3.0 연습 복사본');
+    const again = { ...f.base, parentPhone: '01012345678', followUpResult: 'consulted' };
+    assert.deepEqual(await f.save(f.owner.id, again, { editBase: again }), { ok: true });
+    assert.equal((await sql`select 1 from public.audit_logs where tenant_id=${t} and metadata->>'consultationId'=${f.id}`).length, 1, '아무것도 안 바꾼 저장은 감사로그 없음');
+  });
+});
+
+test('후속 조치 = 2.0 follow-up.ts — 반드시 고른다 · 지난 날짜 거절 · 상담 전 불가 · 등록 완료 → 상태 전환 · 거절 땐 아무것도 안 바뀐다', { skip: SKIP }, async () => {
+  const F = await importV2('features/enrollment/follow-up.ts');
+  await rollback(async (sql) => {
+    const f = await editFixture(sql);
+    assert.deepEqual(await f.save(f.owner.id, { ...f.base, parentPhone: '0101' }), { error: F.FOLLOW_UP_REQUIRED_ERROR });
+    assert.deepEqual(await f.save(f.owner.id, { ...f.base, followUpResult: 'consulted', followUpDate: '2020-01-01' }), { error: F.FOLLOW_UP_DATE_PAST });
+    assert.deepEqual(await f.save(f.owner.id, { ...f.base, followUpResult: 'before' }), { error: F.FOLLOW_UP_BEFORE_BLOCKED });
+    const [same] = await sql`select parent_phone, outcome::text o from public.enrollment_consultations where id=${f.id}`;
+    assert.equal(same.parent_phone, null); assert.equal(same.o, 'consulted');
+    assert.deepEqual(await f.save(f.owner.id, { ...f.base, followUpResult: 'enrolled' }), { ok: true });
+    assert.equal((await sql`select outcome::text o from public.enrollment_consultations where id=${f.id}`)[0].o, 'enrolled');
+    assert.equal((await sql`select metadata from public.audit_logs where tenant_id=${t} and metadata->>'consultationId'=${f.id}`)[0].metadata.outcomeTo, 'enrolled');
+  });
+});
+
+test('상담자 계정(2.0 counselor-account) — 이름이 딱 한 명과 같으면 그 계정 · QR 접수의 빈 상담자 = 처음 고친 사람 · 모르는 사람은 거절', { skip: SKIP }, async () => {
+  await rollback(async (sql) => {
+    const f = await editFixture(sql);
+    const [staff] = await sql`select id::text id, display_name from public.users u where tenant_id=${t} and status::text='active' and system_role::text in ('teacher','admin','manager')
+      and (select count(*) from public.users v where v.tenant_id=${t} and v.status::text='active' and v.display_name=u.display_name)=1 limit 1`;
+    assert.deepEqual(await f.save(f.owner.id, { ...f.base, counselor: staff.display_name, followUpResult: 'consulted' }), { ok: true });
+    const [r] = await sql`select counselor, consultant_id::text cid from public.enrollment_consultations where id=${f.id}`;
+    assert.equal(r.counselor, staff.display_name); assert.equal(r.cid, staff.id);
+
+    const q = await editFixture(sql, { from_public_intake: true, outcome: 'pending' });
+    assert.deepEqual(await q.save(q.owner.id, { ...q.base, parentPhone: '01099998888' }), { ok: true });
+    const [a] = await sql`select counselor, consultant_id::text cid from public.enrollment_consultations where id=${q.id}`;
+    assert.equal(a.counselor, q.owner.name); assert.equal(a.cid, q.owner.id);
+    assert.equal((await sql`select metadata from public.audit_logs where tenant_id=${t} and metadata->>'consultationId'=${q.id}`)[0].metadata.counselorAutofill, q.owner.name);
+
+    assert.deepEqual(await f.save('00000000-0000-4000-8000-000000000000', { ...f.base, followUpResult: 'consulted' }), { error: '로그인이 필요합니다' });
+  });
+});
+
+test('병합으로 사라진 상담 → 남은 상담 주소(2.0 findMergeSuccessor)', { skip: SKIP }, async () => {
+  await rollback(async (sql) => {
+    const [{ id: winner }] = await sql`select id::text id from public.enrollment_consultations where tenant_id=${t} order by consulted_at desc limit 1`;
+    const lost = '00000000-0000-4000-8000-0000000000ab';
+    await sql`insert into public.audit_logs (tenant_id, actor_name, action, target_type, metadata) values (${t}, '시험', 'consultation_merge', 'enrollment_consultations', ${sql.json({ winnerId: winner, loserIds: [lost] })})`;
+    const d = await load(sql, { v2path: `/enrollment/${lost}/edit` });
+    assert.deepEqual({ page: d.page, to: d.to }, { page: 'redirect', to: `/enrollment/${winner}/edit` });
+  });
+});
+
+test('소개한 사람 목록(2.0 loadReferrerOptions) — 원생(퇴원·시험용 제외) + 재직 직원 · 읽기 경로', { skip: SKIP }, async () => {
+  await run(async (sql) => {
+    const d = await load(sql, { referrers: '1' });
+    assert.equal(d.result.ok, true);
+    const [{ s }] = await sql`select count(*)::int s from public.students where tenant_id=${t} and status::text<>'withdrawn' and is_test=false`;
+    assert.equal(d.result.options.filter((o) => o.value.startsWith('s:')).length, s);
+  });
+});

@@ -8,6 +8,10 @@
 // 2.0 서버 함수 대응표(호스트가 부르는 이름 = actions 이름)
 //  | 2.0 함수(모듈)                                            | 여기                         |
 //  | getConsultationTotalCount(server/poll-actions.ts) — 20초 폴링 | 읽기 — GET ?poll=count(쓰기 경로 아님) |
+//  | loadReferrerOptions(server/referrer-actions.ts) — 소개한 사람 목록 | 읽기 — GET ?referrers=1(쓰기 권한 필요) |
+//  | updateEnrollmentConsultation(server/actions.ts) — 상담 수정      | actions.updateEnrollmentConsultation(v2-enrollment-save.mjs) |
+//  | regenerateConsultationAnalysis · generatePrepBrief(prep-actions) · issueAudioUploadTicket(media) — AI·녹음 | 호스트가 보내지 않고 { error: 지원하지 않는 기능 } |
+//  | 그 밖의 저장(끌기·칸 수정·새 상담·삭제·수업 배정·병합·보고서 섹션·보기 설정) | 아직 없음 — 2.0 실패 모양으로 거절 |
 //
 // 호스트에 붙일 때(의존)
 //  · Next 전용: next/link · next/navigation(useRouter — enrollment-kanban · column-cards · sheet-editable-cells · new-consultation-watcher · month-picker) ·
@@ -17,11 +21,15 @@
 //    server/merge-actions.ts(previewConsultationMerge · mergeConsultations) · server/poll-actions.ts · server/view-pref-actions.ts ·
 //    server/school-prefs-actions.ts · server/referrer-actions.ts · server/intake-actions.ts · features/media/server/upload-actions.ts.
 //  · 브라우저 Supabase(실시간 '수정 중' 표시 — features/presence) = shim(아무것도 받지 않음).
-import { UUID, deepMerge, readPeople } from './v2-proc-people.mjs';
+import { UUID, deepMerge, readPeople, serverCall } from './v2-proc-people.mjs';
 import { buildList, getConsultationTotalCount, listRules } from './v2-enrollment-list.mjs';
+import { activeClasses, canViewClasses, detailRules, findMergeSuccessor, getAssignedClasses, getEnrollmentConsultationById, getSiblingConsultations,
+  listReferrerOptions, loadConsultationReferrer, referrerCandidatesFor } from './v2-enrollment-detail.mjs';
+import { formDataOf, updateEnrollmentConsultation } from './v2-enrollment-save.mjs';
 
-const ID = 'enrollment', MENU = 'enrollment';
+const ID = 'enrollment', MENU = 'enrollment', ACTIONS = 'features/enrollment/server/actions.ts';
 const UUID_BODY = UUID.source.slice(1, -1);
+const DETAIL = new RegExp(`^/enrollment/(${UUID_BODY})(/edit)?$`, 'i');
 
 let rulesP = null;
 function rules(importV2) {
@@ -35,7 +43,34 @@ function viewerOf(people, actorId) {
   const u = people.pick(actorId);
   if (!u) return null;
   const lv = (m) => people.level(u, m);
-  return { u, canWrite: ['full', 'scoped'].includes(lv(MENU)), canManage: lv(MENU) === 'full', canBilling: lv('billing') !== 'none', canExits: lv('withdrawals') !== 'none' };
+  return { u, canWrite: ['full', 'scoped'].includes(lv(MENU)), canManage: lv(MENU) === 'full', canBilling: lv('billing') !== 'none', canExits: lv('withdrawals') !== 'none',
+    canTextbook: ['full', 'scoped'].includes(lv('textbook_requests')), classLevel: lv('classes') };
+}
+const modulesOf = (settings) => { const m = deepMerge(settings.base.modules ?? { disabled: [] }, settings.stored?.modules); return { disabled: Array.isArray(m?.disabled) ? m.disabled : [] }; };
+
+/** 상세(2.0 [id]/page.tsx)·수정([id]/edit/page.tsx) — 없는 상담이면 병합으로 남은 상담 주소(2.0 redirect) 또는 notFound. */
+async function buildDetail({ sql, t, importV2, v, operations, modules, id, edit }) {
+  const D = await detailRules(importV2);
+  const consult = await getEnrollmentConsultationById(sql, D, t, id, operations.subjects);
+  if (!consult) {
+    const successor = await findMergeSuccessor(sql, t, id);
+    return successor ? { page: 'redirect', to: `/enrollment/${successor}${edit ? '/edit' : ''}` } : { page: 'missing' };
+  }
+  const referrer = await loadConsultationReferrer(sql, D, t, id);
+  if (edit) {
+    const f = consult.fields;
+    const candidates = referrer.ready && !referrer.referrer
+      ? await referrerCandidatesFor(sql, D, t, { referrerName: referrer.referrerName, path: f.consultationPath, texts: [consult.parentRequest, f.safetyNotes, f.siblingsDetails] })
+      : [];
+    return { page: 'edit', id, viewer: { id: v.u.id, tenantId: t }, consult, referrer, candidates };
+  }
+  const { showAssigned } = (await importV2('features/enrollment/detail-panels.ts')).detailPanelsFor({ outcome: consult.outcome, assignedClassCount: consult.assignedClassCount });
+  const [allClasses, siblings, assigned] = await Promise.all([
+    activeClasses(sql, t), getSiblingConsultations(sql, D, t, id),
+    showAssigned ? getAssignedClasses(sql, D, t, consult.studentId, consult.fields.subject, operations) : null,
+  ]);
+  const canOpenClass = showAssigned && assigned?.ok ? await canViewClasses(sql, v.classLevel, v.u.id, assigned.rows.map((r) => r.classId)) : false;
+  return { page: 'detail', consult, allClasses, settings: { operations, modules }, siblings, canWrite: v.canWrite, canRequestTextbook: v.canTextbook, referrer, assigned, canOpenClass };
 }
 
 async function load({ sql, params, tenantId: t, importV2 }) {
@@ -43,11 +78,18 @@ async function load({ sql, params, tenantId: t, importV2 }) {
   if (params.poll === 'count') return { page: 'poll', count: await getConsultationTotalCount(sql, t) };
   const [R, people] = await Promise.all([rules(importV2), readPeople(sql, t, importV2, MENU)]);
   const settings = people.settings, operations = settings.operations;
-  const modules = deepMerge(settings.base.modules ?? { disabled: [] }, settings.stored?.modules);
-  const base = { editors: people.editorList, operations, modules: { disabled: Array.isArray(modules?.disabled) ? modules.disabled : [] } };
+  const modules = modulesOf(settings);
+  const base = { editors: people.editorList, operations, modules };
   const v = viewerOf(people, params.actor);
   if (!v) return { ...base, page: 'noMenu' };
+  // '소개한 사람' 고르기 목록(2.0 loadReferrerOptions — 읽기라 GET) · 쓰기 권한이 있어야(2.0 같은 문).
+  if (params.referrers === '1') {
+    if (!v.canWrite) return { page: 'referrers', result: { ok: false, error: '신규 콜&상담 권한이 없습니다' } };
+    return { page: 'referrers', result: { ok: true, options: await listReferrerOptions(sql, await detailRules(importV2), t) } };
+  }
   const path = params.v2path ?? '/enrollment';
+  const detail = DETAIL.exec(path);
+  if (detail) return { ...base, ...(await buildDetail({ sql, t, importV2, v, operations, modules, id: detail[1].toLowerCase(), edit: !!detail[2] })) };
   if (path !== '/enrollment') return { ...base, page: 'notFound' };
   const uiPrefs = {};
   const view = R.view.parseEnrollmentView(params.view) ?? R.view.savedEnrollmentView(uiPrefs);
@@ -63,6 +105,17 @@ async function load({ sql, params, tenantId: t, importV2 }) {
   };
 }
 
+// ── 저장(2.0 server/actions.ts) ─────────────────────────────────────────────────────────────────────────────────────────
+/** 저장하는 사람 = 3.0 띠에서 고른 직원(신규 콜&상담 메뉴가 열린 사람 · 쓰기는 2.0과 같은 판정으로 함수가 다시 본다). */
+async function actCtx({ sql, body, tenantId: t, importV2 }) {
+  const people = await readPeople(sql, t, importV2, MENU);
+  const e = typeof body.actor === 'string' ? people.editors.find((x) => x.id === body.actor) : null;
+  const v = e ? viewerOf(people, e.id) : null;
+  return { sql, t, importV2, people, operations: people.settings.operations, canWrite: !!v?.canWrite, v,
+    user: e ? { id: e.id, tenantId: t, displayName: e.display_name, systemRole: e.role, row: e } : null };
+}
+const ACT = (argCount, fn) => ({ validate: (raw) => serverCall(raw, [ACTIONS], argCount), run: async (ctx) => fn(await actCtx(ctx), ctx.body.args) });
+
 const YM = /^\d{4}-\d{2}$/, YMD = /^\d{4}-\d{2}-\d{2}$/;
 export const screen = {
   id: ID, label: '신규 콜&상담', order: 30,
@@ -71,8 +124,10 @@ export const screen = {
     view: /^(?:kanban|table|stats)$/, month: /^.{0,10}$/, consultant: /^.{0,40}$/, q: /^[\s\S]{0,100}$/, outcome: /^[a-z_]{0,20}$/, page: /^\d{1,5}$/,
     range: /^[0-9a-z]{0,4}$/, year: /^[0-9y]{1,4}$/, received: /^.{0,10}$/, from: /^[a-z]{0,20}$/,
     trend: /^[a-z]{0,10}$/, trendMonth: YM, trendFrom: YMD, trendTo: YMD, trendSpan: /^[0-9a-z]{0,6}$/,
-    pg: /^[a-z]{0,10}$/, pgMonth: YM, pgFrom: YMD, pgTo: YMD, pgSpan: /^[0-9a-z]{0,6}$/,
+    pg: /^[a-z]{0,10}$/, pgMonth: YM, pgFrom: YMD, pgTo: YMD, pgSpan: /^[0-9a-z]{0,6}$/, referrers: /^1$/,
   },
-  actions: {},
+  actions: {
+    updateEnrollmentConsultation: ACT(2, (c, args) => updateEnrollmentConsultation(c, formDataOf(args[1]))),
+  },
   load,
 };

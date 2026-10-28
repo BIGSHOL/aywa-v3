@@ -1,0 +1,13 @@
+{
+ "page": [
+  [
+   "export default async function EditEnrollmentPage({\n  params,\n}: {\n  params: Promise<{ id: string }>;\n}) {\n  const viewer = await requireAccess(\"enrollment\");\n  const { id } = await params;\n  const db = (await createClient()) as unknown as SupabaseClient;\n  const [c, ref] = await Promise.all([getEnrollmentConsultationById(id), loadConsultationReferrer(db, id)]);\n  if (!c) notFound();",
+   "export function EditEnrollmentPage({\n  data,\n}: {\n  data: EnrollmentEditData;\n}) {\n  const viewer = data.viewer;\n  const id = data.id;\n  const [c, ref] = [data.consult, data.referrer];\n  if (!c) return null;"
+  ],
+  [
+   "  const candidates = ref.ready && !ref.referrer\n    ? await referrerCandidatesFor(db, viewer.tenantId, { referrerName: ref.referrerName, path: f.consultationPath, texts: [c.parentRequest, f.safetyNotes, f.siblingsDetails] })\n      .catch(() => [])\n    : [];",
+   "  const candidates = data.candidates;"
+  ]
+ ],
+ "removed": []
+}

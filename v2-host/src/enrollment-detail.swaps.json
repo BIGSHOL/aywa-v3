@@ -1,0 +1,21 @@
+{
+ "page": [
+  [
+   "export default async function EnrollmentDetailPage({\n  params,\n}: {\n  params: Promise<{ id: string }>;\n}) {\n  const user = await requireAccess(\"enrollment\");\n  const { id } = await params;",
+   "export function EnrollmentDetailPage({\n  data,\n  id,\n}: {\n  data: EnrollmentDetailData;\n  id: string;\n}) {"
+  ],
+  [
+   "  const [consult, allClasses, settings, siblings, canWrite, canRequestTextbook, referrer] = await Promise.all([\n    getEnrollmentConsultationById(id),\n    getClassesList({ active: \"active\" }),\n    getTenantSettings(),\n    getSiblingConsultations(id), // 같은 학생의 다른 등록상담(반복 접수) — 없으면 빈 배열\n    canWriteTenant(user.systemRole, \"enrollment\"), // 읽기 전용 역할엔 브리프 생성 버튼을 안 준다\n    // 수학 반 배정 직후 '교재 신청서' 경로를 그릴지(원장 2026-09-09) — 못 여는 사람에게 그리면\n    // 눌러도 권한 화면으로 튕기는 죽은 버튼이 된다. 진짜 게이트는 교재 화면의 requireAccess다([[#77]]).\n    canWriteTenant(user.systemRole, \"textbook_requests\"),\n    // 소개한 사람(0362a) — 기본 조회와 따로·실패해도 되게(#95).\n    createClient().then((db) => loadConsultationReferrer(db as unknown as SupabaseClient, id)),\n  ]);",
+   "  const [consult, allClasses, settings, siblings, canWrite, canRequestTextbook, referrer] = [data.consult, data.allClasses, data.settings, data.siblings, data.canWrite, data.canRequestTextbook, data.referrer];"
+  ],
+  [
+   "  if (!consult) {\n    // 🔴 병합으로 사라진 상담이면 **404 대신 남은 쪽으로 보낸다**(원장 2026-09-01 제보) — 병합\n    // 다이얼로그는 자기 창만 옮기므로, 그 상담을 열어 둔 다른 창·뒤로가기·복원된 창은 지워진 id를\n    // 그대로 들고 있다가 빈 404를 만난다.\n    const successor = await findMergeSuccessor(id);\n    if (successor) redirect(`/enrollment/${successor}`);\n    notFound();\n  }",
+   "  if (!consult) return null;"
+  ],
+  [
+   "  const [assigned, classLevel] = showAssigned\n    ? await Promise.all([\n        getAssignedClasses(consult.studentId, f.subject),\n        accessLevelTenant(user.systemRole, \"classes\"),\n      ])\n    : ([null, \"none\"] as const);\n  const canOpenClass =\n    classLevel === \"none\"\n      ? false\n      : classLevel !== \"scoped\" ||\n        // scoped는 반마다 다르다 — 한 반이라도 못 열면 전부 텍스트로(부분 링크는 더 헷갈린다).\n        (assigned?.ok\n          ? (await Promise.all(assigned.rows.map((c) => canViewClassDetail(c.classId)))).every(Boolean)\n          : false);",
+   "  const assigned = showAssigned ? data.assigned : null;\n  const canOpenClass = data.canOpenClass;"
+  ]
+ ],
+ "removed": []
+}
