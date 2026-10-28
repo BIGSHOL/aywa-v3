@@ -241,7 +241,7 @@ window.createFlowUI = function createFlowUI(api) {
   // 업무 흐름 보드 = 표(원장 10-28 "열정렬안되어있는거 정렬" · "열마다 딱 너비가 정해져있어서 넘치면 짤라버려. 마우스 올리면 짤린거 볼 수 있게").
   // 열 너비는 표 머리 한 곳(table-layout:fixed)이 정한다 — 줄마다 글 길이가 달라도 열이 흔들리지 않는다. 넘친 글은 말줄임(.fl-cut),
   // 마우스·초점이 오면 전부 보인다(fl-tip). 처리 화면 = 그 일을 처리하는 화면, 누르면 이 화면 위 엿보기 창으로 연다.
-  const COLS=[['state','상태'],['title','일'],['rec','관련 기록'],['who','할 차례'],['due','기한'],['at','생긴 때'],['place','처리 화면'],['act','']];
+  const COLS=[['state','상태'],['title','일'],['rec','관련 기록'],['who','할 차례'],['due','기한'],['at','발생 시간'],['place','처리 화면'],['act','']];
   const refsOf=c=>(c.entityRefs||[]).filter(r=>r&&r.label&&!(r.type==='task'&&r.label===c.title));
   const placeOf=c=>c.familyId&&api.familyLabel?.(c.familyId)||'';
   const whoText=c=>{const s=myStep(c)||stepOf(c);return s?whoOf(s):'';};
@@ -430,7 +430,8 @@ window.createFlowUI = function createFlowUI(api) {
     // 업무 흐름 화면에서는 소제목을 숨긴다 — 페이지 제목이 같은 말이다(원장 10-28 "여기도 하단의 업무 흐름 중복임"). 이동 목표로는 남긴다.
     return `<section class="fl-section" id="fl-detail" aria-labelledby="fl-detail-title">${heading?'<div class="ax-section-head"><h2 id="fl-detail-title" tabindex="-1">업무 흐름</h2></div>':'<h2 id="fl-detail-title" class="ax-visually-hidden" tabindex="-1">업무 흐름</h2>'}<div class="fl-board"><div class="fl-board-head"><h3 class="fl-board-title">${h(p.label)}<span id="fl-board-count">${p.count}</span></h3><div class="fl-bulk" id="fl-bulk" role="group" aria-label="고른 일" ${store.sel.size?"":"hidden"}>${bulkHtml()}</div><input type="search" class="fl-search" data-fl-search value="${h(p.q)}" placeholder="이름·내용·담당·기록으로 찾기" aria-label="업무 흐름에서 찾기" autocomplete="off"></div><nav class="fl-nav" aria-label="보기">${navList(p.f,'상태',p.states)}${navList(p.f,'종류',p.byKind)}</nav><div id="fl-board-list" class="fl-board-list">${p.listHtml}</div></div>${scenarioPanel()}${stageOverview()}</section>`;
   }
-  function fullView(){return role()==='owner'?`<div class="page-heading"><div><h1>업무 흐름</h1><p>${md(asOf())} 기준 · 누가 어떤 일을 왜 맡았는지와 근거를 봅니다.</p></div></div>${ownerBelow({heading:false})}`:role()==='manager'?managerView():staffView();}
+  // 제목만 — 설명 줄은 두지 않는다(원장 10-28 "이런 자질구리한 멘트 필요없을듯").
+  function fullView(){return role()==='owner'?`<div class="page-heading"><div><h1>업무 흐름</h1></div></div>${ownerBelow({heading:false})}`:role()==='manager'?managerView():staffView();}
 
   /* ---------- local scenarios (clearly local, tied to real copied records, not counted as history) ---------- */
   // The shared context picker (context-picker.js) when it is loaded; otherwise, or if it fails, the plain control.
@@ -846,7 +847,7 @@ window.createFlowUI = function createFlowUI(api) {
     tipEl.style.left=`${Math.min(Math.max(8,r.left),innerWidth-w-8)}px`;tipEl.style.top=`${top}px`;
   }
   function hideTip(){tipFor?.removeAttribute('aria-describedby');tipFor=null;if(tipEl)tipEl.hidden=true;}
-  const cutOf=t=>t?.closest?.('.fl-table .fl-cut');
+  const cutOf=t=>t?.closest?.(':is(.fl-table,.fl-rectable) .fl-cut');
   document.addEventListener('pointerover',event=>{const el=cutOf(event.target);if(el===tipFor)return;if(el)showTip(el);else if(tipFor)hideTip();});
   document.addEventListener('focusin',event=>{const el=cutOf(event.target);if(el)showTip(el);else if(tipFor)hideTip();});
   document.addEventListener('pointerdown',()=>{if(tipFor)hideTip();},true);
@@ -885,35 +886,45 @@ window.createFlowUI = function createFlowUI(api) {
   }
 
   /* ---------- 관련 기록 목록(원장 10-28 "[기록보기] 라벨로 바꾸고 마우스 올리면 리스트 깔끔하게 정리해서 보여주는것도 · 혹은 눌렀을때도 오버레이로 깔끔하게") ---------- */
-  // 한 줄 = 이름 · 종류 · 알아야 할 정보(원장 10-28 "학생이면 학생에게서 알아야할 정보들이 있잖아"). 원생은 스냅숏에서 바로
-  // (학교학년 · 재원 상태 · 듣는 반 · 이번 달 결석 · 이번 달 미납 — 원생 상세와 같은 값), 그 밖의 기록은 그 업무 영역의 기록 한 건
-  // (GET …/records?id=, 읽기만)에서 내용 · 상태 · 날짜 · 칸 셋. 한 번 읽은 기록은 다시 읽지 않는다. 줄을 누르면 그 기록을 엿보기 창에 연다.
+  // 종류마다 표 하나 — 이름 · 그 종류가 가진 칸(원장 10-28 "학생이면 학생에게서 알아야할 정보들이 있잖아" · "항상 열정렬하는거 잊지마").
+  // 기록 정보 = [칸 이름, 값] 목록이라 같은 종류는 같은 열에 같은 정보가 온다(값이 없으면 빈칸 — 다음 값을 당기지 않는다).
+  // 원생은 스냅숏에서 바로(학교·학년 · 상태 · 반 · 이번 달 결석 · 이번 달 미납 — 원생 상세와 같은 값), 그 밖의 기록은 그 업무 영역의
+  // 기록 한 건(GET …/records?id=, 읽기만)의 내용 · 상태 · 날짜 · 칸. 한 번 읽은 기록은 다시 읽지 않는다. 줄을 누르면 그 기록을 엿보기 창에 연다.
   const STUDENT_STATE={enrolled:'재원',withdrawn:'퇴원',paused:'휴원',on_hold:'휴원',leave:'휴원',pending:'등록 예정',waiting:'대기'};
   const schoolGrade=(school,grade)=>{const s=String(school||''),g=String(grade||''),m=/^([초중고])(\d)$/.exec(g);return m&&s.endsWith(m[1])?`${s}${m[2]}`:[s,g].filter(Boolean).join(' ');};
+  const DETAIL_LABEL={enrollment:'학년·학교',students:'학교·학년'};
   let studentIndex=null,classIndex=null;
   function studentFacts(id){
     studentIndex??=new Map((db.students||[]).map(s=>[String(s.id),s]));classIndex??=new Map((db.classes||[]).map(k=>[String(k.id),k]));
     const s=studentIndex.get(String(id));if(!s)return null;const cls=(s.classes||[]).map(k=>classIndex.get(String(k))).filter(Boolean),a=s.attendance||{};
-    return [schoolGrade(s.school,s.grade),STUDENT_STATE[s.status]||'',cls.length?`${cls.slice(0,2).map(k=>k.name).join(', ')}${cls.length>2?` 외 ${fmt(cls.length-2)}`:''}`:'',a.absent?`이번 달 결석 ${fmt(a.absent)}회`:'',s.remaining>0?`이번 달 미납 ${fmt(s.remaining)}원`:''].filter(Boolean);
+    return [['학교·학년',schoolGrade(s.school,s.grade)],['상태',STUDENT_STATE[s.status]||''],['반',cls.length?`${cls.slice(0,2).map(k=>k.name).join(', ')}${cls.length>2?` 외 ${fmt(cls.length-2)}`:''}`:''],['이번 달 결석',a.absent?`${fmt(a.absent)}회`:''],['이번 달 미납',s.remaining>0?`${fmt(s.remaining)}원`:'']];
   }
   const recCache=new Map();
   function recordFacts(r){
     const fam=r.familyId||'',id=String(r.recordId||r.id||''),key=`${fam}:${id}`;
     if(recCache.has(key))return recCache.get(key);
     const known=r.type==='student'?studentFacts(id):null;
-    const p=known?Promise.resolve(known):!fam||!id?Promise.resolve([]):fetch(`/api/workspaces/${encodeURIComponent(fam)}/records?id=${encodeURIComponent(id)}`,{headers:{Accept:'application/json'}}).then(res=>res.ok?res.json():null).then(b=>{const it=b?.item;if(!it)return [];const label=String(r.label||'');return [it.detail,it.status,it.date?md(String(it.date).slice(0,10)):'',...(it.fields||[]).filter(f=>f&&f.value&&f.value!=='—').slice(0,3).map(f=>`${f.label} ${f.value}`)].filter(x=>x&&!label.includes(String(x)));}).catch(()=>{recCache.delete(key);return null;});
+    const clean=v=>{const x=String(v??'').trim();return x==='—'?'':x;};
+    const p=known?Promise.resolve(known):!fam||!id?Promise.resolve([]):fetch(`/api/workspaces/${encodeURIComponent(fam)}/records?id=${encodeURIComponent(id)}`,{headers:{Accept:'application/json'}}).then(res=>res.ok?res.json():null).then(b=>{const it=b?.item;if(!it)return [];const label=String(r.label||''),detail=clean(it.detail);return [[DETAIL_LABEL[fam]||'내용',detail&&!label.includes(detail)?detail:''],['상태',clean(it.status)],['날짜',it.date?md(String(it.date).slice(0,10)):''],...(it.fields||[]).filter(f=>f&&f.label).map(f=>[String(f.label),clean(f.value)])];}).catch(()=>{recCache.delete(key);return null;});
     recCache.set(key,p);return p;
   }
   const recType=r=>r.type==='student'?'원생':r.type==='lead'?'신규 상담':api.familyLabel?.(r.familyId)||'기록';
+  const refKey=r=>`${r.familyId||''}:${String(r.recordId||r.id||'')}`;
+  // 종류별 묶음 자리 — 정보가 다 모이면 그 묶음을 표로 바꿔 그린다(fillFacts).
   function recRows(refs){
-    return `<ul class="fl-recs">${refs.map(r=>{const fam=r.familyId||'',id=String(r.recordId||r.id||''),can=fam&&api.hasView(`workspace-${fam}`)||api.canOpenRecord?.(id);
-      const inner=`<strong>${h(r.label)}</strong><em>${h(recType(r))}</em><span class="fl-rec-facts" data-rec-facts="${h(`${fam}:${id}`)}">…</span>`;
-      return `<li>${can?`<button type="button" class="fl-rec" data-fl="rec-open" data-family="${h(fam)}" data-record="${h(id)}">${inner}${icon('chevron')}</button>`:`<div class="fl-rec">${inner}</div>`}</li>`;}).join('')}</ul>`;
+    const groups=new Map();for(const r of refs){const t=recType(r);if(!groups.has(t))groups.set(t,[]);groups.get(t).push(r);}
+    return [...groups].map(([t,list],i)=>`<section class="fl-recgroup" data-rec-group="${i}"><p class="fl-recgroup-head">${h(t)} ${fmt(list.length)}건</p><div class="fl-recgroup-body"><p class="fl-dim">불러오는 중</p></div></section>`).join('');
   }
-  // 줄을 그린 뒤 정보를 채운다(원생은 바로, 나머지는 조회가 끝나는 대로).
+  function recTable(list,facts){
+    // 열 = 그 묶음에서 값이 하나라도 있는 칸(처음 나온 순서).
+    const cols=[];facts.forEach(f=>(f||[]).forEach(([k,v])=>{if(v&&!cols.includes(k))cols.push(k);}));
+    const cell=v=>`<td><span class="fl-cut">${h(v||'')}</span></td>`;
+    return `<table class="fl-rectable"><thead><tr><th scope="col">이름</th>${cols.map(k=>`<th scope="col">${h(k)}</th>`).join('')}<th aria-hidden="true"></th></tr></thead><tbody>${list.map((r,i)=>{const fam=r.familyId||'',id=String(r.recordId||r.id||''),can=fam&&api.hasView(`workspace-${fam}`)||api.canOpenRecord?.(id),f=new Map(facts[i]||[]),at=`data-family="${h(fam)}" data-record="${h(id)}"`;
+      return `<tr ${can?`class="can" data-fl="rec-open" ${at}`:''}><th scope="row">${can?`<button type="button" class="fl-cut" data-fl="rec-open" ${at}>${h(r.label)}</button>`:`<span class="fl-cut">${h(r.label)}</span>`}</th>${facts[i]===null?`<td colspan="${cols.length||1}" class="fl-dim">정보를 읽지 못했습니다.</td>`:cols.map(k=>cell(f.get(k))).join('')}<td class="fl-rec-go">${can?icon('chevron'):''}</td></tr>`;}).join('')}</tbody></table>`;
+  }
   function fillFacts(root,refs){
-    const byKey=new Map(refs.map(r=>[`${r.familyId||''}:${String(r.recordId||r.id||'')}`,r]));
-    root.querySelectorAll('[data-rec-facts]').forEach(el=>{const r=byKey.get(el.dataset.recFacts);if(!r)return;recordFacts(r).then(f=>{if(!el.isConnected)return;el.textContent=f===null?'정보를 읽지 못했습니다.':f.length?f.join(' · '):'—';});});
+    const groups=new Map();for(const r of refs){const t=recType(r);if(!groups.has(t))groups.set(t,[]);groups.get(t).push(r);}
+    [...groups].forEach(([,list],i)=>Promise.all(list.map(recordFacts)).then(facts=>{const box=root.querySelector(`[data-rec-group="${i}"] .fl-recgroup-body`);if(box?.isConnected){box.innerHTML=recTable(list,facts);if(recPop.el===root)placeRecPop();}}));
   }
   // 마우스를 올리면(잠깐 머문 뒤) 단추 아래 목록 · 목록 위로 옮겨 가도 그대로 · 둘 다 벗어나면 닫는다. 누르면 같은 목록을 가운데 창으로.
   const recPop={el:null,btn:null,show:0,hide:0,hiding:false};
@@ -922,12 +933,16 @@ window.createFlowUI = function createFlowUI(api) {
   function openRecPop(btn){
     const c=caseById(btn.dataset.id);if(!c)return;const refs=refsOf(c);if(!refs.length)return;
     closeRecPop();hideTip();const el=document.createElement('div');el.className='fl-recpop';el.setAttribute('role','dialog');el.setAttribute('aria-label',`${c.title} — 관련 기록`);
-    el.innerHTML=`<p class="fl-recpop-head">관련 기록 ${fmt(refs.length)}건</p><div class="fl-recpop-body live-scroll">${recRows(refs)}</div>`;
-    document.body.append(el);recPop.el=el;recPop.btn=btn;fillFacts(el,refs);api.attachScroll?.();
-    const r=btn.getBoundingClientRect(),w=el.offsetWidth,hh=el.offsetHeight;let top=r.bottom+4;if(top+hh>innerHeight-8)top=Math.max(8,r.top-hh-4);
-    el.style.left=`${Math.min(Math.max(8,r.left),innerWidth-w-8)}px`;el.style.top=`${top}px`;
+    el.innerHTML=`<div class="fl-recpop-body live-scroll">${recRows(refs)}</div>`;
+    document.body.append(el);recPop.el=el;recPop.btn=btn;placeRecPop();fillFacts(el,refs);api.attachScroll?.();
   }
-  function showRecords(id){const c=caseById(id);if(!c)return;const refs=refsOf(c);closeRecPop();dialog('modal',c.title,`관련 기록 ${fmt(refs.length)}건`,recRows(refs));const m=$('#modal');if(m)fillFacts(m,refs);}
+  // 단추 아래(넘치면 위) · 화면 안. 표가 채워져 크기가 바뀌면 다시 잡는다.
+  function placeRecPop(){
+    const el=recPop.el,btn=recPop.btn;if(!el||!btn?.isConnected)return;
+    const r=btn.getBoundingClientRect(),w=el.offsetWidth,hh=el.offsetHeight;let top=r.bottom+4;if(top+hh>innerHeight-8)top=Math.max(8,r.top-hh-4);
+    el.style.left=`${Math.min(Math.max(8,r.right-w),innerWidth-w-8)}px`;el.style.top=`${top}px`;
+  }
+  function showRecords(id){const c=caseById(id);if(!c)return;const refs=refsOf(c);closeRecPop();dialog('modal',c.title,'',`<div class="fl-recs-modal">${recRows(refs)}</div>`);const m=$('#modal');if(m)fillFacts(m,refs);}
   document.addEventListener('pointerover',event=>{
     const b=event.target.closest?.('.fl-recbtn');
     if(b){if(recPop.btn===b){keepRecPop();return;}clearTimeout(recPop.show);recPop.show=setTimeout(()=>{if(b.isConnected&&b.matches(':hover'))openRecPop(b);},220);return;}
