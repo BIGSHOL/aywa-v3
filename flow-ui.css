@@ -152,7 +152,7 @@
 .fl-nav button span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .fl-nav button b{font-weight:600;font-variant-numeric:tabular-nums}
 .fl-nav button:hover{background:var(--ax-soft)}
-.fl-nav button[aria-pressed=true]{background:var(--ax-primary);color:#fff}
+.fl-nav button[aria-pressed=true]{font-weight:700} /* 배경 강조 없음 — 오른쪽 제목이 고른 보기를 말한다(원장 10-28) */
 .fl-nav button.zero:not([aria-pressed=true]){color:#8a93a3}
 .fl-board-main{display:flex;flex-direction:column;gap:10px;min-width:0}
 .fl-board-title{margin:0;font-size:var(--ax-base)}.fl-board-title span{font-weight:500;font-size:var(--ax-sm);margin-left:4px}
