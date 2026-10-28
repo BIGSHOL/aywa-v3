@@ -90,6 +90,10 @@ test('읽기 — 목록 · 상세 5탭 · 근무 설정 · 등록 · 운영자 �
     const supers = (await sql`select id::text id from public.super_admins`).map(r => r.id);
     for (const r of L.rows.filter(r => supers.includes(r.id))) assert.notEqual(r.systemRole, 'master', `${r.displayName} 표시 역할`);
     assert.ok(!('superAdminIds' in L));
+    // 직원 등록 QR은 그리지 않는다(메인 10-28) — 응답 어디에도 운영 주소·등록 토큰이 없다.
+    const json = JSON.stringify(L);
+    assert.deepEqual(L.qrTokens, []);
+    assert.ok(!/aywa\.co\.kr|staff-intake|qrSvg/.test(json), '목록 응답에 운영 주소·등록 토큰 없음');
     for (const tab of ['info', 'monthly', 'classes', 'activity']) {
       const d = await screen.load({ sql, params: { v2path: `/staff/${TESTER}`, tab }, tenantId: t, importV2 });
       assert.equal(d.tab, tab); assert.ok(d[tab] !== undefined, tab);
@@ -198,10 +202,14 @@ test('저장 — 2.0 표·칸·감사로그 · 로그인 계정 거절 · 보호
     assert.equal(back.ok, true);
 
     // 직원 등록 QR · 보기 설정(보는 사람 자신의 ui_prefs.staff만)
+    // 직원 등록 QR 토큰 만들기·갱신은 거절(메인 10-28 — 운영 등록 양식으로 열리는 링크라) · 바뀐 것 없음.
+    const tokensBefore = (await sql`select count(*)::int n, coalesce(string_agg(form_data::text, '|' order by id), '') d from public.academy_documents where tenant_id=${t} and form_type='staff_intake_token'`)[0];
     const qr = await call('ensureStaffIntakeToken', []);
-    assert.equal(qr.ok, true); assert.match(qr.view.qrSvg, /^<svg/);
-    const rot = await call('updateStaffIntakeToken', [null, fd({ id: qr.view.id, action: 'rotate' })]);
-    assert.equal(rot.ok, true); assert.notEqual(rot.view.url, qr.view.url);
+    assert.deepEqual(qr, { error: '연습 화면에서는 직원 등록 QR을 만들지 않습니다' });
+    const anyToken = (await sql`select id::text id from public.academy_documents where tenant_id=${t} and form_type='staff_intake_token' limit 1`)[0]?.id ?? '00000000-0000-4000-8000-000000000000';
+    const rot = await call('updateStaffIntakeToken', [null, fd({ id: anyToken, action: 'rotate' })]);
+    assert.deepEqual(rot, { error: '연습 화면에서는 직원 등록 QR을 만들지 않습니다' });
+    assert.deepEqual((await sql`select count(*)::int n, coalesce(string_agg(form_data::text, '|' order by id), '') d from public.academy_documents where tenant_id=${t} and form_type='staff_intake_token'`)[0], tokensBefore);
     const pref = await call('saveStaffListPrefs', [{ tableScale: 120 }, null]);
     assert.equal(pref.ok, true); assert.equal(pref.view.tableScale, 120);
     assert.equal((await sql`select (ui_prefs->'staff'->>'tableScale')::int s from public.users where id=${actor.id}`)[0].s, 120);

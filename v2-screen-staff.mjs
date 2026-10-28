@@ -6,7 +6,7 @@
 // 보는 사람 = 3.0 띠에서 고른 직원(GET ?actor= — 직원관리 메뉴가 열린 재직 직원). 누가 보느냐로 화면이 달라진다(쓰기 단추 · 계정 관리 · 급여 · 이력서 칸).
 // 🔴 운영자 계정은 지점 화면에서 '관리자'로 보인다(2.0 displayRoleFor) — 운영자 명단은 응답에 싣지 않고, 서버가 표시 역할로 바꿔 내려 보낸다.
 import { readStaffPeople, getStaffList, getStaffById, salaryGate, canViewResume, getResumeByStaffUser, basicInfoData, getStaffClasses,
-  activityData, monthlyData, salaryData, salaryAdmin, protectionStatus, superAdminIds, listIntakeTokens, buildQrView, loadStaffListPrefs, isFullShellRole } from './v2-staff-read.mjs';
+  activityData, monthlyData, salaryData, salaryAdmin, protectionStatus, superAdminIds, loadStaffListPrefs, isFullShellRole } from './v2-staff-read.mjs';
 import { staffActions } from './v2-staff-save.mjs';
 import { isStaffSubPath, staffSubLoad, staffSubActions, staffSubParams } from './v2-staff-sub.mjs';
 
@@ -46,15 +46,14 @@ export async function buildStaff({ ctx, viewer, params, path, importV2 }) {
   const canManage = ctx.canWrite(viewer, 'staff');
 
   if (path === '/staff') {
-    const [prefs, rows, supers, tokens] = await Promise.all([
-      loadStaffListPrefs(ctx, viewer), getStaffList(ctx, viewer), superAdminIds(sql), canManage ? listIntakeTokens(sql, t) : [],
-    ]);
+    const [prefs, rows, supers] = await Promise.all([loadStaffListPrefs(ctx, viewer), getStaffList(ctx, viewer), superAdminIds(sql)]);
     return {
       ...base, list: true, prefs,
       // 표시 역할을 서버에서 입혀 보낸다(운영자 명단은 내려 보내지 않는다 — 화면의 displayRoleFor는 빈 명단으로 같은 결과).
       rows: rows.map(r => ({ ...r, systemRole: displayRoleFor(r.id, r.systemRole, supers) })),
       settings: settingsFor(settings), canManage, isSuperAdmin: false, canImport: ctx.canManage(viewer, 'staff'),
-      qrTokens: await Promise.all(tokens.map(tok => buildQrView(R, tok))),
+      // 직원 등록 QR은 그리지 않는다(메인 10-28) — 복사본의 옛 토큰이 운영 주소에서 열려 연습 중 실제 등록 양식이 운영 DB로 제출될 수 있다.
+      qrTokens: [],
     };
   }
   if (path === '/staff/new') {

@@ -10,10 +10,10 @@
 //    단 2.0이 '로그인 계정이 없는 직원'(임포트분 #31)을 정상 경로로 다루는 자리(이메일 변경·삭제)는 복사본의 auth.users로 그 사실을 보고 DB만 쓴다.
 //    퇴사 때의 로그인 차단(setStaffLoginBlocked)은 2.0도 실패를 삼키는 부수효과라 하지 않고 넘어간다(앱 쪽 벽은 상태값이 맡는다).
 //    알림은 notifications 줄까지(슬랙 깨우기 pokeSlack은 바깥 전송이라 안 함).
-import { randomBytes, randomUUID } from 'node:crypto';
+import { randomUUID } from 'node:crypto';
 import { V2Error } from './v2-screens.mjs';
 import { UUID, audit, serverCall } from './v2-proc-people.mjs';
-import { readStaffPeople, canSeeStaffMember, isFullShellRole, getActiveAssistSlotClasses, buildQrView, listIntakeTokens, parseIntakeToken, INTAKE_FORM_TYPE } from './v2-staff-read.mjs';
+import { readStaffPeople, canSeeStaffMember, isFullShellRole, getActiveAssistSlotClasses } from './v2-staff-read.mjs';
 
 const M_ACTIONS = 'features/staff/server/actions.ts', M_ACCOUNT = 'features/staff/server/account-actions.ts', M_CONTRACT = 'features/staff/contract/server/contract-actions.ts';
 const M_INTAKE = 'features/staff/intake/server/intake-token-actions.ts', M_PREFS = 'features/staff/list/server/list-prefs.ts';
@@ -551,50 +551,16 @@ function intakeGate(c) {
   if (!c.people.canWrite(c.actor, 'staff')) return { error: '직원 등록 QR을 관리할 권한이 없습니다' };
   return null;
 }
-const isOpen = tok => tok.active && (!tok.expiresAt || new Date(tok.expiresAt) > new Date());
+// 직원 등록 QR 토큰 만들기·갱신은 연습 화면에서 하지 않는다(메인 10-28) — 토큰 링크는 운영 등록 양식으로 열려, 연습 중 실제 등록이 운영 DB로
+// 제출될 수 있다. 권한 문(2.0 intakeGate)은 그대로 먼저 지나고, 그 뒤 2.0 실패 모양({ error })으로 거절한다.
+const INTAKE_REFUSED = '연습 화면에서는 직원 등록 QR을 만들지 않습니다';
 async function ensureStaffIntakeToken(c) {
   const gate = intakeGate(c); if (gate) return gate;
-  const { sql, t, actor, R } = c;
-  const tokens = await listIntakeTokens(sql, t);
-  const existing = tokens.find(isOpen) ?? tokens[0];
-  if (existing) return { ok: true, view: await buildQrView(R, existing) };
-  if (R.roles.ROLE_HIERARCHY[actor.role] >= R.roles.ROLE_HIERARCHY.teacher) return { error: '본인 권한으로는 직원 등록 QR을 만들 수 없습니다' };
-  const formData = { token: randomBytes(16).toString('hex'), name: '직원 등록', active: true, expiresAt: null, role: 'teacher', submissionCount: 0 };
-  const w = await adminWrite(sql, s => s`insert into public.academy_documents (tenant_id, title, category, kind, form_type, form_data, restricted, staff_user_id, uploaded_by)
-    values (${t}, ${'직원 등록 QR — 직원 등록'}, 'hr', 'form', ${INTAKE_FORM_TYPE}, ${s.json(formData)}, true, ${actor.id}, ${actor.id})
-    returning id::text id, to_json(created_at)#>>'{}' created_at, form_data`);
-  if (w.error || !w.data[0]) return { error: R.dbError.humanizeDbError(w.error?.message ?? '', '저장') };
-  const created = parseIntakeToken(w.data[0].id, w.data[0].created_at, w.data[0].form_data);
-  if (!created) return { error: 'QR을 만들지 못했습니다' };
-  await audit(sql, t, actor, 'staff_intake_token_create', 'document', '직원 등록', { role: 'teacher' });
-  return { ok: true, view: await buildQrView(R, created), notice: '직원 등록 QR을 만들었습니다' };
+  return { error: INTAKE_REFUSED };
 }
 async function updateStaffIntakeToken(c) {
   const gate = intakeGate(c); if (gate) return gate;
-  const fd = formOf(c.args[1]), { sql, t, actor, R } = c;
-  const id = String(fd.get('id') ?? '').trim(), action = String(fd.get('action') ?? '');
-  if (!id) return { error: '대상을 찾을 수 없습니다' };
-  const raw = tok => ({ token: tok.token, name: tok.name, active: tok.active, expiresAt: tok.expiresAt, role: tok.role, submissionCount: tok.submissionCount });
-  if (action === 'closeOthers') {
-    const others = (await listIntakeTokens(sql, t)).filter(x => x.id !== id && isOpen(x));
-    for (const o of others) await sql`update public.academy_documents set form_data=${sql.json({ ...raw(o), active: false })} where tenant_id=${t} and id=${o.id}`;
-    if (others.length) await audit(sql, t, actor, 'staff_intake_token_toggle', 'document', '이전 링크 일괄 닫기', { closed: others.length });
-    return { ok: true, notice: `이전 링크 ${others.length}개를 닫았습니다` };
-  }
-  const [row] = UUID.test(id) ? await sql`select id::text id, to_json(created_at)#>>'{}' created_at, form_data from public.academy_documents where tenant_id=${t} and form_type=${INTAKE_FORM_TYPE} and id=${id}` : [];
-  if (!row) return { error: '이미 삭제된 QR입니다' };
-  const cur = parseIntakeToken(row.id, row.created_at, row.form_data);
-  if (!cur) return { error: 'QR 정보를 읽을 수 없습니다' };
-  const patch = action === 'close' ? { active: false } : action === 'reopen' ? { active: true, expiresAt: null }
-    : action === 'rotate' ? { token: randomBytes(16).toString('hex'), active: true, expiresAt: null, submissionCount: 0 } : null;
-  if (!patch) return { error: '알 수 없는 요청입니다' };
-  const nextData = { ...(row.form_data ?? {}), ...patch };
-  const w = await adminWrite(sql, s => s`update public.academy_documents set form_data=${s.json(nextData)} where tenant_id=${t} and id=${id}`);
-  if (w.error) return { error: R.dbError.humanizeDbError(w.error.message, '저장') };
-  await audit(sql, t, actor, action === 'rotate' ? 'staff_intake_token_create' : 'staff_intake_token_toggle', 'document', cur.name, { action });
-  const next = parseIntakeToken(cur.id, cur.createdAt, nextData);
-  return { ok: true, view: next ? await buildQrView(R, next) : undefined,
-    notice: action === 'close' ? 'QR을 닫았습니다' : action === 'rotate' ? '새 링크를 발급했습니다 — 옛 링크는 더 이상 열리지 않습니다' : 'QR을 다시 열었습니다' };
+  return { error: INTAKE_REFUSED };
 }
 
 // ── list-prefs.ts ──────────────────────────────────────────────────────────────────────────────────────────────────────

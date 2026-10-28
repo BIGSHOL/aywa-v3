@@ -2,7 +2,7 @@
 // v2-screen-staff.mjs · v2-staff-read.mjs)가 하고 여기서는 page.tsx 본문을 **글자 그대로** 옮겼다. 바꾼 곳은 서버 호출 자리뿐이다
 // (staff-list.swaps.json — [2.0 글자, 바꾼 글자] 짝) — verify-v2-screen-staff.mjs가 2.0 원문에 같은 짝을 대어 글자를 대조한다.
 //  · 운영자 계정 표시(displayRoleFor)는 서버가 표시 역할로 입혀 보낸다 — 여기의 명단은 비어 있다(운영자 명단을 화면에 내리지 않는다).
-//  · 직원 등록 QR(StaffQrSection — 서버 컴포넌트)은 서버가 만든 QR 보기(StaffQrView)를 받아 같은 패널(StaffQrPanel)로 그린다.
+//  · 직원 등록 QR(StaffQrSection)은 그리지 않고 안내 한 줄만 둔다(메인 10-28) — 등록 링크가 운영 양식으로 열려 연습 중 실제 등록이 운영 DB로 제출될 수 있다.
 //  · 한 쪽 행 수의 기기 쿠키는 3.0에 없다 — 주소(?size=)와 기본값으로(2.0이 쿠키를 못 읽을 때와 같다).
 import Link from "next/link";
 import { AutoPageSize } from "@/components/auto-page-size";
@@ -52,7 +52,6 @@ import {
 import { NewStaffTrigger } from "@/app/(shell)/staff/_components/new-staff-trigger";
 import { StaffTableScaleBox, StaffTableScaleControl } from "@/app/(shell)/staff/_components/table-scale";
 import { StaffColumnPicker } from "@/app/(shell)/staff/_components/staff-column-picker";
-import { StaffQrPanel } from "@/app/(shell)/staff/_components/staff-qr-panel";
 import { StaffTable } from "@/app/(shell)/staff/_components/staff-table";
 import { StaffRememberPrefs, StaffViewPrefsProvider } from "@/app/(shell)/staff/_components/staff-view-prefs";
 import { isPayrollEnabled, isStaffLeavesEnabled } from "@/features/payroll/config";
@@ -292,7 +291,7 @@ export function StaffPage({
                 휴가 관리
               </Button>
             ) : null}
-            {canManage ? <StaffQrPanel tokens={data.qrTokens} /> : null}
+            {canManage ? <p className="text-text-dim text-sm">연습 화면에서는 직원 등록 QR을 만들지 않습니다</p> : null}
             {canManage ? <NewStaffTrigger /> : null}
           </>
         }

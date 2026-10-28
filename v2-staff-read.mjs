@@ -322,16 +322,6 @@ export async function salaryData(ctx, viewer, teacherId, period, importV2) {
   } catch { return { month, unavailable: true }; }
 }
 
-/** 직원 등록 QR(listStaffIntakeTokens + buildStaffQrView). 링크 주소는 2.0 요청 주소 자리 — 연습 화면엔 2.0 주소가 없어 운영 주소 형식으로 적는다. */
-export const INTAKE_ORIGIN = 'https://www.aywa.co.kr';
-let qrcode = null;
-export async function buildQrView(R, tok) {
-  qrcode ??= (await import('qrcode')).default;
-  const url = `${INTAKE_ORIGIN}/staff-intake/${tok.token}`;
-  const open = tok.active && (!tok.expiresAt || new Date(tok.expiresAt) > new Date());
-  return { id: tok.id, name: tok.name, url, qrSvg: await qrcode.toString(url, { type: 'svg', margin: 1 }), active: tok.active, open,
-    roleLabel: R.roles.ROLE_LABEL[tok.role] ?? tok.role, submissionCount: tok.submissionCount, expiresAt: tok.expiresAt };
-}
 export const INTAKE_FORM_TYPE = 'staff_intake_token';
 export function parseIntakeToken(id, createdAt, raw) {
   const d = plain(raw) ? raw : {};

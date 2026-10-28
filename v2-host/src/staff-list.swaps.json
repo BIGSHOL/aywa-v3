@@ -17,7 +17,7 @@
    ],
    [
     "{canManage ? <StaffQrSection tenantId={user.tenantId} /> : null}",
-    "{canManage ? <StaffQrPanel tokens={data.qrTokens} /> : null}"
+    "{canManage ? <p className=\"text-text-dim text-sm\">연습 화면에서는 직원 등록 QR을 만들지 않습니다</p> : null}"
    ]
   ]
  }
