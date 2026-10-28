@@ -6,8 +6,8 @@
 (() => {
   'use strict';
   const ID = 'textbook-requests', HOST = `/v2-host/${ID}.html`, S = window.V2Screens; if (!S) return;
-  // 2.0 page.tsx가 읽는 주소 열쇠 그대로(학생 선택칸 초기값).
-  const KEEP = ['studentId'];
+  // 학생 선택칸 초기값 + 업무 흐름에서 연 주문 한 건을 호스트 주소까지 보존한다.
+  const KEEP = ['studentId', 'orderId'];
   let api = null, frame = null, requested = null, hostOk = null, wired = false, editors = [], actor = null;
   const ACTOR_KEY = `v2-host-actor:${ID}`, SEL = `[data-v2-screen="${ID}"]`;
   const esc = s => S.esc(s);

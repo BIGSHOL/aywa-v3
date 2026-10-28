@@ -163,5 +163,15 @@ await check('3.0 쪽: 같은 출처 iframe 자리 · 보는 사람 고르기 · 
   for (const bad of [/2\.0/, /Docker|복사본|v2path|iframe|호스트|ClassNote/i]) assert.doesNotMatch(shown, bad, String(bad));
 });
 
+await check('업무 흐름 orderId가 3.0 해시에서 호스트 iframe 주소로 보존됨', async () => {
+  const bridge = await here('./v2-screen-textbook-requests.js');
+  assert.match(bridge, /const KEEP = \['studentId', 'orderId'\]/);
+  assert.match(bridge, /const query = queryOf\(ctx\.query\)/);
+  assert.match(bridge, /frame\.src = `\$\{HOST\}\$\{query \? `\?\$\{query\}` : ''\}`/);
+  const host = await here('./v2-host/src/textbook-requests.tsx');
+  assert.match(host, /search\.get\('orderId'\)/);
+  assert.match(host, /q\.set\('orderId', orderId\)/);
+});
+
 console.log(`v2 textbook-requests: ${done.length} checks passed`);
 for (const n of done) console.log(`  ✓ ${n}`);
