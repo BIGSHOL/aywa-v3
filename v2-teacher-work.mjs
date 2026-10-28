@@ -184,7 +184,8 @@ function sliceWindow(R, raw, w, scope, cutMs = null, period = false) {
 // 과목 묶음에서 영어는 EiE(classes.english_track = 'eie')와 나머지 영어로 가른다(원장 10-28 "영어와 EiE 분리") — 열쇠 'eie' · 이름 'EiE'.
 export const subjectKeyOf = (c) => (c.subject === 'english' && c.track === 'eie' ? 'eie' : c.subject);
 // 학생은 반을 바꿔 끼울 키가 없다(한 반 = 여러 학생) — 판정은 선생님 묶음 그대로 하고, 끝에서 반 칸을 (반, 학생) 짝 칸으로 쪼갠다(judge의 studentSplit).
-const GROUP = { teacher: null, class: (c) => ({ teacherId: `class:${c.id}`, teacherName: c.name }), subject: (c) => ({ teacherId: `subject:${subjectKeyOf(c)}`, teacherName: subjectKeyOf(c) === 'eie' ? 'EiE' : c.subject }), student: null };
+// 과목 줄 이름 = judge가 만든 subjectName(2.0 programLabel — 선생님 정보 칸·칩과 같은 출처).
+const GROUP = { teacher: null, class: (c) => ({ teacherId: `class:${c.id}`, teacherName: c.name }), subject: (c, subjectName) => ({ teacherId: `subject:${subjectKeyOf(c)}`, teacherName: subjectName(subjectKeyOf(c)) }), student: null };
 /** 학생 묶음의 짝 칸 id(`반id|학생id`)와 그 줄의 teacherId(`student:반id|학생id`) — teacherWorkTrend가 이 모양을 풀어 학생으로 다시 묶는다. */
 const pairId = (classId, studentId) => `${classId}|${studentId}`;
 const STUDENT_PREFIX = 'student:';
@@ -241,7 +242,11 @@ function judge(R, settings, d, w, nowMs, counselShown, unreadGraceHours, groupBy
   const obligations = R.reportWorkObligations({ classes: workClasses, reports: workReports, schedules, enrollments, attendance,
     posts: posts.map((p) => ({ boardName: p.board_name, postedOn: p.posted_on })), from: range.reportFrom, to: today,
     nowMinutes: R.kstMinutesOfDay(new Date(nowMs)), holidays: settings.operations.holidays.map((h) => h.date) });
-  const regroup = GROUP[groupBy], groupClasses = regroup ? workClasses.map((c) => ({ ...c, ...regroup(c) })) : workClasses;
+  // 과목 이름 = 2.0 programLabel(운영실 지표 groupLabel과 같은 출처) — EiE 모듈이 켜졌으면 english = '인재원 영어' · eie = 'EiE', 그 밖은 학원 설정 이름.
+  const eieOn = R.isModuleEnabled(settings.modules.disabled, 'eie'), programSubjects = settings.operations.subjects.map((s) => ({ key: s.key, label: s.label }));
+  const subjectName = (key) => (key === 'eie' ? R.programLabel('eie', programSubjects, eieOn) : key === 'english' ? R.programLabel('injaewon', programSubjects, eieOn)
+    : programSubjects.find((s) => s.key === key)?.label ?? '그 밖의 과목');
+  const regroup = GROUP[groupBy] && ((c) => GROUP[groupBy](c, subjectName)), groupClasses = regroup ? workClasses.map((c) => ({ ...c, ...regroup(c) })) : workClasses;
   const outcomeRows = outcomes.map((r) => ({ classId: r.class_id, studentId: r.student_id, date: r.homework_date, status: r.status, observedAt: r.observed_at }));
   const extraRows = extraIssues.filter((x) => { const student = extraStudentOf.get(x.studentId); return !x.kept && !!student && !student.is_test
     && R.isVideoHomeworkEnabled(settings.report.videoHomeworkPolicy, { classId: x.classId, subjectKey: subjects.get(x.classId) ?? '', grade: student.grade }); });

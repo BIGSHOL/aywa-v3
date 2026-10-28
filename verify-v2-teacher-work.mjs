@@ -232,6 +232,8 @@ test('teacherWorkTrend: week windows = card (30일 열람률 제외) · 선생�
         d.total.forEach((p, i) => { if (!p) return; const s = d.rows.reduce((a, r) => [a[0] + (r.points[i]?.[0] ?? 0), a[1] + (r.points[i]?.[1] ?? 0)], [0, 0]); assert.deepEqual(s, p, `${m.id} ${by} 창 ${i}: 줄 합 = 전체`); });
       }
     }
+    const subj = await teacherWorkTrend({ sql, asOf, tenantId: t, importV2, metric: 'report-written', windows, by: 'subject' });
+    assert.deepEqual(Object.fromEntries(subj.rows.filter((r) => r.key === 'english' || r.key === 'eie').map((r) => [r.key, r.label])), { english: '인재원 영어', eie: 'EiE' }, '과목 줄 이름 = 2.0 programLabel(EiE 켜짐)');
     const d = await teacherWorkTrend({ sql, asOf, tenantId: t, importV2, metric: 'report-written', windows, by: 'teacher' });
     const one = d.rows.find((r) => r.key !== 'unassigned' && r.points.at(-1)?.[1] > 0);
     const classIds = (await sql`select id from public.classes where tenant_id=${t} and teacher_id=${one.key}`).map((c) => c.id);
