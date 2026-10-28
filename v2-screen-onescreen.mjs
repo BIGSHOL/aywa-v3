@@ -9,6 +9,9 @@ import { activeBackup } from './full-db-paths.mjs';
 import { scrub } from './domain-snapshot-core.mjs';
 import { V2Error } from './v2-screens.mjs';
 import { loadOnescreenProps } from './v2-onescreen-roster.mjs';
+import { onescreenExtraActions } from './v2-onescreen-save-extra.mjs';
+import { loadRules as attendanceRules, readSettings as attendanceSettings } from './v2-screen-attendance.mjs';
+import { loadMakeupRules, completeMakeupReservations, completionKey } from './v2-attendance-makeup.mjs';
 
 const DOW = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
 const ATT = { present: '출석', late: '지각', early_leave: '조퇴', absent: '결석', makeup: '보강' };
@@ -159,13 +162,16 @@ export const screen = {
   actions: {
     save: { validate: raw => reportInput(raw), run: async ({ sql, body, tenantId, importV2 }) => runSave(sql, tenantId, await rules(importV2), body) },
     send: { validate: raw => reportInput(raw), run: async ({ sql, body, tenantId, importV2 }) => runSend(sql, tenantId, await rules(importV2), body) },
-    attendance: { validate: raw => attendanceInput(raw), run: async ({ sql, body, tenantId, importV2 }) => runAttendance(sql, tenantId, await rules(importV2), body) },
+    attendance: { validate: raw => attendanceInput(raw), run: async ({ sql, body, tenantId, importV2 }) => runAttendance(sql, tenantId, await rules(importV2), body, importV2) },
     // The v2-host server-action boundary (shims/server-action.ts): POST /api/v2/onescreen/<2.0 function> with { module, actor, args } —
     // 2.0's own call, its first argument being 2.0's input. Same checks and writes as above.
     saveLessonReport: { validate: raw => reportInput(hostCall(raw, 'features/onescreen/server/actions.ts')), run: async ({ sql, body, tenantId, importV2 }) => runSave(sql, tenantId, await rules(importV2), body) },
     saveAndQueueClassnote: { validate: raw => reportInput(hostCall(raw, 'features/onescreen/server/actions.ts')), run: async ({ sql, body, tenantId, importV2 }) => runSend(sql, tenantId, await rules(importV2), body) },
-    setAttendanceCell: { validate: raw => attendanceInput(hostCall(raw, 'features/attendance/server/actions.ts')), run: async ({ sql, body, tenantId, importV2 }) => runAttendance(sql, tenantId, await rules(importV2), body) },
+    setAttendanceCell: { validate: raw => attendanceInput(hostCall(raw, 'features/attendance/server/actions.ts')), run: async ({ sql, body, tenantId, importV2 }) => runAttendance(sql, tenantId, await rules(importV2), body, importV2) },
     saveOnescreenSession: { validate: raw => sessionInput(hostCall(raw, 'features/onescreen/server/actions.ts')), run: async ({ sql, body, tenantId, importV2 }) => runSession(sql, tenantId, await rules(importV2), body) },
+    // 보강 넷(linkMakeupToAbsence · setReservationReportMode · moveReservationToRegular · checkMakeupReservation) · 영상 검사 칸 둘
+    // (setVideoHomeworkMark · setVideoHomeworkMarksBulk) — v2-onescreen-save-extra.mjs. 도우미는 이 모듈이 다 읽힌 뒤에 넘긴다(선언 순서).
+    ...onescreenExtraActions(() => ({ rules, copyDay, settingsOf, actAs, menuMatrix, teachingClassIds, taughtClassSet, runAttendance, VIA })),
   },
 };
 
@@ -282,6 +288,15 @@ async function taughtClassSet(sql, t, R, env, actorId, date) {
   const [teaching, slots] = await Promise.all([teachingClassIds(sql, t, R, env, actorId, date),
     sql`select class_id::text class_id from public.class_schedules where tenant_id=${t} and teacher_id=${actorId} and valid_from<=${date} and (valid_to is null or valid_to>=${date})`]);
   return new Set([...teaching, ...slots.map(s => s.class_id)]);
+}
+/** 2.0 hasReservedMakeup ∨ hasSplitInto: a student with no enrolment or record that day who is due in this class — a reserved makeup
+ *  (status 'reserved') or a class split into it that is live on that weekday and date. A failed or missing table reads as false (2.0: never widen on failure). */
+async function comesWithoutEnrollment(sql, t, studentId, classId, date) {
+  const dow = DOW[new Date(`${date}T00:00:00Z`).getUTCDay()];
+  const look = (q) => sql.savepoint(q).then(r => r.length > 0, () => false);
+  return (await look(sp => sp`select 1 from public.makeup_reservations where tenant_id=${t} and student_id=${studentId} and class_id=${classId} and makeup_date=${date} and status='reserved' limit 1`))
+    || (await look(sp => sp`select 1 from public.class_splits where tenant_id=${t} and student_id=${studentId} and target_class_id=${classId} and day_of_week::text=${dow}
+      and valid_from<=${date} and (valid_to is null or valid_to>=${date}) limit 1`));
 }
 /** 2.0 attendance gate as the page shows it: no write permission → closed; the 7-day lock only for teacher-level (scoped) accounts. */
 function attendanceGate(R, data, teacher, date, asOf) {
@@ -451,7 +466,7 @@ async function runSend(sql, t, R, b) {
 }
 
 /** 2.0 setAttendanceCell for one class and the whole day (no period): permission, the teacher-only lock and scope, then update in place / insert / clear. */
-async function runAttendance(sql, t, R, b) {
+async function runAttendance(sql, t, R, b, importV2) {
   const env = await settingsOf(sql, t, R), actor = await actAs(sql, t, b.actor), asOf = await copyDay(), date = b.sessionDate;
   const matrix = menuMatrix(R, env, actor);
   if (!R.canWrite(actor.role, 'attendance', matrix)) throw new V2Error(403, 'forbidden', '출석 관리 권한이 없습니다');
@@ -463,7 +478,9 @@ async function runAttendance(sql, t, R, b) {
     const [[{ n: enrolled }], [{ n: existing }]] = await Promise.all([
       sql`select count(*)::int n from public.enrollments where tenant_id=${t} and class_id=${b.classId} and student_id=${b.studentId} and (start_date is null or start_date<=${date}) and (end_date is null or end_date>=${date})`,
       sql`select count(*)::int n from public.attendance_records where tenant_id=${t} and class_id=${b.classId} and student_id=${b.studentId} and session_date=${date}`]);
-    if (!R.canWriteAttendanceStudent({ enrolled: enrolled > 0, hasRecord: existing > 0, allowMakeup: false })) throw new V2Error(409, 'not_my_student', '이 반 수강생이 아닙니다');
+    // 2.0: 수강행도 기록도 없으면 그날 이 반에 오기로 한 학생(보강 예약 reserved · 수업 나누기로 들어옴)인지 서버가 표를 직접 본다.
+    const comes = enrolled === 0 && existing === 0 && await comesWithoutEnrollment(sql, t, b.studentId, b.classId, date);
+    if (!R.canWriteAttendanceStudent({ enrolled: enrolled > 0, hasRecord: existing > 0, allowMakeup: comes })) throw new V2Error(409, 'not_my_student', '이 반 수강생이 아닙니다');
   }
   const cls = await classRow(sql, t, b.classId);
   if (!cls) throw bad();
@@ -482,7 +499,8 @@ async function runAttendance(sql, t, R, b) {
     const { updateIds } = R.pickSaveTargets(rows, null);
     await sql`update public.attendance_records set status=${b.status}, recorded_by=${actor.id}, recorded_at=now(), recorded_via=${via} ${b.note !== undefined ? sql`, note=${b.note}` : sql``} where id = any(${updateIds})`;
     await audit(sql, t, actor, 'attendance_cell', 'attendance', { ...base, status: b.status, overwrote: true, prevStatus: rows[0].status, ...back });
-    return { ok: true, status: b.status };
+    const completed = await completeReservations(sql, t, importV2, actor, base, b.status, false);
+    return completed !== undefined ? { ok: true, status: b.status, autoUnits: completed } : { ok: true, status: b.status };
   }
   // New row: 2.0 resolveAutoUnits (lesson profile on → planAutoUnits over that class's schedules) then newRowUnits.
   let lookedUp;
@@ -499,8 +517,22 @@ async function runAttendance(sql, t, R, b) {
   const units = R.newRowUnits(undefined, null, lookedUp), insertedAuto = units.auto === undefined ? undefined : units.units;
   await sql`insert into public.attendance_records (tenant_id, class_id, student_id, session_date, slot_start, status, note, session_units, recorded_by, recorded_via)
     values (${t}, ${cls.id}, ${b.studentId}, ${date}, null, ${b.status}, ${b.note ?? null}, ${units.units}, ${actor.id}, ${via})`;
-  await audit(sql, t, actor, 'attendance_cell', 'attendance', { ...base, status: b.status, created: true, ...(insertedAuto != null ? { autoUnits: insertedAuto } : {}), ...back });
-  return { ok: true, status: b.status, autoUnits: insertedAuto ?? null };
+  // b.blankUnits = 2.0이 시수 칸을 비워 보낸 저장(units: "" — 보강 '했음'). 2.0처럼 감사로그에 units: null, 응답은 자동값이 들어갔을 때만 autoUnits.
+  await audit(sql, t, actor, 'attendance_cell', 'attendance', { ...base, status: b.status, created: true, ...(b.blankUnits ? { units: null } : {}),
+    ...(insertedAuto != null ? { autoUnits: insertedAuto } : {}), ...back });
+  // 2.0: 감사로그 다음 보강 예약 이행 — 이 칸에 걸린 예약이 있으면 done + 메모, 이행이 시수를 바꿨으면 응답도 그 값.
+  const completed = await completeReservations(sql, t, importV2, actor, base, b.status, true), shown = completed !== undefined ? completed : insertedAuto;
+  if (b.blankUnits) return shown !== undefined ? { ok: true, status: b.status, autoUnits: shown } : { ok: true, status: b.status };
+  return { ok: true, status: b.status, autoUnits: shown ?? null };
+}
+/** 2.0 setAttendanceCell의 completeMakeupReservations — 출석부 화면의 이행 본문 그대로(시수를 사람이 치지 않는 저장이라 unitsExplicit=false).
+ *  이행 대상 예약이 없으면 아무것도 쓰지 않고 undefined. 감사로그 이름 = 저장하는 사람. */
+async function completeReservations(sql, t, importV2, actor, base, status, created) {
+  const [A, M] = await Promise.all([attendanceRules(importV2), loadMakeupRules(importV2)]);
+  const settings = await attendanceSettings(sql, t, A);
+  const done = await completeMakeupReservations({ sql, t, R: A, M, settings, actor: { id: actor.id, name: actor.display_name } },
+    [{ studentId: base.studentId, classId: base.classId, date: base.date, status, unitsExplicit: false, created }]);
+  return done.get(completionKey(base));
 }
 
 // ── 2.0 saveOnescreenSession: the teacher's working session (2.0 autosaves it 800ms after typing) ──────────────────────

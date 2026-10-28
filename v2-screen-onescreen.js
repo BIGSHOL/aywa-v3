@@ -9,7 +9,7 @@
   'use strict';
   const ID = 'onescreen', HOST = `/v2-host/${ID}.html`, S = window.V2Screens; if (!S) return;
   const h = S.esc, KEEP = ['teacher', 'date', 'all', 'view', 'class', 'student'];
-  let api = null, frame = null, requested = null, hostOk = null, checking = false, wired = false, last = null;
+  let api = null, frame = null, requested = null, hostOk = null, checking = false, wired = false, last = null, hostTeacher = null;
   const queryOf = q => { const o = new URLSearchParams(); for (const k of KEEP) { const v = q.get(k); if (v) o.set(k, v); } return o.toString(); };
 
   function ensureFrame(query) {
@@ -34,9 +34,25 @@
     Object.assign(frame.style, { top: `${r.top + scrollY}px`, left: `${r.left + scrollX}px`, width: `${r.width}px`, height: `${r.height}px` });
     frame.hidden = false;
   }
+  /** 2.0 강사뷰 '영상 제출 현황'(/onescreen/video-homework) → 3.0 영상 제출 현황 화면의 '내가 낸 숙제' 보기 + 보는 사람(actor = 지금 원스크린의 선생님).
+   *  2.0 page가 읽는 주소 열쇠는 그대로 싣는다. 다른 주소(/lesson-reports/video-homework 등)는 null — 이 함수는 그 한 주소만 넘긴다.
+   *  ⚠️ 호스트 안 이동(hostNavigate)은 이 주소를 /onescreen의 하위 주소로 보고 iframe 주소를 먼저 바꾼다(날짜·all을 잃는다) — 그 갈래(v2-host-nav의 v2path)는
+   *  받지 않는다. 2.0 원스크린 부품엔 이 주소로 가는 링크가 없고(강사 셸 메뉴·알림에만), 창 열기 알림(v2-host-open · eywa-open-window)만 여기로 온다. */
+  function videoHomeworkTarget(href, actorId) {
+    const u = new URL(href || '/', location.origin);
+    if (!/^\/onescreen\/video-homework\/?$/.test(u.pathname)) return null;
+    const q = new URLSearchParams([['view', 'mine']]);
+    for (const k of ['date', 'class', 'subject', 'grade', 'school', 'sort', 'from', 'to', 'q', 'status']) { const v = u.searchParams.get(k); if (v) q.set(k, v); }
+    if (actorId && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(actorId)) q.set('actor', actorId);
+    return `#v2-video-homework?${q}`;
+  }
+  /** 지금 원스크린의 선생님 — 3.0이 고른 teacher, 없으면 호스트가 알려 준 사람(서버가 고른 기본 선생님). */
+  const screenTeacher = () => new URLSearchParams(requested || '').get('teacher') || hostTeacher;
   /** 2.0 주소 → 3.0 기록 창(있으면). 없으면 3.0에 아직 없는 화면이라고만 알린다(주소를 보이지 않는다). */
   function openFromHost(href) {
-    const m = /^\/(students|classes)\/([0-9a-f-]{36})(?:[/?#]|$)/i.exec(href || '');
+    const vh = videoHomeworkTarget(href, screenTeacher());
+    if (vh) { location.hash = vh; return; }
+    const m =/^\/(students|classes)\/([0-9a-f-]{36})(?:[/?#]|$)/i.exec(href || '');
     if (m && api?.canOpenRecord?.(m[2])) return m[1] === 'students' ? api.showStudent(m[2]) : api.openRecord(m[2]);
     api?.toast?.('이 화면은 3.0 연습본에 아직 없습니다.');
   }
@@ -53,6 +69,7 @@
         const page = `#v2-${ID}${query ? `?${query}` : ''}`;
         if (location.hash !== page) location.replace(page);
       } else if (d.type === 'v2-host-open' || d.type === 'eywa-open-window') openFromHost(String(d.href || ''));
+      else if (d.type === 'v2-host-editors' && d.screen === ID && Array.isArray(d.editors)) hostTeacher = typeof d.editors[0]?.id === 'string' ? d.editors[0].id : null;
     });
     const later = () => requestAnimationFrame(place);
     addEventListener('resize', later); addEventListener('scroll', place, { passive: true }); addEventListener('hashchange', later);
