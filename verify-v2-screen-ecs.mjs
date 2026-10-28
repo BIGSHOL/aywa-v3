@@ -217,6 +217,29 @@ async function inRollback(fn) {
   const run = (sql, name, actor, ...args) => { const a = screen.actions[name]; return a.run({ sql, body: a.validate({ module: a.module, actor, args }), tenantId: TENANT, importV2 }); };
   await db.begin(async sql => { await fn({ sql, run }); throw ROLLBACK; }).catch(e => { if (e !== ROLLBACK) throw e; });
 }
+test('복사본(되돌림): JJ 지난 수업 기록은 빈 칸만 이어받고 기존 태도·특이사항을 보존한다', { skip: !db && 'local database not running' }, async () => {
+  await inRollback(async ({ sql, run }) => {
+    await sql`update public.class_schedules set slot_teacher_label='JJ' where class_id=${T_CLASS} and day_of_week::text='tue' and start_time='17:15'`;
+    await sql`insert into public.class_sheet_student_marks
+      (tenant_id, class_id, student_id, mark_date, slot_start, listening_level, memorized_words, updated_by)
+      values (${TENANT}, ${T_CLASS}, ${T_STU}, '2026-09-22', '17:15', 'L4', '510', ${T_ACTOR})`;
+    await sql`insert into public.class_sheet_student_marks
+      (tenant_id, class_id, student_id, mark_date, slot_start, status, progress_note, listening_level, updated_by)
+      values (${TENANT}, ${T_CLASS}, ${T_STU}, '2026-09-29', '17:15', '좋음', '기존 특이사항', '현재 L5', ${T_ACTOR})`;
+    const copied = await run(sql, 'copySlotFromPrevious', T_ACTOR, { classId: T_CLASS, planDate: '2026-09-29', slotStart: '17:15', termMode: 'regular' });
+    assert.equal(copied.ok, true, JSON.stringify(copied));
+    assert.equal(copied.carryPending, false);
+    assert.equal(copied.carryError, null);
+    const patch = copied.carried.find(p => p.studentId === T_STU);
+    assert.deepEqual({ ...patch }, { studentId: T_STU, listeningLevel: '현재 L5', memorizedWords: '510', filled: ['memorizedWords'], sourceDate: '2026-09-22' });
+    const [row] = await sql`select status, progress_note, listening_level, memorized_words from public.class_sheet_student_marks
+      where tenant_id=${TENANT} and class_id=${T_CLASS} and student_id=${T_STU} and mark_date='2026-09-29' and slot_start='17:15'`;
+    assert.deepEqual({ ...row }, { status: '좋음', progress_note: '기존 특이사항', listening_level: '현재 L5', memorized_words: '510' });
+    const [audit] = await sql`select metadata from public.audit_logs where tenant_id=${TENANT} and action='ecs_plan_copy'
+      and metadata->>'classId'=${T_CLASS} and metadata->>'planDate'='2026-09-29' and metadata->>'via'='3.0 연습 복사본' order by id desc limit 1`;
+    assert.equal(audit.metadata.carried, copied.carried.length);
+  });
+});
 /** 한 트랜잭션 안의 감사로그는 시각(now())이 같다 — 순서가 아니라 내용으로 찾는다. */
 const find = (list, pred, what) => { const hit = list.find(a => pred(a.metadata)); assert.ok(hit, `감사로그 없음: ${what}`); return hit.metadata; };
 

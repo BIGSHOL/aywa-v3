@@ -7,12 +7,12 @@
 //  · 알림(반 출결 완료·결석 확인·미출결 → 출석)·슬랙 깨우기는 만들지 않는다 — 저장 뒤 따로 도는 바깥 알림이라 연습 복사본에선 끈다.
 //  · 보강 예약 이행·되돌림(2.0 completeMakeupReservations)은 출석부 화면의 옮긴 본문(v2-attendance-makeup.mjs)을 그대로 부른다 — 2.0 setAttendanceCell과 같은 두 자리
 //    (지우기 뒤 · 저장 끝). 새 보강 체계가 켜진 학원은 그 연결 갈래가 없어 보강 예약이 걸린 칸 저장을 거절한다(출석부 화면과 같은 규약).
-//  · 지난 수업 내용 복사(copySlotFromPrevious)는 계획 줄만 — JJ실 기록 이어받기(carrySelfStudyMarks)는 아직 옮기지 않았다(carried = []).
 //  · 보강 연동 표(makeups adapter)의 허용·차단(nativeWriteAllowance · mappedMakeupDeleteBlock)은 없다 — 복사본에 그 표 연동이 꺼져 있다.
 //  · 연락처가 든 자유 글(가려서 보인 칸)은 화면 글이 가린 그대로면 원문을 지키고, 고쳐 쓰면 거절한다(가린 글자가 저장되지 않게).
 import { z } from 'zod';
 import { V2Error } from './v2-screens.mjs';
 import { plannedLines } from './v2-ecs-props.mjs';
+import { carrySelfStudyMarks } from './v2-ecs-carry.mjs';
 import { loadRules as loadAttendanceRules, readSettings as readAttendanceSettings } from './v2-screen-attendance.mjs';
 import { completeMakeupReservations, completionKey, loadMakeupRules, nativeMakeupsOn } from './v2-attendance-makeup.mjs';
 import { UUID, DAY, canWriteLevel, classAccess, copyDay, isoAt, isoDay, jjManagedClassIds, loadRules, masked, readSettings, readViewers, shown, skillAreaLabelOf } from './v2-ecs-core.mjs';
@@ -255,12 +255,14 @@ export const ACTIONS = {
     if (input.termMode !== 'regular' && input.termMode !== 'exam') return { ok: false, error: '잘못된 요청입니다(시기)' };
     const res = await guarded(sql, s => s`select public.ecs_copy_slot(${t}::uuid, ${user.id}::uuid, ${gate.access.classId}::uuid, ${input.planDate}::date, ${input.slotStart}::time, ${input.termMode}::text) r`);
     if (!res.ok) return { ok: false, error: `내용 복사에 실패했습니다: ${res.error?.message ?? ''}` };
-    const r = res.value[0]?.r ?? {}, carried = [];
-    if ((r.copied ?? 0) > 0) await audit(sql, t, user, 'ecs_plan_copy', 'class_sheet_plan', null, { classId: gate.access.classId, planDate: input.planDate, slotStart: input.slotStart,
-      termMode: input.termMode, copied: r.copied ?? 0, sourceDate: r.sourceDate ?? null, carried: 0 });
+    const r = res.value[0]?.r ?? {};
+    const carry = await carrySelfStudyMarks(sql, t, R, user, gate.access.classId, input.planDate, input.slotStart);
+    const carried = carry.patches;
+    if ((r.copied ?? 0) > 0 || carried.length > 0) await audit(sql, t, user, 'ecs_plan_copy', 'class_sheet_plan', null, { classId: gate.access.classId, planDate: input.planDate, slotStart: input.slotStart,
+      termMode: input.termMode, copied: r.copied ?? 0, sourceDate: r.sourceDate ?? null, carried: carried.length });
     return { ok: true, copied: r.copied ?? 0, sourceLabel: r.sourceDate ? `${r.sourceDate.slice(5)}(${koDowOf(r.sourceDate)})` : null, truncated: r.truncated ?? 0,
       sameDow: typeof r.sameDow === 'boolean' ? r.sameDow : null, reason: r.reason ?? null, lines: (r.lines ?? []).map(l => lineDTO(R, l)),
-      carried, carrySummary: R.carrySummary(carried), carryPending: false, carryError: null };
+      carried, carrySummary: R.carrySummary(carried), carryPending: carry.pending, carryError: carry.error };
   }),
   /** upsertGoal(input) — 담임/부담임 × 월간/주간 × 영역의 교재명·목표 진도(둘 다 비면 행 삭제). 감사는 commitSheetEdits. */
   upsertGoal: serverFn(MODULE.sheet, 1, async ({ sql, t, R, env, user }, raw) => {
