@@ -7,6 +7,7 @@ import { AppProviders } from '@/lib/providers/app-providers';
 import { OperationsProvider } from '@/features/owner/operations-context';
 import { TimetablePage, type TimetableData } from './timetable-page';
 import { onHostRefresh } from '../shims/host-nav';
+import { setHostEditors } from '../shims/server-action';
 import { useHostSearch } from '../shims/next-navigation';
 import { HostFrame, HostMessage } from './host-frame';
 
@@ -41,6 +42,9 @@ function App() {
       .catch((e: Error) => live && setState({ key, error: e.message }));
     return () => { live = false; };
   }, [key, tick]);
+  // 저장할 수 있는 사람(수업 관리 '전체') — 3.0 띠가 이 목록에서 '저장하는 사람'을 고른다.
+  const editors = state.data?.viewer.editors;
+  useEffect(() => { if (editors) setHostEditors(editors); }, [editors]);
   // 다른 주의 자료로 새 주소를 그리지 않는다(주를 바꾼 직후 · 받기 실패).
   if (!state.data || state.key !== key) {
     const failed = state.key === key && !!state.error;

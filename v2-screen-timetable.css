@@ -1,6 +1,9 @@
 /* 2.0 화면 — 시간표: 3.0 쪽은 안내 한 줄과 자리(slot)뿐. 화면 서식은 iframe 안의 2.0 CSS(v2-host)가 그린다. */
-.v2h-note{margin:0;padding:8px 12px;border-radius:10px;background:rgba(163,93,10,.13);color:#5d3a08;font-size:14px;line-height:1.55}
+.v2h-note{display:flex;flex-wrap:wrap;align-items:center;gap:6px 14px;margin:0;padding:8px 12px;border-radius:10px;background:rgba(163,93,10,.13);color:#5d3a08;font-size:14px;line-height:1.55}
+.v2h-note p{flex:1 1 320px;margin:0}
 .v2h-note b{margin-right:6px}
+.v2h-actor{display:inline-flex;align-items:center;gap:6px;white-space:nowrap;font-weight:600}
+.v2h-actor select{height:30px;padding:0 8px;border-radius:8px;border:1px solid rgba(93,58,8,.35);background:#fff;color:#121212;font:inherit;font-weight:500}
 .v2h-slot{position:relative;min-height:420px;border-radius:12px;background:#fff;box-shadow:0 0 0 1px rgba(29,29,31,.14)}
 .v2h-wait{margin:0;padding:24px;font-size:14px;color:#5f6b7a}
 .v2h-frame{position:absolute;z-index:5;border:0;border-radius:12px;background:#fff;box-shadow:0 0 0 1px rgba(29,29,31,.14)}

@@ -2,7 +2,8 @@
 //   node experiments/owner-concept/verify-v2-screen-timetable.mjs
 // ① 원자료가 2.0 서버 함수의 모양 그대로인가(ScheduleSlot·StudentLine 칸) ② 이력 행(#88)·퇴원 줄 판정을 독립 SQL로 대조
 // ③ 옮긴 설정 병합(resolve.ts)이 2.0 원문과 같은가 ④ 호스트가 2.0 부품을 고치지 않고 묶이는가(서버 전용 유입 0 · 운영 주소 0)
-// ⑤ 3.0 쪽은 같은 출처 iframe 자리뿐(운영 2.0 주소·끼워 넣기·저장 요청 없음). 브라우저 확인 스크립트는 work/owner-concept/v2-timetable/.
+// ⑤ 3.0 쪽은 같은 출처 iframe 자리뿐(운영 2.0 주소·끼워 넣기·저장 요청 없음) ⑥ 저장(2단계) — 2.0 함수 이름·반환 모양 그대로,
+// 학원이로 트랜잭션 안에서 돌리고 되돌린다(복사본에 흔적 0). 브라우저 확인 스크립트는 work/owner-concept/v2-timetable/.
 import assert from 'node:assert/strict';
 import { readFile, rm } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
@@ -13,6 +14,8 @@ import { openFullDatabase, tenantId } from './full-db.mjs';
 import { importV2 } from './v2-bridge.mjs';
 import * as T from './v2-screen-timetable.mjs';
 import { build } from './v2-host/build.mjs';
+import { readEditors, loadExtra } from './v2-timetable-save.mjs';
+import { V2Error } from './v2-screens.mjs';
 
 const done = [];
 const check = async (name, fn) => { await fn(); done.push(name); };
@@ -42,7 +45,17 @@ await check('호스트가 옮긴 보강 줄 조립(attachReservedLines)이 2.0 r
 await check('매개변수는 주(week)만 받는다 — 나머지(과목·보기·구분…)는 호스트가 2.0처럼 같은 자료에서 다시 조립한다', () => {
   assert.deepEqual(Object.keys(T.screen.params), ['week']);
   assert.ok(T.screen.params.week.test('2026-10-26') && !T.screen.params.week.test('2026-1-1'));
-  assert.equal(T.screen.actions, undefined, '1단계(보기)는 저장 동작이 없다');
+});
+
+await check('저장 동작 = 2.0 서버 함수 이름 그대로(그 2.0 파일이 실제로 내보내는 함수) · 아직 잇지 않은 함수는 없다(→ 호스트가 보기 전용으로 거절)', async () => {
+  const names = Object.keys(T.screen.actions);
+  assert.deepEqual(names.sort(), ['moveEnrollmentsBatch', 'updateEnrollmentsAttendanceBatch']);
+  const enrollments = await src('features/enrollments/server/actions.ts');
+  assert.match(enrollments, /^["']use server["']/);
+  for (const n of names) assert.match(enrollments, new RegExp(`export async function ${n}\\(`), n);
+  const shim = await here('./v2-host/shims/server-action.ts');
+  assert.match(shim, /fetch\(`\/api\/v2\/\$\{encodeURIComponent\(screen\)\}\/\$\{encodeURIComponent\(name\)\}`/, '같은 출처 공통 틀로만 보낸다');
+  assert.doesNotMatch(shim, /https?:\/\//);
 });
 
 const db = await openFullDatabase();
@@ -62,6 +75,7 @@ try {
     assert.ok(lines.some(l => l.latestReport), '최근 보고서(같은 RPC)');
     assert.ok(now.settings.operations.subjects.length > 0 && Array.isArray(now.settings.modules.disabled));
     assert.equal(now.viewer.canEdit, true); assert.equal(past.viewer.canEdit, false, '지난 주는 2.0처럼 편집 문이 닫힌다');
+    assert.ok(now.viewer.editors.length > 0 && now.viewer.editors[0].role === '원장', '저장할 수 있는 사람 — 원장 먼저');
     for (const c of Object.values(now.teacherColors)) assert.match(c.bg, /^#[0-9a-f]{3,8}$/i);
   });
 
@@ -104,6 +118,47 @@ try {
       and (e.end_date is null or e.end_date > ${now.referenceDate}) and not (s.status::text='withdrawn' and s.withdrawn_at <= ${now.referenceDate})`);
     const aliveKey = new Set(alive.map(a => `${a.subject}:${a.id}`));
     assert.equal(wd.filter(w => aliveKey.has(`${w.subject}:${w.id}`)).length, 0);
+  });
+
+  await check('저장(2단계): 학원이 반 이동·요일 편집 — 같은 DB 함수 · 2.0 문구·반환 모양 · 알림 줄 · 감사로그 via · 바깥 요청 0 (되돌림)', async () => {
+    const STU = '6219e442-aa57-455f-a5bc-834b222d9e1c', ENR = '7d419d88-5a2d-4e32-b29d-c8c19e399e7a', TO = '50d2ece7-6514-4474-8cfc-dd8983d15c18';
+    const MOD = 'features/enrollments/server/actions.ts', A = T.screen.actions, ROLL = new Error('rollback'), X = await loadExtra(importV2);
+    const tx = async fn => { let out; try { await db.begin(async sql => { out = await fn(sql); throw ROLL; }); } catch (e) { if (e !== ROLL) throw e; } return out; };
+    const call = (sql, name, body) => A[name].run({ sql, body: A[name].validate(body), tenantId, importV2 });
+    const editors = await tx(sql => readEditors(sql, tenantId, R, X)), supers = (await db`select id::text id from public.super_admins`).map(r => r.id);
+    assert.ok(!editors.some(e => supers.includes(e.id)), '운영자 계정은 고를 수 없다');
+    const actor = editors[0].id;
+    const [teacher] = await db`select id::text id from public.users where tenant_id=${tenantId} and status::text='active' and system_role::text='teacher' limit 1`;
+    assert.throws(() => A.moveEnrollmentsBatch.validate({ module: 'x.ts', actor, args: [[]] }), e => e instanceof V2Error && e.status === 400, '다른 파일의 함수 이름으로는 못 부른다');
+    assert.throws(() => A.moveEnrollmentsBatch.validate({ module: MOD, actor, args: [[], null, TO] }), e => e.code === 'unsupported', '단체 이동은 아직');
+    assert.deepEqual(await tx(sql => call(sql, 'moveEnrollmentsBatch', { module: MOD, actor: teacher.id, args: [[{ enrollmentId: ENR, newClassId: TO }], null] })), { error: '반 이동은 관리자만 할 수 있습니다' });
+    assert.deepEqual(await tx(sql => call(sql, 'moveEnrollmentsBatch', { module: MOD, actor, args: [[{ enrollmentId: ENR, newClassId: TO }], '2020-01-01'] })), { error: '적용일은 오늘 이후여야 합니다' });
+    assert.deepEqual(await tx(sql => call(sql, 'updateEnrollmentsAttendanceBatch', { module: MOD, actor: teacher.id, args: [[{ enrollmentId: ENR, days: ['mon'] }]] })), { error: '등원 요일 편집은 관리자만 할 수 있습니다' });
+    const moved = await tx(async sql => {
+      const queued = async () => (await sql`select count(*)::int c from net.http_request_queue`)[0].c, before = await queued();
+      const res = await call(sql, 'moveEnrollmentsBatch', { module: MOD, actor, args: [[{ enrollmentId: ENR, newClassId: TO, attendanceDays: [] }], null] });
+      const rows = await sql`select class_id::text class_id, start_date::text s, end_date::text e, is_transferred, is_transferred_in from public.enrollments where tenant_id=${tenantId} and student_id=${STU}`;
+      const notes = await sql`select title, body, link from public.notifications where tenant_id=${tenantId} and created_at >= now() and link=${`/classes/${TO}`}`;
+      const [log] = await sql`select actor_id::text actor_id, target_type, metadata from public.audit_logs where tenant_id=${tenantId} and created_at >= now() and action='enrollment_move_batch'`;
+      const [cls] = await sql`select teacher_id::text t from public.classes where id=${TO}`;
+      return { res, rows, notes, log, cls, extra: (await queued()) - before };
+    });
+    assert.equal(moved.res.results.length, 1); assert.equal(moved.res.results[0].ok, true, moved.res.results[0].error);
+    assert.ok(moved.rows.some(r => r.class_id === TO && r.s === R.kstToday() && !r.e && r.is_transferred_in), '새 반 수강이 오늘부터');
+    assert.ok(moved.rows.some(r => r.class_id !== TO && r.is_transferred), '옛 수강이 반 이동으로 닫힌다');
+    assert.deepEqual([moved.log.actor_id, moved.log.target_type, moved.log.metadata.via, moved.log.metadata.count, moved.log.metadata.studentIds], [actor, 'student', '3.0 연습 복사본', 1, [STU]]);
+    if (moved.cls.t && moved.cls.t !== actor) assert.deepEqual(moved.notes.map(n => [n.title, n.body]), [['반 이동 전입', '학원이 학생이 학원삼(테스트) 반에 전입되었습니다.']]);
+    assert.equal(moved.extra, 0, '바깥 요청 대기열이 늘지 않는다');
+    const days = await tx(async sql => {
+      const res = await call(sql, 'updateEnrollmentsAttendanceBatch', { module: MOD, actor, args: [[{ enrollmentId: ENR, days: ['wed', 'mon', 'xx'] }]] });
+      const [row] = await sql`select attendance_days from public.enrollments where id=${ENR}`;
+      const [log] = await sql`select metadata from public.audit_logs where tenant_id=${tenantId} and created_at >= now() and action='enrollment_days_update'`;
+      return { res, row, log, role: (await sql`select current_user r`)[0].r };
+    });
+    assert.deepEqual(days.res, { count: 1 }); assert.deepEqual(days.row.attendance_days, ['mon', 'wed'], '요일순 · 유효 요일만(2.0 DAY_ORDER)');
+    assert.equal(days.log.metadata.via, '3.0 연습 복사본'); assert.equal(days.role, 'clone_admin', '사용자 역할로 쓴 뒤 원래 역할로');
+    const [after] = await db`select class_id::text c, attendance_days, end_date from public.enrollments where id=${ENR}`;
+    assert.deepEqual([after.c, after.attendance_days, after.end_date], ['e4a2c026-8992-4211-a5fe-b9e93be8a0f3', [], null], '시험 뒤 복사본은 그대로');
   });
 } finally { await db.end(); }
 

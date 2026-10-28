@@ -76,7 +76,7 @@ export type TimetableData = {
   labSeparateEnrollmentIds: string[]; seatPins: { pins: never[]; live: never[] | null };
   makeup: ReservationData; seatWeek: { moves: SeatMoveRow[] | null; live: SeatLiveSlot[] | null };
   scheduledImports: ScheduledSnapshot[]; memoSheets: Record<string, MemoLoad>;
-  viewer: { canEdit: boolean; canEditRoster: boolean; canSplit: boolean; staffSubjects: string[] };
+  viewer: { canEdit: boolean; canEditRoster: boolean; canSplit: boolean; staffSubjects: string[]; editors?: { id: string; name: string; role: string }[] };
 };
 
 /** page.tsx 아래쪽 buildHref 그대로(주소만 /timetable → 호스트가 iframe 주소로 옮긴다). */
