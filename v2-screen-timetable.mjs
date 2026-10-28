@@ -16,7 +16,7 @@ function loadRules(importV2) {
     const at = p => importV2(p);
     const [week, grid, classGrid, periods, periodMatch, partition, integration, subjectDefault, kind, sort, moves, labels, lab, tone,
       moveNote, moveDate, split, order, emptyRows, hapban, rowSpan, seat, subjects, defaults, preset, modules, nameAsOf, teacherAsOf,
-      special, track, eligibility, exitWindow, dateKst, schoolGrade, color, scheduledImport] = await Promise.all([
+      special, track, eligibility, exitWindow, dateKst, schoolGrade, color, scheduledImport, memoDoc, memoPack] = await Promise.all([
       'features/timetable/lib/week.ts', 'features/timetable/lib/grid.ts', 'features/timetable/lib/class-grid.ts',
       'features/timetable/lib/periods.ts', 'features/timetable/lib/period-match.ts', 'features/timetable/lib/weekday-partition.ts',
       'features/timetable/lib/integration-groups.ts', 'features/timetable/lib/subject-default.ts', 'features/timetable/lib/class-kind.ts',
@@ -28,11 +28,12 @@ function loadRules(importV2) {
       'features/classes/class-name-as-of.ts', 'features/classes/teacher-as-of.ts', 'features/classes/special-lecture.ts',
       'features/classes/english-track.ts', 'features/enrollments/eligibility.ts', 'features/withdrawals/window.ts',
       'lib/date-kst.ts', 'lib/format/school-grade.ts', 'lib/color-utils.ts', 'features/timetable/scheduled-import.ts',
+      'features/timetable-memo/doc.ts', 'features/timetable-memo/pack.ts',
     ].map(at));
     return { ...week, ...grid, ...classGrid, ...periods, ...periodMatch, ...partition, ...integration, ...subjectDefault, ...kind, ...sort,
       ...moves, ...labels, ...lab, ...tone, ...moveNote, ...moveDate, ...split, ...order, ...emptyRows, ...hapban, ...rowSpan, MOVABLE_SEATS: seat.MOVABLE_SEATS, ...subjects,
       ...defaults, ...preset, ...modules, ...nameAsOf, ...teacherAsOf, ...special, ...track, ...eligibility, ...exitWindow, ...dateKst,
-      ...schoolGrade, ...color, monthDay: scheduledImport.monthDay };
+      ...schoolGrade, ...color, monthDay: scheduledImport.monthDay, memo: { ...memoDoc, ...memoPack } };
   })().catch(error => { rulesPromise = null; throw error; });
   return rulesPromise;
 }
@@ -268,6 +269,59 @@ async function readSeatPins(sql, t, R, ref) {
   return { pins, live: live.map(r => ({ ...r })) };
 }
 
+const tableExists = async (sql, name) => !!(await sql`select to_regclass(${`public.${name}`}) r`)[0].r;
+
+/** 기본뷰 '보강' 줄 재료 — 2.0 `getReservationsInWeek`(makeup_reservations, 예약 상태 · 그 주 · 화면의 반) + 줄에 쓰는 학생 이름.
+ *  모양은 2.0 `toReservation` 그대로(시각은 HH:MM). 줄 조립(`attachReservedLines`)은 호스트가 같은 본문으로 한다. */
+async function readReservations(sql, t, R, ref, classIds) {
+  if (!classIds.length || !(await tableExists(sql, 'makeup_reservations'))) return { reservations: [], students: [] };
+  const wk = R.weekBoundsOf(ref);
+  const rows = await sql`select id::text id, student_id::text student_id, class_id::text class_id, absence_date::text absence_date, makeup_date::text makeup_date,
+      slot_start::text slot_start, slot_end::text slot_end, period_label, note, status, created_by::text created_by
+    from public.makeup_reservations where tenant_id=${t} and status='reserved' and makeup_date >= ${wk.start} and makeup_date <= ${wk.end} and class_id = any(${classIds}::uuid[])
+    order by makeup_date, slot_start, id`;
+  const reservations = rows.map(r => ({ id: r.id, studentId: r.student_id, classId: r.class_id, absenceDate: r.absence_date.slice(0, 10), makeupDate: r.makeup_date.slice(0, 10),
+    slotStart: hm(r.slot_start), slotEnd: hm(r.slot_end), periodLabel: r.period_label ?? null, note: r.note ?? null, status: r.status === 'done' ? 'done' : 'reserved', createdBy: r.created_by ?? null }));
+  const ids = [...new Set(reservations.map(r => r.studentId))];
+  const students = ids.length ? await sql`select id::text id, name, grade, school from public.students where tenant_id=${t} and id = any(${ids}::uuid[])` : [];
+  return { reservations, students: students.map(s => ({ ...s })) };
+}
+
+/** 통합뷰 *LAB 임시 칸 재료 — 2.0 `getSeatWeekMoves`(seat_period_moves, 그 주 · 옮길 수 있는 자리) + `getSeatLiveSlots`(그 주 자리 배치).
+ *  표가 없으면 null(2.0과 같다 — '모름'을 0줄로 바꾸지 않는다). */
+async function readSeatWeek(sql, t, R, ref) {
+  const wk = R.weekBoundsOf(ref);
+  const live = (await sql`select day_of_week::text "dayOfWeek", start_time::text "startTime", end_time::text "endTime", slot_teacher_label "slotTeacherLabel", valid_from::text "validFrom", valid_to::text "validTo"
+      from public.class_schedules where tenant_id=${t} and slot_teacher_label is not null and valid_from <= ${wk.end} and (valid_to is null or valid_to >= ${wk.start}) order by id`).map(r => ({ ...r }));
+  if (!R.MOVABLE_SEATS.length) return { moves: [], live };
+  if (!(await tableExists(sql, 'seat_period_moves'))) return { moves: null, live };
+  const rows = await sql`select seat, session_date::text session_date, class_id::text class_id, student_id::text student_id, slot_start::text slot_start
+      from public.seat_period_moves where tenant_id=${t} and seat = any(${[...R.MOVABLE_SEATS]}) and session_date >= ${wk.start} and session_date <= ${wk.end} order by id`;
+  return { moves: rows.map(r => ({ seat: r.seat, sessionDate: r.session_date.slice(0, 10), classId: r.class_id, studentId: r.student_id, slotStart: hm(r.slot_start) })), live };
+}
+
+/** 예약된 가져오기 배지 — 2.0 `getScheduledImports`의 재료(오늘 뒤 스냅샷 · 되돌린 것 제외). 묶기(groupScheduledImports)는 호스트가. */
+async function readScheduledImports(sql, t, today) {
+  const snaps = await sql`select id::text id, reference_date::text reference_date, created_at, payload->>'kind' kind from public.timetable_snapshots
+      where tenant_id=${t} and reference_date > ${today} order by reference_date`;
+  if (!snaps.length) return [];
+  const restored = new Set((await sql`select snapshot_id::text snapshot_id from public.timetable_import_logs where tenant_id=${t} and snapshot_id = any(${snaps.map(s => s.id)}::uuid[]) and restored_at is not null`).map(l => l.snapshot_id));
+  return snaps.filter(s => s.reference_date && !restored.has(s.id)).map(s => ({ id: s.id, effectiveDate: s.reference_date.slice(0, 10), kind: s.kind ? 'structure' : 'enrollment', createdAt: new Date(s.created_at).toISOString() }));
+}
+
+/** 영어 통합뷰 오른쪽 메모 시트 — 2.0 `loadMemoSheet`: 행이 없으면 빈 판, 모양이 틀리면 열지 않는다(unavailable). */
+async function readMemoSheets(sql, t, R) {
+  const subjects = [...R.memo.MEMO_SHEET_SUBJECTS];
+  if (!subjects.length || !(await tableExists(sql, 'timetable_memo_sheets'))) return Object.fromEntries(subjects.map(s => [s, { status: 'unavailable' }]));
+  const rows = await sql`select subject, doc, version, updated_at from public.timetable_memo_sheets where tenant_id=${t} and subject = any(${subjects})`;
+  return Object.fromEntries(subjects.map(subject => {
+    const row = rows.find(r => r.subject === subject);
+    if (!row) return [subject, { status: 'ok', packed: R.memo.packSheet(R.memo.emptyDoc()), version: 0, updatedAt: null }];
+    const parsed = R.memo.packedSheetSchema.safeParse(row.doc);
+    return [subject, parsed.success ? { status: 'ok', packed: parsed.data, version: Number(row.version), updatedAt: row.updated_at ? new Date(row.updated_at).toISOString() : null } : { status: 'unavailable' }];
+  }));
+}
+
 /** 한 주의 원자료 — 2.0 page.tsx의 Promise.all(배치+명단 · 설정 · 강사 색 · 자리 고정 · LAB 따로 수업)과 같은 재료. */
 export async function buildTimetableData({ sql, params, tenantId: t, R }) {
   const today = R.kstToday(), thisWk = R.thisMonday(today);
@@ -280,6 +334,9 @@ export async function buildTimetableData({ sql, params, tenantId: t, R }) {
     readSeatPins(sql, t, R, ref),
   ]);
   const rosters = await readRosters(sql, t, R, raw, ref);
+  const [makeup, seatWeek, scheduledImports, memoSheets] = await Promise.all([
+    readReservations(sql, t, R, ref, [...new Set(raw.map(s => s.classId))]), readSeatWeek(sql, t, R, ref), readScheduledImports(sql, t, today), readMemoSheets(sql, t, R),
+  ]);
   // 명단은 반별로 한 번만 보낸다 — 호스트가 2.0과 같은 모양(배치마다 students·studentCount)으로 다시 붙인다(같은 반 배치는 같은 명단).
   const allSlots = raw.map(s => ({ ...s, studentCount: (rosters.get(s.classId) ?? []).filter(l => l.status === 'active').length }));
   const relation = R.weekRelation(week, today);
@@ -289,7 +346,7 @@ export async function buildTimetableData({ sql, params, tenantId: t, R }) {
     today, thisWeek: thisWk, week, referenceDate: ref, allSlots, rosters: Object.fromEntries(rosters),
     settings: { operations: settings.operations, modules: { disabled: settings.disabledModules } },
     teacherColors, teacherNicknames: R.buildTeacherNicknameMap(nickRows.map(u => ({ displayName: u.display_name ?? null, englishName: u.english_name ?? null, active: u.status === 'active' }))),
-    labSeparateEnrollmentIds: labSep.map(r => r.id), seatPins,
+    labSeparateEnrollmentIds: labSep.map(r => r.id), seatPins, makeup, seatWeek, scheduledImports, memoSheets,
     // 원장(관리자 계열)이 보는 2.0 화면 — 편집 문은 2.0처럼 '지난 주가 아니면' 열린다(끌기·그룹 설정). 저장은 1단계라 호스트의
     // 서버 액션 자리표시가 '복사본 보기 전용'으로 거절한다(2단계에서 actions로 잇는다). 수업 나누기는 2.0에서도 꺼져 있다.
     viewer: { canEdit: relation !== 'past', canEditRoster: relation !== 'past', canSplit: false, staffSubjects: [], saves: 'blocked' },

@@ -30,6 +30,15 @@ await check('옮긴 설정 병합(deepMerge·normalizeSubjects)이 2.0 resolve.t
   assert.deepEqual(T.deepMerge({ a: [1], b: { c: 1, d: 2 }, e: 1 }, { a: [2, 3], b: { c: null, x: 9 }, e: null, z: 1 }), { a: [2, 3], b: { c: 1, d: 2 }, e: 1 });
 });
 
+await check('호스트가 옮긴 보강 줄 조립(attachReservedLines)이 2.0 reserved-lines.ts 본문과 같다(조회 두 줄만 받은 자료로)', async () => {
+  const ts = (await import('typescript')).default;
+  const norm = code => ts.transpileModule(code, { compilerOptions: { target: ts.ScriptTarget.ES2022, removeComments: true } }).outputText.replace(/[\s;]+/g, '');
+  const tail = raw => { const text = raw.replace(/\r\n/g, '\n'), i = text.indexOf('  const studentById = new Map('); assert.ok(i > 0, '본문 시작을 찾지 못함'); return text.slice(i); };
+  const orig = await src('features/timetable/server/reserved-lines.ts'), port = await here('./v2-host/src/timetable-ports.ts');
+  assert.equal(norm(`function f(){${tail(port)}`), norm(`function f(){${tail(orig)}`));
+  assert.match(port, /data\.reservations\.filter\(\(r\) => wanted\.has\(r\.classId\)\)/, '2.0이 반 목록으로 묻던 조회를 같은 반 목록으로 좁힌다');
+});
+
 await check('매개변수는 주(week)만 받는다 — 나머지(과목·보기·구분…)는 호스트가 2.0처럼 같은 자료에서 다시 조립한다', () => {
   assert.deepEqual(Object.keys(T.screen.params), ['week']);
   assert.ok(T.screen.params.week.test('2026-10-26') && !T.screen.params.week.test('2026-1-1'));
@@ -54,6 +63,23 @@ try {
     assert.ok(now.settings.operations.subjects.length > 0 && Array.isArray(now.settings.modules.disabled));
     assert.equal(now.viewer.canEdit, true); assert.equal(past.viewer.canEdit, false, '지난 주는 2.0처럼 편집 문이 닫힌다');
     for (const c of Object.values(now.teacherColors)) assert.match(c.bg, /^#[0-9a-f]{3,8}$/i);
+  });
+
+  await check('조각 원자료 = 2.0 조회 모양(보강 예약 toReservation · 자리 이동·배치 · 예약된 가져오기 · 메모 시트 loadMemoSheet)', async () => {
+    const shown = new Set(now.allSlots.map(s => s.classId)), wk = R.weekBoundsOf(now.referenceDate);
+    for (const r of now.makeup.reservations) {
+      assert.ok(shown.has(r.classId) && r.makeupDate >= wk.start && r.makeupDate <= wk.end && r.status === 'reserved', r.id);
+      assert.match(r.slotStart, /^\d{2}:\d{2}$/); assert.match(r.slotEnd, /^\d{2}:\d{2}$/);
+    }
+    const [{ c }] = await db.begin('isolation level repeatable read read only', sql => sql`select count(*)::int c from public.makeup_reservations where tenant_id=${tenantId} and status='reserved'
+      and makeup_date between ${wk.start} and ${wk.end} and class_id = any(${[...shown]}::uuid[])`);
+    assert.equal(now.makeup.reservations.length, c, '그 주 · 화면 반 · 예약 상태 예약 전부');
+    assert.ok(now.seatWeek.moves === null || Array.isArray(now.seatWeek.moves)); assert.ok(Array.isArray(now.seatWeek.live));
+    for (const s of now.scheduledImports) assert.ok(s.effectiveDate > now.today && ['structure', 'enrollment'].includes(s.kind));
+    for (const [subject, m] of Object.entries(now.memoSheets)) {
+      assert.ok(R.memo.MEMO_SHEET_SUBJECTS.includes(subject));
+      if (m.status === 'ok') assert.ok(R.memo.packedSheetSchema.safeParse(m.packed).success, `${subject} 메모 시트 모양`);
+    }
   });
 
   await check('이력 행(#88): 그 주 배치는 요일 칸 날짜에 살아 있는 행만 — 독립 SQL과 배치 행이 같다', async () => {

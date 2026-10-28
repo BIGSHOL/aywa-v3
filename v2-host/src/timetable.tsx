@@ -14,10 +14,16 @@ import { HostFrame, HostMessage } from './host-frame';
 export const HOST_TITLE = '시간표';
 export const HOST_ROUTE = '/timetable';
 
-type Raw = Omit<TimetableData, 'allSlots'> & { allSlots: Omit<TimetableData['allSlots'][number], 'students'>[]; rosters: Record<string, TimetableData['allSlots'][number]['students']> };
+type Raw = Omit<TimetableData, 'allSlots' | 'makeup' | 'seatWeek' | 'scheduledImports' | 'memoSheets'> & Partial<Pick<TimetableData, 'makeup' | 'seatWeek' | 'scheduledImports' | 'memoSheets'>> & { allSlots: Omit<TimetableData['allSlots'][number], 'students'>[]; rosters: Record<string, TimetableData['allSlots'][number]['students']> };
 
 /** 반별로 받은 명단을 2.0 모양(배치마다 students)으로 다시 붙인다 — 같은 반 배치는 같은 명단 배열(2.0과 같다). */
-const attach = (raw: Raw): TimetableData => ({ ...raw, allSlots: raw.allSlots.map((s) => ({ ...s, students: raw.rosters[s.classId] ?? [] })) as TimetableData['allSlots'] });
+const attach = (raw: Raw): TimetableData => ({
+  ...raw,
+  // 서버(4310)가 아직 옛 모듈이면 이 칸들이 없다 — 빈 값으로 그린다(보강 줄·*LAB 칸·배지·메모 시트만 빠진다).
+  makeup: raw.makeup ?? { reservations: [], students: [] }, seatWeek: raw.seatWeek ?? { moves: null, live: null },
+  scheduledImports: raw.scheduledImports ?? [], memoSheets: raw.memoSheets ?? {},
+  allSlots: raw.allSlots.map((s) => ({ ...s, students: raw.rosters[s.classId] ?? [] })) as TimetableData['allSlots'],
+});
 
 function App() {
   // 주소는 호스트 안 이동(history)에 따라 바뀐다 — 쿼리는 화면 해석에, 주(week)만 다시 받아 오는 열쇠다(나머지는 2.0처럼 같은 자료에서 다시 조립).

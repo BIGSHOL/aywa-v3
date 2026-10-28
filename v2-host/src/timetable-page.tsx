@@ -1,8 +1,8 @@
 // 2.0 `src/app/(shell)/timetable/page.tsx`의 화면 조립을 브라우저에서 — 같은 2.0 부품·같은 2.0 함수·같은 변수 이름.
 // page.tsx는 서버 부품(쿠키·세션·DB)이라 그대로 불러올 수 없어서, 서버가 하던 조회만 /api/v2/timetable(복사본)의 원자료로 바꾸고
 // 나머지(주·과목·구분·보기 해석, 필터, 툴바·본문 배치)는 page.tsx 순서 그대로 옮겼다. 원장 계정(관리자 계열)으로 보는 화면이다.
-// 이 판에 아직 없는 것(서버 부품·서버 액션으로 읽는 것): 시간표 X(퇴원 겹침), 영어 메모 시트, 예약 가져오기 배지, 보강 예약 줄,
-// *LAB 임시 칸, 강사뷰·교실뷰·보강 구분 — 그 자리는 '아직 옮기지 않음'으로 정직하게 말한다.
+// 이 판에 아직 없는 것: 시간표 X(퇴원 겹침 — 서버 액션 조회), 강사뷰·교실뷰·보강 구분 — 그 자리는 '아직 옮기지 않음'으로 정직하게 말한다.
+// 메모 시트는 보기만(편집 저장은 2단계).
 import { PageHeader } from '@/components/page-header';
 import { PageMaximizeToolbar } from '@/components/page-maximize/page-maximize-toolbar';
 import { PhotoCard } from '@/components/atoms/photo-card';
@@ -49,6 +49,23 @@ import { WeekdayGroupTables } from '@/app/(shell)/timetable/_components/weekday-
 import { EcsShortcut } from '@/app/(shell)/timetable/_components/ecs-shortcut';
 import { EditorShortcut } from '@/app/(shell)/timetable/_components/editor-shortcut';
 import { TimetableSearchEmptyNote, TimetableSearchProvider, TimetableSearchToggle } from '@/app/(shell)/timetable/_components/search-context';
+import { ScheduledImportBadge } from '@/app/(shell)/timetable/_components/scheduled-import-badge';
+import { buildVirtualLabs, knownLabSources, NO_VIRTUAL_LABS, type SeatMoveRow, type SeatLiveSlot } from '@/features/timetable/lib/virtual-lab';
+import { groupScheduledImports, type ScheduledSnapshot } from '@/features/timetable/scheduled-import';
+import { isMemoSheetSubject } from '@/features/timetable-memo/doc';
+import type { PackedSheet } from '@/features/timetable-memo/pack';
+import { MemoSheet } from '@/features/timetable-memo/ui/memo-sheet';
+import { MemoSheetJumpButton, TimetableSplitPanes } from '@/features/timetable-memo/ui/split-panes';
+import { attachReservedLines, type ReservationData } from './timetable-ports';
+
+type MemoLoad = { status: 'ok'; packed: PackedSheet; version: number; updatedAt: string | null } | { status: 'unavailable' };
+/** 2.0 MemoSheetPane(서버 부품)의 그리기 — 자료는 서버가 같은 loadMemoSheet 규칙으로 보냈다. */
+function MemoSheetPane({ load, subject, canEdit }: { load: MemoLoad | undefined; subject: string; canEdit: boolean }) {
+  if (!load || load.status !== 'ok') {
+    return <div className="bg-card shadow-card flex h-full items-center justify-center rounded-2xl p-6 text-center text-sm">메모 시트를 불러오지 못했습니다. 잠시 뒤 새로고침해 주세요.</div>;
+  }
+  return <MemoSheet cacheKey={`docker-copy:${subject}`} subject={subject} packed={load.packed} version={load.version} updatedAt={load.updatedAt} canEdit={canEdit} />;
+}
 
 type ViewMode = 'basic' | 'integrated' | 'teacher' | 'rooms';
 export type TimetableData = {
@@ -57,6 +74,8 @@ export type TimetableData = {
   settings: { operations: { subjects: SubjectSetting[]; gradeLevels: string[]; weekdayGroupings?: never } & Record<string, unknown>; modules: { disabled: string[] } };
   teacherColors: TeacherColorMap; teacherNicknames: Record<string, string>;
   labSeparateEnrollmentIds: string[]; seatPins: { pins: never[]; live: never[] | null };
+  makeup: ReservationData; seatWeek: { moves: SeatMoveRow[] | null; live: SeatLiveSlot[] | null };
+  scheduledImports: ScheduledSnapshot[]; memoSheets: Record<string, MemoLoad>;
   viewer: { canEdit: boolean; canEditRoster: boolean; canSplit: boolean; staffSubjects: string[] };
 };
 
@@ -136,13 +155,25 @@ export function TimetablePage({ data, search }: { data: TimetableData; search: U
   const teacherNicknames = subject === 'english' ? data.teacherNicknames : undefined;
   const isIntegrated = effView === 'integrated';
   const isRooms = effView === 'rooms';
-  const basicSlots = slots;
+  // page.tsx: canManageImport(원장 계열) · canMasterImport(영어 + 시트 관리) · canSync(구글 시트 연동 — 복사본엔 바깥 시트가 없다)
+  const canManageImport = true, canSync = false, canMasterImport = subject === 'english' && canManageImport;
+  const scheduled = (canSync && canManageImport) || canMasterImport ? groupScheduledImports(data.scheduledImports, today) : [];
+  // 메모 시트(영어 통합뷰 오른쪽 판) — 보기 권한은 원장 계열. 편집 저장은 2단계라 지금은 읽기만.
+  const memoSlot = isIntegrated && !groupEditing && !makeupTab && slots.length > 0 && isMemoSheetSubject(subject);
+  const memo = memoSlot ? { canView: true, canEdit: false } : { canView: false, canEdit: false };
+  const memoSplit = memo.canView && !makeupTab && !isRooms && slots.length > 0 && isIntegrated && !groupEditing;
+  const basicOnly = !makeupTab && effView === 'basic';
+  const basicReserved = basicOnly ? attachReservedLines(slots, referenceDate, data.makeup) : null;
+  const basicSlots = basicReserved?.slots ?? slots;
+  const strayReserved = basicReserved?.strays ?? [];
+  const labSources = isIntegrated && !groupEditing ? knownLabSources(seatPins, data.seatWeek.moves) : null;
+  const virtualLabs = labSources ? buildVirtualLabs({ slots, pins: labSources.pins, moves: labSources.moves, live: data.seatWeek.live, referenceDate, subject, config: periodsConfig }) : NO_VIRTUAL_LABS;
   const searchEnabled = !isRooms && !(isIntegrated && groupEditing);
   const searchIndex = searchEnabled ? buildTimetableSearchIndex(slots) : [];
   const searchScope = timetableSearchScope([rel === 'current' ? '이번 주' : weekTitle(week), subjectMaps.labelOf(subject), kind === 'special' ? '특강' : null]);
   const integratedGrid = isIntegrated ? (
     <TimetableZoomArea>
-      <RichGridView slots={slots} subjectMaps={subjectMaps} config={periodsConfig} teacherColors={teacherColors} teacherNicknames={teacherNicknames} compactSections={compactSections} customGroups={customGroups} hideStudents={hideStudents} />
+      <RichGridView slots={slots} subjectMaps={subjectMaps} config={periodsConfig} teacherColors={teacherColors} teacherNicknames={teacherNicknames} compactSections={compactSections} customGroups={customGroups} hideStudents={hideStudents} virtualLabs={virtualLabs} />
     </TimetableZoomArea>
   ) : null;
   const toolbar = (
@@ -150,6 +181,7 @@ export function TimetablePage({ data, search }: { data: TimetableData; search: U
       <Toolbar rail={false} gap="gap-3 compact-chrome:gap-1">
         <ToolbarRow>
           <WeekNav currentWeek={week} today={today} hrefForWeek={(monday) => buildHref({ view: effView, subject, kind, week: monday, thisWk, compact1h: compactList, hideEmptyDays, collapseEmptyPeriods, hideStudents, englishTrack: carriedTrack, defaultView: thisSubjectDefaultView })} />
+          {scheduled.map((g) => <ScheduledImportBadge key={g.effectiveDate} effectiveDate={g.effectiveDate} today={today} sheetUrl={null} canCancel={(canSync && canManageImport) || canMasterImport} />)}
         </ToolbarRow>
         <ToolbarRow>
           <div className="toolbar-group flex min-w-0 flex-wrap items-center gap-3">
@@ -201,7 +233,7 @@ export function TimetablePage({ data, search }: { data: TimetableData; search: U
                 ) : null}
                 <span className="bg-line h-4 w-px" aria-hidden />
                 <span data-help="tt-excel">
-                  <TimetableToolbarActions subject={subject} today={today} kind={kind} canSync={false} canManageImport={canEdit} canMasterImport={false} sheetUrl={null} compact1h={compactList} />
+                  <TimetableToolbarActions subject={subject} today={today} kind={kind} canSync={canSync} canManageImport={canManageImport} canMasterImport={canMasterImport} sheetUrl={null} compact1h={compactList} />
                 </span>
               </>
             )}
@@ -210,6 +242,7 @@ export function TimetablePage({ data, search }: { data: TimetableData; search: U
           <div className="toolbar-group flex flex-wrap items-center gap-3">
             {showEcsShortcut && !isRooms ? <div className="hidden compact-chrome:block"><EcsShortcut week={week} /></div> : null}
             {showEditorShortcut && !isRooms ? <EditorShortcut /> : null}
+            {memo.canView ? <MemoSheetJumpButton className={`${TOOLBAR_CHIP} ${TOOLBAR_CHIP_OFF}`} /> : null}
             {!makeupTab && (effView === 'basic' || effView === 'integrated') && slots.length > 0 && canEdit ? <span data-help="tt-save"><TimetableEditControls rosterHidden={hideStudents} /></span> : null}
           </div>
         </ToolbarRow>
@@ -226,8 +259,8 @@ export function TimetablePage({ data, search }: { data: TimetableData; search: U
           <div data-maximize-title-row="" className="shrink-0 compact-chrome:hidden">
             <PageHeader eyebrow={tt('수업 운영')} title={tt('시간표')} description={isRooms ? tt('교실 사용 현황 지도') : `${subjectMaps.labelOf(subject)} 주간표`} actions={isRooms || !showEcsShortcut ? null : <EcsShortcut week={week} />} />
           </div>
-          {toolbar}
-          <TimetableSearchEmptyNote />
+          {memoSplit ? null : toolbar}
+          {memoSplit ? null : <TimetableSearchEmptyNote />}
           {makeupTab ? <NotYet what="보강 구분" /> : isRooms ? <NotYet what="교실뷰" /> : slots.length === 0 ? (
             <div className="mx-auto w-full max-w-xl py-4">
               <PhotoCard src="/photos/timetable-empty.webp" alt="" caption={kind === 'special' ? '이 기간에 등록된 특강이 없습니다' : '해당 과목의 시간표가 없습니다'} sub={kind === 'special' ? "반을 만들 때 '특강'을 켜면 여기에 표시됩니다 (운영 종료일이 지난 특강은 자동으로 내려갑니다)" : '가져오기 또는 편집으로 반을 배치해 보세요'} aspect="3/2" sizes="(max-width: 768px) 100vw, 576px" />
@@ -238,14 +271,19 @@ export function TimetablePage({ data, search }: { data: TimetableData; search: U
               initialOthersTitle={subjectRow?.integrationOthersTitle ?? ''} initialPresets={groupPresets} initialCompactSections={compactList}
               doneHref={buildHref({ view: effView, subject, kind, week, thisWk, compact1h: compactList, hideEmptyDays, collapseEmptyPeriods, hideStudents, englishTrack: carriedTrack, defaultView: thisSubjectDefaultView })} />
           ) : isIntegrated ? (
-            <RosterMoveArea canEdit={canEditRoster} today={today}>{integratedGrid}</RosterMoveArea>
+            memoSplit ? (
+              <TimetableSplitPanes top={<>{toolbar}<TimetableSearchEmptyNote /></>} left={<RosterMoveArea canEdit={canEditRoster} today={today}>{integratedGrid}</RosterMoveArea>}
+                right={<MemoSheetPane load={data.memoSheets[subject]} subject={subject} canEdit={memo.canEdit} />} />
+            ) : (
+              <RosterMoveArea canEdit={canEditRoster} today={today}>{integratedGrid}</RosterMoveArea>
+            )
           ) : effView === 'teacher' ? <NotYet what="강사뷰" /> : (
             <ClassMoveProvider index={canEdit ? buildClassMoveIndex([...allSlots], [...new Set(slots.map((s) => s.classId ?? s.id))]) : null}>
               <TimetableDndArea>
                 <TimetableZoomArea>
                   <div className="flex min-h-0 flex-1 flex-col">
                     <EmptyPeriodScope collapsed={collapseEmptyPeriods} hideStudents={hideStudents}>
-                      <WeekdayGroupTables slots={basicSlots} strays={[]} config={periodsConfig} weekMonday={week} dayGroups={weekdayGroups} collapseEmptyPeriods={collapseEmptyPeriods} hideStudents={hideStudents} teacherOrder={viewPrefs.teacherOrder?.[subject]} />
+                      <WeekdayGroupTables slots={basicSlots} strays={strayReserved} config={periodsConfig} weekMonday={week} dayGroups={weekdayGroups} collapseEmptyPeriods={collapseEmptyPeriods} hideStudents={hideStudents} teacherOrder={viewPrefs.teacherOrder?.[subject]} />
                     </EmptyPeriodScope>
                   </div>
                 </TimetableZoomArea>
