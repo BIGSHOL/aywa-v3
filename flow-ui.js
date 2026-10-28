@@ -931,14 +931,26 @@ window.createFlowUI = function createFlowUI(api) {
     return [['학교·학년',schoolGrade(s.school,s.grade)],['상태',STUDENT_STATE[s.status]||''],['반',cls.length?`${cls.slice(0,2).map(k=>k.name).join(', ')}${cls.length>2?` 외 ${fmt(cls.length-2)}`:''}`:''],['이번 달 결석',a.absent?`${fmt(a.absent)}회`:''],['이번 달 미납',s.remaining>0?`${fmt(s.remaining)}원`:'']];
   }
   // 이름 칸은 새로 읽은 기록의 이름 — 업무에 실린 이름은 그 일이 생길 때 적은 것이라 옛 이름일 수 있다(휴가 결재 = 신청자).
-  const recCache=new Map(),recName=new Map();
+  const recCache=new Map(),recName=new Map(),recItem=new Map();
+  // 칸 이름은 영역이 알려 준 것(detailLabel·dateLabel — 반·수업일 · 청구월·납부 기한 …)을 먼저 쓴다.
+  const famMeta=fam=>db.workspaces?.families?.[fam]||{};
   function recordFacts(r){
     const fam=r.familyId||'',id=String(r.recordId||r.id||''),key=`${fam}:${id}`;
     if(recCache.has(key))return recCache.get(key);
     const known=r.type==='student'?studentFacts(id):null;
     const clean=v=>{const x=String(v??'').trim();return x==='—'?'':/^\d{4}-\d{2}-\d{2}$/.test(x)?md(x):x;};
-    const p=known?Promise.resolve(known):!fam||!id?Promise.resolve([]):fetch(`/api/workspaces/${encodeURIComponent(fam)}/records?id=${encodeURIComponent(id)}`,{headers:{Accept:'application/json'}}).then(res=>res.ok?res.json():null).then(b=>{const it=b?.item;if(!it)return r.detail?[['내용',String(r.detail)]]:[];if(it.label)recName.set(key,String(it.label));const label=String(it.label||r.label||''),detail=clean(it.detail);return ordered(fam,[[DETAIL_LABEL[fam]||'내용',detail&&!label.includes(detail)?detail:''],['상태',clean(it.status)],[DATE_LABEL[fam]||'날짜',it.date?md(String(it.date).slice(0,10)):''],...(it.fields||[]).filter(f=>f&&f.label).map(f=>[String(f.label),clean(f.value)])]);}).catch(()=>{recCache.delete(key);return null;});
+    const factsOf=it=>{if(!it)return r.detail?[['내용',String(r.detail)]]:[];if(it.label)recName.set(key,String(it.label));const label=String(it.label||r.label||''),detail=clean(it.detail);return ordered(fam,[[famMeta(fam).detailLabel||DETAIL_LABEL[fam]||'내용',detail&&!label.includes(detail)?detail:''],['상태',clean(it.status)],[famMeta(fam).dateLabel||DATE_LABEL[fam]||'날짜',it.date?md(String(it.date).slice(0,10)):''],...(it.fields||[]).filter(f=>f&&f.label).map(f=>[String(f.label),clean(f.value)])]);};
+    const p=known?Promise.resolve(known):!fam||!id?Promise.resolve([]):recItem.has(key)?Promise.resolve(factsOf(recItem.get(key))):fetch(`/api/workspaces/${encodeURIComponent(fam)}/records?id=${encodeURIComponent(id)}`,{headers:{Accept:'application/json'}}).then(res=>res.ok?res.json():null).then(b=>factsOf(b?.item)).catch(()=>{recCache.delete(key);return null;});
     recCache.set(key,p);return p;
+  }
+  // 아직 안 읽은 기록은 영역마다 한 번에 읽는다(GET …/records?ids=, 100건씩) — 기록마다 요청 하나씩 나가던 것(검수 10-28 M13).
+  // 묶음 조회가 실패하면 그 기록들은 한 건씩 읽는 길로 돌아간다.
+  function prefetch(refs){
+    const by=new Map();
+    for(const r of refs){if(r.type==='student')continue;const fam=r.familyId||'',id=String(r.recordId||r.id||''),key=`${fam}:${id}`;if(!fam||!id||recCache.has(key)||recItem.has(key))continue;if(!by.has(fam))by.set(fam,[]);if(!by.get(fam).includes(id))by.get(fam).push(id);}
+    const jobs=[];
+    for(const [fam,ids] of by)for(let i=0;i<ids.length;i+=100){const part=ids.slice(i,i+100);jobs.push(fetch(`/api/workspaces/${encodeURIComponent(fam)}/records?ids=${part.map(encodeURIComponent).join(',')}`,{headers:{Accept:'application/json'}}).then(res=>res.ok?res.json():null).then(b=>{if(!b||!Array.isArray(b.items))return;const got=new Map(b.items.map(it=>[String(it.id),it]));for(const id of part)recItem.set(`${fam}:${id}`,got.get(id)||null);}).catch(()=>{}));}
+    return Promise.all(jobs);
   }
   const recType=r=>r.type==='student'?'원생':r.type==='lead'?'신규 상담':api.familyLabel?.(r.familyId)||'기록';
   const refKey=r=>`${r.familyId||''}:${String(r.recordId||r.id||'')}`;
@@ -960,7 +972,8 @@ window.createFlowUI = function createFlowUI(api) {
   }
   function fillFacts(root,refs){
     const groups=new Map();for(const r of refs){const t=recType(r);if(!groups.has(t))groups.set(t,[]);groups.get(t).push(r);}
-    [...groups].forEach(([,list],i)=>Promise.all(list.map(recordFacts)).then(facts=>{const box=root.querySelector(`[data-rec-group="${i}"] .fl-recgroup-body`);if(box?.isConnected){box.innerHTML=recTable(list,facts);if(recPop.el===root)placeRecPop();}}));
+    const ready=prefetch(refs);
+    [...groups].forEach(([,list],i)=>ready.then(()=>Promise.all(list.map(recordFacts))).then(facts=>{const box=root.querySelector(`[data-rec-group="${i}"] .fl-recgroup-body`);if(box?.isConnected){box.innerHTML=recTable(list,facts);if(recPop.el===root)placeRecPop();}}));
   }
   // 마우스를 올리면(잠깐 머문 뒤) 단추 아래 목록 · 목록 위로 옮겨 가도 그대로 · 둘 다 벗어나면 닫는다. 누르면 같은 목록을 가운데 창으로.
   const recPop={el:null,btn:null,show:0,hide:0,hiding:false};
