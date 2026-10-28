@@ -1052,12 +1052,16 @@ window.createFlowUI = function createFlowUI(api) {
   function peekFull(){const spec=peek.spec,page=peek.page;peek.dlg.close();if(spec&&(!page||page===spec.page))moveTo(spec);else if(page)navigate(page);}
   // 업무 흐름 표가 처음 보일 때 쉬는 틈에 창을 미리 띄운다(넓은 화면만 — 휴대폰은 처음 누를 때).
   function warmPeek(){if(PEEK||peek.warm)return;peek.warm=true;setTimeout(()=>{const go=()=>{if(!peek.dlg&&matchMedia('(min-width: 761px)').matches)peekBox();};if('requestIdleCallback' in window)requestIdleCallback(go,{timeout:4000});else go();},1500);}
+  let peekTicket=0;
   addEventListener('message',event=>{
     if(event.origin!==location.origin||event.data?.type!==PEEK_MSG)return;
     if(PEEK){
       if(event.source!==parent||!event.data.open)return;const spec=event.data.open;
-      if(!api.hasView(spec.page)){parent.postMessage({type:PEEK_MSG,event:'missing'},location.origin);return;}
-      document.querySelectorAll('dialog[open]').forEach(d=>d.close());moveTo(spec);return;
+      const show=()=>{document.querySelectorAll('dialog[open]').forEach(d=>d.close());moveTo(spec);},missing=()=>parent.postMessage({type:PEEK_MSG,event:'missing'},location.origin);
+      // 2.0 화면 스크립트는 /api/v2 목록을 받은 뒤에 붙는다 — 미리 띄운 창이 그 전에 신호를 받으면 등록될 때까지 잠깐(10초) 기다린다.
+      const ticket=++peekTicket; // 기다리는 사이 다른 업무를 누르면 앞의 기다림은 버린다
+      if(!api.hasView(spec.page)){if(!/^v2-/.test(spec.page)){missing();return;}const t0=Date.now(),wait=()=>{if(ticket!==peekTicket)return;if(api.hasView(spec.page))show();else if(Date.now()-t0<10000)setTimeout(wait,200);else missing();};wait();return;}
+      show();return;
     }
     if(!peek.frame||event.source!==peek.frame.contentWindow)return;
     const ev=event.data.event;
