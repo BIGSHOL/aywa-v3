@@ -50,7 +50,8 @@ await check('매개변수는 주(week) + 시간표 X(exit·anchor)뿐 — 나머
 
 await check('저장 동작 = 2.0 서버 함수 이름 그대로(그 2.0 파일이 실제로 내보내는 함수) · 아직 잇지 않은 함수는 없다(→ 호스트가 보기 전용으로 거절)', async () => {
   const MODULES = { moveEnrollmentsBatch: 'features/enrollments/server/actions.ts', updateEnrollmentsAttendanceBatch: 'features/enrollments/server/actions.ts',
-    moveClassSlots: 'features/timetable/server/move-actions.ts', holdSingleEnrollment: 'features/students/server/actions.ts', endSingleEnrollment: 'features/students/server/actions.ts' };
+    moveClassSlots: 'features/timetable/server/move-actions.ts', holdSingleEnrollment: 'features/students/server/actions.ts', endSingleEnrollment: 'features/students/server/actions.ts',
+    saveMemoSheet: 'features/timetable-memo/server/actions.ts' };
   assert.deepEqual(Object.keys(T.screen.actions).sort(), Object.keys(MODULES).sort());
   for (const [n, file] of Object.entries(MODULES)) {
     const text = await src(file);
@@ -124,7 +125,7 @@ try {
     assert.equal(wd.filter(w => aliveKey.has(`${w.subject}:${w.id}`)).length, 0);
   });
 
-  await check('저장(2단계): 학원이 반 이동·요일 편집·반 블록 옮기기·대기/퇴원 보내기 — 같은 DB 함수·판정 · 2.0 문구·반환 모양 · 알림 줄 · 감사로그 via · 바깥 요청 0 (되돌림)', async () => {
+  await check('저장(2단계): 학원이 반 이동·요일 편집·반 블록 옮기기·대기/퇴원 보내기·메모 시트 — 같은 DB 함수·판정 · 2.0 문구·반환 모양 · 알림 줄 · 감사로그 via · 바깥 요청 0 (되돌림)', async () => {
     const STU = '6219e442-aa57-455f-a5bc-834b222d9e1c', ENR = '7d419d88-5a2d-4e32-b29d-c8c19e399e7a', TO = '50d2ece7-6514-4474-8cfc-dd8983d15c18';
     const MOD = 'features/enrollments/server/actions.ts', A = T.screen.actions, ROLL = new Error('rollback'), X = await loadExtra(importV2);
     const tx = async fn => { let out; try { await db.begin(async sql => { out = await fn(sql); throw ROLL; }); } catch (e) { if (e !== ROLL) throw e; } return out; };
@@ -211,6 +212,28 @@ try {
     assert.deepEqual([ended.res, ended.row.e, ended.row.r, ended.row.m, ended.log.metadata.via], [undefined, today, reason, '시험', '3.0 연습 복사본'], '같은 과목 다른 반이 있으면 종료');
     const [back] = await db`select end_date, on_hold, withdrawal_reason from public.enrollments where id=${ENR}`;
     assert.deepEqual([back.end_date, back.on_hold, back.withdrawal_reason], [null, false, null], '시험 뒤 수강은 그대로');
+
+    // 메모 시트(영어) — version 비교 · 낡은 판은 덮지 않고 최신 판을 돌려준다 · 감사로그 10분 묶음. 학원 공용 판이라 되돌림으로만.
+    const MM = 'features/timetable-memo/server/actions.ts', memo = (sql, who, input) => call(sql, 'saveMemoSheet', { module: MM, actor: who, args: [input] });
+    const [sheet] = await db`select doc, version from public.timetable_memo_sheets where tenant_id=${tenantId} and subject='english'`;
+    if (sheet) {
+      const v = Number(sheet.version), packed = sheet.doc;
+      assert.deepEqual(await tx(sql => memo(sql, teacher.id, { subject: 'english', packed, baseVersion: v })), { ok: false, error: '시트를 고칠 권한이 없습니다' });
+      assert.deepEqual(await tx(sql => memo(sql, actor, { subject: 'math', packed, baseVersion: v })), { ok: false, error: '이 과목에는 시트가 없습니다' });
+      assert.equal((await tx(sql => memo(sql, actor, { subject: 'english', packed: { nope: 1 }, baseVersion: v }))).error, '저장할 수 없는 값이 있습니다. 마지막으로 고친 칸을 확인해 주세요.');
+      const saved = await tx(async sql => ({ res: await memo(sql, actor, { subject: 'english', packed, baseVersion: v }),
+        row: (await sql`select version from public.timetable_memo_sheets where tenant_id=${tenantId} and subject='english'`)[0],
+        logs: await sql`select target_label, metadata from public.audit_logs where tenant_id=${tenantId} and created_at >= now() and action='timetable_memo_sheet_save'` }));
+      assert.equal(saved.res.ok, true); assert.equal(saved.res.version, v + 1); assert.equal(Number(saved.row.version), v + 1);
+      assert.ok(saved.logs.length <= 1 && (saved.logs.length === 0 || saved.logs[0].metadata.via === '3.0 연습 복사본'), '감사로그는 많아야 한 줄(10분 묶음)');
+      for (const stale of [v - 1, 0]) {
+        const c = await tx(sql => memo(sql, actor, { subject: 'english', packed, baseVersion: stale }));
+        assert.deepEqual([c.ok, c.conflict, c.version], [false, true, v], `낡은 판(${stale})은 최신 판을 돌려준다`);
+        assert.ok(R.memo.packedSheetSchema.safeParse(c.packed).success);
+      }
+      const [still] = await db`select version from public.timetable_memo_sheets where tenant_id=${tenantId} and subject='english'`;
+      assert.equal(Number(still.version), v, '시험 뒤 판은 그대로');
+    }
   });
 
   await check('시간표 X = 2.0 loadExitOverlay 모양 · 줄의 학생은 그 달 창에 실제로 퇴원(퇴원)·그 과목 수강을 끝낸(수강종료) 사람 — 독립 SQL', async () => {

@@ -38,7 +38,7 @@ function loadExtra(importV2) {
 const RANK = ['master', 'admin', 'manager'];
 /**
  * 저장할 수 있는 사람(editors) — 수업 관리 '전체'(2.0 canManageTenant(role,'classes')). 원장 먼저, 같은 역할은 이름순. 운영자 계정은 뺀다.
- * statusIds — 그중 원생 상태(대기·퇴원)도 바꿀 수 있는 사람 = 2.0 canManageStudentStatusNow(원생 쓰기 '전체' + 원생 상태 변경 담당;
+ * memoIds — 그중 메모 시트를 고칠 수 있는 사람(시간표 '전체'). statusIds — 그중 원생 상태(대기·퇴원)도 바꿀 수 있는 사람 = 2.0 canManageStudentStatusNow(원생 쓰기 '전체' + 원생 상태 변경 담당;
  * 담당 명단은 resolve.ts처럼 저장 원문의 specialAccess에서 studentStatusManagerIds로 읽는다).
  */
 export async function readPeople(sql, t, R, X) {
@@ -61,7 +61,9 @@ export async function readPeople(sql, t, R, X) {
     .sort((a, b) => a.rank - b.rank || a.name.localeCompare(b.name, 'ko'))
     .map(({ rank, ...u }) => u);
   const statusIds = new Set(chosen.filter(u => level(u, 'students') === 'full' && X.canManageStudentStatus({ id: u.id, systemRole: u.role }, false, managerIds)).map(u => u.id));
-  return { editors, statusIds };
+  // 메모 시트 편집 = 2.0 memoSheetAccess.canEdit(시간표 '전체').
+  const memoIds = new Set(chosen.filter(u => level(u, 'timetable') === 'full').map(u => u.id));
+  return { editors, statusIds, memoIds };
 }
 export const readEditors = async (sql, t, R, X) => (await readPeople(sql, t, R, X)).editors;
 
@@ -333,6 +335,71 @@ async function endSingleEnrollment(sql, t, R, X, actorId, [, fd]) {
   return undefined;
 }
 
+// ── 2.0 features/timetable-memo/server/actions.ts saveMemoSheet ───────────────────────────────────────────────────────
+// 영어 시간표 오른쪽 메모 시트 — 화면이 고칠 때마다 판 통째를 보낸다. 권한 = 2.0 memoSheetAccess(시간표 '전체' — readPeople.memoIds).
+// version 비교로 덮어쓰기를 막고(다르면 최신 판을 돌려줌), 감사로그는 같은 사람이 10분 안에 또 저장하면 한 줄로 친다(2.0은 응답 뒤 after()).
+// ⚠️ 공통 틀의 요청 상한(256KB)이 2.0 상한(4MB)보다 작다 — 그보다 큰 판은 '요청이 너무 큽니다'로 거절된다(복사본의 영어 판은 약 61KB).
+const MEMO_TABLE_AUDIT = 'timetable_memo_sheet_save', MEMO_AUDIT_WINDOW_MS = 10 * 60 * 1000, MEMO_MAX_BYTES = 4 * 1024 * 1024;
+
+function memoArgs(args) {
+  const [input] = args;
+  if (!plain(input) || typeof input.subject !== 'string' || input.subject.length > 40 || typeof input.baseVersion !== 'number') throw bad();
+  return [{ subject: input.subject, packed: input.packed, baseVersion: input.baseVersion }];
+}
+
+/** store.ts loadMemoSheet — 저장한 적이 없으면 빈 판(version 0) · 모양이 틀린 행은 열지 않는다. */
+async function loadMemoSheet(sql, t, R, subject) {
+  const [row] = await sql`select doc, version, updated_at from public.timetable_memo_sheets where tenant_id=${t} and subject=${subject}`;
+  if (!row) return { status: 'ok', packed: R.memo.packSheet(R.memo.emptyDoc()), version: 0, updatedAt: null };
+  const parsed = R.memo.packedSheetSchema.safeParse(row.doc);
+  if (!parsed.success) return { status: 'unavailable' };
+  return { status: 'ok', packed: parsed.data, version: Number(row.version), updatedAt: row.updated_at ? new Date(row.updated_at).toISOString() : null };
+}
+async function memoConflict(sql, t, R, subject) {
+  const latest = await loadMemoSheet(sql, t, R, subject);
+  if (latest.status !== 'ok') return { ok: false, error: '시트를 다시 불러오지 못했습니다. 새로고침해 주세요.' };
+  return { ok: false, conflict: true, version: latest.version, packed: latest.packed, updatedAt: latest.updatedAt };
+}
+
+async function saveMemoSheet(sql, t, R, X, actorId, [input]) {
+  if (!actorId) return { ok: false, error: '다시 로그인해 주세요' };
+  if (!R.memo.isMemoSheetSubject(input.subject)) return { ok: false, error: '이 과목에는 시트가 없습니다' };
+  const people = await readPeople(sql, t, R, X), actor = people.editors.find(e => e.id === actorId);
+  if (!actor || !people.memoIds.has(actor.id)) return { ok: false, error: '시트를 고칠 권한이 없습니다' };
+  const parsed = R.memo.packedSheetSchema.safeParse(input.packed);
+  if (!parsed.success) return { ok: false, error: '저장할 수 없는 값이 있습니다. 마지막으로 고친 칸을 확인해 주세요.' };
+  const doc = parsed.data;
+  if (Buffer.byteLength(JSON.stringify(doc), 'utf8') > MEMO_MAX_BYTES) return { ok: false, error: '시트가 너무 큽니다. 쓰지 않는 행·열을 지워 주세요.' };
+  const base = input.baseVersion;
+  if (!Number.isInteger(base) || base < 0) return { ok: false, error: '잘못된 요청입니다' };
+  const savedAt = new Date().toISOString(), fallback = '시트를 저장하지 못했습니다. 잠시 뒤 다시 시도해 주세요.';
+  let version;
+  if (base === 0) {
+    try {
+      await sql.savepoint(s => s`insert into public.timetable_memo_sheets (tenant_id, subject, version, doc, updated_at, updated_by)
+        values (${t}, ${input.subject}, 1, ${s.json(doc)}, ${savedAt}, ${actor.id})`);
+    } catch (e) {
+      if (e?.code === '23505') return memoConflict(sql, t, R, input.subject);
+      return { ok: false, error: X.explainDbError(dbError(e), { scope: 'timetableMemo.save.insert', fallback }).message };
+    }
+    version = 1;
+  } else {
+    let row;
+    try {
+      [row] = await sql.savepoint(s => s`update public.timetable_memo_sheets set doc=${s.json(doc)}, updated_at=${savedAt}, updated_by=${actor.id}, version=${base + 1}
+        where tenant_id=${t} and subject=${input.subject} and version=${base} returning version`);
+    } catch (e) { return { ok: false, error: X.explainDbError(dbError(e), { scope: 'timetableMemo.save.update', fallback }).message }; }
+    if (!row) return memoConflict(sql, t, R, input.subject);
+    version = Number(row.version);
+  }
+  const since = new Date(Date.now() - MEMO_AUDIT_WINDOW_MS).toISOString();
+  const [recent] = await sql`select id from public.audit_logs where tenant_id=${t} and actor_id=${actor.id} and action=${MEMO_TABLE_AUDIT} and created_at >= ${since} limit 1`;
+  if (!(recent && version > 1)) {
+    await audit(sql, t, actor, MEMO_TABLE_AUDIT, 'timetable_memo_sheet', { subject: input.subject, version, rows: doc.rows, cols: doc.cols, cells: doc.cells.length }, '시간표 메모 시트');
+  }
+  return { ok: true, version, savedAt };
+}
+
 // ── 2.0 features/timetable/server/move-actions.ts ──────────────────────────────────────────────────────────────────────
 // 반 블록(화면의 한 칸 = 배치 여러 줄)을 다른 요일·교시로 — 판정 순서·문구 2.0 그대로.
 // ⚠️ 2.0은 '적용일 이후 그 교시로 찍힌 출결' 확인에서 attendance_records의 `date` 칸을 읽는데, 그 표의 날짜 칸은 `session_date`다
@@ -473,6 +540,7 @@ const ACTIONS = {
   moveClassSlots: { module: 'features/timetable/server/move-actions.ts', args: slotMoveArgs, run: moveClassSlots },
   holdSingleEnrollment: { module: 'features/students/server/actions.ts', args: formArgs, run: holdSingleEnrollment },
   endSingleEnrollment: { module: 'features/students/server/actions.ts', args: formArgs, run: endSingleEnrollment },
+  saveMemoSheet: { module: 'features/timetable-memo/server/actions.ts', args: memoArgs, run: saveMemoSheet },
 };
 
 /** 공통 틀(v2-screens.mjs)의 actions — 2.0 함수 이름 그대로. rules = importV2 => 시간표 화면의 2.0 순수 모듈 묶음,

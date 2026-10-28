@@ -354,8 +354,9 @@ export async function buildTimetableData({ sql, params, tenantId: t, R, X }) {
     // 2.0 canEdit = 지난 주가 아님 + 수업 관리 '전체' · canEditRoster = 지난 주가 아님 + 원생 상태 변경(canManageStudentStatusNow).
     // 3.0엔 로그인이 없어 '전체'인 사람(editors) 중 3.0 띠에서 고른 사람으로 저장한다 — 명단 문은 그중 원생 상태를 바꿀 수 있는 사람이
     // 있을 때 열리고, 고른 사람이 못 바꾸면 2.0 문구로 거절된다. 수업 나누기는 2.0에서도 꺼져 있다.
+    // 메모 시트 = 2.0 memoSheetAccess.canEdit(시간표 '전체' — 주와 무관).
     viewer: { canEdit: relation !== 'past' && people.editors.length > 0, canEditRoster: relation !== 'past' && people.editors.some(e => people.statusIds.has(e.id)),
-      canSplit: false, staffSubjects: [], editors: people.editors },
+      canEditMemo: people.editors.some(e => people.memoIds.has(e.id)), canSplit: false, staffSubjects: [], editors: people.editors },
   };
 }
 

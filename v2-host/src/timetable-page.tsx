@@ -78,7 +78,7 @@ export type TimetableData = {
   labSeparateEnrollmentIds: string[]; seatPins: { pins: never[]; live: never[] | null };
   makeup: ReservationData; seatWeek: { moves: SeatMoveRow[] | null; live: SeatLiveSlot[] | null };
   scheduledImports: ScheduledSnapshot[]; memoSheets: Record<string, MemoLoad>;
-  viewer: { canEdit: boolean; canEditRoster: boolean; canSplit: boolean; staffSubjects: string[]; editors?: { id: string; name: string; role: string }[] };
+  viewer: { canEdit: boolean; canEditRoster: boolean; canEditMemo?: boolean; canSplit: boolean; staffSubjects: string[]; editors?: { id: string; name: string; role: string }[] };
 };
 
 /** page.tsx 아래쪽 buildHref 그대로(주소만 /timetable → 호스트가 iframe 주소로 옮긴다). */
@@ -162,7 +162,8 @@ export function TimetablePage({ data, search }: { data: TimetableData; search: U
   const scheduled = (canSync && canManageImport) || canMasterImport ? groupScheduledImports(data.scheduledImports, today) : [];
   // 메모 시트(영어 통합뷰 오른쪽 판) — 보기 권한은 원장 계열. 편집 저장은 2단계라 지금은 읽기만.
   const memoSlot = isIntegrated && !groupEditing && !makeupTab && slots.length > 0 && isMemoSheetSubject(subject);
-  const memo = memoSlot ? { canView: true, canEdit: false } : { canView: false, canEdit: false };
+  // 2.0 memoSheetAccess — 보기 = 시간표를 여는 직원(원장 보기), 편집 = 시간표 '전체'(고를 수 있는 사람 중에 있으면).
+  const memo = memoSlot ? { canView: true, canEdit: data.viewer.canEditMemo === true } : { canView: false, canEdit: false };
   const memoSplit = memo.canView && !makeupTab && !isRooms && slots.length > 0 && isIntegrated && !groupEditing;
   const basicOnly = !makeupTab && effView === 'basic';
   const basicReserved = basicOnly ? attachReservedLines(slots, referenceDate, data.makeup) : null;
