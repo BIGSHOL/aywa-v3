@@ -125,7 +125,7 @@ export async function loadFlowSource({ workspaces, capturedAt, asOf }) {
       const taskDetail = k => {
         const r = k.kind === 'enrollment_followup' && ['open', 'late'].includes(k.status) ? enrollmentEvidence.get(String(k.subject_id)) : null;
         const pendingResult = r?.status === '등록 완료' && r.fields?.some(f => f.label === '상담 결과');
-        return scrub([k.detail, pendingResult && '수강 중이나 상담 결과 미확정. 신규 콜&상담에서 결과를 등록 완료로 변경해 주세요.'].filter(Boolean).join(' '));
+        return scrub([k.detail, pendingResult && '수강 중이나 상담 결과 미확정. 신규 콜&상담에서 결과를 등록 완료로 변경해 주세요.'].filter(Boolean).join(' · '));
       };
       const signals = defs.map(({ f, s, table }) => { const type = TYPE_OF_TABLE[table]; const refs = type ? s.recordIds.map(id => `${type}:${id}`).filter(k => entities.has(k)) : []; return { familyId: f.id, signal: s, table, refs }; });
       for (const w of signalWiring(signals)) if (w.status !== 'ok') console.warn(`flow source wiring: ${w.familyId}/${w.signalId} ${w.status} (records ${w.records}, linked ${w.linked})`);
