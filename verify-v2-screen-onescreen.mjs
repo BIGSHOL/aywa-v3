@@ -44,38 +44,29 @@ test('copy: a teacher day — classes, rows, saved reports and labels follow 2.0
   assert(Object.keys(d.history.days).every(k => k.startsWith(d.history.month)), 'month calendar stays in the month');
 });
 
-async function page(data, query = '', extra = {}) {
+// The 3.0 side of the screen: a note, the '보는 선생님' picker and the slot the v2-host iframe sits over (2.0's own components draw the rest).
+async function page(query = '', teachers = { status: 'ready', data: { teachers: [{ id: 't1', name: '김<b>선생', active: true, classes: 2 }, { id: 't2', name: '이선생', active: true, classes: 1 }] } }) {
   const src = await readFile(new URL('./v2-screen-onescreen.js', import.meta.url), 'utf8');
-  let def = null;
+  let def = null; const fetched = [], loads = [];
   const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-  vm.runInNewContext(src, { window: { V2Screens: { register: x => { def = x; }, esc } }, document: { addEventListener() {}, querySelector: () => null } });
-  return def.render({ query: new URLSearchParams(query), load: () => ({ status: 'ready', data }), go() {}, refresh() {}, ...extra });
+  const V2Screens = { register: x => { def = x; }, esc };
+  vm.runInNewContext(src, { window: { V2Screens }, document: { addEventListener() {}, querySelector: () => null, body: { append() {} }, createElement: () => ({ dataset: {}, style: {} }) },
+    addEventListener() {}, requestAnimationFrame() {}, MutationObserver: class { observe() {} }, location: { origin: 'http://x', hash: '' }, URLSearchParams,
+    fetch: (url, opt) => { fetched.push([url, opt?.method]); return new Promise(() => {}); } });
+  const html = def.render({ query: new URLSearchParams(query), load: p => { loads.push(p); return teachers; }, go() {}, api: {} });
+  return { html, fetched, loads };
 }
-const row = extra => ({ classId: 'c1', className: '중2 수학 A', subjectKey: 'math', subjectLabel: '수학', name: '수학', isSpecial: false, reportOptout: false, makeup: false, today: '일차방정식', textbook: '개념원리', homeworkToday: '20~24쪽',
-  attitude: '좋음', homework: '90%', tests: { daily: { score: 9, max: 10 }, check: { score: null, max: 5 } }, draft: '오늘 잘 했습니다.', trendDraft: '', note: '', fromSession: false, attendanceRaw: 'present', attendanceLabel: '출석', attendanceUnits: 3,
-  report: { status: 'success', badge: { label: 'ClassNote 발송 완료', short: '발송됨' }, readAt: null, views: 2 }, prev: { date: '2026-10-22', progress: '정수', examInfo: '일일 8/10' }, gate: '발송됨 — 재발송 불가', sendStatus: 'sent', saved: true,
-  preview: { title: '2026년 10월 26일 수학 보고서', fields: { textbook: '개념원리', progress: '수학 일차방정식', homeworkToday: '20~24쪽', dailyTest: '10문제 중 9개 맞음', checkTest: '', homeworkScore: '90%', attitude: '좋음', notes: '오늘 잘 했습니다.' } }, ...extra });
-const fixture = () => ({ asOf: '2026-10-27', date: '2026-10-26', dateLabel: '2026년 10월 26일 (월)', dow: 'mon', teachers: [{ id: 't1', name: '김<b>선생', active: true, classes: 2 }], teacher: { id: 't1', name: '김<b>선생' },
-  todayClasses: [{ id: 'c1', name: '중2 수학 A', startTime: '16:00', count: 2, delegated: false }], noClassesToday: false, showingAll: false,
-  students: [{ id: 's1', name: '<img src=x onerror=alert(1)>', schoolGrade: '칠성중2', mark: '출석', subjects: [row()] }, { id: 's2', name: '이학생', schoolGrade: '칠성중2', mark: '결석', subjects: [row({ saved: false, report: null, sendStatus: 'todo', gate: '결석 — 발송 제외', attendanceRaw: 'absent', attendanceLabel: '결석' })] }],
-  settings: { academyName: '인재원', showDailyTest: true, showCheckTest: true, show: { showTextbook: true, showProgress: true, showHomeworkToday: true, showDailyTest: true, showCheckTest: true, showHomework: true, showAttitude: true, showParentNote: true, showTrendNote: true, showAcademyName: true } },
-  history: { month: '2026-10', weeks: [[null, null, null, '2026-10-01', '2026-10-02', '2026-10-03', '2026-10-04']], days: { '2026-10-02': { total: 3, sent: 2, target: 3, problem: 1, actionable: 0, pending: 0 } } } });
 
-test('page: 2.0 labels in every view, names escaped, inputs/saves/sends disabled', async () => {
-  const card = await page(fixture());
-  assert(!card.includes('<img src=x') && card.includes('&lt;img src=x'), 'student name escaped');
-  assert(!card.includes('김<b>선생') && card.includes('김&lt;b&gt;선생'), 'teacher name escaped');
-  for (const l of ['보는 선생님', '눌러서 오늘로', '작성 1', '미작성 1', '학부모 화면 미리보기', 'today 보고서', '학생 정보', '오늘 수업', '평가', '학부모 전달 내용', '이전 10/22', 'ClassNote 발송 완료', '복사본 보기 전용']) assert(card.includes(l), l);
-  for (const b of ['ClassNote 발송', '자동작성', '가져오기']) assert(new RegExp(`<button[^>]*disabled[^>]*>${b}</button>`).test(card), `${b} disabled`);
-  const grid = await page(fixture(), 'view=grid');
-  for (const l of ['학생 · 반', '타임', '진도(오늘)', '일일', '확인', '태도', '과제 수행률', '교재명 · 보강 · 과제', '학부모 문구', '발송 · 편집', '발송가능 0', '결석 — 발송 제외']) assert(grid.includes(l), l);
-  assert(/<input type="checkbox" disabled/.test(grid));
-  const status = await page(fixture(), 'view=status');
-  for (const l of ['미작성 1', '발송완료 1', '학부모 열람 0', '아직 안 보낸 1 / 전체 2']) assert(status.includes(l), l);
-  const history = await page(fixture(), 'view=history');
-  for (const l of ['작성 3건 · 학부모 발송 2/3', '학부모 발송 2 / 작성 3건', '실패 1']) assert(history.includes(l), l);
-  const filtered = await page(fixture(), 'write=todo');
-  assert(filtered.includes('이학생') && !filtered.includes('&lt;img src=x'), 'write filter keeps only the not-written student');
+test('page: note, teacher picker (escaped, the chosen one selected) and the host slot', async () => {
+  const { html, fetched, loads } = await page('teacher=t2&date=2026-10-27');
+  assert(html.includes('연습 복사본(Docker)') && html.includes('data-v2-host-slot'), 'note and slot');
+  assert(!html.includes('김<b>선생') && html.includes('김&lt;b&gt;선생'), 'teacher names escaped');
+  assert(/<option value="t2" selected>이선생 · 반 1<\/option>/.test(html), 'the chosen teacher is selected');
+  assert(!html.includes('최근 보고서가 가장 많은 선생님'), 'no default option when a teacher is chosen');
+  assert.equal(JSON.stringify(loads), JSON.stringify([{ list: 'teachers' }]), 'only the light teacher list is loaded on the 3.0 side');
+  assert.equal(JSON.stringify(fetched), JSON.stringify([['/v2-host/onescreen.html', 'HEAD']]), 'checks the host page once; nothing else');
+  const none = await page('');
+  assert(none.html.includes('<option value="" selected>최근 보고서가 가장 많은 선생님</option>'), 'default pick when no teacher is chosen');
 });
 
 // 2단계: the actions write what 2.0 writes. Test student 학원이 · test class (원장's test fixtures), inside one transaction that
@@ -108,6 +99,13 @@ test('actions: 2.0 inputs (+ actor) — validation refuses bad input before touc
   assert.throws(() => screen.actions.attendance.validate({ ...att, status: 'present', allowMakeup: true }), /보강/);
   assert.equal(screen.actions.attendance.validate({ ...att, status: null }).status, null);
   assert.equal(screen.actions.attendance.validate({ ...att, status: 'present', onlyIfEmpty: true }).onlyIfEmpty, true);
+  // The v2-host boundary: 2.0's own call { module, actor, args:[input] } under 2.0's function names.
+  const call = (module, input) => ({ module, actor: TEACHER, args: [input] });
+  assert.equal(screen.actions.saveLessonReport.validate(call('features/onescreen/server/actions.ts', ok)).fields.progress, '수학 일차방정식');
+  assert.equal(screen.actions.saveAndQueueClassnote.validate(call('features/onescreen/server/actions.ts', ok)).actor, TEACHER);
+  assert.equal(screen.actions.setAttendanceCell.validate(call('features/attendance/server/actions.ts', { ...att, actor: undefined, status: 'late' })).status, 'late');
+  assert.throws(() => screen.actions.saveLessonReport.validate(call('features/attendance/server/actions.ts', ok)), /입력 값/, 'another module under the same name is refused');
+  assert.throws(() => screen.actions.setAttendanceCell.validate({ module: 'features/attendance/server/actions.ts', actor: TEACHER, args: [] }), /입력 값/);
 });
 
 test('actions on the copy (rolled back): attendance, save, send and their audit lines follow 2.0', { skip: !db && 'local database not running' }, async () => {
@@ -207,23 +205,42 @@ test('actions on the copy (rolled back): attendance, save, send and their audit 
   assert.equal(after[0].audits, before[0].audits, 'rolled back — the copy is unchanged');
 });
 
-test('page (writable): card inputs, save/send/attendance buttons, the copy note; other views stay view-only', async () => {
-  const gates = { '11': { canSend: true, label: null }, '10': { canSend: false, label: '멘트 필요' }, '01': { canSend: false, label: '진도 필요' }, '00': { canSend: false, label: '진도·멘트 필요' } };
-  const d = fixture();
-  d.attitudes = ['매우 좋음', '좋음', '보통', '안좋음', '매우 안좋음']; d.attendanceEditable = true; d.attendanceLock = null;
-  d.students[1].subjects[0] = { ...d.students[1].subjects[0], gates, draft: '', attendanceRaw: 'present', attendanceLabel: '출석', gate: null };
-  const ctx = { writable: true, copyNote: '연습용 복사본(Docker)에 저장됩니다.' };
-  const card = await page(d, 'student=s2', ctx);
-  for (const l of ['연습용 복사본(Docker)에 저장됩니다.', '2.0 화면 · 연습 복사본', '이 선생님 이름으로 연습용 복사본에 저장합니다', '복사본 — 실제 발송 없음', '멘트 필요']) assert(card.includes(l), l);
-  assert(/<textarea class="os-input" rows="2" data-os-f="today"[^>]*>일차방정식<\/textarea>/.test(card), 'progress is an input with the shown value');
-  assert(/<button type="button" class="os-btn" data-os="save" data-key="[^"]+" >저장<\/button>/.test(card), 'save enabled');
-  assert(/data-os="send"[^>]*disabled>ClassNote 발송/.test(card), 'send follows the 2.0 gate for what is typed (no report text yet)');
-  assert(/data-os="att" data-s="present"[^>]*aria-pressed="true"/.test(card), 'attendance buttons show the mark');
-  assert(/<option selected>좋음<\/option>/.test(card), 'attitude select keeps the value');
-  const sent = await page(d, 'student=s1', ctx);
-  assert(/data-os="save"[^>]*disabled>발송됨 — 수정 불가/.test(sent), 'a sent report is locked (2.0 refuses the save)');
-  const grid = await page(d, 'view=grid', ctx);
-  assert(/<button type="button" class="os-btn small" disabled title="이 연습 화면에는 아직 없는 기능입니다/.test(grid), 'grid stays view-only with the reason');
+test('saveOnescreenSession on the copy (rolled back): insert, update from the read revision, a stale thinner save does not overwrite', { skip: !db && 'local database not running' }, async () => {
+  await inRollback(async ({ sql, run, tenantId: t }) => {
+    const { asOf: day } = await screen.load({ sql, params: { list: 'teachers' }, tenantId: t, importV2: (await import('./v2-bridge.mjs')).importV2 }).then(async () => ({ asOf: (await screen.load({ sql, params: { teacher: TEACHER }, tenantId: t, importV2: (await import('./v2-bridge.mjs')).importV2 })).asOf }));
+    const M = 'features/onescreen/server/actions.ts', call = input => ({ module: M, actor: TEACHER, args: [input] });
+    const save = input => run(sql, 'saveOnescreenSession', call({ studentId: STUDENT, sessionDate: day, classId: CLASS, ...input }));
+    const today = async () => (await sql`select subject_progress->${CLASS}->>'today' v from public.onescreen_daily_sessions where tenant_id=${t} and student_id=${STUDENT} and session_date=${day} and updated_by=${TEACHER}`)[0]?.v;
+    await sql`delete from public.onescreen_daily_sessions where tenant_id=${t} and student_id=${STUDENT} and session_date=${day} and updated_by=${TEACHER}`;
+    const first = await save({ subjectProgress: { [CLASS]: { today: '가', draft: '첫 글' } }, attitude: '좋음' });
+    assert.equal(first.ok, true); assert.match(first.updatedAt, /^\d{4}-\d{2}-\d{2}T.*[+-]\d{2}:\d{2}$/, 'PostgREST-style timestamp');
+    assert.equal(await today(), '가');
+    const second = await save({ baseUpdatedAt: first.updatedAt, subjectProgress: { [CLASS]: { today: '나', draft: '첫 글' } }, attitude: '좋음' });
+    assert.equal(await today(), '나'); assert.notEqual(second.updatedAt, first.updatedAt);
+    const stale = await save({ baseUpdatedAt: first.updatedAt, subjectProgress: { [CLASS]: { today: '', draft: '' } } });
+    assert.equal(stale.skipped, true);
+    assert.equal(await today(), '나', 'a window that read an older revision and has less written does not wipe the newer session (2.0 sessionSaveDecision)');
+    const [other] = await sql`select s.id from public.students s where s.tenant_id=${t} and not exists (select 1 from public.enrollments e join public.classes c on c.id=e.class_id where e.student_id=s.id and c.teacher_id=${TEACHER}) limit 1`;
+    await assert.rejects(run(sql, 'saveOnescreenSession', call({ studentId: other.id, sessionDate: day, subjectProgress: {} })), /담당 학생이 아닙니다/);
+  });
+});
+
+test('props=1 (the host path): 2.0 props plus the host context; the picker lists only active teachers', { skip: !db && 'local database not running' }, async () => {
+  const { tenantId: t } = await import('./full-db.mjs'), { importV2 } = await import('./v2-bridge.mjs');
+  const load = params => db.begin('isolation level repeatable read read only', sql => screen.load({ sql, params, tenantId: t, importV2 }));
+  const { teachers } = await load({ list: 'teachers' });
+  const [{ n }] = await db`select count(distinct u.id)::int n from public.users u join public.classes c on c.teacher_id=u.id and c.tenant_id=${t} and c.is_active where u.tenant_id=${t} and u.status::text='active'`;
+  assert.equal(teachers.length, n); assert(teachers.every(x => x.active), 'no one who is not employed — their screen would silently be someone else\'s');
+  const d = await load({ props: '1', teacher: TEACHER, date: '2026-10-27' });
+  assert.equal(d.actor.id, TEACHER, 'the chosen teacher is the screen\'s teacher');
+  assert(d.oneScreen && d.videoHomework && Array.isArray(d.oneScreen.initial), '2.0 props for OneScreenClient and VideoHomeworkProvider');
+  assert(['ko', 'en'].includes(d.host.lang));
+  assert(Object.keys(d.host.licenses).every(k => ['ai_analysis', 'google_sheets', 'meeting_recording', 'window_mode'].includes(k)));
+  assert(d.host.operations.subjects.length > 0 && d.host.operations.gradeLevels.length > 0);
+  // Screen language follows 2.0 resolveSheetLang: the teacher's own ui_prefs choice first.
+  const [en] = await db`select id from public.users u where tenant_id=${t} and status::text='active' and ui_prefs->'teacherView'->>'lang'='en'
+    and exists (select 1 from public.classes c where c.teacher_id=u.id and c.is_active) order by id limit 1`;
+  if (en) assert.equal((await load({ props: '1', teacher: en.id })).host.lang, 'en');
 });
 
 test.after(async () => { await db?.end(); });

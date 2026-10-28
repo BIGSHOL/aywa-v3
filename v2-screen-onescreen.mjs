@@ -8,6 +8,7 @@ import { readFile } from 'node:fs/promises';
 import { activeBackup } from './full-db-paths.mjs';
 import { scrub } from './domain-snapshot-core.mjs';
 import { V2Error } from './v2-screens.mjs';
+import { loadOnescreenProps } from './v2-onescreen-roster.mjs';
 
 const DOW = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
 const ATT = { present: '출석', late: '지각', early_leave: '조퇴', absent: '결석', makeup: '보강' };
@@ -18,7 +19,8 @@ const MODULES = ['features/onescreen/roster-filter.ts', 'features/onescreen/repo
   'features/onescreen/classnote-guard.ts', 'features/owner/classnote-gate.ts', 'features/onescreen/absence-gate.ts', 'features/attendance/save-targets.ts',
   'features/attendance/edit-window.ts', 'features/attendance/auto-units.ts', 'features/onescreen/attitude.ts', 'features/owner/lesson-profile.ts', 'features/onescreen/trend-optout.ts',
   'features/onescreen/send-class.ts', 'features/onescreen/classnote-collision.ts', 'features/onescreen/math-report-pilot.ts', 'features/onescreen/jj-capture-plan.ts', 'lib/permissions.ts',
-  'features/attendance/teacher-axis.ts', 'features/classes/delegation-window.ts', 'features/timetable/lib/teacher-label.ts', 'features/attendance/makeup-write.ts'];
+  'features/attendance/teacher-axis.ts', 'features/classes/delegation-window.ts', 'features/timetable/lib/teacher-label.ts', 'features/attendance/makeup-write.ts', 'features/onescreen/session-write.ts', 'features/onescreen/makeup-session.ts',
+  'features/teacher-view/i18n.ts', 'features/teacher-view/view-prefs.ts'];
 let v2 = null, asOfDay = null;
 const shift = (ymd, n) => new Date(Date.parse(`${ymd}T00:00:00Z`) + n * 86_400_000).toISOString().slice(0, 10);
 async function rules(importV2) {
@@ -33,8 +35,17 @@ async function copyDay() {
 
 export const screen = {
   id: 'onescreen', label: '선생님 원스크린', order: 1,
-  params: { teacher: /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/, date: /^\d{4}-\d{2}-\d{2}$/, all: /^1$/ },
+  // props=1 (+ 2.0's own address keys view · class · student) = the props 2.0's page.tsx hands OneScreenClient and VideoHomeworkProvider,
+  // for the v2-host entry (v2-onescreen-roster.mjs); without it, the interim hand-drawn page's data.
+  params: { teacher: /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/, date: /^\d{4}-\d{2}-\d{2}$/, all: /^1$/, props: /^1$/, list: /^teachers$/, view: /^[a-z-]{1,20}$/,
+    class: /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/, student: /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/ },
   async load({ sql, params, tenantId: t, importV2 }) {
+    if (params.list === 'teachers') return { teachers: await teacherList(sql, t) }; // the 3.0 side's '보는 선생님' picker
+    if (params.props === '1') {
+      const props = await loadOnescreenProps({ sql, params, tenantId: t, importV2 });
+      const { hostSettings, ...rest } = props;
+      return { ...rest, host: await hostContext(sql, t, await rules(importV2), props.actor?.id ?? null, hostSettings) };
+    }
     const R = await rules(importV2), asOf = await copyDay();
     const [stored] = await sql`select s.data, tn.name from public.tenants tn left join public.tenant_settings s on s.tenant_id=tn.id where tn.id=${t}`;
     const data = stored?.data || {}, report = { ...R.DEFAULT_SETTINGS.report, ...(data.report || {}) };
@@ -149,8 +160,32 @@ export const screen = {
     save: { validate: raw => reportInput(raw), run: async ({ sql, body, tenantId, importV2 }) => runSave(sql, tenantId, await rules(importV2), body) },
     send: { validate: raw => reportInput(raw), run: async ({ sql, body, tenantId, importV2 }) => runSend(sql, tenantId, await rules(importV2), body) },
     attendance: { validate: raw => attendanceInput(raw), run: async ({ sql, body, tenantId, importV2 }) => runAttendance(sql, tenantId, await rules(importV2), body) },
+    // The v2-host server-action boundary (shims/server-action.ts): POST /api/v2/onescreen/<2.0 function> with { module, actor, args } —
+    // 2.0's own call, its first argument being 2.0's input. Same checks and writes as above.
+    saveLessonReport: { validate: raw => reportInput(hostCall(raw, 'features/onescreen/server/actions.ts')), run: async ({ sql, body, tenantId, importV2 }) => runSave(sql, tenantId, await rules(importV2), body) },
+    saveAndQueueClassnote: { validate: raw => reportInput(hostCall(raw, 'features/onescreen/server/actions.ts')), run: async ({ sql, body, tenantId, importV2 }) => runSend(sql, tenantId, await rules(importV2), body) },
+    setAttendanceCell: { validate: raw => attendanceInput(hostCall(raw, 'features/attendance/server/actions.ts')), run: async ({ sql, body, tenantId, importV2 }) => runAttendance(sql, tenantId, await rules(importV2), body) },
+    saveOnescreenSession: { validate: raw => sessionInput(hostCall(raw, 'features/onescreen/server/actions.ts')), run: async ({ sql, body, tenantId, importV2 }) => runSession(sql, tenantId, await rules(importV2), body) },
   },
 };
+
+/** Teachers who can be the screen's teacher: active accounts owning an active class — the props loader (pickActor) and the saves (actAs)
+ *  take only active people, so the picker never offers someone whose screen would silently be another teacher's. */
+const teacherList = async (sql, t) => (await sql`select u.id, u.display_name name, u.status::text status, count(distinct c.id)::int classes from public.users u
+  join public.classes c on c.teacher_id=u.id and c.tenant_id=${t} and c.is_active where u.tenant_id=${t} and u.status::text='active' group by u.id order by u.display_name`)
+  .map(x => ({ id: x.id, name: x.name, active: x.status === 'active', classes: x.classes }));
+/** What 2.0's (shell) layout wraps a window (embed) screen with, for the v2-host entry. Operations, the switched-off modules and the
+ *  licence flags come from the props loader (`hostSettings` — the same resolved settings and copy-time licence judgement it used,
+ *  i.e. one source like 2.0's layout → OperationsProvider). Here only what the loader does not make: the teacher's screen language
+ *  and the teachers the 3.0 side can pick (2.0 has no picker — the screen is the logged-in teacher's). Presence and the notification
+ *  bell are left out (no outside connection). */
+async function hostContext(sql, t, R, actorId, hostSettings) {
+  const [teachers, [me]] = await Promise.all([teacherList(sql, t),
+    actorId ? sql`select display_name, ui_prefs, teacher_view_lang from public.users where tenant_id=${t} and id=${actorId}` : []]);
+  return { operations: hostSettings?.operations ?? null, disabledModules: hostSettings?.disabledModules ?? [], licenses: hostSettings?.licenses ?? {},
+    // 2.0 getSheetLang: the teacher's own choice (ui_prefs) → the admin's pick (teacher_view_lang) → by name.
+    lang: R.resolveSheetLang(R.readTeacherLangPref(me?.ui_prefs), me?.teacher_view_lang ?? null, me?.display_name ?? null), teachers };
+}
 
 // ── 2단계: 2.0 saveLessonReport · saveAndQueueClassnote · setAttendanceCell on the Docker copy ─────────────────────────
 // Inputs are 2.0's (SaveLessonReportInput · the setAttendanceCell input) plus `actor` — 3.0 has no login, so the page passes
@@ -174,6 +209,11 @@ const NOT_SAVED = ['videoHomework', 'videoHomeworkSeenAt', 'videoSubmitLink', 'v
 const STATUSES = ['present', 'absent', 'late', 'excused', 'early_leave'];
 const MASK = '연락처 가림'; // domain-snapshot-core scrub — the hand-drawn page shows free text with contacts masked
 
+/** A v2-host call { module, actor, args:[input] } → the input plus the actor; the module must be the 2.0 file that exports that function. */
+function hostCall(raw, module) {
+  if (!plain(raw) || raw.module !== module || !Array.isArray(raw.args) || !plain(raw.args[0])) throw bad();
+  return { ...raw.args[0], actor: raw.actor };
+}
 function reportInput(raw) {
   if (!plain(raw)) throw bad();
   if (raw.makeup === true || raw.outOfClass === true || raw.makeupClassId) throw unsupported('보강·수업 외 보고서는 이 연습 화면에서 아직 저장하지 않습니다.');
@@ -461,4 +501,52 @@ async function runAttendance(sql, t, R, b) {
     values (${t}, ${cls.id}, ${b.studentId}, ${date}, null, ${b.status}, ${b.note ?? null}, ${units.units}, ${actor.id}, ${via})`;
   await audit(sql, t, actor, 'attendance_cell', 'attendance', { ...base, status: b.status, created: true, ...(insertedAuto != null ? { autoUnits: insertedAuto } : {}), ...back });
   return { ok: true, status: b.status, autoUnits: insertedAuto ?? null };
+}
+
+// ── 2.0 saveOnescreenSession: the teacher's working session (2.0 autosaves it 800ms after typing) ──────────────────────
+const num = v => { if (v === null || v === undefined) return null; if (typeof v !== 'number' || !Number.isFinite(v) || v < 0 || v > 1000) throw bad(); return v; };
+const opt = (v, max) => (v === null || v === undefined ? null : str(v, max));
+function sessionInput(raw) {
+  if (!plain(raw)) throw bad();
+  const sp = raw.subjectProgress ?? {};
+  if (!plain(sp) || JSON.stringify(sp).length > 400_000) throw bad();
+  return { actor: uuid(raw.actor), studentId: uuid(raw.studentId), outOfClass: raw.outOfClass === true, sessionDate: raw.sessionDate == null || raw.sessionDate === '' ? null : ymd(raw.sessionDate),
+    classId: raw.classId == null ? null : uuid(raw.classId), baseUpdatedAt: raw.baseUpdatedAt == null ? null : str(raw.baseUpdatedAt, 64), studyGrade: opt(raw.studyGrade, 40), subjectProgress: sp,
+    dailyScore: num(raw.dailyScore), dailyMax: num(raw.dailyMax), checkScore: num(raw.checkScore), checkMax: num(raw.checkMax), attitude: opt(raw.attitude, 40), homework: opt(raw.homework, 200),
+    note: opt(raw.note, 4000), progressConfirmed: raw.progressConfirmed === true };
+}
+/** 2.0 order: the actor's teaching classes that day, a student of them (or out-of-class: a student of this academy), then write only from the
+ *  revision that was read (sessionSaveDecision · preserveMakeupSessionEntries · updated_at compare-and-set). No audit line (2.0 logs none). */
+async function runSession(sql, t, R, b) {
+  const env = await settingsOf(sql, t, R), actor = await actAs(sql, t, b.actor), date = R.resolveReportDate(b.sessionDate, await copyDay());
+  const ids = await teachingClassIds(sql, t, R, env, actor.id, date);
+  if (!ids.length) throw new V2Error(409, 'no_classes', '담당 반이 없습니다');
+  const [enr] = await sql`select 1 from public.enrollments where tenant_id=${t} and student_id=${b.studentId} and (start_date is null or start_date<=${date})
+    and (end_date is null or end_date>=${date}) and class_id::text = any(${ids}) limit 1`;
+  if (!enr) {
+    if (!b.outOfClass) throw new V2Error(409, 'not_my_student', '담당 학생이 아닙니다');
+    const [st] = await sql`select 1 from public.students where tenant_id=${t} and id=${b.studentId}`;
+    if (!st) throw new V2Error(409, 'not_academy_student', '학원 학생이 아닙니다');
+  }
+  // Timestamps as PostgREST writes them — the page compares them as text (sameSessionRevision).
+  const [prior] = await sql`select to_json(updated_at)#>>'{}' updated_at, subject_progress, attitude, homework, special_note, daily_score, check_score from public.onescreen_daily_sessions
+    where tenant_id=${t} and student_id=${b.studentId} and session_date=${date} and updated_by=${actor.id}`;
+  const incoming = { subjectProgress: b.subjectProgress, attitude: b.attitude, homework: b.homework, note: b.note, dailyScore: b.dailyScore, checkScore: b.checkScore };
+  if (R.sessionSaveDecision(R.sessionContentFromRow(prior ?? null), incoming, R.sameSessionRevision(b.baseUpdatedAt ?? undefined, prior?.updated_at)) === 'ignore')
+    return { ok: true, skipped: true, updatedAt: prior?.updated_at ?? undefined };
+  const progress = sql.json(R.preserveMakeupSessionEntries(prior?.subject_progress ?? {}, b.subjectProgress));
+  const v = { class_id: b.classId, study_grade: b.studyGrade, daily_score: b.dailyScore, daily_max: b.dailyMax, check_score: b.checkScore, check_max: b.checkMax, attitude: b.attitude, homework: b.homework, special_note: b.note, progress_confirmed: b.progressConfirmed };
+  if (!prior) {
+    const [row] = await sql`insert into public.onescreen_daily_sessions (tenant_id, student_id, session_date, class_id, study_grade, subject_progress, daily_score, daily_max, check_score, check_max, attitude, homework,
+        special_note, progress_confirmed, updated_by, updated_at)
+      values (${t}, ${b.studentId}, ${date}, ${v.class_id}, ${v.study_grade}, ${progress}, ${v.daily_score}, ${v.daily_max}, ${v.check_score}, ${v.check_max}, ${v.attitude}, ${v.homework},
+        ${v.special_note}, ${v.progress_confirmed}, ${actor.id}, clock_timestamp()) returning to_json(updated_at)#>>'{}' updated_at`;
+    return { ok: true, updatedAt: row.updated_at };
+  }
+  const [row] = await sql`update public.onescreen_daily_sessions set class_id=${v.class_id}, study_grade=${v.study_grade}, subject_progress=${progress}, daily_score=${v.daily_score}, daily_max=${v.daily_max},
+      check_score=${v.check_score}, check_max=${v.check_max}, attitude=${v.attitude}, homework=${v.homework}, special_note=${v.special_note}, progress_confirmed=${v.progress_confirmed}, updated_at=clock_timestamp()
+    where tenant_id=${t} and updated_by=${actor.id} and student_id=${b.studentId} and session_date=${date}
+      and updated_at=(${prior.updated_at}::text)::timestamptz -- as text: postgres.js would turn a timestamptz parameter into a JS Date and drop the microseconds
+    returning to_json(updated_at)#>>'{}' updated_at`;
+  return row ? { ok: true, updatedAt: row.updated_at } : { ok: true, skipped: true };
 }
