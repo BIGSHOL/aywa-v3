@@ -69,7 +69,8 @@
     });
     addEventListener('change', e => {
       const t = e.target;
-      if (!(t instanceof HTMLSelectElement) || !t.matches('[data-v2h-actor]')) return;
+      // 시간표 화면 안의 선택만 — 다른 화면이 같은 표식을 써도 시간표의 '저장하는 사람'이 바뀌지 않게.
+      if (!(t instanceof HTMLSelectElement) || !t.matches('[data-v2-screen="timetable"] [data-v2h-actor]')) return;
       actor = t.value;
       try { localStorage.setItem(ACTOR_KEY, t.value); } catch { /* 이 창에서만 기억 */ }
       tellHost();
