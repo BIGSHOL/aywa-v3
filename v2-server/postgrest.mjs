@@ -111,7 +111,7 @@ function rowJson(sql, M, table, al, items, embedWheres = []) {
     }
     const r = relation(M, table, it), sub = `e${++aliasSeq}`, key0 = it.alias ?? it.name;
     const { expr: subExpr, inner: subInner } = rowJson(sql, M, r.table, sub, it.select);
-    const own = embedWheres.filter(w => w.embed === key0).map(w => w.build(sql, sub));
+    const own = embedWheres.filter(w => w.embed === key0).map(w => w.build(sql, sub, c => M.types.get(r.table)?.get(c)?.udt ?? null));
     if (own.length) used.add(key0);
     // 부모 칸 ↔ 표 칸 짝 — many-to-one: 부모.cols = 표.refcols · one-to-many: 표.cols = 부모.refcols
     const on = r.many
@@ -145,8 +145,10 @@ function colExpr(sql, al, col) {
   for (const [, op, key] of m[2].matchAll(/(->>?)([A-Za-z0-9_]+)/g)) c = sql`(${c} ${sql.unsafe(op)} ${/^\d+$/.test(key) ? sql`${Number(key)}::int` : sql`${key}::text`})`;
   return c;
 }
-function cond(sql, al, col, op, value, negate = false) {
+function cond(sql, al, col, op, value, negate = false, typeOf = () => null) {
   const c = colExpr(sql, al, col);
+  const udt = /->/.test(col) ? null : typeOf(col);
+  const lit = v => (v !== null && TIMEY.has(udt) ? timeyValue(sql, String(v), udt) : v);
   let out;
   if (op === 'is') {
     const v = String(value).toLowerCase();
@@ -154,9 +156,9 @@ function cond(sql, al, col, op, value, negate = false) {
     out = sql`${c} is ${sql.unsafe(v)}`;
   } else if (op === 'in') {
     const list = Array.isArray(value) ? value.map(scalar) : splitTop(String(value).replace(/^\(|\)$/g, '')).map(unquote);
-    out = list.length === 0 ? sql`false` : sql`${c} in ${sql(list)}`;
+    out = list.length === 0 ? sql`false` : TIMEY.has(udt) ? sql`${c} in (${list.map(lit).reduce((a, b) => sql`${a}, ${b}`)})` : sql`${c} in ${sql(list)}`;
   } else if (op === 'like' || op === 'ilike') out = sql`${c} ${sql.unsafe(OPS[op])} ${String(value).replace(/\*/g, '%')}`;
-  else if (OPS[op]) out = value === null ? sql`${c} ${sql.unsafe(OPS[op])} null` : sql`${c} ${sql.unsafe(OPS[op])} ${scalar(value)}`;
+  else if (OPS[op]) out = value === null ? sql`${c} ${sql.unsafe(OPS[op])} null` : sql`${c} ${sql.unsafe(OPS[op])} ${lit(scalar(value))}`;
   else if (op === 'cs' || op === 'cd' || op === 'ov') {
     const arr = Array.isArray(value) ? `{${value.map(x => `"${String(x).replace(/"/g, '\\"')}"`).join(',')}}` : String(value);
     out = sql`${c} ${sql.unsafe(op === 'cs' ? '@>' : op === 'cd' ? '<@' : '&&')} ${arr}`;
@@ -164,19 +166,25 @@ function cond(sql, al, col, op, value, negate = false) {
   return negate ? sql`not (${out})` : out;
 }
 /** PostgREST 논리 글자 "a.eq.1,b.is.null,and(c.gt.2,d.lt.3)" → 조건(묶음 = or). */
-function logic(sql, al, text, joiner = 'or') {
+function logic(sql, al, text, joiner = 'or', typeOf) {
   const parts = splitTop(text).map(p => {
     const m = /^(not\.)?(and|or)\((.*)\)$/s.exec(p);
-    if (m) { const inner = logic(sql, al, m[3], m[2]); return m[1] ? sql`not (${inner})` : inner; }
+    if (m) { const inner = logic(sql, al, m[3], m[2], typeOf); return m[1] ? sql`not (${inner})` : inner; }
     const seg = p.split('.');
     if (seg.length < 3) throw new UnsupportedShape(`논리 거르기 '${p}'`);
     const col = seg[0]; let i = 1, negate = false;
     if (seg[i] === 'not') { negate = true; i++; }
     const op = seg[i], value = unquote(seg.slice(i + 1).join('.'));
-    return cond(sql, al, col, op, op === 'in' ? value : value, negate);
+    return cond(sql, al, col, op, op === 'in' ? value : value, negate, typeOf);
   });
-  return parts.reduce((a, b) => sql`${a} ${sql.unsafe(joiner)} ${b}`);
+  // 🔴 묶음은 늘 괄호로 — 다른 거르기와 `and`로 이어질 때 `a and b or c`가 되면 or 한쪽만으로 행이 걸린다(지우기 하나가 57행에 걸렸다).
+  return sql`(${parts.reduce((a, b) => sql`${a} ${sql.unsafe(joiner)} ${b}`)})`;
 }
+
+// 🔴 시각 칸 값은 글자로 보내고 서버에서 바꾼다 — postgres.js는 서버가 시각으로 추정한 인자를 Date로 바꿔 **밀리초로 자른다**(…254636 → …254).
+//    그러면 2.0의 낙관적 잠금(`.eq("updated_at", 읽은 값)`)이 늘 '변경됨'이 되고, 읽은 시각을 다시 쓰면 값이 바뀐다. PostgREST는 글자를 그대로 넘긴다.
+const TIMEY = new Set(['timestamptz', 'timestamp', 'date', 'time', 'timetz']);
+const timeyValue = (sql, v, udt) => sql`(${v}::text)::${sql.unsafe(udt)}`;
 
 // ── 값 쓰기 ────────────────────────────────────────────────────────────────────────────────────────────────────────────
 function cell(sql, M, table, col, v) {
@@ -190,6 +198,7 @@ function cell(sql, M, table, col, v) {
     return `{${v.map(x => (x === null ? 'NULL' : `"${String(x).replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`)).join(',')}}`;
   }
   if (typeof v === 'object' && !(v instanceof Date)) throw new UnsupportedShape(`객체 값을 ${table}.${col}(${t.type})에`);
+  if (TIMEY.has(t.udt)) return timeyValue(sql, v instanceof Date ? v.toISOString() : String(v), t.udt);
   return v instanceof Date ? v.toISOString() : typeof v === 'boolean' || typeof v === 'number' ? v : String(v);
 }
 
@@ -240,8 +249,8 @@ class Builder {
     if (dot >= 0) {
       const key = col.slice(0, dot), rest = col.slice(dot + 1);
       if (rest.includes('.')) throw new UnsupportedShape(`두 겹 임베드 거르기 '${col}'`);
-      this.wheres.push({ embed: key, build: (sql, al) => cond(sql, al, rest, op, value, negate) });
-    } else this.wheres.push({ embed: null, build: (sql, al) => cond(sql, al, col, op, value, negate) });
+      this.wheres.push({ embed: key, build: (sql, al, typeOf) => cond(sql, al, rest, op, value, negate, typeOf) });
+    } else this.wheres.push({ embed: null, build: (sql, al, typeOf) => cond(sql, al, col, op, value, negate, typeOf) });
     return this;
   }
   eq(c, v) { return this.#w(c, 'eq', v); }
@@ -261,7 +270,7 @@ class Builder {
   filter(c, op, v) { const neg = op.startsWith('not.'), o = neg ? op.slice(4) : op; return this.#w(c, o, o === 'in' ? String(v) : v, neg); }
   or(text, opts = {}) {
     if (opts.foreignTable || opts.referencedTable) throw new UnsupportedShape('임베드 표의 or');
-    this.wheres.push({ embed: null, build: (sql, al) => logic(sql, al, text, 'or') }); return this;
+    this.wheres.push({ embed: null, build: (sql, al, typeOf) => logic(sql, al, text, 'or', typeOf) }); return this;
   }
   match(obj) { for (const [k, v] of Object.entries(obj)) this.eq(k, v); return this; }
   order(col, opts = {}) {
@@ -294,8 +303,8 @@ class Builder {
     }
   }
   #source(sql) { return this.rpcCall ? this.rpcCall(sql) : sql`public.${sql(this.table)}`; }
-  #where(sql, al, extra = []) {
-    const all = [...this.wheres.filter(w => !w.embed).map(w => w.build(sql, al)), ...extra];
+  #where(sql, al, extra = [], typeOf) {
+    const all = [...this.wheres.filter(w => !w.embed).map(w => w.build(sql, al, typeOf)), ...extra];
     return all.length ? sql`where ${all.reduce((a, b) => sql`${a} and ${b}`)}` : sql``;
   }
   async #select(sql, M) {
@@ -305,7 +314,7 @@ class Builder {
     const embedWheres = this.wheres.filter(w => w.embed);
     const { expr, inner, used } = this.rpcCall ? { expr: this.#rpcRowExpr(sql, al, items), inner: [], used: new Set() } : rowJson(sql, M, table, al, items, embedWheres);
     for (const w of embedWheres) if (!used.has(w.embed)) throw Object.assign(new Error(`'${w.embed}' is not an embedded resource in this request`), { pgrst: 'PGRST108', status: 400 });
-    const where = this.#where(sql, al, inner);
+    const where = this.#where(sql, al, inner, c => M.types.get(table)?.get(c)?.udt ?? null);
     let count = null;
     if (this.countMode === 'exact') count = Number((await sql`select count(*)::bigint n from ${this.#source(sql)} ${sql(al)} ${where}`)[0].n);
     if (this.head) return { data: null, error: null, count, status: 200, statusText: 'OK' };
@@ -349,7 +358,7 @@ class Builder {
       return ret ? this.#shape(out.map(r => r.j), null) : { data: null, error: null, count: null, status: 201, statusText: 'Created' };
     }
     if (this.wheres.some(w => w.embed)) throw new UnsupportedShape('쓰기에 임베드 거르기');
-    const where = this.#where(sql, al), ret = this.#returningExpr(sql, M, al);
+    const where = this.#where(sql, al, [], c => M.types.get(this.table)?.get(c)?.udt ?? null), ret = this.#returningExpr(sql, M, al);
     let out;
     if (this.op === 'update') {
       const entries = Object.entries(this.payload ?? {}).filter(([, v]) => v !== undefined);
