@@ -355,10 +355,16 @@ export async function buildTimetableData({ sql, params, tenantId: t, R, X }) {
   };
 }
 
+/** 2.0 getWeeklyScheduleWithStudents({ referenceDate }) 모양 — 배치마다 반 명단을 붙인다(반 블록 옮기기의 서버 판정 재료). */
+async function weekSlots(sql, t, R, ref, today) {
+  const { slots, labelMap } = await readSlots(sql, t, R, ref, today), rosters = await readRosters(sql, t, R, slots, ref);
+  return { slots: slots.map(x => ({ ...x, students: rosters.get(x.classId) ?? [] })), labelMap };
+}
+
 export const screen = {
   id: ID, label: '시간표', order: 2,
   params: { week: /^\d{4}-\d{2}-\d{2}$/ },
   load: async ({ sql, params, tenantId, importV2 }) => buildTimetableData({ sql, params, tenantId, R: await loadRules(importV2), X: await loadExtra(importV2) }),
-  actions: timetableActions(loadRules),
+  actions: timetableActions(loadRules, { weekSlots }),
 };
-export { loadRules };
+export { loadRules, weekSlots };
