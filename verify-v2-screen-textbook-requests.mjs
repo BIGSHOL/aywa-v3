@@ -101,6 +101,8 @@ try {
         const own = await act('requestTextbook', [null, fd({ bookName: '강사 연습 교재', studentId: [mineStudent.id] })], tch.id);
         assert.equal(own.ok, true, own.error);
         assert.deepEqual(await act('deleteTextbookRequest', [null, fd({ id: own.created[0].id })], tch.id), { ok: true });
+        // 사용자 역할 쓰기가 끝나면 신분·역할이 들어올 때 값으로(뒤의 서비스 키 자리 쓰기가 이 강사로 판정되지 않게)
+        assert.deepEqual([...await sql`select coalesce(current_setting('request.jwt.claims', true), '') c, current_user <> 'authenticated' back`], [{ c: '', back: true }]);
         assert.equal((await sql`select count(*)::int n from public.textbook_orders where id = any(${[id, own.created[0].id]}::uuid[])`)[0].n, 0);
         assert.deepEqual(await act('saveMyTextbookMent', ['  안녕하세요 {학생}  ']), { ok: true });
         assert.equal((await M.screen.load({ sql, params: { ment: '1' }, tenantId, importV2 })).ment, '안녕하세요 {학생}');

@@ -286,6 +286,31 @@ try {
       }
     }
   });
+
+  await check('신분(jwt claims)은 사용자 역할 쓰기(asAuthenticated) 안에서만 선다 — 끝나면 들어올 때 값으로(서비스 키 자리 쓰기가 그 사람으로 판정되지 않게) · 부른 쪽이 세운 신분은 그대로', async () => {
+    const { asAuthenticated } = await import('./v2-timetable-save.mjs');
+    const ROLL = new Error('rollback');
+    try {
+      await db.begin(async sql => {
+        const claims = async () => (await sql`select coalesce(current_setting('request.jwt.claims', true), '') c`)[0].c;
+        await sql`select set_config('v2.actor_claims', ${JSON.stringify({ sub: '00000000-0000-0000-0000-000000000001', role: 'authenticated' })}, true)`; // actAs가 맡겨 두는 자리
+        assert.equal(await claims(), '', 'actAs는 신분을 바로 세우지 않는다');
+        const inside = await asAuthenticated(sql, async s => (await s`select current_setting('request.jwt.claims', true) c, current_user u`)[0]);
+        assert.equal(JSON.parse(inside.c).sub, '00000000-0000-0000-0000-000000000001'); assert.equal(inside.u, 'authenticated');
+        assert.equal(await claims(), '', '쓰기가 끝나면 신분이 비어 있다');
+        assert.notEqual((await sql`select current_user u`)[0].u, 'authenticated');
+        // 퇴원관리처럼 부른 쪽이 먼저 세운 신분은 덮지 않고 그대로 돌려놓는다
+        await sql`select set_config('request.jwt.claims', ${JSON.stringify({ sub: '00000000-0000-0000-0000-000000000002', role: 'authenticated' })}, true)`;
+        const outer = await asAuthenticated(sql, async s => JSON.parse((await s`select current_setting('request.jwt.claims', true) c`)[0].c).sub);
+        assert.equal(outer, '00000000-0000-0000-0000-000000000002'); assert.equal(JSON.parse(await claims()).sub, '00000000-0000-0000-0000-000000000002');
+        // 실패하면 저장점째 되돌아가 역할·신분 모두 원래대로
+        await sql`select set_config('request.jwt.claims', '', true)`;
+        await asAuthenticated(sql, async s => { await s`select 1/0`; }).catch(() => {});
+        assert.equal(await claims(), ''); assert.notEqual((await sql`select current_user u`)[0].u, 'authenticated');
+        throw ROLL;
+      });
+    } catch (e) { if (e !== ROLL) throw e; }
+  });
 } finally { await db.end(); }
 
 await check('호스트: 2.0 부품을 고치지 않고 묶인다 — 서버 전용 유입 0 · 서버 액션은 자리표시 · 운영 주소·외부 호출 0', async () => {

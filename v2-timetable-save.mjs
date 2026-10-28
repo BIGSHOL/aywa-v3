@@ -4,7 +4,8 @@
 //    args는 2.0 함수 인자 그대로(호스트 shims/server-action.ts가 보낸다).
 //  · 사람 = 3.0엔 로그인이 없어 3.0 띠에서 고른 직원. 고를 수 있는 사람 = 2.0 canManageTenant(역할,'classes')와 같은 권한 표
 //    (역할 기본 + 학원 설정 덮어쓰기 + 개인 예외)의 '전체' — 운영자 계정은 뺀다(출석부 화면과 같은 규약).
-//    그 사람의 신분(request.jwt.claims)으로 쓴다 — 2.0 DB 함수가 권한을 한 번 더 본다.
+//    2.0이 사용자 클라이언트로 쓰는 줄은 그 사람의 신분(request.jwt.claims) + authenticated 역할로 쓴다(asAuthenticated) — 2.0 DB 함수·RLS·보호 트리거가 권한을 한 번 더 본다.
+//    신분은 그 쓰기 안에서만 선다 — 2.0이 서비스 키로 하던 쓰기(감사로그·알림 등)가 이 사람으로 판정되지 않게.
 //  · 반환 = 2.0 함수의 반환 모양 그대로({ results } · { error } · { count }) — 부품이 2.0과 똑같이 읽는다.
 //  · 알림 = notifications 표 줄까지(2.0 notifyUsers). 슬랙 깨우기(pokeSlack)는 부르지 않는다(바깥 요청).
 //  · 감사로그 = 2.0 logAction과 같은 칸 + metadata.via '3.0 연습 복사본'.
@@ -68,23 +69,31 @@ export async function readPeople(sql, t, R, X) {
 }
 export const readEditors = async (sql, t, R, X) => (await readPeople(sql, t, R, X)).editors;
 
-/** 고른 사람으로 저장 — 저장 가능한 사람이 아니면 null(호출부가 2.0의 거절 문구를 돌려준다). 맞으면 그 사람의 신분을 세운다. */
+/** 고른 사람의 신분 — 트랜잭션에 맡겨 두기만 한다(v2.actor_claims). 실제로 서는 곳은 asAuthenticated 안(2.0 사용자 클라이언트 자리)뿐이다.
+ *  ⚠️ request.jwt.claims에 바로 세우면 set_config(local)가 트랜잭션 끝까지 남아 2.0 서비스 키 자리의 쓰기(enrollments 보호 트리거 등)까지 이 사람으로 판정된다. */
+const holdActor = (sql, actor) => sql`select set_config('v2.actor_claims', ${JSON.stringify({ sub: actor.id, role: 'authenticated' })}, true)`;
+
+/** 고른 사람으로 저장 — 저장 가능한 사람이 아니면 null(호출부가 2.0의 거절 문구를 돌려준다). 맞으면 그 사람의 신분을 맡겨 둔다(holdActor). */
 async function actAs(sql, t, R, X, actorId) {
   const actor = actorId ? (await readEditors(sql, t, R, X)).find(e => e.id === actorId) : null;
   if (!actor) return null;
-  await sql`select set_config('request.jwt.claims', ${JSON.stringify({ sub: actor.id, role: 'authenticated' })}, true)`;
+  await holdActor(sql, actor);
   return actor;
 }
 
 const audit = (sql, t, actor, action, targetType, metadata, targetLabel = null) => sql`insert into public.audit_logs (tenant_id, actor_id, actor_name, action, target_type, target_label, metadata)
   values (${t}, ${actor.id}, ${actor.name}, ${action}, ${targetType}, ${targetLabel}, ${sql.json({ ...metadata, via: VIA })})`;
 
-/** 2.0이 사용자 클라이언트(PostgREST = authenticated 역할)로 직접 쓰는 줄 — 같은 역할로 써서 RLS·보호 트리거가 2.0처럼 본다.
- *  (복사본 접속 계정은 수퍼유저라 그냥 쓰면 둘 다 건너뛴다.) 실패하면 저장점째 되돌아가 역할도 원래대로다. */
+/** 2.0이 사용자 클라이언트(PostgREST = authenticated 역할)로 직접 쓰는 줄 — 같은 역할·같은 신분으로 써서 RLS·보호 트리거·DB 함수가 2.0처럼 본다.
+ *  (복사본 접속 계정은 수퍼유저라 그냥 쓰면 다 건너뛴다.) 신분 = 부른 쪽이 이미 세운 claims, 없으면 맡겨 둔 사람(actAs).
+ *  끝나면 역할과 claims를 들어올 때 값으로 되돌린다(set_config local은 저장점을 풀어도 남는다). 실패하면 저장점째 되돌아가 둘 다 원래대로다. */
 const asAuthenticated = (sql, fn) => sql.savepoint(async s => {
+  const [{ prev, held }] = await s`select coalesce(current_setting('request.jwt.claims', true), '') prev, coalesce(current_setting('v2.actor_claims', true), '') held`;
+  if (!prev && held) await s`select set_config('request.jwt.claims', ${held}, true)`;
   await s`set local role authenticated`;
   const out = await fn(s);
   await s`reset role`;
+  await s`select set_config('request.jwt.claims', ${prev}, true)`;
   return out;
 });
 
@@ -148,7 +157,8 @@ async function moveEnrollmentsBatch(sql, t, R, X, actorId, [moves, effectiveDate
   if (dateError) return { error: dateError };
   const p_moves = moves.map(m => ({ enrollmentId: m.enrollmentId, newClassId: m.newClassId, startDate: eff, attendanceDays: X.DAY_ORDER.filter(d => (m.attendanceDays ?? []).includes(d)) }));
   let data;
-  try { [{ r: data }] = await sql.savepoint(s => s`select public.move_enrollments_batch(${s.json(p_moves)}::jsonb, ${eff}::date) r`); }
+  // 2.0 supabase.rpc(사용자 클라이언트) — 그 사람 신분 + authenticated 역할로.
+  try { [{ r: data }] = await asAuthenticated(sql, s => s`select public.move_enrollments_batch(${s.json(p_moves)}::jsonb, ${eff}::date) r`); }
   catch (e) { return { error: X.toKoreanDbError(dbError(e), '반 이동을 저장하지 못했습니다', 'enrollments.moveBatch') }; }
   const results = Array.isArray(data) ? data : [];
   const okIds = new Set(results.filter(r => r.ok).map(r => r.enrollmentId)), okMoves = moves.filter(m => okIds.has(m.enrollmentId));
@@ -239,7 +249,7 @@ async function statusActAs(sql, t, R, X, actorId) {
   if (!actorId) return null;
   const people = await readPeople(sql, t, R, X), actor = people.editors.find(e => e.id === actorId);
   if (!actor || !people.statusIds.has(actor.id)) return null;
-  await sql`select set_config('request.jwt.claims', ${JSON.stringify({ sub: actor.id, role: 'authenticated' })}, true)`;
+  await holdActor(sql, actor);
   return actor;
 }
 const why = (X, e, scope, fallback) => X.explainDbError(dbError(e), { scope, fallback }).message;
