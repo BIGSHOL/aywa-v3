@@ -27,7 +27,8 @@ export const DETAIL_KEYS = Object.freeze(['contribution', 'month', 'view', 'enti
 
 // 저장(2단계) — 머리·폼 저장(v2-students-save-head.mjs)과 탭 안 저장(v2-students-save-tabs.mjs). 모듈이 없으면 그 저장은 아직 없다
 // (호스트의 공용 저장 자리가 '아직 지원하지 않는 저장'으로 거절). 각 모듈은 { 2.0 함수 이름: { validate, run } }을 export한다.
-const [saveHead, saveTabs, contributionActions] = await Promise.all([optional('v2-students-save-head.mjs'), optional('v2-students-save-tabs.mjs'), optional('v2-students-contribution-actions.mjs')]);
+const [saveHead, saveTabs, contributionRead, contributionActions] = await Promise.all([optional('v2-students-save-head.mjs'), optional('v2-students-save-tabs.mjs'),
+  optional('v2-students-contribution-read.mjs'), optional('v2-students-contribution-actions.mjs')]);
 const ACTIONS = { ...(saveHead?.studentsHeadActions ?? {}), ...(saveTabs?.studentsTabActions ?? {}), ...(contributionActions?.actions ?? {}) };
 
 const pick = (params, keys) => Object.fromEntries(keys.flatMap((k) => (params[k] !== undefined ? [[k, params[k]]] : [])));
@@ -55,8 +56,8 @@ export const screen = {
     const viewerId = params.viewer ?? null;
     if (!sub) return { notFound: true };
     if (params.contributionRead) {
-      if (!sub[2] || sub[3] || !contributionActions) return { notFound: true };
-      return contributionActions.read({ sql, tenantId, importV2, viewerId, studentId: sub[2], kind: params.contributionRead,
+      if (!sub[2] || sub[3] || !contributionRead) return { notFound: true };
+      return contributionRead.read({ sql, tenantId, importV2, viewerId, studentId: sub[2], kind: params.contributionRead,
         month: params.month, sourceId: params.sourceId });
     }
     // 저장하는 사람(학생 관리 '전체') — 저장이 있을 때만 싣는다(3.0 띠가 이 목록에서 고른다 · 수업목록과 같은 신호).

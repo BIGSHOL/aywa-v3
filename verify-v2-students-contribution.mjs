@@ -1,4 +1,4 @@
-// 원생 기여도 기본 면 — Docker 읽기만, 원본 점수·근거 자료와 같은 서버 함수.
+// 원생 기여도 기본 면 — 원본 점수·근거 조회와 원본 판정 함수의 Docker 롤백 검증.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
@@ -8,6 +8,7 @@ import { stopV2Server } from './v2-server-runner.mjs';
 import { buildStudentDetail } from './v2-students-detail.mjs';
 import { screen } from './v2-screen-students.mjs';
 import { studentsBase } from './v2-students-common.mjs';
+import { originalSignalFunction } from './v2-students-contribution-actions.mjs';
 
 const db = await openFullDatabase();
 test('기여도 기본 면 = 원본 월별 점수·근거 조회 · 다른 학생 자료 없음 · 읽기 전용', async () => {
@@ -41,22 +42,23 @@ test('확장 근거 조회는 원본 함수를 Docker 읽기 경로로 호출한
     params: { v2path: `/students/${student.id}`, contributionRead: 'parent', sourceId: '0'.repeat(64) } }));
   assert.equal(typeof parent.result.error, 'string');
 });
-test('긍정 신호 변경은 원본 함수·선택 사용자·형식 검증으로만 받는다', () => {
+test('긍정 신호 변경은 2.0 함수 AST의 열·감사 이름·낙관적 잠금 조건을 그대로 쓴다', async () => {
+  const { text } = await originalSignalFunction();
+  for (const required of ['.eq("judged_at", before.judged_at)', 'cancelled_at:', 'cancelled_by:', 'cancel_reason:',
+    'rejudge_requested_at:', 'student_contribution_signal_cancel', 'student_contribution_signal_rejudge',
+    'metadata: { id: value.id, studentId: before.student_id, before, reason: value.reason }']) assert.ok(text.includes(required), required);
   const action = screen.actions.changePositiveSignal;
   const [valid] = ['00000000-0000-0000-0000-000000000001'];
   assert.equal(action.validate({ module: 'features/student-contribution/server/actions.ts', actor: valid,
     args: [{ id: valid, operation: 'rejudge', reason: '원본 확인' }] }).input.operation, 'rejudge');
-  assert.throws(() => action.validate({ module: 'features/student-contribution/server/actions.ts', actor: valid,
-    args: [{ id: valid, operation: 'rejudge', reason: ' ' }] }));
-  assert.throws(() => action.validate({ module: 'features/student-contribution/server/actions.ts', actor: valid,
-    args: [{ id: valid, operation: 'delete', reason: '원본 확인' }] }));
+  assert.throws(() => action.validate({ module: 'features/student-contribution/server/actions.ts', actor: null,
+    args: [{ id: valid, operation: 'rejudge', reason: '원본 확인' }] }));
 });
-test('긍정 신호 변경 원본 함수의 Docker 쓰기는 롤백되고 바깥 요청 줄을 늘리지 않는다', async (t) => {
-  const [signal] = await db`select id::text id, rejudge_requested_at from public.student_positive_signals
-    where tenant_id=${tenantId} order by id limit 1`;
+test('원본 판정 취소·재판정은 같은 열과 감사로그를 쓰고 롤백되며 바깥 요청 0', async (t) => {
+  const [signal] = await db`select id::text id, rejudge_requested_at, cancelled_at, cancelled_by::text cancelled_by, cancel_reason
+    from public.student_positive_signals where tenant_id=${tenantId} and cancelled_at is null order by id limit 1`;
   if (!signal) return t.skip('복사본에 긍정 신호 기록이 없음');
   const base = await db.begin('read only', (sql) => studentsBase({ sql, tenantId, importV2 }));
-  const [before] = await db`select rejudge_requested_at from public.student_positive_signals where id=${signal.id}`;
   const [queueBefore] = await db`select count(*)::int n from net.http_request_queue`;
   const body = screen.actions.changePositiveSignal.validate({ module: 'features/student-contribution/server/actions.ts',
     actor: base.viewer.id, args: [{ id: signal.id, operation: 'rejudge', reason: 'Docker 롤백 확인' }] });
@@ -65,15 +67,28 @@ test('긍정 신호 변경 원본 함수의 Docker 쓰기는 롤백되고 바깥
     await db.begin(async (sql) => {
       const result = await screen.actions.changePositiveSignal.run({ sql, body, tenantId });
       assert.equal(result.ok, true, result.error);
+      const cancelBody = screen.actions.changePositiveSignal.validate({ module: 'features/student-contribution/server/actions.ts',
+        actor: base.viewer.id, args: [{ id: signal.id, operation: 'cancel', reason: 'Docker 롤백 확인' }] });
+      const cancelled = await screen.actions.changePositiveSignal.run({ sql, body: cancelBody, tenantId });
+      assert.equal(cancelled.ok, true, cancelled.error);
+      const [changed] = await sql`select rejudge_requested_at, cancelled_at, cancelled_by::text cancelled_by, cancel_reason
+        from public.student_positive_signals where id=${signal.id}`;
+      assert.ok(changed.rejudge_requested_at);
+      assert.ok(changed.cancelled_at);
+      assert.equal(changed.cancelled_by, base.viewer.id);
+      assert.equal(changed.cancel_reason, 'Docker 롤백 확인');
       assert.equal((await sql`select count(*)::int n from net.http_request_queue`)[0].n, queueBefore.n);
-      assert.equal((await sql`select count(*)::int n from public.audit_logs where tenant_id=${tenantId}
-        and action='student_contribution_signal_rejudge' and metadata->>'id'=${signal.id}`)[0].n > 0, true);
+      const audits = await sql`select action from public.audit_logs where tenant_id=${tenantId}
+        and action in ('student_contribution_signal_rejudge', 'student_contribution_signal_cancel') and metadata->>'id'=${signal.id}`;
+      assert.ok(audits.some((r) => r.action === 'student_contribution_signal_rejudge'));
+      assert.ok(audits.some((r) => r.action === 'student_contribution_signal_cancel'));
       throw rollback;
     });
   } catch (error) { if (error !== rollback) throw error; }
-  const [after] = await db`select rejudge_requested_at from public.student_positive_signals where id=${signal.id}`;
+  const [after] = await db`select id::text id, rejudge_requested_at, cancelled_at, cancelled_by::text cancelled_by, cancel_reason
+    from public.student_positive_signals where id=${signal.id}`;
   const [queueAfter] = await db`select count(*)::int n from net.http_request_queue`;
-  assert.deepEqual(after, before);
+  assert.deepEqual(after, signal);
   assert.equal(queueAfter.n, queueBefore.n);
 });
 test.after(async () => { await stopV2Server(); await db.end(); });
