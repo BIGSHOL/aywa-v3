@@ -835,17 +835,18 @@ window.createFlowUI = function createFlowUI(api) {
   /* ---------- 잘린 글 보기(원장 10-28 "마우스 올리면 짤린거 볼 수 있게") ---------- */
   // 표 칸의 .fl-cut이 넘쳐 잘렸으면 마우스·키보드 초점이 왔을 때 전부를 띄운다. data-hint(상태 표시의 뜻)는 잘리지 않아도 띄운다.
   // 브라우저 기본 툴팁(title)은 쓰지 않는다. 클릭·스크롤을 막지 않고(pointer-events:none) 화면 안에 둔다.
+  // 가운데 창(dialog)은 맨 위층(top layer)이라 z-index로는 못 넘는다 — 팁도 popover로 맨 위층에 올리고, 띄울 때마다 다시 올려 가장 나중에 연 창보다 위에 둔다.
   let tipEl=null,tipFor=null;
   function showTip(el){
     const cut=el.scrollWidth>el.clientWidth+1,text=el.dataset.hint||(cut?el.dataset.full||el.textContent.trim():'');
     if(!text){hideTip();return;}
-    if(!tipEl){tipEl=document.createElement('div');tipEl.className='fl-tip';tipEl.id='fl-tip';tipEl.setAttribute('role','tooltip');document.body.append(tipEl);}
+    if(!tipEl){tipEl=document.createElement('div');tipEl.className='fl-tip';tipEl.id='fl-tip';tipEl.setAttribute('role','tooltip');if(tipEl.showPopover)tipEl.popover='manual';document.body.append(tipEl);}
     if(tipFor&&tipFor!==el)tipFor.removeAttribute('aria-describedby');
-    tipEl.textContent=text;tipEl.hidden=false;tipFor=el;el.setAttribute('aria-describedby','fl-tip');
+    tipEl.textContent=text;if(tipEl.showPopover){if(tipEl.matches(':popover-open'))tipEl.hidePopover();tipEl.showPopover();}else tipEl.hidden=false;tipFor=el;el.setAttribute('aria-describedby','fl-tip');
     const r=el.getBoundingClientRect(),w=tipEl.offsetWidth,hh=tipEl.offsetHeight;let top=r.bottom+6;if(top+hh>innerHeight-8)top=Math.max(8,r.top-hh-6);
     tipEl.style.left=`${Math.min(Math.max(8,r.left),innerWidth-w-8)}px`;tipEl.style.top=`${top}px`;
   }
-  function hideTip(){tipFor?.removeAttribute('aria-describedby');tipFor=null;if(tipEl)tipEl.hidden=true;}
+  function hideTip(){tipFor?.removeAttribute('aria-describedby');tipFor=null;if(!tipEl)return;if(tipEl.showPopover){if(tipEl.matches(':popover-open'))tipEl.hidePopover();}else tipEl.hidden=true;}
   const cutOf=t=>t?.closest?.(':is(.fl-table,.fl-rectable) .fl-cut');
   document.addEventListener('pointerover',event=>{const el=cutOf(event.target);if(el===tipFor)return;if(el)showTip(el);else if(tipFor)hideTip();});
   document.addEventListener('focusin',event=>{const el=cutOf(event.target);if(el)showTip(el);else if(tipFor)hideTip();});

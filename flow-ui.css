@@ -276,7 +276,7 @@
 .fl-rectable .fl-rec-go{width:16px;padding-right:2px}.fl-rectable .fl-rec-go .icon{width:16px;height:16px}
 .fl-recs-modal{min-width:min(44rem,calc(100vw - 60px));overflow-x:auto}
 /* 잘린 글 보기 · 상태의 뜻 */
-.fl-tip{position:fixed;z-index:70;max-width:min(26rem,calc(100vw - 16px));padding:8px 10px;border:1px solid var(--ax-line);border-radius:8px;background:#fff;box-shadow:0 8px 24px rgba(23,33,62,.14);font-size:var(--ax-xs);line-height:1.5;white-space:pre-line;overflow-wrap:anywhere;pointer-events:none}
+.fl-tip{position:fixed;z-index:70;inset:auto;margin:0;overflow:visible;color:inherit;max-width:min(26rem,calc(100vw - 16px));padding:8px 10px;border:1px solid var(--ax-line);border-radius:8px;background:#fff;box-shadow:0 8px 24px rgba(23,33,62,.14);font-size:var(--ax-xs);line-height:1.5;white-space:pre-line;overflow-wrap:anywhere;pointer-events:none}
 .fl-tip[hidden]{display:none}
 /* 엿보기 창(원장 10-28 "페이지 이동하지말고 내부에 오버레이창으로 바로 처리 … 노션처럼") — 오른쪽에서 나오는 넓은 창, 안은 같은 앱의 그 화면. */
 dialog.fl-peek{position:fixed;inset:0;width:100vw;max-width:none;height:100dvh;max-height:none;margin:0;padding:0;border:0;background:transparent;box-shadow:none;overflow:hidden}
