@@ -36,6 +36,8 @@
 //   class-sheets/server/month-memo-actions.ts  saveMonthMemo     class_sheet_month_memos                          (commitSheetEdits가)
 //   attendance/server/actions.ts               setAttendanceCell attendance_records(교시 칸 갈래)                attendance_cell · attendance_note · attendance_clear
 //   class-sheets/server/goals-board-actions.ts setMyEcsGoalsRole · setMyEcsGoalsView  users.ui_prefs.ecs            (없음 — 2.0과 같다)
+//   textbooks/server/plan-actions.ts           previewTextbookFill(저장 없음 — 교재 배정 창 미리보기) · loadClassSlotChoices · loadClassTextbookPlans ·
+//                                              loadAssignableTextbooks(읽기 — 호스트는 GET)   applyTextbookFill 등 저장은 아직
 //   students/server/english-name.ts            updateStudentEnglishName students.english_name(CAS · 지점 중복)   student_english_name_update
 //   보강 추가(v2-ecs-makeup.mjs): attendance/server/actions.ts searchMakeupStudents(읽기) · makeup-actions.ts fetchMakeupAbsences(읽기) ·
 //     setAttendanceCell(status makeup · allowMakeup — 칸과 시수) · makeup-note-action.ts noteMakeupAgainstAbsence  attendance_records.note   attendance_makeup_link
@@ -65,7 +67,7 @@ import { MAKEUP_ACTIONS } from './v2-ecs-makeup.mjs';
 import { GOALS_ACTIONS, goalsData } from './v2-ecs-goals.mjs';
 import { planGapData } from './v2-ecs-gap.mjs';
 import { seatDayData } from './v2-ecs-seat.mjs';
-import { readAssignableTextbooks, readClassTextbookPlans, readSlotChoices } from './v2-ecs-textbooks.mjs';
+import { TEXTBOOK_ACTIONS, readAssignableTextbooks, readClassTextbookPlans, readSlotChoices } from './v2-ecs-textbooks.mjs';
 
 /** 2.0 주소 — /ecs · /ecs/<반> · /ecs/<반>/month · /ecs/goals · /ecs/plan-gap. */
 const ROUTE = /^\/ecs(?:\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})(\/month)?|\/(goals|plan-gap))?$/;
@@ -76,7 +78,7 @@ export const screen = {
     period: /^(month|session)$/, day: DAY, readonly: /^1$/,
     // 읽기 서버 액션(호스트 registerHostHandler) — 그 2.0 함수의 인자 칸만.
     read: /^(dayPlan|compare|slotChoices|textbookPlans|assignable)$/, class: UUID, slot: /^\d{2}:\d{2}(?::\d{2})?$/ },
-  actions: { ...ACTIONS, ...MAKEUP_ACTIONS, ...GOALS_ACTIONS },
+  actions: { ...ACTIONS, ...MAKEUP_ACTIONS, ...GOALS_ACTIONS, ...TEXTBOOK_ACTIONS },
   async load({ sql, params: q, tenantId: t, importV2 }) {
     const R = await loadRules(importV2), today = await copyDay(), env = await readSettings(sql, t, R);
     const viewers = await readViewers(sql, t, R, env);

@@ -593,4 +593,34 @@ test('복사본: 교재 배정 창의 읽기 셋(GET ?read=slotChoices · textbo
   assert.deepEqual(await load({ read: 'slotChoices', class: MATH, viewer: T_ACTOR }), { ok: false, error: '담당 반이 아닙니다' });
 });
 
+test('복사본(되돌림): 교재 배정 미리보기(previewTextbookFill) = 2.0 ApplyPreview 칸 · 실제 배정의 입력이면 그 배정의 원래 계획(expandPlans)과 같은 날짜·교시·차수 · 저장 없음', { skip: !db && 'local database not running' }, async () => {
+  const types = await src('features/textbooks/types.ts'), R = await C.loadRules(importV2), { plannedLines } = await import('./v2-ecs-props.mjs');
+  const [owner] = await db`select u.id::text id from public.users u where u.tenant_id=${TENANT} and u.status='active' and u.system_role='master' and not exists (select 1 from public.super_admins s where s.id=u.id) order by u.display_name limit 1`;
+  // 그 반에 배정이 하나뿐인(같은 교재가 겹치지 않는) 고른-교시 배정.
+  const [p] = await db`select p.id::text id, p.class_id::text class_id, p.textbook_id::text textbook_id, p.pace, p.term_mode, p.start_date::text start_date, p.start_lesson_no, p.slot_picks, b.title
+    from public.class_textbook_plans p join public.textbooks b on b.id=p.textbook_id
+    where p.tenant_id=${TENANT} and p.is_active and p.slot_picks is not null and array_length(p.slot_picks, 1) > 0
+      and (select count(*) from public.class_textbook_plans q where q.class_id=p.class_id and q.is_active) = 1 order by p.created_at limit 1`;
+  assert.ok(p, '비교할 배정');
+  await inRollback(async ({ sql, run }) => {
+    const before = await sql`select count(*)::int n from public.class_sheet_plan_lines where class_id=${p.class_id}`;
+    const input = { classId: p.class_id, textbookId: p.textbook_id, slotPicks: p.slot_picks, pace: p.pace, termMode: p.term_mode, startDate: p.start_date, startLessonNo: p.start_lesson_no };
+    const res = await run(sql, 'previewTextbookFill', owner.id, input);
+    assert.equal(res.ok, true, JSON.stringify(res).slice(0, 200));
+    sameShape(res.preview, typeKeys(types, 'ApplyPreview'), 'ApplyPreview');
+    for (const r of res.preview.rows) sameShape(r, typeKeys(types, 'ApplyPreviewRow'), 'ApplyPreviewRow');
+    assert.equal(res.preview.textbookTitle, p.title);
+    const today = await C.copyDay();
+    assert.ok(res.preview.rows.every(r => (r.date < today) === (r.outcome === 'skip-past')), '지난 날짜 = skip-past');
+    const last = res.preview.rows.at(-1)?.date ?? p.start_date, env = await C.readSettings(sql, TENANT, R);
+    const base = await plannedLines(sql, TENANT, R, env, p.class_id, p.start_date, last);
+    const fromPlan = Object.entries(base.baselineByCell).flatMap(([k, lines]) => lines.filter(l => l.title === p.title).map(l => `${k}|${l.lessonNo}`)).sort();
+    assert.deepEqual(res.preview.rows.map(r => `${r.date}|${r.slotStart}|${r.lessonNo}`).sort(), fromPlan, '미리보기 = 그 배정의 원래 계획(두 2.0 함수가 같은 칸)');
+    assert.deepEqual(await run(sql, 'previewTextbookFill', owner.id, { ...input, slotPicks: [] }), { ok: false, error: '교시를 하나 이상 골라 주세요' });
+    assert.deepEqual(await run(sql, 'previewTextbookFill', owner.id, { ...input, startDate: 'x' }), { ok: false, error: '시작일을 골라 주세요' });
+    assert.deepEqual(await run(sql, 'previewTextbookFill', T_ACTOR, input), { ok: false, error: '담당 반이 아닙니다' });
+    assert.equal((await sql`select count(*)::int n from public.class_sheet_plan_lines where class_id=${p.class_id}`)[0].n, before[0].n, '저장 없음');
+  });
+});
+
 test.after(async () => { await db?.end(); });
