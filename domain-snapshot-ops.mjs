@@ -1,5 +1,5 @@
 // 운영 영역 — 셔틀·재고·회의록·전자결재·데이터베이스(+ 두 번째 묶음).
-import { PRIORITY, family, field, md, metric, monthlyTrend, record, scrub, signal } from './domain-snapshot-core.mjs';
+import { ISO_AT, PRIORITY, family, field, latest, md, metric, monthlyTrend, record, scrub, signal } from './domain-snapshot-core.mjs';
 import { opsFamilies2 } from './domain-snapshot-ops2.mjs';
 
 const DAY = { mon: '월', tue: '화', wed: '수', thu: '목', fri: '금', sat: '토', sun: '일' };
@@ -39,16 +39,21 @@ export async function opsFamilies(ctx) {
 
   // 재고관리 — 자산(근거)·대여·실사·소모품.
   const assets = await sql`select a.id, a.asset_code, coalesce(c.label, a.category) category, a.maker, a.model, a.status, a.location, a.holder_name, a.last_audited_on::text audited from public.inventory_assets a left join public.inventory_categories c on c.key=a.category and c.tenant_id=${t} where a.tenant_id=${t} order by a.sort_order nulls last, a.asset_code`;
-  const loans = await sql`select l.id, l.status, l.due_on::text due, l.asset_id from public.inventory_loans l where l.tenant_id=${t}`;
+  const loans = await sql`select l.id, l.status, l.due_on::text due, l.due_note, l.lent_on::text lent, l.asset_id, coalesce(u.display_name, l.borrower_name) borrower from public.inventory_loans l left join public.users u on u.id=l.borrower_user_id and u.tenant_id=${t} where l.tenant_id=${t}`;
   const [inv] = await sql`select (select count(*)::int from public.inventory_audits where tenant_id=${t}) audits, (select max(audited_on)::text from public.inventory_audits where tenant_id=${t}) last_audit, (select count(*)::int from public.inventory_supplies where tenant_id=${t}) supplies, (select coalesce(sum(qty),0)::int from public.inventory_supplies where tenant_id=${t}) qty`;
   const overdueLoans = loans.filter(l => l.status === 'out' && l.due && l.due < asOf);
   const overdueAssets = new Set(overdueLoans.map(l => l.asset_id));
+  // 지금 대여 중인 자산의 대여 — 대여자·대여일·반납 기한(기한 대신 적은 말 '상시' 등은 그대로) 칸. 같은 자산이 둘이면 기한 빠른 쪽.
+  const outLoan = new Map(); for (const l of loans.filter(x => x.status === 'out').sort((a, b) => String(a.due || '9999').localeCompare(String(b.due || '9999')))) if (!outLoan.has(l.asset_id)) outLoan.set(l.asset_id, l);
+  // 제조사가 모델명 앞에 이미 있으면('LG' + 'LG 15U56') 한 번만.
+  const makerModel = a => (a.maker && a.model && a.model.toLowerCase().startsWith(a.maker.toLowerCase()) ? a.model : [a.maker, a.model].filter(Boolean).join(' '));
   out.inventory = family('inventory', '재고관리(자산·대여·실사·소모품·업체)', {
     summary: `반납 기한 지난 대여 ${overdueLoans.length}건 · 소모품 ${inv.supplies}종 · 마지막 실사 ${inv.last_audit ? md(inv.last_audit) : '기록 없음'}.`,
     metrics: [metric('전체 자산', assets.length, '대', '폐기·분실 포함'), ...Object.entries(ASSET).map(([k, v]) => metric(`자산 ${v}`, assets.filter(a => a.status === k).length, '대')), metric('반납 전 대여', loans.filter(l => l.status === 'out').length, '건'), metric('반납 기한 지난 대여', overdueLoans.length, '건'), metric('실사 기록', inv.audits, '건', `마지막 ${inv.last_audit ? md(inv.last_audit) : '기록 없음'}`), metric('소모품', inv.supplies, '종', `수량 합계 ${inv.qty}개`)],
-    evidence: assets.map(a => record({ id: a.id, label: [a.category, a.asset_code].filter(Boolean).join(' '), detail: [a.maker, a.model].filter(Boolean).join(' '), date: a.audited, status: ASSET[a.status] || '기타', fields: [field('위치', a.location), field('사용자', a.holder_name)], facets: [`status:${a.status}`, `category:${a.category}`, overdueAssets.has(a.id) && 'loan-overdue'] })),
+    evidence: assets.map(a => { const l = outLoan.get(a.id); return record({ id: a.id, label: [a.category, a.asset_code].filter(Boolean).join(' '), detail: makerModel(a), date: a.audited, status: ASSET[a.status] || '기타', fields: [field('위치', a.location), field('사용자', a.holder_name), ...filled([['대여자', l?.borrower], ['대여일', l?.lent ? md(l.lent) : null], ['반납 기한', l ? (l.due ? md(l.due) : l.due_note || '정하지 않음') : null]])], facets: [`status:${a.status}`, `category:${a.category}`, overdueAssets.has(a.id) && 'loan-overdue'] }); }),
+    detailLabel: '모델', dateLabel: '마지막 실사',
     facetLabels: { ...pre('status', ASSET), 'loan-overdue': '반납 기한 지남', ...Object.fromEntries([...new Set(assets.map(a => a.category))].map(c => [`category:${c}`, c])) }, recordSource: 'inventory_assets',
-    signals: overdueLoans.length ? [signal({ id: 'inventory-loan-overdue', title: `반납 기한 지난 자산 대여 ${overdueLoans.length}건`, summary: `${overdueLoans.slice(0, 3).map(l => { const a = assets.find(x => x.id === l.asset_id); return `${a ? [a.category, a.asset_code].filter(Boolean).join(' ') : '자산'}(${md(l.due)}까지)`; }).join(', ')}${overdueLoans.length > 3 ? ` 외 ${overdueLoans.length - 3}건` : ''}. 아직 대여 중입니다.`, priority: PRIORITY.check, source: '재고관리 · 대여 기록', recordIds: [...overdueAssets], draft: { title: '자산 반납 확인', body: '반납 예정일이 지난 대여 자산의 위치와 반납 일정을 확인해 주세요.' } })] : [],
+    signals: overdueLoans.length ? [signal({ id: 'inventory-loan-overdue', title: `반납 기한 지난 자산 대여 ${overdueLoans.length}건`, summary: `${overdueLoans.slice(0, 3).map(l => { const a = assets.find(x => x.id === l.asset_id); return `${a ? [a.category, a.asset_code].filter(Boolean).join(' ') : '자산'}(${md(l.due)}까지)`; }).join(', ')}${overdueLoans.length > 3 ? ` 외 ${overdueLoans.length - 3}건` : ''}. 아직 대여 중입니다.`, priority: PRIORITY.check, source: '재고관리 · 대여 기록', recordIds: [...overdueAssets], facet: 'loan-overdue', at: latest(overdueLoans.map(l => l.due)), draft: { title: '자산 반납 확인', body: '반납 예정일이 지난 대여 자산의 위치와 반납 일정을 확인해 주세요.' } })] : [],
     sourceLabel: '자산 · 대여 · 실사 · 소모품', coverageNote: '목록은 자산 전체입니다.',
     sources: [{ table: 'inventory_assets', rows: assets.length }, { table: 'inventory_loans', rows: loans.length }, { table: 'inventory_audits', rows: inv.audits }, { table: 'inventory_supplies', rows: inv.supplies }],
   });
@@ -68,7 +73,7 @@ export async function opsFamilies(ctx) {
   // 전자결재 — 결재 문서(근거)와 결재선.
   // 휴가는 신청자·종류·기간·일수로 알아보는 문서라 이름 칸은 신청자, 그 밖의 양식은 문서 제목. 결재선은 '이름 역할 → …', 지금 차례는 대기 중 첫 칸
   // (원장 10-28 "이름이 김예원이어야할거같은데, 항목 잘 정리해봐. 기간 이런걸 표현할 수 있을거같은데").
-  const docs = await sql`select d.id, d.title, d.form_type, d.status, to_char(d.submitted_at at time zone 'Asia/Seoul','YYYY-MM-DD') d, u.display_name drafter,
+  const docs = await sql`select d.id, d.title, d.form_type, d.status, to_char(d.submitted_at at time zone 'Asia/Seoul','YYYY-MM-DD') d, to_char(d.submitted_at at time zone 'UTC', ${ISO_AT}) submitted, u.display_name drafter,
       (select count(*)::int from public.approval_steps s where s.tenant_id=${t} and s.document_id=d.id) steps,
       (select count(*)::int from public.approval_steps s where s.tenant_id=${t} and s.document_id=d.id and s.decision='pending') waiting,
       (select string_agg(coalesce(a.display_name, '이름 없음') || ' ' || coalesce(s.role_label, '승인'), ' → ' order by s.step_no) from public.approval_steps s left join public.users a on a.id=s.approver_id and a.tenant_id=${t} where s.tenant_id=${t} and s.document_id=d.id) line,
@@ -92,7 +97,7 @@ export async function opsFamilies(ctx) {
     metrics: [metric('결재 문서', docs.length, '건'), ...Object.entries(APPROVAL).map(([k, v]) => metric(v, docs.filter(d => d.status === k).length, '건')), metric('대기 중인 결재 단계', docs.reduce((n, d) => n + d.waiting, 0), '개')],
     evidence: docs.map(docRecord),
     facetLabels: { ...pre('status', APPROVAL), ...pre('form', FORM) }, recordSource: 'approval_documents',
-    signals: pending.length ? [signal({ id: 'approval-pending', title: `결재 대기 문서 ${pending.length}건`, summary: scrub(`${pending.slice(0, 3).map(docLine).join(', ')}${pending.length > 3 ? ` 외 ${pending.length - 3}건` : ''}.`), priority: PRIORITY.decide, source: '전자결재 · 대기 문서', recordIds: pending.map(d => d.id), draft: { title: '결재 문서 검토 및 보완', body: '결재 문서의 내용과 첨부 근거를 확인하고, 보완할 사항이 있으면 정리해서 알려 주세요.' } })] : [],
+    signals: pending.length ? [signal({ id: 'approval-pending', title: `결재 대기 문서 ${pending.length}건`, summary: scrub(`${pending.slice(0, 3).map(docLine).join(', ')}${pending.length > 3 ? ` 외 ${pending.length - 3}건` : ''}.`), priority: PRIORITY.decide, source: '전자결재 · 대기 문서', recordIds: pending.map(d => d.id), facet: 'status:pending', at: latest(pending.map(d => d.submitted)), draft: { title: '결재 문서 검토 및 보완', body: '결재 문서의 내용과 첨부 근거를 확인하고, 보완할 사항이 있으면 정리해서 알려 주세요.' } })] : [],
     sourceLabel: '전자결재 문서 · 결재선', coverageNote: '목록은 결재 문서 전체입니다(최근 상신 순).',
     sources: [{ table: 'approval_documents', rows: docs.length }, { table: 'approval_steps', rows: docs.reduce((n, d) => n + d.steps, 0) }],
   });

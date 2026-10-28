@@ -37,6 +37,6 @@ export async function loadWorkspaces(sql, { tenantId, asOf, capturedAt }) {
   const workspaces = { asOf, families };
   assertWorkspaces(workspaces, FAMILY_IDS);
   for (const id of AUDIT_ONLY) if (families[id].dataState !== 'not-applicable') throw new Error(`workspaces.${id}: audit-only family must be not-applicable`);
-  store = Object.freeze({ asOf, families: new Map(FAMILY_IDS.map(id => [id, { facets: families[id].facets, records: families[id][EVIDENCE] }])) });
+  store = Object.freeze({ asOf, families: new Map(FAMILY_IDS.map(id => [id, { title: families[id].title, facets: families[id].facets, records: families[id][EVIDENCE] }])) });
   return workspaces;
 }

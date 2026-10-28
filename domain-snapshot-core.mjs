@@ -49,7 +49,13 @@ export const metric = (label, value, unit, detail = '') => ({ label, value: fini
 export const field = (label, value) => ({ label, value: value === null || value === undefined || value === '' ? '—' : scrub(value) });
 export const record = ({ id, label, detail = '', date = '', status = '', fields = [], facets = [] }) => ({ id: String(id), label: scrub(label) || '—', detail: scrub(detail) || '', date: date || '', status: scrub(status) || '', fields: fields.map(f => ({ label: f.label, value: scrub(f.value) })), facetIds: facets.filter(Boolean).map(String) });
 // facet = 이 신호를 처리하는 목록의 걸러 보기(일 카드의 '○○ 열기'가 그 걸러 보기로 연다 — 원장 10-28 "어디로 가야하는지 배선 같은게 없음").
-export const signal = ({ id, title, summary, priority, source, recordIds = [], draft, facet = '' }) => ({ id, title, summary, priority, source, recordIds: recordIds.map(String), draft, ...(facet ? { facet } : {}) });
+// 걸러 보기의 기록 = 신호의 recordIds와 같은 집합(verify-domain-snapshot.mjs가 잠근다).
+// at = 신호가 묶은 기록 중 가장 늦게 생긴 것의 날짜('YYYY-MM-DD') 또는 시각(UTC ISO) — 업무 흐름 '발생 시간'(점검 시각이 아니다).
+export const signal = ({ id, title, summary, priority, source, recordIds = [], draft, facet = '', at = '' }) => ({ id, title, summary, priority, source, recordIds: recordIds.map(String), draft, ...(facet ? { facet } : {}), ...(at ? { at } : {}) });
+// 값 목록 중 가장 늦은 것(빈 값 제외). 한 신호 안에서는 같은 모양(날짜끼리 · ISO끼리)만 넘긴다.
+export const latest = values => values.filter(Boolean).map(String).sort().at(-1) || '';
+// SQL에서 시각을 신호 at 모양(UTC ISO)으로 — flow-source.mjs와 같은 형식.
+export const ISO_AT = 'YYYY-MM-DD"T"HH24:MI:SS"Z"';
 export const sumOf = rows => rows.reduce((n, r) => n + (Number(r.count) || 0), 0);
 export const countOf = (rows, key) => rows.find(r => r.key === key)?.count || 0;
 
@@ -96,6 +102,7 @@ export function dailyTrend(label, unit, rows, asOf) {
 
 // evidence = every applicable record (server store); records = the first 12 or a
 // curated summary; facets are counted from evidence so chips match the endpoint.
+// detailLabel · dateLabel = 이 영역 기록의 '내용'(detail)·'날짜'(date)가 무엇인지(반 · 수업일 …) — 표 머리가 화면마다 따로 짐작하지 않게.
 export function family(id, title, part) {
   const evidence = part.evidence || [];
   const counts = new Map();
@@ -106,6 +113,7 @@ export function family(id, title, part) {
     facets: order.filter(k => counts.get(k)).map(k => ({ id: k, label: scrub(part.facetLabels?.[k] || k), count: counts.get(k) })),
     records: (part.summaryRecords || evidence).slice(0, RECORD_LIMIT), totalRecords: evidence.length, sourceLabel: part.sourceLabel || '',
     dataState: part.dataState || (evidence.length ? 'available' : 'empty'), coverageNote: part.coverageNote || '', sources: part.sources || [], recordSource: evidence.length ? part.recordSource || null : null,
+    ...(part.detailLabel ? { detailLabel: part.detailLabel } : {}), ...(part.dateLabel ? { dateLabel: part.dateLabel } : {}),
   };
   Object.defineProperty(out, EVIDENCE, { value: Object.freeze(evidence), enumerable: false });
   return out;
@@ -113,6 +121,7 @@ export function family(id, title, part) {
 export const notApplicable = (id, title, coverageNote, summary = '지점 원장 업무 공간 밖의 영역입니다.') => family(id, title, { summary, dataState: 'not-applicable', sourceLabel: '해당 없음', coverageNote });
 
 const DATE = /^\d{4}-\d{2}(-\d{2})?$/;
+const SIGNAL_AT = /^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2}:\d{2}Z)?$/;
 // Throws on the first contract violation so a bad loader cannot ship silently.
 export function assertWorkspaces(ws, ids) {
   const fail = (id, why) => { throw new Error(`workspaces.${id}: ${why}`); };
@@ -127,6 +136,8 @@ export function assertWorkspaces(ws, ids) {
       for (const p of f.trend.points) if (!DATE.test(p.date) || p.date > ws.asOf.slice(0, p.date.length) || !Number.isFinite(p.value)) fail(id, `trend point ${p.date}`);
     }
     for (const s of f.signals) if (!s.id || !s.title || !Object.values(PRIORITY).includes(s.priority) || !s.draft?.title || !s.draft?.body) fail(id, `signal ${s.id}`);
+    for (const s of f.signals) if (s.facet && !f.facets.some(x => x.id === s.facet)) fail(id, `signal ${s.id} facet ${s.facet} missing`);
+    for (const s of f.signals) if (s.at !== undefined && (!SIGNAL_AT.test(s.at) || s.at.slice(0, 10) > ws.asOf)) fail(id, `signal ${s.id} at ${s.at}`);
     const ids = new Set(f.records.map(r => r.id));
     for (const s of f.signals) for (const r of s.recordIds) if (!ids.has(r) && !(f[EVIDENCE] || []).some(e => e.id === r)) fail(id, `signal ${s.id} points outside evidence`);
     for (const x of f.facets) if (!x.id || !x.label || !Number.isInteger(x.count) || x.count < 1) fail(id, 'facet');

@@ -11,7 +11,7 @@ import { AUDIT_ONLY, FAMILY_IDS, workspaceRecords } from './domain-snapshot.mjs'
 import { EVIDENCE } from './domain-snapshot-core.mjs';
 import { REASON_LABEL, SYSTEM_BULK_WITHDRAWAL_DATES } from './domain-snapshot-students2.mjs';
 import { ROLE_LABEL } from './domain-snapshot-people.mjs';
-import { handleWorkspaceRecords, queryRecords } from './domain-http.mjs';
+import { handleWorkspaceRecords, queryRecords, searchRecords } from './domain-http.mjs';
 import { buildAssistantContext, contextText, ISSUE_FAMILY } from './claude-bridge-context.mjs';
 
 const done = [];
@@ -143,6 +143,49 @@ check('records endpoint: strict params, facet counts = filter results, search, p
   }
   const last = queryRecords(store, 'lesson-reports', new URLSearchParams({ page: '100000', pageSize: '100' })).body;
   assert.deepEqual(last.items, []); assert.equal(last.total, F['lesson-reports'].totalRecords);
+  // ids= — 여러 건 한 번에: 단독으로만 · 요청 순서 · 없는 id 빼기 · 같은 id 한 번 · 최대 100개.
+  const bills = store.families.get('billing').records, [a, b, c] = [bills[0].id, bills[1].id, bills[2].id];
+  const many = queryRecords(store, 'billing', new URLSearchParams({ ids: [c, 'no-such-record', a, b, a].join(',') }));
+  assert.equal(many.status, 200); assert.deepEqual(many.body.items.map(r => r.id), [c, a, b]); assert.equal(many.body.familyId, 'billing');
+  assert.deepEqual(queryRecords(store, 'billing', new URLSearchParams({ ids: 'no-such-record' })).body.items, []);
+  assert.deepEqual(queryRecords(store, 'billing', new URLSearchParams({ ids: a })).body.items.map(r => r.id), [a]);
+  const hundred = bills.slice(0, 100).map(r => r.id);
+  assert.equal(queryRecords(store, 'billing', new URLSearchParams({ ids: hundred.join(',') })).body.items.length, 100);
+  for (const bad of ['ids=', `ids=${a},`, `ids=${a}&ids=${b}`, `ids=${a}&id=${b}`, `ids=${a}&q=x`, `ids=${a}&pageSize=5`, 'ids=a%20b', `ids=${[...hundred, bills[100].id].join(',')}`]) assert.equal(queryRecords(store, 'billing', new URLSearchParams(bad)).status, 400, bad);
+  assert.equal(queryRecords(store, 'nope', new URLSearchParams({ ids: a })).status, 404);
+  // 이름 칸에서 뺀 날짜도 화면 모양(M/D)으로 찾힌다.
+  const absent = store.families.get('attendance').records.find(r => r.status === '결석');
+  const shown = `${Number(absent.date.slice(5, 7))}/${Number(absent.date.slice(8, 10))}`;
+  assert(queryRecords(store, 'attendance', new URLSearchParams({ q: `${absent.label} ${shown}`, pageSize: '100' })).body.items.some(r => r.id === absent.id), 'M/D search');
+  // 통합 검색: 영역 이름 낱말은 기록이 다른 낱말을 맞혔을 때만 채운다("김소은 퇴원보고서") · 영역 이름 하나만으로는 맞지 않는다.
+  const wr = store.families.get('withdrawal-reports').records[0];
+  if (wr) assert(searchRecords(store, new URLSearchParams({ q: `${wr.label} 퇴원보고서` })).body.groups.some(g => g.familyId === 'withdrawal-reports'), 'family word fills in');
+  assert(!searchRecords(store, new URLSearchParams({ q: '출석부' })).body.groups.some(g => g.familyId === 'attendance'), 'family word alone matches nothing');
+});
+
+check('signals: facet = the same record set as recordIds · at = latest record time, never past asOf', () => {
+  const missing = [];
+  for (const f of Object.values(F)) for (const s of f.signals) {
+    if (s.at !== undefined) assert(/^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2}:\d{2}Z)?$/.test(s.at) && s.at.slice(0, 10) <= asOf, `${f.id} ${s.id} at ${s.at}`);
+    if (!s.recordIds.length) continue; // 기록 없이 연결 상태로만 서는 신호(구글 시트 연동 오류)
+    if (!s.facet || s.at === undefined) missing.push(`${f.id} ${s.id}`);
+    if (!s.facet) continue;
+    const viaFacet = (f[EVIDENCE] || []).filter(r => r.facetIds.includes(s.facet)).map(r => r.id).sort();
+    assert.deepEqual(viaFacet, [...s.recordIds].sort(), `${f.id} ${s.id} facet ${s.facet}`);
+    assert.equal(queryRecords(store, f.id, new URLSearchParams({ facet: s.facet })).body.filteredTotal, s.recordIds.length, `${f.id} ${s.id} endpoint`);
+  }
+  assert.deepEqual(missing, [], 'every signal with records carries facet and at');
+});
+
+check('person records: the name cell is the person, no date repeated in it', () => {
+  const one = id => (F[id][EVIDENCE] || [])[0];
+  for (const id of ['attendance', 'makeups', 'lesson-reports', 'video-homework', 'withdrawal-reports', 'billing', 'textbook-requests', 'payroll']) {
+    const r = one(id); if (!r) continue;
+    assert(!/\d{1,2}\/\d{1,2}|\d{4}-\d{2}-\d{2}|\d{2}\.\d{2}/.test(r.label), `${id} label carries a date: ${r.label}`);
+  }
+  const students = new Set(snapshot.students.map(s => s.name));
+  for (const id of ['attendance', 'makeups', 'lesson-reports', 'video-homework', 'billing']) { const r = one(id); if (r) assert(students.has(r.label), `${id} label is a student: ${r.label}`); }
+  for (const r of (F.inventory[EVIDENCE] || [])) { const words = r.detail.split(' '); assert(words.length < 2 || words[0] !== words[1], `inventory detail repeats the maker: ${r.detail}`); }
 });
 
 check('assistant context carries domain metrics but no personal names or payroll amounts', () => {
@@ -170,6 +213,9 @@ await new Promise(r => server.listen(0, '127.0.0.1', r));
 const call = (method, path) => new Promise((resolve, reject) => { const q = request({ host: '127.0.0.1', port: server.address().port, method, path, agent: false }, res => { let b = ''; res.on('data', c => { b += c; }); res.on('end', () => resolve({ status: res.statusCode, type: res.headers['content-type'], body: b })); }); q.on('error', reject); q.end(); });
 const ok = await call('GET', '/api/workspaces/billing/records?facet=remaining&pageSize=5');
 assert.equal(ok.status, 200); assert.match(ok.type, /application\/json/); assert.equal(JSON.parse(ok.body).items.length, 5);
+const pair = store.families.get('billing').records.slice(0, 2).map(r => r.id);
+const several = await call('GET', `/api/workspaces/billing/records?ids=${pair.reverse().join(',')}`);
+assert.equal(several.status, 200); assert.deepEqual(JSON.parse(several.body).items.map(r => r.id), pair);
 assert.equal((await call('POST', '/api/workspaces/billing/records')).status, 405);
 assert.equal((await call('GET', '/api/workspaces/Billing/records')).status, 404);
 server.close();
