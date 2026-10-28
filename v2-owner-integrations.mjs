@@ -8,6 +8,7 @@ import { audit, asAuthenticated } from './v2-timetable-save.mjs';
 import { UUID } from './v2-mcs-core.mjs';
 import { loadOwnerSlack } from './v2-owner-slack.mjs';
 import { loadOwnerVideo } from './v2-owner-video.mjs';
+import { loadOwnerAgent } from './v2-owner-agent.mjs';
 
 const bad = () => new V2Error(400, 'invalid_request', '입력 값을 확인해 주세요.');
 const plain = v => !!v && typeof v === 'object' && !Array.isArray(v);
@@ -48,7 +49,8 @@ export async function integrationsView(sql, t, R, settings, viewer, sp, importV2
   const active = available.includes(wanted) ? wanted : available[0];
   const slackState = active === 'slack' ? await loadOwnerSlack(sql, t, viewer, importV2) : null;
   const video = active === 'video' ? await loadOwnerVideo(sql, t, viewer).catch(() => null) : null;
-  return { available, sheetStatuses, saEmail: null, slack: slackState, video };
+  const agent = active === 'agent' && sp.read === 'agent_dashboard' ? await loadOwnerAgent(sql, t, sp, settings) : null;
+  return { available, sheetStatuses, saEmail: null, slack: slackState, video, agent };
 }
 
 // ── integrations/server/actions.ts ─────────────────────────────────────────────────────────────────────────────────────

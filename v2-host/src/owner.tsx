@@ -3,12 +3,12 @@
 // 데이터 = /api/v2/owner?tab=…&year=…&viewer=…(Docker 복사본, v2-screen-owner.mjs) — 2.0 page.tsx가 return 앞에서 만들던 값 그대로.
 // 보는 사람 = 3.0 띠가 고른 사람(면마다 그 사람의 권한 — 2.0과 같은 판정). 권한 없는 면 · 옛 주소는 서버가 알려 준 주소로 옮긴다(2.0 redirect).
 import { createRoot } from 'react-dom/client';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { AppProviders } from '@/lib/providers/app-providers';
 import { OperationsProvider } from '@/features/owner/operations-context';
 import { OwnerHostPage, type OwnerPageData } from './owner-page';
 import { hostNavigate, onHostRefresh } from '../shims/host-nav';
-import { setHostEditors, registerHostHandler, VIEW_ONLY, type HostEditor } from '../shims/server-action';
+import { hostActor, setHostEditors, registerHostHandler, VIEW_ONLY, type HostEditor } from '../shims/server-action';
 import { useHostSearch } from '../shims/next-navigation';
 import { HostFrame, HostMessage } from './host-frame';
 
@@ -26,6 +26,21 @@ for (const [module, names] of [
     : name === 'loadSlackPeople' ? '연습 화면에서는 슬랙 직원 목록을 불러올 수 없습니다' : VIEW_ONLY }));
 registerHostHandler('features/video-submit/server/drive-settings-actions.ts', 'saveVideoDriveSetting', async () => ({ error: VIEW_ONLY }));
 for (const name of ['loadTodaysMathMenus', 'saveTodaysMathMenus']) registerHostHandler('features/integrations/todays-math/server/branch-menus-actions.ts', name, async () => ({ ok: false, message: '연습 화면에서는 오늘 수학에 연결할 수 없습니다.' }));
+
+registerHostHandler('features/sync-agent/server/actions.ts', 'getAgentDashboard', async (input) => {
+  const p = input && typeof input === 'object' ? input as { module?: unknown; level?: unknown; date?: unknown; cursor?: { at?: unknown; id?: unknown } } : {};
+  const q = new URLSearchParams({ tab: 'sheets', sub: 'agent', read: 'agent_dashboard' });
+  const actor = hostActor(); if (actor) q.set('viewer', actor);
+  if (typeof p.module === 'string') q.set('agentModule', p.module);
+  if (typeof p.level === 'string') q.set('agentLevel', p.level);
+  if (typeof p.date === 'string') q.set('agentDate', p.date);
+  if (typeof p.cursor?.at === 'string' && typeof p.cursor.id === 'string') { q.set('agentCursorAt', p.cursor.at); q.set('agentCursorId', p.cursor.id); }
+  const r = await fetch(`/api/v2/owner?${q}`, { headers: { Accept: 'application/json' } }).catch(() => null);
+  const body = r ? await r.json().catch(() => null) : null;
+  return r?.ok ? body?.page?.integrations?.agent ?? { error: '연동 PC 상태를 불러오지 못했습니다.' } : { error: '연동 PC 상태를 불러오지 못했습니다.' };
+});
+for (const name of ['issueAgentCode', 'issueAgentManagementCode', 'revokeAgentDevice', 'saveAgentSettings'])
+  registerHostHandler('features/sync-agent/server/actions.ts', name, async () => ({ error: VIEW_ONLY }));
 
 // 슬랙 API 조회·발송은 외부 서비스에 닿는다. 2.0 부품의 함수 호출을 이 화면에서 즉시 거절한다.
 for (const [module, names] of [
@@ -82,7 +97,7 @@ function App() {
   }, [key, tick]);
   const editors = state.data?.editors, resolvedViewer = state.data?.viewer?.id ?? null;
   useEffect(() => { shownViewer.current = resolvedViewer; }, [resolvedViewer]);
-  useEffect(() => { if (editors) setHostEditors(editors); }, [editors]);
+  useLayoutEffect(() => { if (editors) setHostEditors(editors); }, [editors]);
   // 2.0 redirect(옛 설정 탭 · 권한 없는 면 → 맡은 면) — 주소를 바꿔 다시 읽는다.
   const redirect = state.key === key && state.data?.route === 'redirect' ? state.data.redirect ?? null : null;
   useEffect(() => { if (redirect) hostNavigate(redirect, 'replace'); }, [redirect]);

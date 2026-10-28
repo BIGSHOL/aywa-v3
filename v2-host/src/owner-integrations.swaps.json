@@ -22,7 +22,7 @@
   ],
   [
    "{active === \"agent\" ? <AgentCard classnoteOn={classnoteModuleOn(settings)} makeeduOn={modulesOn.makeedu}\n        legacyPC={modulesOn.makeedu?<LegacyMakeeduPC />:null} /> : null}",
-   "{active === \"agent\" ? <OwnerServerFace face=\"agent\" /> : null}"
+   "{active === \"agent\" ? <AgentCard classnoteOn={available.includes(\"video\")} makeeduOn={available.includes(\"makeedu\")} /> : null}"
   ]
  ],
  "sheets-face.tsx": [

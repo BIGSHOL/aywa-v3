@@ -243,13 +243,16 @@ export const screen = {
   actions: { ...ownerActions(ownerIo), ...integrationActions(ownerIo), ...slackActions(ownerIo), ...popupActions(ownerIo), ...ownerDataActions(ownerIo), ...evaluationActions(ownerIo), ...contributionActions(ownerIo) },
   params: { viewer: UUID, tab: /^[a-z_]{1,24}$/, year: /^\d{4}$/, sub: /^[a-zA-Z_]{1,24}$/, page: /^\d{1,4}$/,
     action: /^[a-z0-9_]{1,80}$/, q: /^[\s\S]{0,200}$/, from: /^\d{4}-\d{2}-\d{2}$/, to: /^\d{4}-\d{2}-\d{2}$/,
-    read: /^dashboard_preview$/ },
+    read: /^(dashboard_preview|agent_dashboard)$/, agentModule: /^[a-z]{2,16}$/, agentLevel: /^[a-z]{2,16}$/,
+    agentDate: /^\d{4}-\d{2}-\d{2}$/, agentCursorAt: /^[0-9TZ:.-]{20,30}$/, agentCursorId: UUID },
   load: async ({ sql, params: sp, tenantId: t, importV2 }) => {
     const [R, O] = await Promise.all([loadRules(importV2), loadOwnerRules(importV2)]);
     const row = await readSettingsRow(sql, t);
     const settings = O.resolve.resolveSettings(row.data, { name: row.name });
     const viewers = await readOwnerViewers(sql, t, R, O, settings);
     const viewer = viewers.find(v => v.id === sp.viewer) ?? viewers[0] ?? null;
+    if (sp.read === 'agent_dashboard' && (sp.tab !== 'sheets' || sp.sub !== 'agent' || !sp.viewer || viewer?.id !== sp.viewer))
+      return { route: 'denied' };
     if (sp.read === 'dashboard_preview') {
       if (sp.tab !== 'dashboard' || !viewer || viewer.id !== sp.viewer || viewer.systemRole !== 'master' || viewer.level(O.faceAccess.ownerFaceMenu('dashboard')) === 'none')
         return { route: 'denied' };

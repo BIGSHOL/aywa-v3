@@ -27,7 +27,7 @@ const fd = obj => ({ $formData: Object.entries(obj).map(([k, v]) => [k, typeof v
 await check('주소 열쇠 = 2.0 page.tsx가 서버에서 읽는 칸(tab · year · sub) + 보는 사람(viewer)', async () => {
   const page = lf(await src('app/(shell)/owner/page.tsx'));
   for (const k of ['tab', 'year', 'sub']) assert.match(page, new RegExp(`sp\\.${k}\\b`));
-  assert.deepEqual(Object.keys(M.screen.params).sort(), ['action', 'from', 'page', 'q', 'read', 'sub', 'tab', 'to', 'viewer', 'year']);
+  assert.deepEqual(Object.keys(M.screen.params).sort(), ['action', 'agentCursorAt', 'agentCursorId', 'agentDate', 'agentLevel', 'agentModule', 'from', 'page', 'q', 'read', 'sub', 'tab', 'to', 'viewer', 'year']);
 });
 
 await check('그리기 = 2.0 owner/page.tsx 글자 그대로 — 바꾼 곳은 서버에서만 나오는 값 셋과 서버 컴포넌트 면(owner-page.swaps.json)', async () => {
