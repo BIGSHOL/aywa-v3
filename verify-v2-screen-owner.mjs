@@ -92,6 +92,18 @@ try {
   const base = await load({});
   const admin = base.editors.find(e => e.role === '관리자');
 
+  await check('탭 및 메뉴 구성 = 닫힌 메뉴·강사 역할 메뉴·강사 개인 예외를 이 면에서만 계산', async () => {
+    const d = await load({ tab: 'navigation' });
+    assert.equal(d.route, 'page');
+    const gates = d.page.navigationGates;
+    assert.ok(gates && Array.isArray(gates.closed) && Array.isArray(gates.teacherOpen) && Array.isArray(gates.teacherPersonal));
+    assert.ok(gates.closed.includes('makeups'), '꺼진 보강 메뉴');
+    assert.ok(gates.teacherOpen.includes('textbook_requests'), '강사 메뉴 입구');
+    assert.ok(gates.teacherPersonal.includes('student_english_name'), '강사 개인 권한');
+    assert.ok(!gates.teacherOpen.some(k => gates.closed.includes(k)) && !gates.teacherPersonal.some(k => gates.closed.includes(k)));
+    assert.equal((await load({ tab: 'profile' })).page.navigationGates, null);
+  });
+
   await check('기여도 = 침산 시범 지점·메뉴 두 개·실험실·원장 게이트, 전체 원생 원자료 미리보기', async () => {
     const master = { id: base.viewer.id, systemRole: 'master', level: () => 'full' };
     assert.equal(await contributionGate('00000000-0000-4000-8000-000000000001', master, async () => true), null);

@@ -18,6 +18,7 @@ import { loadOwnerDashboard, loadOwnerDashboardPreview } from './v2-owner-dashbo
 import { loadOwnerImport } from './v2-owner-import.mjs';
 import { portfolioGate, loadOwnerEvaluation, evaluationActions } from './v2-owner-evaluation.mjs';
 import { contributionGate, loadOwnerContribution, contributionActions } from './v2-owner-contribution.mjs';
+import { loadNavigationGates } from './v2-owner-navigation-gates.mjs';
 
 const ID = 'owner';
 const plain = v => !!v && typeof v === 'object' && !Array.isArray(v);
@@ -211,8 +212,7 @@ async function ownerPage({ sql, t, R, O, sp, viewers, viewer, settings, row, imp
     permissionStaff: staff.filter(u => !operators.has(u.id)).map(u => ({ id: u.id, name: u.display_name ?? '(이름 없음)', role: u.role })),
     hiddenPermissionIds: permissionPeople.filter(id => operators.has(id)).filter((id, i, a) => a.indexOf(id) === i),
     hiddenSettingKeys,
-    // '탭 및 메뉴 구성' 편집기의 강사 메뉴 판정(navigationEditorGates)은 다음 단계 — 그때까지 강사뷰 편집기는 비어 보인다.
-    navigationGates: null,
+    navigationGates: tab === 'navigation' ? await loadNavigationGates(sql, t, R, O, settings, importV2) : null,
     integrations: tab === 'sheets' ? await integrationsView(sql, t, R, settings, viewer) : null,
     popups: tab === 'popups' ? await listPopups(sql, t, importV2) : null,
     audit, data, dashboard,
