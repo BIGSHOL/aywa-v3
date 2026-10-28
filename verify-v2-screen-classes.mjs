@@ -326,6 +326,38 @@ try {
     const [after] = await q1`select class_name, teacher_id::text t, closed_at, is_active from public.classes where id=${CLS}`;
     assert.deepEqual([after.class_name, after.t, after.closed_at, after.is_active], [k.class_name, k.t, null, true], '시험 뒤 복사본은 그대로');
   });
+
+  await check('저장(2단계) — 수강 날짜 고치기(확인 서명 · 마지막 반은 퇴원보고서) · 배정 취소(기록 세기 → DB 함수 delete_enrollment_history) (되돌림)', async () => {
+    const A = C.screen.actions, ROLL = new Error('rollback'), EM = 'features/enrollments/server/actions.ts';
+    for (const n of ['updateEnrollmentDates', 'deleteEnrollment']) assert.ok((await src(EM)).includes(`export async function ${n}(`), n);
+    const tx = async fn => { let out; try { await db.begin(async sql => { out = await fn(sql); throw ROLL; }); } catch (e) { if (e !== ROLL) throw e; } return out; };
+    const run = (sql, name, actor, args) => A[name].run({ sql, body: A[name].validate({ module: EM, actor, args }), tenantId, importV2 });
+    const form = o => ({ $formData: Object.entries(o) }), actor = base.editors[0].id;
+    const STU = '6219e442-aa57-455f-a5bc-834b222d9e1c', CLS = 'e4a2c026-8992-4211-a5fe-b9e93be8a0f3', TO = '50d2ece7-6514-4474-8cfc-dd8983d15c18';
+    const [enr] = await q1`select id::text id, start_date::text s from public.enrollments where student_id=${STU} and class_id=${CLS} and end_date is null limit 1`;
+    const [last] = await q1`select max(session_date)::text d from public.attendance_records where student_id=${STU} and class_id=${CLS}`;
+    const next = d => new Date(Date.parse(`${d}T00:00:00Z`) + 86400000).toISOString().slice(0, 10);
+    const moved = await tx(async sql => {
+      const first = await run(sql, 'updateEnrollmentDates', actor, [null, form({ enrollmentId: enr.id, field: 'start', value: next(last.d) })]);
+      const again = await run(sql, 'updateEnrollmentDates', actor, [null, form({ enrollmentId: enr.id, field: 'start', value: next(last.d), confirm: 'x' })]);
+      const ok = await run(sql, 'updateEnrollmentDates', actor, [null, form({ enrollmentId: enr.id, field: 'start', value: next(last.d), confirm: first.confirm.token })]);
+      return { first, again, ok, s: (await sql`select start_date::text s from public.enrollments where id=${enr.id}`)[0].s,
+        log: (await sql`select metadata from public.audit_logs where tenant_id=${tenantId} and created_at >= now() and action='enrollment_dates_update'`)[0]?.metadata };
+    });
+    assert.equal(moved.first.confirm.title, '이미 찍힌 출결이 기간 밖이 됩니다', '출결이 밀려나면 저장 전에 묻는다');
+    assert.equal(moved.again.confirm?.token, moved.first.confirm.token, '서명이 다르면 다시 묻는다');
+    assert.deepEqual([moved.ok, moved.s, moved.log.from, moved.log.to, moved.log.attendanceOutsideLast, moved.log.via], [{ ok: true }, next(last.d), enr.s, next(last.d), last.d, '3.0 연습 복사본']);
+    assert.match((await tx(sql => run(sql, 'updateEnrollmentDates', actor, [null, form({ enrollmentId: enr.id, field: 'end', value: today })]))).error ?? '', /퇴원보고서/, '마지막 반에 종료일 = 퇴원 → 퇴원보고서로');
+    const del = await tx(async sql => {
+      const made = await run(sql, 'createEnrollment', actor, [null, form({ studentId: STU, classId: TO, startDate: next(today) })]);
+      const res = await run(sql, 'deleteEnrollment', actor, [null, form({ enrollmentId: made.enrollmentId })]);
+      return { res, left: (await sql`select count(*)::int n from public.enrollments where id=${made.enrollmentId}`)[0].n,
+        log: (await sql`select metadata from public.audit_logs where tenant_id=${tenantId} and created_at >= now() and action='enrollment_delete'`)[0]?.metadata };
+    });
+    assert.deepEqual([del.res, del.left, del.log.via, del.log.rpcVia, del.log.cancelledBeforeStart], [{ ok: true }, 0, '3.0 연습 복사본', 'validated_rpc', true]);
+    const [after] = await q1`select start_date::text s from public.enrollments where id=${enr.id}`;
+    assert.equal(after.s, enr.s, '시험 뒤 복사본은 그대로');
+  });
 } finally { await db.end(); }
 
 await check('호스트: 2.0 부품을 고치지 않고 묶인다 — 서버 전용 유입 0 · 운영 주소·외부 호출 0', async () => {

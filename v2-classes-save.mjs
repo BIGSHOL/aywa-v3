@@ -5,7 +5,7 @@
 // 쓰기는 2.0처럼 사용자 역할(authenticated)로 — RLS·보호 트리거가 2.0과 같게 본다. 2.0은 트랜잭션 없이 지우고 다시 넣다 실패하면 옛 행을
 // 되살리는데, 여기선 지우기·넣기를 저장점 하나에 담아 실패하면 저장점째 되돌아간다(2.0 '되살리기 성공' 갈래와 같은 결과 · 같은 문구).
 import { V2Error } from './v2-screens.mjs';
-import { actAs, audit, asAuthenticated, notifyClassAssignment, readPeople } from './v2-timetable-save.mjs';
+import { actAs, audit, asAuthenticated, notifyClassAssignment, readPeople, lastCourseViaReport } from './v2-timetable-save.mjs';
 
 const bad = () => new V2Error(400, 'invalid_request', '입력 값을 확인해 주세요.');
 const plain = v => !!v && typeof v === 'object' && !Array.isArray(v);
@@ -13,13 +13,14 @@ const plain = v => !!v && typeof v === 'object' && !Array.isArray(v);
 let rulesPromise = null;
 function loadSaveRules(importV2) {
   rulesPromise ??= (async () => {
-    const [name, conflict, english, color, label, notice, preserve, periods, overlap, subjects, dbErrors, eligibility, assign, dk, delegation, level] = await Promise.all([
+    const [name, conflict, english, color, label, notice, preserve, periods, overlap, subjects, dbErrors, eligibility, assign, dk, delegation, level, dateAccess, dateEdit, deletable] = await Promise.all([
       'features/classes/class-name.ts', 'features/classes/class-name-conflict.ts', 'features/classes/english-track.ts', 'lib/color-utils.ts',
       'features/timetable/lib/teacher-label.ts', 'features/classes/period-notice.ts', 'features/classes/schedule-preserve.ts', 'features/timetable/lib/periods.ts',
       'features/classes/overlap.ts', 'features/owner/subjects.ts', 'features/enrollments/db-errors.ts', 'features/enrollments/eligibility.ts',
       'features/enrollments/server/assign-helpers.ts', 'lib/date-kst.ts', 'features/classes/delegation-window.ts', 'features/timetable/lib/level.ts',
+      'features/enrollments/date-access.ts', 'features/enrollments/date-edit.ts', 'features/enrollments/deletable.ts',
     ].map(p => importV2(p)));
-    return { name, conflict, english, color, label, notice, preserve, periods, overlap, subjects, dbErrors, eligibility, assign, dk, delegation, level };
+    return { name, conflict, english, color, label, notice, preserve, periods, overlap, subjects, dbErrors, eligibility, assign, dk, delegation, level, dateAccess, dateEdit, deletable };
   })().catch(error => { rulesPromise = null; throw error; });
   return rulesPromise;
 }
@@ -806,6 +807,155 @@ async function changeClassLevel(ctx, actorId, [classId, change]) {
 }
 const levelArgs = args => { if (args.length !== 2 || typeof args[0] !== 'string' || !UUID.test(args[0]) || !['number-up', 'number-down', 'class-up', 'class-down'].includes(args[1])) throw bad(); return args; };
 
+// ── 고른 사람의 메뉴 권한(2.0 accessLevelTenant · canManageTenant) — readPeople과 같은 권한 표(역할 재정의 + 개인 예외) ─────────
+async function actorLevels(ctx, actorId) {
+  const { sql, t, R, X } = ctx;
+  const [[u], [row]] = await Promise.all([
+    sql`select system_role::text role from public.users where tenant_id=${t} and id=${actorId}`,
+    sql`select data from public.tenant_settings where tenant_id=${t}`,
+  ]);
+  const stored = plain(row?.data) ? row.data : null, base = R.baseSettingsFor(R.presetOfStored(stored));
+  const permissions = { ...base.permissions, ...(plain(stored?.permissions) ? stored.permissions : {}) };
+  const matrix = X.perms.resolveMatrix(Array.isArray(permissions.overrides) ? permissions.overrides : []);
+  const userOverrides = Array.isArray(permissions.userOverrides) ? permissions.userOverrides : [];
+  const level = menu => (u ? X.perms.accessLevel(u.role, menu, X.perms.applyUserOverrides(matrix, actorId, u.role, userOverrides)) : 'none');
+  return { role: u?.role ?? null, level, specialAccess: permissions.specialAccess };
+}
+
+// ── 2.0 features/enrollments/server/actions.ts updateEnrollmentDates(반 상세 시작일·종료일 더블클릭) ────────────────────────
+/** countAttendanceOutside — 새 기간 밖으로 밀려나는 출결 수와 마지막 날짜(조회 실패는 throw → 저장 중단). */
+async function countAttendanceOutside(sql, { tenantId, studentId, classId, ranges }) {
+  if (ranges.length === 0) return null;
+  const rows = [];
+  for (const r of ranges) {
+    const [x] = await sql`select count(*)::int count, max(session_date)::text last from public.attendance_records where tenant_id=${tenantId} and student_id=${studentId}
+      and class_id=${classId} and session_date >= ${r.from}::date ${r.to !== null ? sql`and session_date <= ${r.to}::date` : sql``}`;
+    rows.push({ count: x.count, lastDate: x.last ?? null });
+  }
+  const count = rows.reduce((acc, r) => acc + r.count, 0);
+  const lastDate = rows.reduce((acc, r) => (r.lastDate && (!acc || r.lastDate > acc) ? r.lastDate : acc), null);
+  return count > 0 && lastDate ? { count, lastDate } : null;
+}
+const PERIOD_END_REASON = '운영 기간 종료';
+async function updateEnrollmentDates(ctx, actorId, [, formData]) {
+  const { sql, t, R, X, S } = ctx;
+  const actor = await actAs(sql, t, R, X, actorId);
+  // canEditEnrollmentDatesNow — 원생·수업·퇴원 메뉴 중 하나라도 열려 있고 원장이거나 '수강 날짜 수정' 지정 직원.
+  const lv = actor ? await actorLevels(ctx, actor.id) : null;
+  const menus = lv ? ['students', 'classes', 'withdrawals'].map(lv.level) : [];
+  const allowed = !!lv && lv.role !== 'student' && menus.some(l => l !== 'none')
+    && S.dateAccess.canEditEnrollmentDates({ id: actor.id, systemRole: lv.role }, false, lv.specialAccess?.enrollmentDateEditorIds);
+  if (!allowed) return { error: S.dateAccess.ENROLLMENT_DATE_DENIED };
+  const enrollmentId = String(formData.get('enrollmentId') ?? '').trim(), field = String(formData.get('field') ?? '').trim();
+  const raw = String(formData.get('value') ?? '').trim(), confirmed = String(formData.get('confirm') ?? '').trim();
+  if (!enrollmentId) return { error: '수강 ID가 누락되었습니다' };
+  if (field !== 'start' && field !== 'end') return { error: '잘못된 필드입니다' };
+  const [current] = UUID.test(enrollmentId) ? await sql`select start_date::text start_date, end_date::text end_date, student_id::text student_id, class_id::text class_id,
+      is_transferred, is_transferred_in, withdrawal_reason from public.enrollments where id=${enrollmentId} and tenant_id=${t}` : [];
+  if (!current) return { error: '수강 정보를 찾을 수 없습니다' };
+  // getEnrollmentDateAccess 반 범위 — 메뉴가 전체·열람이면 모든 반(저장하는 사람은 수업 관리 '전체').
+  const access = { allowed: true, classIds: menus.some(l => l === 'full' || l === 'readonly') ? null : [] };
+  if (!S.dateAccess.canEditEnrollmentDateClass(access, current.class_id)) return { error: S.dateAccess.ENROLLMENT_DATE_DENIED };
+  const prevWindow = { startDate: current.start_date, endDate: current.end_date ?? null, isTransferred: current.is_transferred ?? false, isTransferredIn: current.is_transferred_in ?? false };
+  const value = S.dateEdit.dateEditStorageValue(field, raw || null, formData.get('endDateInclusive') === '1', prevWindow.isTransferred === true);
+  const invalid = S.dateEdit.enrollmentDateEditError(field, value, prevWindow);
+  if (invalid) return { error: invalid };
+  const nextWindow = S.dateEdit.applyDateEdit(prevWindow, field, value);
+  const today = R.kstToday();
+  if (S.dateEdit.transferPairRisk(prevWindow, field, value, today)) {
+    return { error: '예약된 반 이동은 상단 ‘예정된 변경’의 수정에서 날짜를 바꿔 주세요. 이전 반 종료와 새 반 시작이 함께 변경됩니다.' };
+  }
+  const currentEnd = current.end_date ?? null;
+  if (field === 'end' && value && (currentEnd === null || (currentEnd >= today && value < currentEnd))) {
+    const lastCourse = await lastCourseViaReport(sql, t, X, { studentId: current.student_id, enrollmentIds: [enrollmentId], date: value });
+    if (lastCourse) return { error: lastCourse };
+  }
+  let shrink;
+  try {
+    shrink = await sql.savepoint(s => countAttendanceOutside(s, { tenantId: t, studentId: current.student_id, classId: current.class_id,
+      ranges: S.dateEdit.newlyExcludedAttendanceRanges(prevWindow, nextWindow) }));
+  } catch { return { error: '출결 기록을 확인하지 못했습니다. 잠시 후 다시 시도해 주세요' }; }
+  const risks = shrink ? [{ kind: 'attendanceOutside', shrink }] : [];
+  if (risks.length > 0) {
+    const token = S.dateEdit.dateEditConfirmToken(enrollmentId, field, value, risks);
+    if (confirmed !== token) return { confirm: { token, title: S.dateEdit.dateEditConfirmTitle(risks), message: S.dateEdit.dateEditConfirmMessage(field, raw || null, risks), field, value: raw || null } };
+  }
+  const patch = field === 'start' ? { start_date: value }
+    : value ? { end_date: value, ...(current.withdrawal_reason === PERIOD_END_REASON ? { withdrawal_reason: null } : {}) }
+      : { end_date: null, withdrawal_reason: null, withdrawal_detail: null, withdrawal_memo: null, is_transferred: false };
+  // 2.0은 관리 클라이언트(RLS 우회)로 날짜 칸만 고친다 — 읽은 그대로일 때만(동시에 바뀌었으면 0행).
+  let changed;
+  try {
+    changed = await sql.savepoint(s => s`update public.enrollments set ${s(patch)} where id=${enrollmentId} and tenant_id=${t} and student_id=${current.student_id}
+      and class_id=${current.class_id} and start_date=${current.start_date}::date and end_date is not distinct from ${current.end_date}::date returning id`);
+  } catch (e) {
+    const err = dbErr(e);
+    if (S.dbErrors.isOverlapConflict(err)) return { error: await describeOverlapConflict(sql, t, current.student_id, current.class_id, nextWindow.startDate, nextWindow.endDate, enrollmentId) };
+    return { error: X.toKoreanDbError(err, '날짜를 저장하지 못했습니다', 'enrollments.dates') };
+  }
+  if (!changed.length) return { error: '수강 정보가 변경되었습니다. 화면을 새로고침한 뒤 다시 수정해 주세요' };
+  await audit(sql, t, actor, 'enrollment_dates_update', 'student', { studentId: current.student_id, classId: current.class_id, field,
+    from: field === 'start' ? current.start_date : current.end_date, to: value, ...(shrink ? { attendanceOutside: shrink.count, attendanceOutsideLast: shrink.lastDate } : {}) });
+  return { ok: true };
+}
+
+/** actions.ts countEnrollmentRecords — 그 (학생, 반)에 붙은 기록 수(출결 · 보고서(정규·보강 반) · 원스크린 · 영어 시트 기록(단어수만 적힌 줄 제외) · 출결 후속 · 청구 항목). */
+async function countEnrollmentRecords(sql, t, studentId, classId) {
+  const one = async q => (await q)[0].n;
+  const [attendance, lessonReports, onescreenSessions, sheetMarks, followups, billing] = await Promise.all([
+    one(sql`select count(*)::int n from public.attendance_records where tenant_id=${t} and student_id=${studentId} and class_id=${classId}`),
+    one(sql`select count(*)::int n from public.lesson_reports where tenant_id=${t} and student_id=${studentId} and (class_id=${classId} or makeup_class_id=${classId})`),
+    one(sql`select count(*)::int n from public.onescreen_daily_sessions where tenant_id=${t} and student_id=${studentId} and class_id=${classId}`),
+    one(sql`select count(*)::int n from public.class_sheet_student_marks where tenant_id=${t} and student_id=${studentId} and class_id=${classId}
+      and (status is not null or progress_note is not null or score is not null or listening_level is not null)`),
+    one(sql`select count(*)::int n from public.attendance_followups where tenant_id=${t} and student_id=${studentId} and class_id=${classId}`),
+    one(sql`select ((select count(*) from public.invoice_session_terms x where x.tenant_id=${t} and x.class_id=${classId}
+        and x.invoice_id in (select id from public.invoices where tenant_id=${t} and student_id=${studentId}))
+      + (select count(*) from public.invoice_teacher_splits x where x.tenant_id=${t} and x.class_id=${classId}
+        and x.invoice_id in (select id from public.invoices where tenant_id=${t} and student_id=${studentId})))::int n`),
+  ]);
+  return { attendance, lessonReports, onescreenSessions, sheetMarks, followups, billing };
+}
+
+// ── 2.0 deleteEnrollment(예정 학생 '배정 취소' · 원장의 잘못 만든 이력 삭제) ─────────────────────────────────────────
+// 기록 개수 확인·형제 수강·삭제·감사로그(enrollment_delete — 행 스냅샷)는 DB 함수 delete_enrollment_history가 직접 한다(사용자 역할로 부른다).
+// 2.0 서버 함수가 그 앞에서 먼저 보는 판정(권한 · 예약된 반 이동 · 시작한 수강)과 문구는 여기서 같은 순서로.
+async function deleteEnrollment(ctx, actorId, [, formData]) {
+  const { sql, t, R, X, S } = ctx;
+  const actor = await actAs(sql, t, R, X, actorId);
+  const lv = actor ? await actorLevels(ctx, actor.id) : null;
+  const ownerLevel = !!lv && lv.level('owner') === 'full', assignLevel = !!lv && lv.level('students') === 'full';
+  if (!ownerLevel && !assignLevel) return { error: '수업 이력 삭제 권한이 없습니다 (원장 전용)' };
+  const enrollmentId = String(formData.get('enrollmentId') ?? '').trim();
+  if (!enrollmentId) return { error: '수강 ID가 누락되었습니다' };
+  const [enr] = UUID.test(enrollmentId) ? await sql`select tenant_id::text tenant_id, student_id::text student_id, class_id::text class_id, start_date::text start_date,
+      end_date::text end_date, on_hold, is_transferred, is_transferred_in, attendance_days, salary_tier from public.enrollments where id=${enrollmentId}` : [];
+  if (!enr || enr.tenant_id !== t) return { error: '수강 정보를 찾을 수 없습니다' };
+  const today = R.kstToday(), start = enr.start_date, end = enr.end_date ?? null;
+  if ((enr.is_transferred_in && start > today) || (enr.is_transferred && end && end > today)) {
+    return { error: '예약된 반 이동은 ‘예정된 변경’의 취소를 눌러 주세요. 이전 반 수강도 함께 복구됩니다.' };
+  }
+  if (!ownerLevel && !(start > today)) return { error: "이미 시작한 수강은 삭제할 수 없습니다 — 다니던 수업은 '수강 종료'로 끝내주세요(기록은 남습니다)." };
+  // 2.0 countEnrollmentRecords + 형제 수강 → enrollmentDeleteBlockReason(세는 조회는 관리 클라이언트 + 지점 조건 — 여기 접속도 같다). 하나라도 실패하면 막는다.
+  const DELETE_PROBE_FAILED = '남은 기록을 확인하지 못해 삭제를 중단했습니다. 잠시 후 다시 시도해 주세요.';
+  let counts, siblings;
+  try {
+    [counts, siblings] = await sql.savepoint(s => Promise.all([countEnrollmentRecords(s, t, enr.student_id, enr.class_id),
+      s`select id, salary_tier from public.enrollments where tenant_id=${t} and student_id=${enr.student_id} and class_id=${enr.class_id} and id <> ${enrollmentId} limit 200`]));
+  } catch { return { error: DELETE_PROBE_FAILED }; }
+  const blocked = S.deletable.enrollmentDeleteBlockReason({ counts, hasSiblingEnrollment: siblings.length > 0, thisRowHasTier: !!enr.salary_tier, siblingHasTier: siblings.some(r => !!r.salary_tier) });
+  if (blocked) return { error: blocked };
+  const expected = { student_id: enr.student_id, class_id: enr.class_id, start_date: start, end_date: end, on_hold: enr.on_hold, is_transferred: enr.is_transferred,
+    is_transferred_in: enr.is_transferred_in, attendance_days: enr.attendance_days, salary_tier: enr.salary_tier };
+  const { data: deleted, error } = await tryWrite(sql, s => s`select public.delete_enrollment_history(${enrollmentId}::uuid, ${s.json(expected)}::jsonb) id`);
+  if (error) return { error: X.toKoreanDbError(dbErr(error), '수업 이력을 삭제하지 못했습니다', 'enrollments.history.delete') };
+  if (!deleted || deleted.length === 0) return { error: '수업 이력을 삭제할 권한이 없거나 이미 삭제된 행입니다' };
+  // DB 함수가 남긴 감사로그(via 'validated_rpc')에 연습 복사본 표시 — 원래 값은 rpcVia로 그대로 둔다.
+  await sql`update public.audit_logs set metadata = metadata || jsonb_build_object('via', ${VIA_NOTE}::text, 'rpcVia', metadata->>'via')
+    where tenant_id=${t} and actor_id=${actor.id} and created_at = now() and action='enrollment_delete' and metadata->>'studentId' = ${String(enr.student_id)}`;
+  return { ok: true };
+}
+
 // ── 공통 틀 동작 ─────────────────────────────────────────────────────────────────────────────────────────────────────
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const CLASSES = 'features/classes/server/actions.ts';
@@ -826,6 +976,8 @@ const ACTIONS = {
   createClassDelegation: { module: CLASSES, args: formAction, run: createClassDelegation },
   revokeClassDelegation: { module: CLASSES, args: formAction, run: revokeClassDelegation },
   changeClassLevel: { module: 'features/timetable/server/actions.ts', args: levelArgs, run: changeClassLevel },
+  updateEnrollmentDates: { module: ENROLLMENTS, args: formAction, run: updateEnrollmentDates },
+  deleteEnrollment: { module: ENROLLMENTS, args: formAction, run: deleteEnrollment },
 };
 
 /** rules = 수업목록 화면 규칙(loadRules) · extra = 시간표 저장의 loadExtra(권한 표·역할 이름 …) · readers = { readSettings(sql, t) }. */
