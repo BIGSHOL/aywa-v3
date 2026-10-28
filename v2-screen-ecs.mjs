@@ -49,7 +49,8 @@
 //   반환 모양이 { ok, error }가 아닌 셋(searchMakeupStudents · fetchMakeupAbsences · fetchMakeupHostClasses)은 저장이 안 될 때 ecs.tsx가 2.0 실패 모양을 정한다.
 //   아직 잇지 않은 2.0 서버 액션(호스트가 '복사본 보기 전용'으로 거절):
 //   (교재 지우기·되돌리기 넷 deleteClassTextbookPlan · undoPlanDelete · undoPlanImport · undoLessonShift는 v2-ecs-plan-undo.mjs 머리 주석의 표)
-//   class-sheets/server/memorized-actions.ts pullEcsMemorizedWords · textbooks/server/plan-actions.ts setLessonShift(미룸/당김) ·
+//   class-sheets/server/memorized-actions.ts pullEcsMemorizedWords — 바깥 연동(인재원 SRS)이라 2.0 게이트를 지난 뒤 늘 거절(쓰기 없음).
+//   textbooks/server/plan-actions.ts setLessonShift(미룸/당김) ·
 //   attendance/server/actions.ts setAttendanceBulk(오늘 면) ·
 //   attendance/server/makeup-actions.ts fetchMakeupHostClasses(원스크린 보강 반 고르기 — ECS 흐름은 안 부른다).
 //

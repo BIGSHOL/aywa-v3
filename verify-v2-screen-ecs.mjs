@@ -718,4 +718,15 @@ test('복사본(되돌림): 기입 → [실행 취소](undoPlanImport) = 넣은 
   assert.deepEqual([after[0].audits, after[0].plans], [before[0].audits, before[0].plans], '되돌렸다');
 });
 
+test('복사본: 단어 수 가져오기(pullEcsMemorizedWords) = 바깥 연동이라 2.0 게이트 뒤 늘 거절 · 쓰기 없음', { skip: !db && 'local database not running' }, async () => {
+  await inRollback(async ({ sql, run }) => {
+    const n = async () => (await sql`select count(*)::int n from public.class_sheet_student_marks where class_id=${T_CLASS}`)[0].n, n0 = await n();
+    assert.deepEqual(await run(sql, 'pullEcsMemorizedWords', T_ACTOR, { classId: T_CLASS, date: '2026-09-22', slotStart: '7:15' }), { ok: false, error: '잘못된 요청입니다(날짜/교시)' });
+    assert.deepEqual(await run(sql, 'pullEcsMemorizedWords', T_ACTOR, { classId: MATH, date: '2026-09-22', slotStart: '17:15' }), { ok: false, error: '담당 반이 아닙니다' });
+    const r = await run(sql, 'pullEcsMemorizedWords', T_ACTOR, { classId: T_CLASS, date: '2026-09-22', slotStart: '17:15' });
+    assert.equal(r.ok, false); assert.match(r.error, /연습 화면에서 부르지 않습니다/);
+    assert.equal(await n(), n0);
+  });
+});
+
 test.after(async () => { await db?.end(); });

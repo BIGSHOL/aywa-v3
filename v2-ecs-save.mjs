@@ -598,6 +598,15 @@ export const ACTIONS = {
     await audit(sql, t, user, 'student_english_name_update', 'student', student.name, { studentId, before: previousEnglishName, after: englishName });
     return { ok: true, englishName };
   }),
+  /** pullEcsMemorizedWords({ classId, date, slotStart }) — 2.0은 인재원 SRS(바깥 연동)에서 단어 수를 받아 적는다. 연습 화면은 바깥을 부르지 않으므로
+   *  2.0과 같은 입력 검사·반 게이트를 지난 뒤 2.0 실패 모양으로 알린다(출석부 자리 화면과 같은 문구). 쓰기·감사 없음. */
+  pullEcsMemorizedWords: serverFn('features/class-sheets/server/memorized-actions.ts', 1, async ({ sql, t, R, env, user }, raw) => {
+    const input = obj(raw);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(str(input.date)) || !/^\d{2}:\d{2}$/.test(str(input.slotStart))) return { ok: false, error: '잘못된 요청입니다(날짜/교시)' };
+    const gate = await classAccess(sql, t, R, env, user, str(input.classId), { write: true });
+    if (!gate.ok) return { ok: false, error: gate.error };
+    return { ok: false, error: '인재원 단어수 가져오기는 연습 화면에서 부르지 않습니다. 바뀐 것은 없습니다.' };
+  }),
   // ── 내 보기 설정(users.ui_prefs.ecs) — 2.0 setMyEcs*: 기본값과 같으면 키를 지운다. 감사로그 없음(2.0과 같다). ──
   setMyEcsTodayOrder: serverFn(MODULE.sheet, 1, async ({ sql, t, R, user }, order) => {
     const [row] = await sql`select ui_prefs from public.users where tenant_id=${t} and id=${user.id}`;
