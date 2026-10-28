@@ -280,8 +280,7 @@ window.createFlowUI = function createFlowUI(api) {
     const where=c.familyId&&api.familyLabel?.(c.familyId);if(where)out.push(btn(`${where} 열기`,'goto',`data-id="${id}"`));
     return `<div class="ax-actions">${out.join('')}</div>`;
   }
-  // `focus` = the cases the card names (the 원장 결정 card names its first case); '아래에서 보기' then spotlights only those.
-  const countCard=(label,value,detail,filter,tone='',focus=[])=>`<button type="button" class="ax-signal fl-count ${tone}" data-fl="filter" data-id="${h(filter)}"${focus.length?` data-focus="${h(focus.join(' '))}"`:''}><span class="ax-signal-kind"><span>${h(label)}</span></span><strong class="ax-signal-value">${fmt(value)}건</strong><span class="ax-signal-title">${h(detail)}</span><span class="ax-signal-go">아래에서 보기 ${icon('down')}</span></button>`;
+  const countCard=(label,value,detail,filter,tone='')=>`<button type="button" class="ax-signal fl-count ${tone}" data-fl="filter" data-id="${h(filter)}"><span class="ax-signal-kind"><span>${h(label)}</span></span><strong class="ax-signal-value">${fmt(value)}건</strong><span class="ax-signal-title">${h(detail)}</span><span class="ax-signal-go">아래에서 보기 ${icon('down')}</span></button>`;
   const stageCounts=list=>Object.keys(STATE).map(k=>[k,list.filter(c=>c.state===k).length]);
   function stateNote(){
     if(store.status==='loading'||store.status==='idle')return '<p class="ax-note" role="status">업무 흐름을 불러오는 중입니다.</p>';
@@ -359,7 +358,7 @@ window.createFlowUI = function createFlowUI(api) {
     const open=cases().filter(c=>c.state!=='done'),decide=open.filter(ownerDecides),blocked=open.filter(c=>unassigned(c)||late(c)||returned(c)),moving=open.filter(c=>!local(c));
     // 원장 첫 화면은 원장의 일만(원장 10-28 "원장은 영상 업로드가 숙제 출제에 비해 잘되고 있냐 안되고 있냐만 보면 되는거 아닌가"):
     // 개별 처리 건(결석 전화·영상 확인 …)의 종류 카드는 첫 화면에서 빼고 아래 목록의 걸러 보기에만 둔다. 운영 상태는 ax.js가 지표 추세 카드로 그린다.
-    return countCard('원장 결정 대기',decide.length,decide.length?kindGroups(decide).map(k=>`${k.label} ${fmt(k.items.length)}`).join(' · '):'지금 결정할 일이 없습니다','decide',decide.length?'urgent':'',decide.map(c=>c.id));
+    return countCard('원장 결정 대기',decide.length,decide.length?kindGroups(decide).map(k=>`${k.label} ${fmt(k.items.length)}`).join(' · '):'지금 결정할 일이 없습니다','decide',decide.length?'urgent':'');
   }
   function ownerStageCell(){
     if(!ready())return '';
@@ -1035,7 +1034,7 @@ window.createFlowUI = function createFlowUI(api) {
     if(action==='col'){const key=el.dataset.col;if(colMenu.key===key)closeColMenu();else openColMenu(key);return;}
     if(action==='col-clear'){const key=el.dataset.col;if(key)delete store.cols[key];else store.cols={};store.pages.board=1;paintBoardList();if(colMenu.el)paintColMenu();document.querySelector('[data-fl-search]')?.focus({preventScroll:true});return;}
     // From another page the jump waits for the home render (the hash change) and lands at once.
-    if(action==='filter'){store.filter=id;store.pages.board=1;store.pages[id]=1;closeColMenu(false);const routed=api.getPage()!=='home'&&api.getPage()!=='flow',go=()=>requestAnimationFrame(()=>{api.scrollToSection('#fl-detail',{instant:routed,spotlight:()=>{const l=document.querySelector(`#fl-detail :is(.fl-list,.fl-tbody)[data-list="${CSS.escape(id)}"]`),named=(el.dataset.focus||'').split(' ').filter(Boolean).map(c=>l?.querySelector(`:is(.fl-case,.fl-row)[data-case="${CSS.escape(c)}"]`)).filter(Boolean),box=l?.closest('.fl-tablewrap')||l;return named.length?named:box?[box,box.nextElementSibling?.matches('.fl-pager')?box.nextElementSibling:null].filter(Boolean):'#fl-detail';}});$('#fl-detail-title,#fl-detail h2')?.focus?.({preventScroll:true});});if(routed&&location.hash!=='#home'){addEventListener('hashchange',go,{once:true});navigate('home');}else{if(routed)navigate('home');else api.render();go();}return;}
+    if(action==='filter'){store.filter=id;store.pages.board=1;store.pages[id]=1;closeColMenu(false);const routed=api.getPage()!=='home'&&api.getPage()!=='flow',go=()=>requestAnimationFrame(()=>{api.scrollToSection('#fl-detail',{instant:routed});$('#fl-detail-title,#fl-detail h2')?.focus?.({preventScroll:true});});if(routed&&location.hash!=='#home'){addEventListener('hashchange',go,{once:true});navigate('home');}else{if(routed)navigate('home');else api.render();go();}return;}
     if(action==='node'||action==='pick'){toggleNode(el);return;}
     if(action==='tree-go'){treeGo(el.dataset.node);return;}
     if(action==='tree-reload'){const e=treeEntry(id);e.retry=0;if(!e.data)e.status='loading';paintTree(id);fetchTree(id);return;}
