@@ -11,6 +11,7 @@ import { openFullDatabase, tenantId } from './full-db.mjs';
 import { importV2 } from './v2-bridge.mjs';
 import * as M from './v2-screen-owner.mjs';
 import { validateDashboardAssignments } from './v2-owner-dashboard.mjs';
+import { IMPORT_MENU, loadOwnerImport } from './v2-owner-import.mjs';
 import { build } from './v2-host/build.mjs';
 import { readV2, runV2Server, stopV2Server } from './v2-server-runner.mjs';
 
@@ -37,7 +38,7 @@ await check('그리기 = 2.0 owner/page.tsx 글자 그대로 — 바꾼 곳은 �
     const i = page.indexOf(a); assert.ok(mine.includes(page.slice(i, page.indexOf(b, i) + b.length)), a);
   }
   // 바꾼 자리 = 서버 값 셋(자리 PIN 상태 · 휴일 · 권한 token) + 서버 컴포넌트 면 — 2.0 클라 부품(섹션 폼)은 손대지 않았다
-  assert.equal(swaps.filter(([, to]) => /OwnerServerFace|OwnerIntegrationsFace|OwnerAuditFace|OwnerDataFace|OwnerDashboardFace|PopupsManager/.test(to)).length, swaps.length - 3);
+  assert.equal(swaps.filter(([, to]) => /OwnerServerFace|OwnerIntegrationsFace|OwnerAuditFace|OwnerDataFace|OwnerDashboardFace|OwnerImportFace|PopupsManager/.test(to)).length, swaps.length - 3);
   assert.ok(swaps.some(([from, to]) => from === '<PopupsFace />' && to === '<PopupsManager items={popups ?? []} />'), '팝업 공지 = popups-face.tsx 본문(<PopupsManager items={items} />) 그대로');
   assert.match(lf(await src('app/(shell)/owner/_components/popups-face.tsx')), /const items = await listPopups\(\);\n  return <PopupsManager items=\{items\} \/>;/);
   // 연동 면 = integrations-face.tsx · sheets-face.tsx 본문 그대로(서버 카드만 '아직' — owner-integrations.swaps.json)
@@ -51,6 +52,23 @@ await check('그리기 = 2.0 owner/page.tsx 글자 그대로 — 바꾼 곳은 �
   assert.ok(integ.includes(sret), 'sheets-face 본문(구글 시트 절은 그대로)');
   assert.ok(sret.includes('<SubjectSheetCard key={s} subject={s} label={subjectMaps.labelOf(s)} status={sheetStatuses[i]} />'));
   for (const [from] of swaps) assert.doesNotMatch(from, /<(Profile|Operations|Subjects|Billing|Notifications|Consultations|Permissions|Navigation|Modules|Makeups)Section/);
+});
+
+await check('데이터 가져오기 = 12개 importer 메뉴와 도입 순서 · 끈 기능 숨김 · 메뉴 전체 권한만 버튼 · 파일 처리 주소 미연결', async () => {
+  const { IMPORT_KINDS, IMPORT_META } = await importV2('features/excel-import/kinds.ts');
+  assert.deepEqual(Object.keys(IMPORT_MENU).sort(), [...IMPORT_KINDS].sort());
+  for (const kind of IMPORT_KINDS) {
+    const source = await src(`features/excel-import/importers/${kind}.ts`);
+    assert.equal(IMPORT_MENU[kind], source.match(/menu: "([^"]+)"/)[1], kind);
+  }
+  const O = await M.loadOwnerRules(importV2);
+  const rows = await loadOwnerImport(importV2, O.modules, ['shuttle', 'calendar', 'textbooks'], { level: menu => menu === 'billing' ? 'scoped' : 'full' });
+  assert.deepEqual(rows.map(r => r.kind), [...IMPORT_KINDS].sort((a, b) => IMPORT_META[a].step - IMPORT_META[b].step).filter(k => !['shuttle', 'calendar', 'textbooks'].includes(k)));
+  assert.ok(rows.filter(r => ['invoices', 'expenses'].includes(r.kind)).every(r => !r.allowed), 'scoped는 전체 가져오기 불가');
+  assert.ok(rows.filter(r => !['invoices', 'expenses'].includes(r.kind)).every(r => r.allowed));
+  const face = await here('./v2-host/src/owner-import.tsx');
+  assert.match(face, /연습 화면에서는 엑셀 파일 가져오기를 아직 지원하지 않습니다/);
+  assert.doesNotMatch(face, /fetch\(|type="file"|FormData|\/api\//);
 });
 
 await check('감사로그 그리기 = 2.0 표·필터 부품 · 액션 한글 라벨 515개 동등 · GET 폼은 호스트 안에서 이동', async () => {
@@ -71,6 +89,19 @@ const load = params => db.begin('isolation level repeatable read read only', sql
 try {
   const base = await load({});
   const admin = base.editors.find(e => e.role === '관리자');
+
+  await check('데이터 가져오기 면 = 현재 지점 모듈·보는 사람 권한으로 줄만 전달, 다른 면은 읽지 않음', async () => {
+    const master = await load({ tab: 'import' });
+    assert.equal(master.route, 'page');
+    assert.equal(master.page.importRows.length, 12);
+    assert.equal(master.page.importRows[0].kind, 'staff');
+    assert.equal(master.page.importRows[1].kind, 'classrooms');
+    assert.equal((await load({ tab: 'profile' })).page.importRows, null);
+    if (admin) {
+      const d = await load({ tab: 'import', viewer: admin.id });
+      if (d.route === 'page') assert.ok(d.page.importRows.every(r => typeof r.allowed === 'boolean'));
+    }
+  });
 
   await check('보는 사람 = 학원 설정의 어느 면이든 열 수 있는 재직 직원(운영자 계정 제외 · 원장 먼저) · 면 탭 = 그 사람이 열 수 있는 면 · 옛 탭은 2.0 주소로', async () => {
     const supers = (await db`select id::text id from public.super_admins`).map(r => r.id);

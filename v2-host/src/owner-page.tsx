@@ -27,6 +27,7 @@ import type { AdminPopup } from "@/features/notices/server/queries";
 import { OwnerAuditFace, type OwnerAuditData } from "./owner-audit";
 import { OwnerDataFace, type OwnerData } from "./owner-data";
 import { OwnerDashboardFace, type OwnerDashboardData } from "./owner-dashboard";
+import { OwnerImportFace, type OwnerImportRow } from "./owner-import";
 
 type Sp = Record<string, string | undefined>;
 
@@ -70,6 +71,7 @@ export type OwnerPageData = {
   audit: OwnerAuditData | null;
   data: OwnerData | null;
   dashboard: OwnerDashboardData | null;
+  importRows: OwnerImportRow[] | null;
 };
 
 function facesFor(canReadAudit: boolean, showModules: boolean, showMakeups: boolean, showEvaluation: boolean, showContribution: boolean): OwnerFaceDef[] {
@@ -98,7 +100,7 @@ function fmt(iso: string | null): string {
 export function OwnerHostPage({ d, sp }: { d: OwnerPageData; sp: Sp }) {
   const { settings, meta, tab, canEditSettings, canReadAudit, isMaster, showMakeups, showEvaluation, showContribution, showsOperations, canEditOperations, settingsUnreadable,
     operationsTokens, operationsForClient, seatPin, classrooms, canImportClassrooms, teacherLabelsBySubject, periodDefs, sessionYear, holidayDates, permissionsSource,
-    permissionsTok, userOverrideNames, permissionStaff, hiddenPermissionIds, hiddenSettingKeys, navigationGates, integrations, popups, audit, data, dashboard } = d;
+    permissionsTok, userOverrideNames, permissionStaff, hiddenPermissionIds, hiddenSettingKeys, navigationGates, integrations, popups, audit, data, dashboard, importRows } = d;
   // 2.0 page.tsx와 같은 식 — 연동 면 makeedu 실행 이력 쪽(지금은 '아직')이 쓴다.
   const page = Math.max(1, Number(sp.page) || 1);
   const allowedTabs = new Map<OwnerFaceKey, boolean>(d.allowedTabEntries);
@@ -263,7 +265,7 @@ export function OwnerHostPage({ d, sp }: { d: OwnerPageData; sp: Sp }) {
           <OwnerDataFace d={data!} page={page} />
         </div>
       ) : null}
-      {tab === "import" ? <OwnerServerFace face="import" /> : null}
+      {tab === "import" ? <OwnerImportFace rows={importRows ?? []} /> : null}
       {/* 🔴 주소를 직접 쳐도 열리지 않는다 — 면을 감추기만 하면 그건 게이트가 아니다([[#77]]).
           권한이 없으면 조회 자체를 안 한다(빈 표를 보여 주고 "기록 없음"이라 적으면 거짓말이 된다). */}
       {tab === "audit" ? (

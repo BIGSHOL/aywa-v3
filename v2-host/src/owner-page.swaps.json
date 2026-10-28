@@ -37,7 +37,7 @@
  ],
  [
   "<ImportHubFace />",
-  "<OwnerServerFace face=\"import\" />"
+  "<OwnerImportFace rows={importRows ?? []} />"
  ],
  [
   "<AuditFace action={sp.action} q={sp.q} from={sp.from} to={sp.to} page={page} isEmbed={isEmbed} />",

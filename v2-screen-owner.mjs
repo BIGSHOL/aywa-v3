@@ -15,6 +15,7 @@ import { listPopups, popupActions } from './v2-owner-popups.mjs';
 import { loadOwnerAudit } from './v2-owner-audit.mjs';
 import { loadOwnerData, ownerDataActions } from './v2-owner-data.mjs';
 import { loadOwnerDashboard, loadOwnerDashboardPreview } from './v2-owner-dashboard.mjs';
+import { loadOwnerImport } from './v2-owner-import.mjs';
 
 const ID = 'owner';
 const plain = v => !!v && typeof v === 'object' && !Array.isArray(v);
@@ -212,6 +213,7 @@ async function ownerPage({ sql, t, R, O, sp, viewers, viewer, settings, row, imp
     integrations: tab === 'sheets' ? await integrationsView(sql, t, R, settings, viewer) : null,
     popups: tab === 'popups' ? await listPopups(sql, t, importV2) : null,
     audit, data, dashboard,
+    importRows: tab === 'import' ? await loadOwnerImport(importV2, O.modules, settings.modules.disabled, viewer) : null,
   };
 }
 
