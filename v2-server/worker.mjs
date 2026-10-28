@@ -59,8 +59,10 @@ async function runSteps(sql, call) {
     }
     // after() 할 일 — 2.0은 응답 뒤에 돌지만 여기선 같은 트랜잭션 끝에서 기다린다(남긴 바깥 요청을 잡으려고).
     const { callStore } = await import('./context.mjs');
-    const after = callStore.getStore().after;
+    const store = callStore.getStore(), after = store.after;
     while (after.length) await after.shift()();
+    // 흉내 밖 모양을 2.0 코드가 제 catch로 삼켰어도(빈 값 · '못 불러옴') 결과를 내지 않는다 — 다른 화면을 조용히 보이지 않게.
+    if (store.unsupported) throw store.unsupported;
     return results;
   });
 }

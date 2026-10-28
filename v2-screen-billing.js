@@ -9,7 +9,8 @@
   const ID = 'billing', HOST = `/v2-host/${ID}.html`, S = window.V2Screens; if (!S) return;
   // 2.0 page.tsx · 각 면이 읽는 주소 열쇠 그대로(+ 하위 주소 v2path — 환불 요청서·지출 상세·수납 통계).
   const KEEP = ['v2path', 'tab', 'period', 'q', 'sort', 'desc', 'page', 'overdue', 'missing', 'subject', 'only', 'allocation', 'confirmation', 'panel', 'status',
-    'active', 'cactive', 'cat', 'cpage', 'cpmode', 'csub', 'grade', 'hm', 'hy', 'qid', 'qpage', 'tsub'];
+    'active', 'cactive', 'cat', 'cpage', 'cpmode', 'csub', 'grade', 'hm', 'hy', 'qid', 'qpage', 'tsub',
+    'grain', 'month', 'from', 'to', 'span', 'ex', 'exMonth', 'exFrom', 'exTo', 'exSpan'];
   let api = null, frame = null, requested = null, hostOk = null, wired = false, editors = [], actor = null;
   const ACTOR_KEY = `v2-host-actor:${ID}`, SEL = `[data-v2-screen="${ID}"]`;
   const esc = s => S.esc(s);

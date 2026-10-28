@@ -8,6 +8,7 @@
 //  · 환불 요청서(refunds-face.tsx · refunds/new · refunds/[id]) — v2-billing-refunds.mjs(restricted 문서라 보는 사람 신분 + RLS로만)
 //  · 수강료 계산기(calculator-panel.tsx · tuition-prices-panel.tsx · saved-quotes-panel.tsx · 교재 단가표는 catalog-panel 같은 것) — v2-billing-calculator.mjs
 //  · 회차 확정(session-terms-face.tsx · session-verification-face.tsx) — v2-billing-sessions.mjs(2.0 서버 함수 그대로 · 공용 러너)
+//  · 수납 통계(/billing/stats · stats/page.tsx) — v2-billing-stats.mjs(2.0 loadBillingStats 그대로)
 //  · 강사 정산(teacher-settlement-face.tsx) — v2-billing-payroll.mjs(2.0 서버 함수 그대로 · 급여 열람 게이트 = 2.0 canReadSalary)
 // 사람마다 보이는 것이 다르다 — '보는 사람'을 고르고(운영자 계정 제외 · 원장 먼저) 그 사람의 권한 표로 2.0과 같게 낸다(v2-billing-common.mjs).
 // 🔴 급여(강사 정산)는 급여 열람 게이트(payroll_settings · 급여 기능 켜짐)를 지난 사람에게만 싣는다.
@@ -44,6 +45,7 @@ import { readCalculatorFace, calculatorActions } from './v2-billing-calculator.m
 import { invoiceActions } from './v2-billing-invoice-save.mjs';
 import { readSessionsFace, sessionActions, readSessionCall } from './v2-billing-sessions.mjs';
 import { readPayrollFace, payrollActions } from './v2-billing-payroll.mjs';
+import { readBillingStats, statsActions, STATS_KEYS } from './v2-billing-stats.mjs';
 import { readRefundRequests, readRefundById, loadRefundRules, loadRefundStudentOptions, loadRefundPrefill, refundActions } from './v2-billing-refunds.mjs';
 
 const ID = 'billing';
@@ -62,12 +64,14 @@ const PARAMS = {
   refundOptions: /^1$/, prefill: UUID, months: /^(1|2|3|6|12|all)$/,
   // 회차 확정의 읽기 셋(배분 창 · 이월 선택지 · 지우기 미리보기) — 2.0 서버 함수 이름 · 인자(JSON 배열).
   call: /^[A-Za-z]{1,40}$/, args: /^[^\u0000-\u001f]{0,400}$/,
+  // 수납 통계(/billing/stats) — 2.0 PERIOD_KEYS · EXPENSE_TREND_KEYS(grain · month · from · to · span · ex*).
+  ...Object.fromEntries(STATS_KEYS.map(k => [k, /^[a-z0-9-]{1,20}$/])),
 };
 
 export const screen = {
   id: ID, label: '수납관리', order: 9,
   params: PARAMS,
-  actions: { ...invoiceActions, ...textbookFaceActions, ...expenseActions, ...refundActions, ...calculatorActions, ...sessionActions, ...payrollActions },
+  actions: { ...invoiceActions, ...textbookFaceActions, ...expenseActions, ...refundActions, ...calculatorActions, ...sessionActions, ...payrollActions, ...statsActions },
   paramMax: { args: 400 },
   load: async ({ sql, params: sp, tenantId: t, importV2 }) => {
     const R = await loadBillingRules(importV2);
@@ -104,6 +108,9 @@ export const screen = {
       const refund = await readRefundById(sql, viewer, await loadRefundRules(importV2), refundPath);
       return { ...common, route: 'page', access, page: refund ? 'refund' : 'notFound', refund, canWrite: access.writeBilling };
     }
+    // 하위 주소 — 수납 통계(2.0 stats/page.tsx: requireAccess('billing') → loadBillingStats).
+    if (sp.v2path === '/billing/stats') return access.billing ? { ...common, route: 'page', access, page: 'stats', stats: await readBillingStats(t, importV2, viewer, sp) }
+      : { ...common, route: 'page', access, page: 'noAccess' };
     const tab = resolveBillingTab(sp.tab), sessionOn = R.modules.isModuleEnabled(env.disabled, 'session_billing');
     const effectiveTab = (tab === 'payroll' && !access.readSalary) || (!sessionOn && ['sessions', 'verify', 'payroll'].includes(tab)) ? 'billing' : tab;
     const denied = !(tab === 'payroll' ? access.payrollMenu : access.billing) || (effectiveTab !== 'payroll' && !access.billing);

@@ -15,6 +15,7 @@ import type { RefundDetail } from '@/features/billing/server/refund-queries';
 import { NewRefundPage } from './billing-refund-new';
 import { RefundViewPage } from './billing-refund-view';
 import { HostRedirect } from './billing-host-parts';
+import { BillingStatsPage } from './billing-stats-page';
 import type { ExpenseRow } from '@/features/billing/server/expense-queries';
 import { HostFrame, HostMessage } from './host-frame';
 import { BillingPage, type BillingPageData } from './billing-page';
@@ -64,6 +65,8 @@ for (const [file, names] of SESSION_WRITES) for (const name of names) saving(SES
 // 강사 정산 — 강사 보수 · 반별 급여(2.0 함수 그대로 · 게이트도 2.0 코드가 다시 본다).
 saving('features/payroll/server/comp-actions.ts', 'saveTeacherComp', true);
 saving('features/payroll/server/class-salary-actions.ts', 'saveClassSalary', true);
+// 수납 통계 보기 모드(계정 귀속 ui_prefs) — 2.0도 다시 그리지 않는다.
+for (const name of ['saveBillingStatsMode', 'saveExpenseStatsMode', 'saveTuitionHistoryView']) saving('features/billing/stats/prefs-actions.ts', name, false);
 const sessionRead = (file: string, name: string) => registerHostHandler(SESSION + file, name, async (...args: unknown[]) => {
   const body = (await readBillingLater({ call: name, args: JSON.stringify(args.map((a) => (a === undefined ? null : a))) }, null)) as { value?: unknown } | null;
   return body && 'value' in body ? body.value : { error: NOT_SAVED };
@@ -107,11 +110,13 @@ type Ops = Parameters<typeof OperationsProvider>[0];
 type Data = { editors: HostEditor[]; viewer: { id: string; name: string; role: string } | null; route: 'none' | 'page' }
   & Partial<Omit<BillingPageData, 'host'>> & { host: { operations: Ops; disabledModules: Ops['disabledModules'] } }
   // 하위 주소 — 지출결의서 상세(expenses/[id]/page.tsx) · 2.0 requireAccess · notFound 자리.
-  & { page?: 'expense' | 'notFound' | 'noAccess' | 'refundNew' | 'refund' | 'redirect'; expense?: ExpenseRow | null; refund?: RefundDetail | null; canWrite?: boolean; to?: string };
+  & { page?: 'expense' | 'notFound' | 'noAccess' | 'refundNew' | 'refund' | 'redirect' | 'stats'; expense?: ExpenseRow | null; refund?: RefundDetail | null; canWrite?: boolean; to?: string;
+    stats?: Parameters<typeof BillingStatsPage>[0]['stats'] };
 
 /** 2.0 page.tsx · 각 면의 searchParams — 서버가 다시 그리던 열쇠(v2path = 하위 주소). */
 const KEYS = ['v2path', 'tab', 'period', 'q', 'sort', 'desc', 'page', 'overdue', 'missing', 'subject', 'only', 'allocation', 'confirmation', 'panel', 'status',
-  'active', 'cactive', 'cat', 'cpage', 'cpmode', 'csub', 'grade', 'hm', 'hy', 'qid', 'qpage', 'tsub'] as const;
+  'active', 'cactive', 'cat', 'cpage', 'cpmode', 'csub', 'grade', 'hm', 'hy', 'qid', 'qpage', 'tsub',
+  'grain', 'month', 'from', 'to', 'span', 'ex', 'exMonth', 'exFrom', 'exTo', 'exSpan'] as const;
 
 function App() {
   const search = new URLSearchParams(useHostSearch());
@@ -163,6 +168,17 @@ function App() {
   if (d.page === 'expense' && d.expense) return <ExpenseDocument expense={d.expense} />;
   // 2.0 refunds/new · refunds/[id] — 수납 쓰기가 아니면 목록으로(redirect) · userId = 보는 사람.
   if (d.page === 'redirect' && d.to) return <HostRedirect to={d.to} />;
+  // 2.0 billing/stats/page.tsx — 자료는 서버가 2.0 loadBillingStats를 그대로 돌려 낸 값.
+  if (d.page === 'stats' && d.stats) {
+    const raw: Record<string, string> = {}; for (const [k, v] of search) if (k !== 'v2path') raw[k] = v;
+    return (
+      <EmbedProvider embed>
+        <OperationsProvider subjects={ops.subjects} gradeLevels={ops.gradeLevels} jobTitles={ops.jobTitles} jobTitlesByDepartment={ops.jobTitlesByDepartment} disabledModules={d.host.disabledModules}>
+          <BillingStatsPage sp={raw} stats={d.stats} />
+        </OperationsProvider>
+      </EmbedProvider>
+    );
+  }
   if ((d.page === 'refundNew' || d.page === 'refund') && d.viewer) {
     const user = { id: d.viewer.id };
     return (

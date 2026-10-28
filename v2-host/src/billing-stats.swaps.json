@@ -1,0 +1,24 @@
+{
+ "page": [
+  [
+   "import { requireAccess } from \"@/lib/auth/require-access\";\n",
+   ""
+  ],
+  [
+   "import { loadBillingStats } from \"@/features/billing/stats/load\";\nimport { hasPeriodParams, monthSpanOf, parseStatsPeriod, readPeriodParams } from \"@/features/stats/period\";\n",
+   "import type { loadBillingStats } from \"@/features/billing/stats/load\";\nimport { parseStatsPeriod } from \"@/features/stats/period\";\n"
+  ],
+  [
+   "import { BackToListButton } from \"../../consultations/_components/back-to-list-button\";\nimport { StatCard } from \"../../students/stats/_components/stat-card\";\nimport { BillingTrendCard } from \"./billing-trend-card\";\nimport { ExpenseTrendCard } from \"./expense-trend-card\";\nimport { TuitionHistoryCard } from \"./tuition-history-card\";\n",
+   "import { BackToListButton } from \"@/app/(shell)/consultations/_components/back-to-list-button\";\nimport { StatCard } from \"@/app/(shell)/students/stats/_components/stat-card\";\nimport { BillingTrendCard } from \"@/app/(shell)/billing/stats/billing-trend-card\";\nimport { ExpenseTrendCard } from \"@/app/(shell)/billing/stats/expense-trend-card\";\nimport { TuitionHistoryCard } from \"@/app/(shell)/billing/stats/tuition-history-card\";\n"
+  ],
+  [
+   "export const metadata = { title: \"수납 통계 — 에이와\" };\n\n",
+   ""
+  ],
+  [
+   "export default async function BillingStatsPage({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {\n  await requireAccess(\"billing\");\n  const sp = await searchParams;\n  const params = readPeriodParams(sp);\n  const stats = await loadBillingStats(hasPeriodParams(params) ? monthSpanOf(params.span) : null, one(sp.subject), readPeriodParams(sp, EXPENSE_TREND_KEYS));\n",
+   "export function BillingStatsPage({ sp, stats }: { sp: Record<string, string | string[] | undefined>; stats: Awaited<ReturnType<typeof loadBillingStats>> }) {\n  // 게이트 · 자료 = 서버가 2.0 requireAccess(\"billing\") · loadBillingStats(같은 인자 — readPeriodParams · monthSpanOf · EXPENSE_TREND_KEYS)를 그대로 돌려 낸 값.\n"
+  ]
+ ]
+}

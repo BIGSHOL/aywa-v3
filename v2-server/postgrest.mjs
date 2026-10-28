@@ -8,10 +8,13 @@
 //    임베드는 FK로(둘 이상이면 PGRST201 · 없으면 PGRST200 — 2.0이 늘 FK 이름을 적는 이유) · 오류는 { data: null, error: { code, message, details, hint } }
 //  · 신분: 세션 클라이언트 = 보는 사람(claims) + authenticated 역할(RLS가 2.0처럼 본다) · 관리자 클라이언트 = 복사본 접속 그대로(RLS 우회)
 //  · 쿼리마다 저장점 — 실패해도 트랜잭션이 깨지지 않는다(PostgREST 요청 하나 = 문장 하나). 한 동작 안의 쿼리는 줄 세워 하나씩(한 연결 · 역할 전환이 섞이지 않게).
-import { currentCall } from './context.mjs';
+import { callStore, currentCall } from './context.mjs';
 
 export const MAX_ROWS = 1000;
-export class UnsupportedShape extends Error { constructor(what) { super(`2.0 조회 모양을 아직 흉내 내지 않습니다: ${what}`); this.code = 'V2_UNSUPPORTED'; } }
+// 던질 때 그 동작에 표시도 남긴다 — 2.0 코드가 제 try/catch로 삼켜('못 불러옴'으로 바꿔) 넘어가도 작업 스레드가 동작 끝에 다시 던진다.
+export class UnsupportedShape extends Error {
+  constructor(what) { super(`2.0 조회 모양을 아직 흉내 내지 않습니다: ${what}`); this.code = 'V2_UNSUPPORTED'; const c = callStore.getStore(); if (c && !c.unsupported) c.unsupported = this; }
+}
 const IDENT = /^[a-z_][a-z0-9_]*$/;
 const ident = (name, what = '이름') => { if (!IDENT.test(name)) throw new UnsupportedShape(`${what} '${name}'`); return name; };
 
@@ -62,10 +65,12 @@ function parseSelect(text) {
       return { kind: 'embed', alias: alias ? ident(alias, '임베드 별칭') : null, name: ident(name, '임베드'), hint: hint[0] ? ident(hint[0], '임베드 힌트') : null, inner: inner2, select: parseSelect(inner) };
     }
     if (item === '*') return { kind: 'star' };
-    if (/->|\.\.\.|\(/.test(item)) throw new UnsupportedShape(`고르기 '${item}'`);
-    const m = /^(?:([a-zA-Z_][a-zA-Z0-9_]*)\s*:\s*)?([a-z_][a-z0-9_]*)(?:::([a-z_][a-z0-9_ ]*(?:\[\])?))?$/.exec(item);
+    if (/\.\.\.|\(/.test(item)) throw new UnsupportedShape(`고르기 '${item}'`);
+    // JSON 경로(PostgREST: `별칭:칸->열쇠->>열쇠` — `->` = json 값 · `->>` = 글자 · 숫자 열쇠 = 배열 자리 · 별칭이 없으면 이름 = 마지막 열쇠).
+    const m = /^(?:([a-zA-Z_][a-zA-Z0-9_]*)\s*:\s*)?([a-z_][a-z0-9_]*)((?:->>?[A-Za-z0-9_]+)*)(?:::([a-z_][a-z0-9_ ]*(?:\[\])?))?$/.exec(item);
     if (!m) throw new UnsupportedShape(`고르기 '${item}'`);
-    return { kind: 'col', alias: m[1] ?? null, col: m[2], cast: m[3] ?? null };
+    const path = [...m[3].matchAll(/(->>?)([A-Za-z0-9_]+)/g)].map(([, op, key]) => ({ text: op === '->>', key: /^\d+$/.test(key) ? Number(key) : key }));
+    return { kind: 'col', alias: m[1] ?? (path.length ? String(path.at(-1).key) : null), col: m[2], cast: m[4] ?? null, path };
   });
 }
 
@@ -99,7 +104,9 @@ function rowJson(sql, M, table, al, items, embedWheres = []) {
     if (it.kind === 'star') { parts.push(sql`to_jsonb(${sql(al)})`); continue; }
     if (it.kind === 'col') {
       if (!cols.has(it.col)) throw Object.assign(new Error(`column ${table}.${it.col} does not exist`), { code: '42703' });
-      const expr = it.cast ? sql`(${sql(al)}.${sql(it.col)})::${sql.unsafe(it.cast)}` : sql`${sql(al)}.${sql(it.col)}`;
+      let base = sql`${sql(al)}.${sql(it.col)}`;
+      for (const p of it.path ?? []) base = sql`(${base} ${sql.unsafe(p.text ? '->>' : '->')} ${typeof p.key === 'number' ? sql`${p.key}::int` : sql`${p.key}::text`})`;
+      const expr = it.cast ? sql`(${base})::${sql.unsafe(it.cast)}` : base;
       pairs.push([it.alias ?? it.col, expr]); continue;
     }
     const r = relation(M, table, it), sub = `e${++aliasSeq}`, key0 = it.alias ?? it.name;
@@ -130,9 +137,16 @@ function rowJson(sql, M, table, al, items, embedWheres = []) {
 const OPS = { eq: '=', neq: '<>', gt: '>', gte: '>=', lt: '<', lte: '<=', like: 'like', ilike: 'ilike' };
 const unquote = v => (v.startsWith('"') && v.endsWith('"') ? v.slice(1, -1).replace(/\\"/g, '"') : v);
 const scalar = v => (v === null ? null : typeof v === 'object' ? (() => { throw new UnsupportedShape('객체 값으로 거르기'); })() : String(v));
+/** 거르기 칸 — 칸 이름 또는 JSON 경로(PostgREST `metadata->>newTeacherId` = 글자 · `data->k` = json 값). */
+function colExpr(sql, al, col) {
+  const m = /^([a-z_][a-z0-9_]*)((?:->>?[A-Za-z0-9_]+)*)$/.exec(col);
+  if (!m) throw new UnsupportedShape(`칸 '${col}'`);
+  let c = sql`${sql(al)}.${sql(m[1])}`;
+  for (const [, op, key] of m[2].matchAll(/(->>?)([A-Za-z0-9_]+)/g)) c = sql`(${c} ${sql.unsafe(op)} ${/^\d+$/.test(key) ? sql`${Number(key)}::int` : sql`${key}::text`})`;
+  return c;
+}
 function cond(sql, al, col, op, value, negate = false) {
-  ident(col, '칸');
-  const c = sql`${sql(al)}.${sql(col)}`;
+  const c = colExpr(sql, al, col);
   let out;
   if (op === 'is') {
     const v = String(value).toLowerCase();

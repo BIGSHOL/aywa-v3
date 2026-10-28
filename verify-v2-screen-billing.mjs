@@ -10,6 +10,7 @@ import { pathToFileURL } from 'node:url';
 import { openFullDatabase, tenantId } from './full-db.mjs';
 import { importV2 } from './v2-bridge.mjs';
 import * as M from './v2-screen-billing.mjs';
+import { STATS_KEYS } from './v2-billing-stats.mjs';
 import { build } from './v2-host/build.mjs';
 
 /** 화면으로 JSON에 실어 보낼 수 있는 값인가 — 객체·배열·원시값만(Map · Set · Date · 함수 없음). */
@@ -29,11 +30,14 @@ await check('주소 열쇠 = 2.0 page.tsx · 수납관리 부품이 읽는 칸(s
   const dir = new URL('../../src/app/(shell)/billing/_components/', import.meta.url), keys = new Set();
   for (const f of [...(await readdir(dir)).filter(n => n.endsWith('.tsx')).map(n => new URL(n, dir)), new URL('../../src/app/(shell)/billing/page.tsx', import.meta.url)])
     for (const m of (await readFile(f, 'utf8')).matchAll(/\bsp\.([a-zA-Z]+)/g)) keys.add(m[1]);
-  assert.deepEqual(Object.keys(M.screen.params).filter(k => !['viewer', 'v2path', 'ment', 'refundOptions', 'prefill', 'months', 'call', 'args'].includes(k)).sort(), [...keys].sort());
+  assert.deepEqual(Object.keys(M.screen.params).filter(k => !['viewer', 'v2path', 'ment', 'refundOptions', 'prefill', 'months', 'call', 'args', ...STATS_KEYS].includes(k)).sort(), [...keys].sort());
   const host = await here('./v2-host/src/billing.tsx'), shell = await here('./v2-screen-billing.js');
   const listOf = text => JSON.parse(`[${/KEYS = \[([^\]]+)\]|KEEP = \[([^\]]+)\]/.exec(text).slice(1).find(Boolean).replace(/'/g, '"')}]`);
-  assert.deepEqual(listOf(host).sort(), ['v2path', ...keys].sort());
-  assert.deepEqual(listOf(shell).sort(), ['v2path', ...keys].sort());
+  assert.deepEqual(listOf(host).sort(), ['v2path', ...keys, ...STATS_KEYS].sort());
+  assert.deepEqual(listOf(shell).sort(), ['v2path', ...keys, ...STATS_KEYS].sort());
+  // 수납 통계 열쇠 = 2.0 PERIOD_KEYS · EXPENSE_TREND_KEYS 값 그대로
+  const per = await importV2('features/stats/period.ts'), ex = await importV2('features/billing/stats/expense-trend.ts');
+  assert.deepEqual([...Object.values(per.PERIOD_KEYS), ...Object.values(ex.EXPENSE_TREND_KEYS)].sort(), [...STATS_KEYS].sort());
 });
 
 await check('그리기 = 2.0 billing/page.tsx · billing-content.tsx · makeedu-sync-badge.tsx 글자 그대로(서버 호출 자리만 billing-page.swaps.json 짝 · 짝마다 한 번)', async () => {
@@ -57,15 +61,16 @@ await check('그리기 = 2.0 billing/page.tsx · billing-content.tsx · makeedu-
     ['rf.newPage', '../refunds/new/page.tsx', 'billing-refund-new.tsx'], ['rf.viewPage', '../refunds/[id]/page.tsx', 'billing-refund-view.tsx'],
     ['cs.panel', 'calculator-panel.tsx', 'billing-calculator-panel.tsx'], ['cs.prices', 'tuition-prices-panel.tsx', 'billing-tuition-prices-panel.tsx'], ['cs.quotes', 'saved-quotes-panel.tsx', 'billing-saved-quotes-panel.tsx'],
     ['ss.terms', 'session-terms-face.tsx', 'billing-session-terms-face.tsx'], ['ss.verify', 'session-verification-face.tsx', 'billing-session-verification-face.tsx'],
-    ['ps.face', 'teacher-settlement-face.tsx', 'billing-teacher-settlement-face.tsx']]) {
+    ['ps.face', 'teacher-settlement-face.tsx', 'billing-teacher-settlement-face.tsx'], ['st.page', '../stats/page.tsx', 'billing-stats-page.tsx']]) {
     const rf = JSON.parse(await here('./v2-host/src/billing-refunds.swaps.json'));
     const swaps = key === 'expenses' ? JSON.parse(await here('./v2-host/src/billing-expenses.swaps.json')).panel : key.startsWith('rf.') ? rf[key.slice(3)] : key.startsWith('cs.') ? JSON.parse(await here('./v2-host/src/billing-calculator.swaps.json'))[key.slice(3)]
       : key.startsWith('ss.') ? JSON.parse(await here('./v2-host/src/billing-sessions.swaps.json'))[key.slice(3)]
-      : key.startsWith('ps.') ? JSON.parse(await here('./v2-host/src/billing-payroll.swaps.json'))[key.slice(3)] : tb[key];
+      : key.startsWith('ps.') ? JSON.parse(await here('./v2-host/src/billing-payroll.swaps.json'))[key.slice(3)]
+      : key.startsWith('st.') ? JSON.parse(await here('./v2-host/src/billing-stats.swaps.json'))[key.slice(3)] : tb[key];
     const want = applySwaps(lf(await src(`app/(shell)/billing/_components/${file}`)), swaps, key), mine = lf(await here(`./v2-host/src/${mineFile}`));
     assert.ok(mine.endsWith(want), `${mineFile} = 2.0 ${file} + 짝`);
     assert.ok(mine.slice(0, mine.length - want.length).split('\n').filter(Boolean).every(l => l.startsWith('//')), `${mineFile} 앞에는 주석만`);
-    assert.doesNotMatch(want.split('\n').filter(l => !/^\s*(\/\/|\*|\/\*)/.test(l)).join('\n'), /\bawait\b|getCurrentUser|getTenantSettings|resolveBrandingSrc|summarizeExpenses\(|requireAccess|getRefundRequests\(|getTuitionCatalog|getQuote|getSessionTermsView\(|loadSeatShareSummary\(|getSessionVerificationView\(|getTeacherSplitsStatus\(|getTeacherTuitionView\(|getClassSalaryRows\(|canReadSalary\(|canManageSalary\(/, `${mineFile}: 서버 호출이 남지 않는다`);
+    assert.doesNotMatch(want.split('\n').filter(l => !/^\s*(\/\/|\*|\/\*)/.test(l)).join('\n'), /\bawait\b|getCurrentUser|getTenantSettings|resolveBrandingSrc|summarizeExpenses\(|requireAccess|getRefundRequests\(|getTuitionCatalog|getQuote|getSessionTermsView\(|loadSeatShareSummary\(|getSessionVerificationView\(|getTeacherSplitsStatus\(|getTeacherTuitionView\(|getClassSalaryRows\(|canReadSalary\(|canManageSalary\(|loadBillingStats\(|readPeriodParams\(/,`${mineFile}: 서버 호출이 남지 않는다`);
   }
 });
 
@@ -563,7 +568,20 @@ try {
         assert.equal(many.error?.code, 'PGRST116');
         const none = await admin.from('invoices').select('id').eq('id', '00000000-0000-0000-0000-000000000000').maybeSingle();
         assert.deepEqual([none.data, none.error], [null, null]);
-        await assert.rejects(async () => { await admin.from('invoices').select('line_items->kind').limit(1); }, e => e.code === 'V2_UNSUPPORTED', 'JSON 경로는 아직 흉내 밖 — 던진다');
+        // JSON 경로 = PostgREST처럼(`별칭:칸->열쇠` = json 값 · `->>` = 글자 · 별칭 없으면 이름 = 마지막 열쇠)
+        const jp = await admin.from('student_history_monthly').select('month,general:data->tuitionPaidGeneral,data->>tuitionPaidEie').eq('tenant_id', tenantId).order('month').limit(400);
+        const jw = await sql`select month::text, data->'tuitionPaidGeneral' g, data->>'tuitionPaidEie' e from public.student_history_monthly where tenant_id=${tenantId} order by month limit 400`;
+        assert.ok(jw.length > 0 && jp.error === null);
+        assert.deepEqual(jp.data, jw.map(r => ({ month: r.month, general: r.g, tuitionPaidEie: r.e })));
+        // 거르기 칸의 JSON 경로(2.0 teacher-as-of-queries · churn-source: not('metadata->>newTeacherId', 'is', null) · or 'metadata->>newTeacherId.in.(…)')
+        const tf = await admin.from('audit_logs').select('id', { count: 'exact', head: true }).eq('tenant_id', tenantId).in('action', ['class_handover_apply', 'class_update']).not('metadata->>newTeacherId', 'is', null);
+        const [{ n: tn }] = await sql`select count(*)::int n from public.audit_logs where tenant_id=${tenantId} and action in ('class_handover_apply','class_update') and metadata->>'newTeacherId' is not null`;
+        assert.ok(tn > 0); assert.equal(tf.count, tn);
+        await assert.rejects(async () => { await admin.from('invoices').select('id, ...students(name)').limit(1); }, e => e.code === 'V2_UNSUPPORTED', '흉내 밖 모양 — 던진다');
+        // 2.0 코드가 제 catch로 삼켜도 그 동작에 표시가 남는다 — 작업 스레드가 동작 끝에 다시 던진다(worker.mjs).
+        const { callStore } = await import('./v2-server/context.mjs');
+        assert.equal(callStore.getStore().unsupported?.code, 'V2_UNSUPPORTED');
+        callStore.getStore().unsupported = undefined;
         await assert.rejects(async () => { await admin.from('invoices').select('id').order('student.name').limit(1); }, e => e.code === 'V2_UNSUPPORTED');
         // 세션 클라이언트 = 보는 사람 RLS — 원장은 자기 지점 청구서만, 강사는 수납 정책에 막혀 0행(2.0과 같은 정책)
         const mine = await user.from('invoices').select('*', { count: 'exact', head: true });
@@ -748,6 +766,36 @@ try {
     const { results: [denied] } = await runV2Server({ actorId: admin.id, tenantId, mode: 'write', rollback: true, steps: [
       { module: 'features/payroll/server/class-salary-actions.ts', fn: 'saveClassSalary', args: [null, fd({ classId: cls.id, commissionRate: '10' })] }] });
     assert.deepEqual(denied.value, { error: '급여 설정 변경 권한이 없습니다' });
+  });
+
+  await check('수납 통계(/billing/stats) = 2.0 loadBillingStats 그대로(인자 = 2.0 period 함수로 주소에서) — 지난 기록 = 원본 표 + 2.0 mergeTuitionHistory · 기간 열쇠가 인자로 간다 · 수납 권한이 없으면 싣지 않는다', async () => {
+    const d = await load({ v2path: '/billing/stats' });
+    assert.equal(d.page, 'stats'); assert.ok(plainDeep(d.stats));
+    const s = d.stats;
+    assert.equal(s.months.length, 12); assert.equal(s.months.at(-1), s.today.slice(0, 7), '마지막 달 = 이번 달');
+    assert.deepEqual(s.rows.map(r => r.period), s.months, '달마다 요약 한 줄');
+    assert.ok(s.expenses && Array.isArray(s.expenses.keys), '지출 추이');
+    const T = await importV2('features/billing/stats/tuition-history.ts');
+    const raw = await db`select month::text, source, data from public.student_history_monthly where tenant_id=${tenantId} order by month limit 400`;
+    assert.deepEqual(s.tuition, T.mergeTuitionHistory(raw.map(r => ({ month: r.month.slice(0, 7), source: r.source, data: r.data }))), '지난 기록 = 원본 표');
+    const d24 = (await load({ v2path: '/billing/stats', span: '24', ex: 'day' })).stats;
+    assert.equal(d24.months.length, 24); assert.equal(d24.expensePeriod.grain, 'day', '지출 기간 열쇠(ex) = 2.0 EXPENSE_TREND_KEYS');
+    for (const e of base.editors) {
+      const v = await load({ viewer: e.id, v2path: '/billing/stats' });
+      if (!v.access.billing) { assert.equal(v.page, 'noAccess'); assert.equal(v.stats, undefined); }
+    }
+  });
+
+  await check('수납 통계 보기 모드 저장(되돌림) = 2.0 saveBillingStatsMode 그대로 — 계정 귀속 ui_prefs · 모르는 값은 2.0 거절', async () => {
+    const { runV2Server } = await import('./v2-server-runner.mjs');
+    const before = (await db`select ui_prefs::text p from public.users where id=${base.viewer.id}`)[0].p;
+    const { results, probes } = await runV2Server({ actorId: base.viewer.id, tenantId, mode: 'write', rollback: true, steps: [
+      { module: 'features/billing/stats/prefs-actions.ts', fn: 'saveBillingStatsMode', args: [{ mode: 'month24' }] },
+      { module: 'features/billing/stats/prefs-actions.ts', fn: 'saveBillingStatsMode', args: [{ mode: 'day' }] },
+    ], probes: [{ text: `select ui_prefs->'billingStats' p from public.users where id = $1`, params: [base.viewer.id] }] });
+    assert.equal(results[0].value?.ok, true); assert.deepEqual(results[1].value, { ok: false, error: '알 수 없는 보기입니다' });
+    assert.equal(JSON.stringify(probes[0][0].p).includes('month24'), true, '저장됨(트랜잭션 안)');
+    assert.equal((await db`select ui_prefs::text p from public.users where id=${base.viewer.id}`)[0].p, before, '되돌린 뒤 그대로');
   });
 } finally { await db.end(); await (await import('./v2-server-runner.mjs')).stopV2Server(); }
 
