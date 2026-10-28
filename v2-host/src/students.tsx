@@ -12,7 +12,16 @@ import { StudentDetailPage, type StudentDetailData } from "./students-detail";
 import { EditStudentPage, NewStudentPage, type StudentEditData, type StudentNewData } from "./students-form";
 import { StudentTabDataProvider, setCopyDay } from "./students-shared";
 import { onHostRefresh } from "../shims/host-nav";
-import { setHostEditors } from "../shims/server-action";
+import { registerHostHandler, setHostEditors } from "../shims/server-action";
+
+/** 배정 창의 '반 이동' 후보 — 2.0 listMovableEnrollments는 읽기라 같은 화면의 GET(movable)으로 묻는다(수업목록과 같다). 답은 2.0 반환 모양. */
+const MOVABLE_FAILED = "수강 목록을 불러오지 못했습니다";
+registerHostHandler("features/enrollments/server/movable-actions.ts", "listMovableEnrollments", async (studentId) => {
+  if (typeof studentId !== "string" || !/^[0-9a-f-]{36}$/i.test(studentId)) return { ok: false, error: "학생을 확인할 수 없습니다" };
+  const r = await fetch(`/api/v2/students?${new URLSearchParams({ movable: studentId })}`, { headers: { Accept: "application/json" } }).catch(() => null);
+  const body = r ? ((await r.json().catch(() => null)) as { ok?: unknown } | null) : null;
+  return r?.ok && body && typeof body.ok === "boolean" ? body : { ok: false, error: MOVABLE_FAILED };
+});
 import { usePathname, useSearchParams } from "../shims/next-navigation";
 import { HostFrame, HostMessage } from "./host-frame";
 

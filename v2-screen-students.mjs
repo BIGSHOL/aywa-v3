@@ -35,7 +35,7 @@ const pick = (params, keys) => Object.fromEntries(keys.flatMap((k) => (params[k]
 export const screen = {
   id: ID, label: '원생목록', order: 6,
   params: {
-    v2path: SUB, viewer: new RegExp(`^${UUID_BODY}$`),
+    v2path: SUB, viewer: new RegExp(`^${UUID_BODY}$`), movable: new RegExp(`^${UUID_BODY}$`),
     // 목록
     status: /^[a-z_]{1,20}$/, subject: /^[a-z0-9_,]{0,200}$/, q: /^[^\u0000-\u001f]{0,200}$/, page: /^\d{1,5}$/, grade: TEXT,
     teacher: new RegExp(`^(all|${UUID_BODY}(?:,${UUID_BODY}){0,60})$`), field: /^[a-z]{1,12}$/, sort: /^[a-zA-Z_]{1,24}$/, noenr: /^[01]$/,
@@ -48,6 +48,8 @@ export const screen = {
   paramMax: { teacher: 2300 },
   ...(Object.keys(ACTIONS).length ? { actions: ACTIONS } : {}),
   load: async ({ sql, params, tenantId, importV2 }) => {
+    // 수업 탭 배정 창의 '반 이동' 후보 — 2.0 listMovableEnrollments(읽기). 반 화면의 같은 읽기를 그대로 부른다(같은 데이터는 같은 원본).
+    if (params.movable) return (await import('./v2-screen-classes.mjs')).screen.load({ sql, params: { movable: params.movable }, tenantId, importV2 });
     const sub = SUB.exec(params.v2path ?? '/students');
     const viewerId = params.viewer ?? null;
     if (!sub) return { notFound: true };
