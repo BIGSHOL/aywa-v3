@@ -35,7 +35,9 @@ await check('그리기 = 2.0 owner/page.tsx 글자 그대로 — 바꾼 곳은 �
     const i = page.indexOf(a); assert.ok(mine.includes(page.slice(i, page.indexOf(b, i) + b.length)), a);
   }
   // 바꾼 자리 = 서버 값 셋(자리 PIN 상태 · 휴일 · 권한 token) + 서버 컴포넌트 면 — 2.0 클라 부품(섹션 폼)은 손대지 않았다
-  assert.equal(swaps.filter(([, to]) => /OwnerServerFace|OwnerIntegrationsFace/.test(to)).length, swaps.length - 3);
+  assert.equal(swaps.filter(([, to]) => /OwnerServerFace|OwnerIntegrationsFace|PopupsManager/.test(to)).length, swaps.length - 3);
+  assert.ok(swaps.some(([from, to]) => from === '<PopupsFace />' && to === '<PopupsManager items={popups ?? []} />'), '팝업 공지 = popups-face.tsx 본문(<PopupsManager items={items} />) 그대로');
+  assert.match(lf(await src('app/(shell)/owner/_components/popups-face.tsx')), /const items = await listPopups\(\);\n  return <PopupsManager items=\{items\} \/>;/);
   // 연동 면 = integrations-face.tsx · sheets-face.tsx 본문 그대로(서버 카드만 '아직' — owner-integrations.swaps.json)
   const integ = lf(await here('./v2-host/src/owner-integrations.tsx')), iswaps = JSON.parse(await here('./v2-host/src/owner-integrations.swaps.json'));
   const face = lf(await src('app/(shell)/owner/_components/integrations-face.tsx')), sheets = lf(await src('app/(shell)/owner/_components/sheets-face.tsx'));
@@ -174,6 +176,36 @@ try {
         const logs = await sql`select action, target_label, metadata from public.audit_logs where tenant_id=${tenantId} and created_at = now()`;
         assert.ok(logs.some(l => l.action === 'integration_sheet_target' && l.metadata.cleared === false && !JSON.stringify(l.metadata).includes('sheet-id')), '시트 ID 값은 남기지 않는다');
         assert.ok(logs.every(l => l.metadata.via === '3.0 연습 복사본'));
+        throw ROLL;
+      });
+    } catch (e) { if (e !== ROLL) throw e; }
+  });
+  await check('팝업 공지 = listPopups(활성 먼저 · 우선순위 · 최근) · 저장 넷(만들기 · 고치기 · 켜고 끄기 · 지우기) 2.0 그대로(되돌림) · 영문 번역(AI)은 하지 않는다', async () => {
+    const d = (await load({ tab: 'popups' })).page.popups;
+    const order = await db`select id::text id from public.notice_popups where tenant_id=${tenantId} order by is_active desc, priority desc, created_at desc`;
+    assert.deepEqual(d.map(p => p.id), order.map(r => r.id));
+    assert.ok(d.every(p => p.imageSrc === null || p.imageSrc.startsWith('/')), '그림은 사이트 안 경로만');
+    const actions = lf(await src('features/notices/server/actions.ts')), mine = lf(await here('./v2-owner-popups.mjs'));
+    for (const m of actions.matchAll(/error: "([^"]+)"/g)) if (!/영문 만들기|팝업을 찾을 수 없습니다/.test(m[1])) assert.ok(mine.includes(m[1]), m[1]);
+    for (const m of actions.matchAll(/action: "([a-z_]+)"/g)) assert.ok(mine.includes(`'${m[1]}'`), m[1]);
+    const ROLL = new Error('rollback');
+    try {
+      await db.begin(async sql => {
+        const fdp = obj => ({ $formData: Object.entries(obj).map(([k, v]) => [k, String(v)]) });
+        const act = (name, form, actor = base.viewer.id) => { const a = M.screen.actions[name]; return a.run({ sql, body: a.validate({ module: 'features/notices/server/actions.ts', actor, args: [null, fdp(form)] }), tenantId, importV2 }); };
+        assert.deepEqual(await act('createNoticePopup', { title: '연습 팝업', body: '본문', audience: 'all', width: '9999', priority: '5', isActive: 'on', startsAt: '2026-10-28T15:58' }), { ok: true });
+        const [row] = await sql`select id::text id, width, starts_at = '2026-10-28T06:58:00Z'::timestamptz kst, author_id::text author from public.notice_popups where tenant_id=${tenantId} and title='연습 팝업'`;
+        assert.deepEqual([row.width, row.kst, row.author], [720, true, base.viewer.id], '폭 상한 · KST 벽시계 · 작성자');
+        assert.deepEqual(await act('createNoticePopup', { title: 'x' }), { error: '본문 또는 이미지를 입력해주세요' });
+        assert.deepEqual(await act('updateNoticePopup', { id: row.id, title: '연습 팝업2', body: '본문2' }), { ok: true });
+        assert.deepEqual(await act('toggleNoticePopupActive', { id: row.id, isActive: 'false' }), { ok: true });
+        assert.deepEqual(await act('regenerateNoticeTranslation', { id: row.id }), { error: '연습 화면에서는 아직 지원하지 않는 기능입니다' });
+        assert.equal((await sql`select count(*)::int n from public.notice_popup_translations where notice_id=${row.id}`.catch(() => [{ n: 0 }]))[0].n, 0, '번역(AI)을 만들지 않는다');
+        assert.deepEqual(await act('deleteNoticePopup', { id: row.id }), { ok: true });
+        if (admin) assert.deepEqual(await act('createNoticePopup', { title: 'y', body: 'b' }, admin.id), { error: '팝업 공지 설정 변경 권한이 없습니다' });
+        const logs = await sql`select action, metadata->>'via' via from public.audit_logs where tenant_id=${tenantId} and created_at = now()`;
+        assert.deepEqual(logs.map(l => l.action).sort(), ['notice_popup_create', 'notice_popup_delete', 'notice_popup_toggle', 'notice_popup_update']);
+        assert.ok(logs.every(l => l.via === '3.0 연습 복사본'));
         throw ROLL;
       });
     } catch (e) { if (e !== ROLL) throw e; }

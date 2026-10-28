@@ -11,6 +11,7 @@
 import { UUID, loadRules } from './v2-mcs-core.mjs';
 import { ownerActions } from './v2-owner-save.mjs';
 import { integrationsView, integrationActions } from './v2-owner-integrations.mjs';
+import { listPopups, popupActions } from './v2-owner-popups.mjs';
 
 const ID = 'owner';
 const plain = v => !!v && typeof v === 'object' && !Array.isArray(v);
@@ -131,7 +132,7 @@ function permissionAccountIds(O, value) {
 }
 
 // ── page.tsx 본문 ──────────────────────────────────────────────────────────────────────────────────────────────────────
-async function ownerPage({ sql, t, R, O, sp, viewers, viewer, settings, row }) {
+async function ownerPage({ sql, t, R, O, sp, viewers, viewer, settings, row, importV2 }) {
   // 옛 설정 탭은 권한 검사에 앞서 현재 주소로(2.0 redirect).
   const legacy = { report_mgmt: '/lesson-reports', report: '/lesson-reports?tab=report', ai_ment: '/lesson-reports?tab=ai_ment', sessions: '/owner?tab=subjects' }[sp.tab];
   if (legacy) return { redirect: legacy };
@@ -199,6 +200,7 @@ async function ownerPage({ sql, t, R, O, sp, viewers, viewer, settings, row }) {
     // '탭 및 메뉴 구성' 편집기의 강사 메뉴 판정(navigationEditorGates)은 다음 단계 — 그때까지 강사뷰 편집기는 비어 보인다.
     navigationGates: null,
     integrations: tab === 'sheets' ? await integrationsView(sql, t, R, settings, viewer) : null,
+    popups: tab === 'popups' ? await listPopups(sql, t, importV2) : null,
   };
 }
 
@@ -212,7 +214,7 @@ async function ownerIo(sql, t, importV2) {
 export const screen = {
   id: ID, label: '학원 설정', order: 20,
   // 저장 = 2.0 saveOwnerSection(v2-owner-save.mjs) — 저장하는 사람 = 보는 사람.
-  actions: { ...ownerActions(ownerIo), ...integrationActions(ownerIo) },
+  actions: { ...ownerActions(ownerIo), ...integrationActions(ownerIo), ...popupActions(ownerIo) },
   params: { viewer: UUID, tab: /^[a-z_]{1,24}$/, year: /^\d{4}$/, sub: /^[a-zA-Z_]{1,24}$/, page: /^\d{1,4}$/ },
   load: async ({ sql, params: sp, tenantId: t, importV2 }) => {
     const [R, O] = await Promise.all([loadRules(importV2), loadOwnerRules(importV2)]);
@@ -225,7 +227,7 @@ export const screen = {
       host: { operations: { subjects: settings.operations.subjects, gradeLevels: settings.operations.gradeLevels, jobTitles: settings.operations.jobTitles,
         jobTitlesByDepartment: settings.operations.jobTitlesByDepartment }, disabledModules: settings.modules.disabled } };
     if (!viewer) return { ...common, route: 'none' };
-    const page = await ownerPage({ sql, t, R, O, sp, viewers, viewer, settings, row });
+    const page = await ownerPage({ sql, t, R, O, sp, viewers, viewer, settings, row, importV2 });
     if (page.redirect) return { ...common, route: 'redirect', redirect: page.redirect };
     if (page.denied) return { ...common, route: 'denied' };
     return { ...common, route: 'page', page };

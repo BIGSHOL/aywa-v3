@@ -22,6 +22,8 @@ import { ModulesSection } from "@/app/(shell)/owner/_components/modules-section"
 import { MakeupsSection } from "@/app/(shell)/owner/_components/makeups-section";
 import { OwnerServerFace } from "./owner-server-face";
 import { OwnerIntegrationsFace, type OwnerIntegrationsData } from "./owner-integrations";
+import { PopupsManager } from "@/app/(shell)/owner/_components/popups-manager";
+import type { AdminPopup } from "@/features/notices/server/queries";
 
 type Sp = Record<string, string | undefined>;
 
@@ -59,6 +61,8 @@ export type OwnerPageData = {
   navigationGates: { teacherOpen: never[]; teacherPersonal?: never; closed?: never } | null;
   /** 연동 면(tab=sheets)일 때만 — 켜진 연동 탭 · 과목별 구글 시트 상태. */
   integrations: OwnerIntegrationsData | null;
+  /** 팝업 공지 면(tab=popups)일 때만 — popups-face.tsx가 listPopups로 받던 목록. */
+  popups: AdminPopup[] | null;
 };
 
 function facesFor(canReadAudit: boolean, showModules: boolean, showMakeups: boolean, showEvaluation: boolean, showContribution: boolean): OwnerFaceDef[] {
@@ -87,7 +91,7 @@ function fmt(iso: string | null): string {
 export function OwnerHostPage({ d, sp }: { d: OwnerPageData; sp: Sp }) {
   const { settings, meta, tab, canEditSettings, canReadAudit, isMaster, showMakeups, showEvaluation, showContribution, showsOperations, canEditOperations, settingsUnreadable,
     operationsTokens, operationsForClient, seatPin, classrooms, canImportClassrooms, teacherLabelsBySubject, periodDefs, sessionYear, holidayDates, permissionsSource,
-    permissionsTok, userOverrideNames, permissionStaff, hiddenPermissionIds, hiddenSettingKeys, navigationGates, integrations } = d;
+    permissionsTok, userOverrideNames, permissionStaff, hiddenPermissionIds, hiddenSettingKeys, navigationGates, integrations, popups } = d;
   // 2.0 page.tsx와 같은 식 — 연동 면 makeedu 실행 이력 쪽(지금은 '아직')이 쓴다.
   const page = Math.max(1, Number(sp.page) || 1);
   const allowedTabs = new Map<OwnerFaceKey, boolean>(d.allowedTabEntries);
@@ -233,7 +237,7 @@ export function OwnerHostPage({ d, sp }: { d: OwnerPageData; sp: Sp }) {
           </div>
         )
       ) : null}
-      {tab === "popups" ? <OwnerServerFace face="popups" /> : null}
+      {tab === "popups" ? <PopupsManager items={popups ?? []} /> : null}
       {/* 연동 = 켜진 연동만 내부 탭(슬랙 · makeedu · 구글 시트) — 원장 2026-09-28 "세로 스크롤이 너무 길어짐". */}
       {tab === "sheets" ? (
         <OwnerIntegrationsFace d={integrations!} settings={settings} sub={sp.sub} page={page} />
