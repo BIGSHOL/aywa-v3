@@ -174,7 +174,8 @@ test('teacherWorkWeekly: six KPIs over 8 weekly windows — 2.0 card scope (less
     assert.equal(kpis[3].span, '어제까지 7일'); assert.match(kpis[2].span, /^최근 \d+일$/); assert.match(kpis[2].basis, /\d+시간이 안 된 것/);
     for (const k of kpis) assert.doesNotMatch(`${k.label} ${k.span} ${k.basis}`, /2\.0/,'화면 문구에 2.0을 적지 않는다(원장 10-28)');
     // Past windows are judged as they ended (no as-of cut), the last one at the capture — the same judgment as the expanded trend (원장 10-28).
-    const works = await loadTeacherWorkWindows({ sql, tenantId: t, todays: windows.map((w) => w.to), importV2, asOfCut: false });
+    // 반은 창 안에 있었던 반(period — 원장 10-28 "기간내에 존재하는 항목들로만") · 2.0 단일 창(현재 담당 반)과는 종강이 걸린 창에서 다르다(아래 확인).
+    const works = await loadTeacherWorkWindows({ sql, tenantId: t, todays: windows.map((w) => w.to), importV2, asOfCut: false, period: true });
     const sum = (rows, k) => rows.reduce((n, r) => n + (Number(r[k]) || 0), 0), pct = (a, b) => (b > 0 ? Math.round((a / b) * 1000) / 10 : null);
     const [{ first: videoFrom }] = await sql`select min(report_date)::text first from public.lesson_reports where tenant_id=${t} and video_homework is not null`;
     let differs = false;
@@ -188,6 +189,8 @@ test('teacherWorkWeekly: six KPIs over 8 weekly windows — 2.0 card scope (less
       if (!video) assert.equal(kpis[4].points[i].value, null, 'no video homework yet → 기록 없음, not 0%');
     }
     assert(differs, 'some window has non-lesson rows that would change 출제율 — the lesson scope is doing something');
+    const current = await loadTeacherWorkWindows({ sql, tenantId: t, todays: windows.map((w) => w.to), importV2, asOfCut: false });
+    assert(current.some((w, i) => sum(w.rows, 'reportTarget') !== sum(works[i].rows, 'reportTarget')), '종강이 걸린 창이 있다 — 카드(창 안에 있었던 반)가 2.0 현재 담당 반과 다르게 센다');
   });
 });
 

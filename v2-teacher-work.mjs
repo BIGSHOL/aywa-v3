@@ -80,7 +80,7 @@ async function fetchRaw(sql, R, t, settings, wins, scope, counselShown, period =
   const classes = await sql`select id, class_name, subject, english_track, teacher_id, report_optout, closed_at::text closed_at from public.classes
     where tenant_id=${t} and (is_active = true or (${period}::boolean and closed_at is not null)) and (closed_at is null or closed_at >= ${attendanceFrom}) order by id`;
   const inScope = classes.filter((c) => !R.isTestClass(c.class_name) && (!scope || scope.classIds.includes(c.id)));
-  const visible = inScope.filter((c) => c.report_optout !== true && (!c.closed_at || c.closed_at >= (period ? reportFrom : minToday)));
+  const visible = inScope.filter((c) => c.report_optout !== true && (!c.closed_at || c.closed_at >= (period ? reportFetchFrom : minToday)));
   const classIds = visible.map((c) => c.id), scopedIds = inScope.map((c) => c.id);
   if (!classIds.length) return { classes };
   const teacherIds = [...new Set(visible.flatMap((c) => (c.teacher_id ? [c.teacher_id] : [])))];
@@ -145,13 +145,14 @@ function closedCut(raw) {
 }
 /**
  * 한 창의 원자료 — 2.0 조회 조건을 그대로 걸고, 보고서는 2.0의 덩어리 순서(그 창의 반 목록 100개씩)로 다시 늘어놓는다. `cutMs` = as-of 시각(null이면 자르지 않음).
- * `period`(확장 추세 · 원장 10-28 "기간내에 존재하는 항목들로만 … 종강된 반이 기간내에 있으면 넣고 없으면 뺄것") = 창 안에 하루라도 있었던 반(종강일 ≥ 창 첫날) ·
- * 2.0(카드)은 창 끝 날에도 있는 반만(종강일 ≥ 기준일 — 현재 담당 반 기준).
+ * `period`(확장 추세·첫 화면 카드 · 원장 10-28 "기간내에 존재하는 항목들로만 … 종강된 반이 기간내에 있으면 넣고 없으면 뺄것") = 창 안에 하루라도 있었던 반 —
+ * 종강일 ≥ 그 창 조회 첫날(reportFetchFrom: 7일 지표와 학부모 열람 창 중 이른 날 · 확장 추세는 둘이 같다). 7일 창 전에 종강한 반은 종강일 끊기로 7일 지표가 0이다.
+ * 2.0 단일 창(loadTeacherWork)은 창 끝 날에도 있는 반만(종강일 ≥ 기준일 — 현재 담당 반 기준).
  */
 function sliceWindow(R, raw, w, scope, cutMs = null, period = false) {
   const classes = raw.classes.filter((c) => !c.closed_at || c.closed_at >= w.attendanceFrom);
   const inScope = classes.filter((c) => !R.isTestClass(c.class_name) && (!scope || scope.classIds.includes(c.id)));
-  const visible = inScope.filter((c) => c.report_optout !== true && (!c.closed_at || c.closed_at >= (period ? w.range.reportFrom : w.today)));
+  const visible = inScope.filter((c) => c.report_optout !== true && (!c.closed_at || c.closed_at >= (period ? w.reportFetchFrom : w.today)));
   const classIds = visible.map((c) => c.id), scoped = new Set(inScope.map((c) => c.id));
   const base = { inScope, visible, classIds, period };
   if (!classIds.length) return base;
@@ -311,6 +312,7 @@ export async function loadTeacherWorkWindows({ sql: tx, tenantId, todays, scope 
 // 원장 첫 화면 '운영 상태'와 선생님 수업보고서 영역이 같은 값을 쓴다 — 같은 트랜잭션 안에서는 한 번만 계산한다.
 // 지난 창은 그 창이 끝난 상태(그날 수업은 모두 마감 대상 · 늦게 쓴 보고서도 셈), 지금 창은 복사본을 뜬 순간 — 확장 추세(teacherWorkTrend)의 주별과
 // 같은 판정이라 카드의 '7일 전 대비'와 확장 추세의 '직전 대비'가 같은 숫자다(원장 10-28 카드 ▲7.4%p ↔ 확장 추세 ▼1.7%p가 갈렸던 것).
+// 반도 같은 기준(period — 창 안에 있었던 반 · 원장 10-28 "기간내에 존재하는 항목들로만") — 2.0 단일 창(현재 담당 반)과는 종강이 걸린 창에서 다르다.
 const SUMS = ['reports', 'reportTarget', 'sent', 'recalled', 'unread', 'unreadJudged', 'attendanceUnrecorded', 'attendanceDays', 'videoIssuedReports', 'reportsWritten', 'videoSubmitted', 'videoAssigned'];
 const weeklyMemo = new WeakMap();
 /**
@@ -325,7 +327,7 @@ export function teacherWorkWeekly({ sql, asOf, tenantId = COPY_TENANT, importV2,
 }
 async function weekly({ sql, asOf, tenantId: t, importV2, n }) {
   const [{ kpi, rate, weekWindows }, load] = await Promise.all([import('./domain-snapshot-core.mjs'), importV2 ?? import('./v2-bridge.mjs').then((m) => m.importV2)]);
-  const windows = weekWindows(asOf, n), works = await loadTeacherWorkWindows({ sql, tenantId: t, todays: windows.map((w) => w.to), importV2: load, asOfCut: false });
+  const windows = weekWindows(asOf, n), works = await loadTeacherWorkWindows({ sql, tenantId: t, todays: windows.map((w) => w.to), importV2: load, asOfCut: false, period: true });
   // 영상 숙제 값이 처음 생긴 날 — 그 전에 끝난 창은 영상 지표가 '기록 없음'(0%가 아니다).
   const [{ first: videoFrom }] = await sql`select min(report_date)::text first from public.lesson_reports where tenant_id=${t} and video_homework is not null`;
   const sum = (rows) => Object.fromEntries(SUMS.map((k) => [k, rows.reduce((s, r) => s + (Number(r[k]) || 0), 0)]));
