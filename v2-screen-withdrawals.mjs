@@ -372,6 +372,10 @@ async function asUser(sql, actor, fn) {
   catch (e) {
     if (e instanceof V2Error) throw e;
     return { error: { code: e?.code ?? null, message: e?.message ?? '', details: e?.detail ?? null, hint: e?.hint ?? null } };
+  } finally {
+    // set_config(…, true)는 저장점을 풀어도 트랜잭션 끝까지 남는다(MCS 세션 발견) — 뒤따르는 서버 쓰기(2.0 service_role 자리)가
+    // 이 사람 신분으로 판정되지 않게 바로 비운다.
+    await sql`select set_config('request.jwt.claims', '', true)`;
   }
 }
 const why = (P, error, step, studentId) => P.dbError.explainDbError(error, { scope: `students.enrollmentSync.${step}`, context: { studentId },

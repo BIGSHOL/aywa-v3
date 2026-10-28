@@ -114,7 +114,9 @@ try {
       const [s] = await sql`select withdrawal_metadata m from public.students where id=${STU}`;
       const enr = await sql`select withdrawal_reason r from public.enrollments where id = any(${setup.closed}::uuid[])`;
       const [log] = await sql`select actor_id::text a, target_type, metadata from public.audit_logs where tenant_id=${tenantId} and action='withdrawal_update' and created_at >= now()`;
-      return { setup, badReason, noMemo, ok, m: s.m, enr, log };
+      // 사용자 신분 쓰기 뒤에 신분(claims)·역할이 트랜잭션에 남지 않는다 — 다음 쓰기가 그 사람으로 판정되면 안 된다(MCS 세션 함정).
+      const [left] = await sql`select coalesce(current_setting('request.jwt.claims', true), '') claims, current_user role`;
+      return { setup, badReason, noMemo, ok, m: s.m, enr, log, left };
     });
     assert.equal(out.badReason.error, '유효한 퇴원 사유를 선택해주세요');
     assert.ok(out.noMemo.error, "'기타'는 메모가 있어야 한다(2.0 checkReasonInput)");
@@ -122,6 +124,7 @@ try {
     assert.deepEqual([out.m.reason, out.m.memo, out.m.consultation.teacherCalledParent, out.m.reportId], ['relocation', '이사함', true, 'keep-me']);
     assert.ok(out.setup.closed.length === 0 || out.enr.every(r => r.r === 'relocation'), '퇴원일에 함께 닫힌 수강 사유도 바뀐다');
     assert.deepEqual([out.log.a, out.log.target_type, out.log.metadata.reason, out.log.metadata.enrollments, out.log.metadata.via], [SEOLHYUN, 'student', 'relocation', out.setup.closed.length, '3.0 연습 복사본']);
+    assert.deepEqual([out.left.claims, out.left.role === 'authenticated'], ['', false], '쓰기 뒤 신분·역할이 남지 않는다');
   });
 
   await check('저장: 상담 추적 — 단계 하나만 바꾸고 나머지 칸 보존 · 퇴원생 아니면 거절 · 감사로그 (되돌림)', async () => {
