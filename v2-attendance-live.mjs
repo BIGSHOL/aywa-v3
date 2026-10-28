@@ -411,9 +411,18 @@ export async function readRangeRecap(ctx, user, dates, boardOf) {
   if (!user || attendanceLevelOf(R, settings, user) !== 'full') return null;
   const wanted = dates.filter(d => ISO.test(d)).slice(0, L.recapRange.RECAP_MAX_DAYS);
   if (wanted.length === 0) return null;
-  // 2.0 RPC `dashboard_absence_risk`(최근 14일 반·하루 결석 2회 이상) — 그 사람 신분(request.jwt.claims)으로 같은 함수를 부른다.
-  await sql`select set_config('request.jwt.claims', ${JSON.stringify({ sub: user.id, role: 'authenticated' })}, true)`;
-  const repeats = new Map((await sql`select student_id::text student_id, absences from public.dashboard_absence_risk(${2})`).map(r => [r.student_id, Number(r.absences)]));
+  // 2.0 사용자 클라이언트의 신분·역할로 RPC를 부르고, 뒤의 보드 조회 전에 원래 값으로 되돌린다.
+  const [{ prev }] = await sql`select coalesce(current_setting('request.jwt.claims', true), '') prev`;
+  let repeatRows;
+  try {
+    await sql`select set_config('request.jwt.claims', ${JSON.stringify({ sub: user.id, role: 'authenticated' })}, true)`;
+    await sql`set local role authenticated`;
+    repeatRows = await sql`select student_id::text student_id, absences from public.dashboard_absence_risk(${2})`;
+  } finally {
+    try { await sql`reset role`; }
+    finally { await sql`select set_config('request.jwt.claims', ${prev}, true)`; }
+  }
+  const repeats = new Map(repeatRows.map(r => [r.student_id, Number(r.absences)]));
   const [planned, loaded] = await Promise.all([readPlannedRepeats(sql, t, L, [...repeats.keys()]),
     Promise.all(wanted.map(async date => ({ date, holiday: holidayNameOf(R, settings, date), board: await boardOf(date), followups: await readFollowups(sql, t, date) })))]);
   const days = loaded.map(({ date, holiday, board, followups }) => ({

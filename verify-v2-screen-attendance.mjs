@@ -1448,7 +1448,13 @@ test('복사본: 오늘 출결 — 데스크(전체 권한)는 세 탭 · 테스
     // 어제 출결 — 기간(from~date)의 날마다 같은 보드 · 합계 = 그 날들 칸 수.
     const span = L.recapRange.recapDatesFor(TODAY);
     assert.equal(d.recapHref, `/attendance/live?tab=recap&from=${span[0]}&date=${span[span.length - 1]}`);
+    const previousClaims = JSON.stringify({ sub: '00000000-0000-4000-8000-000000000000', role: 'authenticated' });
+    await sql`select set_config('request.jwt.claims', ${previousClaims}, true)`;
+    const [{ role: beforeRole }] = await sql`select current_user role`;
     const r = await liveLoad(sql, { tab: 'recap', from: span[0], date: span[span.length - 1] });
+    const [{ claims, role }] = await sql`select current_setting('request.jwt.claims', true) claims, current_user role`;
+    assert.equal(claims, previousClaims, 'RPC 뒤 JWT claims가 이전 값');
+    assert.equal(role, beforeRole, 'RPC 뒤 역할이 이전 값');
     assert.equal(r.recap.days.length, span.length);
     let expected = 0;
     for (const day of span) expected += (await liveLoad(sql, { date: day })).board?.totals.expected ?? 0;
