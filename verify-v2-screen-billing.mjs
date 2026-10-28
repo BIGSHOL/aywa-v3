@@ -577,6 +577,16 @@ try {
         const tf = await admin.from('audit_logs').select('id', { count: 'exact', head: true }).eq('tenant_id', tenantId).in('action', ['class_handover_apply', 'class_update']).not('metadata->>newTeacherId', 'is', null);
         const [{ n: tn }] = await sql`select count(*)::int n from public.audit_logs where tenant_id=${tenantId} and action in ('class_handover_apply','class_update') and metadata->>'newTeacherId' is not null`;
         assert.ok(tn > 0); assert.equal(tf.count, tn);
+        // bool · 숫자 거르기 = 값 그대로(글자로 보내 서버가 바꾼다) — postgres.js에 맡기면 'true'가 거짓으로 가서 eq(is_active, true)가 비활성 행만 돌려줬다
+        const [{ act, inact }] = await sql`select count(*) filter (where is_active)::int act, count(*) filter (where not is_active)::int inact from public.classes where tenant_id=${tenantId}`;
+        assert.ok(act > 0 && inact > 0 && act !== inact, '활성·비활성 반이 둘 다 있어야 대조가 된다');
+        for (const [label, b, want] of [
+          ['eq true', admin.from('classes').select('id', { count: 'exact', head: true }).eq('tenant_id', tenantId).eq('is_active', true), act],
+          ['eq false', admin.from('classes').select('id', { count: 'exact', head: true }).eq('tenant_id', tenantId).eq('is_active', false), inact],
+          ['or 글자', admin.from('classes').select('id', { count: 'exact', head: true }).eq('tenant_id', tenantId).or('is_active.eq.true'), act],
+          ['in', admin.from('classes').select('id', { count: 'exact', head: true }).eq('tenant_id', tenantId).in('is_active', [true]), act],
+          ['neq', admin.from('classes').select('id', { count: 'exact', head: true }).eq('tenant_id', tenantId).neq('is_active', true), inact],
+        ]) assert.equal((await b).count, want, label);
         // or 묶음은 괄호로(다른 거르기와 and) — 괄호가 없으면 2.0 deleteSessionTerm의 지우기 하나가 57행에 걸렸다
         const [t1] = await sql`select id::text id, to_jsonb(updated_at) #>> '{}' u from public.invoice_session_terms where tenant_id=${tenantId} and allocation_amount > 0 limit 1`;
         const orc = await admin.from('invoice_session_terms').select('id', { count: 'exact', head: true }).eq('tenant_id', tenantId).eq('id', t1.id).or('allocation_amount.is.null,allocation_amount.eq.0');

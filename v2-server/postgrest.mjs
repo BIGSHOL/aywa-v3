@@ -136,7 +136,7 @@ function rowJson(sql, M, table, al, items, embedWheres = []) {
 // ── 거르기 ─────────────────────────────────────────────────────────────────────────────────────────────────────────────
 const OPS = { eq: '=', neq: '<>', gt: '>', gte: '>=', lt: '<', lte: '<=', like: 'like', ilike: 'ilike' };
 const unquote = v => (v.startsWith('"') && v.endsWith('"') ? v.slice(1, -1).replace(/\\"/g, '"') : v);
-const scalar = v => (v === null ? null : typeof v === 'object' ? (() => { throw new UnsupportedShape('객체 값으로 거르기'); })() : String(v));
+const scalar = v => (v === null ? null : typeof v === 'object' ? (() => { throw new UnsupportedShape('객체 값으로 거르기'); })() : typeof v === 'boolean' || typeof v === 'number' ? v : String(v));
 /** 거르기 칸 — 칸 이름 또는 JSON 경로(PostgREST `metadata->>newTeacherId` = 글자 · `data->k` = json 값). */
 function colExpr(sql, al, col) {
   const m = /^([a-z_][a-z0-9_]*)((?:->>?[A-Za-z0-9_]+)*)$/.exec(col);
@@ -148,7 +148,7 @@ function colExpr(sql, al, col) {
 function cond(sql, al, col, op, value, negate = false, typeOf = () => null) {
   const c = colExpr(sql, al, col);
   const udt = /->/.test(col) ? null : typeOf(col);
-  const lit = v => (v !== null && TIMEY.has(udt) ? timeyValue(sql, String(v), udt) : v);
+  const lit = v => (v !== null && castable(udt) ? typed(sql, String(v), udt) : v);
   let out;
   if (op === 'is') {
     const v = String(value).toLowerCase();
@@ -156,7 +156,7 @@ function cond(sql, al, col, op, value, negate = false, typeOf = () => null) {
     out = sql`${c} is ${sql.unsafe(v)}`;
   } else if (op === 'in') {
     const list = Array.isArray(value) ? value.map(scalar) : splitTop(String(value).replace(/^\(|\)$/g, '')).map(unquote);
-    out = list.length === 0 ? sql`false` : TIMEY.has(udt) ? sql`${c} in (${list.map(lit).reduce((a, b) => sql`${a}, ${b}`)})` : sql`${c} in ${sql(list)}`;
+    out = list.length === 0 ? sql`false` : castable(udt) ? sql`${c} in (${list.map(lit).reduce((a, b) => sql`${a}, ${b}`)})` : sql`${c} in ${sql(list)}`;
   } else if (op === 'like' || op === 'ilike') out = sql`${c} ${sql.unsafe(OPS[op])} ${String(value).replace(/\*/g, '%')}`;
   else if (OPS[op]) out = value === null ? sql`${c} ${sql.unsafe(OPS[op])} null` : sql`${c} ${sql.unsafe(OPS[op])} ${lit(scalar(value))}`;
   else if (op === 'cs' || op === 'cd' || op === 'ov') {
@@ -181,10 +181,12 @@ function logic(sql, al, text, joiner = 'or', typeOf) {
   return sql`(${parts.reduce((a, b) => sql`${a} ${sql.unsafe(joiner)} ${b}`)})`;
 }
 
-// 🔴 시각 칸 값은 글자로 보내고 서버에서 바꾼다 — postgres.js는 서버가 시각으로 추정한 인자를 Date로 바꿔 **밀리초로 자른다**(…254636 → …254).
-//    그러면 2.0의 낙관적 잠금(`.eq("updated_at", 읽은 값)`)이 늘 '변경됨'이 되고, 읽은 시각을 다시 쓰면 값이 바뀐다. PostgREST는 글자를 그대로 넘긴다.
-const TIMEY = new Set(['timestamptz', 'timestamp', 'date', 'time', 'timetz']);
-const timeyValue = (sql, v, udt) => sql`(${v}::text)::${sql.unsafe(udt)}`;
+// 🔴 거르기·쓰기 값은 **글자로 보내고 서버에서 칸 형식으로 바꾼다**(PostgREST가 하는 일 그대로 — URL·JSON의 글자를 Postgres가 바꾼다).
+//    postgres.js에 맡기면 서버가 추정한 형식의 직렬화기가 값을 바꾼다:
+//     · 시각 = Date로 바꿔 밀리초로 자른다(…254636 → …254) → 2.0 낙관적 잠금(`.eq("updated_at", 읽은 값)`)이 늘 '변경됨'
+//     · bool = 글자 'true'를 거짓으로 보낸다 → `.eq("is_active", true)`가 **비활성 행만** 돌려줬다(활성 133 → 46 · 출석부 청구 조회가 통째로 빔)
+const castable = udt => typeof udt === 'string' && /^[a-z_][a-z0-9_]*$/.test(udt) && !udt.startsWith('_');
+const typed = (sql, v, udt) => sql`(${v}::text)::${sql(udt)}`;
 
 // ── 값 쓰기 ────────────────────────────────────────────────────────────────────────────────────────────────────────────
 function cell(sql, M, table, col, v) {
@@ -198,8 +200,8 @@ function cell(sql, M, table, col, v) {
     return `{${v.map(x => (x === null ? 'NULL' : `"${String(x).replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`)).join(',')}}`;
   }
   if (typeof v === 'object' && !(v instanceof Date)) throw new UnsupportedShape(`객체 값을 ${table}.${col}(${t.type})에`);
-  if (TIMEY.has(t.udt)) return timeyValue(sql, v instanceof Date ? v.toISOString() : String(v), t.udt);
-  return v instanceof Date ? v.toISOString() : typeof v === 'boolean' || typeof v === 'number' ? v : String(v);
+  const text = v instanceof Date ? v.toISOString() : String(v);
+  return castable(t.udt) ? typed(sql, text, t.udt) : typeof v === 'boolean' || typeof v === 'number' ? v : text;
 }
 
 // ── 실행 ───────────────────────────────────────────────────────────────────────────────────────────────────────────────
