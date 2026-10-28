@@ -20,11 +20,11 @@ try{
   assert.equal(await page.locator('[data-chart] [title], [data-chart] title').count(),0,'No native title tooltips inside charts');
 
   // 1. Briefing trend line: each month's hit zone shows that month and its exact value.
-  const students='.ax-change-cell:nth-child(1) .chart-line',paid='.ax-change-cell:nth-child(2) .chart-line';
+  const students='.ax-change-cell:nth-child(1) .chart-line',paid='.ax-change-cell:nth-child(2) .chart-line' /* 청구액 선(원장 10-28 '청구월별 누적 수납액 -> 청구액') */;
   await hoverPoint(page,students,0);
   let tip=await tipState(page);
   assert.equal(tip.hidden,false);assert.equal(tip.head,`${trend[0].month.slice(0,4)}년 ${Number(trend[0].month.slice(5))}월`);
-  assert.deepEqual(tip.rows,[['청구 대상 원생',`${trend[0].payingStudents}명`]]);assert(tip.meta.includes('청구월 기준'));
+  assert.deepEqual(tip.rows,[['재원생',`${trend[0].payingStudents}명`]]);assert(tip.meta.includes('청구월 기준'));
   assert(tip.inside,'Popover stays inside the viewport');assert.equal(tip.pointer,'none','Popover never blocks clicks or scrolling');
   assert.equal(await page.locator(students).getAttribute('aria-describedby'),'chart-tip');
   await hoverPoint(page,students,1);tip=await tipState(page);
@@ -39,11 +39,11 @@ try{
 
   // 2. Keyboard: focus shows the latest month, arrows move, Escape closes, scrolling the chart away closes it.
   await page.locator(paid).focus();tip=await tipState(page);
-  assert.equal(tip.rows[0][1],won(trend.at(-1).paid),'Exact won value, not rounded');
+  assert.equal(tip.rows[0][1],won(trend.at(-1).billed),'Exact won value, not rounded');
   await page.keyboard.press('ArrowLeft');tip=await tipState(page);
-  assert.equal(tip.head,`${trend.at(-2).month.slice(0,4)}년 ${Number(trend.at(-2).month.slice(5))}월`);assert.equal(tip.rows[0][1],won(trend.at(-2).paid));
-  assert.match(await page.locator('.chart-live').innerText(),new RegExp(won(trend.at(-2).paid)),'Keyboard moves are announced');
-  await page.keyboard.press('Home');assert.equal((await tipState(page)).rows[0][1],won(trend[0].paid));
+  assert.equal(tip.head,`${trend.at(-2).month.slice(0,4)}년 ${Number(trend.at(-2).month.slice(5))}월`);assert.equal(tip.rows[0][1],won(trend.at(-2).billed));
+  assert.match(await page.locator('.chart-live').innerText(),new RegExp(won(trend.at(-2).billed)),'Keyboard moves are announced');
+  await page.keyboard.press('Home');assert.equal((await tipState(page)).rows[0][1],won(trend[0].billed));
   await page.keyboard.press('Escape');assert.equal((await tipState(page)).hidden,true);assert.equal(await page.evaluate(()=>document.activeElement.classList.contains('chart-line')),true,'Escape keeps focus on the chart');
   await page.keyboard.press('End');assert.equal((await tipState(page)).hidden,false);
   await page.evaluate(()=>window.scrollTo(0,document.body.scrollHeight));await page.waitForFunction(()=>document.getElementById('chart-tip').hidden);

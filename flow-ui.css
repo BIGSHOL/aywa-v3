@@ -173,7 +173,7 @@
 .fl-table th,.fl-table td{padding:7px 8px;border-bottom:1px solid var(--ax-line);background:transparent;color:var(--ax-ink);font-size:var(--ax-xs);text-align:left;vertical-align:middle;overflow:hidden}
 .fl-table thead th{padding:2px 2px;font-weight:650;border-top:1px solid var(--ax-line);border-bottom-color:rgba(29,29,31,.3)}
 .fl-table tbody tr:last-child td{border-bottom:1px solid var(--ax-line)}
-.fl-table .c-state{width:10.4em}.fl-table .c-rec{width:9.6em}.fl-table .c-who{width:6.4em}.fl-table .c-due{width:4.4em}.fl-table .c-at{width:7.2em}.fl-table .c-place{width:8.4em}.fl-table .c-act{width:9em}
+.fl-table .c-state{width:10.4em}.fl-table .c-rec{width:8em}.fl-table .c-who{width:6.4em}.fl-table .c-due{width:4.4em}.fl-table .c-at{width:7.2em}.fl-table .c-place{width:8.4em}.fl-table .c-act{width:9em}
 .fl-table tbody tr{scroll-margin-top:16px}
 .fl-table tbody tr:hover{background:var(--ax-soft)}
 .fl-table .fl-cut{display:block;min-width:0;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -244,6 +244,26 @@
 .fl-colpop-list p{padding:6px 4px}
 .fl-colpop-foot{display:flex;align-items:center;justify-content:space-between;gap:8px}
 .fl-colpop-foot .button{height:var(--ax-control-h-sm);min-height:var(--ax-control-h-sm);padding:0 12px;font-size:var(--ax-xs)}
+/* 관련 기록 — 표 칸은 '기록 보기' 단추 하나, 마우스를 올리면 목록(.fl-recpop), 누르면 같은 목록을 가운데 창(#modal)에. */
+.fl-recbtn{display:inline-flex;align-items:center;gap:6px;max-width:100%;height:var(--ax-control-h-sm);padding:0 10px;border:1px solid var(--ax-line);border-radius:6px;background:#fff;font:inherit;font-size:var(--ax-xs);font-weight:600;white-space:nowrap}
+.fl-recbtn b{font-weight:500;font-variant-numeric:tabular-nums;color:var(--ax-primary)}
+.fl-recbtn:hover,.fl-recbtn:focus-visible{border-color:var(--ax-primary);background:var(--ax-soft)}
+.fl-recpop{position:fixed;z-index:65;display:flex;flex-direction:column;width:min(34rem,calc(100vw - 16px));max-height:min(26rem,calc(100vh - 16px));border:1px solid var(--ax-line);border-radius:8px;background:#fff;box-shadow:0 10px 30px rgba(23,33,62,.16);font-size:var(--ax-xs)}
+.fl-recpop-head{padding:8px 12px;border-bottom:1px solid var(--ax-line);font-weight:650}
+.fl-recpop-body{min-height:0;padding:2px 4px}
+.fl-recs{list-style:none;margin:0;padding:0;display:flex;flex-direction:column}
+.fl-recs li+li{border-top:1px solid var(--ax-line)}
+/* 한 줄 = 이름 · 종류 · 알아야 할 정보 · 열기 표시 — 열을 맞춘다. */
+.fl-rec{display:grid;grid-template-columns:6.5em 5.5em minmax(0,1fr) 16px;align-items:center;gap:10px;width:100%;padding:8px;border-radius:6px;font:inherit;font-size:var(--ax-xs);color:var(--ax-ink);text-align:left}
+button.fl-rec:hover,button.fl-rec:focus-visible{background:var(--ax-soft)}
+.fl-rec strong{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:var(--ax-sm)}
+.fl-rec em{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-style:normal;color:var(--ax-primary)}
+.fl-rec-facts{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.fl-rec .icon{width:16px;height:16px}
+div.fl-rec{grid-template-columns:6.5em 5.5em minmax(0,1fr)}
+#modal .fl-recs{min-width:min(40rem,calc(100vw - 60px))}
+.fl-recpop .fl-rec-facts,#modal .fl-rec-facts{white-space:normal;overflow-wrap:anywhere}
+@media(max-width:560px){.fl-rec{grid-template-columns:minmax(0,1fr) auto 16px}.fl-rec-facts{grid-column:1/-1;grid-row:2;white-space:normal}div.fl-rec{grid-template-columns:minmax(0,1fr) auto}}
 /* 잘린 글 보기 · 상태의 뜻 */
 .fl-tip{position:fixed;z-index:70;max-width:min(26rem,calc(100vw - 16px));padding:8px 10px;border:1px solid var(--ax-line);border-radius:8px;background:#fff;box-shadow:0 8px 24px rgba(23,33,62,.14);font-size:var(--ax-xs);line-height:1.5;white-space:pre-line;overflow-wrap:anywhere;pointer-events:none}
 .fl-tip[hidden]{display:none}
