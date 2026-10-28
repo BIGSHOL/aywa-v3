@@ -92,7 +92,7 @@
       if (hostOk === null) fetch(HOST, { method: 'HEAD' }).then(r => r.ok, () => false).then(ok => { if (hostOk === null) { hostOk = ok; api?.render?.(); } });
       else if (hostOk) requestAnimationFrame(() => { ensureFrame(query); place(); });
       const wait = hostOk === false ? '강사 시트를 열지 못했습니다. 잠시 후 새로고침해 주세요.' : hostOk === null ? '강사 시트를 여는 중…' : '';
-      return `<div class="v2h-note" role="note"><p><b>연습 화면</b> 고른 사람의 화면으로 보입니다(선생님은 담당 반만). 수학 강사 시트는 아직 보기만 할 수 있습니다.</p><span data-v2h-actor-slot>${actorPicker()}</span></div>
+      return `<div class="v2h-note" role="note"><p><b>연습 화면</b> 고른 사람의 화면으로 보입니다(선생님은 담당 반만). 저장도 고른 사람으로 합니다.</p><span data-v2h-actor-slot>${actorPicker()}</span></div>
         <div class="v2h-slot" data-v2-host-slot>${wait ? `<p class="v2h-wait">${wait}</p>` : ''}</div>`;
     },
   });

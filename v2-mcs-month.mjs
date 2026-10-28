@@ -7,7 +7,7 @@ import { mcsClassAccess, visibleClassFilter } from './v2-mcs-core.mjs';
 import { mathClassTextbooks, mathBookTargets, recentReportsAllClasses, schoolExamPeriods, sentReport } from './v2-math-textbooks.mjs';
 
 let monthRules = null;
-function loadMonthRules(importV2) {
+export function loadMonthRules(importV2) {
   monthRules ??= (async () => {
     const [goalRail, lessonPos, goals, stall, span, curriculum, font, plan, history, classDates] = await Promise.all([
       'features/math-sheets/lib/goal-rail.ts', 'features/math-sheets/lib/lesson-position.ts', 'features/math-sheets/lib/student-goals.ts', 'features/math-sheets/lib/progress-stall.ts',
@@ -19,7 +19,7 @@ function loadMonthRules(importV2) {
   return monthRules;
 }
 /** timestamptz → PostgREST가 내던 글자(UTC ISO). */
-const ISO = (sql, col) => sql`to_char(${sql(col)} at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US') || '+00:00'`;
+export const ISO = (sql, col) => sql`to_char(${sql(col)} at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US') || '+00:00'`;
 const PRIOR_WINDOW_DAYS = 45;
 
 // ── server/lifecycle.ts mathLifecycleBadges — 이 달 들어온·나간·옮긴 표식(다른 반 수강까지 보고 '반 이동'을 가른다) ──────────────

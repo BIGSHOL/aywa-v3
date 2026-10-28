@@ -24,7 +24,7 @@ await check('주소 열쇠 = 2.0 반별 page.tsx(month) + 하위 주소(v2path: 
   // 반 월간이 서버에서 읽는 주소 값은 month 하나(student·그 밖 칸은 화면이 주소에서 직접 읽는다 — 호스트도 iframe 주소에서 넘긴다)
   assert.deepEqual([...month.matchAll(/typeof query\.(\w+) === "string"/g)].map(m => m[1]), ['month', 'student']);
   assert.match(month, /getMathSheetMonth\(classId, month \?\? null\)/);
-  assert.deepEqual(Object.keys(M.screen.params).sort(), ['month', 'v2path', 'viewer']);
+  assert.deepEqual(Object.keys(M.screen.params).sort(), ['month', 'revision', 'v2path', 'viewer']); // revision = 남은 계획 수정 창 읽기(GET)
   for (const ok of ['/mcs', '/mcs/teachers', '/mcs/a600c53d-1fde-47c8-b533-65b5e580ccc0/month']) assert.ok(M.screen.params.v2path.test(ok), ok);
   for (const no of ['/mcs/x', '/classes', '/mcs/teachers/x', '/mcs/a600c53d-1fde-47c8-b533-65b5e580ccc0', '/mcs/x/month', '/mcs/a600c53d-1fde-47c8-b533-65b5e580ccc0/month/x'])
     assert.ok(!M.screen.params.v2path.test(no), no);
@@ -179,6 +179,82 @@ try {
       return;
     }
     assert.fail('담당 반이 있는 강사가 없다');
+  });
+
+  // ── 저장(되돌림) — 한 트랜잭션에서 돌리고 끝에 되돌린다 ─────────────────────────────────────────────────────────────
+  const LEARNING = 'features/math-sheets/server/learning-actions.ts';
+  const MODULE = { setMyMcsFontSize: 'features/math-sheets/server/actions.ts', saveMathLearningGoals: LEARNING, setMathClassLearningTrack: LEARNING, resetMathLearningGoals: LEARNING,
+    reviseMathLearningGoal: 'features/math-sheets/server/learning-revision-actions.ts', saveMathTextbookAssignment: 'features/textbooks/server/math-assignment-actions.ts',
+    saveMathBookTarget: 'features/textbooks/server/math-book-target-actions.ts', saveSchoolExamPeriods: 'features/textbooks/server/school-exam-actions.ts' };
+  const ROLL = new Error('rollback');
+  const rolled = async fn => { try { await db.begin(async sql => { await fn(sql); throw ROLL; }); } catch (e) { if (e !== ROLL) throw e; } };
+  const actIn = sql => (name, arg, actor = base.viewer.id) => { const a = M.screen.actions[name];
+    return a.run({ sql, body: a.validate({ module: MODULE[name], actor, args: [arg] }), tenantId, importV2 }); };
+
+  await check('저장 = 반 월간이 부르는 2.0 서버 액션 8개(+ 수정 창 읽기 GET) · 모양이 다르면 400 · 저장하는 사람이 아니면 2.0 첫 거절 문구', async () => {
+    assert.deepEqual(Object.keys(M.screen.actions).sort(), Object.keys(MODULE).sort());
+    assert.throws(() => M.screen.actions.saveMathBookTarget.validate({ module: MODULE.setMyMcsFontSize, actor: null, args: [{}] }), /입력 값/);
+    assert.throws(() => M.screen.actions.setMyMcsFontSize.validate({ module: MODULE.setMyMcsFontSize, actor: 'x', args: ['md'] }), /입력 값/);
+    await rolled(async sql => assert.deepEqual(await actIn(sql)('setMathClassLearningTrack', { classId: cardOf.classId, track: 'regular' }, null), { ok: false, error: '로그인이 필요합니다' }));
+  });
+
+  await check('저장 문구·입력 모양 = 2.0 원문(zod 스키마 글자 대조 · 거절 문구가 모두 옮겨졌다)', async () => {
+    const mine = lf(await here('./v2-mcs-save.mjs'));
+    const files = ['features/math-sheets/server/learning-actions.ts', 'features/math-sheets/server/learning-revision-actions.ts', 'features/textbooks/server/math-assignment-actions.ts',
+      'features/textbooks/server/math-book-target-actions.ts', 'features/textbooks/server/school-exam-actions.ts'];
+    const schema = (text, name) => { const i = text.indexOf(`const ${name} = `); assert.ok(i >= 0, name); return text.slice(text.indexOf('=', i), text.indexOf(');\n', i) + 3); };
+    const pairs = [[0, 'inputSchema', 'inputSchema'], [0, 'resetSchema', 'resetSchema'], [1, 'loadSchema', 'loadSchema'], [1, 'saveSchema', 'saveSchema'],
+      [2, 'inputSchema', 'assignSchema'], [3, 'inputSchema', 'targetSchema'], [4, 'inputSchema', 'examSchema']];
+    const texts = await Promise.all(files.map(async f => lf(await src(f))));
+    for (const [i, theirs, ours] of pairs) assert.equal(schema(mine, ours), schema(texts[i], theirs), `${files[i]} ${theirs}`);
+    for (const [i, text] of texts.entries()) for (const m of text.matchAll(/error: (?:[a-z.]+ \? )?"([^"]+)"/g))
+      assert.ok(mine.includes(m[1]), `${files[i]}: ${m[1]}`);
+  });
+
+  await check('저장(되돌림) — 수업 유형 · 전체 목표 수정·초기화(원장만)·다시 만들기 · 교재 배정(같은 교재 확인) · 목표 권 · 학교별 내신기간 · 글씨 — 감사로그는 연습 복사본 표시', async () => {
+    await rolled(async sql => {
+      const act = actIn(sql), teacher = base.editors.find(e => e.role === '강사').id;
+      const [g] = await sql`select g.class_id::text class_id, g.student_id::text student_id, g.track, g.start_date::text start_date from public.math_learning_track_goals g
+        join public.classes c on c.id=g.class_id where g.tenant_id=${tenantId} and g.block_count is not null and c.is_active and c.math_learning_track = g.track order by g.updated_at desc limit 1`;
+      const cls = g.class_id, key = `${cls}:${g.student_id}:${g.start_date}:${g.track}`;
+      // 수정 창 읽기(GET) → 그대로 다시 저장 · 낡은 시각이면 거절
+      const rev = await M.screen.load({ sql, params: { revision: key, viewer: base.viewer.id }, tenantId, importV2 });
+      assert.equal(rev.ok, true, rev.error); assert.deepEqual(Object.keys(rev.data).sort(), ['context', 'goal', 'progress', 'today']);
+      const goal = rev.data.goal, same = { classId: cls, studentId: g.student_id, startDate: g.start_date, track: g.track, updatedAt: goal.updatedAt,
+        expectedCurrentBlock: rev.data.progress.currentBlock, expectedCurrentDate: rev.data.progress.currentDate, textbook: goal.textbook, milestones: goal.milestones };
+      assert.deepEqual(await act('reviseMathLearningGoal', { ...same, updatedAt: '2000-01-01T00:00:00.000000+00:00' }),
+        { ok: false, error: '목표 또는 현재 진도가 변경되었습니다. 창을 다시 열어 최신 계획을 확인해 주세요.' });
+      assert.deepEqual(await act('reviseMathLearningGoal', same), { ok: true }, '마이크로초까지 같은 시각으로 행을 찾는다');
+      const create = { classId: cls, studentIds: [g.student_id], studyGrade: goal.studyGrade, endStudyGrade: goal.endStudyGrade, startBlock: goal.startBlock, endBlock: goal.endBlock,
+        startDate: goal.startDate, endDate: goal.endDate, textbook: goal.textbook, track: g.track, blockCount: goal.blockCount, milestones: goal.milestones, mode: 'create' };
+      assert.deepEqual(await act('saveMathLearningGoals', create), { ok: false, error: '이미 목표가 설정되었습니다. 새로고침 후 목표 확장으로 다음 정거장을 추가해 주세요.' });
+      const reset = { classId: cls, studentIds: [g.student_id], track: g.track, startDate: g.start_date };
+      const tReset = await act('resetMathLearningGoals', reset, teacher);
+      assert.equal(tReset.ok, false); assert.ok(['담당 반이 아닙니다', '전체 목표 초기화는 원장만 할 수 있습니다.'].includes(tReset.error), tReset.error);
+      assert.deepEqual(await act('resetMathLearningGoals', reset), { ok: true, removed: 1 });
+      assert.deepEqual(await act('saveMathLearningGoals', create), { ok: true });
+      const [row] = await sql`select block_count, jsonb_typeof(milestones) kind, jsonb_array_length(milestones) n, updated_by::text by from public.math_learning_track_goals
+        where tenant_id=${tenantId} and class_id=${cls} and student_id=${g.student_id} and track=${g.track} and start_date=${g.start_date}::date`;
+      assert.deepEqual(row, { block_count: goal.blockCount, kind: 'array', n: goal.milestones.length, by: base.viewer.id }, '계획 정거장은 jsonb 배열로');
+      // 수업 유형 · 교재 · 목표 권 · 내신기간 · 글씨
+      assert.deepEqual(await act('setMathClassLearningTrack', { classId: cls, track: g.track === 'regular' ? 'supplement' : 'regular' }), { ok: true });
+      const [book] = await sql`select id::text id, title from public.textbooks where tenant_id=${tenantId} and subject='math' and is_active limit 1`;
+      assert.deepEqual(await act('saveMathTextbookAssignment', { classId: cls, studentId: null, textbookId: book.id }), { ok: true });
+      assert.deepEqual(await act('saveMathTextbookAssignment', { classId: cls, studentId: null, textbookId: book.id }), { ok: true, unchanged: true });
+      assert.deepEqual(await act('saveMathTextbookAssignment', { classId: cls, studentId: g.student_id, textbookId: book.id }), { ok: false, conflict: { kind: 'same-as-class', title: book.title } });
+      assert.deepEqual(await act('saveMathBookTarget', { classId: cls, studentId: g.student_id, series: 'x', targetKey: 'y' }), { ok: false, error: '목표 교재를 다시 골라 주세요.' });
+      const [st] = await sql`select s.school from public.students s join public.enrollments e on e.student_id=s.id where e.tenant_id=${tenantId} and e.class_id=${cls} and s.school is not null
+        and (e.end_date is null or e.end_date >= ${today}::date) limit 1`;
+      const exam = { classId: cls, school: st.school, schoolYear: 2026, rows: [{ term: '2-final', from: '2026-12-01', to: '2026-12-05' }] };
+      assert.deepEqual(await act('saveSchoolExamPeriods', exam), { ok: true });
+      assert.deepEqual(await act('saveSchoolExamPeriods', { ...exam, school: '없는학교' }), { ok: false, error: '이 반 학생의 학교가 아닙니다. 새로고침해 주세요.' });
+      assert.deepEqual(await act('setMyMcsFontSize', 'lg'), { ok: true });
+      assert.equal((await sql`select ui_prefs->'mcs'->>'fontSize' f from public.users where id=${base.viewer.id}`)[0].f, 'lg');
+      const logs = await sql`select action, metadata->>'via' via from public.audit_logs where tenant_id=${tenantId} and created_at = now()`;
+      assert.deepEqual([...new Set(logs.map(l => l.action))].sort(), ['math_textbook_assign', 'mcs_class_learning_track', 'mcs_learning_goal_reset', 'mcs_learning_goal_revise',
+        'mcs_learning_goal_save', 'school_exam_periods'].sort());
+      assert.ok(logs.every(l => l.via === '3.0 연습 복사본'));
+    });
   });
 } finally { await db.end(); }
 

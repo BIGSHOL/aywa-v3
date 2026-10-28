@@ -12,9 +12,22 @@ import type { TeacherGroup } from '@/features/math-sheets/server/teacher-roster'
 import { McsLandingPage, McsTeachersPage } from './mcs-pages';
 import { McsMonthPage, type McsMonthData } from './mcs-month';
 import { onHostRefresh } from '../shims/host-nav';
-import { setHostEditors, type HostEditor } from '../shims/server-action';
+import { hostActor, registerHostHandler, setHostEditors, type HostEditor } from '../shims/server-action';
 import { useHostSearch } from '../shims/next-navigation';
 import { HostFrame, HostMessage } from './host-frame';
+
+/** 남은 계획 수정 창이 열 때 읽는 2.0 loadMathLearningGoalRevision — 읽기라 같은 화면의 GET(revision)으로 묻는다(저장하는 사람으로). 답은 2.0 반환 모양. */
+const REVISION_FAILED = '현재 목표와 진도를 확인하지 못했습니다. 새로고침 후 다시 시도해 주세요.';
+registerHostHandler('features/math-sheets/server/learning-revision-actions.ts', 'loadMathLearningGoalRevision', async (input) => {
+  const v = (input ?? {}) as { classId?: unknown; studentId?: unknown; startDate?: unknown; track?: unknown };
+  if (![v.classId, v.studentId, v.startDate, v.track].every((x) => typeof x === 'string')) return { ok: false, error: '수정할 목표를 확인해 주세요.' };
+  const q = new URLSearchParams({ revision: [v.classId, v.studentId, v.startDate, v.track].join(':') });
+  const actor = hostActor(); if (actor) q.set('viewer', actor);
+  const r = await fetch(`/api/v2/mcs?${q}`, { headers: { Accept: 'application/json' } }).catch(() => null);
+  if (r?.status === 400) return { ok: false, error: '수정할 목표를 확인해 주세요.' };
+  const body = r ? ((await r.json().catch(() => null)) as { ok?: unknown } | null) : null;
+  return r?.ok && body && typeof body.ok === 'boolean' ? body : { ok: false, error: REVISION_FAILED };
+});
 
 /** 진입점 표식(build.mjs가 찾는다) — 창 제목과 이 화면의 2.0 주소. */
 export const HOST_TITLE = '강사 시트 · 수학';

@@ -6,6 +6,7 @@
 // 사람마다 화면이 다르다(강사 = 담당 반만) — '보는 사람'(viewer)을 고르고 그 사람의 역할·권한 표로 범위를 낸다(v2-mcs-core).
 import { UUID, loadRules, readSettings, readViewers, editorsOf, visibleClassFilter } from './v2-mcs-core.mjs';
 import { mcsMonthPage } from './v2-mcs-month.mjs';
+import { mcsActions, mcsIo, loadMathLearningGoalRevision } from './v2-mcs-save.mjs';
 import { mathCatalogBooks, studentBookOrders, recentReportsByStudentClass, mathBookTargets, schoolExamPeriods } from './v2-math-textbooks.mjs';
 
 const ID = 'mcs';
@@ -129,11 +130,19 @@ async function teacherRosterData(sql, t, R, env, viewer) {
 
 /** 2.0 하위 주소 — /mcs(반별) · /mcs/teachers(선생님별) · /mcs/<반>/month(반 월간). 진도맵(시안)은 다음 단계. */
 const UUID_BODY = UUID.source.slice(1, -1);
+const REVISION = new RegExp(`^${UUID_BODY}:${UUID_BODY}:[0-9]{4}-[0-9]{2}-[0-9]{2}:(?:regular|supplement)$`);
 const ROUTE = new RegExp(`^/mcs(?:/teachers|/${UUID_BODY}/month)?$`), MONTH = new RegExp(`^/mcs/(${UUID_BODY})/month$`);
 export const screen = {
   id: ID, label: '강사 시트 · 수학', order: 7,
-  params: { v2path: ROUTE, viewer: UUID, month: /^\d{4}-\d{2}$/ },
+  params: { v2path: ROUTE, viewer: UUID, month: /^\d{4}-\d{2}$/, revision: REVISION },
+  // 저장 = 반 월간이 부르는 2.0 서버 액션(v2-mcs-save.mjs) — 저장하는 사람 = 보는 사람.
+  actions: mcsActions,
   load: async ({ sql, params: q, tenantId: t, importV2 }) => {
+    // 남은 계획 수정 창이 여는 순간 읽는 2.0 loadMathLearningGoalRevision(읽기라 GET) — 답은 2.0 반환 모양 그대로.
+    if (q.revision) {
+      const io = await mcsIo(sql, t, importV2), [classId, studentId, startDate, track] = q.revision.split(':');
+      return loadMathLearningGoalRevision(io, io.viewers.find(v => v.id === q.viewer) ?? null, { classId, studentId, startDate, track });
+    }
     const R = await loadRules(importV2), env = await readSettings(sql, t, R);
     const viewers = await readViewers(sql, t, R, env);
     const viewer = viewers.find(v => v.id === q.viewer) ?? viewers[0] ?? null;
