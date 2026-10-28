@@ -893,6 +893,69 @@ try {
     assert.deepEqual((await load({ tab: 'sessions', period: '2026-11' })).sessions.confirm.view, val(1), '11월 되돌린 뒤 = 저장 전');
   });
 
+  await check('월 정액 시수·수납 항목 합치기(되돌림) = 테스트 학생에게 유효한 자료를 만든 뒤 2.0 저장 함수로 실제 변경 · 확정액 보존 · 감사로그 · 바깥 요청 0 · 잔여 행 0', async () => {
+    const { runV2Server } = await import('./v2-server-runner.mjs');
+    const S = 'features/billing/session-terms/server/';
+    const [fixture] = await db`select s.id::text student_id, c.id::text class_id, c.teacher_id::text actor_id
+      from public.students s cross join public.classes c join public.users u on u.id=c.teacher_id
+      where s.tenant_id=${tenantId} and s.is_test and s.name='학원이' and s.status='enrolled'
+        and c.tenant_id=${tenantId} and c.class_name='PL5' and c.subject='english' and c.english_track='eie'
+        and c.is_active and u.status='active' and u.system_role='admin' limit 1`;
+    const [multi] = await db`select i.id::text id, i.line_items from public.invoices i join public.students s on s.id=i.student_id
+      where i.tenant_id=${tenantId} and s.is_test and s.name='테스트' and i.period='2026-11' and i.status<>'void' limit 1`;
+    assert.ok(fixture && multi && Array.isArray(multi.line_items) && multi.line_items.length >= 3, '테스트 학생·월 정액 반·여러 청구 항목');
+    const before = await db`select
+      (select count(*)::int from public.enrollments where student_id=${fixture.student_id} and class_id=${fixture.class_id}) enrollments,
+      (select count(*)::int from public.invoices where student_id=${fixture.student_id} and period='2026-11' and status<>'void') invoices,
+      (select count(*)::int from public.invoice_session_terms t join public.invoices i on i.id=t.invoice_id where i.student_id=${fixture.student_id} and i.period='2026-11') terms,
+      (select count(*)::int from net.http_request_queue) queued`;
+    assert.deepEqual([before[0].enrollments, before[0].invoices, before[0].terms], [0, 0, 0]);
+    const fd = pairs => ({ $formData: pairs });
+    const monthlyTerm = col => ({ $sql: `select ${col} from public.invoice_session_terms t join public.invoices i on i.id=t.invoice_id
+      where t.tenant_id=$1 and i.student_id=$2 and i.period='2026-11' and t.class_id=$3 and i.status<>'void' limit 1`, params: [tenantId, fixture.student_id, fixture.class_id] });
+    const source = { $sql: 'select line_items from public.invoices where id=$1 and tenant_id=$2', params: [multi.id, tenantId] };
+    const mr = await importV2('features/billing/session-terms/month-roster.ts');
+    const { results, probes } = await runV2Server({ actorId: fixture.actor_id, tenantId, mode: 'write', rollback: true, allowRefs: true, steps: [
+      { module: 'features/enrollments/server/actions.ts', fn: 'createEnrollment', args: [null, fd([['studentId', fixture.student_id], ['classId', fixture.class_id], ['startDate', '2026-11-01']])] },
+      { module: 'features/billing/server/actions.ts', fn: 'createInvoice', args: [null, fd([['studentId', fixture.student_id], ['period', '2026-11'], ['amountTotal', '100000']])] },
+      { module: `${S}actions.ts`, fn: 'confirmSessionTerm', args: [null, fd([['id', mr.virtualTermId(fixture.student_id, fixture.class_id)], ['period', '2026-11'], ['sessions', '4'], ['unitPrice', '25000']])] },
+      { module: `${S}monthly-sessions.ts`, fn: 'updateMonthlyTermSessions', args: [monthlyTerm('t.id::text'), 5, monthlyTerm(`to_jsonb(t.confirmed_at) #>> '{}'`)] },
+      { module: `${S}receipt-allocation-actions.ts`, fn: 'mergeReceiptItems', args: [multi.id, source, [0, 2], '연습 합산'] },
+    ], probes: [
+      { text: `select t.pricing_mode::text pricing_mode, t.confirmed_sessions::float8 confirmed_sessions, t.unit_price::float8 unit_price, t.amount::float8 amount
+        from public.invoice_session_terms t join public.invoices i on i.id=t.invoice_id where i.student_id=$1 and i.period='2026-11' and t.class_id=$2`, params: [fixture.student_id, fixture.class_id] },
+      { text: 'select line_items from public.invoices where id=$1', params: [multi.id] },
+      { text: `select action, metadata->>'via' via from public.audit_logs where tenant_id=$1 and created_at=now()`, params: [tenantId] },
+      { text: 'select count(*)::int n from net.http_request_queue' },
+    ] });
+    assert.ok(results[0].value?.enrollmentId, '2.0 반 배정');
+    assert.deepEqual(results[1].value, { ok: true }, '2.0 테스트 청구서');
+    const confirmed = results[2].value, changed = results[3].value, merged = results[4].value;
+    assert.equal(confirmed.ok, true, JSON.stringify(confirmed).slice(0, 200));
+    assert.equal(confirmed.terms?.[0]?.pricingMode, 'monthly');
+    assert.equal(changed.error, undefined, JSON.stringify(changed).slice(0, 200));
+    assert.equal(changed.terms?.[0]?.confirmedSessions, 5);
+    assert.deepEqual([changed.terms[0].amount, changed.terms[0].unitPrice], [confirmed.terms[0].amount, confirmed.terms[0].unitPrice], '월 시수만 바꾸고 확정액·단가는 보존');
+    assert.deepEqual([probes[0][0].pricing_mode, probes[0][0].confirmed_sessions, probes[0][0].unit_price, probes[0][0].amount],
+      ['monthly', 5, confirmed.terms[0].unitPrice, confirmed.terms[0].amount]);
+    assert.equal(merged.committed, true, JSON.stringify(merged).slice(0, 200));
+    assert.equal(merged.data?.source?.length, multi.line_items.length - 1, '청구 항목 둘을 한 항목으로 합침');
+    assert.ok(JSON.stringify(merged.data.source).includes('연습 합산'));
+    assert.equal(probes[1][0].line_items.length, multi.line_items.length - 1);
+    assert.equal(probes[1][0].line_items.reduce((sum, row) => sum + Number(row.amount ?? 0), 0), multi.line_items.reduce((sum, row) => sum + Number(row.amount ?? 0), 0), '청구 총액 보존');
+    const actions = new Set(probes[2].map(r => r.action));
+    for (const action of ['enrollment_assign', 'invoice_create', 'session_term_confirm', 'session_term_monthly_units']) assert.ok(actions.has(action), action);
+    assert.ok(probes[2].every(r => r.via === '3.0 연습 복사본'));
+    assert.equal(probes[3][0].n, before[0].queued, '바깥 요청 0');
+    const after = await db`select
+      (select count(*)::int from public.enrollments where student_id=${fixture.student_id} and class_id=${fixture.class_id}) enrollments,
+      (select count(*)::int from public.invoices where student_id=${fixture.student_id} and period='2026-11' and status<>'void') invoices,
+      (select count(*)::int from public.invoice_session_terms t join public.invoices i on i.id=t.invoice_id where i.student_id=${fixture.student_id} and i.period='2026-11') terms,
+      (select count(*)::int from net.http_request_queue) queued`;
+    assert.deepEqual(after, before, '시험이 만든 행·바깥 요청은 모두 되돌림');
+    assert.deepEqual((await db`select line_items from public.invoices where id=${multi.id}`)[0].line_items, multi.line_items, '원래 테스트 청구 항목 보존');
+  });
+
   await check('회차 확정 읽기 셋(배분 창 · 이월 선택지 · 지우기 미리보기) = 2.0 서버 함수를 화면 GET으로 — 쓰기 0 · 모르는 함수 거절', async () => {
     const sept = (await load({ tab: 'sessions', period: '2026-09' })).sessions.confirm.view.rows;
     const row = sept.find(r => r.termState === 'term' && r.invoiceId);

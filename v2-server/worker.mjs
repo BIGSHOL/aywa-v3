@@ -30,6 +30,17 @@ const queued = async sql => {
   return present ? (await sql`select count(*)::int n from net.http_request_queue`)[0].n : 0;
 };
 
+// 2.0 서버 함수가 logAction 대신 DB 함수 안에서 감사로그를 직접 남길 때도 연습 저장의 출처를 붙인다.
+// DB 함수의 저장점은 별도 xmin을 가지므로 현재 요청의 시각·행위자로 고른다.
+async function markAuditSource(sql, tenantId, actorId) {
+  if (!actorId) return;
+  const via = '3.0 연습 복사본';
+  await sql`update public.audit_logs set metadata = case
+    when metadata ? 'via' then (metadata - 'via') || jsonb_build_object('surface', coalesce(metadata->'surface', metadata->'via'), 'via', ${via}::text)
+    else coalesce(metadata, '{}'::jsonb) || jsonb_build_object('via', ${via}::text) end
+    where tenant_id=${tenantId} and actor_id=${actorId} and created_at=now() and metadata->>'via' is distinct from ${via}`;
+}
+
 async function runSteps(sql, call) {
   const actor = await actorOf(sql, call.tenantId, call.actorId);
   // metaSql = 표 정보(FK · 칸 형식 · 함수 모양) 전용 — 트랜잭션 밖 연결(역할 전환과 섞이지 않게).
@@ -88,6 +99,7 @@ async function handle(call) {
         await sql`set local statement_timeout = '60s'`;
         const before = await queued(sql);
         const results = await runSteps(sql, call);
+        await markAuditSource(sql, call.tenantId, call.actorId);
         if (await queued(sql) > before) throw Object.assign(new Error('outbound'), { code: 'outbound_blocked' });
         const probes = [];
         for (const p of call.probes ?? []) probes.push(await sql.unsafe(p.text, p.params ?? []));
