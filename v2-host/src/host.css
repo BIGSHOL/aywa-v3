@@ -1,0 +1,10 @@
+/* 2.0 CSS 그대로 — src/app/globals.css를 Tailwind v4로 컴파일한다(소스 스캔 = 저장소 루트, 2.0 next build와 같은 기준).
+   글꼴은 2.0 next/font(localFont '--font-pretendard')와 같은 파일·같은 굵기 범위. */
+@font-face {
+  font-family: "Pretendard";
+  src: url("/fonts/PretendardVariable.woff2") format("woff2");
+  font-weight: 45 920;
+  font-style: normal;
+  font-display: swap;
+}
+@import "../../../../src/app/globals.css";
