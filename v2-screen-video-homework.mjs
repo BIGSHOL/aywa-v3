@@ -872,4 +872,4 @@ export const screen = {
   },
   load: build,
 };
-export { loadRules, ADMIN_PATH };
+export { loadRules, ADMIN_PATH, videoHomeworkWriteError, loadTarget, writeMark };
