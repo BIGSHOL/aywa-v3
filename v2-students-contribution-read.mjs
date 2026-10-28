@@ -5,7 +5,7 @@ import { runV2Server } from './v2-server-runner.mjs';
 const MONTH = /^\d{4}-(0[1-9]|1[0-2])$/;
 const SOURCE = /^[a-f0-9]{64}$/;
 
-export async function read({ sql, tenantId, importV2, viewerId, studentId, kind, month, sourceId }) {
+export async function read({ sql, tenantId, importV2, viewerId, studentId, kind, month, sourceId, period, refreshedAt, revision }) {
   const base = await studentsBase({ sql, tenantId, importV2, viewerId });
   if (!base.viewer) return { result: { error: '기여도 기록을 열람할 수 없습니다.' } };
   if (kind === 'video' && MONTH.test(month ?? '')) {
@@ -23,6 +23,16 @@ export async function read({ sql, tenantId, importV2, viewerId, studentId, kind,
       fn: kind === 'learning' ? 'getStudentLearningConnections' : 'getStudentCommunicationConnections', args: [studentId] }],
       actorId: base.viewer.id, tenantId, mode: 'read' });
     return { result: r.value };
+  }
+  if (kind === 'pending') {
+    const { results: [r] } = await runV2Server({ steps: [{ module: 'features/student-contribution/server/pending-actions.ts',
+      fn: 'getContributionPendingDetails', args: [studentId] }], actorId: base.viewer.id, tenantId, mode: 'read' });
+    return { result: r.value };
+  }
+  if (kind === 'recent') {
+    const { loadContributionRecent } = await import('./v2-students-contribution-list.mjs');
+    return { result: await loadContributionRecent(base, { period: Number(period), month, refreshedAt: refreshedAt || null,
+      revision: Number(revision) }) };
   }
   return { result: { error: '조회할 기록을 확인해 주세요.' } };
 }

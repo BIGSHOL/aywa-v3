@@ -11,7 +11,7 @@ import { StudentsListPage, type StudentListData } from "./students-list";
 import { StudentDetailPage, type StudentDetailData } from "./students-detail";
 import { EditStudentPage, NewStudentPage, type StudentEditData, type StudentNewData } from "./students-form";
 import { StudentTabDataProvider, setCopyDay } from "./students-shared";
-import { onHostRefresh } from "../shims/host-nav";
+import { currentRoute, onHostRefresh } from "../shims/host-nav";
 import { registerHostHandler, setHostEditors } from "../shims/server-action";
 
 /** 배정 창의 '반 이동' 후보 — 2.0 listMovableEnrollments는 읽기라 같은 화면의 GET(movable)으로 묻는다(수업목록과 같다). 답은 2.0 반환 모양. */
@@ -22,7 +22,7 @@ registerHostHandler("features/enrollments/server/movable-actions.ts", "listMovab
   const body = r ? ((await r.json().catch(() => null)) as { ok?: unknown } | null) : null;
   return r?.ok && body && typeof body.ok === "boolean" ? body : { ok: false, error: MOVABLE_FAILED };
 });
-const contributionRead = async (studentId: unknown, kind: "video" | "parent" | "learning" | "communication", extra: Record<string, string> = {}) => {
+const contributionRead = async (studentId: unknown, kind: "video" | "parent" | "learning" | "communication" | "pending" | "recent", extra: Record<string, string> = {}) => {
   if (typeof studentId !== "string" || !/^[0-9a-f-]{36}$/i.test(studentId)) return { error: "학생을 확인할 수 없습니다." };
   const query = new URLSearchParams({ v2path: `/students/${studentId}`, contributionRead: kind, ...extra });
   const response = await fetch(`/api/v2/students?${query}`, { headers: { Accept: "application/json" } }).catch(() => null);
@@ -39,6 +39,16 @@ registerHostHandler("features/student-contribution/server/learning-actions.ts", 
   contributionRead(studentId, "learning"));
 registerHostHandler("features/student-contribution/server/communication-actions.ts", "getStudentCommunicationConnections", (studentId) =>
   contributionRead(studentId, "communication"));
+registerHostHandler("features/student-contribution/server/pending-actions.ts", "getContributionPendingDetails", async (studentId) => {
+  const result = await contributionRead(studentId, "pending");
+  return result && typeof result === "object" && "error" in result ? null : result;
+});
+registerHostHandler("features/student-contribution/server/recent-action.ts", "readContributionRecent", (input) => {
+  const studentId = /^\/students\/([0-9a-f-]{36})$/i.exec(currentRoute())?.[1];
+  const value = input as { period?: unknown; month?: unknown; refreshedAt?: unknown; revision?: unknown } | null;
+  return contributionRead(studentId, "recent", { period: String(value?.period ?? ""), month: String(value?.month ?? ""),
+    refreshedAt: String(value?.refreshedAt ?? ""), revision: String(value?.revision ?? "") });
+});
 import { usePathname, useSearchParams } from "../shims/next-navigation";
 import { HostFrame, HostMessage } from "./host-frame";
 

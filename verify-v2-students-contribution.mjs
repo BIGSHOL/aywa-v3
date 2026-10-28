@@ -9,6 +9,7 @@ import { buildStudentDetail } from './v2-students-detail.mjs';
 import { screen } from './v2-screen-students.mjs';
 import { studentsBase } from './v2-students-common.mjs';
 import { originalSignalFunction } from './v2-students-contribution-actions.mjs';
+import { originalListFunction, originalRecentFunction } from './v2-students-contribution-list.mjs';
 
 const db = await openFullDatabase();
 test('기여도 기본 면 = 원본 월별 점수·근거 조회 · 다른 학생 자료 없음 · 읽기 전용', async () => {
@@ -31,10 +32,48 @@ test('기여도 월별 점수 본문 = 2.0 본문 그대로', async () => {
   const root = new URL('../../', import.meta.url);
   const original = (await readFile(new URL('src/features/student-contribution/components/student-panel.tsx', root), 'utf8')).replace(/\r\n/g, '\n');
   const host = (await readFile(new URL('experiments/owner-concept/v2-host/src/students-tab-contribution.tsx', root), 'utf8')).replace(/\r\n/g, '\n');
-  const expected = original.slice(original.indexOf('  if (!data)')).replace(
-    '<Link href="/student-contribution" className="mt-5 inline-block text-sm text-primary underline">원생 기여도 목록으로</Link>',
-    '<Link href="/students" className="mt-5 inline-block text-sm text-primary underline">원생 목록으로</Link>');
-  assert.equal(host.slice(host.lastIndexOf('  if (!data)')), expected);
+  assert.equal(host.slice(host.lastIndexOf('  if (!data)')), original.slice(original.indexOf('  if (!data)')));
+});
+test('기여도 목록은 2.0 목록 본문과 Docker 집계 함수를 쓰며 바깥 요청이 없다', async () => {
+  const { text: original } = await originalListFunction();
+  for (const piece of ['getContributionDirectory()', 'getContributionSnapshot()', 'cachedContributionTotals(', 'cachedEnrolledMonths(',
+    'students.map((s) => ({ ...s, enrolledMonths:']) assert.ok(original.includes(piece), piece);
+  const [student] = await db`select id::text id from public.students where tenant_id=${tenantId}
+    and status='enrolled' and not coalesce(is_test,false) order by id limit 1`;
+  const [queueBefore] = await db`select count(*)::int n from net.http_request_queue`;
+  const data = await db.begin('read only', (sql) => buildStudentDetail({ sql, tenantId, id: student.id,
+    sp: { tab: 'contribution', contribution: 'list' }, importV2 }));
+  const list = data.tab.data.list;
+  assert.equal(list.ready, true);
+  assert.equal(list.gate.tenantId, tenantId);
+  assert.ok(list.rows.length > 0);
+  assert.ok(list.rows.every((row) => row.id && row.total?.studentId === row.id));
+  const item = list.rows.find((row) => row.total);
+  const { normalizeStoredRaws } = await importV2('features/student-contribution/model/normalize-raws.ts');
+  const { shiftMonth } = await importV2('lib/date-kst.ts');
+  const [stored] = await db`select raws, recent from public.student_contribution_totals(${tenantId}, ${[item.id]}::uuid[],
+    ${shiftMonth(list.month, -11)})`;
+  assert.deepEqual(item.total.raws, normalizeStoredRaws(stored.raws));
+  assert.deepEqual(item.total.recent, normalizeStoredRaws(stored.recent));
+  assert.equal((await db`select count(*)::int n from net.http_request_queue`)[0].n, queueBefore.n);
+});
+test('기간별 증감과 미확인 항목은 2.0 함수의 Docker 읽기 경로로 열린다', async () => {
+  const { text } = await originalRecentFunction();
+  for (const piece of ['schema.safeParse(input)', 'getContributionScoreRoster()', 'getContributionSnapshot()',
+    'cachedContributionTotals(', 'snapshot.revision']) assert.ok(text.includes(piece), piece);
+  const [student] = await db`select id::text id from public.students where tenant_id=${tenantId}
+    and status='enrolled' and not coalesce(is_test,false) order by id limit 1`;
+  const detail = await db.begin('read only', (sql) => buildStudentDetail({ sql, tenantId, id: student.id,
+    sp: { tab: 'contribution', contribution: 'list' }, importV2 }));
+  const list = detail.tab.data.list;
+  const load = (kind, extra = {}) => db.begin('read only', (sql) => screen.load({ sql, tenantId, importV2,
+    params: { v2path: `/students/${student.id}`, contributionRead: kind, ...extra } }));
+  const recent = await load('recent', { period: '3', month: list.month,
+    refreshedAt: list.refreshedAt ?? '', revision: String(list.revision) });
+  assert.ok(Array.isArray(recent.result.rows), recent.result.error);
+  assert.ok(recent.result.rows.every((row) => row.studentId && row.recent));
+  const pending = await load('pending');
+  assert.ok(pending.result === null || (Array.isArray(pending.result.details) && pending.result.computedAt));
 });
 test('학생 기록 연결의 월별·현재 관점을 원본 Docker 읽기 함수로 받는다', async () => {
   const [student] = await db`select id::text id from public.students where tenant_id=${tenantId}

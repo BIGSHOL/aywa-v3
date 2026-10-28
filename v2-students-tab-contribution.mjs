@@ -2,6 +2,10 @@
 import { runV2Server } from './v2-server-runner.mjs';
 
 export async function loadTab({ base, id, sp }) {
+  if (sp.contribution === 'list') {
+    const { loadContributionList } = await import('./v2-students-contribution-list.mjs');
+    return { list: await loadContributionList(base) };
+  }
   if (sp.contribution === 'ontology') {
     if (sp.view === 'current') {
       const { results: [r] } = await runV2Server({ steps: [{ module: 'features/student-contribution/server/live-scope-query.ts',

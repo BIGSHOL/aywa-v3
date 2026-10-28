@@ -37,7 +37,8 @@ export const screen = {
   id: ID, label: '원생목록', order: 6,
   params: {
     v2path: SUB, viewer: new RegExp(`^${UUID_BODY}$`), movable: new RegExp(`^${UUID_BODY}$`),
-    contributionRead: /^(video|parent|learning|communication)$/, sourceId: /^[a-f0-9]{64}$/,
+    contributionRead: /^(video|parent|learning|communication|pending|recent)$/, sourceId: /^[a-f0-9]{64}$/,
+    period: /^(1|3|6|12)$/, refreshedAt: /^[0-9TZ:.+\-]{0,40}$/, revision: /^\d{1,12}$/,
     // 목록
     status: /^[a-z_]{1,20}$/, subject: /^[a-z0-9_,]{0,200}$/, q: /^[^\u0000-\u001f]{0,200}$/, page: /^\d{1,5}$/, grade: TEXT,
     teacher: new RegExp(`^(all|${UUID_BODY}(?:,${UUID_BODY}){0,60})$`), field: /^[a-z]{1,12}$/, sort: /^[a-zA-Z_]{1,24}$/, noenr: /^[01]$/,
@@ -58,7 +59,8 @@ export const screen = {
     if (params.contributionRead) {
       if (!sub[2] || sub[3] || !contributionRead) return { notFound: true };
       return contributionRead.read({ sql, tenantId, importV2, viewerId, studentId: sub[2], kind: params.contributionRead,
-        month: params.month, sourceId: params.sourceId });
+        month: params.month, sourceId: params.sourceId, period: params.period,
+        refreshedAt: params.refreshedAt, revision: params.revision });
     }
     // 저장하는 사람(학생 관리 '전체') — 저장이 있을 때만 싣는다(3.0 띠가 이 목록에서 고른다 · 수업목록과 같은 신호).
     const withEditors = async (data) => (data && !data.notFound && !data.missing && Object.keys(ACTIONS).length

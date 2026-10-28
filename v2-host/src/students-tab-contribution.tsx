@@ -22,13 +22,16 @@ import { CurrentScopeExplorer } from "./students-contribution-current-explorer";
 import { liveScopeRequest } from "@/features/students/ontology/live-scope";
 import type { getContributionOntology } from "@/features/student-contribution/server/ontology-query";
 import type { getCurrentOntologyScope } from "@/features/student-contribution/server/live-scope-query";
+import type { getContributionList } from "@/features/student-contribution/server/queries";
+import { ContributionList } from "./students-contribution-list";
 
 type ContributionData = Awaited<ReturnType<typeof getContributionStudent>>;
 type ContributionTabData = { contribution?: ContributionData; live?: LiveConnections | null;
   summary?: Awaited<ReturnType<typeof getStudentRecordSummary>>;
   ontologyMode?: "monthly" | "current";
   ontology?: Awaited<ReturnType<typeof getContributionOntology>>;
-  currentScope?: Awaited<ReturnType<typeof getCurrentOntologyScope>> };
+  currentScope?: Awaited<ReturnType<typeof getCurrentOntologyScope>>;
+  list?: Awaited<ReturnType<typeof getContributionList>> };
 
 export function StudentContributionView({ studentId, params }: { studentId: string; params: Record<string, string | undefined> }) {
   const tab = useStudentTab<ContributionTabData>();
@@ -38,12 +41,17 @@ export function StudentContributionView({ studentId, params }: { studentId: stri
       : tab.ontology ? <OntologyExplorer studentId={studentId} data={tab.ontology} initialScope={liveScopeRequest(params, tab.ontology.tenant)} />
         : <p>학생 기록 연결을 열람할 수 없습니다.</p>}
   </StudentContributionScope>;
+  if (params.contribution === "list") return <StudentContributionScope studentId={studentId} back={params.back}>
+    {tab.list ? <ContributionList studentId={studentId} data={{ ...tab.list, gate: { ...tab.list.gate, canWrite: false } }} />
+      : <p>기여도 목록을 열람할 수 없습니다.</p>}
+  </StudentContributionScope>;
   if (params.contribution && params.contribution !== "student") return <MissingTab />;
   const { contribution: data, live, summary } = tab;
   if (!data) return <p>기여도 기록을 열람할 수 없습니다.</p>;
   return <StudentContributionScope studentId={studentId} back={params.back}>
     <div className="w-full min-w-0 space-y-5 pb-6">
-      <ContributionHeader studentId={studentId} title={`${data.student.name}의 기여도와 기록`} description="월별 점수와 계산 근거를 확인하세요." active="students" />
+      <ContributionHeader studentId={studentId} title={`${data.student.name}의 기여도와 기록`} description="월별 점수와 계산 근거를 확인하세요." active="students"
+        actions={<Link href="/student-contribution" className="rounded-lg border border-line px-3 py-2 text-sm hover:bg-muted">전체 기여도 목록</Link>} />
       <ContributionStudentPanel studentId={studentId} month={params.month} data={data} />
       <details key={studentId} id={`current-connections-${studentId}`} tabIndex={-1} className="group rounded-xl border border-line" aria-label="현재 연결">
         <summary className="flex cursor-pointer list-none items-center justify-between gap-4 px-5 py-4 focus-visible:outline-primary [&::-webkit-details-marker]:hidden">
@@ -75,7 +83,7 @@ export function StudentContributionView({ studentId, params }: { studentId: stri
 export function ContributionStudentPanel({ studentId, month, data }: { studentId: string; month?: string; data: ContributionData }) {
   if (!data) return <p>기여도 기록을 열람할 수 없습니다.</p>;
   if (!data.ready || !data.months.length) return <div className="w-full space-y-5">
-    <div className="rounded-xl border border-line p-12 text-center"><p className="font-semibold">아직 집계된 기록이 없습니다.</p><p className="mt-2 text-sm">첫 집계가 끝나면 점수와 계산 근거가 표시됩니다.</p><Link href="/students" className="mt-5 inline-block text-sm text-primary underline">원생 목록으로</Link></div></div>;
+    <div className="rounded-xl border border-line p-12 text-center"><p className="font-semibold">아직 집계된 기록이 없습니다.</p><p className="mt-2 text-sm">첫 집계가 끝나면 점수와 계산 근거가 표시됩니다.</p><Link href="/student-contribution" className="mt-5 inline-block text-sm text-primary underline">원생 기여도 목록으로</Link></div></div>;
   const config = data.settings.config, current = kstMonth(), since = shiftMonth(current, -11);
   const total = sumRaws(data.months.flatMap((m) => [m.raws, m.correction])), scored = scoreRaws(total, config);
   const selected = data.months.find((m) => m.month === month) ?? data.months.at(-1)!;
