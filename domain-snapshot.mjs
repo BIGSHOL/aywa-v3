@@ -29,7 +29,7 @@ export async function loadWorkspaces(sql, { tenantId, asOf, capturedAt }) {
   const areasOf = Object.fromEntries(subjects.filter(s => s.key).map(s => [s.key, Array.isArray(s.areas) ? s.areas.filter(a => a?.key && a?.label) : []]));
   if (!areasOf.english?.length) areasOf.english = ENGLISH_SKILL_AREAS;
   const ctx = {
-    sql, t: tenantId, asOf, month, monthStart, capturedAt,
+    sql, t: tenantId, asOf, month, monthStart, capturedAt, subjectSettings: subjects,
     notTest: sql`and student_id not in (select id from public.students where tenant_id=${tenantId} and coalesce(is_test,false))`,
     subjectLabel: key => labels[key] || (key ? '기타 과목' : '과목 미지정'),
     skillAreaLabel: (subject, key) => (areasOf[subject] || []).find(a => a.key === key)?.label || key,

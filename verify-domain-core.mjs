@@ -6,6 +6,18 @@ import { EVIDENCE, MASK, PRIORITY, assertWorkspaces, family, field, metric, mont
 import { queryRecords } from './domain-http.mjs';
 import { FAMILY_IDS } from './domain-snapshot.mjs';
 import { isBookkeepingOnlyExit, normalizeReason } from './domain-snapshot-students2.mjs';
+import { enrollmentStageOf } from './domain-snapshot-students.mjs';
+import { importV2 } from './v2-bridge.mjs';
+
+test('신규 상담 신호는 2.0 칸반의 과목별 수강 판정을 따르고 결과 코드는 유지한다', async () => {
+  const [{ stageOfCard }, { consultClassKeysOf }] = await Promise.all([importV2('features/enrollment/board-stages.ts'), importV2('features/enrollment/consult-subject.ts')]);
+  const keys = consultClassKeysOf([{ key: 'english', label: '영어' }, { key: 'math', label: '수학' }]);
+  const lead = { id: 'lead-1', subject: '영어', oc: 'ai_done' };
+  assert.equal(enrollmentStageOf(lead, new Map([['lead-1', ['english']]]), keys, stageOfCard), 'enrolled');
+  assert.equal(enrollmentStageOf(lead, new Map([['lead-1', ['math']]]), keys, stageOfCard), 'consulted', '다른 과목의 수강으로 완료하지 않는다');
+  assert.equal(enrollmentStageOf(lead, new Map(), keys, stageOfCard), 'consulted');
+  assert.equal(lead.oc, 'ai_done', '원본 결과는 바꾸지 않는다');
+});
 
 test('masking hides contacts but keeps amounts, dates, ids and reference numbers', () => {
   setKnownContacts(['010-1234-5678', '110-222-333444', '홍길동, 김철수', '053 555 0101']);

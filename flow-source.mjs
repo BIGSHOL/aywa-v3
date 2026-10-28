@@ -2,7 +2,7 @@
 // read-only transaction. Every relation is a foreign key (relation.source = "table.column");
 // nothing is linked by matching names. Labels pass the shared contact scrub.
 import { openFullDatabase, tenantId } from './full-db.mjs';
-import { scrub } from './domain-snapshot-core.mjs';
+import { EVIDENCE, scrub } from './domain-snapshot-core.mjs';
 import { ACTOR_ROLE, ROLE_LABEL, TASK_KINDS } from './flow-rules.mjs';
 import { PROVIDER as INTEGRATION_LABEL } from './domain-snapshot-support.mjs';
 import { importV2 } from './v2-bridge.mjs';
@@ -121,13 +121,19 @@ export async function loadFlowSource({ workspaces, capturedAt, asOf }) {
         if (subjectType && entities.has(`${subjectType}:${k.subject_id}`)) link('about', key, `${subjectType}:${k.subject_id}`, 'staff_tasks.subject_id');
       }
       const historyBy = new Map(); for (const h of history) { if (!historyBy.has(h.task)) historyBy.set(h.task, []); historyBy.get(h.task).push(h); }
+      const enrollmentEvidence = new Map((workspaces?.families?.enrollment?.[EVIDENCE] || []).map(r => [String(r.id), r]));
+      const taskDetail = k => {
+        const r = k.kind === 'enrollment_followup' && ['open', 'late'].includes(k.status) ? enrollmentEvidence.get(String(k.subject_id)) : null;
+        const pendingResult = r?.status === '등록 완료' && r.fields?.some(f => f.label === '상담 결과');
+        return scrub([k.detail, pendingResult && '수강 중이나 상담 결과 미확정. 신규 콜&상담에서 결과를 등록 완료로 변경해 주세요.'].filter(Boolean).join(' '));
+      };
       const signals = defs.map(({ f, s, table }) => { const type = TYPE_OF_TABLE[table]; const refs = type ? s.recordIds.map(id => `${type}:${id}`).filter(k => entities.has(k)) : []; return { familyId: f.id, signal: s, table, refs }; });
       for (const w of signalWiring(signals)) if (w.status !== 'ok') console.warn(`flow source wiring: ${w.familyId}/${w.signalId} ${w.status} (records ${w.records}, linked ${w.linked})`);
       // signalFamilies = families whose signals were read (a signal missing there has cleared); loadedAt = when this source was read.
       const signalFamilies = Object.values(workspaces?.families || {}).filter(f => ['available', 'empty'].includes(f.dataState)).map(f => f.id);
       return {
         identity: { tenantId: t, tenantSlug: 'cs', capturedAt, asOf }, loadedAt: new Date().toISOString(), signalFamilies, actors, entities, relations, signals,
-        tasks: tasks.map(k => ({ id: k.id, kind: k.kind, status: k.status, closeReason: k.close_reason, ...(k.kind === 'attendance_absent_desk' && k.close_reason === 'desk_settled' ? { closeResult: deskCloseResult(k.cycle, deskByTask.get(k.id) || [], attendanceOutcomeLabel) } : {}), closedAt: k.closed, title: scrub(k.title), detail: scrub(k.detail), openedAt: k.opened, dueAt: k.due, assigneeIds: k.assignees || [], subjectKey: TASK_SUBJECT[k.kind] && entities.has(`${TASK_SUBJECT[k.kind]}:${k.subject_id}`) ? `${TASK_SUBJECT[k.kind]}:${k.subject_id}` : null, history: historyBy.get(k.id) || [] })),
+        tasks: tasks.map(k => ({ id: k.id, kind: k.kind, status: k.status, closeReason: k.close_reason, ...(k.kind === 'attendance_absent_desk' && k.close_reason === 'desk_settled' ? { closeResult: deskCloseResult(k.cycle, deskByTask.get(k.id) || [], attendanceOutcomeLabel) } : {}), closedAt: k.closed, title: scrub(k.title), detail: taskDetail(k), openedAt: k.opened, dueAt: k.due, assigneeIds: k.assignees || [], subjectKey: TASK_SUBJECT[k.kind] && entities.has(`${TASK_SUBJECT[k.kind]}:${k.subject_id}`) ? `${TASK_SUBJECT[k.kind]}:${k.subject_id}` : null, history: historyBy.get(k.id) || [] })),
         candidates: { absence: absences.filter(a => studentKey(a.student_id)).map(a => a.id), billing: invoices.filter(i => i.remaining > 0 && studentKey(i.student_id)).map(i => i.id), consultation: consults.filter(c => studentKey(c.student_id)).map(c => c.id) },
       };
     });
