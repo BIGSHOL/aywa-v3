@@ -403,3 +403,6 @@
 .spot-on{border-color:var(--ax-primary)!important;animation:spot-pulse 1.6s ease-out infinite}
 @keyframes spot-pulse{0%{box-shadow:0 0 0 0 rgba(21,62,117,.4)}70%{box-shadow:0 0 0 9px rgba(21,62,117,0)}100%{box-shadow:0 0 0 0 rgba(21,62,117,0)}}
 @media (prefers-reduced-motion:reduce){.spot-dim,.spot-back{transition:none}.spot-on{animation:none;box-shadow:0 0 0 2px var(--ax-primary)}}
+/* 이슈 확인 대상 = 업무 흐름과 같은 종류별 표(flow-ui .fl-rectable) — 길면 상자 안에서 넘긴다. 종류가 하나면 그 머리는 위 '확인 대상'과 같은 말이라 숨긴다. */
+.ax-recs-box{max-height:26rem}
+.ax-recs-box .fl-recgroup:only-child .fl-recgroup-head{display:none}

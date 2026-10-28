@@ -892,7 +892,7 @@ window.createFlowUI = function createFlowUI(api) {
   // 기록 한 건(GET …/records?id=, 읽기만)의 내용 · 상태 · 날짜 · 칸. 한 번 읽은 기록은 다시 읽지 않는다. 줄을 누르면 그 기록을 엿보기 창에 연다.
   const STUDENT_STATE={enrolled:'재원',withdrawn:'퇴원',paused:'휴원',on_hold:'휴원',leave:'휴원',pending:'등록 예정',waiting:'대기'};
   const schoolGrade=(school,grade)=>{const s=String(school||''),g=String(grade||''),m=/^([초중고])(\d)$/.exec(g);return m&&s.endsWith(m[1])?`${s}${m[2]}`:[s,g].filter(Boolean).join(' ');};
-  const DETAIL_LABEL={enrollment:'학년·학교',students:'학교·학년'};
+  const DETAIL_LABEL={enrollment:'학년·학교',students:'학교·학년',billing:'청구월',approvals:'종류','textbook-requests':'요청'};
   let studentIndex=null,classIndex=null;
   function studentFacts(id){
     studentIndex??=new Map((db.students||[]).map(s=>[String(s.id),s]));classIndex??=new Map((db.classes||[]).map(k=>[String(k.id),k]));
@@ -904,8 +904,8 @@ window.createFlowUI = function createFlowUI(api) {
     const fam=r.familyId||'',id=String(r.recordId||r.id||''),key=`${fam}:${id}`;
     if(recCache.has(key))return recCache.get(key);
     const known=r.type==='student'?studentFacts(id):null;
-    const clean=v=>{const x=String(v??'').trim();return x==='—'?'':x;};
-    const p=known?Promise.resolve(known):!fam||!id?Promise.resolve([]):fetch(`/api/workspaces/${encodeURIComponent(fam)}/records?id=${encodeURIComponent(id)}`,{headers:{Accept:'application/json'}}).then(res=>res.ok?res.json():null).then(b=>{const it=b?.item;if(!it)return [];const label=String(r.label||''),detail=clean(it.detail);return [[DETAIL_LABEL[fam]||'내용',detail&&!label.includes(detail)?detail:''],['상태',clean(it.status)],['날짜',it.date?md(String(it.date).slice(0,10)):''],...(it.fields||[]).filter(f=>f&&f.label).map(f=>[String(f.label),clean(f.value)])];}).catch(()=>{recCache.delete(key);return null;});
+    const clean=v=>{const x=String(v??'').trim();return x==='—'?'':/^\d{4}-\d{2}-\d{2}$/.test(x)?md(x):x;};
+    const p=known?Promise.resolve(known):!fam||!id?Promise.resolve([]):fetch(`/api/workspaces/${encodeURIComponent(fam)}/records?id=${encodeURIComponent(id)}`,{headers:{Accept:'application/json'}}).then(res=>res.ok?res.json():null).then(b=>{const it=b?.item;if(!it)return r.detail?[['내용',String(r.detail)]]:[];const label=String(r.label||''),detail=clean(it.detail);return [[DETAIL_LABEL[fam]||'내용',detail&&!label.includes(detail)?detail:''],['상태',clean(it.status)],['날짜',it.date?md(String(it.date).slice(0,10)):''],...(it.fields||[]).filter(f=>f&&f.label).map(f=>[String(f.label),clean(f.value)])];}).catch(()=>{recCache.delete(key);return null;});
     recCache.set(key,p);return p;
   }
   const recType=r=>r.type==='student'?'원생':r.type==='lead'?'신규 상담':api.familyLabel?.(r.familyId)||'기록';
@@ -916,8 +916,8 @@ window.createFlowUI = function createFlowUI(api) {
     return [...groups].map(([t,list],i)=>`<section class="fl-recgroup" data-rec-group="${i}"><p class="fl-recgroup-head">${h(t)} ${fmt(list.length)}건</p><div class="fl-recgroup-body"><p class="fl-dim">불러오는 중</p></div></section>`).join('');
   }
   function recTable(list,facts){
-    // 열 = 그 묶음에서 값이 하나라도 있는 칸(처음 나온 순서).
-    const cols=[];facts.forEach(f=>(f||[]).forEach(([k,v])=>{if(v&&!cols.includes(k))cols.push(k);}));
+    // 열 = 그 묶음에서 값이 하나라도 있는 칸. 순서는 기록이 칸을 내는 순서 — 새 칸은 그 줄에서 바로 앞 칸 뒤에 끼운다(첫 줄에 없는 칸이 맨 뒤로 밀리지 않게).
+    const cols=[];facts.forEach(f=>{const ks=(f||[]).filter(([,v])=>v).map(([k])=>k);ks.forEach((k,j)=>{if(cols.includes(k))return;let at=0;for(let p=j-1;p>=0;p--){const i=cols.indexOf(ks[p]);if(i>=0){at=i+1;break;}}cols.splice(at,0,k);});});
     const cell=v=>`<td><span class="fl-cut">${h(v||'')}</span></td>`;
     return `<table class="fl-rectable"><thead><tr><th scope="col">이름</th>${cols.map(k=>`<th scope="col">${h(k)}</th>`).join('')}<th aria-hidden="true"></th></tr></thead><tbody>${list.map((r,i)=>{const fam=r.familyId||'',id=String(r.recordId||r.id||''),can=fam&&api.hasView(`workspace-${fam}`)||api.canOpenRecord?.(id),f=new Map(facts[i]||[]),at=`data-family="${h(fam)}" data-record="${h(id)}"`;
       return `<tr ${can?`class="can" data-fl="rec-open" ${at}`:''}><th scope="row">${can?`<button type="button" class="fl-cut" data-fl="rec-open" ${at}>${h(r.label)}</button>`:`<span class="fl-cut">${h(r.label)}</span>`}</th>${facts[i]===null?`<td colspan="${cols.length||1}" class="fl-dim">정보를 읽지 못했습니다.</td>`:cols.map(k=>cell(f.get(k))).join('')}<td class="fl-rec-go">${can?icon('chevron'):''}</td></tr>`;}).join('')}</tbody></table>`;
@@ -1072,5 +1072,5 @@ window.createFlowUI = function createFlowUI(api) {
   },true);
 
   load();
-  return {load,ready,status:()=>store.status,actor,role,actors,nameOf,sidebar,inboxCount,ownerCards,ownerStageCell,ownerBelow,fullView,staffView,managerView,showCase,asRequests,createRequest,actAs,caseById,stepOf,myStep,notices,stateNote};
+  return {recordsHtml:recRows,fillRecords:fillFacts,load,ready,status:()=>store.status,actor,role,actors,nameOf,sidebar,inboxCount,ownerCards,ownerStageCell,ownerBelow,fullView,staffView,managerView,showCase,asRequests,createRequest,actAs,caseById,stepOf,myStep,notices,stateNote};
 };

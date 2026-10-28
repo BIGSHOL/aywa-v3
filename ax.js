@@ -9,7 +9,7 @@ window.createOwnerWorkspace = function createOwnerWorkspace(api) {
   const current=()=>db.trend.find(t=>t.month===db.meta.month);
   const total=(rows,key)=>rows.reduce((n,r)=>n+Number(r[key]||0),0);
   const staffById=new Map(db.staff.map(s=>[s.id,s]));
-  const ui={filter:'all',inbox:'unread',read:new Set(),reportRead:new Set(),archived:new Set(),expanded:new Set(),requests:[],drafts:new Map(),requestArgs:null,focusIssue:null,homePrompt:'',rule:true,slack:true,app:true};
+  const ui={recRefs:new Map(),filter:'all',inbox:'unread',read:new Set(),reportRead:new Set(),archived:new Set(),expanded:new Set(),requests:[],drafts:new Map(),requestArgs:null,focusIssue:null,homePrompt:'',rule:true,slack:true,app:true};
   const chat={turns:[],context:null,topic:'',pending:null};
   let workspaces=null,flowUI=null;
   // Requests come from the durable flow store when the server provides it; otherwise from this tab (session only).
@@ -22,6 +22,8 @@ window.createOwnerWorkspace = function createOwnerWorkspace(api) {
   // Limits mirror the backend contract (prompt ≤1000, history ≤12 items, each ≤2000, total ≤8000, server timeout 90s).
   const ASSISTANT={endpoint:'/api/assistant',promptLimit:1000,historyItems:12,historyItemLimit:2000,historyTotal:8000,timeoutMs:120000};
   const RECORDS_SHOWN=8;
+  // 이슈 기록 종류 → 업무 흐름 기록(종류 · 업무 영역). 같은 id로 그 영역의 기록 한 건을 읽는다.
+  const REC_REF={student:['student','students'],lead:['lead','enrollment'],bill:['invoice','billing'],approval:['approval','approvals'],task:['task','tasks-notifications'],book:['textbook_order','textbook-requests']};
   const SIGNAL_ORDER=['approval','billing','tasks','admissions','attendance','books','enrollment'];
   const FILTERS=[['all','전체',null],['decide','결정 필요','결정 필요'],['check','확인 필요','확인 필요'],['progress','진행 확인','진행 확인'],['change','변화','변화 감지']];
   const STATUS={requested:'확인 대기',working:'진행 중',done:'완료 보고'};
@@ -95,12 +97,19 @@ window.createOwnerWorkspace = function createOwnerWorkspace(api) {
   }
   function recordList(issue){
     if(!issue.records.length)return '';
+    // 확인 대상 = 업무 흐름 '기록 보기'와 같은 종류별 표(원장 10-28 "그냥 다 리스트로" · "학생이면 학생에게서 알아야할 정보들" · "항상 열정렬").
+    // 정보는 그 표가 채운다(flow-ui fillRecords — decorateView). 업무 흐름을 못 불러오면 예전 목록.
+    if(flowUI?.recordsHtml){
+      const refs=issue.records.map(r=>{const [type,familyId]=REC_REF[r.type]||[r.type,''];return {type,familyId,id:String(r.id),recordId:String(r.id),label:r.name,detail:r.detail};});
+      ui.recRefs.set(issue.id,refs);
+      return `<section class="ax-records"><div class="ax-section-head"><h4>확인 대상 ${issue.records.length}${issue.unit}</h4>${button(`${labels[issue.page]||'전체 기록'} 열기`,'navigate',issue.page)}</div><div class="ax-recs-box live-scroll" data-ax-recs="${h(issue.id)}">${flowUI.recordsHtml(refs)}</div></section>`;
+    }
     const open=ui.expanded.has(issue.id),more=issue.records.length-RECORDS_SHOWN;
     return `<section class="ax-records"><div class="ax-section-head"><h4>확인 대상 ${issue.records.length}${issue.unit}</h4>${button(`${labels[issue.page]||'전체 기록'} 열기`,'navigate',issue.page)}</div><ul class="ax-record-list" id="ax-records-${issue.id}" data-collapsed="${!open}">${issue.records.map((r,i)=>`<li class="${i>=RECORDS_SHOWN?'ax-more':''}"><button type="button" data-ax="record" data-type="${r.type}" data-id="${h(r.id)}"><strong>${h(r.name)}</strong><span>${h(r.detail)}</span>${icon('chevron')}</button></li>`).join('')}</ul>${more>0?`<button type="button" class="ax-text-link" id="ax-expand-${issue.id}" data-ax="expand" data-id="${issue.id}" aria-controls="ax-records-${issue.id}" aria-expanded="${open}">${open?'접기':`나머지 ${more}${issue.unit} 더 보기`}</button>`:''}</section>`;
   }
   function issueSection(issue){
     const related=requestsFor(issue.id);
-    return `<article class="ax-issue" id="ax-issue-${issue.id}" tabindex="-1" aria-labelledby="ax-issue-${issue.id}-title"><header><div class="ax-issue-meta">${pill(issue.category)}${pill(issue.priority,issue.priority==='결정 필요'?'amber':issue.priority==='변화 감지'?'blue':'')}${pill(issueState(issue.id),issueState(issue.id)==='결과 도착'?'green':'')}</div><h3 id="ax-issue-${issue.id}-title">${h(issue.title)}</h3><p class="ax-summary">${h(issue.summary)}</p><div class="ax-actions">${button('업무 요청','request',issue.id,true)}${button('이 이슈로 대화','ask',issue.id)}${button('슬랙 알림 미리보기','slack',issue.id)}</div></header><div class="ax-issue-body ${issue.records.length||issue.id==='enrollment'?'':'single'}"><section class="ax-evidence"><h4>확인 근거</h4><ul>${issue.facts.map(f=>`<li>${h(f)}</li>`).join('')}</ul><p class="ax-source">${h(issue.source)} · ${caption}</p></section>${issue.id==='enrollment'?`<section class="ax-records">${chart(db.trend.filter(t=>db.months.includes(t.month)),'payingStudents','명',{label:'청구 대상 원생'})}</section>`:recordList(issue)}</div>${related.length?`<section class="ax-linked"><h4>연결된 요청 ${related.length}건</h4>${related.map(requestRow).join('')}</section>`:''}<footer class="ax-issue-footer">${button(ui.read.has(issue.id)?'확인 취소':'확인함','read',issue.id,false,`id="ax-read-${issue.id}"`)}${button('보관','archive',issue.id,false,`id="ax-archive-${issue.id}"`)}<span>확인함은 업무 완료와 별개입니다.</span></footer></article>`;
+    return `<article class="ax-issue" id="ax-issue-${issue.id}" tabindex="-1" aria-labelledby="ax-issue-${issue.id}-title"><header><div class="ax-issue-meta">${pill(issue.category)}${pill(issue.priority,issue.priority==='결정 필요'?'amber':issue.priority==='변화 감지'?'blue':'')}${pill(issueState(issue.id),issueState(issue.id)==='결과 도착'?'green':'')}</div><h3 id="ax-issue-${issue.id}-title">${h(issue.title)}</h3><p class="ax-summary">${h(issue.summary)}</p><div class="ax-actions">${button('업무 요청','request',issue.id,true)}${button('이 이슈로 대화','ask',issue.id)}${button('슬랙 알림 미리보기','slack',issue.id)}</div></header><div class="ax-issue-body single">${issue.id==='enrollment'?`<section class="ax-records">${chart(db.trend.filter(t=>db.months.includes(t.month)),'payingStudents','명',{label:'청구 대상 원생'})}</section>`:recordList(issue)}</div>${related.length?`<section class="ax-linked"><h4>연결된 요청 ${related.length}건</h4>${related.map(requestRow).join('')}</section>`:''}<footer class="ax-issue-footer">${button(ui.read.has(issue.id)?'확인 취소':'확인함','read',issue.id,false,`id="ax-read-${issue.id}"`)}${button('보관','archive',issue.id,false,`id="ax-archive-${issue.id}"`)}</footer></article>`;
   }
   function issueList(all){
     const available=FILTERS.filter(f=>!f[2]||all.some(i=>i.priority===f[2]));if(!available.some(f=>f[0]===ui.filter))ui.filter='all';
@@ -388,6 +397,7 @@ window.createOwnerWorkspace = function createOwnerWorkspace(api) {
   },true);
   function decorateView(){
     const page=api.getPage();
+    if(flowUI?.fillRecords)document.querySelectorAll('[data-ax-recs]').forEach(el=>{const refs=ui.recRefs.get(el.dataset.axRecs);if(refs)flowUI.fillRecords(el,refs);});
     if(page==='home'&&ui.focusIssue){const id=ui.focusIssue,instant=ui.focusRouted;ui.focusIssue=null;requestAnimationFrame(()=>focusIssue(id,{instant}));}
     else if(!['home','flow','inbox','requests','automation'].includes(page)&&!page.startsWith('workspace-')&&$('main h1'))$('main h1').textContent=labels[page]||$('main h1').textContent;
   }
