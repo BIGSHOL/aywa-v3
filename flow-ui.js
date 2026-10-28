@@ -1044,7 +1044,11 @@ window.createFlowUI = function createFlowUI(api) {
   const studentIdOf=c=>{const s=refsOf(c).filter(r=>r.familyId==='students'&&r.recordId);return s.length===1?String(s[0].recordId):'';};
   const V2_ROUTE={'withdrawal-reports':{record:id=>({v2path:`/withdrawal-reports/${id}`}),list:{status:'pending'}},approvals:{record:id=>({v2path:`/approvals/${id}`}),list:{tab:'waiting'}},
     'video-homework':{list:c=>({status:c.taskKind==='video_unassigned'?'assign':'missing',...oneStudent(c),...(actorById(v2Actor(c))?.role==='teacher'?{view:'mine'}:{})})},
-    'class-sheets':{screen:'students',use:c=>c.taskKind==='progress_anomaly'&&!!studentIdOf(c),list:c=>({v2path:`/students/${studentIdOf(c)}`,tab:'progress'})}};
+    'class-sheets':{screen:'students',use:c=>c.taskKind==='progress_anomaly'&&!!studentIdOf(c),list:c=>({v2path:`/students/${studentIdOf(c)}`,tab:'progress'})},
+    // 결석 확인 전화 = 그날 오늘 출결의 '확인 필요' 탭(2.0 주소에 학생 하나를 짚는 열쇠가 없다 — 그 학생 줄은 목록에 뜬다) · 할 일은 결석을 적은 날 생긴다.
+    attendance:{use:c=>c.taskKind==='attendance_absent_desk'&&!!c.createdAt,list:c=>({v2path:'/attendance/live',tab:'desk',date:kstDate(c.createdAt)})},
+    // 콜&상담 후속 조치 = 그 상담 상세(여럿이면 칸반).
+    enrollment:{record:id=>({v2path:`/enrollment/${id}`}),list:{}}};
   // 2.0 화면의 '보는 사람'(= 저장하는 사람, 주소 actor가 화면에서 고른 사람보다 이긴다) — 지금 보는 사람이 그 단계 담당이면 그대로, 아니면 그 단계 담당(승인·결재 차례인 사람).
   // 화면이 고를 수 없는 사람이면 화면이 무시하고 제 규칙(원장 먼저)으로 돈다.
   const v2Actor=c=>{const me=actor()?.id,ids=activeSteps(c).flatMap(s=>s.assigneeIds||[]);return ids.includes(me)?me:ids[0]||me||'';};
