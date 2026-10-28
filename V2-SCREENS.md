@@ -84,4 +84,5 @@
 - 원본 운영 DB 접속 금지. 운영 배포·푸시 금지. 4310 재시작은 메인이 한다(서버 모듈을 바꾸면 메인에 요청).
 - 개발 중 저장 시험은 복사본에 실제로 쓴다. 시험 데이터는 '학원이'(테스트 학생)·테스트 반을 쓰고, 시험이 끝나면 그 행을 지우거나 원래 값으로 되돌리는 정리까지 시험 안에 넣는다.
 - 다른 세션 파일·공용 파일(`live.js`·`serve-live.mjs`·`live.html`·`workspaces.*`·`flow-*`)은 고치지 않는다. 필요하면 메인에 요청.
+  - `v2-ts-hooks.mjs`(importV2의 해석 규칙, 10-28 학원 설정): src 안의 `.tsx`도 찾고(`.ts` → `.tsx` → `/index.ts` → `/index.tsx`) JSX만 `react/jsx-runtime`으로 변환 · `'server-only'`는 빈 모듈. 서버 실행 모듈(`next/headers`·`@/lib/supabase/server` 등)은 흉내 내지 않는다 — 필요하면 순수 선언만 골라 쓰거나(`v2-billing-pure.mjs` 방식) 격리 실행기로.
 - 커밋은 자기 파일만 경로 지정, 커밋 전 적대적 리뷰 1회.
