@@ -25,7 +25,7 @@ export const HOST_ROUTE = '/ecs';
 /** 읽기 서버 액션 — 2.0 getEcsDayPlan(월간 '그 날 고치기') · getSlotPlanCompare([계획 비교])는 저장이 아니라 같은 화면의 GET으로 묻는다
  *  (시간표 loadExitOverlay와 같은 규약 — 보기는 쓰기 기록에 남지 않는다). 답은 2.0 반환 모양 그대로({ ok, … } · { ok:false, error }). */
 const READ_FAILED = '불러오지 못했습니다. 잠시 뒤 다시 열어 주세요.';
-async function readOnServer(read: 'dayPlan' | 'compare', fields: Record<string, unknown>) {
+async function readOnServer(read: 'dayPlan' | 'compare' | 'slotChoices' | 'textbookPlans' | 'assignable', fields: Record<string, unknown>) {
   const q = new URLSearchParams({ read });
   for (const [k, v] of Object.entries(fields)) if (typeof v === 'string' && v) q.set(k, v);
   const viewer = hostActor();
@@ -42,6 +42,11 @@ registerHostHandler('features/textbooks/server/compare-actions.ts', 'getSlotPlan
   const { classId, date, slotStart } = (input ?? {}) as { classId?: unknown; date?: unknown; slotStart?: unknown };
   return readOnServer('compare', { class: classId, date, slot: slotStart });
 });
+
+// 교재 배정 창(TextbookFillDialog · TextbookFillExisting)이 여는 읽기 셋 — 같은 규약(화면 GET).
+registerHostHandler('features/textbooks/server/plan-actions.ts', 'loadClassSlotChoices', async (classId) => readOnServer('slotChoices', { class: classId }));
+registerHostHandler('features/textbooks/server/plan-actions.ts', 'loadClassTextbookPlans', async (classId) => readOnServer('textbookPlans', { class: classId }));
+registerHostHandler('features/textbooks/server/plan-actions.ts', 'loadAssignableTextbooks', async () => readOnServer('assignable', {}));
 
 /** 반환이 { ok, error }가 아닌 2.0 함수 — 저장이 안 될 때(받지 않는 함수 · 거절 · 불통) 2.0이 실패 때 내던 모양(부품이 그 모양으로 읽는다). 보강 추가 흐름(EcsMakeupAdder → MakeupAddFlow). */
 registerHostFallback('features/attendance/server/actions.ts', 'searchMakeupStudents', () => []);

@@ -32,7 +32,7 @@ export const MODULES = [
   'features/timetable/lib/week.ts', 'features/timetable/lib/periods.ts', 'features/timetable/lib/teacher-label.ts',
   'features/classes/english-track.ts', 'features/classes/class-name-as-of.ts', 'features/owner/defaults.ts', 'features/owner/preset.ts',
   'features/owner/month-plan-texts.ts', 'features/owner/lesson-profile.ts', 'features/periods/resolve.ts', 'features/enrollments/eligibility.ts',
-  'features/textbooks/plan-expand.ts', 'features/textbooks/plan-compare.ts', 'features/textbooks/shift-key.ts', 'features/textbooks/import-undo.ts', 'features/class-sheets/lib/carry-marks.ts',
+  'features/textbooks/plan-expand.ts', 'features/textbooks/plan-compare.ts', 'features/textbooks/lesson-schedule.ts', 'features/textbooks/shift-key.ts', 'features/textbooks/import-undo.ts', 'features/class-sheets/lib/carry-marks.ts',
   'features/teacher-view/i18n.ts', 'features/teacher-view/view-prefs.ts', 'features/teacher-view/teacher-name.ts', 'lib/modules.ts', 'lib/date-kst.ts',
 ];
 
@@ -144,7 +144,7 @@ export async function readViewers(sql, t, R, env) {
     // 화면 언어 — 2.0 getTeacherViewLang: 강사 화면(선생님 역할)만 계정 설정·관리자 지정·이름으로 고르고, 그 밖은 한국어.
     const lang = u.role === 'teacher' ? R.resolveSheetLang(R.readTeacherLangPref(u.ui_prefs ?? null), R.parseSheetLang(u.teacher_view_lang), u.display_name) : R.DEFAULT_SHEET_LANG;
     return { id: u.id, name: u.display_name, systemRole: u.role, roleLabel: R.ROLE_LABEL[u.role] ?? '', uiPrefs: u.ui_prefs ?? null, lang,
-      levels: { ecs: level('ecs'), attendance: level('attendance'), englishName: level('student_english_name') } };
+      levels: { ecs: level('ecs'), attendance: level('attendance'), englishName: level('student_english_name'), textbooks: level('textbooks') } };
   }).filter(u => u.levels.ecs !== 'none')
     .sort((a, b) => (RANK.includes(a.systemRole) ? RANK.indexOf(a.systemRole) : RANK.length) - (RANK.includes(b.systemRole) ? RANK.indexOf(b.systemRole) : RANK.length) || a.name.localeCompare(b.name, 'ko'));
 }

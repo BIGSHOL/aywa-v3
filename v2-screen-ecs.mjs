@@ -10,7 +10,8 @@
 //   /ecs?view=room          → 2.0 ecs/page.tsx room 갈래  getEcsSeatDay("JJ", date)          → EcsSeatDayFace(v2-ecs-seat.mjs)
 //   /ecs (강사 · 오늘 면) → 아직 옮기지 않음(route만 알려 준다)
 //   공통: editors(저장·보는 사람 = ECS 권한이 있는 재직 직원, 운영자 계정 제외) · viewer · host(OperationsProvider 값 · 화면 언어 · 영어 이름 편집 권한)
-//   읽기 서버 액션(?read=dayPlan&class&date · ?read=compare&class&date&slot) → 2.0 getEcsDayPlan · getSlotPlanCompare의 반환 그대로.
+//   읽기 서버 액션(?read=dayPlan&class&date · compare&class&date&slot · slotChoices&class · textbookPlans&class · assignable) → 2.0 getEcsDayPlan ·
+//   getSlotPlanCompare · loadClassSlotChoices · loadClassTextbookPlans · loadAssignableTextbooks의 반환 그대로(v2-ecs-textbooks.mjs).
 //   호스트가 이 둘을 저장 경로(POST)가 아니라 여기(GET, 읽기 전용 트랜잭션)로 묻는다 — 보기는 쓰기 기록에 남지 않는다(시간표 loadExitOverlay와 같다).
 //
 // ■ actions = 2.0 서버 액션과 1:1(v2-ecs-save.mjs) — 같은 이름·같은 인자·같은 표·칸·DB 함수·감사로그(metadata.via = '3.0 연습 복사본').
@@ -64,6 +65,7 @@ import { MAKEUP_ACTIONS } from './v2-ecs-makeup.mjs';
 import { GOALS_ACTIONS, goalsData } from './v2-ecs-goals.mjs';
 import { planGapData } from './v2-ecs-gap.mjs';
 import { seatDayData } from './v2-ecs-seat.mjs';
+import { readAssignableTextbooks, readClassTextbookPlans, readSlotChoices } from './v2-ecs-textbooks.mjs';
 
 /** 2.0 주소 — /ecs · /ecs/<반> · /ecs/<반>/month · /ecs/goals · /ecs/plan-gap. */
 const ROUTE = /^\/ecs(?:\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})(\/month)?|\/(goals|plan-gap))?$/;
@@ -73,7 +75,7 @@ export const screen = {
   params: { v2path: ROUTE, viewer: UUID, week: DAY, view: /^(week|room|today|cal|rail|mp)$/, date: DAY, mode: /^(sheet|cards)$/, month: /^\d{4}-\d{2}$/,
     period: /^(month|session)$/, day: DAY, readonly: /^1$/,
     // 읽기 서버 액션(호스트 registerHostHandler) — 그 2.0 함수의 인자 칸만.
-    read: /^(dayPlan|compare)$/, class: UUID, slot: /^\d{2}:\d{2}(?::\d{2})?$/ },
+    read: /^(dayPlan|compare|slotChoices|textbookPlans|assignable)$/, class: UUID, slot: /^\d{2}:\d{2}(?::\d{2})?$/ },
   actions: { ...ACTIONS, ...MAKEUP_ACTIONS, ...GOALS_ACTIONS },
   async load({ sql, params: q, tenantId: t, importV2 }) {
     const R = await loadRules(importV2), today = await copyDay(), env = await readSettings(sql, t, R);
@@ -83,7 +85,11 @@ export const screen = {
       const user = viewers.find(v => v.id === q.viewer);
       if (!user) return { ok: false, error: '접근 권한이 없습니다' };
       const ctx = { sql, t, R, env, user, today };
-      return q.read === 'dayPlan' ? readDayPlan(ctx, { classId: q.class, planDate: q.date }) : readSlotCompare(ctx, { classId: q.class, date: q.date, slotStart: q.slot });
+      if (q.read === 'dayPlan') return readDayPlan(ctx, { classId: q.class, planDate: q.date });
+      if (q.read === 'compare') return readSlotCompare(ctx, { classId: q.class, date: q.date, slotStart: q.slot });
+      if (q.read === 'slotChoices') return readSlotChoices(ctx, q.class);
+      if (q.read === 'textbookPlans') return readClassTextbookPlans(ctx, q.class);
+      return readAssignableTextbooks(ctx);
     }
     const viewer = viewers.find(v => v.id === q.viewer) ?? viewers[0] ?? null;
     const ops = env.operations;

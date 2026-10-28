@@ -35,7 +35,7 @@ test('2.0 모듈을 한 객체로 펼쳐도 같은 이름에 다른 값이 없�
 test('매개변수: 2.0 주소(v2path)·2.0 쿼리·보는 사람만, 모양이 아니면 거절', () => {
   const P = screen.params, ok = (k, v) => P[k].test(v), U = 'e175fd4d-a655-409a-905e-71850ab1b848';
   assert.deepEqual(Object.keys(P).sort(), ['class', 'date', 'day', 'mode', 'month', 'period', 'read', 'readonly', 'slot', 'v2path', 'view', 'viewer', 'week']);
-  for (const [k, v] of [['read', 'dayPlan'], ['read', 'compare'], ['class', U], ['slot', '17:15'], ['slot', '17:15:00']]) assert.ok(ok(k, v), `${k}=${v}`);
+  for (const [k, v] of [['read', 'dayPlan'], ['read', 'compare'], ['read', 'slotChoices'], ['read', 'textbookPlans'], ['read', 'assignable'], ['class', U], ['slot', '17:15'], ['slot', '17:15:00']]) assert.ok(ok(k, v), `${k}=${v}`);
   for (const [k, v] of [['read', 'flushSheetPatches'], ['class', 'x'], ['slot', '7:15'], ['slot', '17:15:00.1']]) assert.ok(!ok(k, v), `${k}=${v} 거절`);
   for (const v of ['/ecs', `/ecs/${U}`, `/ecs/${U}/month`, '/ecs/goals', '/ecs/plan-gap']) assert.ok(ok('v2path', v), v);
   for (const v of ['/ecs/x', '/timetable', `/ecs/${U}/month/x`, `/ecs/${U}?week=1`, 'ecs']) assert.ok(!ok('v2path', v), `${v} 거절`);
@@ -186,7 +186,8 @@ test('호스트 진입점: 읽기 둘은 GET(쓰기 기록 밖) · 반환 모양
   const entry = await here('v2-host/src/ecs.tsx');
   const handlers = [...entry.matchAll(/registerHostHandler\('([^']+)', '(\w+)'/g)].map(m => [m[1], m[2]]);
   const fallbacks = [...entry.matchAll(/registerHostFallback\('([^']+)', '(\w+)', ([^\n]+)\);/g)].map(m => [m[1], m[2], m[3]]);
-  assert.deepEqual(handlers, [['features/class-sheets/server/day-plan.ts', 'getEcsDayPlan'], ['features/textbooks/server/compare-actions.ts', 'getSlotPlanCompare']]);
+  assert.deepEqual(handlers, [['features/class-sheets/server/day-plan.ts', 'getEcsDayPlan'], ['features/textbooks/server/compare-actions.ts', 'getSlotPlanCompare'],
+    ...['loadClassSlotChoices', 'loadClassTextbookPlans', 'loadAssignableTextbooks'].map(n => ['features/textbooks/server/plan-actions.ts', n])]);
   for (const [module, name] of [...handlers, ...fallbacks]) {
     const text = await src(module);
     assert.match(text, /^(?:\s|\/\/[^\n]*\n|\/\*[\s\S]*?\*\/)*["']use server["']/, `${module}: "use server"`);
@@ -563,6 +564,33 @@ test('JJ 보고서 담당(학원 설정 specialAccess.jjReportManagerIds) — �
       assert.equal(await teachesOn(sql, TENANT, ids[0], cid, day, { R, env: { ...env, permissions: { ...env.permissions, specialAccess: {} } } }), false, '명단에서 빼면 못 맡는다');
     }
   });
+});
+
+test('복사본: 교재 배정 창의 읽기 셋(GET ?read=slotChoices · textbookPlans · assignable) = 2.0 반환 모양 · 독립 SQL과 같은 행', { skip: !db && 'local database not running' }, async () => {
+  const [owner] = await db`select u.id::text id from public.users u where u.tenant_id=${TENANT} and u.status='active' and u.system_role='master' and not exists (select 1 from public.super_admins s where s.id=u.id) order by u.display_name limit 1`;
+  const R = await C.loadRules(importV2), types = await src('features/textbooks/types.ts');
+  // 교시 고르기 — 오늘 도는 (시각, 담당) 칩, LAB 제외, 시각 순.
+  const sc = await load({ read: 'slotChoices', class: INJAEWON, viewer: owner.id });
+  assert.equal(sc.ok, true);
+  for (const r of sc.rows) sameShape(r, typeKeys(types, 'ClassSlotChoice'), 'ClassSlotChoice');
+  const today = await C.copyDay();
+  const live = await db`select distinct to_char(start_time, 'HH24:MI') || '|' || coalesce(slot_teacher_label, '') k, slot_teacher_label lbl from public.class_schedules
+    where tenant_id=${TENANT} and class_id=${INJAEWON} and valid_from <= ${today} and (valid_to is null or valid_to >= ${today})`;
+  assert.deepEqual(sc.rows.map(r => r.key).sort(), live.filter(r => R.specialSlotLabel(r.lbl) !== 'LAB').map(r => r.k).sort());
+  assert.deepEqual(sc.rows.map(r => r.start), [...sc.rows.map(r => r.start)].sort(), '시각 순');
+  assert.ok(sc.rows.every(r => r.picks.length === r.dows.length && r.picks.every(p => typeof p === 'string')));
+  // 반의 배정 — 시작일 늦은 것 먼저, 2.0 ClassTextbookPlanRow 칸.
+  const [{ class_id: cid, n }] = await db`select class_id::text class_id, count(*)::int n from public.class_textbook_plans where tenant_id=${TENANT} and is_active group by class_id order by count(*) desc limit 1`;
+  const tp = await load({ read: 'textbookPlans', class: cid, viewer: owner.id });
+  assert.equal(tp.ok, true); assert.equal(tp.rows.length, n);
+  for (const r of tp.rows) sameShape(r, typeKeys(types, 'ClassTextbookPlanRow'), 'ClassTextbookPlanRow');
+  assert.deepEqual(tp.rows.map(r => r.startDate), [...tp.rows.map(r => r.startDate)].sort().reverse());
+  // 배정할 교재 — 영어 · 차수 ≥ 1 · 구분 있음.
+  const as = await load({ read: 'assignable', viewer: owner.id });
+  const [{ m }] = await db`select count(*)::int m from public.textbooks where tenant_id=${TENANT} and subject='english' and session_count >= 1 and skill_area is not null`;
+  assert.equal(as.ok, true); assert.equal(as.rows.length, Math.min(m, 500));
+  // 강사 — 남의 반이면 2.0 게이트 문구, 교재목록 메뉴 권한이 없으면 거절.
+  assert.deepEqual(await load({ read: 'slotChoices', class: MATH, viewer: T_ACTOR }), { ok: false, error: '담당 반이 아닙니다' });
 });
 
 test.after(async () => { await db?.end(); });
