@@ -7,7 +7,7 @@ import { useEffect, useRef, useState } from 'react';
 import { AppProviders } from '@/lib/providers/app-providers';
 import { OperationsProvider } from '@/features/owner/operations-context';
 import { TextbooksHostPage, type TextbooksPageData } from './textbooks-page';
-import { onHostRefresh } from '../shims/host-nav';
+import { hostNavigate, onHostRefresh } from '../shims/host-nav';
 import { hostActor, registerHostHandler, setHostEditors, type HostEditor } from '../shims/server-action';
 import { useHostSearch } from '../shims/next-navigation';
 import { HostFrame, HostMessage } from './host-frame';
@@ -33,9 +33,31 @@ type Data = TextbooksPageData & {
 };
 
 /** 2.0 page.tsx searchParams — 서버가 다시 그리던 열쇠(면 · 과목 · 구분 · 검색 · 쪽). */
-const KEYS = ['tab', 'subject', 'area', 'q', 'page'] as const;
+const KEYS = ['tab', 'subject', 'area', 'q', 'page', 'textbook'] as const;
 const ACTOR_KEY = 'v2-host-actor:textbooks';
 const storedActor = () => { try { return localStorage.getItem(ACTOR_KEY); } catch { return null; } };
+
+/** 주소로 한 권을 열면 기존 2.0 목록의 그 행만 보여 주고 표시한다. 필터를 누르면 일반 목록으로 돌아간다. */
+function FocusedPage({ d, sp, settings }: Parameters<typeof TextbooksHostPage>[0]) {
+  const root = useRef<HTMLDivElement>(null);
+  const focus = d.focusTextbook;
+  useEffect(() => {
+    if (!focus) return;
+    const normalized = new URLSearchParams({ tab: 'books', subject: focus.subject, textbook: focus.id });
+    if (new URLSearchParams(location.search).toString() !== normalized.toString())
+      hostNavigate(`/textbooks?${normalized}`, 'replace');
+  }, [focus?.id, focus?.subject]);
+  useEffect(() => {
+    if (!focus || d.list.rows[0]?.id !== focus.id) return;
+    const row = root.current?.querySelector('tbody tr');
+    if (!row) return;
+    row.classList.add('bg-primary/10', 'outline', 'outline-2', 'outline-primary');
+    row.scrollIntoView({ block: 'nearest' });
+    return () => row.classList.remove('bg-primary/10', 'outline', 'outline-2', 'outline-primary');
+  }, [focus?.id, d.list.rows]);
+  const shown = focus ? { ...sp, tab: 'books', subject: focus.subject, area: undefined, q: undefined, page: undefined } : sp;
+  return <div ref={root} style={{ display: 'contents' }}><TextbooksHostPage d={d} sp={shown} settings={settings} /></div>;
+}
 
 function App() {
   const qs = useHostSearch(), search = new URLSearchParams(qs);
@@ -79,7 +101,7 @@ function App() {
   if (d.route === 'none') return <HostMessage text="교재목록을 볼 수 있는 직원이 없습니다." />;
   return (
     <OperationsProvider subjects={ops.subjects} gradeLevels={ops.gradeLevels} jobTitles={ops.jobTitles} jobTitlesByDepartment={ops.jobTitlesByDepartment} disabledModules={d.host.disabledModules}>
-      <TextbooksHostPage d={d} sp={sp} settings={{ operations: ops as never }} />
+      <FocusedPage d={d} sp={sp} settings={{ operations: ops as never }} />
     </OperationsProvider>
   );
 }

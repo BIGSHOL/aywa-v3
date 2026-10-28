@@ -20,6 +20,7 @@ type Sp = Record<string, string | undefined>;
 export type TextbooksPageData = {
   canWrite: boolean;
   canImport: boolean;
+  focusTextbook: { id: string; subject: ReturnType<typeof resolveTextbookSubject> } | null;
   list: { status: TextbookTableStatus; rows: TextbookListItem[]; total: number | null; page: number; pageSize: number };
   plans: { status: TextbookTableStatus; rows: ClassTextbookPlanRow[] };
   mathPlans: { status: TextbookTableStatus; rows: MathAssignmentListRow[] } | null;

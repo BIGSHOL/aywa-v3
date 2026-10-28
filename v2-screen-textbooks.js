@@ -8,7 +8,7 @@
   'use strict';
   const ID = 'textbooks', HOST = `/v2-host/${ID}.html`, S = window.V2Screens; if (!S) return;
   // 2.0 page.tsx가 읽는 주소 열쇠 그대로(면 · 과목 · 구분 · 검색 · 쪽).
-  const KEEP = ['tab', 'subject', 'area', 'q', 'page'];
+  const KEEP = ['tab', 'subject', 'area', 'q', 'page', 'textbook'];
   let api = null, frame = null, requested = null, hostOk = null, wired = false, editors = [], actor = null;
   const ACTOR_KEY = `v2-host-actor:${ID}`, SEL = `[data-v2-screen="${ID}"]`;
   const esc = s => S.esc(s);

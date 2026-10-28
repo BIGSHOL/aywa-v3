@@ -21,7 +21,16 @@ const lf = s => s.replace(/\r\n/g, '\n');
 await check('주소 열쇠 = 2.0 page.tsx가 읽는 칸(tab · subject · area · q · page) + 보는 사람(viewer) + 다이얼로그 상세 읽기(detail)', async () => {
   const page = lf(await src('app/(shell)/textbooks/page.tsx'));
   assert.deepEqual([...new Set([...page.matchAll(/sp\.(\w+)/g)].map(m => m[1]))].sort(), ['area', 'page', 'q', 'subject', 'tab']);
-  assert.deepEqual(Object.keys(M.screen.params).sort(), ['area', 'detail', 'page', 'q', 'subject', 'tab', 'viewer']);
+  assert.deepEqual(Object.keys(M.screen.params).sort(), ['area', 'detail', 'page', 'q', 'subject', 'tab', 'textbook', 'viewer']);
+});
+
+await check('책 주소 열쇠가 3.0 해시와 호스트 GET을 지나며 목록 조작 때는 빠진다', async () => {
+  const bridge = await here('./v2-screen-textbooks.js');
+  const host = await here('./v2-host/src/textbooks.tsx');
+  const nav = await here('./v2-host/shims/next-navigation.tsx');
+  assert.match(bridge, /const KEEP = \[[^\]]*'textbook'/);
+  assert.match(host, /const KEYS = \[[^\]]*'textbook'/);
+  assert.match(nav, /currentRoute\(\) === '\/textbooks'\) q\.delete\('textbook'\)/);
 });
 
 await check('그리기 = 2.0 textbooks/page.tsx 조회 뒤 본문 그대로(면 상태 판정 · 쓰기 잠금 · 구분 목록 · 면 탭 · 세 면)', async () => {
@@ -65,6 +74,21 @@ try {
     }
     assert.equal((await load({ q: '100%' })).list.total, (await db`select count(*)::int n from public.textbooks where tenant_id=${tenantId} and subject='english' and strpos(title, '100%') > 0`)[0].n);
     const p2 = await load({ page: '2' }); assert.equal(p2.list.page, 2); assert.ok(p2.list.rows.every(r => !base.list.rows.some(x => x.id === r.id)));
+  });
+
+  await check('textbook 주소 = 같은 학원의 그 책 한 권 · 실제 과목 · 검색/페이지 조건을 넘어서 표시 · 다른 학원 책은 제외', async () => {
+    const [book] = await db`select id::text id, subject from public.textbooks where tenant_id=${tenantId} and subject='math' order by title desc limit 1`;
+    assert.ok(book, '수학 교재 표본');
+    const d = await load({ textbook: book.id, tab: 'plans', subject: 'english', area: 'grammar', q: '없는 검색어', page: '2' });
+    assert.deepEqual(d.focusTextbook, { id: book.id, subject: 'math' });
+    assert.deepEqual(d.list.rows.map(r => r.id), [book.id]);
+    assert.equal(d.list.total, 1); assert.equal(d.list.page, 1);
+    const [foreign] = await db`select id::text id from public.textbooks where tenant_id<>${tenantId} limit 1`;
+    if (foreign) {
+      const denied = await load({ textbook: foreign.id, q: '없는 검색어' });
+      assert.equal(denied.focusTextbook, null);
+      assert.ok(!denied.list.rows.some(r => r.id === foreign.id));
+    }
   });
 
   await check('반 배정 면 = 영어는 살아 있는 배정 전부(원장) · 강사는 강사 시트 담당 범위 · 수학은 반·학생 교재 배정 전부', async () => {

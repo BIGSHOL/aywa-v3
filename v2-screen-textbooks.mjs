@@ -35,7 +35,7 @@ export async function readTextbooks(sql, t, opts) {
   const page = Math.max(1, opts.page ?? 1), from = (page - 1) * PAGE_SIZE;
   // 2.0: 콤마·괄호는 떼고 %·_·\는 글자로(ilike 와일드카드 escape).
   const safe = (opts.q ?? '').trim().replace(/[,()]/g, ' ').replace(/[%_\\]/g, c => `\\${c}`).trim();
-  const where = sql`tenant_id=${t} ${opts.subject ? sql`and subject=${opts.subject}` : sql``} ${opts.skillArea ? sql`and skill_area=${opts.skillArea}` : sql``}
+  const where = sql`tenant_id=${t} ${opts.id ? sql`and id=${opts.id}` : sql``} ${opts.subject ? sql`and subject=${opts.subject}` : sql``} ${opts.skillArea ? sql`and skill_area=${opts.skillArea}` : sql``}
     ${safe ? sql`and title ilike ${`%${safe}%`}` : sql``}`;
   let rows, total;
   try {
@@ -131,7 +131,7 @@ const PLAN_ACTIONS = {
 
 export const screen = {
   id: ID, label: '교재목록', order: 8,
-  params: { viewer: UUID, detail: UUID, tab: /^[a-z]{1,10}$/, subject: /^[a-z]{1,10}$/, area: /^[a-z0-9_]{1,40}$/, q: /^[^\u0000-\u001f]{0,100}$/, page: /^\d{1,4}$/ },
+  params: { viewer: UUID, detail: UUID, textbook: UUID, tab: /^[a-z]{1,10}$/, subject: /^[a-z]{1,10}$/, area: /^[a-z0-9_]{1,40}$/, q: /^[^\u0000-\u001f]{0,100}$/, page: /^\d{1,4}$/ },
   // 저장 = 교재 마스터(v2-textbooks-save.mjs) + 반 배정 면(지우기 · 되돌리기 · 미리보기 — 강사 시트 게이트) — 저장하는 사람 = 보는 사람.
   actions: { ...textbooksActions, ...PLAN_ACTIONS },
   load: async ({ sql, params: sp, tenantId: t, importV2 }) => {
@@ -143,14 +143,21 @@ export const screen = {
     const common = { editors: editorsOf(viewers), viewer: viewer && { id: viewer.id, name: viewer.name, role: viewer.roleLabel },
       host: { operations: env.operations, disabledModules: env.disabled } };
     if (!viewer) return { ...common, route: 'none' };
-    const tab = tb.faces.resolveTextbookTab(sp.tab), subject = tb.faces.resolveTextbookSubject(sp.subject), today = R.dk.kstToday();
+    const [focusedBook] = sp.textbook
+      ? await sql`select id::text id, subject from public.textbooks where tenant_id=${t} and id=${sp.textbook}`
+      : [];
+    const tab = focusedBook ? 'books' : tb.faces.resolveTextbookTab(sp.tab);
+    const subject = focusedBook ? tb.faces.resolveTextbookSubject(focusedBook.subject) : tb.faces.resolveTextbookSubject(sp.subject), today = R.dk.kstToday();
     const [list, plans, mathPlans] = await Promise.all([
-      readTextbooks(sql, t, { subject, skillArea: sp.area ?? null, q: sp.q ?? null, page: Number(sp.page ?? 1) || 1 }),
+      readTextbooks(sql, t, focusedBook
+        ? { id: focusedBook.id, subject, page: 1 }
+        : { subject, skillArea: sp.area ?? null, q: sp.q ?? null, page: Number(sp.page ?? 1) || 1 }),
       tab === 'plans' && subject === 'english' ? readClassTextbookPlans(sql, t, { ecs, tb }, viewer, today) : { status: 'ok', rows: [] },
       tab === 'plans' && subject === 'math' ? readMathAssignmentList(sql, t) : null,
     ]);
     return { ...common, route: 'page',
       // 2.0 canWriteTenant(쓰기 = full|scoped) · canManageTenant(엑셀로 넣기 = full) — 보는 사람의 권한 표로.
-      canWrite: viewer.level === 'full' || viewer.level === 'scoped', canImport: viewer.level === 'full', list, plans, mathPlans };
+      canWrite: viewer.level === 'full' || viewer.level === 'scoped', canImport: viewer.level === 'full', list, plans, mathPlans,
+      focusTextbook: focusedBook && list.status === 'ok' ? { id: focusedBook.id, subject } : null };
   },
 };
