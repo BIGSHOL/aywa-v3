@@ -14,6 +14,7 @@ import { Worker } from 'node:worker_threads';
 import { setImmediate } from 'node:timers';
 import { createHash } from 'node:crypto';
 import { useWorkspaceStore } from './workspace-store.mjs';
+import { scopeForWrite } from './data-refresh-scope.mjs';
 
 export const DATA_REVISION_PATH = '/api/data-revision';
 export class RefreshError extends Error { constructor(code, message, { final = false } = {}) { super(message); this.code = code; this.final = final; } }
@@ -98,13 +99,13 @@ export function createRefreshScheduler({ run, debounceMs = 3000, maxWaitMs = 200
 }
 
 /** 작업 스레드 한 번 — 결과를 받으면 바로 끝낸다(스레드의 DB 연결·메모리는 스레드와 함께 사라진다). */
-export function runWorker({ flow, timeoutMs = 180_000 }) {
+export function runWorker({ flow, scope = 'full', previous = null, timeoutMs = 180_000 }) {
   return new Promise((resolve, reject) => {
-    const worker = new Worker(new URL('./data-refresh-worker.mjs', import.meta.url), { workerData: { flow } });
+    const worker = new Worker(new URL('./data-refresh-worker.mjs', import.meta.url), { workerData: { flow, scope, previous } });
     let settled = false;
     const done = (fn, value) => { if (settled) return; settled = true; clearTimeout(timer); worker.terminate().catch(() => {}); fn(value); };
     const timer = setTimeout(() => done(reject, new RefreshError('timeout', `자료 계산이 ${Math.round(timeoutMs / 1000)}초 안에 끝나지 않았습니다.`)), timeoutMs);
-    worker.once('message', m => (m?.ok ? done(resolve, m) : done(reject, new RefreshError(m?.error || 'refresh_failed', m?.message || '자료를 다시 만들지 못했습니다.'))));
+    worker.once('message', m => (m?.ok ? done(resolve, m) : done(reject, new RefreshError(m?.error || 'refresh_failed', m?.message || '자료를 다시 만들지 못했습니다.', { final: m?.error === 'copy_changed' }))));
     worker.once('error', e => done(reject, new RefreshError('worker_error', e?.message || '작업 스레드에서 오류가 났습니다.')));
     worker.once('exit', code => done(reject, new RefreshError('worker_exit', `작업 스레드가 결과 없이 끝났습니다(${code}).`)));
   });
@@ -115,14 +116,16 @@ export function runWorker({ flow, timeoutMs = 180_000 }) {
  * (data · 기록 저장소 · assistant.use) → flow.service.reloadSource(source). reloadSource가 아직 없으면 건너뛰고 로그만.
  * expect = 시작 때의 { importedAt, asOf }.
  */
-export function createDataRefresh({ data, assistant = null, flow = null, expect, spawn = runWorker, log = console.log, scheduler = {} }) {
-  let blocked = null;
+export function createDataRefresh({ data, assistant = null, flow = null, expect, initialRecords = null, spawn = runWorker, log = console.log, scheduler = {} }) {
+  let blocked = null, recordsForNext = initialRecords, pendingScope = null;
   async function run() {
     if (blocked) throw blocked;
     const started = Date.now();
+    const scope = pendingScope === 'class-review' && recordsForNext ? 'class-review' : 'full';
+    pendingScope = null;
     // 업무 흐름이 아직 시작 중이면 기다린다(시작이 실패했으면 흐름 없이).
     const service = flow ? (flow.service || await Promise.resolve(flow.ready).then(() => flow.service, () => null) || null) : null;
-    const out = await spawn({ flow: Boolean(service) });
+    const out = await spawn({ flow: Boolean(service), scope, previous: scope === 'full' ? null : { json: data.current.json, records: recordsForNext } });
     // 지점은 snapshot.mjs가 slug로 이미 확인한다 — 지점 이름은 내용이라(저장으로 바뀔 수 있다) 비교하지 않는다.
     for (const key of ['importedAt', 'asOf']) if (out.meta?.[key] !== expect[key]) {
       blocked = new RefreshError('copy_changed', `복사본이 시작 때와 다릅니다(${key}). 자료를 바꾸지 않았습니다 — 서버를 다시 켜 주세요.`, { final: true });
@@ -135,6 +138,7 @@ export function createDataRefresh({ data, assistant = null, flow = null, expect,
     // 여기부터 한 틱 — 첫 화면 자료·기록 저장소·비서 컨텍스트가 같은 시점으로.
     const changed = data.replace({ json: Buffer.from(out.json), snapshotHash: out.snapshotHash, recordsHash: out.recordsHash });
     if (recordsChanged) useWorkspaceStore(records);
+    recordsForNext = out.records;
     if (snapshotChanged) assistant?.use?.(out.assistant);
     let note = '업무 흐름 꺼짐', failed = null;
     if (service && out.flowError) { note = `업무 흐름 원본 실패(${out.flowError}) — 흐름은 옛 원본`; failed = new RefreshError('flow_source_failed', '업무 흐름 원본을 다시 읽지 못했습니다.'); }
@@ -148,12 +152,18 @@ export function createDataRefresh({ data, assistant = null, flow = null, expect,
     }
     const t = out.timings || {};
     const what = changed ? `바뀜: ${[snapshotChanged && '첫 화면', recordsChanged && '기록'].filter(Boolean).join('·')}` : '그대로';
-    log(`자료 갱신 r${data.current.revision}(${what}) ${Date.now() - started}ms — 작업 스레드 ${t.total ?? '-'}ms(스냅숏 ${t.snapshot ?? '-'}ms · 흐름 원본 ${t.flow ?? '-'}ms) · 전달 ${transit ?? '-'}ms${recordsChanged ? ` · 기록 풀기 ${unpack}ms` : ''} · ${note}`);
+    log(`자료 갱신 r${data.current.revision}(${what}) ${Date.now() - started}ms — 작업 스레드 ${t.total ?? '-'}ms(스냅숏 ${t.snapshot ?? '-'}ms · 흐름 원본 ${t.flow ?? '-'}ms) · 전달 ${transit ?? '-'}ms${recordsChanged ? ` · 기록 풀기 ${unpack}ms` : ''} · ${note}${scope === 'full' ? '' : ` · 영향 영역 ${scope}`}`);
     if (failed) throw failed; // 첫 화면 쪽은 이미 새 자료 — 흐름만 다시 맞추러 한 번 더(횟수 제한)
   }
   const s = createRefreshScheduler({ run, log, ...scheduler });
   return {
     ...s,
+    schedule() { pendingScope = 'full'; s.schedule(); },
+    scheduleWrite(write) {
+      const next = scopeForWrite(write);
+      pendingScope = pendingScope === null ? next : pendingScope === next ? next : 'full';
+      s.schedule();
+    },
     /** GET /api/data-revision 본문 — 화면은 revision·etag만 본다. */
     info() {
       const d = data.current, st = s.status();

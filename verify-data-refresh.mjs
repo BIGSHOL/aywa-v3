@@ -8,6 +8,7 @@ import { rm } from 'node:fs/promises';
 import { pathToFileURL } from 'node:url';
 import { join } from 'node:path';
 import { createDataHolder, createDataRefresh, createRefreshScheduler, decodeRecords, encodeData, encodeRecords, RefreshError } from './data-refresh.mjs';
+import { scopeForWrite } from './data-refresh-scope.mjs';
 import { currentWorkspaceStore, useWorkspaceStore } from './workspace-store.mjs';
 import { handleWorkspaceRecords } from './domain-http.mjs';
 import { createV2ScreenRoute } from './v2-screens.mjs';
@@ -29,6 +30,21 @@ const out = (tag, extra = {}) => {
 };
 
 try {
+  await check('만족도 판정만 영역 갱신, 다른 저장과 섞이면 전체 갱신', async () => {
+    assert.equal(scopeForWrite({ screen: 'class-review', action: 'decideJudgment' }), 'class-review');
+    assert.equal(scopeForWrite({ screen: 'billing', action: 'saveInvoice' }), 'full');
+    const scopes = [], data = createDataHolder(encoded('a'));
+    const r = createDataRefresh({ data, initialRecords: encoded('a').records, expect: EXPECT, log: quiet,
+      spawn: async ({ scope, previous }) => { scopes.push(scope); if (scope === 'class-review') assert(previous?.json && previous?.records); return out('a'); },
+      scheduler: { debounceMs: 10, minGapMs: 0 } });
+    r.scheduleWrite({ screen: 'class-review', action: 'decideJudgment' });
+    await sleep(60); await r.idle();
+    r.scheduleWrite({ screen: 'class-review', action: 'decideJudgment' });
+    r.scheduleWrite({ screen: 'billing', action: 'saveInvoice' });
+    await sleep(60); await r.idle(); await r.close();
+    assert.deepEqual(scopes, ['class-review', 'full']);
+  });
+
   await check('내줄 모양: 같은 내용이면 개정 번호 그대로 · 바뀌면 +1 · 기록만 바뀌면 ETag 그대로 · script 끝에 개정 번호', async () => {
     const h = createDataHolder(encoded('a'));
     assert.equal(h.current.revision, 1); assert.match(h.current.etag, /^"[0-9a-f]{24}"$/);

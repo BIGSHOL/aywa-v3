@@ -7,13 +7,22 @@ import { loadSnapshot } from './snapshot.mjs';
 import { workspaceRecords } from './domain-snapshot.mjs';
 import { loadFlowSource } from './flow-source.mjs';
 import { areaDestinations, buildAssistantContext } from './claude-bridge-context.mjs';
-import { encodeData } from './data-refresh.mjs';
+import { decodeRecords, encodeData } from './data-refresh.mjs';
+import { refreshClassReview } from './data-refresh-scope.mjs';
 
 const ms = t => Math.round(performance.now() - t), started = performance.now(), timings = {};
 try {
   let t = performance.now();
-  const snapshot = await loadSnapshot(); timings.snapshot = ms(t);
-  const records = workspaceRecords();
+  let snapshot, records;
+  if (workerData?.scope === 'class-review' && workerData.previous) {
+    const previous = workerData.previous;
+    const oldRecords = await decodeRecords(previous.records);
+    ({ snapshot, records } = await refreshClassReview(JSON.parse(Buffer.from(previous.json).toString('utf8')), oldRecords));
+  } else {
+    snapshot = await loadSnapshot();
+    records = workspaceRecords();
+  }
+  timings.snapshot = ms(t);
   const { json, snapshotHash, recordsHash, records: packed } = encodeData(snapshot, records);
   let source = null, flowError = null;
   if (workerData?.flow) {

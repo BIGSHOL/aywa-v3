@@ -69,7 +69,8 @@ export async function attendanceFamilies(ctx) {
   return out;
 }
 
-async function reportFamilies({ sql, t, asOf, month, monthStart, notTest, subjectLabel, subjectFacets, skillAreaLabel }) {
+async function reportFamilies(ctx) {
+  const { sql, t, asOf, month, monthStart, notTest, subjectLabel, subjectFacets, skillAreaLabel } = ctx;
   const out = {};
   // 교재목록 — 사용 중인 교재(근거)·차수·반 배정 계획.
   const books = await sql`select b.id, b.title, b.subject, b.skill_area, b.session_count, (select count(*)::int from public.textbook_lessons l where l.tenant_id=${t} and l.textbook_id=b.id) lessons, (select count(*)::int from public.class_textbook_plans p where p.tenant_id=${t} and p.textbook_id=b.id and p.is_active) plans from public.textbooks b where b.tenant_id=${t} and b.is_active order by plans desc, b.subject, b.title`;
@@ -105,6 +106,13 @@ async function reportFamilies({ sql, t, asOf, month, monthStart, notTest, subjec
     sources: [{ table: 'lesson_reports', rows: reports.length }, { table: 'classnote_parent_messages', rows: aux.messages }, { table: 'lesson_report_ratings', rows: aux.ratings }],
   });
 
+  out['class-review'] = await classReviewFamily(ctx);
+  return out;
+}
+
+// 만족도 저장은 기본 첫 화면 자료를 건드리지 않는다. 이 영역만 다시 읽을 때도 같은 생성 함수를 쓴다.
+export async function classReviewFamily({ sql, t }) {
+  const out = {};
   // 직원 평가·포트폴리오 — 원장만 보는 화면. 점수 값은 싣지 않고 기록 상태만.
   const portfolio = await sql`select p.teacher_id||':'||p.month id, u.display_name, p.month, p.class_count, p.known_count, p.closed_at is not null closed from public.teacher_portfolio_months p join public.users u on u.id=p.teacher_id and u.tenant_id=${t} where p.tenant_id=${t} order by p.month desc, u.display_name`;
   const judgments = await sql`select state as key, count(*)::int count from public.teacher_satisfaction_judgments where tenant_id=${t} group by 1`;
@@ -125,5 +133,5 @@ async function reportFamilies({ sql, t, asOf, month, monthStart, notTest, subjec
     sourceLabel: '수업 평가 문서 · 직원 포트폴리오 · 만족도 판정', coverageNote: '목록은 만족도 확인 대기 학부모 글과 직원 포트폴리오 월 기록입니다.',
     sources: [{ table: 'teacher_portfolio_months', rows: portfolio.length }, { table: 'teacher_satisfaction_judgments', rows: sumOf(judgments) }, { table: 'academy_documents', rows: cr.reviews }],
   });
-  return out;
+  return out['class-review'];
 }
