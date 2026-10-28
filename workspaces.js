@@ -600,9 +600,10 @@ window.createWorkspaces = function createWorkspaces(api) {
   // 이동은 그 기록과 상관없어 뺀다. 미리보기·요청 초안은 본문 '할 수 있는 일'에 그대로 있다.
   function recordActions(a,r){
     const rid=String(r.id),open=Boolean(api.openRecord&&api.canOpenRecord?.(rid)),v2=window.V2Screens?.target(a.id)||'';
+    const target=a.id==='textbooks'&&v2?`${v2}${v2.includes('?')?'&':'?'}textbook=${encodeURIComponent(rid)}`:v2;
     const out=[btn('이 기록으로 요청','record-request',`data-id="${h(a.id)}" data-record="${h(rid)}"`,true)];
     if(open)out.push(btn('상세 화면 열기','record-open',`data-record="${h(rid)}"`));
-    if(v2)out.push(btn('처리 화면 열기','goto',`data-page="${h(v2.slice(1))}"`));
+    if(target)out.push(btn('처리 화면 열기','goto',`data-page="${h(target.slice(1))}"`));
     if(!open&&!v2)actionsOf(a).filter(x=>x.mode==='navigate'&&!familyOf(targetOf(x).page)&&resolvePage(targetOf(x).page)).forEach(x=>out.push(btn(x.label,'action',`data-id="${h(a.id)}" data-action="${h(x.id)}" data-record="${h(rid)}"`)));
     return `<div class="ax-actions">${out.join('')}</div>`;
   }
