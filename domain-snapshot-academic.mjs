@@ -14,13 +14,19 @@ export async function academicFamilies(ctx) {
   // 선생님 원스크린 — 학생 칸 기록과 그 화면에서 쓴 보고서·ClassNote 공지.
   const [os] = await sql`select count(*)::int total, count(*) filter (where session_date >= ${monthStart})::int rows_m, count(distinct student_id) filter (where session_date >= ${monthStart})::int students, count(distinct class_id) filter (where session_date >= ${monthStart})::int classes, max(session_date)::text last from public.onescreen_daily_sessions where tenant_id=${t} and session_date <= ${asOf} ${notTest}`;
   const [osReports] = await sql`select count(*)::int c from public.lesson_reports where tenant_id=${t} and source='onescreen' and report_date between ${monthStart} and ${asOf} ${notTest}`;
-  const notices = await sql`select id, status, to_char(created_at at time zone 'Asia/Seoul','YYYY-MM-DD') d, case when jsonb_typeof(targets)='array' then jsonb_array_length(targets) end targets from public.classnote_notices where tenant_id=${t} order by created_at desc`;
+  // 공지마다 누가·어느 반·누구에게 보냈는지로 이름을 붙인다(원장 10-28 "전부 이름이 일치하는데 뭘 말하고 싶은건지 알 수가 없음"). 본문은 싣지 않는다.
+  const notices = await sql`select n.id, n.status, to_char(n.created_at at time zone 'Asia/Seoul','YYYY-MM-DD') d, case when jsonb_typeof(n.targets)='array' then jsonb_array_length(n.targets) end targets,
+    u.display_name sender, case when jsonb_typeof(n.targets)='array' then (select array_agg(distinct e->>'className') from jsonb_array_elements(n.targets) e where e->>'className' is not null) end class_names,
+    case when jsonb_typeof(n.targets)='array' then (select e->>'studentName' from jsonb_array_elements(n.targets) e where e->>'studentName' is not null limit 1) end first_student
+    from public.classnote_notices n left join public.users u on u.id=n.created_by and u.tenant_id=n.tenant_id where n.tenant_id=${t} order by n.created_at desc`;
+  const noticeLabel = n => { const cls = n.class_names || [], who = n.first_student ? `${n.first_student}${n.targets > 1 ? ` 외 ${n.targets - 1}명` : ''}` : n.targets ? `${n.targets}명` : '대상 없음';
+    return `${n.sender || '보낸 사람 모름'} → ${cls.length ? `${cls[0]}${cls.length > 1 ? ` 외 ${cls.length - 1}개 반` : ''} · ` : ''}${who}`; };
   const failedNotices = notices.filter(n => ['failed', 'partial'].includes(n.status) && n.d >= week);
   out.onescreen = family('onescreen', '선생님 원스크린(수업 마감)', {
     summary: `${month} 원스크린 학생 칸 기록 ${os.rows_m}건(학생 ${os.students}명·반 ${os.classes}개), 원스크린에서 쓴 보고서 ${osReports.c}건.`,
     metrics: [metric('이번 달 학생 칸 기록', os.rows_m, '건', '수업일 기준'), metric('기록된 학생', os.students, '명', '이번 달'), metric('원스크린에서 쓴 보고서', osReports.c, '건', '이번 달 · 수업일 기준'), metric('ClassNote 공지', notices.length, '건', '개별·반 공지 전체 기간')],
     trend: monthlyTrend('월별 원스크린 학생 칸 기록', '건', await sql`select to_char(session_date,'YYYY-MM') as month, count(*)::int as value from public.onescreen_daily_sessions where tenant_id=${t} and session_date <= ${asOf} ${notTest} group by 1`, asOf),
-    evidence: notices.map(n => record({ id: n.id, label: `ClassNote 공지 ${n.d}`, date: n.d, status: NOTICE[n.status] || '기타', fields: [field('대상', n.targets === null ? null : `${n.targets}건`)], facets: [`status:${n.status}`] })),
+    evidence: notices.map(n => record({ id: n.id, label: noticeLabel(n), date: n.d, status: NOTICE[n.status] || '기타', fields: [field('대상', n.targets === null ? null : `${n.targets}명`), field('반', (n.class_names || []).join(', ') || null)], facets: [`status:${n.status}`] })),
     facetLabels: prefixed('status', NOTICE), recordSource: 'classnote_notices',
     signals: failedNotices.length ? [signal({ id: 'onescreen-notice-failed', title: `공지 발송 실패 ${failedNotices.length}건`, summary: '최근 7일 공지 중 일부 또는 전체 발송에 실패한 기록입니다.', priority: PRIORITY.check, source: 'ClassNote 공지 발송 결과', recordIds: failedNotices.map(n => n.id), draft: { title: '공지 발송 실패 확인', body: '최근 7일 안에 발송에 실패한 공지가 있습니다. 대상과 결과를 확인하고 필요한 경우 다시 보내 주세요.' } })] : [],
     sourceLabel: '원스크린 학생 칸 기록 · ClassNote 공지', coverageNote: `${os.last ? `원스크린 기록은 ${os.last}까지 있습니다.` : '원스크린 기록이 없습니다.'} 근거 목록은 ClassNote 공지 전체이며 공지 본문은 보여 주지 않습니다.`,
