@@ -3,7 +3,8 @@
 // · 오늘 값 = 2.0 `src/features/dashboard/overview/server.ts`의 students·courses·withdrawals·intake·enrolledToday 칸. 조회는 같은 표·같은 조건을 SQL로
 //   (사용자 클라이언트 RLS = 지점 격리 → `tenant_id`), 판정은 2.0 순수 함수(importV2). `server-only` 파일의 조립부(조회 사이의 몇 줄)만 같은 식으로 옮겼다.
 // · 추세 = 재원생·강좌수는 2.0 '재원생 추이'·'강좌수 추이'(`loadEnrolledTrend` — 달마다 말일, 이번 달은 오늘 · 에이와 기록이 갖춰진 달부터).
-//   퇴원&수업종료는 2.0 칸 판정을 달마다 1일~같은 날로, 신규문의('오늘 접수')·신규 등록('이달 신규')은 2.0 칸 판정을 최근 7일 창 8개로.
+//   퇴원&수업종료는 2.0 칸 판정을 달마다 1일~같은 날로, 신규 등록('이달 신규')은 2.0 칸 판정을 최근 7일 창 8개로. 신규문의는 2.0 '신규 문의 추이'처럼
+//   상담일로 최근 7일 창 8개(2.0 칸 '오늘 접수'는 입력 시각이지만, 옮겨 넣은 옛 상담이 입력한 날로 몰려 추세로는 쓸 수 없다 · 앱에서 넣은 상담은 둘이 같다).
 // · 큰 숫자 = 2.0 칸 값. 재원생·강좌수는 오늘 점도 칸 값(2.0 규약 '오늘 점 = 칸'). 퇴원&수업종료는 칸에 단체 장부 정리 퇴원이 들고
 //   추세 점·전월 대비에는 안 든다(원장 10-20 "카드엔 들고 추이엔 안 든다" — 큰 숫자와 마지막 점이 다를 수 있다). 전월 대비는 선의 점 팝오버와
 //   같은 추세 점끼리다(한 카드 안의 두 '전월 대비'가 다른 모집단이면 안 된다 · 장부 날짜 몰림이 '좋아짐'으로 칠해지지 않게).
@@ -26,12 +27,12 @@ const MODULES = { kst: 'lib/date-kst.ts', comp: 'features/students/enrollment/en
   consult: 'features/enrollment/consult-subject.ts' };
 const OUTCOME_ACTION = 'enrollment_consultation_outcome';
 let rulesP = null, constsP = null;
-async function rules(importV2) {
+export async function rules(importV2) {
   rulesP ??= Promise.all(Object.entries(MODULES).map(async ([k, m]) => [k, await importV2(m)])).then(Object.fromEntries).catch((e) => { rulesP = null; throw e; });
   return rulesP;
 }
 /** 서버 전용 파일의 창 길이 — 불러올 수 없어 그 파일의 값을 읽는다(기록 범위 record-coverage.ts · 청구 시작 달 trend-billing-server.ts). */
-async function consts() {
+export async function consts() {
   const read = async (file, re) => {
     const n = Number((await readFile(new URL(`../../src/features/dashboard/overview/${file}`, import.meta.url), 'utf8')).match(re)?.[1]);
     if (!Number.isInteger(n) || n <= 0) throw new Error(`2.0 ${file}의 창 길이를 읽지 못했습니다`);
@@ -42,7 +43,7 @@ async function consts() {
   return constsP;
 }
 /** 2.0 getTenantSettings — 설정 행을 못 읽으면 침산 기본값 + 지점 이름(v2-teacher-work.mjs와 같은 식). */
-async function tenantSettings(sql, t, importV2) {
+export async function tenantSettings(sql, t, importV2) {
   const [row, name, RR] = await Promise.all([
     sql.soft(async (sp) => ({ data: (await sp`select data from public.tenant_settings where tenant_id=${t}`)[0]?.data ?? null }), { failed: true }),
     sql.soft(async (sp) => (await sp`select name from public.tenants where id=${t}`)[0]?.name ?? '', ''),
@@ -72,8 +73,8 @@ async function enrolledCards(sql, R, t, today, subjects) {
 }
 
 // ── 재원생 추이 · 강좌수 추이 ───────────────────────────────────────────────────────────────────────────────────────────
-/** 2.0 loadTrendRaw(trend-inputs-server.ts) — 원생·수강 전건(반은 왼쪽 조인). */
-async function trendRaw(sql, R, t, today) {
+/** 2.0 loadTrendRaw(trend-inputs-server.ts) — 원생·수강 전건(반은 왼쪽 조인). 운영실 추이 영역(v2-dashboard-trends.mjs)도 쓴다. */
+export async function trendRaw(sql, R, t, today) {
   const [students, enrollments] = await Promise.all([
     sql`select id::text id, status::text status, enrolled_at::text enrolled_at, withdrawn_at::text withdrawn_at, notes, withdrawal_metadata from public.students where tenant_id=${t} order by id`,
     sql`select e.id::text id, e.student_id::text student_id, e.class_id::text class_id, e.start_date::text start_date, e.end_date::text end_date, e.is_transferred, e.on_hold, c.subject, c.english_track
@@ -91,10 +92,11 @@ async function trendRaw(sql, R, t, today) {
     enrollments: enrollments.map((e) => ({ studentId: e.student_id, subject: e.subject ?? null, start: e.start_date, end: e.end_date, transferred: !!e.is_transferred, classId: e.class_id,
       ...(e.on_hold ? { onHold: true } : {}), ...(e.english_track ? { englishTrack: e.english_track } : {}) })),
     firstStart: [...firstStart], ended: [...ended], recordsFrom: firstOut ? firstOut.slice(0, 7) : null,
+    fromYear: firstOut ? Number(firstOut.slice(0, 4)) : Number(today.slice(0, 4)),
   };
 }
 /** 2.0 loadCleanupBilling(trend-billing-server.ts) — 장부 정리 학생의 청구가 살아 있는 달 + 청구가 지점을 덮기 시작한 달. 저장점 안(`sp`)에서만. */
-async function cleanupBilling(sp, R, t, today, searchMonths) {
+export async function cleanupBilling(sp, R, t, today, searchMonths) {
   const C = R.coverage, thisMonth = today.slice(0, 7);
   const ids = (await sp`select id::text id, withdrawal_metadata from public.students where tenant_id=${t} and status = 'withdrawn' order by id`)
     .filter((s) => R.bulk.isCleanupExit(s.withdrawal_metadata)).map((s) => s.id);
@@ -120,7 +122,7 @@ async function cleanupBilling(sp, R, t, today, searchMonths) {
  * 2.0 computeRecordCoverage(record-coverage.ts)의 `trustFrom`(에이와 수강 기록이 갖춰진 첫 달) — 추이가 그 달부터 그린다. 저장점 안(`sp`)에서만.
  * '수업을 시작한 등록'(`started` — 등록·퇴원 추이의 등록 칸)은 이 다섯 칸이 쓰지 않아 읽지 않는다. `mark` = 확정값(0386a, 못 읽으면 null).
  */
-async function recordTrustFrom(sp, R, t, today, windowMonths, mark) {
+export async function recordTrustFrom(sp, R, t, today, windowMonths, mark) {
   const C = R.coverage, thisMonth = today.slice(0, 7), windowStart = C.shiftMonth(thisMonth, -(windowMonths - 1));
   const [rawBills, enrollments] = await Promise.all([
     sp`select student_id::text student_id, period from public.invoices where tenant_id=${t} and category = 'tuition' and status::text not in ('void', 'refunded')
@@ -157,7 +159,7 @@ function enrolledTrends(R, raw, billing, trustFrom, asOf, refDay, subjects) {
 /** 2.0 lastClassOf(withdrawals/server/window.ts). */
 const lastClassOf = (row) => ({ className: row?.class?.class_name ?? null, subject: row?.class?.subject ?? null, englishTrack: row?.class?.english_track ?? null, reason: row?.withdrawal_reason ?? null });
 /** 2.0 getWithdrawalsInWindow(from, to) — 병합 학생은 모집단에서 · 수업 기록 없는 장부 정리 · 시스템 정리는 뺀다. 과목 칸 재료(exitClasses)까지. */
-async function windowWithdrawals(sql, R, t, from, to) {
+export async function windowWithdrawals(sql, R, t, from, to) {
   const students = (await sql`select id::text id, name, school, grade, enrolled_at::text enrolled_at, withdrawn_at::text withdrawn_at, notes, withdrawal_metadata from public.students
     where tenant_id=${t} and status = 'withdrawn' and withdrawn_at >= ${from} and withdrawn_at <= ${to} order by withdrawn_at desc, id`).filter((s) => !R.merged.isMergedStudent(s.notes));
   if (!students.length) return [];
@@ -178,7 +180,7 @@ async function windowWithdrawals(sql, R, t, from, to) {
     });
     const systemBulk = R.bulk.isSystemBulkWithdrawal({ withdrawnAt: s.withdrawn_at, hasEnrollmentHistory: !!row });
     if (!R.win.inWithdrawalWindow({ withdrawnAt: s.withdrawn_at, systemBulk }, from, to)) return [];
-    return [{ id: s.id, name: s.name, withdrawnAt: (s.withdrawn_at ?? '').slice(0, 10), lastClassName: klass.className, lastClassSubject: klass.subject,
+    return [{ id: s.id, name: s.name, enrolledAt: s.enrolled_at ? s.enrolled_at.slice(0, 10) : null, withdrawnAt: (s.withdrawn_at ?? '').slice(0, 10), lastClassName: klass.className, lastClassSubject: klass.subject,
       lastClassEnglishTrack: klass.englishTrack, exitClasses, cleanup: R.bulk.isCleanupExit(s.withdrawal_metadata) }];
   });
 }
@@ -187,7 +189,7 @@ async function windowWithdrawals(sql, R, t, from, to) {
  * 지난 날짜용으로 `from` 뒤에 퇴원한 학생(병합 제외)도 싣는다 — 그 날짜엔 재원이었다. `firstCreatedMs` = 지점의 첫 수강이 만들어진 때
  * (그 전 날짜엔 생성 시각 컷을 걸지 않는다 — 첫 묶음은 옛 기록을 한꺼번에 옮긴 것이라 생성 시각이 그 수강이 생긴 때가 아니다).
  */
-async function subjectEndedInputs(sql, R, t, from) {
+export async function subjectEndedInputs(sql, R, t, from) {
   const [students, enrollments, [{ first }]] = await Promise.all([
     sql`select id::text id, name, school, grade, status::text status, withdrawn_at::text withdrawn_at, notes, withdrawal_metadata from public.students
       where tenant_id=${t} and (status in ('enrolled', 'on_hold') or (status = 'withdrawn' and withdrawn_at > ${from})) order by id`,
@@ -212,7 +214,7 @@ async function subjectEndedInputs(sql, R, t, from) {
  * `past`(복사본 날짜 전) = 그날 뒤에 퇴원한 학생도 그날 재원생으로 넣는다(`trend`면 단체 장부 정리 퇴원생은 빼고 — 추세선 규칙).
  * `cutMs` = 그 시각 뒤에 만든 수강은 뺀다(null이면 컷 없음). 둘 다 없으면(복사본 날짜) 2.0 칸 그대로 재원·휴원만.
  */
-function subjectEnded(R, { students, bySt }, today, { past = false, cutMs = null, trend = false } = {}) {
+export function subjectEnded(R, { students, bySt }, today, { past = false, cutMs = null, trend = false } = {}) {
   const rows = [];
   for (const s of students) {
     if (s.status === 'withdrawn' && !(past && s.withdrawn_at?.slice(0, 10) > today && !(trend && s.cleanup))) continue;
@@ -227,9 +229,11 @@ function subjectEnded(R, { students, bySt }, today, { past = false, cutMs = null
   }
   return rows;
 }
-/** 2.0 monthWithdrawals — 그 달 1일 ~ min(말일, 기준일)의 퇴원(과목마다 한 줄) + 과목 전체 종료. 칸 숫자 = 줄 수(countWithdrawalPrograms().total). */
-function monthWithdrawalRows(R, withdrawn, ended, today, subjects) {
-  const win = R.win.withdrawalMonthWindow(today.slice(0, 7), today);
+/**
+ * 2.0 monthWithdrawals — 그 달 1일 ~ min(말일, 기준일)의 퇴원(과목마다 한 줄) + 과목 전체 종료. 칸 숫자 = 줄 수(countWithdrawalPrograms().total).
+ * `win`({ from, to })을 주면 그 창으로 — 운영실 흐름(확장 추세)이 같은 판정을 아무 창에나 돌린다(v2-dashboard-flow-students.mjs).
+ */
+export function monthWithdrawalRows(R, withdrawn, ended, today, subjects, win = R.win.withdrawalMonthWindow(today.slice(0, 7), today)) {
   return R.exits.includeSubjectEnds(withdrawn.filter((row) => R.win.inWithdrawalWindow({ withdrawnAt: row.withdrawnAt, systemBulk: false }, win.from, win.to))
     .flatMap((row) => (row.exitClasses.length ? row.exitClasses : [{ subject: row.lastClassSubject, englishTrack: row.lastClassEnglishTrack, className: row.lastClassName }]).map((klass) => ({
       id: row.id, eventKey: `${row.id}|${klass.subject ?? 'unknown'}`, name: row.name, schoolGrade: null, withdrawnAt: row.withdrawnAt, className: klass.className ?? undefined,
@@ -242,7 +246,7 @@ function monthWithdrawalRows(R, withdrawn, ended, today, subjects) {
  * 2.0 getEnrolledRecent의 재료를 가장 넓은 창 [lo, hi)로 한 번에 — 상태 변경 기록(등록 완료로 옮김) + 반 배정으로 '등록 완료' 칸에 선 상담의 후보와 그 학생의 수강.
  * 창마다 `enrolledIn`이 2.0 판정으로 다시 센다(넓은 창의 후보는 좁은 창 후보를 다 품는다 — 창 안에 선 때는 창 안 접수이거나 창 안 반 배정이다).
  */
-async function enrolledInputs(sql, R, t, lo, hi, subjects) {
+export async function enrolledInputs(sql, R, t, lo, hi, subjects) {
   const [logs, [{ first }], assignedInWindow, consultsInWindow] = await Promise.all([
     sql`select metadata, to_json(created_at)#>>'{}' created_at from public.audit_logs where tenant_id=${t} and action = ${OUTCOME_ACTION} and metadata->>'to' = 'enrolled'
       and created_at >= ${lo} and created_at < ${hi} order by created_at, id`,
@@ -252,7 +256,7 @@ async function enrolledInputs(sql, R, t, lo, hi, subjects) {
       where tenant_id=${t} and outcome::text <> 'enrolled' and student_id is not null and created_at >= ${lo} and created_at < ${hi} order by id`]);
   const moved = [...R.outcome.enrollmentEventTimes(logs).keys()];
   const [outcomes, ofStudents] = await Promise.all([
-    moved.length ? sql`select id::text id, outcome::text outcome from public.enrollment_consultations where tenant_id=${t} and id = any(${moved}::uuid[]) order by id` : [],
+    moved.length ? sql`select id::text id, outcome::text outcome, subject from public.enrollment_consultations where tenant_id=${t} and id = any(${moved}::uuid[]) order by id` : [],
     assignedInWindow.length ? sql`select id::text id, subject, student_id::text student_id, outcome::text outcome, to_json(created_at)#>>'{}' created_at from public.enrollment_consultations
       where tenant_id=${t} and outcome::text <> 'enrolled' and student_id = any(${assignedInWindow.map((r) => r.student_id)}::uuid[]) order by id` : []]);
   const consults = new Map([...consultsInWindow, ...ofStudents].map((c) => [c.id, c]));
@@ -261,19 +265,25 @@ async function enrolledInputs(sql, R, t, lo, hi, subjects) {
     from public.enrollments e join public.classes c on c.id = e.class_id and c.tenant_id = ${t} where e.tenant_id=${t} and e.student_id = any(${studentIds}::uuid[]) order by e.id` : [];
   const byStudent = new Map();
   for (const e of enrollments) byStudent.set(e.student_id, [...(byStudent.get(e.student_id) ?? []), { subject: e.subject ?? null, createdAt: e.created_at, endDate: e.end_date }]);
-  return { logs, firstLog: first, enrolledNow: new Set(outcomes.filter((c) => c.outcome === 'enrolled').map((c) => c.id)), consults: [...consults.values()], byStudent,
+  return { logs, firstLog: first, enrolledNow: new Set(outcomes.filter((c) => c.outcome === 'enrolled').map((c) => c.id)),
+    movedSubject: new Map(outcomes.map((c) => [c.id, c.subject ?? null])), consults: [...consults.values()], byStudent,
     classKeysOf: R.consult.consultClassKeysOf(subjects) };
 }
-/** [lo, hi) 안에 '등록 완료'가 된 상담 수 — 2.0 getEnrolledRecent(상태 로그 쪽 · 지금도 등록 완료) + assignedEntries(반 배정 쪽 · kstToday 자리 = `day`). */
-function enrolledIn(R, d, lo, hi, day) {
+/**
+ * [lo, hi) 안에 '등록 완료'가 된 상담 — 2.0 getEnrolledRecent(상태 로그 쪽 · 지금도 등록 완료) + assignedEntries(반 배정 쪽 · kstToday 자리 = `day`).
+ * 돌려줌 = `[{ id, subject }]`(상담 id · 상담 과목 글자 — 확장 추세의 과목별 줄). 상태 로그 쪽 과목은 `enrolledInputs`가 읽은 상담에서 찾는다.
+ */
+export function enrolledItemsIn(R, d, lo, hi, day) {
   const loMs = Date.parse(lo), hiMs = Date.parse(hi), inside = (iso) => { const x = Date.parse(iso); return x >= loMs && x < hiMs; };
-  const viaLog = [...R.outcome.enrollmentEventTimes(d.logs.filter((l) => inside(l.created_at))).keys()].filter((id) => d.enrolledNow.has(id)).length;
+  const viaLog = [...R.outcome.enrollmentEventTimes(d.logs.filter((l) => inside(l.created_at))).keys()].filter((id) => d.enrolledNow.has(id))
+    .map((id) => ({ id, subject: d.movedSubject.get(id) ?? null }));
   const viaAssignment = d.consults.filter((c) => {
     const at = R.recent.assignedEntryAt({ consultCreatedAt: c.created_at, classKeys: d.classKeysOf(c.subject), enrollments: d.byStudent.get(c.student_id) ?? [], today: day });
     return !!at && inside(at);
-  }).length;
-  return viaLog + viaAssignment;
+  }).map((c) => ({ id: c.id, subject: c.subject ?? null }));
+  return [...viaLog, ...viaAssignment];
 }
+const enrolledIn = (R, d, lo, hi, day) => enrolledItemsIn(R, d, lo, hi, day).length;
 
 // ── 묶기 ───────────────────────────────────────────────────────────────────────────────────────────────────────────────
 const yymm = (m) => `${m.slice(2, 4)}.${m.slice(5, 7)}`;
@@ -308,9 +318,12 @@ async function compute({ sql: tx, asOf, tenantId: t, importV2 }) {
     subjectEndedInputs(sql, R, t, `${months[0].month}-01`),
     // 재료 = 첫 주 창과 이번 달 1일 중 이른 날 ~ 기준일 끝(2.0 칸은 그날 하루 전체 · 창은 아래에서 같은 시각까지 자른다).
     enrolledInputs(sql, R, t, dayStart(weeks[0].from < `${asOf.slice(0, 7)}-01` ? weeks[0].from : `${asOf.slice(0, 7)}-01`), today.endIso, subjects),
-    Promise.all([sql`select to_json(min(created_at))#>>'{}' first from public.enrollment_consultations where tenant_id=${t}`,
-      sql`select to_json(created_at)#>>'{}' created_at from public.enrollment_consultations where tenant_id=${t}
-        and created_at >= ${dayStart(weeks[0].from)} and created_at < ${today.endIso} order by created_at, id`]),
+    // 신규문의 점 = 상담일(2.0 '신규 문의 추이'와 같은 축 — 7월·8월에 옮겨 넣은 옛 상담 2천여 건이 입력한 날로 몰리지 않게 · 앱에서 넣은 상담은
+    // 상담일 = 입력 시각) · 2.0 칸 '오늘 접수'만 입력 시각(그날 들어온 것)으로 따로 센다.
+    Promise.all([sql`select to_json(min(consulted_at))#>>'{}' first from public.enrollment_consultations where tenant_id=${t}`,
+      sql`select to_json(consulted_at)#>>'{}' consulted_at from public.enrollment_consultations where tenant_id=${t}
+        and consulted_at >= ${dayStart(weeks[0].from)} and consulted_at < ${today.endIso} order by consulted_at, id`,
+      sql`select count(*)::int n from public.enrollment_consultations where tenant_id=${t} and created_at >= ${today.startIso} and created_at < ${today.endIso}`]),
   ]);
   const trends = enrolledTrends(R, raw, billing, trustFrom, asOf, clock.day, sliceSubjects);
   // 칸 숫자 = 2.0 칸 그대로 · 추세 점 = 사유 없는 단체 장부 정리 퇴원을 뺀다(2.0 추세선 규칙, 원장 2026-10-20 *"단체로 장부 정리한 건에 대해서는 추세선에서
@@ -323,12 +336,11 @@ async function compute({ sql: tx, asOf, tenantId: t, importV2 }) {
     return monthWithdrawalRows(R, trend ? withdrawn.filter((row) => !row.cleanup) : withdrawn, ended, day, subjects);
   };
   const exitRows = exitsOf(asOf);
-  const [[{ first: intakeFirst }], intakeRows] = intake;
-  const intakeMs = intakeRows.map((r) => Date.parse(r.created_at));
+  const [[{ first: intakeFirst }], intakeRows, [{ n: intakeToday }]] = intake;
+  const intakeMs = intakeRows.map((r) => Date.parse(r.consulted_at));
   const countIn = (lo, hi) => intakeMs.filter((x) => x >= Date.parse(lo) && x < Date.parse(hi)).length;
-  // 신규문의 '오늘 접수'(2.0 칸 — 그날 하루 전체) · 이달 신규(2.0 칸 — 이번 달 1일 ~ 오늘).
+  // 2.0 칸 값: 신규문의 '오늘 접수'(위 — 그날 입력된 상담) · 이달 신규(이번 달 1일 ~ 오늘).
   const enrolledMonth = enrolledIn(R, enrolled, dayStart(`${asOf.slice(0, 7)}-01`), today.endIso, asOf);
-  const intakeToday = countIn(today.startIso, today.endIso);
 
   const point = (label, value) => ({ label, value });
   // 재원생·강좌수 오늘 점 = 칸 값(2.0 규약 '오늘 점 = 칸' — 미래 시작 새 수강만 남은 학생처럼 둘이 갈리는 드문 경우도 칸을 따른다).
@@ -338,25 +350,25 @@ async function compute({ sql: tx, asOf, tenantId: t, importV2 }) {
   const studentsCard = pastDay ? todayOf(trends.students) : cards.students, coursesCard = pastDay ? todayOf(trends.courses) : cards.courses;
   const withdrawalsCard = R.win.countWithdrawalPrograms(exitRows).total;
   const exitsKpi = kpi('퇴원·수업종료', '명', months.map((w) => point(w.label, R.win.countWithdrawalPrograms(exitsOf(w.day, true)).total)),
-    { better: 'down', period: 'month', span: '이번 달',
+    { id: 'exits', better: 'down', period: 'month', span: '이번 달',
       basis: '그 달 퇴원한 학생과 한 과목을 모두 끝낸 학생(과목마다 한 번) · 큰 숫자는 단체 장부 정리 퇴원도 셈 · 추세선과 전월 대비는 빼고 셈 · 달마다 1일부터 같은 날까지' });
   const kpis = [
     kpi('재원생', '명', withToday(trends.students, studentsCard),
-      { better: 'up', period: 'month', span: '오늘 기준', basis: '재원 학생(반 수업이 모두 아직 시작 전인 학생은 뺌) · 지난달까지는 그 달 말일 기준' }),
+      { id: 'enrolled-students', better: 'up', period: 'month', span: '오늘 기준', basis: '재원 학생(반 수업이 모두 아직 시작 전인 학생은 뺌) · 지난달까지는 그 달 말일 기준' }),
     kpi('강좌수', '개', withToday(trends.courses, coursesCard),
-      { better: 'up', period: 'month', span: '오늘 기준', basis: '재원생이 듣는 과목 수(한 학생이 같은 과목 반을 여럿 들어도 하나) · 지난달까지는 그 달 말일 기준' }),
+      { id: 'courses', better: 'up', period: 'month', span: '오늘 기준', basis: '재원생이 듣는 과목 수(한 학생이 같은 과목 반을 여럿 들어도 하나) · 지난달까지는 그 달 말일 기준' }),
     // 큰 숫자만 칸 값 — 전월 대비(previous·delta)는 kpi()가 센 추세 점끼리 그대로(선의 점 팝오버와 같은 비교).
     { ...exitsKpi, value: withdrawalsCard },
     kpi('신규문의', '건', weeks.map((w) => {
       const lo = dayStart(w.from);
       // 콜&상담 기록이 시작되기 전에 시작한 창은 '기록 없음'.
       return point(w.label, !intakeFirst || Date.parse(lo) < Date.parse(intakeFirst) ? null : countIn(lo, at(w.to)));
-    }), { better: 'up', period: 'week', span: '최근 7일', basis: '그 7일 동안 접수된 신규 콜&상담 · 날마다 같은 시각까지 셈' }),
+    }), { id: 'intake', better: 'up', period: 'week', span: '최근 7일', basis: '상담일이 그 7일 안인 신규 콜&상담 · 날마다 같은 시각까지 셈' }),
     kpi('신규 등록', '명', weeks.map((w) => {
       const lo = dayStart(w.from);
       // 상태 변경 기록이 남기 전에 시작한 창은 '기록 없음'.
       return point(w.label, !enrolled.firstLog || Date.parse(lo) < Date.parse(enrolled.firstLog) ? null : enrolledIn(R, enrolled, lo, at(w.to), w.to));
-    }), { better: 'up', period: 'week', span: '최근 7일', basis: '그 7일 동안 등록 완료가 된 신규 콜&상담(반 배정으로 등록된 것 포함) · 날마다 같은 시각까지 셈' }),
+    }), { id: 'new-enrollments', better: 'up', period: 'week', span: '최근 7일', basis: '그 7일 동안 등록 완료가 된 신규 콜&상담(반 배정으로 등록된 것 포함) · 날마다 같은 시각까지 셈' }),
   ];
   return { asOf, kpis, months, weeks, trustFrom,
     // 추이가 스스로 센 기준일 점(시험·대조용) — 2.0 규약은 '오늘 점 = 칸'이고, 둘이 갈리면 2.0이 아는 드문 경우다.

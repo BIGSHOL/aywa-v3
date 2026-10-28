@@ -7,6 +7,8 @@
 // 창(windows)·필터·이름 붙이기·응답 모양은 화면 서버가 공통으로 맡는다. 계산은 그 지표 카드와 같은 함수여야 한다(같은 데이터는 같은 원본).
 // 필터는 { dim, key } — 지표가 알아듣는 기준만 온다(dims 중 하나).
 import { TEACHER_WORK_METRICS, teacherWorkTrend } from './v2-teacher-work.mjs';
+// 운영실 — 2.0 상단 KPI 9칸(카드와 같은 id)과 추세가 있는 위젯(등록 · 퇴원 · 3개월 내 퇴원 · 등원율 · 청구·수납). 계산은 v2-dashboard-flow*.mjs.
+import { DASHBOARD_TREND_METRICS } from './v2-dashboard-flow.mjs';
 
 // 수업보고서·출결·영상 — 2.0 강사별 업무 현황 판정. 선생님·반·과목으로 묶고, 필터는 반 목록(scope)으로 좁힌다. 학생 묶음은 아직 없다.
 const TEACHER_WORK_DIMS = Object.freeze([{ id: 'teacher', label: '선생님별' }, { id: 'class', label: '반별' }, { id: 'subject', label: '과목별' }]);
@@ -17,9 +19,9 @@ async function classScope(sql, tenantId, filter) {
   return { classIds: hit ? classes.filter(hit).map((c) => c.id) : [] };
 }
 
-export const TREND_METRICS = Object.freeze(TEACHER_WORK_METRICS.map((m) => Object.freeze({
+export const TREND_METRICS = Object.freeze([...TEACHER_WORK_METRICS.map((m) => Object.freeze({
   id: m.id, label: m.label, group: '선생님 수업보고서', unit: '%', better: 'up', dims: TEACHER_WORK_DIMS, endsYesterday: !!m.attendance,
   async series({ sql, asOf, tenantId, importV2, windows, by, filter }) {
     return teacherWorkTrend({ sql, asOf, tenantId, importV2, metric: m.id, windows, by, scope: await classScope(sql, tenantId, filter) });
   },
-})));
+})), ...DASHBOARD_TREND_METRICS]);

@@ -93,7 +93,7 @@ export const pgError = (e) => ({ code: e?.code, message: e?.message, details: e?
 const isMissingColumn = (e, column) => { const msg = e?.message ?? ''; return msg.includes(column) && /does not exist|not find|schema cache/i.test(msg); };
 const DOW_KEY = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
 /** 2.0 OperationsProvider의 라이선스 키(operations-context.tsx `LicenseKey` = rule.ts `LicensedFeature`). */
-const HOST_LICENSES = ['ai_analysis', 'google_sheets', 'meeting_recording', 'window_mode'];
+export const HOST_LICENSES = ['ai_analysis', 'google_sheets', 'meeting_recording', 'window_mode'];
 const MAKEUP_UNREAD_NOTICE = '보강 배정을 확인하지 못했습니다. 새로고침해 다시 확인해 주세요.';
 const isPlainObject = (v) => typeof v === 'object' && v !== null && !Array.isArray(v);
 
@@ -165,7 +165,8 @@ async function resolveSkillAreas(subject) {
 }
 
 // ── 권한 = 2.0 perm-matrix.ts getPermMatrix → resolveActorPermMatrix → getActorPermMatrix → getUserPermMatrix(같은 차례·같은 순수 함수) ──
-async function userPermMatrix(sql, R, settings, actor, t, at) {
+// 운영실(v2-dashboard-overview.mjs)도 같은 함수로 '보는 사람'의 메뉴를 판정한다. `R` = 이 파일의 rules(importV2) · `actor` = { id, system_role }.
+export async function userPermMatrix(sql, R, settings, actor, t, at) {
   const [lab, lic, isSuper] = await Promise.all([
     sql.soft((sp) => sp`select menu_key from public.lab_menu_assignments`, null),
     sql.soft((sp) => sp`select feature, is_active, to_json(expires_at)#>>'{}' expires_at from public.tenant_licenses where tenant_id=${t} and feature = any(${['laboratory', 'ai_analysis']})`, null),

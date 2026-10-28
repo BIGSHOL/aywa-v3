@@ -1,5 +1,7 @@
 // 운영 영역 두 번째 묶음 — 캘린더·할 일·알림·슬랙·대시보드.
 import { PRIORITY, addDays, family, field, latest, md, metric, monthlyTrend, record, signal } from './domain-snapshot-core.mjs';
+import { dashboardKpiCards } from './v2-dashboard-flow.mjs';
+import { importV2 } from './v2-bridge.mjs';
 
 // live.js taskKind와 같은 라벨 = 2.0 staff_tasks 종류 원문(src/features/staff-tasks/kinds.ts). owner_review는 시안의 원장 개인 업무.
 const TASK_KIND = { report_send_failed: '보고서 발송 실패', followup_due: '상담 후속조치', enrollment_followup: '콜&상담 후속 조치', progress_anomaly: '진도 기록 이상', attendance_absent_desk: '결석 확인 전화', video_upload_check: '영상 업로드 확인', video_unassigned: '미배정 영상', unsent_report: '미발송 수업 보고서', approval_turn: '전자결재 차례', withdrawal_step: '퇴원보고서', help_question: '도움말 질문', owner_review: '원장 개인 업무' };
@@ -53,9 +55,13 @@ export async function opsFamilies2({ sql, t, asOf, month, monthStart }) {
   // 대시보드(운영실) — 일일 브리핑 기록·학원 공지·역할별 배치 저장 여부.
   const briefings = await sql`select id, briefing_date::text d, processing_status, notified_at is not null notified, left(coalesce(nullif(narrative, ''), team_report->>'headline', ''), 300) narrative, left(coalesce(processing_error, ''), 120) failure from public.daily_briefings where tenant_id=${t} and briefing_date <= ${asOf} order by briefing_date desc`;
   const [db] = await sql`select (select count(*)::int from public.announcements where tenant_id=${t}) announcements, (select count(*)::int from public.student_daily_stats where tenant_id=${t}) daily, (select case when jsonb_typeof(data->'dashboard'->'layouts')='object' then (select count(*)::int from jsonb_object_keys(data->'dashboard'->'layouts')) else 0 end from public.tenant_settings where tenant_id=${t}) layouts`;
+  // KPI = 2.0 운영실 상단 칸 9개를 흐름(추세) 카드로(원장 10-28 "기존 2.0 kpi들을 전부 흐름으로") — 업무 영역 metrics(kind 'kpi') · 몇 칸을 어디에 보일지는 화면이 정한다.
+  // 카드마다 id = 확장 추세 지표 id(trend-metrics.mjs). 묶음마다 저장점이라 DB 오류도 그 카드만 빠진다 · 하나도 못 세면 종전 숫자 칸으로(실패는 로그로).
+  let dashKpis = [];
+  try { dashKpis = await dashboardKpiCards({ sql, asOf, tenantId: t, importV2 }); } catch (e) { console.error(`workspaces.dashboard KPI: ${e.message}`); }
   out.dashboard = family('dashboard', '대시보드(운영실)', {
     summary: !briefings[0] ? '일일 브리핑 기록이 없습니다.' : briefings[0].d < asOf ? `일일 브리핑은 ${md(briefings[0].d)} 이후 만들어지지 않았습니다.` : `일일 브리핑은 ${md(asOf)}까지 있습니다.`,
-    metrics: [metric('전체 일일 브리핑', briefings.length, '건'), metric('알림까지 보낸 브리핑', briefings.filter(b => b.notified).length, '건'), metric('저장된 역할별 배치', db.layouts, '개', '없으면 기본 배치'), metric('학원 공지', db.announcements, '건'), metric('일별 원생 기록', db.daily, '일')],
+    metrics: dashKpis.length ? dashKpis : [metric('전체 일일 브리핑', briefings.length, '건'), metric('알림까지 보낸 브리핑', briefings.filter(b => b.notified).length, '건'), metric('저장된 역할별 배치', db.layouts, '개', '없으면 기본 배치'), metric('학원 공지', db.announcements, '건'), metric('일별 원생 기록', db.daily, '일')],
     evidence: briefings.map(b => record({ id: b.id, label: `${md(b.d)} 브리핑 · ${(b.processing_status === 'completed' ? (String(b.narrative).split(/(?<=[.!?。])\s|[\r\n]/)[0] || '내용 없음') : '생성 실패').slice(0, 70)}`, date: b.d, status: b.processing_status === 'completed' ? '생성 완료' : '생성 실패', fields: [field('알림', b.notified ? '보냄' : '보내지 않음')], facets: [b.notified ? 'notified' : 'not-notified'] })),
     facetLabels: { notified: '알림 보냄', 'not-notified': '알림 안 보냄' }, recordSource: 'daily_briefings',
     sourceLabel: '일일 브리핑 · 학원 공지 · 운영실 배치', coverageNote: '목록은 일일 브리핑입니다(최근 순).',

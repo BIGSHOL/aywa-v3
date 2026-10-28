@@ -208,18 +208,18 @@ test('퇴원·수업종료: 큰 숫자 = 2.0 칸 = 독립 SQL · 달마다 1일~
   assert.equal(k.better, 'down');
 });
 
-test('신규문의: 2.0 칸(오늘 접수) = 독립 SQL · 최근 7일 창 8개 = 창마다 같은 시각까지 접수 수 · 마지막 창 = 7일 전체', { skip: SKIP }, async () => {
+test('신규문의: 2.0 칸(오늘 접수 · 입력 시각) = 독립 SQL · 최근 7일 창 8개 = 창마다 같은 시각까지 상담일 수 · 마지막 창 = 7일 전체', { skip: SKIP }, async () => {
   const [{ n: today }] = await db`select count(*)::int n from public.enrollment_consultations where tenant_id=${t} and created_at >= ${kst(asOf)} and created_at < ${kst(addDays(asOf, 1))}`;
   assert.equal(out.cards.intakeToday, today);
   const k = K['신규문의'], weeks = weekWindows(asOf, 8);
   assert.deepEqual(k.points.map((p) => p.label), weeks.map((w) => w.label));
-  const [{ first }] = await db`select min(created_at) first from public.enrollment_consultations where tenant_id=${t}`;
+  const [{ first }] = await db`select min(consulted_at) first from public.enrollment_consultations where tenant_id=${t}`;
   for (const [i, w] of weeks.entries()) {
-    const [{ n }] = await db`select count(*)::int n from public.enrollment_consultations where tenant_id=${t} and created_at >= ${kst(w.from)} and created_at < ${cut(w.to)}`;
+    const [{ n }] = await db`select count(*)::int n from public.enrollment_consultations where tenant_id=${t} and consulted_at >= ${kst(w.from)} and consulted_at < ${cut(w.to)}`;
     assert.equal(k.points[i].value, kst(w.from) < first ? null : n, w.label);
   }
-  // 복사본을 뜬 뒤의 접수는 없다 — 마지막 창(그 시각까지) = 7일 하루 전체 합.
-  const [{ n: full }] = await db`select count(*)::int n from public.enrollment_consultations where tenant_id=${t} and created_at >= ${kst(weeks[7].from)} and created_at < ${kst(addDays(asOf, 1))}`;
+  // 복사본을 뜬 뒤의 상담일은 없다(미리 적은 상담일이 있으면 마지막 창이 그만큼 작다) — 마지막 창(그 시각까지) = 7일 하루 전체 합.
+  const [{ n: full }] = await db`select count(*)::int n from public.enrollment_consultations where tenant_id=${t} and consulted_at >= ${kst(weeks[7].from)} and consulted_at < ${kst(addDays(asOf, 1))}`;
   assert.equal(k.value, full);
   assert(k.points.some((p) => p.value > 0), '접수가 있는 창이 있어야 의미가 있다');
 });
@@ -274,9 +274,9 @@ test('지난 기준일: 창 끝 = 그날 복사본을 뜬 시각(복사본 날�
   const p = await ro((sql) => studentStatusKpis({ sql, asOf: past, tenantId: t, importV2 }));
   const k = p.kpis.find((x) => x.label === '신규문의');
   assert.deepEqual(k.points.map((x) => x.label), weeks.map((w) => w.label));
-  const [{ first }] = await db`select min(created_at) first from public.enrollment_consultations where tenant_id=${t}`;
+  const [{ first }] = await db`select min(consulted_at) first from public.enrollment_consultations where tenant_id=${t}`;
   for (const [i, w] of weeks.entries()) {
-    const [{ n }] = await db`select count(*)::int n from public.enrollment_consultations where tenant_id=${t} and created_at >= ${kst(w.from)} and created_at < ${cut(w.to)}`;
+    const [{ n }] = await db`select count(*)::int n from public.enrollment_consultations where tenant_id=${t} and consulted_at >= ${kst(w.from)} and consulted_at < ${cut(w.to)}`;
     assert.equal(k.points[i].value, kst(w.from) < first ? null : n, w.label);
   }
   // 재원생·강좌수: 그 기준일 달 전의 점은 지금 기준일과 같고, 그날 칸 = 추이의 그날 점 = 따로 센 값(칸 조회는 지금 상태로만 세어 그날로 되감지 못한다).
