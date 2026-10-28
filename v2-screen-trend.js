@@ -274,7 +274,7 @@
     const col = t.closest('.tr-chart .chart-col[data-tr-drill]');
     if (col) { if (!down?.touch || down.armed) drill(col); return; }
     const b = t.closest('[data-tr-grain],[data-tr-by],[data-tr-filter],[data-tr-unfilter],[data-tr-undrill],[data-tr-sort],[data-tr-more],[data-tr-open],[data-tr-chip]'); if (!b) return;
-    if (b.dataset.trOpen) { last.api.openRecord?.(b.dataset.trOpen); return; } // 명단의 이름 = 그 기록 창
+    if (b.dataset.trOpen) { if(last.d.metric.id==='recent-absent')last.api.showAbsences?.(b.dataset.trOpen);else last.api.openRecord?.(b.dataset.trOpen); return; }
     if (b.dataset.trChip) { const k = b.dataset.trChip; if (finder.chips.has(k)) finder.chips.delete(k); else finder.chips.add(k); showAll = false; last.api.render(); return; }
     // 기간 단위를 바꾸면 쪼개 보기도 끝난다(쪼개 보는 중 눌린 단추 = 나눈 단위 — 누르면 그 단위의 보통 보기).
     if (b.dataset.trGrain) go({ grain: b.dataset.trGrain, ...UNDRILL });

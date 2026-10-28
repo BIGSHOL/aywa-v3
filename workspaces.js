@@ -793,7 +793,7 @@ window.createWorkspaces = function createWorkspaces(api) {
     // 쪽 = 빠짐없이 가진 목록이면 화면에서 바로, 아니면 그 쪽을 읽는다. 목록 머리가 화면 위로 지나갔으면 목록 처음으로 옮긴다.
     if(action==='page'){state.page[id]=Math.max(1,Number(el.dataset.page));delete state.pin[id];const local=LOCAL.has(id)&&!has(id);if(local)repaintLocal(id);else if(needsRemote(id))loadRecords(id);else refreshMain(id);const top=local?document.querySelector(`[data-list-key="${CSS.escape(id)}"]`):$('#ws-main');if(top&&top.getBoundingClientRect().top<0)api.scrollToSection?.(top);return;}
     if(action==='reload'){if(boardMode(id)){delete state.board[id];loadBoard(id);refreshMain(id);return;}if(state.remote[id])state.remote[id].key='';loadRecords(id);return;}
-    if(action==='record'){showRecord(id,record);return;}
+    if(action==='record'){if(id==='attendance'&&['repeat-absence','repeat-absence-absent'].includes(state.facet[id])){api.showAbsences(null,{attendanceId:record});return;}showRecord(id,record);return;}
     if(action==='record-open'){api.openRecord(record);return;}
     if(action==='goto'){navigate(el.dataset.page);return;}
     if(action==='record-request'){const a=area(id),r=recordById(id,record);if(!a||!r)return;document.querySelectorAll('dialog[open]').forEach(d=>d.close());requestFrom(a,{title:`${r.label} 확인`,body:`${a.label}의 이 기록을 확인하고 필요한 조치와 결과를 보고해 주세요.`,records:[r]});return;}

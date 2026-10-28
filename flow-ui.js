@@ -266,7 +266,7 @@ window.createFlowUI = function createFlowUI(api) {
     const refs=refsOf(c),fl=flags(c),place=placeOf(c),who=whoText(c),at=when(atOf(c));
     const pick=lead()?`<td class="c-sel">${canPick(c)?`<input type="checkbox" data-fl-pick="${h(c.id)}" aria-label="${h([c.title,sumOf(c)].filter(Boolean).join(' — '))} 고르기" ${store.sel.has(c.id)?'checked':''}>`:''}</td>`:'';
     // 관련 기록 = '기록 보기' 단추 하나(원장 10-28 "[기록보기] 라벨로 바꾸고 마우스 올리면 리스트 깔끔하게 정리해서 보여주는것도 · 혹은 눌렀을때도 오버레이로").
-    return `<tr class="fl-row" data-case="${h(c.id)}">${pick}<td class="c-state"><span class="fl-cut fl-line" data-hint="${h(fl.map(([t,hint])=>hint?`${t} — ${hint}`:t).join('\n'))}">${chips(c)}</span></td><td class="c-title"><button type="button" class="fl-cut" data-fl="open" data-id="${h(c.id)}">${h(c.title)}</button>${c.summary?`<small class="fl-cut">${h(sumOf(c))}</small>`:''}</td><td class="c-rec">${refs.length?`<button type="button" class="fl-recbtn" data-fl="recs" data-id="${h(c.id)}" aria-haspopup="dialog">기록 보기<b>${fmt(refs.length)}</b></button>`:'<span class="fl-dim">—</span>'}</td><td class="c-who"><span class="fl-cut">${h(who||'—')}</span></td><td class="c-due"><span class="fl-cut">${c.dueAt?h(md(kstDate(c.dueAt))):'—'}</span></td><td class="c-at"><span class="fl-cut">${h(at)}</span></td><td class="c-place">${place?`<button type="button" class="fl-place fl-cut" data-fl="goto" data-id="${h(c.id)}" aria-label="${h(place)} 열기">${h(place)}</button>`:'<span class="fl-dim">—</span>'}</td><td class="c-act">${actionBar(c,{compact:true})}</td></tr>`;
+    return `<tr class="fl-row" data-case="${h(c.id)}">${pick}<td class="c-state"><span class="fl-cut fl-line" data-hint="${h(fl.map(([t,hint])=>hint?`${t} — ${hint}`:t).join('\n'))}">${chips(c)}</span></td><td class="c-title"><button type="button" class="fl-cut" data-fl="open" data-id="${h(c.id)}">${h(c.title)}</button>${c.summary?`<small class="fl-cut">${h(sumOf(c))}</small>`:''}</td><td class="c-rec">${refs.length?`<button type="button" class="fl-recbtn" data-fl="recs" data-id="${h(c.id)}" aria-haspopup="dialog">기록 보기<b>${fmt(c.signalId?c.entityTotal||refs.length:refs.length)}</b></button>`:'<span class="fl-dim">—</span>'}</td><td class="c-who"><span class="fl-cut">${h(who||'—')}</span></td><td class="c-due"><span class="fl-cut">${c.dueAt?h(md(kstDate(c.dueAt))):'—'}</span></td><td class="c-at"><span class="fl-cut">${h(at)}</span></td><td class="c-place">${place?`<button type="button" class="fl-place fl-cut" data-fl="goto" data-id="${h(c.id)}" aria-label="${h(place)} 열기">${h(place)}</button>`:'<span class="fl-dim">—</span>'}</td><td class="c-act">${actionBar(c,{compact:true})}</td></tr>`;
   }
   // What the previewed person can do on this case right now (the server still validates every command).
   // 보고·요청에 붙인 기록(서버가 복사본 기록 저장소에서 확인한 값) — 누르면 그 기록을 연다.
@@ -1001,7 +1001,7 @@ window.createFlowUI = function createFlowUI(api) {
   function openRecPop(btn){
     const c=caseById(btn.dataset.id);if(!c)return;const refs=refsOf(c);if(!refs.length)return;
     closeRecPop();hideTip();const el=document.createElement('div');el.className='fl-recpop';el.setAttribute('role','dialog');el.setAttribute('aria-label',`${c.title} — 관련 기록`);
-    el.innerHTML=`<div class="fl-recpop-body live-scroll">${recRows(refs)}</div>`;
+    el.innerHTML=`<div class="fl-recpop-body live-scroll">${c.signalId&&c.entityTotal>refs.length?`<p class="fl-dim">처음 ${fmt(refs.length)}건 · 기록 보기를 누르면 전체 ${fmt(c.entityTotal)}건을 쪽별로 볼 수 있습니다.</p>`:''}${recRows(refs)}</div>`;
     document.body.append(el);recPop.el=el;recPop.btn=btn;placeRecPop();fillFacts(el,refs,c);api.attachScroll?.();
   }
   // 단추 아래(넘치면 위) · 화면 안. 표가 채워져 크기가 바뀌면 다시 잡는다.
@@ -1010,7 +1010,19 @@ window.createFlowUI = function createFlowUI(api) {
     const r=btn.getBoundingClientRect(),w=el.offsetWidth,hh=el.offsetHeight;let top=r.bottom+4;if(top+hh>innerHeight-8)top=Math.max(8,r.top-hh-4);
     el.style.left=`${Math.min(Math.max(8,r.right-w),innerWidth-w-8)}px`;el.style.top=`${top}px`;
   }
-  function showRecords(id){const c=caseById(id);if(!c)return;const refs=refsOf(c);closeRecPop();dialog('modal',c.title,'',`<div class="fl-recs-modal">${recRows(refs)}</div>`);const m=$('#modal');if(m)fillFacts(m,refs,c);}
+  let recPageAsk=0;
+  async function showRecordsPage(id,page){
+    const c=caseById(id),ask=++recPageAsk,m=$('#modal'),box=m?.querySelector(`.fl-recs-modal[data-case="${CSS.escape(id)}"]`);if(!c||!box)return;
+    box.innerHTML='<p class="fl-dim" role="status">기록을 불러오는 중입니다.</p>';
+    try{
+      const response=await fetch(`/api/flow/records?caseId=${encodeURIComponent(id)}&page=${page}`,{headers:{Accept:'application/json'}});
+      if(!response.ok)throw new Error('records');const data=await response.json();
+      if(ask!==recPageAsk||!box.isConnected||!m.open||!caseById(id))return;
+      const refs=data.refs||[],pager=`<nav class="fl-pager" aria-label="관련 기록 쪽"><button type="button" class="button small" data-fl="rec-page" data-id="${h(id)}" data-page="${data.page-1}" ${data.page<=1?'disabled':''}>이전</button><span>${fmt(data.page)} / ${fmt(data.pages)}쪽 · 전체 ${fmt(data.total)}건</span><button type="button" class="button small" data-fl="rec-page" data-id="${h(id)}" data-page="${data.page+1}" ${data.page>=data.pages?'disabled':''}>다음</button></nav>`;
+      box.innerHTML=`${pager}${recRows(refs)}${pager}`;fillFacts(box,refs,c);api.attachScroll?.();
+    }catch{if(ask===recPageAsk&&box.isConnected&&m.open)box.innerHTML=`<p class="fl-dim">기록을 불러오지 못했습니다.</p><button type="button" class="button small" data-fl="rec-page" data-id="${h(id)}" data-page="${page}">다시 읽기</button>`;}
+  }
+  function showRecords(id){const c=caseById(id);if(!c)return;const refs=refsOf(c);closeRecPop();dialog('modal',c.title,'',`<div class="fl-recs-modal" data-case="${h(id)}">${c.signalId&&c.entityTotal>refs.length?'<p class="fl-dim">기록을 불러오는 중입니다.</p>':recRows(refs)}</div>`);const m=$('#modal');if(c.signalId&&c.entityTotal>refs.length)showRecordsPage(id,1);else if(m)fillFacts(m,refs,c);}
   document.addEventListener('pointerover',event=>{
     const b=event.target.closest?.('.fl-recbtn');
     if(b){if(recPop.btn===b){keepRecPop();return;}clearTimeout(recPop.show);recPop.show=setTimeout(()=>{if(b.isConnected&&b.matches(':hover'))openRecPop(b);},220);return;}
@@ -1132,15 +1144,16 @@ window.createFlowUI = function createFlowUI(api) {
     if(action==='bulk-clear'){store.sel.clear();paintBoardList();return;}
     if(action==='bulk-reassign'){openBulkReassign();return;}
     // 관련 기록 한 줄 — 작업 공간이 있으면 엿보기 창에 그 기록, 없으면 이 화면의 기록 상세.
-    if(action==='rec-open'){const {family,record}=el.dataset;closeRecPop();if(family&&api.hasView(`workspace-${family}`)){openPeek({page:`workspace-${family}`,family,record},el);return;}if(record&&api.canOpenRecord?.(record)){document.querySelectorAll('dialog[open]').forEach(d=>d.close());api.openRecord(record);}return;}
+    if(action==='rec-open'){const {family,record}=el.dataset,recordCase=el.closest('.fl-recs-modal')?.dataset.case||(recPop.el?.contains(el)?recPop.btn?.dataset.id:null);closeRecPop();if(family==='students'&&record&&el.closest('#ax-issue-attendance')){api.showAbsences(record);return;}if(family==='attendance'&&record&&caseById(recordCase)?.signalId==='attendance-repeat-absence'){api.showAbsences(null,{attendanceId:record});return;}if(family&&api.hasView(`workspace-${family}`)){openPeek({page:`workspace-${family}`,family,record},el);return;}if(record&&api.canOpenRecord?.(record)){document.querySelectorAll('dialog[open]').forEach(d=>d.close());api.openRecord(record);}return;}
     if(action==='rec-process'){const {family,type,record}=el.dataset,c=caseById(el.dataset.case);if(!c||!family||!record)return;closeRecPop();processRecord(c,family,type,record,el);return;}
+    if(action==='rec-page'){showRecordsPage(id,Number(el.dataset.page));return;}
     // 쪽 이동 — 표만 다시 그리고, 표 머리가 화면 위로 지나갔으면 표 처음으로 눈에 보이게 옮긴다.
     if(action==='page'){const key=el.dataset.pageList||'';store.pages[key]=Number(id)||1;if(key==='board')paintBoardList();else api.render();const top=document.querySelector(key==='board'?'#fl-board-list':`:is(.fl-list,.fl-tbody)[data-list="${CSS.escape(key)}"]`);if(top&&top.getBoundingClientRect().top<0)api.scrollToSection(top);document.querySelector(`.fl-pager [data-page-list="${CSS.escape(key)}"][aria-current="page"]`)?.focus({preventScroll:true});return;}
     if(action==='col'){const key=el.dataset.col;if(colMenu.key===key)closeColMenu();else openColMenu(key);return;}
     if(action==='col-clear'){const key=el.dataset.col;if(key)delete store.cols[key];else store.cols={};store.pages.board=1;paintBoardList();if(colMenu.el)paintColMenu();document.querySelector('[data-fl-search]')?.focus({preventScroll:true});return;}
     // From another page the jump waits for the home render (the hash change) and lands at once.
     if(action==='filter'){store.filter=id;store.pages.board=1;store.pages[id]=1;closeColMenu(false);const routed=api.getPage()!=='home'&&api.getPage()!=='flow',go=()=>requestAnimationFrame(()=>{api.scrollToSection('#fl-detail',{instant:routed});$('#fl-detail-title,#fl-detail h2')?.focus?.({preventScroll:true});});if(routed&&location.hash!=='#home'){addEventListener('hashchange',go,{once:true});navigate('home');}else{if(routed)navigate('home');else api.render();go();}return;}
-    if(action==='node'||action==='pick'){toggleNode(el);return;}
+    if(action==='node'||action==='pick'){if(action==='pick'&&caseById(treeCase)?.signalId==='attendance-repeat-absence'){const student=trees.get(treeCase)?.index.get(el.dataset.node)?.entityRef?.id;if(student){api.showAbsences(student);return;}}toggleNode(el);return;}
     if(action==='tree-go'){treeGo(el.dataset.node);return;}
     if(action==='tree-reload'){const e=treeEntry(id);e.retry=0;if(!e.data)e.status='loading';paintTree(id);fetchTree(id);return;}
     if(action==='open'){showCase(id);return;}
@@ -1152,7 +1165,7 @@ window.createFlowUI = function createFlowUI(api) {
     // A tree link opens the copied record in place: the snapshot's own view, else the workspace's record view, which
     // reads a record off its list by exact id. The tree stays until that succeeds; the workspace says when it cannot
     // (not found, failed) and drops an answer that comes after the person moved on. Other links go to the workspace.
-    if(action==='entity'){const {family,record}=el.dataset;if(record&&el.closest('.fl-tree')){if(api.canOpenRecord?.(record)){api.openRecord(record);return;}const p=family?api.showWorkspaceRecord?.(family,record):null;if(p&&typeof p.then==='function'){el.disabled=true;el.setAttribute('aria-busy','true');p.finally(()=>{el.disabled=false;el.removeAttribute('aria-busy');});return;}toast('이 기록은 여기서 바로 열 수 없습니다. 해당 작업 공간 목록에서 찾아 주세요.');return;}if(family&&api.hasView(`workspace-${family}`)){openPeek({page:`workspace-${family}`,family,record},el);return;}document.querySelectorAll('dialog[open]').forEach(d=>d.close());if(record)api.openRecord?.(record);return;}
+    if(action==='entity'){const {family,record}=el.dataset;if(record&&el.closest('.fl-tree')){if(family==='students'&&caseById(treeCase)?.signalId==='attendance-repeat-absence'){api.showAbsences(record);return;}if(api.canOpenRecord?.(record)){api.openRecord(record);return;}const p=family?api.showWorkspaceRecord?.(family,record):null;if(p&&typeof p.then==='function'){el.disabled=true;el.setAttribute('aria-busy','true');p.finally(()=>{el.disabled=false;el.removeAttribute('aria-busy');});return;}toast('이 기록은 여기서 바로 열 수 없습니다. 해당 작업 공간 목록에서 찾아 주세요.');return;}if(family&&api.hasView(`workspace-${family}`)){openPeek({page:`workspace-${family}`,family,record},el);return;}document.querySelectorAll('dialog[open]').forEach(d=>d.close());if(record)api.openRecord?.(record);return;}
   },true);
   // After a command the open drawer of the same case refreshes in place (scroll, branches and focus kept).
   function reopenCase(id){if(!$('#detail[open]')||!caseById(id))return;if(treeShown(id))refreshDetail();else showCase(id);}

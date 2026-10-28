@@ -180,7 +180,7 @@
   // 열쇠 이름의 뜻으로 고른다(지표마다 열쇠가 다르다 — math · mathOnly · english.math · both · eie · injaewon · unknown …). 모르면 null.
   const SUBJECT_TONE={math:'#1d4ed8',english:'#c62828',eie:'#ea580c',mixed:'#7c3aed',none:'#9ca3af'};
   const subjectColor=key=>{const k=String(key??'').toLowerCase();if(!k)return null;if(/^(unknown|none|other|otheronly|nothing)$/.test(k))return SUBJECT_TONE.none;const math=k.includes('math'),eie=k.includes('eie'),eng=/english|injaewon/.test(k);if(k==='both'||(math&&(eie||eng)))return SUBJECT_TONE.mixed;if(eie)return SUBJECT_TONE.eie;if(eng)return SUBJECT_TONE.english;if(math)return SUBJECT_TONE.math;return null;};
-  const api={db,h,fmt,yymm,won,icon,chart,lineChart,exact,dialog,navigate,render,attachScroll,scrollToSection,toast,subjectLabel:subject,subjectColor,showStudent,showBill,showApproval,showTask,openRecord,canOpenRecord,getPage:()=>state.page,hasView:id=>Boolean(viewFor(id)),closeMenu};
+  const api={db,h,fmt,yymm,won,icon,chart,lineChart,exact,dialog,navigate,render,attachScroll,scrollToSection,toast,subjectLabel:subject,subjectColor,showStudent,showAbsences,showBill,showApproval,showTask,openRecord,canOpenRecord,getPage:()=>state.page,hasView:id=>Boolean(viewFor(id)),closeMenu};
   const ax=window.createOwnerWorkspace(api);
   const ws=typeof window.createWorkspaces==='function'?window.createWorkspaces({...api,ax}):null;
   ax.useWorkspaces?.(ws);
@@ -387,6 +387,22 @@
     if(!node.open)node.showModal();attachScroll();
   }
   const recordLines=(rows,emptyText='등록된 기록이 없습니다.')=>rows.length?`<div class="live-agenda">${rows.map(r=>`<div class="live-agenda-item"><span>${h(r.date||'날짜 미입력')}</span><div><strong>${h(r.title)}</strong><p class="live-pre">${h(r.text||'')}</p></div></div>`).join('')}</div>`:empty(emptyText,'');
+  let absenceAsk=0;
+  async function showAbsences(studentId,{attendanceId}={}){
+    const ask=++absenceAsk;
+    dialog('absence-detail','이번 달 결석 상세','결석 한 건마다 수업과 후속 기록을 확인합니다.','<p class="live-note" role="status">결석 기록을 불러오는 중입니다.</p>');
+    try{
+      const key=attendanceId?`attendance=${encodeURIComponent(attendanceId)}`:`student=${encodeURIComponent(studentId)}`;
+      const response=await fetch(`/api/attendance-absences?${key}`,{headers:{Accept:'application/json'}});
+      if(!response.ok)throw new Error('load');
+      const data=await response.json();
+      if(ask!==absenceAsk||!$('#absence-detail')?.open)return;
+      const rows=data.rows||[];
+      const body=`<div class="live-drawer-summary"><strong>${h(rows.length)}건 결석</strong><p>${h(data.month)} · 정정 반영 출결 · 같은 날 반별 수업은 각각 표시</p></div>`+
+        (rows.length?`<ol class="absence-list">${rows.map(r=>`<li class="absence-item"><div class="absence-item-head"><strong>${h(r.date)} · ${h(r.className||'반 미입력')}</strong><span>${h(r.time||'교시·시간 미입력')}</span></div><dl><dt>담당 선생님</dt><dd>${h(r.teacher||'기록 없음')}</dd><dt>사유·메모</dt><dd>${h(r.memo||'기록 없음')}</dd><dt>후속 처리</dt><dd>${h(r.followup||'후속 기록 없음')}</dd></dl>${r.classId?`<button type="button" class="button small" data-absence-day="${h(r.date)}" data-absence-class="${h(r.classId)}">2.0 출석부 그날 보기</button>`:''}</li>`).join('')}</ol>`:empty('이번 달 결석 기록이 없습니다.',''));
+      dialog('absence-detail',`${data.student.name} · 이번 달 결석`,`${data.month} · ${rows.length}건`,body);
+    }catch{if(ask===absenceAsk&&$('#absence-detail')?.open)dialog('absence-detail','이번 달 결석 상세','',`<p class="live-note">결석 기록을 불러오지 못했습니다. 잠시 뒤 다시 열어 주세요.</p>`);}
+  }
   const notesFor=context=>state.localNotes.filter(n=>n.context===context);
   const notePanel=context=>notesFor(context).length?panel('작성한 메모','새로고침하면 사라집니다.',recordLines(notesFor(context).map(n=>({date:shortDate(n.date),title:n.title,text:n.body})))):'';
   function showStudent(id){
@@ -503,6 +519,7 @@
     const el=event.target.closest('button,a,[data-action]');if(!el||el.disabled)return;
     const d=el.dataset;
     if(d.close){$(`#${d.close}`)?.close();return;}
+    if(d.absenceDay){navigate(`v2-attendance?v2path=/attendance/${d.absenceDay}/${d.absenceClass}`);return;}
     if(d.go){navigate(d.go);return;}
     if(d.action){if(d.action!=='menu'&&el.closest('#sidebar'))closeMenu(false);actions[d.action]?.();return;}
     if(d.student){showStudent(d.student);return;}

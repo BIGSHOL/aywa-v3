@@ -7,6 +7,7 @@ import { fullDbRoot } from './full-db-paths.mjs';
 import { openFullDatabase, tenantId } from './full-db.mjs';
 import { createAssistantFromEnv } from './claude-bridge-http.mjs';
 import { handleWorkspaceRecords } from './domain-http.mjs';
+import { handleAbsenceDetail } from './absence-detail.mjs';
 import { loadFlowSource } from './flow-source.mjs';
 import { createFlowAI } from './flow-decision.mjs';
 import { createFlowService, defaultStoreDir, startFlow } from './flow-service.mjs';
@@ -116,6 +117,7 @@ const server=createServer(async(req,res)=>{
  if(v2HostRoute.handles(path)){try{await v2HostRoute.handle(req,res,path);}catch{if(!res.headersSent)reject(500,'화면 파일을 읽지 못했습니다.');}return;}
  if(v2ScreenRoute.handles(path)){try{await v2ScreenRoute.handle(req,res,path);}catch{if(!res.headersSent)reject(500,'화면을 불러오지 못했습니다.');}return;}
  if(path===DATA_REVISION_PATH){try{dataRevision(req,res);}catch{if(!res.headersSent)reject(500,'자료 상태를 읽지 못했습니다.');}return;}
+ if(path==='/api/attendance-absences'){if(req.headers['sec-fetch-site']==='cross-site'){reject(403,'Local access only');return;}try{await handleAbsenceDetail(req,res,headers,snapshot.meta.asOf);}catch{if(!res.headersSent)reject(500,'결석 기록을 읽지 못했습니다.');}return;}
  // JSON endpoints answer their own method errors; cross-site requests still fall through to the guards below.
  if(req.headers['sec-fetch-site']!=='cross-site'){try{if(handleWorkspaceRecords(req,res,headers))return;}catch{if(!res.headersSent)reject(500,'기록을 읽지 못했습니다.');return;}}
  if(!['GET','HEAD'].includes(req.method)){reject(405,'Read-only preview');return;}

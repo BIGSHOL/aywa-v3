@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { openStore, namespaceDir, StoreError } from './flow-store.mjs';
 import { changedCount, reconcileSource } from './flow-reconcile.mjs';
 import { buildView } from './flow-view.mjs';
+import { entityRef } from './flow-engine.mjs';
 import { failedDecision, recordDecision, runCommand } from './flow-commands.mjs';
 import { createHierarchyRuntime, openOverlay } from './flow-hierarchy-runtime.mjs';
 import { createHierarchyProviders } from './flow-hierarchy-providers.mjs';
@@ -84,6 +85,15 @@ export async function createFlowService({ source, dir, ai, tenantName = '', lock
       return { ...summary, applied: true, revision: store.state.revision };
     },
     view: (params = {}) => buildView(store.state, source, { aiStatus: ai.status(), tenantName, inFlight: jobs, ...params }),
+    recordPage: (caseId, page) => {
+      const c = store.state.cases[caseId];
+      if (!c?.signalId) return null;
+      const signal = source.signals.find(s => s.familyId === c.familyId && s.signal.id === c.signalId);
+      if (!signal) return null;
+      const refs = signal.refs.map(key => entityRef(source, key)).filter(Boolean), size = 50, pages = Math.max(1, Math.ceil(refs.length / size));
+      if (page > pages) return null;
+      return { caseId, page, pages, total: refs.length, refs: refs.slice((page - 1) * size, page * size) };
+    },
     hierarchy: caseId => runtime.view(caseId),
     hierarchyTag: caseId => { runtime.check(caseId); return runtime.etag(caseId); },
     command: async body => { const result = await runCommand(store, () => source, body, { ai, now, jobs, waitMs }); runtime.notify(); return result; },

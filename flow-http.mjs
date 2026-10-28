@@ -4,7 +4,7 @@ import { CommandError } from './flow-commands.mjs';
 import { StoreError } from './flow-store.mjs';
 import { HierarchyError } from './flow-hierarchy.mjs';
 
-export const FLOW_PATH = '/api/flow', ACTIONS_PATH = '/api/flow/actions', HIERARCHY_PATH = '/api/flow/hierarchy';
+export const FLOW_PATH = '/api/flow', ACTIONS_PATH = '/api/flow/actions', HIERARCHY_PATH = '/api/flow/hierarchy', RECORDS_PATH = '/api/flow/records';
 const BODY_LIMIT = 16 * 1024;
 const JSON_TYPE = /^application\/json\s*(?:;\s*charset\s*=\s*"?utf-8"?\s*)?$/i;
 
@@ -34,11 +34,22 @@ export function createFlowRoute({ flow, origins, headers = {}, enabled = true })
   };
   const unavailable = res => { const f = flow.failure; send(res, 503, f ? { error: f.code, message: f.message } : { error: 'flow_starting', message: '업무 흐름을 준비하는 중입니다.' }, { 'Retry-After': '2' }); };
   return {
-    handles: path => path === FLOW_PATH || path === ACTIONS_PATH || path === HIERARCHY_PATH,
+    handles: path => path === FLOW_PATH || path === ACTIONS_PATH || path === HIERARCHY_PATH || path === RECORDS_PATH,
     async handle(req, res, path) {
       if (!enabled) return send(res, 404, { error: 'not_found', message: '사용할 수 없는 주소입니다.' });
       const site = req.headers['sec-fetch-site'];
       if (site && site !== 'same-origin' && site !== 'none') return send(res, 403, { error: 'forbidden_origin', message: '이 화면에서만 요청할 수 있습니다.' });
+      if (path === RECORDS_PATH) {
+        if (!['GET', 'HEAD'].includes(req.method)) return send(res, 405, { error: 'method_not_allowed', message: '조회만 할 수 있습니다.' }, { Allow: 'GET, HEAD' });
+        const q = new URL(req.url, 'http://127.0.0.1').searchParams;
+        if ([...q.keys()].some(k => !['caseId', 'page'].includes(k)) || q.getAll('caseId').length !== 1 || !/^[A-Za-z0-9_-]{1,120}$/.test(q.get('caseId')) || q.getAll('page').length !== 1 || !/^[1-9]\d{0,5}$/.test(q.get('page'))) return send(res, 400, { error: 'invalid_request', message: '업무 번호와 쪽 번호를 확인해 주세요.' });
+        if (!flow.service) return unavailable(res);
+        const data = flow.service.recordPage(q.get('caseId'), Number(q.get('page')));
+        if (!data) return send(res, 404, { error: 'not_found', message: '기록 쪽을 찾지 못했습니다.' });
+        const body = Buffer.from(JSON.stringify(data));
+        res.writeHead(200, { ...headers, 'Content-Type': 'application/json; charset=utf-8', 'Content-Length': body.length });
+        return res.end(req.method === 'HEAD' ? undefined : body);
+      }
       // Issue hierarchy: stored tree + AI results only. GET never starts a provider call (FLOW-HIERARCHY.md).
       if (path === HIERARCHY_PATH) {
         if (!['GET', 'HEAD'].includes(req.method)) return send(res, 405, { error: 'method_not_allowed', message: '조회만 할 수 있습니다.' }, { Allow: 'GET, HEAD' });
