@@ -12,6 +12,8 @@
 // 🔴 급여(강사 정산)는 급여 열람 게이트(payroll_settings · 급여 기능 켜짐)를 지난 사람에게만 싣는다.
 //
 // 2.0 서버 액션 ↔ actions 대응표(이름·인자·반환 = 2.0 그대로, 저장하는 사람 = 보는 사람):
+//  features/billing/server/actions.ts                 createInvoice(_prev, fd) → CreateInvoiceState
+//  features/billing/server/manual-invoice-actions.ts  markManualInvoicePaid(id, method?) · voidManualInvoice(id) → { ok?, error? }
 //  features/billing/server/textbook-actions.ts        toggleTextbookCheck(_prev, fd{id, field, checked}) · createTextbookOrder(_prev, fd) ·
 //                                                      updateTextbookOrder(_prev, fd{id,…}) · deleteTextbookOrder(_prev, fd{id}) → TextbookState
 //  features/billing/server/expense-actions.ts         createExpense · updateExpense · deleteExpense · toggleExpenseApproval · duplicateExpense ·
@@ -36,6 +38,7 @@ import { readInvoicesForPeriod, readAvailablePeriods, readStudentOptions } from 
 import { readTextbooksFace, loadMyTextbookMent, textbookFaceActions } from './v2-billing-textbooks.mjs';
 import { readExpensesFace, readExpenseById, loadExpenseRules, expenseActions } from './v2-billing-expenses.mjs';
 import { readCalculatorFace, calculatorActions } from './v2-billing-calculator.mjs';
+import { invoiceActions } from './v2-billing-invoice-save.mjs';
 import { readRefundRequests, readRefundById, loadRefundRules, loadRefundStudentOptions, loadRefundPrefill, refundActions } from './v2-billing-refunds.mjs';
 
 const ID = 'billing';
@@ -57,7 +60,7 @@ const PARAMS = {
 export const screen = {
   id: ID, label: '수납관리', order: 9,
   params: PARAMS,
-  actions: { ...textbookFaceActions, ...expenseActions, ...refundActions, ...calculatorActions },
+  actions: { ...invoiceActions, ...textbookFaceActions, ...expenseActions, ...refundActions, ...calculatorActions },
   load: async ({ sql, params: sp, tenantId: t, importV2 }) => {
     const R = await loadBillingRules(importV2);
     const env = await readSettings(sql, t, R), viewers = await readBillingViewers(sql, t, R, env);

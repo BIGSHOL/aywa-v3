@@ -47,6 +47,9 @@ saving(NOTICE, 'saveMyTextbookMent', false);
 // 지출 — 증빙 파일(올리기·열기·지우기)은 파일 저장소라 받지 않는다(보내지 않고 '아직 지원하지 않는 저장').
 const EXPENSE = 'features/billing/server/expense-actions.ts';
 for (const name of ['createExpense', 'updateExpense', 'deleteExpense', 'toggleExpenseApproval', 'duplicateExpense', 'setExpenseReceiptType']) saving(EXPENSE, name, true);
+// 수납 면 — 청구서 만들기 · 수동 청구서 완납/취소.
+saving('features/billing/server/actions.ts', 'createInvoice', true);
+for (const name of ['markManualInvoicePaid', 'voidManualInvoice']) saving('features/billing/server/manual-invoice-actions.ts', name, true);
 // 수강료 계산기 — 교재 단가표(교재 면에도 있다) · 수강료 단가 · 견적 저장/삭제.
 const CALC: [string, string[]][] = [
   ['features/billing/server/catalog-actions.ts', ['createCatalogItem', 'updateCatalogItem', 'deleteCatalogItem', 'toggleCatalogActive']],

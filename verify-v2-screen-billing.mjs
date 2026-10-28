@@ -469,6 +469,59 @@ try {
     } catch (e) { if (e !== ROLL) throw e; }
     assert.equal(await count(db), before, '되돌린 뒤 남은 연습 행 0');
   });
+
+  await check('수납 면 저장(되돌림) — 청구서 만들기(검사 · 납부기한 = 학원 설정 · 같은 달 중복 거절) · 수동 청구서 완납(실청구 · 결제수단) · 취소(미납만 · 동기화분 거절) — 그 사이 바뀜 검사는 마이크로초까지 같은 글자 · 문구·감사로그 2.0 그대로 · 바깥 요청 0', async () => {
+    for (const file of ['actions.ts', 'manual-invoice-actions.ts']) {
+      const text = lf(await src(`features/billing/server/${file}`)), mine = lf(await here('./v2-billing-invoice-save.mjs'));
+      for (const m of text.matchAll(/error: "([^"]+)"|action: "([a-z_]+)"|= "([^"]+)";\n/g)) assert.ok(mine.includes(m[1] ?? m[3] ?? `'${m[2]}'`), `${file}: ${m[1] ?? m[2] ?? m[3]}`);
+    }
+    const [hak] = await db`select id::text id from public.students where tenant_id=${tenantId} and is_test and name like '학원이%' order by name limit 1`;
+    const synced = (await db`select id::text id, line_items from public.invoices where tenant_id=${tenantId} and status='unpaid' order by period desc limit 50`);
+    const lines = await importV2('features/billing/invoice-lines.ts'), calc = await importV2('features/billing/tuition-calc.ts');
+    const makeedu = synced.find(r => !lines.isManualInvoiceShape(r.line_items));
+    const ROLL = new Error('rollback');
+    const before = (await db`select count(*)::int n from public.invoices where tenant_id=${tenantId}`)[0].n;
+    try {
+      await db.begin(async sql => {
+        const [{ q0 }] = await sql`select count(*)::int q0 from net.http_request_queue`;
+        const fd = pairs => ({ $formData: Object.entries(pairs).map(([k, v]) => [k, String(v)]) });
+        const act = (module, name, args) => { const a = M.screen.actions[name]; return a.run({ sql, body: a.validate({ module: `features/billing/server/${module}`, actor: base.viewer.id, args }), tenantId, importV2 }); };
+        assert.deepEqual(await act('actions.ts', 'createInvoice', [null, fd({ studentId: '', period: '2030-1', amountTotal: '0', amountDiscount: '-5' })]),
+          { fieldErrors: { studentId: '학생을 선택해주세요', period: '청구월 형식은 YYYY-MM 입니다', amountTotal: '청구액을 입력해주세요' } });
+        assert.deepEqual(await act('actions.ts', 'createInvoice', [null, fd({ studentId: hak.id, period: '2030-01', amountTotal: '100', amountDiscount: '200' })]),
+          { fieldErrors: { amountDiscount: '할인액이 청구액보다 클 수 없습니다' } });
+        assert.deepEqual(await act('actions.ts', 'createInvoice', [null, fd({ studentId: hak.id, period: '2030-01', category: 'material', amountTotal: '50,000', amountDiscount: '5000' })]), { ok: true });
+        const [inv] = await sql`select id::text id, status, category, due_date::text due, line_items, amount_total::float8 total from public.invoices where tenant_id=${tenantId} and student_id=${hak.id} and period='2030-01'`;
+        const [{ data }] = await sql`select data from public.tenant_settings where tenant_id=${tenantId}`;
+        assert.deepEqual([inv.status, inv.category, inv.total], ['unpaid', 'material', 50000]);
+        assert.equal(inv.due, calc.resolveDueDate('2030-01', data?.billing?.dueDay ?? (await M.screen.load({ sql, params: { tab: 'calculator' }, tenantId, importV2 })).calculator.settings.billing.dueDay) || null);
+        assert.ok(lines.isManualInvoiceShape(inv.line_items), '수동 청구서 모양');
+        const dup = await act('actions.ts', 'createInvoice', [null, fd({ studentId: hak.id, period: '2030-01', amountTotal: '1000' })]);
+        if (dup.error) assert.equal(dup.error, '이미 해당 학생의 이 달 청구서가 있습니다'); // 유니크 제약이 있는 학원만
+        assert.deepEqual(await act('manual-invoice-actions.ts', 'markManualInvoicePaid', [inv.id, 'card']), { ok: true });
+        const [paid] = await sql`select status, amount_paid::float8 paid, payment_method from public.invoices where id=${inv.id}`;
+        assert.deepEqual([paid.status, paid.paid, paid.payment_method], ['paid', 45000, 'card'], '수납액 = 청구 − 할인');
+        assert.deepEqual(await act('manual-invoice-actions.ts', 'markManualInvoicePaid', [inv.id, null]), { error: '이미 완납된 청구서입니다' });
+        assert.deepEqual(await act('manual-invoice-actions.ts', 'voidManualInvoice', [inv.id]), { error: '수납 기록이 있는 청구서는 취소할 수 없습니다' });
+        assert.deepEqual(await act('actions.ts', 'createInvoice', [null, fd({ studentId: hak.id, period: '2030-02', amountTotal: '1000' })]), { ok: true });
+        const [inv2] = await sql`select id::text id from public.invoices where tenant_id=${tenantId} and student_id=${hak.id} and period='2030-02'`;
+        assert.deepEqual(await act('manual-invoice-actions.ts', 'voidManualInvoice', [inv2.id]), { ok: true });
+        assert.equal((await sql`select status from public.invoices where id=${inv2.id}`)[0].status, 'void');
+        assert.deepEqual(await act('manual-invoice-actions.ts', 'voidManualInvoice', [inv2.id]), { error: '이미 취소된 청구서입니다' });
+        if (makeedu) assert.deepEqual(await act('manual-invoice-actions.ts', 'voidManualInvoice', [makeedu.id]),
+          { error: '메이크에듀에서 동기화된 청구서는 여기서 바꿀 수 없습니다 — 메이크에듀에서 고치면 다음 동기화에 반영됩니다' });
+        assert.deepEqual(await act('manual-invoice-actions.ts', 'voidManualInvoice', ['x']), { error: '청구서를 찾을 수 없습니다' });
+        const logs = await sql`select action, metadata from public.audit_logs where tenant_id=${tenantId} and created_at = now()`;
+        assert.deepEqual(logs.map(l => l.action).sort(), (dup.ok ? ['invoice_create'] : []).concat(['invoice_create', 'invoice_create', 'invoice_manual_paid', 'invoice_manual_void']).sort());
+        assert.ok(logs.every(l => l.metadata.via === '3.0 연습 복사본'));
+        assert.deepEqual(logs.find(l => l.action === 'invoice_manual_paid').metadata, { invoiceId: inv.id, studentId: hak.id, period: '2030-01', statusFrom: 'unpaid', paidFrom: 0, paidTo: 45000, method: 'card', via: '3.0 연습 복사본' });
+        const [{ q1 }] = await sql`select count(*)::int q1 from net.http_request_queue`;
+        assert.equal(q1, q0, '바깥 요청 0');
+        throw ROLL;
+      });
+    } catch (e) { if (e !== ROLL) throw e; }
+    assert.equal((await db`select count(*)::int n from public.invoices where tenant_id=${tenantId}`)[0].n, before, '되돌린 뒤 남은 연습 청구서 0');
+  });
 } finally { await db.end(); }
 
 await check('호스트: 2.0 부품을 고치지 않고 묶인다 — 서버 전용 유입 0 · 운영 주소·외부 호출 0', async () => {
