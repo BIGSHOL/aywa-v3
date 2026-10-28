@@ -25,6 +25,11 @@ const DB_REFUSAL = {
   23505: '이미 같은 기록이 있어 저장하지 않았습니다.', 23503: '이어진 기록이 없어 저장하지 않았습니다.', 23502: '빠진 값이 있어 저장하지 않았습니다.',
   23514: '값이 규칙에 맞지 않아 저장하지 않았습니다.', '23P01': '같은 기간의 기록과 겹쳐 저장하지 않았습니다.', 42501: '수정이 막힌 기록이라 저장하지 않았습니다.',
 };
+// 2.0 Zod가 기본 영어로 돌려주는 검증 문구만 화면에서 한국어로 안내한다.
+const validationMessage = message => typeof message === 'string' && /^(?:Invalid (?:UUID|input|email(?: address)?|URL|(?:ISO )?date(?:time)?|string|number|boolean|enum value|literal value)\b|Expected (?:string|number|boolean|object|array|date|integer)\b|Required$|Too (?:small|big)\b|String must contain\b)/i.test(message)
+  ? '입력 값을 확인해 주세요.' : message;
+const publicResult = result => result && typeof result === 'object' && !Array.isArray(result) && typeof result.error === 'string'
+  ? { ...result, error: validationMessage(result.error) } : result;
 const refusal = e => e instanceof V2Error ? e
   : DB_REFUSAL[e?.code] ? new V2Error(409, 'db_refused', DB_REFUSAL[e.code])
   : e?.code === 'P0001' && /[가-힣]/.test(e.message || '') ? new V2Error(409, 'db_refused', e.message) : null; // 2.0 trigger messages are Korean
@@ -75,7 +80,7 @@ const clip = (v, n) => { const t = JSON.stringify(v ?? null) ?? 'null'; return t
 
 export function createV2ScreenRoute({ screens, headers = {}, open = openFullDatabase, journal = JOURNAL, onWrite = null }) {
   const send = (req, res, status, body) => { const data = Buffer.from(JSON.stringify(body)); res.writeHead(status, { ...headers, 'Content-Type': 'application/json; charset=utf-8', 'Content-Length': data.length, 'Cache-Control': 'no-store' }); res.end(req.method === 'HEAD' ? undefined : data); };
-  const fail = (req, res, e) => send(req, res, e.status, { error: e.code, message: e.message });
+  const fail = (req, res, e) => send(req, res, e.status, { error: e.code, message: validationMessage(e.message) });
   let chain = Promise.resolve(); // writes run one at a time, so the outbound-queue count belongs to this write
   const serial = fn => { const p = chain.then(fn, fn); chain = p.catch(() => {}); return p; };
   const record = entry => appendFile(journal, `${JSON.stringify(entry)}\n`).catch(error => console.error(`2.0 write journal failed: ${error.code || 'error'}`));
@@ -99,7 +104,7 @@ export function createV2ScreenRoute({ screens, headers = {}, open = openFullData
       }));
       await record({ ...entry, ok: true, ms: Date.now() - started, result: clip(result, 1000) });
       try { onWrite?.({ screen: id, action: name }); } catch (error) { console.error(`2.0 write hook failed: ${error?.message || error}`); } // 저장은 이미 끝났다 — 알림 실패로 답을 바꾸지 않는다
-      return send(req, res, 200, { ok: true, result: result ?? null });
+      return send(req, res, 200, { ok: true, result: publicResult(result ?? null) });
     } catch (error) {
       const r = refusal(error);
       await record({ ...entry, ok: false, ms: Date.now() - started, error: r?.code || error?.code || 'error' });

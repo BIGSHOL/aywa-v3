@@ -39,6 +39,8 @@ const screens = Promise.resolve(new Map([
       leak: { validate: raw => raw, run: async ({ sql }) => { await sql`insert into x values (${'leak'})`; await sql`queue-http`; return {}; } },
       dbRefuse: { validate: raw => raw, run: async () => { throw Object.assign(new Error('duplicate key value violates unique constraint "x_key"'), { code: '23505' }); } },
       crash: { validate: raw => raw, run: async () => { throw new Error('relation "secret_table" does not exist'); } },
+      validationResult: { validate: raw => raw, run: async ({ body }) => ({ error: body.message }) },
+      validationRefusal: { validate: raw => raw, run: async () => { throw new V2Error(400, 'invalid_request', 'Invalid UUID'); } },
     } }],
   ['view', { id: 'view', label: '보기', load: async () => ({}) }],
 ]));
@@ -94,6 +96,16 @@ try {
   await check('database errors answer Korean, never the raw message', async () => {
     const d = await call('/api/v2/demo/dbRefuse', { method: 'POST', body: {} }); assert.equal(d.status, 409); assert.equal(d.body.message, '이미 같은 기록이 있어 저장하지 않았습니다.');
     const c = await call('/api/v2/demo/crash', { method: 'POST', body: {} }); assert.equal(c.status, 500); assert.doesNotMatch(c.body.message, /secret_table|relation/);
+  });
+  await check('known English validation errors answer Korean without changing other results', async () => {
+    for (const message of ['Invalid UUID', 'Invalid input: expected UUID', 'Expected string, received number', 'Required']) {
+      const r = await call('/api/v2/demo/validationResult', { method: 'POST', body: { message } });
+      assert.deepEqual(r.body, { ok: true, result: { error: '입력 값을 확인해 주세요.' } });
+    }
+    const korean = await call('/api/v2/demo/validationResult', { method: 'POST', body: { message: '학생을 선택해 주세요.' } });
+    assert.equal(korean.body.result.error, '학생을 선택해 주세요.');
+    const refusal = await call('/api/v2/demo/validationRefusal', { method: 'POST', body: {} });
+    assert.equal(refusal.status, 400); assert.equal(refusal.body.message, '입력 값을 확인해 주세요.');
   });
   await check('writes run one at a time and every connection is closed', async () => {
     state.peak = 0;
