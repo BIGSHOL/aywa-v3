@@ -81,6 +81,8 @@
 .ws-th:hover .ws-th-caret,.ws-th[aria-expanded=true] .ws-th-caret,.ws-th:focus-visible .ws-th-caret{opacity:1}
 th.al-c .ws-th{justify-content:center}th.al-r .ws-th{justify-content:flex-end}
 th:is(.al-c,.al-r) .ws-th-caret{margin-left:0}
+/* 다른 화면에 놓인 공통 리스트(listTable — 수납관리 '수납 리스트' 등) = 검색 · 거르기 칩 · 표 · 쪽 번호를 한 묶음으로. */
+.ws-locallist{display:flex;flex-direction:column;gap:10px;min-width:0}
 /* 칸반 칸 안 = 같은 공통 리스트의 줄(머리 없이). */
 .ws-mini{font-size:var(--ax-xs)}
 .ws-mini tbody tr:last-child>*{border-bottom:0}
