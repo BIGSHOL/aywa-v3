@@ -5,7 +5,7 @@
 .fl-source{display:flex;flex-wrap:wrap;align-items:center;gap:6px 12px;font-size:var(--ax-xs)}
 .fl-fold .page-heading{margin-bottom:12px}
 .fl-fold .fl-source{margin-bottom:14px}
-.fl-count.urgent .ax-signal-value{color:var(--ax-warning)}
+.fl-count.urgent .ax-signal-value{color:var(--ax-warning)}.fl-count.warn .ax-signal-value{color:var(--ax-danger)}
 .fl-now{display:flex;flex-direction:column;gap:12px;margin-top:20px}
 .fl-now>h2,.fl-section>h2{font-size:var(--ax-lg)}
 .fl-section{display:flex;flex-direction:column;gap:14px;margin:8px 0 32px;scroll-margin-top:16px}

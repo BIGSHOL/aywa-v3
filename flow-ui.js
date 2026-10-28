@@ -283,11 +283,18 @@ window.createFlowUI = function createFlowUI(api) {
     // bottlenecks = open steps (ready or working) grouped by step role, over every case including local ones.
     return `<section class="fl-stages" aria-label="상태별 업무 수"><h2>상태별 업무 수</h2><div class="fl-stage-row">${stageCounts(real).map(([k,n])=>`<div><span>${h(STATE[k])}</span><strong>${fmt(n)}</strong></div>`).join(`<i aria-hidden="true">${icon('chevron')}</i>`)}</div>${jams.length?`<p class="fl-jams">열린 단계가 많은 담당(로컬 미리보기 포함) ${jams.map(b=>`<span>${h(b.label)} ${fmt(b.waiting)}개</span>`).join('')}</p>`:''}<p class="ax-note">복사본 기록에서 시작된 일 ${fmt(real.length)}건 기준입니다. 로컬 미리보기 ${fmt(dev.length)}건은 뺐습니다.${total>cases().length?` 전체 ${fmt(total)}건 중 ${fmt(cases().length)}건을 불러왔습니다.`:''}</p></section>`;
   }
+  // 일은 상태 묶음(막힌·열린)보다 무슨 일인지로 먼저 보인다(원장 10-28 "막힌일, 열린일 보다 실제 어떤 일인지 분화해서 알려주는게 더 좋을듯").
+  // 종류 = 2.0 할 일 종류(taskKind)의 단계 이름, 묶음 신호는 제목에서 건수를 뗀 이름. 카드와 아래 목록이 같은 열쇠(kind:…)로 맞물린다.
+  const kindLabel=c=>c.taskKind?(c.steps?.[0]?.label||c.title||c.taskKind):String(c.title||'').replace(/\s*[\d,]+\s*(건|명|개)$/,'').replace(/\s*[\d,]+\s*(건|명|개)$/,'')||'기타';
+  const kindKey=c=>`kind:${c.taskKind||kindLabel(c)}`;
+  function kindGroups(open){const g=new Map();for(const c of open){const k=kindKey(c);if(!g.has(k))g.set(k,{key:k,label:kindLabel(c),items:[]});g.get(k).items.push(c);}return [...g.values()].sort((a,b)=>b.items.length-a.items.length||a.label.localeCompare(b.label,'ko'));}
+  const kindDetail=items=>{const parts=[['늦음',items.filter(late).length],['담당 없음',items.filter(unassigned).length],['되돌림',items.filter(returned).length]].filter(([,n])=>n);return parts.length?parts.map(([l,n])=>`${l} ${fmt(n)}`).join(' · '):stageCounts(items).filter(([k,n])=>k!=='done'&&n).map(([k,n])=>`${STATE[k]} ${fmt(n)}`).join(' · ');};
   // Owner: critical blocked handoffs, required decisions and stage counts on the first screen (cards reused by ax).
   function ownerCards(){
     if(!ready())return '';
     const open=cases().filter(c=>c.state!=='done'),decide=open.filter(c=>mine(c)),blocked=open.filter(c=>unassigned(c)||late(c)||returned(c)),moving=open.filter(c=>!local(c));
-    return `${countCard('원장 결정',decide.length,decide[0]?decide[0].title:'지금 결정할 일이 없습니다','decide','urgent',decide[0]?[decide[0].id]:[])}${countCard('막힌 일',blocked.length,blocked.length?[['담당 없음',open.filter(unassigned).length],['늦음',open.filter(late).length],['되돌림',open.filter(returned).length]].filter(([,n])=>n).map(([l,n])=>`${l} ${n}`).join(' · '):'막힌 일이 없습니다','blocked')}${countCard('열린 일',moving.length,stageCounts(moving).filter(([k])=>k!=='done').map(([k,n])=>`${STATE[k]} ${n}`).join(' · '),'moving')}`;
+    const kinds=kindGroups(moving),top=kinds.slice(0,5),rest=kinds.slice(5),restItems=rest.flatMap(k=>k.items);
+    return `${countCard('원장 결정',decide.length,decide[0]?decide[0].title:'지금 결정할 일이 없습니다','decide','urgent',decide[0]?[decide[0].id]:[])}${top.map(k=>countCard(k.label,k.items.length,kindDetail(k.items),k.key,k.items.some(late)?'warn':'')).join('')}${rest.length?countCard('그 밖의 일',restItems.length,`${rest.slice(0,4).map(k=>`${k.label} ${fmt(k.items.length)}`).join(' · ')}${rest.length>4?` 외 ${rest.length-4}종`:''}`,'moving'):''}${blocked.length&&!top.length?countCard('늦은 일·담당 없는 일',blocked.length,kindDetail(blocked),'blocked'):''}`;
   }
   function ownerStageCell(){
     if(!ready())return '';
@@ -297,9 +304,10 @@ window.createFlowUI = function createFlowUI(api) {
   function ownerBelow(){
     if(!ready())return stateNote();
     const open=cases().filter(c=>c.state!=='done');
-    const lists={decide:open.filter(c=>mine(c)),blocked:open.filter(c=>unassigned(c)||late(c)||returned(c)),moving:open.filter(c=>!local(c)),local:cases().filter(local),done:cases().filter(c=>c.state==='done')};
+    const kinds=kindGroups(open.filter(c=>!local(c)));
+    const lists={decide:open.filter(c=>mine(c)),...Object.fromEntries(kinds.map(k=>[k.key,k.items])),blocked:open.filter(c=>unassigned(c)||late(c)||returned(c)),moving:open.filter(c=>!local(c)),local:cases().filter(local),done:cases().filter(c=>c.state==='done')};
     const f=lists[store.filter]?store.filter:'decide';
-    return `<section class="fl-section" id="fl-detail" aria-labelledby="fl-detail-title"><div class="ax-section-head"><h2 id="fl-detail-title" tabindex="-1">연결된 업무 흐름</h2>${sourceLine()}</div>${filterBar(f,[['decide','원장 결정',lists.decide.length],['blocked','막힌 일',lists.blocked.length],['moving','열린 일',lists.moving.length],['local','로컬 미리보기',lists.local.length],['done','끝난 일',lists.done.length]])}${list(lists[f],'이 조건의 일이 없습니다.',f)}${scenarioPanel()}${stageOverview()}</section>`;
+    return `<section class="fl-section" id="fl-detail" aria-labelledby="fl-detail-title"><div class="ax-section-head"><h2 id="fl-detail-title" tabindex="-1">연결된 업무 흐름</h2>${sourceLine()}</div>${filterBar(f,[['decide','원장 결정',lists.decide.length],...kinds.map(k=>[k.key,k.label,k.items.length]),['blocked','늦은 일·담당 없는 일',lists.blocked.length],['moving','열린 일 전체',lists.moving.length],['local','로컬 미리보기',lists.local.length],['done','끝난 일',lists.done.length]])}${list(lists[f],'이 조건의 일이 없습니다.',f)}${scenarioPanel()}${stageOverview()}</section>`;
   }
   function fullView(){return role()==='owner'?`<div class="page-heading"><div><h1>업무 흐름</h1><p>원장 · 누가 어떤 일을 왜 맡았는지와 근거를 봅니다.</p></div></div>${ownerBelow()}`:role()==='manager'?managerView():staffView();}
 
