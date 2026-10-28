@@ -58,3 +58,21 @@
 /* 쪼개 보기(원장 10-28 "이 항목을 눌렀을때 해당 기간에 대해 자세한 지표") — 누를 수 있는 점만 손가락 커서 · 쪼개 보는 범위는 필터 칩과 같은 모양(×로 원래 보기). */
 .tr-chart .chart-col[data-tr-drill]{cursor:pointer}
 .tr-range{background:var(--ax-soft)}
+/* 기준별 줄의 기간마다 동그라미(원장 10-28 "과목에도 동그라미를 기간마다") — 흰 바탕 · 줄 색 테두리, 마우스·초점이 간 기간은 그 기간의 모든 줄 점을 채운다. */
+.tr-sdot{fill:#fff;stroke:var(--c);stroke-width:1.8}
+.chart-col.active .tr-sdot,.chart-col:hover .tr-sdot{fill:var(--c)}
+/* 팝오버 줄마다 직전 대비(live.js fillTip이 delta를 받으면 has-delta) — [이름 | 값 | 변화]가 세로로 줄 맞게 셋째 칸은 고정 폭, 팝오버는 그만큼 넓힌다. 화면 밖 배치 규칙은 그대로. */
+.chart-pop.has-delta{min-width:260px;max-width:min(440px,calc(100vw - 16px))}
+.chart-pop.has-delta .chart-pop-row{display:grid;grid-template-columns:minmax(0,1fr) auto 6.2em;align-items:baseline;gap:12px}
+.chart-pop-delta{text-align:right;font-size:var(--ax-xs);font-variant-numeric:tabular-nums;white-space:nowrap}
+.chart-pop-delta.good{color:var(--ax-good);font-weight:600}.chart-pop-delta.bad{color:var(--ax-bad);font-weight:600}
+/* 명단(자세히 보기 아래) — 열 맞춘 표 · 글자 14px #121212(전역 th 10px 회색 규칙 덮기) · 짧은 값 가운데 · 내용은 왼쪽(제목도 같은 쪽) · 기간은 묶음 첫 줄에 한 번. */
+.tr-roster-table{width:100%;table-layout:fixed;border-collapse:collapse}
+.tr-roster-table th,.tr-roster-table td{padding:6px 8px;border-bottom:1px solid var(--ax-line);font-size:var(--ax-xs);color:var(--ax-ink);background:transparent;text-align:center;vertical-align:middle;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tr-roster-table thead th{font-weight:650}
+.tr-roster-table tbody th{font-weight:500;vertical-align:top;font-variant-numeric:tabular-nums}
+.tr-roster-table .l{text-align:left}
+.tr-roster-table td.l{white-space:normal;word-break:keep-all}
+.tr-roster-table td{font-variant-numeric:tabular-nums}
+.tr-roster-more{margin:0;font-size:var(--ax-xs);color:var(--ax-ink)}
+.tr-roster-table .ax-text-link{font:inherit;min-height:0;padding:0;line-height:inherit;color:inherit}

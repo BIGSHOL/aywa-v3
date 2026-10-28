@@ -1,6 +1,10 @@
 // 확장 추세 — 서버(원장 10-28 "추세를 눌렀을때 확장 추세로 이동 … 일별 월별 연별 추세를 자세하게 … 학생별, 선생님별, 반별, 과목별"
 // · "완전한 확장 추세 툴을 하나 만들고 … 기준만 바꿔서 필터링"). 지표·기간 단위·기준·필터를 받아 창마다 합계와 기준별 줄을 낸다. 읽기 전용.
 // 지표는 trend-metrics.mjs 한 곳에서 온다. 기록이 시작되기 전의 창은 앞에서 잘라 내고, 중간에 기록이 없는 창은 '기록 없음'(0이 아니다).
+// 명단 계약(원장 10-28 "자세히보기를 눌러 들어왔을때 이걸 체크할 수 있는 리스트가 있으면 더 좋을듯. 아래쪽에"):
+//   metric.series는 filter가 있을 때 선택적으로 records를 함께 돌려줄 수 있다 — windows와 같은 길이, 칸마다 null(기록 없음 창) 또는
+//   [{ id(학생 id 또는 그 기록 id), name, sub?(학교·학년 — 경명여중1), date?(YYYY-MM-DD), dateLabel?(그 날짜의 이름 — 퇴원일), note?(한 줄 내용 — '등록 4/2 · 29일 만에') }].
+//   load는 필터를 건 보기에서만 records를 windows·total과 같은 자리(start)로 잘라 넘긴다. 없는 지표는 명단을 그리지 않는다(안내 문구 없음). 기억 키는 그대로(필터가 이미 키에 있다).
 import { addDays, weekWindows, yymm, rate } from './domain-snapshot-core.mjs';
 import { copyClock } from './v2-onescreen-roster.mjs';
 import { TREND_METRICS } from './trend-metrics.mjs';
@@ -144,7 +148,10 @@ export const screen = {
       filter: filter ? { ...filter, label: label(filter.dim, filter.key, await filterName()) } : null,
       windows: windows.slice(start),
       total: total.slice(start),
-      rows: raw.rows.map((r) => ({ key: r.key, label: label(by, r.key, r.label), points: r.points.map(pt).slice(start), ...(meta?.has(r.key) ? { meta: meta.get(r.key) } : {}) })).filter((r) => r.points.some(has)),
+      // 지금 보이는 창 모두에서 0이거나 기록 없는 줄은 뺀다(원장 10-28 "구간 전체에 대해서 0이면 그냥 보여주지말것. 구간 내에 최소 1이라도 있어야 그래프든 리스트든") —
+      // 비율은 분자가 아니라 값(0%)으로 보고, 분모 0은 기록 없음. 쪼개 보면 그 창들로 다시 본다. 전체(total)는 늘 남는다.
+      rows: raw.rows.map((r) => ({ key: r.key, label: label(by, r.key, r.label), points: r.points.map(pt).slice(start), ...(meta?.has(r.key) ? { meta: meta.get(r.key) } : {}) })).filter((r) => r.points.some((p) => has(p) && p.value !== 0)),
+      ...(filter && Array.isArray(raw.records) && raw.records.length === windows.length ? { records: raw.records.slice(start) } : {}),
     };
   },
 };

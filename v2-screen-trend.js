@@ -17,6 +17,14 @@
     const good = better === 'up' ? d > 0 : better === 'down' ? d < 0 : null;
     return { text: `${d > 0 ? '▲' : '▼'} ${unit === '%' ? `${Math.abs(d).toFixed(1)}%p` : fmt(Math.abs(d))}`, tone: good === null ? '' : good ? 'good' : 'bad' };
   };
+  // 팝오버의 줄마다 직전 창 대비(원장 10-28 "오버레이 가로를 조금 더 늘려서 항목별 변화 추이") — live.js fillTip의 셋째 칸(delta).
+  // 비율 = %p · 건수 = 단위 그대로(▲ 3명) · 같으면 '–' · 직전 창이 기록 없음(첫 창 포함)이면 빈 칸 · 색은 지표의 좋아지는 방향(좋아짐 빨강 · 나빠짐 파랑).
+  const deltaOf = (p, q, unit, better) => {
+    if (p?.value == null || q?.value == null) return { text: '' };
+    const dv = p.value - q.value; if (!dv) return { text: '–' };
+    const good = better === 'up' ? dv > 0 : better === 'down' ? dv < 0 : null;
+    return { text: `${dv > 0 ? '▲' : '▼'} ${unit === '%' ? `${Math.abs(dv).toFixed(1)}%p` : `${fmt(Math.abs(dv))}${unit}`}`, ...(good === null ? {} : { tone: good ? 'good' : 'bad' }) };
+  };
   // 분자 / 분모는 비율 지표만(건수 지표는 분모가 1이라 '333 / 1'로 보였다).
   const ratio = (p, unit = '%') => (unit === '%' && p && p.den != null ? `${fmt(p.num)} / ${fmt(p.den)}` : '');
   const tip = (title, rows, meta) => esc(JSON.stringify({ title, rows, meta: meta.filter(Boolean) }));
@@ -35,7 +43,11 @@
   const colorOf = (d, r, i) => (SUBJECT_DIMS.has(d.by) && last?.api?.subjectColor?.(r.key)) || PALETTE[i % PALETTE.length];
   // 보여 주지 않는 줄(원장 10-28 "그 밖의 과목은 제외") — 전체 값에는 그대로 든다.
   const HIDDEN_ROWS = new Set(['otherOnly']);
-  const rowsOf = d => d.rows.filter(r => !HIDDEN_ROWS.has(r.key));
+  // 줄 차례 = 과목 줄들 → 동시 등록(both · 원장 10-28 "등록은 동시등록도 적어줄것") → 모름·미수강·그 밖·담당 모름. 그래프·범례·팝오버·표가 같은 차례
+  // (표는 고른 정렬을 이 묶음 안에서 한다). 지금 보이는 창 모두에서 0이거나 기록 없는 줄은 서버가 이미 뺐다(원장 10-28 "구간 전체에 대해서 0이면 그냥 보여주지말것").
+  const TAIL = /^(unknown|none|nothing|other|unassigned)$/i;
+  const rankOf = key => (key === 'both' ? 1 : TAIL.test(String(key)) ? 2 : 0);
+  const rowsOf = d => d.rows.filter(r => !HIDDEN_ROWS.has(r.key)).sort((a, b) => rankOf(a.key) - rankOf(b.key));
   const picked = new Map(); // `${지표}|${기준}|${필터}` → 그리는 줄 열쇠(사람이 바꾸면 그대로 둔다)
   const viewKey = d => `${d.metric.id}|${d.by}|${d.filter ? `${d.filter.dim}:${d.filter.key}` : ''}`;
   const sizeOf = r => { const p = r.points[r.points.length - 1]; return p ? (p.den ?? p.num ?? 0) : 0; };
@@ -70,13 +82,16 @@
     const every = Math.ceil(n / 12), name = d.filter?.label ? `${d.filter.label} · ${d.metric.label}` : d.metric.label, many = series.length > 0;
     // 쪼갤 수 있는 점(기록이 있고 지표가 더 잘게 나눠지는 단위) = data-tr-drill — 누르면(키보드 Enter) 그 기간을 한 단계 잘게. 그 밖의 점은 누를 수 있어 보이지 않는다.
     const sub = d.drill ? grainName(d, d.drill) : '';
+    // 기준별 줄도 기간마다 동그라미(원장 10-28 "과목에도 동그라미를 기간마다 두고 한번에 볼 수 있게") — 흰 바탕 · 그 줄 색 테두리, 기록 없는 기간엔 없음.
+    // 점은 그 기간의 칸(chart-col) 안에 그려 마우스·초점이 간 기간의 모든 줄 점이 함께 채워진다(같은 세로선).
     const cols = d.windows.map((w, i) => {
-      const p = d.total[i], q = i ? d.total[i - 1] : null, b = base?.total?.[i], c = changeOf(p, q, d.metric.unit, d.metric.better), drill = sub && p?.value != null;
-      const rows = [{ label: many ? `${name} (전체)` : name, value: shown(p?.value, d.metric.unit), tone: 'primary', color: many ? '#121212' : '' },
-        ...(base ? [{ label: '학원 전체', value: shown(b?.value, d.metric.unit), tone: 'secondary' }] : []),
-        ...series.map(s => ({ label: s.label, value: shown(s.points[i]?.value, d.metric.unit), color: s.color }))];
-      return `<g class="chart-col" data-point${drill ? ` data-tr-drill="${i}"` : ''} data-tip="${tip(when(w), rows, [i ? (c.tone ? { text: `직전 대비 ${c.text}`, tone: c.tone } : `직전 대비 ${c.text}`) : '', ratio(p, d.metric.unit), drill ? `눌러서 ${sub}로 보기` : ''])}">`
-        + `<rect class="chart-hit" x="${x(i) - step / 2}" y="${T - 8}" width="${step}" height="${H - B - T + 8}"/>`
+      const p = d.total[i], q = i ? d.total[i - 1] : null, b = base?.total?.[i], drill = sub && p?.value != null, u = d.metric.unit, bt = d.metric.better;
+      const rows = [{ label: many ? `${name} (전체)` : name, value: shown(p?.value, u), tone: 'primary', color: many ? '#121212' : '', delta: deltaOf(p, q, u, bt) },
+        ...(base ? [{ label: '학원 전체', value: shown(b?.value, u), tone: 'secondary', delta: deltaOf(b, i ? base.total[i - 1] : null, u, bt) }] : []),
+        ...series.map(s => ({ label: s.label, value: shown(s.points[i]?.value, u), color: s.color, delta: deltaOf(s.points[i], i ? s.points[i - 1] : null, u, bt) }))];
+      const dots = series.map(s => (s.points[i]?.value == null ? '' : `<circle class="tr-sdot" style="--c:${s.color}" cx="${x(i)}" cy="${y(s.points[i].value)}" r="3.5"/>`)).join('');
+      return `<g class="chart-col" data-point${drill ? ` data-tr-drill="${i}"` : ''} data-tip="${tip(when(w), rows, [ratio(p, u), drill ? `눌러서 ${sub}로 보기` : ''])}">`
+        + `<rect class="chart-hit" x="${x(i) - step / 2}" y="${T - 8}" width="${step}" height="${H - B - T + 8}"/>` + dots
         + (p?.value == null ? `<text data-anchor x="${x(i)}" y="${H - B - 6}" text-anchor="middle">—</text>` : `<circle class="tr-dot" data-anchor cx="${x(i)}" cy="${y(p.value)}" r="4"/>`)
         + (i % every === 0 || i === n - 1 ? `<text x="${x(i)}" y="${H - 10}" text-anchor="middle">${esc(axisName(w))}</text>` : '') + '</g>';
     }).join('');
@@ -100,7 +115,7 @@
       den: (a, b) => ((b.now?.den ?? b.now?.num ?? 0) - (a.now?.den ?? a.now?.num ?? 0)) * (sort.dir ? -1 : 1),
       change: (a, b) => { const ch = r => (r.now?.value != null && r.prev?.value != null ? r.now.value - r.prev.value : null); return (ch(a) == null) - (ch(b) == null) || (ch(a) - ch(b)) * (sort.dir ? sign : -sign); },
     }[sort.key];
-    rows.sort(cmp);
+    rows.sort((a, b) => rankOf(a.key) - rankOf(b.key) || cmp(a, b));
     const head = (key, label, cls = '') => `<th class="${cls}"><button type="button" data-tr-sort="${key}" aria-pressed="${sort.key === key}">${label}${sort.key === key ? (sort.dir ? ' ↑' : ' ↓') : ''}</button></th>`;
     const cut = showAll ? rows : rows.slice(0, 20), w = d.windows[li];
     return `<section class="tr-break"><h3>${esc(dim?.label || '기준별')} <span>${esc(dayName(w))}</span></h3>`
@@ -112,6 +127,33 @@
           + `<td class="tr-spark">${api.lineChart(r.points.map((p, i) => ({ label: d.windows[i].label, value: p?.value ?? null })), { key: 'value', label: r.label, unit, compare: '직전', better })}</td>`
           + `<td><button type="button" class="ax-text-link" data-tr-filter="${esc(r.key)}">자세히 보기</button></td></tr>`; }).join('')
       + `</tbody></table></div>${rows.length > cut.length ? `<button type="button" class="button" data-tr-more>나머지 ${fmt(rows.length - cut.length)}개 더 보기</button>` : ''}</section>`;
+  }
+
+  // 명단(원장 10-28 "자세히보기를 눌러 들어왔을때 이걸 체크할 수 있는 리스트가 있으면 더 좋을듯. 아래쪽에. 스크롤해서 내려갔을때") —
+  // 필터를 건 보기에서 지표가 records(창마다 그 숫자를 이루는 기록)를 줄 때만. 최근 창이 먼저 · 0건인 창은 건너뛰고 모두 0이면 구역째 없음.
+  // 열 = 기간 | 이름 | 학교·학년 | (날짜) | 내용 — 짧은 값은 가운데, 내용은 왼쪽. 이름은 열 수 있는 기록이면 단추(api.openRecord). 200줄까지.
+  const ROSTER_MAX = 200;
+  const dateText = (day, asOf) => (!/^\d{4}-\d{2}-\d{2}$/.test(String(day || '')) ? '' : day.slice(0, 4) === String(asOf || '').slice(0, 4)
+    ? `${Number(day.slice(5, 7))}/${Number(day.slice(8, 10))}` : `${day.slice(2, 4)}.${day.slice(5, 7)}.${day.slice(8, 10)}`);
+  function roster(d, api) {
+    if (!d.filter || !Array.isArray(d.records)) return '';
+    const groups = d.windows.map((w, i) => ({ w, list: Array.isArray(d.records[i]) ? d.records[i].filter(r => r && r.name) : [] })).filter(g => g.list.length).reverse();
+    const total = groups.reduce((n, g) => n + g.list.length, 0); if (!total) return '';
+    const all = groups.flatMap(g => g.list), hasSub = all.some(r => r.sub), hasDate = all.some(r => r.date), hasNote = all.some(r => r.note);
+    const dateHead = all.find(r => r.dateLabel)?.dateLabel || '날짜';
+    const who = r => (r.id != null && api.canOpenRecord?.(r.id) ? `<button type="button" class="ax-text-link" data-tr-open="${esc(r.id)}">${esc(r.name)}</button>` : esc(r.name));
+    let left = ROSTER_MAX; const body = [];
+    for (const g of groups) {
+      if (left <= 0) break;
+      const list = [...g.list].sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')) || String(a.name).localeCompare(String(b.name), 'ko')).slice(0, left); left -= list.length;
+      list.forEach((r, k) => body.push(`<tr>${k ? '' : `<th scope="rowgroup" rowspan="${list.length}">${esc(dayName(g.w))}</th>`}<td>${who(r)}</td>`
+        + `${hasSub ? `<td>${esc(r.sub || '')}</td>` : ''}${hasDate ? `<td>${esc(dateText(r.date, d.asOf))}</td>` : ''}${hasNote ? `<td class="l">${esc(r.note || '')}</td>` : ''}</tr>`));
+    }
+    const shownN = ROSTER_MAX - Math.max(left, 0), cols = [['8.5em', '기간'], ['7em', '이름'], ...(hasSub ? [['8em', '학교·학년']] : []), ...(hasDate ? [['6.5em', dateHead]] : []), ...(hasNote ? [['', '내용', 'l']] : [])];
+    return `<section class="tr-break tr-roster"><h3>명단 <span>${esc(d.filter.label)} · ${fmt(total)}건</span></h3>`
+      + `<div class="tr-table-wrap"><table class="tr-roster-table"><colgroup>${cols.map(([wd]) => `<col${wd ? ` style="width:${wd}"` : ''}>`).join('')}</colgroup>`
+      + `<thead><tr>${cols.map(([, l, c]) => `<th scope="col"${c ? ` class="${c}"` : ''}>${esc(l)}</th>`).join('')}</tr></thead><tbody>${body.join('')}</tbody></table></div>`
+      + (total > shownN ? `<p class="tr-roster-more">외 ${fmt(total - shownN)}건${d.drill ? ' — 점을 눌러 기간을 쪼개 보면 다 보입니다' : ''}</p>` : '') + '</section>';
   }
 
   // 지표를 바꿀 때 기다리지 않게(원장 10-28 "지표 변경시마다 추세를 계산하는중이라고 따로 나오던데, 바로 뜨게"):
@@ -149,7 +191,7 @@
       + (d.range ? `<span class="tr-filter tr-range"><strong>${esc(d.range.label)}</strong> ${esc(grainName(d, d.grain))}<button type="button" class="icon-button" data-tr-undrill aria-label="나눠 보기 닫기 — ${esc(grainName(d, d.range.up))} 보기로">×</button></span>` : '')
       + (d.filter ? `<span class="tr-filter"><strong>${esc(d.filter.label)}</strong>만 보는 중<button type="button" class="icon-button" data-tr-unfilter aria-label="필터 풀기">×</button></span>` : '') + '</div>'
       + `<section class="tr-main"><div class="tr-now"><span>${esc(d.windows[li] ? dayName(d.windows[li]) : '')}</span><strong>${shown(p?.value, d.metric.unit)}</strong><small class="${c.tone}">${li ? `직전 대비 ${c.text}` : ''}</small><small>${ratio(p, d.metric.unit)}</small></div>${bigChart(d, base, seriesOf(d))}</section>`
-      + (d.rows.length ? table(d, ctx.api) : '<p class="v3s-note">이 조건의 기록이 없습니다.</p>') + '</div>';
+      + (d.rows.length ? table(d, ctx.api) : '<p class="v3s-note">이 조건의 기록이 없습니다.</p>') + roster(d, ctx.api) + '</div>';
     warm(d, params.grain);
     return lastHtml;
   }
@@ -193,7 +235,8 @@
     if (!t.closest?.('[data-v2-screen="trend"]')) return;
     const col = t.closest('.tr-chart .chart-col[data-tr-drill]');
     if (col) { if (!down?.touch || down.armed) drill(col); return; }
-    const b = t.closest('[data-tr-grain],[data-tr-by],[data-tr-filter],[data-tr-unfilter],[data-tr-undrill],[data-tr-sort],[data-tr-more]'); if (!b) return;
+    const b = t.closest('[data-tr-grain],[data-tr-by],[data-tr-filter],[data-tr-unfilter],[data-tr-undrill],[data-tr-sort],[data-tr-more],[data-tr-open]'); if (!b) return;
+    if (b.dataset.trOpen) { last.api.openRecord?.(b.dataset.trOpen); return; } // 명단의 이름 = 그 기록 창
     // 기간 단위를 바꾸면 쪼개 보기도 끝난다(쪼개 보는 중 눌린 단추 = 나눈 단위 — 누르면 그 단위의 보통 보기).
     if (b.dataset.trGrain) go({ grain: b.dataset.trGrain, ...UNDRILL });
     else if (b.hasAttribute('data-tr-undrill')) go({ grain: last.d?.range?.up || last.params.up || last.params.grain, ...UNDRILL });

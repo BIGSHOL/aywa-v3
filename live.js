@@ -97,7 +97,10 @@
   function fillTip(d){
     const el=(cls,text,tag='div')=>{const node=document.createElement(tag);node.className=cls;node.textContent=text;return node;};
     tip.replaceChildren(el('chart-pop-head',d.title));
-    d.rows.forEach(r=>{const row=el('chart-pop-row',''),name=el(`chart-pop-label ${r.tone==='secondary'?'secondary':''}`,String(r.label||''),'span');if(/^#[0-9a-f]{3,8}$/i.test(String(r.color||'')))name.style.setProperty('--dot',r.color);row.append(name,el('chart-pop-value',String(r.value||''),'strong'));tip.append(row);});
+    // Opt-in third column (확장 추세 — 원장 10-28 "항목별 변화 추이"): rows carrying `delta: { text, tone }` get [label | value | change]; other charts are unchanged.
+    const deltas=d.rows.some(r=>r&&typeof r==='object'&&'delta' in r);tip.classList.toggle('has-delta',deltas);
+    d.rows.forEach(r=>{const row=el('chart-pop-row',''),name=el(`chart-pop-label ${r.tone==='secondary'?'secondary':''}`,String(r.label||''),'span');if(/^#[0-9a-f]{3,8}$/i.test(String(r.color||'')))name.style.setProperty('--dot',r.color);row.append(name,el('chart-pop-value',String(r.value||''),'strong'));
+      if(deltas){const dl=r.delta||{};row.append(el(`chart-pop-delta${['good','bad'].includes(dl.tone)?` ${dl.tone}`:''}`,String(dl.text||''),'span'));}tip.append(row);});
     d.meta.forEach(m=>tip.append(el(`chart-pop-meta${typeof m==='object'&&['good','bad'].includes(m.tone)?` ${m.tone}`:''}`,metaText(m))));
   }
   function placeTip(){
