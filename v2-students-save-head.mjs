@@ -11,7 +11,7 @@
 // 🔴 바깥 호출은 하지 않는다: pushIjwProfiles(인재원 프로필 보내기 · updateStudent 뒤) · recordMathWithdrawalToSheet(구글 시트 · endStudentEnrollments 뒤)
 //   · revalidatePath(호스트가 저장 뒤 다시 읽는다).
 import { V2Error } from './v2-screens.mjs';
-import { audit, asAuthenticated, lastCourseViaReport, loadExtra } from './v2-timetable-save.mjs';
+import { audit, asAuthenticated, lastCourseViaReport, loadExtra, endEnrollmentById } from './v2-timetable-save.mjs';
 import { studentsBase, readStudentEditors } from './v2-students-common.mjs';
 import { userPermMatrix } from './v2-onescreen-roster.mjs';
 
@@ -181,17 +181,7 @@ async function listOpenEnrollments(sql, S, studentId) {
     return { error: null, rows: rows.map((r) => ({ id: r.id, classId: r.class_id ?? null, onHold: r.on_hold === true })) };
   } catch (e) { return { error: dbWhy(S, e, 'students.enrollmentSync.listOpen', SYNC_FALLBACK), rows: [] }; }
 }
-async function endEnrollmentById(sql, S, enrollmentId, date, reason, notes) {
-  try {
-    return await write(sql, async (s) => {
-      const [enr] = await s`select start_date::text start_date, class_id::text class_id, student_id::text student_id from public.enrollments where id=${enrollmentId}`;
-      if (!enr) return { error: '수강 기록을 찾을 수 없습니다' };
-      const endDate = String(enr.start_date) > date ? String(enr.start_date) : date;
-      await s`update public.enrollments set end_date=${endDate}::date, withdrawal_reason=${reason}, withdrawal_detail=${notes.detail}, withdrawal_memo=${notes.memo} where id=${enrollmentId}`;
-      return { error: null, endDate, classId: enr.class_id ?? null, studentId: enr.student_id ?? null };
-    });
-  } catch (e) { return { error: dbWhy(S, e, 'students.enrollmentSync.endOne', SYNC_FALLBACK) }; }
-}
+// endEnrollmentById = 시간표 저장의 같은 함수(v2-timetable-save.mjs — 2.0 enrollment-sync.ts 한 벌 · 같은 데이터는 같은 원본).
 
 // ── createStudent ─────────────────────────────────────────────────────────────────────────────────────────────────────
 async function createStudent(ctx, [, formData]) {
@@ -458,7 +448,7 @@ async function endStudentEnrollments(ctx, [, formData]) {
   const lastCourse = await lastCourseViaReport(sql, t, X, { studentId, enrollmentIds: targets.map((x) => x.id), date });
   if (lastCourse) return { error: lastCourse };
   for (const tg of targets) {
-    const res = await endEnrollmentById(sql, S, tg.id, date, reasonStr, { detail: checked.detail, memo });
+    const res = await endEnrollmentById(sql, t, X, tg.id, date, reasonStr, { detail: checked.detail, memo }, studentId);
     if (res.error) return { error: '수강을 종료하지 못했습니다. 잠시 후 다시 시도해 주세요.' };
     await audit(sql, t, who.actor, 'enrollment_end', 'student', { studentId, classId: res.classId, date: res.endDate, reason: reasonStr, detail: checked.detail, memo,
       source: 'status_dialog', partial: targets.length < open.length });
