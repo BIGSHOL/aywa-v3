@@ -52,9 +52,9 @@
 //     clearPresentAttendance · upsertStudentMark · commitSheetEdits · flushSheetPatches · setSlotShouting · removeMakeupAttendee · copySlotFromPrevious · setMyEcsFontSize ·
 //     반 순서 setMyEcsTodayOrder(users.ui_prefs.ecs.todayOrder, 감사로그 없음 — 2.0과 같다).
 //   아직 잇지 않은 2.0 서버 액션(호스트가 '복사본 보기 전용'으로 거절):
-//   (교재 지우기·되돌리기 넷 deleteClassTextbookPlan · undoPlanDelete · undoPlanImport · undoLessonShift는 v2-ecs-plan-undo.mjs 머리 주석의 표)
+//   (교재 지우기·되돌리기 넷 deleteClassTextbookPlan · undoPlanDelete · undoPlanImport · undoLessonShift는 v2-ecs-plan-undo.mjs 머리 주석의 표 ·
+//    회차 미룸·당김 setLessonShift는 v2-ecs-shift.mjs 머리 주석의 표)
 //   class-sheets/server/memorized-actions.ts pullEcsMemorizedWords — 바깥 연동(인재원 SRS)이라 2.0 게이트를 지난 뒤 늘 거절(쓰기 없음).
-//   textbooks/server/plan-actions.ts setLessonShift(미룸/당김) ·
 //   attendance/server/actions.ts setAttendanceBulk(오늘 면 요약 카드의 '전원 출석' — 반환 { error } 그대로 거절, 카드가 되돌린다) ·
 //   attendance/server/makeup-actions.ts fetchMakeupHostClasses(원스크린 보강 반 고르기 — ECS 흐름은 안 부른다).
 //
@@ -77,6 +77,7 @@ import { seatDayData } from './v2-ecs-seat.mjs';
 import { todayFaceData } from './v2-ecs-today.mjs';
 import { TEXTBOOK_ACTIONS, readAssignableTextbooks, readClassTextbookPlans, readSlotChoices } from './v2-ecs-textbooks.mjs';
 import { PLAN_UNDO_ACTIONS } from './v2-ecs-plan-undo.mjs';
+import { SHIFT_ACTIONS } from './v2-ecs-shift.mjs';
 
 /** 2.0 주소 — /ecs · /ecs/<반> · /ecs/<반>/month · /ecs/goals · /ecs/plan-gap. */
 const ROUTE = /^\/ecs(?:\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})(\/month)?|\/(goals|plan-gap))?$/;
@@ -87,7 +88,7 @@ export const screen = {
     period: /^(month|session)$/, day: DAY, readonly: /^1$/,
     // 읽기 서버 액션(호스트 registerHostHandler) — 그 2.0 함수의 인자 칸만.
     read: /^(dayPlan|compare|slotChoices|textbookPlans|assignable)$/, class: UUID, slot: /^\d{2}:\d{2}(?::\d{2})?$/ },
-  actions: { ...ACTIONS, ...MAKEUP_ACTIONS, ...GOALS_ACTIONS, ...TEXTBOOK_ACTIONS, ...PLAN_UNDO_ACTIONS },
+  actions: { ...ACTIONS, ...MAKEUP_ACTIONS, ...GOALS_ACTIONS, ...TEXTBOOK_ACTIONS, ...PLAN_UNDO_ACTIONS, ...SHIFT_ACTIONS },
   async load({ sql, params: q, tenantId: t, importV2 }) {
     const R = await loadRules(importV2), today = await copyDay(), env = await readSettings(sql, t, R);
     const viewers = await readViewers(sql, t, R, env);

@@ -27,14 +27,14 @@ async function claimHistory(sql, t, classId, id, actorId) {
   return rows.length > 0 ? 'ok' : 'taken';
 }
 const releaseHistory = (sql, t, id) => sql`update public.class_plan_import_batches set undone_at=null, undone_by=null where tenant_id=${t} and id=${id}`;
-async function recordHistoryEntry(sql, t, { classId, date, actorId, meta, count }) {
+export async function recordHistoryEntry(sql, t, { classId, date, actorId, meta, count }) {
   const [row] = await sql`insert into public.class_plan_import_batches (tenant_id, class_id, period_from, period_to, rows, row_count, created_by)
     values (${t}, ${classId}, ${date}, ${date}, ${sql.json([meta])}, ${count}, ${actorId}) returning id::text id`;
   return row?.id ?? undefined;
 }
 
 // ── 2.0 shift-markers.ts writeMarker — 칸·줄 표식 한 개(없음 = 지움, 있으면 upsert) ──
-async function writeMarker(sql, t, R, classId, key, kind, actor) {
+export async function writeMarker(sql, t, R, classId, key, kind, actor) {
   const p = R.parseMarkerKey(key);
   if (!p) throw new Error('invalid marker key');
   if (kind === null) { await sql`delete from public.class_lesson_shifts where tenant_id=${t} and class_id=${classId} and plan_date=${p.date} and slot_start=${p.slot} and lane=${p.lane} and pos=${p.pos}`; return; }

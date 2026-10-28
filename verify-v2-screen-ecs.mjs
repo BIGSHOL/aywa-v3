@@ -81,7 +81,7 @@ test('actions = 2.0 서버 액션과 1:1 — 같은 모듈("use server")의 같�
   const names = Object.keys(screen.actions);
   for (const n of ['flushSheetPatches', 'createPlanLine', 'movePlanLine', 'deletePlanLine', 'copyWeekFromPrevious', 'copySlotFromPrevious', 'upsertGoal', 'upsertStudentMark', 'saveMemo',
     'setSlotShouting', 'removeMakeupAttendee', 'markPresentIfAbsent', 'clearPresentAttendance', 'setAttendanceCell', 'commitSheetEdits', 'saveMonthPlanCells', 'saveMonthMemo', 'getEcsDayPlan', 'getSlotPlanCompare',
-    'updateStudentEnglishName', 'searchMakeupStudents', 'fetchMakeupAbsences', 'noteMakeupAgainstAbsence']) assert.ok(names.includes(n), n);
+    'updateStudentEnglishName', 'searchMakeupStudents', 'fetchMakeupAbsences', 'noteMakeupAgainstAbsence', 'setLessonShift', 'undoLessonShift']) assert.ok(names.includes(n), n);
   // 2.0 ECS 서버 액션 파일의 setMyEcs* 열은 전부 잇는다(보기 설정은 그 사람 계정에).
   const sheetActions = await src('features/class-sheets/server/actions.ts');
   for (const m of sheetActions.matchAll(/export async function (setMyEcs\w+)\(/g)) assert.ok(names.includes(m[1]), m[1]);
@@ -922,6 +922,140 @@ test('복사본(되돌림): 오늘 면의 저장 = 주간 시트와 같은 액�
     assert.equal((await sql`select count(*)::int n from net.http_request_queue`)[0].n, before[0].net, '바깥 요청 없음');
   });
   assert.equal((await db`select count(*)::int n from public.audit_logs`)[0].n, before[0].audits, '되돌렸다');
+});
+
+// ── ⑧ 회차 미룸·당김 — 2.0 plan-actions.ts setLessonShift(shift-lines · shift-relay · shift-snapshot) ──
+const shiftOkKeys = text => { const i = text.indexOf('export type LessonShiftResult'), j = text.indexOf('| {', i) + 3, k = text.indexOf('\n    }\n', j); return keysAtTop(text.slice(j, k)); };
+const SHIFT_FAIL_KEYS = ['error', 'historyId', 'ok', 'undo'];
+
+test('복사본(되돌림): 회차 미룸·당김(setLessonShift) — 배정이 안 지나가는 칸 = 같은 요일·교시끼리 한 주씩(2.0 planLessonShift: 미룸은 누른 칸이 빈다) + 칸 표식 순 횟수 · 2.0 LessonShiftResult 칸 · 미룸 → 되돌리기 = 원래대로 · 미룸 → 당김 = 원래대로 · 감사로그·히스토리 · 2.0 거절 문구', { skip: !db && 'local database not running' }, async () => {
+  const text = (await src('features/textbooks/server/plan-actions.ts')).replace(/\r\n/g, '\n'), R = await C.loadRules(importV2), { validToken } = await import('./v2-ecs-plan-undo.mjs');
+  const before = await db`select (select count(*)::int from public.audit_logs) audits, (select count(*)::int from net.http_request_queue) net, (select count(*)::int from public.class_lesson_shifts) marks`;
+  await inRollback(async ({ sql, run }) => {
+    // 시험용으로만(되돌림): 테스트 반 수업을 기준일 뒤로 · 화요일 17:15 두 칸에 알아볼 진도.
+    await sql`update public.class_schedules set valid_to=null where class_id=${T_CLASS}`;
+    await sql`update public.class_sheet_plan_lines set progress='A' where class_id=${T_CLASS} and plan_date='2026-10-13' and term_mode='regular'`;
+    await sql`update public.class_sheet_plan_lines set progress='B' where class_id=${T_CLASS} and plan_date='2026-10-20' and term_mode='regular'`;
+    const tue = async () => (await sql`select plan_date::text d, progress from public.class_sheet_plan_lines where class_id=${T_CLASS} and term_mode='regular' and slot_start='17:15'
+      and plan_date >= '2026-10-13' and extract(isodow from plan_date) = 2 order by plan_date`).map(r => `${r.d}:${r.progress}`);
+    const marks = async () => (await sql`select plan_date::text d, kind, lane from public.class_lesson_shifts where class_id=${T_CLASS} order by plan_date, lane`).map(r => `${r.d}:${r.kind}:${r.lane}`);
+    const state = async () => (await sql`select plan_date::text d, to_char(slot_start,'HH24:MI') s, term_mode, line_no, skill_area, textbook, page_range, progress, homework from public.class_sheet_plan_lines
+      where class_id=${T_CLASS} order by plan_date, slot_start, term_mode, line_no`).map(r => JSON.stringify(r));
+    const shifts = async () => (await sql`select metadata from public.audit_logs where tenant_id=${TENANT} and action='textbook_lesson_shift' and metadata->>'via'='3.0 연습 복사본'`).map(a => a.metadata);
+    const s0 = await state();
+    assert.deepEqual([await tue(), await marks()], [['2026-10-13:A', '2026-10-20:B'], []]);
+    const at = { classId: T_CLASS, date: '2026-10-13', slotStart: '17:15' };
+    // 미룸 — 뒤 칸이 전부 한 주씩 뒤로, 누른 칸은 빈다 · 표식은 비어 있는 첫 칸(누른 칸)에 · 결과 = 2.0 칸.
+    const r1 = await run(sql, 'setLessonShift', T_ACTOR, { ...at, kind: 'skip' });
+    assert.equal(r1.ok, true, JSON.stringify(r1).slice(0, 200)); sameShape(r1, shiftOkKeys(text), 'LessonShiftResult');
+    assert.deepEqual(await tue(), ['2026-10-20:A', '2026-10-27:B']);
+    assert.deepEqual(await marks(), ['2026-10-13:skip:']);
+    assert.deepEqual([r1.kind, r1.moved, r1.lines, r1.cells.map(c => `${c.date}|${c.slotStart}`)], ['skip', 2, [], ['2026-10-13|17:15']], '누른 칸(이제 빈 칸)을 화면이 갈아 끼운다');
+    assert.ok(validToken(r1.undo, T_CLASS), '되돌리기 기록 = 2.0 validToken을 통과');
+    assert.deepEqual(r1.undo.markers, [{ key: '2026-10-13|17:15', before: null, after: 'skip' }]);
+    const [hist] = await sql`select rows, row_count, period_from::text period_from from public.class_plan_import_batches where id=${r1.historyId}`;
+    assert.deepEqual([hist.rows[0].kind, hist.rows[0].shift, hist.rows[0].title, hist.period_from, hist.row_count], ['shift', 'skip', R.shiftTitleOf(r1.undo), '2026-10-13', r1.undo.removed.length + r1.undo.added.length + r1.undo.changed.length], '툴바 [되돌리기 ▾] 히스토리');
+    assert.deepEqual(hist.rows[0].token, r1.undo);
+    assert.deepEqual((await shifts()).map(m => [m.date, m.slot, m.kind, m.moved]), [['2026-10-13', '17:15', 'skip', 2]], '감사로그 textbook_lesson_shift');
+    // 되돌리기 — 줄·표식이 미루기 전 그대로 · 두 번은 안 된다.
+    assert.deepEqual(await run(sql, 'undoLessonShift', T_ACTOR, { classId: T_CLASS, token: r1.undo, historyId: r1.historyId }), { ok: true });
+    assert.deepEqual([await state(), await marks()], [s0, []], '미룸 → 되돌리기 = 원래대로');
+    assert.deepEqual(await run(sql, 'undoLessonShift', T_ACTOR, { classId: T_CLASS, token: r1.undo, historyId: r1.historyId }), { ok: false, error: '이미 되돌렸습니다' });
+    // 미룸 → 당김 = 원래대로(반대 표식이 누른 칸에 있으면 지운다).
+    assert.equal((await run(sql, 'setLessonShift', T_ACTOR, { ...at, kind: 'skip' })).ok, true);
+    const r2 = await run(sql, 'setLessonShift', T_ACTOR, { ...at, kind: 'advance' });
+    assert.deepEqual([r2.ok, r2.kind, r2.lines.map(l => l.progress)], [true, 'advance', ['A']]);
+    assert.deepEqual([await state(), await marks()], [s0, []], '미룸 → 당김 = 원래대로');
+    // 줄 하나(lineId) — 배정이 안 지나가면 그 줄과 같은 구분·교재명 줄만 한 주씩, 표식 없음.
+    const [line] = await sql`select id::text id from public.class_sheet_plan_lines where class_id=${T_CLASS} and plan_date='2026-10-13' and slot_start='17:15' and term_mode='regular'`;
+    const r3 = await run(sql, 'setLessonShift', T_ACTOR, { ...at, kind: 'skip', lineId: line.id });
+    assert.deepEqual([r3.ok, await tue(), await marks()], [true, ['2026-10-20:A', '2026-10-27:B'], []]);
+    // 옮길 줄이 없는 칸 = 표식만(moved 0) · kind null = 표식만 지운다(줄 그대로, 감사로그 없음).
+    const r4 = await run(sql, 'setLessonShift', T_ACTOR, { classId: T_CLASS, date: '2026-10-31', slotStart: '11:00', kind: 'skip' });
+    assert.deepEqual([r4.ok, r4.moved, await marks()], [true, 0, ['2026-10-31:skip:']]);
+    const s4 = await state(), n4 = (await shifts()).length;
+    assert.deepEqual(await run(sql, 'setLessonShift', T_ACTOR, { classId: T_CLASS, date: '2026-10-31', slotStart: '11:00', kind: null }), { ok: true, kind: null, moved: 0 });
+    assert.deepEqual([await state(), await marks(), (await shifts()).length], [s4, [], n4]);
+    // 2.0 거절 문구 — 쓰기 없음.
+    const fails = [
+      [{ ...at, date: '10/13', kind: 'skip' }, '날짜가 올바르지 않습니다'],
+      [{ ...at, slotStart: '7:15', kind: 'skip' }, '교시가 올바르지 않습니다'],
+      [{ ...at, kind: 'skip', lineId: 'x' }, '줄이 올바르지 않습니다'],
+      [{ ...at, kind: 'skip', fill: true }, '계획만 있는 칸은 당김만 됩니다'],
+      [{ ...at, classId: MATH, kind: 'skip' }, '담당 반이 아닙니다'],
+      [{ classId: T_CLASS, date: '2026-10-10', slotStart: '11:00', kind: 'advance' }, '다음 주 진도가 없어 당겨올 내용이 없습니다'],
+    ];
+    const s5 = await state();
+    for (const [input, error] of fails) {
+      const r = await run(sql, 'setLessonShift', T_ACTOR, input);
+      assert.deepEqual([r.ok, r.error], [false, error], JSON.stringify(input));
+      for (const k of Object.keys(r).filter(k => r[k] !== undefined)) assert.ok(SHIFT_FAIL_KEYS.includes(k), `실패 칸 ${k}`);
+    }
+    assert.deepEqual([await state(), await marks()], [s5, []], '거절은 쓰기 없음');
+    assert.equal((await sql`select count(*)::int n from net.http_request_queue`)[0].n, before[0].net, '바깥 요청 없음');
+  });
+  const after = await db`select (select count(*)::int from public.audit_logs) audits, (select count(*)::int from public.class_lesson_shifts) marks`;
+  assert.deepEqual([after[0].audits, after[0].marks], [before[0].audits, before[0].marks], '되돌렸다');
+});
+
+test('복사본(되돌림): 회차 미룸·당김 — 배정 교재가 지나가는 칸 = 교재 순서로(2.0 shiftAlongPlans): 실제 줄 = 표식을 반영한 2.0 일정(expandPlans) · 줄 하나 = 그 배정의 줄 표식 · 계획만 있는 칸의 당김 · 되돌리기 = 기입 직후 그대로', { skip: !db && 'local database not running' }, async () => {
+  const [owner] = await db`select u.id::text id from public.users u where u.tenant_id=${TENANT} and u.status='active' and u.system_role='master' and not exists (select 1 from public.super_admins s where s.id=u.id) order by u.display_name limit 1`;
+  const before = await db`select (select count(*)::int from public.audit_logs) audits, (select count(*)::int from net.http_request_queue) net, (select count(*)::int from public.class_textbook_plans) plans, (select count(*)::int from public.class_lesson_shifts) marks`;
+  await inRollback(async ({ sql, run }) => {
+    await sql`update public.class_schedules set valid_to=null where class_id=${T_CLASS}`; // 시험용(되돌림): 테스트 반 수업을 기준일 뒤로
+    const R = await C.loadRules(importV2), env = await C.readSettings(sql, TENANT, R), viewer = (await C.readViewers(sql, TENANT, R, env)).find(v => v.id === owner.id), today = await C.copyDay();
+    const { readSlotChoices } = await import('./v2-ecs-textbooks.mjs'), { plannedLines } = await import('./v2-ecs-props.mjs');
+    const chip = (await readSlotChoices({ sql, t: TENANT, R, env, user: viewer, today }, T_CLASS)).rows.find(c => !c.seat && c.dows.length >= 3);
+    // 차수마다 진도 글이 다른 교재 — 줄이 어느 차수인지 글로 알아볼 수 있게.
+    const [book] = await sql`select b.id::text id, b.title from public.textbooks b where b.tenant_id=${TENANT} and b.subject='english' and b.session_count between 8 and 40 and b.skill_area is not null
+      and (select count(distinct progress) from public.textbook_lessons l where l.textbook_id=b.id and coalesce(btrim(l.progress), '') <> '') = b.session_count
+      and not exists (select 1 from public.class_textbook_plans p where p.class_id=${T_CLASS} and p.textbook_id=b.id) order by b.title limit 1`;
+    assert.ok(chip && book, '고른 교시 · 교재');
+    const fill = await run(sql, 'applyTextbookFill', owner.id, { classId: T_CLASS, textbookId: book.id, slotPicks: chip.picks, pace: 'period', termMode: 'regular', startDate: today, startLessonNo: 1 });
+    assert.equal(fill.ok, true, JSON.stringify(fill).slice(0, 200));
+    const [plan] = await sql`select id::text id from public.class_textbook_plans where class_id=${T_CLASS} and textbook_id=${book.id} and is_active`;
+    const bookLines = async () => (await sql`select id::text id, plan_date::text d, to_char(slot_start,'HH24:MI') s, progress from public.class_sheet_plan_lines
+      where class_id=${T_CLASS} and term_mode='regular' and textbook=${book.title} and plan_date >= ${today} order by plan_date, slot_start, line_no`);
+    const shape = rows => rows.map(r => `${r.d}|${r.s}|${r.progress}`);
+    const marks = async () => (await sql`select plan_date::text d, kind, lane, pos from public.class_lesson_shifts where class_id=${T_CLASS} order by plan_date, lane`).map(r => `${r.d}:${r.kind}:${r.lane}:${r.pos}`);
+    /** 실제 그 교재 줄 = 표식(지금 DB)을 반영한 2.0 일정 — 누른 날부터. */
+    const followsPlan = async from => {
+      const actual = (await bookLines()).filter(r => r.d >= from);
+      const pl = await plannedLines(sql, TENANT, R, env, T_CLASS, from, actual.at(-1).d);
+      const planned = Object.entries(pl.byCell).flatMap(([k, ls]) => ls.filter(l => l.title === book.title).map(l => `${k}|${l.progress}`)).filter(k => k >= from).sort();
+      assert.deepEqual(shape(actual).sort(), planned, '실제 줄 = 표식을 반영한 2.0 일정(expandPlans)');
+    };
+    const b0 = await bookLines();
+    assert.ok(b0.length >= 8 && new Set(b0.map(r => R.dowKeyOf(r.d))).size >= 3, '여러 요일에 걸친 배정');
+    const press = b0[1], at = { classId: T_CLASS, date: press.d, slotStart: press.s };
+    // 교시 통째 미룸 — 차수가 요일을 건너 교재 순서로 한 칸씩 뒤로(같은 요일끼리가 아니다) · 그 주의 바뀐 칸도 함께 돌려준다.
+    const r1 = await run(sql, 'setLessonShift', owner.id, { ...at, kind: 'skip' });
+    assert.equal(r1.ok, true, JSON.stringify(r1).slice(0, 200));
+    assert.deepEqual(shape((await bookLines()).filter(r => r.d >= press.d)).slice(0, 2).map(k => k.split('|')[2]), [press.progress, b0[2].progress].map(String), '누른 칸의 차수가 다음 수업일로');
+    assert.equal((await bookLines()).find(r => r.d === press.d && r.s === press.s), undefined, '누른 칸은 빈다');
+    assert.ok(r1.cells.some(c => c.date !== press.d && R.dowKeyOf(c.date) !== R.dowKeyOf(press.d) && c.lines.length > 0), '같은 주 다른 요일 칸도 갈아 끼운다');
+    assert.deepEqual(await marks(), [`${press.d}:skip::0`], '교시 통째 = 칸 표식');
+    await followsPlan(press.d);
+    assert.deepEqual(await run(sql, 'undoLessonShift', owner.id, { classId: T_CLASS, token: r1.undo, historyId: r1.historyId }), { ok: true });
+    assert.deepEqual([shape(await bookLines()), await marks()], [shape(b0), []], '되돌리기 = 기입 직후 그대로');
+    // 줄 하나 — 그 배정(lane = 배정 id)의 줄 표식 · 같은 일정 규칙.
+    const line = (await bookLines())[1];
+    const r2 = await run(sql, 'setLessonShift', owner.id, { ...at, kind: 'skip', lineId: line.id });
+    assert.equal(r2.ok, true, JSON.stringify(r2).slice(0, 200));
+    assert.deepEqual(await marks(), [`${press.d}:skip:${plan.id}:1`], '줄 표식 = 그 배정 · 첫 자리');
+    await followsPlan(press.d);
+    // 계획만 있는 칸의 당김(fill) — 미룸을 걷어 뒤 수업이 올라와 채운다(아무 차수도 버리지 않는다).
+    const r3 = await run(sql, 'setLessonShift', owner.id, { ...at, kind: 'advance', fill: true });
+    assert.equal(r3.ok, true, JSON.stringify(r3).slice(0, 200));
+    assert.deepEqual([shape(await bookLines()), await marks()], [shape(b0), []], '미룸 → 계획만 있는 칸의 당김 = 원래대로');
+    const r4 = await run(sql, 'setLessonShift', owner.id, { ...at, kind: 'advance', fill: true });
+    assert.deepEqual([r4.ok, r4.error, r4.undo], [false, '이 칸엔 이미 진도가 있습니다 — 새로고침 후 줄의 [당김]을 눌러 주세요', undefined], '진도가 있는 칸은 줄의 당김으로(바뀐 게 없어 되돌리기도 없다)');
+    const logs = await sql`select metadata from public.audit_logs where tenant_id=${TENANT} and action='textbook_lesson_shift' and metadata->>'via'='3.0 연습 복사본'`;
+    assert.deepEqual(logs.map(l => l.metadata.kind).sort(), ['advance', 'skip', 'skip']);
+    assert.equal((await sql`select count(*)::int n from net.http_request_queue`)[0].n, before[0].net, '바깥 요청 없음');
+  });
+  const after = await db`select (select count(*)::int from public.audit_logs) audits, (select count(*)::int from public.class_textbook_plans) plans, (select count(*)::int from public.class_lesson_shifts) marks`;
+  assert.deepEqual([after[0].audits, after[0].plans, after[0].marks], [before[0].audits, before[0].plans, before[0].marks], '되돌렸다');
 });
 
 test.after(async () => { await db?.end(); });

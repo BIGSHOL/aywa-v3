@@ -242,7 +242,7 @@ async function recordImportBatch(ctx, { classId, from, to, before, plan }) {
   return row?.id ?? null;
 }
 /** 2.0 applyCellLessons — 칸마다 첫 차수는 RPC(ecs_apply_textbook_lessons, 100칸씩), 한 칸 여러 차수는 planCellExtras로 채움·새 줄. */
-async function applyCellLessons(ctx, { classId, termMode, book, cells: rawCells }) {
+export async function applyCellLessons(ctx, { classId, termMode, book, cells: rawCells }) {
   const { sql, t, R, user } = ctx;
   const cells = rawCells.filter(c => c.lessons.length > 0), total = { applied: 0, filled: 0, added: 0, skipped: 0, truncated: 0 };
   const firsts = cells.map(c => ({ date: c.date, slot: c.slot, ...c.lessons[0] }));

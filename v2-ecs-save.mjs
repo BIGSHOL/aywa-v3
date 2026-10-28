@@ -54,7 +54,7 @@ export const audit = (sql, t, user, action, targetType, targetLabel, metadata) =
 async function guarded(sql, fn) {
   try { return { ok: true, value: await sql.savepoint(fn) }; } catch (e) { return { ok: false, error: e }; }
 }
-const lineDTO = (R, row) => R.planLineFromRow({ ...row, id: String(row.id), plan_date: isoDay(row.plan_date), slot_start: String(row.slot_start), updated_at: isoAt(row.updated_at) });
+export const lineDTO = (R, row) => R.planLineFromRow({ ...row, id: String(row.id), plan_date: isoDay(row.plan_date), slot_start: String(row.slot_start), updated_at: isoAt(row.updated_at) });
 const linesResult = (R, res) => (res.ok ? { ok: true, lines: res.value.map(r => lineDTO(R, r)) }
   : { ok: false, error: String(res.error?.message ?? '').includes('ECS_MAX_LINES') ? '한 교시에 담을 수 있는 줄 수(20)를 넘었습니다' : `저장에 실패했습니다: ${res.error?.message ?? ''}` });
 const KO_DOW = ['일', '월', '화', '수', '목', '금', '토'];
