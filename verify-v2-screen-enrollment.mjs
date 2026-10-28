@@ -494,3 +494,34 @@ test('요약 붙이기 = 2.0 appendAiSummaryToConsultationContent — 저장된 
     assert.deepEqual(log.metadata.changed, ['상담 내용']); assert.equal(log.metadata.surface, 'ai_summary');
   });
 });
+
+test('병합 = 2.0 previewConsultationMerge(읽기) · mergeConsultations — 사람이 고를 칸은 정해야 실행 · 진 쪽 삭제·분석 이관 · 감사로그 · 신분은 저장 뒤 원래대로', { skip: SKIP }, async () => {
+  await rollback(async (sql) => {
+    const a = await editFixture(sql, { parent_phone: '01011112222', counselor: '갑' });
+    const [{ id: b }] = await sql`insert into public.enrollment_consultations ${sql({ tenant_id: t, consulted_at: new Date(Date.now() - 86400000), prospect_name: '시험상담', prospect_grade: '중1',
+      prospect_school: '침산중', outcome: 'consulted', parent_phone: '01011112222', counselor: '을' })} returning id::text id`;
+    await withAnalysis(sql, b);
+    const preview = await load(sql, { mergeIds: `${a.id},${b}`, mergeWinner: a.id });
+    assert.equal(preview.page, 'mergePreview');
+    const { plan, rows } = preview.result;
+    assert.equal(plan.winnerId, a.id); assert.deepEqual(plan.loserIds, [b]); assert.equal(rows.length, 2); assert.deepEqual(plan.blockers, []);
+    assert.deepEqual((await load(sql, { mergeIds: a.id })).result, { error: '병합하려면 상담을 2건 이상 골라야 합니다' });
+    const body = (args) => screen.actions.mergeConsultations.validate({ module: 'features/enrollment/server/merge-actions.ts', actor: a.owner.id, args });
+    assert.throws(() => screen.actions.mergeConsultations.validate({ module: 'features/enrollment/server/actions.ts', actor: a.owner.id, args: [a.id, [b], {}] }), '다른 모듈 이름은 거절');
+    const conflicts = plan.decisions.filter((d) => d.needsHuman);
+    if (conflicts.length) assert.match((await screen.actions.mergeConsultations.run({ sql, body: body([a.id, [b], {}]), tenantId: t, importV2 })).error, /어느 쪽으로 남길지/);
+    const [{ before }] = await sql`select coalesce(current_setting('request.jwt.claims', true), '') before`;
+    const choices = Object.fromEntries(conflicts.map((d) => [d.key, a.id]));
+    const res = await screen.actions.mergeConsultations.run({ sql, body: body([a.id, [b], choices]), tenantId: t, importV2 });
+    assert.deepEqual(res, { ok: true, winnerId: a.id });
+    const [{ after, role }] = await sql`select coalesce(current_setting('request.jwt.claims', true), '') after, current_user role`;
+    assert.equal(after, before, '신분 쓰기 뒤 claims가 원래 값'); assert.notEqual(role, 'authenticated');
+    const [left] = await sql`select (select count(*)::int from public.enrollment_consultations where id=${b}) loser,
+      (select count(*)::int from public.consultation_ai_analysis where consultation_id=${a.id}) moved`;
+    assert.deepEqual(left, { loser: 0, moved: 1 });
+    const [log] = await sql`select action, actor_id::text actor, metadata from public.audit_logs where tenant_id=${t} and action='consultation_merge' and metadata->>'winnerId'=${a.id}`;
+    assert.equal(log.actor, a.owner.id); assert.deepEqual(log.metadata.loserIds, [b]); assert.equal(log.metadata.via, '3.0 연습 복사본');
+    // 병합된 상담 주소 → 남은 상담(상세의 findMergeSuccessor와 같은 감사로그)
+    assert.deepEqual((({ page, to }) => ({ page, to }))(await load(sql, { v2path: `/enrollment/${b}` })), { page: 'redirect', to: `/enrollment/${a.id}` });
+  });
+});

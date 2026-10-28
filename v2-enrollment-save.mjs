@@ -389,3 +389,97 @@ export async function appendAiSummaryToConsultationContent(ctx, consultationId) 
   }
   return { ok: true };
 }
+
+// ── 병합(server/merge-actions.ts) ──────────────────────────────────────────────────────────────────────────────────────
+const MERGE_GAP_DAYS = 7, MAX_MERGE_ROWS = 10;
+let mergeRulesP = null;
+function mergeRules(importV2) {
+  mergeRulesP ??= Promise.all(['features/enrollment/merge-plan.ts', 'features/enrollment/merge-policy.ts', 'features/enrollment/consult-origin.ts'].map((m) => importV2(m)))
+    .then(([plan, policy, origin]) => ({ plan, policy, origin })).catch((e) => { mergeRulesP = null; throw e; });
+  return mergeRulesP;
+}
+
+/**
+ * 2.0 사용자 신분으로 한 번(저장점 안) — 이전 claims를 읽어 두고 끝나면 역할·claims를 되돌린다(수납 v2-billing-common asViewer와 같은 모양).
+ * 실패하면 저장점째 되돌아가 claims도 함께 돌아간다. 반환 { data } · { error }.
+ */
+export async function asViewer(sql, actorId, fn) {
+  try {
+    return { data: await sql.savepoint(async (s) => {
+      const [{ prev }] = await s`select coalesce(current_setting('request.jwt.claims', true), '') prev`;
+      await s`select set_config('request.jwt.claims', ${JSON.stringify({ sub: actorId, role: 'authenticated' })}, true)`;
+      await s`set local role authenticated`;
+      const out = await fn(s);
+      await s`reset role`;
+      await s`select set_config('request.jwt.claims', ${prev}, true)`;
+      return out;
+    }), error: null };
+  } catch (e) { return { data: null, error: { code: e?.code ?? null, message: e?.message ?? '' } }; }
+}
+
+/** loadRows — 대상 행(PostgREST select('*')와 같은 JSON) + 자식 개수 + 대기 중 makeedu 전송 + 분석 모델. */
+async function loadMergeRows(sql, t, ids) {
+  const [rows, ai, rec, push] = await Promise.all([
+    sql`select to_json(c) j from public.enrollment_consultations c where c.tenant_id = ${t} and c.id = any(${ids}::uuid[])`,
+    sql`select a.consultation_id::text consultation_id, a.model_version from public.consultation_ai_analysis a where a.consultation_id = any(${ids}::uuid[])`,
+    sql`select consultation_id::text consultation_id from public.consultation_recordings where consultation_id = any(${ids}::uuid[])`,
+    sql`select consultation_id::text consultation_id, status::text status from public.makeedu_push_requests where tenant_id = ${t} and consultation_id = any(${ids}::uuid[])`,
+  ]);
+  const children = {};
+  const bump = (id, k) => { children[id] ??= { ai: 0, rec: 0, push: 0 }; children[id][k] += 1; };
+  for (const r of ai) bump(r.consultation_id, 'ai');
+  for (const r of rec) bump(r.consultation_id, 'rec');
+  for (const r of push) bump(r.consultation_id, 'push');
+  const models = {};
+  for (const r of ai) (models[r.consultation_id] ??= []).push(String(r.model_version ?? ''));
+  return { rows: rows.map((r) => r.j), children, pendingPush: push.filter((r) => ['pending', 'running'].includes(String(r.status))).length, models };
+}
+const uuidList = (v) => (Array.isArray(v) ? [...new Set(v.filter((x) => typeof x === 'string' && /^[0-9a-f-]{36}$/i.test(x)))] : []);
+
+/** previewConsultationMerge(ids, forceWinnerId) — 읽기(호스트가 GET으로 부른다). 2.0 반환 { plan, rows } · { error }. */
+export async function previewConsultationMerge(ctx, ids, forceWinnerId) {
+  const { sql, t, importV2 } = ctx;
+  if (!ctx.user) return { error: '로그인이 필요합니다' };
+  if (!ctx.canWrite) return { error: '신규 콜&상담 권한이 없습니다' };
+  const M = await mergeRules(importV2);
+  const unique = uuidList(ids);
+  if (unique.length < 2) return { error: '병합하려면 상담을 2건 이상 골라야 합니다' };
+  if (unique.length > MAX_MERGE_ROWS) return { error: `한 번에 ${MAX_MERGE_ROWS}건까지 합칠 수 있습니다` };
+  const { rows, children, pendingPush, models } = await loadMergeRows(sql, t, unique);
+  if (rows.length !== unique.length) return { error: '상담을 찾을 수 없습니다' };
+  const plan = M.plan.planMerge(rows, { children, maxDayGap: MERGE_GAP_DAYS, forceWinnerId: typeof forceWinnerId === 'string' ? forceWinnerId : undefined });
+  if (pendingPush > 0) plan.blockers.push('makeedu 전송 대기 중인 상담이 있어 병합할 수 없습니다');
+  const winnerModels = new Set(models[plan.winnerId] ?? []);
+  const dropped = plan.loserIds.flatMap((id) => (models[id] ?? []).filter((m) => winnerModels.has(m)));
+  if (dropped.length > 0) plan.warnings.push(`같은 AI 모델의 분석이 양쪽에 있어 ${dropped.length}건은 남기는 상담 쪽만 보존됩니다`);
+  const sourceOf = (r) => M.origin.consultOriginLabel({ legacyKey: r.legacy_key ?? null, makeeduId: r.makeedu_id ?? null, makeeduPushedAt: r.makeedu_pushed_at ?? null, fromPublicIntake: r.from_public_intake ?? null });
+  return { plan, rows: rows.map((r) => ({ id: r.id, label: String(r.prospect_name ?? ''), outcome: String(r.outcome ?? ''), consultedAt: String(r.consulted_at ?? ''), source: sourceOf(r) })) };
+}
+
+/** mergeConsultations(winnerId, loserIds, choices) — 2.0 DB 함수 merge_enrollment_consultations를 고른 사람 신분으로. 반환 { ok, winnerId } · { error }. */
+export async function mergeConsultations(ctx, winnerId, loserIds, choices = {}) {
+  const { sql, t, user, importV2 } = ctx;
+  if (!user) return { error: '로그인이 필요합니다' };
+  if (!ctx.canWrite) return { error: '신규 콜&상담 권한이 없습니다' };
+  const M = await mergeRules(importV2);
+  const unique = uuidList([winnerId, ...(Array.isArray(loserIds) ? loserIds : [])]);
+  if (typeof winnerId !== 'string' || !winnerId || unique.length < 2) return { error: '병합 대상이 올바르지 않습니다' };
+  if (unique.length > MAX_MERGE_ROWS) return { error: `한 번에 ${MAX_MERGE_ROWS}건까지 합칠 수 있습니다` };
+  const { rows, children } = await loadMergeRows(sql, t, unique);
+  if (rows.length !== unique.length) return { error: '상담을 찾을 수 없습니다' };
+  const winner = rows.find((r) => r.id === winnerId);
+  if (!winner) return { error: '남길 상담을 찾을 수 없습니다' };
+  const plan = M.plan.planMerge(rows, { children, maxDayGap: MERGE_GAP_DAYS, forceWinnerId: winnerId });
+  if (plan.blockers.length > 0) return { error: plan.blockers[0] };
+  const built = M.plan.buildMergePatch(plan, rows, winnerId, choices && typeof choices === 'object' && !Array.isArray(choices) ? choices : {});
+  if (built.error !== undefined) {
+    const miss = built.error.startsWith('MISSING_CHOICE:') ? built.error.slice('MISSING_CHOICE:'.length) : null;
+    return { error: miss ? `'${M.policy.COLUMN_LABEL[miss] ?? miss}'을(를) 어느 쪽으로 남길지 정해주세요` : built.error };
+  }
+  const discarded = built.discarded.map((d) => ({ field: M.policy.COLUMN_LABEL[d.key] ?? d.key, values: d.values }));
+  const r = await asViewer(sql, user.id, (s) => s`select public.merge_enrollment_consultations(${winnerId}::uuid, ${plan.loserIds}::uuid[], ${s.json(built.patch)}) result`);
+  if (r.error) return { error: r.error.message };
+  await audit(sql, t, user.row, 'consultation_merge', 'enrollment_consultations', String(winner.prospect_name ?? ''),
+    { winnerId, loserIds: plan.loserIds, discarded, result: r.data[0]?.result ?? null });
+  return { ok: true, winnerId };
+}

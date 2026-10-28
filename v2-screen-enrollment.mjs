@@ -19,7 +19,9 @@
 //  | deleteEnrollmentConsultation(server/actions.ts) — 상담 삭제 | actions.deleteEnrollmentConsultation(성공 = { redirectTo } → 호스트가 이동 · 2.0 redirect) |
 //  | updateConsultationReportSection(server/actions.ts) — AI 리포트 섹션 글 고치기(사람) | actions.updateConsultationReportSection |
 //  | appendAiSummaryToConsultationContent(server/actions.ts) — 저장된 요약 붙이기(AI 호출 없음) | actions.appendAiSummaryToConsultationContent |
-//  | 그 밖의 저장(수업 배정·병합) | 아직 없음 — 2.0 실패 모양으로 거절 |
+//  | previewConsultationMerge(server/merge-actions.ts) — 병합 미리보기 | 읽기 — GET ?mergeIds=a,b[&mergeWinner=] |
+//  | mergeConsultations(server/merge-actions.ts) — 병합 | actions.mergeConsultations(DB 함수 merge_enrollment_consultations를 고른 사람 신분으로 · asViewer) |
+//  | 그 밖의 저장(수업 배정) | 아직 없음 — 2.0 실패 모양으로 거절 |
 //
 // 호스트에 붙일 때(의존)
 //  · Next 전용: next/link · next/navigation(useRouter — enrollment-kanban · column-cards · sheet-editable-cells · new-consultation-watcher · month-picker) ·
@@ -35,7 +37,7 @@ import { activeClasses, canViewClasses, detailRules, findMergeSuccessor, getAssi
   listReferrerOptions, loadConsultationReferrer, referrerCandidatesFor } from './v2-enrollment-detail.mjs';
 import { buildStats } from './v2-enrollment-stats.mjs';
 import { appendAiSummaryToConsultationContent, createEnrollmentConsultation, deleteEnrollmentConsultation, formDataOf, patchConsultationCells, setEnrollmentOutcome,
-  updateConsultationReportSection, updateEnrollmentConsultation } from './v2-enrollment-save.mjs';
+  mergeConsultations, previewConsultationMerge, updateConsultationReportSection, updateEnrollmentConsultation } from './v2-enrollment-save.mjs';
 
 const ID = 'enrollment', MENU = 'enrollment', ACTIONS = 'features/enrollment/server/actions.ts';
 const UUID_BODY = UUID.source.slice(1, -1);
@@ -97,6 +99,11 @@ async function load({ sql, params, tenantId: t, importV2 }) {
     if (!v.canWrite) return { page: 'referrers', result: { ok: false, error: '신규 콜&상담 권한이 없습니다' } };
     return { page: 'referrers', result: { ok: true, options: await listReferrerOptions(sql, await detailRules(importV2), t) } };
   }
+  // 병합 미리보기(2.0 previewConsultationMerge — 읽기라 GET) · 같은 판정(planMerge)·같은 문구.
+  if (params.mergeIds) {
+    const e = people.editors.find((x) => x.id === v.u.id);
+    return { page: 'mergePreview', result: await previewConsultationMerge({ sql, t, importV2, canWrite: v.canWrite, user: e ? { id: e.id } : null }, params.mergeIds.split(','), params.mergeWinner) };
+  }
   const path = params.v2path ?? '/enrollment';
   // 새 상담(2.0 new/page.tsx) — 보는 사람 + 소개 칸이 DB에 있는지(2.0 referrerColumnsReady — #95).
   if (path === '/enrollment/new') {
@@ -132,6 +139,8 @@ async function actCtx({ sql, body, tenantId: t, importV2 }) {
     user: e ? { id: e.id, tenantId: t, displayName: e.display_name, systemRole: e.role, row: e } : null };
 }
 const ACT = (argCount, fn) => ({ validate: (raw) => serverCall(raw, [ACTIONS], argCount), run: async (ctx) => fn(await actCtx(ctx), ctx.body.args) });
+/** 병합은 2.0 server/merge-actions.ts에 있다. */
+const ACTM = (argCount, fn) => ({ validate: (raw) => serverCall(raw, ['features/enrollment/server/merge-actions.ts'], argCount), run: async (ctx) => fn(await actCtx(ctx), ctx.body.args) });
 
 const YM = /^\d{4}-\d{2}$/, YMD = /^\d{4}-\d{2}-\d{2}$/;
 export const screen = {
@@ -142,7 +151,9 @@ export const screen = {
     range: /^[0-9a-z]{0,4}$/, year: /^[0-9y]{1,4}$/, received: /^.{0,10}$/, from: /^[a-z]{0,20}$/,
     trend: /^[a-z]{0,10}$/, trendMonth: YM, trendFrom: YMD, trendTo: YMD, trendSpan: /^[0-9a-z]{0,6}$/,
     pg: /^[a-z]{0,10}$/, pgMonth: YM, pgFrom: YMD, pgTo: YMD, pgSpan: /^[0-9a-z]{0,6}$/, referrers: /^1$/, form: /^[A-Za-z0-9_-]{1,64}$/,
+    mergeIds: new RegExp(`^${UUID_BODY}(?:,${UUID_BODY}){0,19}$`, 'i'), mergeWinner: UUID,
   },
+  paramMax: { mergeIds: 800 },
   actions: {
     updateEnrollmentConsultation: ACT(2, (c, args) => updateEnrollmentConsultation(c, formDataOf(args[1]))),
     createEnrollmentConsultation: ACT(2, (c, args) => createEnrollmentConsultation(c, formDataOf(args[1]))),
@@ -151,6 +162,7 @@ export const screen = {
     deleteEnrollmentConsultation: ACT(2, (c, args) => deleteEnrollmentConsultation(c, formDataOf(args[1]))),
     updateConsultationReportSection: ACT(2, (c, args) => updateConsultationReportSection(c, formDataOf(args[1]))),
     appendAiSummaryToConsultationContent: ACT(1, (c, args) => appendAiSummaryToConsultationContent(c, args[0])),
+    mergeConsultations: ACTM(3, (c, args) => mergeConsultations(c, args[0], args[1], args[2] ?? {})),
   },
   load,
 };

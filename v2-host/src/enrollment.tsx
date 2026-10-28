@@ -74,6 +74,17 @@ registerHostHandler('features/enrollment/server/actions.ts', 'deleteEnrollmentCo
   return undefined;
 });
 
+/** 병합 미리보기(2.0 previewConsultationMerge) — 읽기라 GET ?mergeIds=…(저장하는 사람의 권한으로). 못 받으면 2.0 실패 모양 { error }. */
+registerHostHandler('features/enrollment/server/merge-actions.ts', 'previewConsultationMerge', (ids, forceWinnerId) => {
+  const q = new URLSearchParams({ mergeIds: (Array.isArray(ids) ? ids : []).join(',') });
+  if (typeof forceWinnerId === 'string' && forceWinnerId) q.set('mergeWinner', forceWinnerId);
+  const actor = hostActor();
+  if (actor) q.set('actor', actor);
+  return fetch(`/api/v2/${SCREEN}?${q}`, { headers: { Accept: 'application/json' } })
+    .then(async (r) => (r.ok ? ((await r.json()) as { result: unknown }).result : { error: '병합 미리보기를 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.' }))
+    .catch(() => ({ error: '병합 미리보기를 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.' }));
+});
+
 const ACTOR_KEY = `v2-host-actor:${SCREEN}`;
 /** 저장하는 사람 — 3.0 띠가 고른 값(같은 출처 저장소 + v2-host-actor 알림). 바뀌면 다시 읽는다(끌기·칸 수정 권한이 그 사람의 것). */
 function useActor() {
