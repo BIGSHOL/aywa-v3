@@ -468,8 +468,11 @@
   function showSearch(){state.search='';const node=$('#modal');node.innerHTML=`<header class="live-dialog-header"><h2 id="modal-title">검색</h2><button class="icon-button" data-close="modal" aria-label="닫기">${icon('close')}</button></header><div class="live-form"><input id="global-search" aria-label="통합 검색" placeholder="학생, 학교, 수업, 선생님 검색" autocomplete="off"></div><div class="live-search-results live-scroll" id="search-results">${searchResults()}</div>`;if(!node.open)node.showModal();$('#global-search').focus();attachScroll();}
 
   const views={home,students,admissions,classes,learning,finance,staff,parents,shuttle,approvals,resources,calendar,settings,inbox:ax.inbox,requests:ax.requests,automation:ax.automation,...(flowUI?{flow:()=>flowUI.fullView()}:{})};
+  // 업무 흐름과 작업 공간은 첫 자료의 집계·미리보기와 각 영역의 기록 GET으로 그린다.
+  // 학생·청구 등 옛 상세 화면을 열 때에만 전체 상세를 읽는다.
+  const needsFull=page=>page!=='home'&&page!=='flow'&&!page.startsWith('workspace-');
   function render(){
-    if(state.page&&state.page!=='home'&&!fullReady){shell();ax.decorateShell();$('#main').innerHTML='<p class="live-note" role="status">상세 자료를 불러오는 중입니다.</p>';ensureFull().then(()=>render(),()=>{$('#main').innerHTML='<p class="live-note" role="alert">상세 자료를 불러오지 못했습니다. 화면을 다시 열어 주세요.</p>';});return;}
+    if(state.page&&needsFull(state.page)&&!fullReady){shell();ax.decorateShell();$('#main').innerHTML='<p class="live-note" role="status">상세 자료를 불러오는 중입니다.</p>';ensureFull().then(()=>render(),()=>{$('#main').innerHTML='<p class="live-note" role="alert">상세 자료를 불러오지 못했습니다. 화면을 다시 열어 주세요.</p>';});return;}
     clearSpotlight();
     const focused=document.activeElement,focusId=focused?.id,selection=typeof focused?.selectionStart==='number'?focused.selectionStart:null;
     const navHref=focused?.closest('#sidebar')&&focused.getAttribute('href');
