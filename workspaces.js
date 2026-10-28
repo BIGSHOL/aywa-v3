@@ -83,7 +83,8 @@ window.createWorkspaces = function createWorkspaces(api) {
     return `<div class="ws" data-family="${h(id)}" data-view="${kind}"><div class="page-heading ws-heading"><div><p class="ws-group">${h(a.group||'')}</p><h1>${h(a.label)}</h1><p>${h(d?.summary||a.summary||'')}</p></div><div class="heading-actions">${btn('이 화면으로 대화','ask',`data-id="${h(id)}"`)}${btn('업무 요청','request',`data-id="${h(id)}"`,true)}</div></div><p class="ws-state">${pill(STATE_LABEL[st.key],st.key==='available'?'blue':st.key==='missing'||st.key==='unavailable'?'amber':'')}<span>${h(d?.sourceLabel||'')}${d?.sourceLabel?' · ':''}${caption()}</span>${st.note?`<span>${h(st.note)}</span>`:''}</p>${critical(a)}${signalList(a)}<div class="ws-body"><section class="ws-main" id="ws-main" aria-label="${h(a.label)} 기록">${mainHtml(a)}</section><aside class="ws-side">${actionPanel(a)}<div id="ws-local">${localLog(a)}</div>${linkedRequests(a)}${relations(a)}</aside></div></div>`;
   }
   function critical(a){
-    const d=data(a.id),metrics=(d?.metrics||[]).slice(0,4),trend=d?.trend;
+    // KPI 추세 카드가 있으면 6개까지, 누적 건수 막대는 그리지 않는다(원장 10-28 "전체 몇건 … 아무 도움이 안됨"). 공통 설명은 카드 아래 한 번.
+    const all=d0=>d0?.metrics||[],d=data(a.id),isKpi=all(d).some(m=>m.kind==='kpi'),metrics=all(d).slice(0,isKpi?6:4),trend=isKpi?null:d?.trend,bases=[...new Set(metrics.filter(m=>m.kind==='kpi').map(m=>m.basis||''))],sharedBasis=bases.length===1?bases[0]:'';
     if(!metrics.length&&!trend?.points?.length)return '';
     const value=m=>m.value===null||m.value===undefined?'기록 없음':`${fmt(m.value)}${m.unit||''}`;
     const points=(trend?.points||[]).map(p=>trend.granularity==='day'?{date:p.date,value:p.value}:{month:p.date,value:p.value});
@@ -91,8 +92,8 @@ window.createWorkspaces = function createWorkspaces(api) {
     // KPI = 최근 변화(원장 10-28 "원하는건 추세"): 지금 값 · 직전 기간 대비(좋아짐/나빠짐 색) · 추세선(기간마다 값은 마우스·키보드로).
     const kpiCard=m=>{const pct=m.unit==='%',shown=v=>v===null?'기록 없음':`${pct?v.toFixed(1):fmt(v)}${m.unit||''}`,d=m.delta,dir=d===null||d===0?0:d>0?1:-1,good=m.better==='up'?dir>0:m.better==='down'?dir<0:null,per=m.period==='month'?'전월':'지난 7일';
       const change=d===null?'비교할 기간 기록 없음':dir===0?`${per} 대비 변화 없음`:`${per} 대비 ${dir>0?'▲':'▼'} ${pct?`${Math.abs(d).toFixed(1)}%p`:`${fmt(Math.abs(d))}${m.unit||''}`}${!pct&&m.previous>0?` (${Math.round(Math.abs(d)/m.previous*100)}%)`:''}`;
-      return `<div class="ws-metric ws-kpi"><span>${h(m.label)}</span><strong>${h(shown(m.value))}</strong><small class="ws-kpi-change${dir===0||good===null?'':good?' good':' bad'}">${h(change)}</small><span class="ws-kpi-spark">${api.lineChart(m.points,{key:'value',label:m.label,unit:m.unit||'',basis:m.basis||''})}</span>${m.basis?`<small>${h(m.basis)}</small>`:''}</div>`;};
-    return `<section class="ws-critical" aria-label="핵심 지표">${metrics.length?`<div class="ws-metrics">${metrics.map(m=>m.kind==='kpi'?kpiCard(m):`<div class="ws-metric"><span>${h(m.label)}</span><strong>${h(value(m))}</strong>${m.detail?`<small>${h(m.detail)}</small>`:''}</div>`).join('')}</div>`:''}${chartHtml?`<div class="ws-trend"><h2>${h(trend.label||'추이')}</h2>${chartHtml}</div>`:''}</section>`;
+      return `<div class="ws-metric ws-kpi"><span>${h(m.label)}</span><strong>${h(shown(m.value))}</strong><small class="ws-kpi-change${dir===0||good===null?'':good?' good':' bad'}">${h(change)}</small><span class="ws-kpi-spark">${api.lineChart(m.points,{key:'value',label:m.label,unit:m.unit||'',basis:m.basis||''})}</span>${m.basis&&m.basis!==sharedBasis?`<small>${h(m.basis)}</small>`:''}</div>`;};
+    return `<section class="ws-critical" aria-label="핵심 지표">${metrics.length?`<div class="ws-metrics">${metrics.map(m=>m.kind==='kpi'?kpiCard(m):`<div class="ws-metric"><span>${h(m.label)}</span><strong>${h(value(m))}</strong>${m.detail?`<small>${h(m.detail)}</small>`:''}</div>`).join('')}</div>`:''}${sharedBasis?`<p class="ws-kpi-basis">${h(sharedBasis)}</p>`:''}${chartHtml?`<div class="ws-trend"><h2>${h(trend.label||'추이')}</h2>${chartHtml}</div>`:''}</section>`;
   }
   const byPriority=(x,y)=>(PRIORITY_ORDER.indexOf(x.priority)+1||9)-(PRIORITY_ORDER.indexOf(y.priority)+1||9);
   function signalCard(id,s,withFamily=false){

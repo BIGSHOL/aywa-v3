@@ -13,6 +13,7 @@
 .ws-metric small{font-size:var(--ax-xs);overflow-wrap:anywhere}
 .ws-kpi-change{font-weight:600}.ws-kpi-change.good{color:var(--ax-positive)}.ws-kpi-change.bad{color:var(--ax-danger)}
 .ws-kpi-spark{display:flex;height:40px;margin-top:2px}.ws-kpi-spark .chart-line{flex:1 1 auto}
+.ws-kpi-basis{grid-column:1/-1;margin:0;font-size:var(--ax-xs);color:var(--ax-ink)}
 .ws-trend{min-width:0;padding:14px 16px;border:1px solid var(--ax-line);border-radius:8px}
 .ws-trend h2{font-size:var(--ax-sm);margin-bottom:8px}
 .ws-line{height:120px}
