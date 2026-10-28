@@ -11,7 +11,7 @@ export async function academicFamilies(ctx) {
   const out = {};
   const week = addDays(asOf, -6);
 
-  // 선생님 원스크린 — 학생 칸 기록과 그 화면에서 쓴 보고서·ClassNote 공지.
+  // 선생님 수업보고서(2.0 원스크린, 원장 10-28 이름 변경) — 학생 칸 기록과 그 화면에서 쓴 보고서·ClassNote 공지.
   const [os] = await sql`select count(*)::int total, count(*) filter (where session_date >= ${monthStart})::int rows_m, count(distinct student_id) filter (where session_date >= ${monthStart})::int students, count(distinct class_id) filter (where session_date >= ${monthStart})::int classes, max(session_date)::text last from public.onescreen_daily_sessions where tenant_id=${t} and session_date <= ${asOf} ${notTest}`;
   const [osReports] = await sql`select count(*)::int c from public.lesson_reports where tenant_id=${t} and source='onescreen' and report_date between ${monthStart} and ${asOf} ${notTest}`;
   // 공지마다 누가·어느 반·누구에게 보냈는지로 이름을 붙인다(원장 10-28 "전부 이름이 일치하는데 뭘 말하고 싶은건지 알 수가 없음"). 본문은 싣지 않는다.
@@ -22,7 +22,7 @@ export async function academicFamilies(ctx) {
   const noticeLabel = n => { const cls = n.class_names || [], who = n.first_student ? `${n.first_student}${n.targets > 1 ? ` 외 ${n.targets - 1}명` : ''}` : n.targets ? `${n.targets}명` : '대상 없음';
     return `${n.sender || '보낸 사람 모름'} → ${cls.length ? `${cls[0]}${cls.length > 1 ? ` 외 ${cls.length - 1}개 반` : ''} · ` : ''}${who}`; };
   const failedNotices = notices.filter(n => ['failed', 'partial'].includes(n.status) && n.d >= week);
-  out.onescreen = family('onescreen', '선생님 원스크린(수업 마감)', {
+  out.onescreen = family('onescreen', '선생님 수업보고서', {
     summary: `${month} 원스크린 학생 칸 기록 ${os.rows_m}건(학생 ${os.students}명·반 ${os.classes}개), 원스크린에서 쓴 보고서 ${osReports.c}건.`,
     metrics: [metric('이번 달 학생 칸 기록', os.rows_m, '건', '수업일 기준'), metric('기록된 학생', os.students, '명', '이번 달'), metric('원스크린에서 쓴 보고서', osReports.c, '건', '이번 달 · 수업일 기준'), metric('ClassNote 공지', notices.length, '건', '개별·반 공지 전체 기간')],
     trend: monthlyTrend('월별 원스크린 학생 칸 기록', '건', await sql`select to_char(session_date,'YYYY-MM') as month, count(*)::int as value from public.onescreen_daily_sessions where tenant_id=${t} and session_date <= ${asOf} ${notTest} group by 1`, asOf),

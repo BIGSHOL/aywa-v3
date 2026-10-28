@@ -112,7 +112,7 @@ export const families = [
 
   // ───────────────────────────── 수업 ─────────────────────────────
   {
-    id: 'onescreen', label: '선생님 원스크린(수업 마감)', domain: '수업',
+    id: 'onescreen', label: '선생님 수업보고서(수업 마감)', domain: '수업',
     menuKeys: ['teacher_onescreen'], routes: ['/onescreen'], api: [], crons: ['/api/cron/ment-style-rebuild'],
     featureDirs: ['onescreen', 'report-templates'],
     audience: ['teacher', 'master', 'admin'],

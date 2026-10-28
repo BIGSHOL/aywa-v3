@@ -79,7 +79,7 @@ export const AREAS = [
       req('tasks-notifications.follow', '할 일 후속 요청', [sel('kind', '할 일 종류', 'staffTaskKind'), memo('요청 내용', true)], ['api-staff-tasks'], '할 일 처리 확인 요청', '아래 종류의 할 일이 어떻게 처리되고 있는지 확인해 알려 주세요. 할 일은 원래 기록이 바뀌어야 닫힙니다.'),
     ] },
   // ───────── 수업 ─────────
-  { id: 'onescreen', label: '선생님 원스크린', group: 'class', viewKind: 'sheet', summary: '선생님이 보고서·출결·공지·보강을 한곳에서 마감하는 화면을 봅니다.',
+  { id: 'onescreen', label: '선생님 수업보고서', group: 'class', viewKind: 'sheet', summary: '선생님이 수업보고서를 쓰고 보내며 출결·공지·보강까지 한곳에서 마감하는 화면(2.0 원스크린)을 봅니다.',
     facets: [fc('reports', '수업보고서', route('/onescreen')), fc('video', '영상 제출 현황', route('/onescreen/video-homework'), 'face'), fc('notice', '학부모 공지', text('src/features/onescreen/server/notice-actions.ts', 'sendOnescreenNotice'))],
     actions: [
       req('onescreen.unwritten', '보고서 작성 요청', [cls(), date(), memo()], ['saveLessonReport', 'saveMyReportTemplate', 'issueReportAttachmentUploadTicket'], '수업보고서 작성 요청', '아래 반·날짜의 수업보고서를 작성해 주세요. 작성하면 발송 큐에 올라갑니다.'),
@@ -379,7 +379,7 @@ export const AREAS = [
     ] },
   // ───────── 역할별 화면 ─────────
   { id: 'teacher-workspace', label: '강사 화면', group: 'roles', viewKind: 'records', summary: '선생님이 보는 내 메뉴·내 정보 화면을 미리 봅니다.',
-    facets: [fc('me', '내 정보', route('/me')), fc('onescreen', '선생님 원스크린', route('/onescreen'), 'face')],
+    facets: [fc('me', '내 정보', route('/me')), fc('onescreen', '선생님 수업보고서', route('/onescreen'), 'face')],
     actions: [
       pre('teacher-workspace.preview', '강사 화면 미리보기', [staff('선생님'), f('lang', '화면 언어', 'select', { required: true, options: [{ value: 'ko', label: '한국어' }, { value: 'en', label: 'English' }], evidence: { file: 'src/features/teacher-view/i18n.ts', has: ['SHEET_LANGS = ["ko", "en"]'] } })], ['setMyTeacherLang', 'switchToTeacherView'], '강사 화면 미리보기', '선생님 내 메뉴와 언어 설정을 봅니다.'),
       req('teacher-workspace.account', '계정 정보 정리 요청', [staff('선생님'), memo('바꿀 내용', true)], ['updateMyEmail'], '계정 정보 정리', '선생님 계정의 이메일·보고서 이름을 정리해 주세요.'),

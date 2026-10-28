@@ -1,0 +1,13 @@
+/* 한 줄 컨트롤은 높이 하나 (원장 2026-10-28 "모든 버튼 크기 높이 일치시킬것. 제각각인게 아주 많음").
+   단추·작은 단추·입력칸·드롭다운·날짜·공용 선택창·검색 단추·화면 이동 칩이 모두 --ax-control-h 한 값이다. 이 파일은 맨 마지막에
+   읽혀 앞 파일들의 픽셀 높이(26·28·30·32·38·40·42px …)를 덮는다. 여러 줄 카드형 단추·글상자·체크 칸은 내용 높이 그대로.
+   2.0 형태 화면(.v2s, 2.0 부품 iframe)은 2.0 모양을 지키므로 대상이 아니다. */
+:root { --ax-control-h-sm: var(--ax-control-h); }
+.ax-enabled :is(.button, .icon-button, .cpick-trigger, .ax-search-trigger, .ws-link, .ax-suggestions button, .ax-filter button, .ws-facets button, .fl-entity, .xi-entry, select,
+  input:not([type=checkbox], [type=radio], [type=range], [type=file], [type=color], [type=hidden])):not(.v2s *) {
+  height: var(--ax-control-h) !important; min-height: var(--ax-control-h) !important; box-sizing: border-box;
+}
+.ax-enabled :is(select, input:not([type=checkbox], [type=radio], [type=range], [type=file], [type=color], [type=hidden])):not(.v2s *) {
+  padding-block: 0 !important; line-height: normal;
+}
+.ax-enabled .icon-button:not(.v2s *) { width: var(--ax-control-h); min-width: var(--ax-control-h); }

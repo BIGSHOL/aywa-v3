@@ -558,11 +558,11 @@ window.AxCatalog = {
   },
   {
    "id": "onescreen",
-   "label": "선생님 원스크린",
+   "label": "선생님 수업보고서",
    "group": "수업",
    "groupId": "class",
    "page": "workspace-onescreen",
-   "summary": "선생님이 보고서·출결·공지·보강을 한곳에서 마감하는 화면을 봅니다.",
+   "summary": "선생님이 수업보고서를 쓰고 보내며 출결·공지·보강까지 한곳에서 마감하는 화면(2.0 원스크린)을 봅니다.",
    "viewKind": "sheet",
    "facets": [
     {
@@ -7703,7 +7703,7 @@ window.AxCatalog = {
     },
     {
      "id": "onescreen",
-     "label": "선생님 원스크린",
+     "label": "선생님 수업보고서",
      "kind": "face"
     }
    ],

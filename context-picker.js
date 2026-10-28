@@ -62,7 +62,7 @@ window.ContextPicker = (function () {
     const described = [c.hint ? `${c.id}-hint` : '', c.describedBy || ''].filter(Boolean).join(' ');
     const attrs = Object.entries(c.attrs || {}).filter(([k]) => /^data-[a-z0-9-]+$/.test(k)).map(([k, v]) => ` ${k}="${h(v)}"`).join('');
     const cols = c.columns || [];
-    return `<div class="cpick${c.multiple ? ' is-multi' : ''}${selected.length ? ' has-value' : ''}" id="${id}" data-cpick="${id}" data-cpick-name="${h(c.name)}"${attrs}>${label}<div class="cpick-field">${c.multiple ? `<ul class="cpick-chips" aria-label="선택한 ${h(c.label || '항목')}">${chips(e)}</ul>` : ''}<button type="button" class="cpick-trigger" id="${id}-trigger" aria-haspopup="listbox" aria-expanded="false" aria-controls="${id}-panel" aria-label="${h(triggerName(e))}" ${described ? `aria-describedby="${h(described)}"` : ''} ${c.required ? 'aria-required="true"' : ''}><span class="cpick-shown">${shown(e)}</span>${ICON.down}</button>${c.clearable ? `<button type="button" class="cpick-clear" data-cpick-clear aria-label="${h(c.label || '선택')} 모두 지우기" ${selected.length ? '' : 'hidden'}>${ICON.close}</button>` : ''}</div>${(c.dropped || []).length ? `<p class="cpick-dropped" role="note">지금 고를 수 없어 선택에서 뺐습니다: ${h(c.dropped.map(d => `${d.label}${d.reason ? `(${d.reason})` : ''}`).join(', '))}</p>` : ''}${c.hint ? `<small class="cpick-hint" id="${id}-hint">${h(c.hint)}</small>` : ''}<div class="cpick-panel" id="${id}-panel" style="--cpick-cols:${h(track(cols))};--cpick-ccols:${h(compactOf(c).cols)};--cpick-areas:${h(compactOf(c).areas)}" ${supportsPopover ? 'popover="manual"' : ''} hidden><div class="cpick-search"><input type="search" id="${id}-search" data-cpick-search role="combobox" aria-expanded="true" aria-controls="${id}-list" aria-autocomplete="list" aria-activedescendant="" aria-label="${h(c.label || c.ariaLabel || '항목')} 검색" placeholder="${h(c.searchPlaceholder || '이름으로 찾기')}" autocomplete="off" enterkeyhint="done"></div>${cols.length ? `<div class="cpick-cols" aria-hidden="true"><span style="--ca:tick"></span>${cols.map(col => `<span class="${col.align === 'end' ? 'is-end' : ''}${col.cend ? ' is-cend' : ''}" style="--ca:c-${h(col.key)}">${h(col.label)}</span>`).join('')}</div>` : ''}<ul class="cpick-list" id="${id}-list" role="listbox" ${c.multiple ? 'aria-multiselectable="true"' : ''} aria-label="${h(c.label || c.ariaLabel || '항목')} 목록"></ul><p class="cpick-status" role="status" aria-live="polite"></p><div class="cpick-foot"><span class="cpick-note"></span>${c.multiple ? '<button type="button" class="button" data-cpick-done>선택 완료</button>' : ''}</div></div><div class="cpick-inputs">${inputs(e)}</div></div>`;
+    return `<div class="cpick${c.multiple ? ' is-multi' : ''}${selected.length ? ' has-value' : ''}" id="${id}" data-cpick="${id}" data-cpick-name="${h(c.name)}"${attrs}>${label}<div class="cpick-field">${c.multiple ? `<ul class="cpick-chips" aria-label="선택한 ${h(c.label || '항목')}">${chips(e)}</ul>` : ''}<button type="button" class="cpick-trigger" id="${id}-trigger" aria-haspopup="listbox" aria-expanded="false" aria-controls="${id}-panel" aria-label="${h(triggerName(e))}" ${described ? `aria-describedby="${h(described)}"` : ''} ${c.required ? 'aria-required="true"' : ''}><span class="cpick-shown">${shown(e)}</span>${ICON.down}</button>${c.clearable ? `<button type="button" class="cpick-clear" data-cpick-clear aria-label="${h(c.label || '선택')} 모두 지우기" ${selected.length ? '' : 'hidden'}>${ICON.close}</button>` : ''}</div>${(c.dropped || []).length ? `<p class="cpick-dropped" role="note">지금 고를 수 없어 선택에서 뺐습니다: ${h(c.dropped.map(d => `${d.label}${d.reason ? `(${d.reason})` : ''}`).join(', '))}</p>` : ''}${c.hint ? `<small class="cpick-hint" id="${id}-hint">${h(c.hint)}</small>` : ''}<div class="cpick-panel" id="${id}-panel" style="--cpick-cols:${h(track(cols))};--cpick-ccols:${h(compactOf(c).cols)};--cpick-areas:${h(compactOf(c).areas)}" ${supportsPopover ? 'popover="manual"' : ''} hidden><div class="cpick-search"><input type="search" id="${id}-search" data-cpick-search role="combobox" aria-expanded="true" aria-controls="${id}-list" aria-autocomplete="list" aria-activedescendant="" aria-label="${h(c.label || c.ariaLabel || '항목')} 검색" placeholder="${h(c.searchPlaceholder || (cols.length ? `${cols.map(col => col.label).join('·')}로 찾기` : '이름으로 찾기'))}" autocomplete="off" enterkeyhint="done"></div>${cols.length ? `<div class="cpick-cols" aria-hidden="true"><span style="--ca:tick"></span>${cols.map(col => `<span class="${col.align === 'end' ? 'is-end' : ''}${col.cend ? ' is-cend' : ''}" style="--ca:c-${h(col.key)}">${h(col.label)}</span>`).join('')}</div>` : ''}<ul class="cpick-list" id="${id}-list" role="listbox" ${c.multiple ? 'aria-multiselectable="true"' : ''} aria-label="${h(c.label || c.ariaLabel || '항목')} 목록"></ul><p class="cpick-status" role="status" aria-live="polite"></p><div class="cpick-foot"><span class="cpick-note"></span>${c.multiple ? '<button type="button" class="button" data-cpick-done>선택 완료</button>' : ''}</div></div><div class="cpick-inputs">${inputs(e)}</div></div>`;
   }
 
   function row(e, o, i) {
@@ -76,14 +76,15 @@ window.ContextPicker = (function () {
   }
 
   /* ---------- filtering, remote search ---------- */
-  function matches(o, terms) { if (!terms.length) return true; const s = o._s ?? (o._s = norm([o.title, o.sub, o.context, ...Object.values(o.cells || {}), o.search].join(' '))); return terms.every(t => s.includes(t)); }
+  // 검색은 그 창에 보이는 것 전부를 항상 찾는다(원장 10-28 "검색은 드랍다운 내에 검색가능한 모든것을 항상 검색하도록"): 이름·보조 줄·칩·모든 열·사유·덧붙인 검색어.
+  function matches(o, terms) { if (!terms.length) return true; const s = o._s ?? (o._s = norm([o.title, o.sub, o.context, o.chip, o.reason, ...Object.values(o.cells || {}), o.search].join(' '))); return terms.every(t => s.includes(t)); }
   function refresh(root) {
     const e = entryOf(root); if (!e) return;
     const list = root.querySelector('.cpick-list'), status = root.querySelector('.cpick-status'), note = root.querySelector('.cpick-note');
     const raw = e.query.trim(), terms = raw.toLowerCase().normalize('NFC').split(/\s+/).filter(Boolean).map(norm);
     const r = e.remote, useRemote = Boolean(e.config.remote && raw && r?.query === raw && r.status === 'ready');
     let items = useRemote ? r.items : [...e.data.values()].filter(o => matches(o, terms));
-    if (useRemote) for (const v of e.selected) if (!items.some(o => o.value === v) && matches(optionOf(e, v), terms)) items = [optionOf(e, v), ...items];
+    if (useRemote) { const seen = new Set(items.map(o => o.value)); items = [...items, ...[...e.data.values()].filter(o => !seen.has(o.value) && matches(o, terms))]; } // remote results first, then every loaded row that matches
     e.view = items.slice(0, MAX_ROWS);
     list.innerHTML = e.view.map((o, i) => row(e, o, i)).join('');
     const loading = e.config.remote && raw && r?.query === raw && r.status === 'loading';
@@ -365,7 +366,20 @@ window.ContextPicker = (function () {
         cells: Object.fromEntries([['date', r.date || ''], ['status', r.status || ''], ...fieldCols.map((l, i) => [`f${i}`, (r.fields || []).find(f => f.label === l)?.value ?? ''])]) });
       return { noun: '기록', unit: '건', option, options: (items || []).map(option), compactBelow: 600,
         columns: [{ key: 'name', label: familyLabel, w: 'minmax(0,1.4fr)' }, ...(hasDate ? [{ key: 'date', label: '일자', w: '6.4em' }] : []), ...(hasStatus ? [{ key: 'status', label: '상태', w: 'minmax(4em,.6fr)' }] : []), ...fieldCols.map((l, i) => ({ key: `f${i}`, label: l, w: numeric.has(l) ? '6.6em' : 'minmax(0,.9fr)', align: numeric.has(l) ? 'end' : undefined }))],
-        searchPlaceholder: '이름·상태·날짜로 찾기', note: `${total && total > (items || []).length ? `불러온 ${(items || []).length}건 표시 · 전체 ${Number(total).toLocaleString('ko-KR')}건은 검색어로 찾습니다` : `${(items || []).length}건`}` };
+        searchPlaceholder: `${[familyLabel, ...(hasDate ? ['일자'] : []), ...(hasStatus ? ['상태'] : []), ...fieldCols].join('·')}로 찾기`, note: `${total && total > (items || []).length ? `불러온 ${(items || []).length}건 표시 · 전체 ${Number(total).toLocaleString('ko-KR')}건은 검색어로 찾습니다` : `${(items || []).length}건`}` };
+    },
+    /** Short fixed choices (중요도·결과·단계 …) in the same aligned picker. items: [{value, title, cells:{key:text}, search}]. */
+    choices({ items, columns = [{ key: 'name', label: '선택' }], noun = '항목', unit = '개' }) {
+      const options = (items || []).map(i => ({ value: String(i.value), title: i.title, sub: i.sub || '', context: i.context || '', cells: i.cells || {}, search: i.search || '' }));
+      return { noun, unit, columns, options, note: `${options.length}${unit}` };
+    },
+    /** Months, newest first, with what each month holds when the copy knows it (db.trend: 청구 원생 · 청구액). */
+    months({ db, months }) {
+      const trend = new Map((db?.trend || []).map(t => [t.month, t]));
+      const options = [...new Set(months || [])].sort().reverse().map(m => { const t = trend.get(m) || {};
+        return { value: m, title: `${m.slice(0, 4)}년 ${Number(m.slice(5, 7))}월`, cells: { students: Number.isFinite(t.payingStudents) ? `${t.payingStudents.toLocaleString('ko-KR')}명` : '', billed: Number.isFinite(t.billed) ? won(t.billed) : '' }, search: m }; });
+      return { noun: '달', unit: '개월', options, note: `${options.length}개월`, clearable: false,
+        columns: [{ key: 'name', label: '월', w: 'minmax(0,1fr)' }, { key: 'students', label: '청구 원생', w: 'minmax(5em,.8fr)', align: 'end' }, { key: 'billed', label: '청구액', w: 'minmax(7em,1fr)', align: 'end' }] };
     },
   };
 

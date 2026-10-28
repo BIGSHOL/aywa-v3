@@ -41,6 +41,7 @@ const routes=new Map([
  ['/exit-insight.css',['exit-insight.css','text/css; charset=utf-8']],
  ['/v2-screens.js',['v2-screens.js','text/javascript; charset=utf-8']],
  ['/v2-screens.css',['v2-screens.css','text/css; charset=utf-8']],
+ ['/controls.css',['controls.css','text/css; charset=utf-8']],
  ['/fonts/PretendardVariable.woff2',['../../public/fonts/PretendardVariable.woff2','font/woff2']],
 ]);
 const headers={

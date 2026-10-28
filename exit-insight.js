@@ -41,11 +41,15 @@ window.createExitInsight = function createExitInsight(api) {
     fetch(`${ENDPOINT}?from=${encodeURIComponent(st.from)}&to=${encodeURIComponent(st.to)}`, { headers: { Accept: 'application/json' } }).then(r => (r.ok ? r.json() : null)).then(j => { if (j && ask === st.ask && $('#modal')?.open) { st.data = j; paint(); } }).catch(() => {});
   }
 
+  // 비교 달도 공용 선택창(원장 10-28 "모든 드랍다운 … 서식 일치") — 달마다 청구 원생·청구액을 함께. 못 그리면 기존 칸.
+  function monthPick(id, label, value, fallback) { const CP = window.ContextPicker; if (!CP) return fallback;
+    try { return `<span class="xi-month">${CP.html({ id, name: id, label, clearable: false, selected: [value], ...CP.lists.months({ db: window.AcademySnapshot, months: st.index?.periods || [] }) })}</span>`; } catch { return fallback; } }
+  const pickedMonth = id => { const el = document.getElementById(id); return el?.matches?.('[data-cpick]') ? el.querySelector('input[type=hidden]')?.value || '' : el?.value || ''; };
   function pairs(d) {
     const list = st.index?.pairs || [], periods = st.index?.periods || [];
     const chips = list.map(p => `<button type="button" class="xi-pair" data-xi="open" data-from="${h(p.from)}" data-to="${h(p.to)}" aria-pressed="${p.from === d.from && p.to === d.to}"><strong>${mlabel(p.from)} → ${mlabel(p.to)}</strong><span>${signed(p.delta)}</span></button>`).join('');
     const opts = sel => periods.map(m => `<option value="${h(m)}" ${m === sel ? 'selected' : ''}>${ym(m)}</option>`).join('');
-    return `<div class="xi-pairs" role="group" aria-label="비교할 두 달">${chips}<span class="xi-custom"><label><span>앞 달</span><select id="xi-from">${opts(d.from)}</select></label><label><span>뒤 달</span><select id="xi-to">${opts(d.to)}</select></label>${btn('보기', 'data-xi="custom"')}</span></div>`;
+    return `<div class="xi-pairs" role="group" aria-label="비교할 두 달">${chips}<span class="xi-custom">${monthPick('xi-from', '앞 달', d.from, `<label><span>앞 달</span><select id="xi-from">${opts(d.from)}</select></label>`)}${monthPick('xi-to', '뒤 달', d.to, `<label><span>뒤 달</span><select id="xi-to">${opts(d.to)}</select></label>`)}${btn('보기', 'data-xi="custom"')}</span></div>`;
   }
   function bars(d) {
     const rows = [];
@@ -118,7 +122,7 @@ window.createExitInsight = function createExitInsight(api) {
     const t = event.target.closest?.('[data-xi]'); if (!t) return;
     const kind = t.dataset.xi;
     if (kind === 'open') { event.preventDefault(); open(t.dataset.from, t.dataset.to); }
-    else if (kind === 'custom') { const f = $('#xi-from')?.value, to = $('#xi-to')?.value; if (!f || !to || f >= to) { toast('앞 달이 뒤 달보다 이른 두 달을 골라 주세요.'); return; } open(f, to); }
+    else if (kind === 'custom') { const f = pickedMonth('xi-from'), to = pickedMonth('xi-to'); if (!f || !to || f >= to) { toast('앞 달이 뒤 달보다 이른 두 달을 골라 주세요.'); return; } open(f, to); }
     else if (kind === 'row') toggleRow(t.dataset.xiRow);
     else if (kind === 'filter') applyFilter(t.dataset.filter || '');
     else if (kind === 'more') { document.querySelectorAll('#modal .xi-cluster[data-more]').forEach(n => { n.hidden = false; }); t.remove(); }
