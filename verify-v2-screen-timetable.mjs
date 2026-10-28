@@ -50,7 +50,7 @@ await check('매개변수는 주(week) + 시간표 X(exit·anchor)뿐 — 나머
 
 await check('저장 동작 = 2.0 서버 함수 이름 그대로(그 2.0 파일이 실제로 내보내는 함수) · 아직 잇지 않은 함수는 없다(→ 호스트가 보기 전용으로 거절)', async () => {
   const MODULES = { moveEnrollmentsBatch: 'features/enrollments/server/actions.ts', updateEnrollmentsAttendanceBatch: 'features/enrollments/server/actions.ts',
-    moveClassSlots: 'features/timetable/server/move-actions.ts' };
+    moveClassSlots: 'features/timetable/server/move-actions.ts', holdSingleEnrollment: 'features/students/server/actions.ts', endSingleEnrollment: 'features/students/server/actions.ts' };
   assert.deepEqual(Object.keys(T.screen.actions).sort(), Object.keys(MODULES).sort());
   for (const [n, file] of Object.entries(MODULES)) {
     const text = await src(file);
@@ -124,7 +124,7 @@ try {
     assert.equal(wd.filter(w => aliveKey.has(`${w.subject}:${w.id}`)).length, 0);
   });
 
-  await check('저장(2단계): 학원이 반 이동·요일 편집·반 블록 옮기기 — 같은 DB 함수·판정 · 2.0 문구·반환 모양 · 알림 줄 · 감사로그 via · 바깥 요청 0 (되돌림)', async () => {
+  await check('저장(2단계): 학원이 반 이동·요일 편집·반 블록 옮기기·대기/퇴원 보내기 — 같은 DB 함수·판정 · 2.0 문구·반환 모양 · 알림 줄 · 감사로그 via · 바깥 요청 0 (되돌림)', async () => {
     const STU = '6219e442-aa57-455f-a5bc-834b222d9e1c', ENR = '7d419d88-5a2d-4e32-b29d-c8c19e399e7a', TO = '50d2ece7-6514-4474-8cfc-dd8983d15c18';
     const MOD = 'features/enrollments/server/actions.ts', A = T.screen.actions, ROLL = new Error('rollback'), X = await loadExtra(importV2);
     const tx = async fn => { let out; try { await db.begin(async sql => { out = await fn(sql); throw ROLL; }); } catch (e) { if (e !== ROLL) throw e; } return out; };
@@ -186,6 +186,31 @@ try {
     assert.equal(fixed.log.metadata.via, '3.0 연습 복사본'); assert.equal(fixed.log.metadata.moves[0].to.start, '09:00:00');
     const [kept] = await db`select valid_to from public.class_schedules where id=${slot.id}`;
     assert.equal(kept.valid_to, null, '시험 뒤 배치는 그대로');
+
+    // 명단에서 대기·퇴원으로 보내기 — 2.0 form action(FormData)을 { $formData } 줄로 받는다. 권한 = 원생 상태 변경.
+    const SA = 'features/students/server/actions.ts', form = o => ({ $formData: Object.entries(o) });
+    const reason = (await importV2('features/withdrawals/types.ts')).WITHDRAWAL_REASONS.find(r => r !== '기타');
+    const roster = (sql, name, who, fields) => call(sql, name, { module: SA, actor: who, args: [null, form(fields)] });
+    assert.deepEqual(await tx(sql => roster(sql, 'holdSingleEnrollment', teacher.id, { enrollmentId: ENR, studentId: STU, date: today })), { error: X.STUDENT_STATUS_DENIED });
+    const held = await tx(async sql => ({
+      first: await roster(sql, 'holdSingleEnrollment', actor, { enrollmentId: ENR, studentId: STU, date: today }),
+      again: await roster(sql, 'holdSingleEnrollment', actor, { enrollmentId: ENR, studentId: STU, date: today }),
+      row: (await sql`select on_hold from public.enrollments where id=${ENR}`)[0],
+      logs: await sql`select metadata from public.audit_logs where tenant_id=${tenantId} and created_at >= now() and action='enrollment_hold'`,
+    }));
+    assert.deepEqual([held.first, held.again, held.row.on_hold, held.logs.length, held.logs[0].metadata.via], [undefined, undefined, true, 1, '3.0 연습 복사본'], '대기 · 이미 대기면 기록 없이 통과');
+    assert.deepEqual(await tx(sql => roster(sql, 'endSingleEnrollment', actor, { enrollmentId: ENR, studentId: STU, date: today })), { error: '종료 사유를 골라 주세요.' });
+    const last = await tx(sql => roster(sql, 'endSingleEnrollment', actor, { enrollmentId: ENR, studentId: STU, date: today, reason }));
+    assert.match(last?.error ?? '', /퇴원보고서/, '마지막 반은 퇴원보고서로(2.0 viaReportMessage)');
+    const ended = await tx(async sql => {
+      await sql`insert into public.enrollments (tenant_id, student_id, class_id, start_date) values (${tenantId}, ${STU}, ${TO}, ${today}::date - 3)`;
+      return { res: await roster(sql, 'endSingleEnrollment', actor, { enrollmentId: ENR, studentId: STU, date: today, reason, memo: '시험' }),
+        row: (await sql`select end_date::text e, withdrawal_reason r, withdrawal_memo m from public.enrollments where id=${ENR}`)[0],
+        log: (await sql`select metadata from public.audit_logs where tenant_id=${tenantId} and created_at >= now() and action='enrollment_end'`)[0] };
+    });
+    assert.deepEqual([ended.res, ended.row.e, ended.row.r, ended.row.m, ended.log.metadata.via], [undefined, today, reason, '시험', '3.0 연습 복사본'], '같은 과목 다른 반이 있으면 종료');
+    const [back] = await db`select end_date, on_hold, withdrawal_reason from public.enrollments where id=${ENR}`;
+    assert.deepEqual([back.end_date, back.on_hold, back.withdrawal_reason], [null, false, null], '시험 뒤 수강은 그대로');
   });
 
   await check('시간표 X = 2.0 loadExitOverlay 모양 · 줄의 학생은 그 달 창에 실제로 퇴원(퇴원)·그 과목 수강을 끝낸(수강종료) 사람 — 독립 SQL', async () => {

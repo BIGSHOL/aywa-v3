@@ -7,7 +7,7 @@
 //    · teacherNicknames = `getTeacherNicknameMap` · labSeparateEnrollmentIds = `getLabSeparateEnrollmentIdSet` · seatPins = `getSeatPins`.
 // 주·과목·보기 해석과 화면 조립은 호스트가 2.0 page.tsx와 같은 함수로 한다(v2-host/src/timetable-page.tsx).
 // 저장(2단계, Docker 복사본)은 v2-timetable-save.mjs — 2.0 부품이 부르는 서버 함수를 같은 이름의 동작으로 받는다.
-import { timetableActions, readEditors, loadExtra } from './v2-timetable-save.mjs';
+import { timetableActions, readPeople, loadExtra } from './v2-timetable-save.mjs';
 // 시간표 X(퇴원 겹침)는 읽기 — 같은 GET에 exit=<과목>&anchor=<YYYY-MM>로 묻는다(v2-timetable-exit.mjs, 2.0 loadExitOverlay).
 import { loadExitOverlay } from './v2-timetable-exit.mjs';
 
@@ -330,12 +330,12 @@ async function readMemoSheets(sql, t, R) {
 export async function buildTimetableData({ sql, params, tenantId: t, R, X }) {
   const today = R.kstToday(), thisWk = R.thisMonday(today);
   const week = params.week && R.isValidYmd(params.week) ? R.mondayOf(params.week) : thisWk, ref = R.getWeekReferenceDate(week, today);
-  const [settings, { slots: raw }, labSep, colorRows, nickRows, seatPins, editors] = await Promise.all([
+  const [settings, { slots: raw }, labSep, colorRows, nickRows, seatPins, people] = await Promise.all([
     readSettings(sql, t, R), readSlots(sql, t, R, ref, today),
     sql`select id::text id from public.enrollments where tenant_id=${t} and lab_separate`,
     sql`select display_name, english_name, bg_color, text_color from public.users where tenant_id=${t} and bg_color is not null`,
     sql`select display_name, english_name, status::text status from public.users where tenant_id=${t} and english_name is not null`,
-    readSeatPins(sql, t, R, ref), readEditors(sql, t, R, X),
+    readSeatPins(sql, t, R, ref), readPeople(sql, t, R, X),
   ]);
   const rosters = await readRosters(sql, t, R, raw, ref);
   const [makeup, seatWeek, scheduledImports, memoSheets] = await Promise.all([
@@ -351,9 +351,11 @@ export async function buildTimetableData({ sql, params, tenantId: t, R, X }) {
     settings: { operations: settings.operations, modules: { disabled: settings.disabledModules } },
     teacherColors, teacherNicknames: R.buildTeacherNicknameMap(nickRows.map(u => ({ displayName: u.display_name ?? null, englishName: u.english_name ?? null, active: u.status === 'active' }))),
     labSeparateEnrollmentIds: labSep.map(r => r.id), seatPins, makeup, seatWeek, scheduledImports, memoSheets,
-    // 2.0 canEdit = 지난 주가 아님 + 수업 관리 '전체'. 3.0엔 로그인이 없어 '전체'인 사람(editors) 중 3.0 띠에서 고른 사람으로 저장한다.
-    // 아직 잇지 않은 저장(동작이 없는 함수)은 호스트가 '복사본 보기 전용'으로 거절한다. 수업 나누기는 2.0에서도 꺼져 있다.
-    viewer: { canEdit: relation !== 'past' && editors.length > 0, canEditRoster: relation !== 'past' && editors.length > 0, canSplit: false, staffSubjects: [], editors },
+    // 2.0 canEdit = 지난 주가 아님 + 수업 관리 '전체' · canEditRoster = 지난 주가 아님 + 원생 상태 변경(canManageStudentStatusNow).
+    // 3.0엔 로그인이 없어 '전체'인 사람(editors) 중 3.0 띠에서 고른 사람으로 저장한다 — 명단 문은 그중 원생 상태를 바꿀 수 있는 사람이
+    // 있을 때 열리고, 고른 사람이 못 바꾸면 2.0 문구로 거절된다. 수업 나누기는 2.0에서도 꺼져 있다.
+    viewer: { canEdit: relation !== 'past' && people.editors.length > 0, canEditRoster: relation !== 'past' && people.editors.some(e => people.statusIds.has(e.id)),
+      canSplit: false, staffSubjects: [], editors: people.editors },
   };
 }
 

@@ -22,34 +22,48 @@ let extraPromise = null;
 /** 저장에만 쓰는 2.0 순수 모듈 — 한 번만 불러온다. */
 function loadExtra(importV2) {
   extraPromise ??= (async () => {
-    const [perms, roles, bulk, helpers, dbErrors, cm] = await Promise.all([
+    const [perms, roles, bulk, helpers, dbErrors, cm, dbError, reasonDetail, via, statusPerm, statusAccess, special] = await Promise.all([
       'lib/permissions.ts', 'lib/auth/role-hierarchy.ts', 'features/enrollments/bulk-transfer.ts',
       'features/enrollments/server/assign-helpers.ts', 'features/enrollments/db-errors.ts', 'features/timetable/lib/class-move.ts',
+      'lib/supabase/db-error.ts', 'features/withdrawals/reason-detail.ts', 'features/withdrawals/via-report.ts',
+      'features/owner/student-status-permissions.ts', 'features/students/status-access.ts', 'features/classes/special-lecture.ts',
     ].map(p => importV2(p)));
-    return { perms, ROLE_LABEL: roles.ROLE_LABEL, transferDateError: bulk.transferDateError, DAY_ORDER: helpers.DAY_ORDER, toKoreanDbError: dbErrors.toKoreanDbError, cm };
+    return { perms, ROLE_LABEL: roles.ROLE_LABEL, transferDateError: bulk.transferDateError, DAY_ORDER: helpers.DAY_ORDER, toKoreanDbError: dbErrors.toKoreanDbError, cm,
+      explainDbError: dbError.explainDbError, readReasonForm: reasonDetail.readReasonForm, via, studentStatusManagerIds: statusPerm.studentStatusManagerIds,
+      canManageStudentStatus: statusAccess.canManageStudentStatus, STUDENT_STATUS_DENIED: statusAccess.STUDENT_STATUS_DENIED, special };
   })().catch(error => { extraPromise = null; throw error; });
   return extraPromise;
 }
 
 const RANK = ['master', 'admin', 'manager'];
-/** 저장할 수 있는 사람 — 수업 관리 '전체'(2.0 canManageTenant(role,'classes')). 원장 먼저, 같은 역할은 이름순. */
-export async function readEditors(sql, t, R, X) {
+/**
+ * 저장할 수 있는 사람(editors) — 수업 관리 '전체'(2.0 canManageTenant(role,'classes')). 원장 먼저, 같은 역할은 이름순. 운영자 계정은 뺀다.
+ * statusIds — 그중 원생 상태(대기·퇴원)도 바꿀 수 있는 사람 = 2.0 canManageStudentStatusNow(원생 쓰기 '전체' + 원생 상태 변경 담당;
+ * 담당 명단은 resolve.ts처럼 저장 원문의 specialAccess에서 studentStatusManagerIds로 읽는다).
+ */
+export async function readPeople(sql, t, R, X) {
   const [users, supers, [row]] = await Promise.all([
     sql`select id::text id, display_name, system_role::text role from public.users where tenant_id=${t} and status::text='active' and display_name is not null`,
-    sql`select id::text id from public.super_admins`.catch(() => []),
+    sql`select id::text id from public.super_admins`,
     sql`select data from public.tenant_settings where tenant_id=${t}`,
   ]);
   const stored = plain(row?.data) ? row.data : null, base = R.baseSettingsFor(R.presetOfStored(stored));
-  const permissions = { ...base.permissions, ...(plain(stored?.permissions) ? stored.permissions : {}) };
+  const storedPermissions = plain(stored?.permissions) ? stored.permissions : undefined;
+  const permissions = { ...base.permissions, ...(storedPermissions ?? {}) };
   const matrix = X.perms.resolveMatrix(Array.isArray(permissions.overrides) ? permissions.overrides : []);
   const userOverrides = Array.isArray(permissions.userOverrides) ? permissions.userOverrides : [];
   const operators = new Set(supers.map(s => s.id));
-  return users
-    .filter(u => !operators.has(u.id) && X.perms.accessLevel(u.role, 'classes', X.perms.applyUserOverrides(matrix, u.id, u.role, userOverrides)) === 'full')
+  const level = (u, menu) => X.perms.accessLevel(u.role, menu, X.perms.applyUserOverrides(matrix, u.id, u.role, userOverrides));
+  const managerIds = X.studentStatusManagerIds(storedPermissions?.specialAccess);
+  const chosen = users.filter(u => !operators.has(u.id) && level(u, 'classes') === 'full');
+  const editors = chosen
     .map(u => ({ id: u.id, name: u.display_name, role: X.ROLE_LABEL[u.role] ?? '', rank: RANK.includes(u.role) ? RANK.indexOf(u.role) : RANK.length }))
     .sort((a, b) => a.rank - b.rank || a.name.localeCompare(b.name, 'ko'))
     .map(({ rank, ...u }) => u);
+  const statusIds = new Set(chosen.filter(u => level(u, 'students') === 'full' && X.canManageStudentStatus({ id: u.id, systemRole: u.role }, false, managerIds)).map(u => u.id));
+  return { editors, statusIds };
 }
+export const readEditors = async (sql, t, R, X) => (await readPeople(sql, t, R, X)).editors;
 
 /** 고른 사람으로 저장 — 저장 가능한 사람이 아니면 null(호출부가 2.0의 거절 문구를 돌려준다). 맞으면 그 사람의 신분을 세운다. */
 async function actAs(sql, t, R, X, actorId) {
@@ -200,6 +214,125 @@ async function updateEnrollmentsAttendanceBatch(sql, t, R, X, actorId, [edits]) 
   return { count: applied.length };
 }
 
+// ── 2.0 features/students/server/actions.ts — 명단에서 대기·퇴원으로 보내기 ─────────────────────────────────────────────
+// 권한 = 2.0 canManageStudentStatusNow(원생 쓰기 '전체' + 원생 상태 변경 담당 — readPeople.canStatus). 수정은 고른 사람의 신분과
+// authenticated 역할로 — 수강 보호 트리거(student_status_private.guard_enrollment)가 2.0처럼 권한을 한 번 더 본다.
+// ⚠️ 2.0 endSingleEnrollment는 수학 수강을 끝내면 구글 시트에 적는다(recordMathWithdrawalToSheet, 응답 뒤) — 바깥 호출이라 부르지 않는다.
+
+/** 2.0 인자의 FormData(호스트가 { $formData: [[이름, 글자]…] }로 보낸다) → 서버의 FormData. */
+function formArg(v) {
+  if (!plain(v) || !Array.isArray(v.$formData) || v.$formData.length > 50) throw bad();
+  const fd = new FormData();
+  for (const pair of v.$formData) {
+    if (!Array.isArray(pair) || pair.length !== 2 || typeof pair[0] !== 'string' || typeof pair[1] !== 'string' || pair[0].length > 40 || pair[1].length > 4000) throw bad();
+    fd.append(pair[0], pair[1]);
+  }
+  return fd;
+}
+const formArgs = args => { if (args.length !== 2) throw bad(); return [null, formArg(args[1])]; };
+
+/** 고른 사람이 원생 상태를 바꿀 수 있으면 그 신분을 세운다(아니면 null → 2.0 STUDENT_STATUS_DENIED). */
+async function statusActAs(sql, t, R, X, actorId) {
+  if (!actorId) return null;
+  const people = await readPeople(sql, t, R, X), actor = people.editors.find(e => e.id === actorId);
+  if (!actor || !people.statusIds.has(actor.id)) return null;
+  await sql`select set_config('request.jwt.claims', ${JSON.stringify({ sub: actor.id, role: 'authenticated' })}, true)`;
+  return actor;
+}
+const why = (X, e, scope, fallback) => X.explainDbError(dbError(e), { scope, fallback }).message;
+
+/** via-report.ts loadEndRows — 학생의 수강 전부(과목 불문 · 끝난 것 포함) + 상태·퇴원일. 반 하나라도 못 읽으면 던진다. */
+async function loadEndRows(sql, t, X, studentId) {
+  const [[student], enrollments] = await Promise.all([
+    sql`select status::text status, withdrawn_at::text withdrawn_at from public.students where tenant_id=${t} and id=${studentId}`,
+    sql`select id::text id, class_id::text class_id, start_date::text start_date, end_date::text end_date, is_transferred from public.enrollments where tenant_id=${t} and student_id=${studentId} order by id`,
+  ]);
+  if (!student) throw new Error('학생을 찾지 못했습니다');
+  const classIds = [...new Set(enrollments.map(e => e.class_id))];
+  const classes = classIds.length ? await sql`select id::text id, class_name, subject, is_special from public.classes where tenant_id=${t} and id = any(${classIds}::uuid[])` : [];
+  const byId = new Map(classes.map(c => [c.id, c]));
+  if (classIds.some(id => !byId.has(id))) throw new Error('수강 반 정보를 확인하지 못했습니다');
+  return {
+    status: String(student.status), withdrawnAt: student.withdrawn_at ?? null,
+    rows: enrollments.map(e => { const c = byId.get(e.class_id); return { id: e.id, classId: e.class_id, className: c.class_name, subject: c.subject, start: e.start_date, end: e.end_date,
+      isTransferred: e.is_transferred ?? undefined, isSpecial: X.special.isSpecialLecture({ isSpecial: c.is_special, className: c.class_name }) }; }),
+  };
+}
+
+/** via-report.ts lastCourseViaReport — 끝내면 이어지는 반이 없는(사실상 퇴원)·그 과목 마지막 반이면 퇴원보고서로 보내는 문구. 조회 실패는 통과시키지 않는다. */
+async function lastCourseViaReport(sql, t, X, input) {
+  try {
+    return await sql.savepoint(async s => {
+      let studentId = input.studentId || null;
+      if (!studentId) {
+        const first = input.enrollmentIds[0];
+        if (!first || !UUID.test(first)) return null;
+        studentId = (await s`select student_id::text student_id from public.enrollments where tenant_id=${t} and id=${first}`)[0]?.student_id ?? null;
+        if (!studentId) return null;
+      }
+      if (!UUID.test(studentId)) throw new Error('학생 id');
+      const { status, withdrawnAt, rows } = await loadEndRows(s, t, X, studentId);
+      if (!X.via.lastCourseGateApplies(status, withdrawnAt)) return null;
+      return X.via.viaReportMessage(rows, input.enrollmentIds, input.date, withdrawnAt);
+    });
+  } catch (e) {
+    console.error(`withdrawals.viaReport.lastCourse: ${e?.code || ''} ${e?.message || ''}`);
+    return '수강 정보를 확인하지 못했습니다. 잠시 후 다시 시도해 주세요.';
+  }
+}
+
+/** enrollment-sync.ts endEnrollmentById — 수강 한 건 종료(미래 시작이면 시작일로 클램프 · 종료 사유·세부·메모). */
+async function endEnrollmentById(sql, t, X, enrollmentId, date, reason, notes, expectedStudentId) {
+  const FALLBACK = '수강 정보를 저장하지 못했습니다. 잠시 후 다시 시도해 주세요.';
+  if (!UUID.test(enrollmentId)) return { error: '수강 기록을 찾을 수 없습니다' };
+  const [enr] = await sql`select start_date::text start_date, class_id::text class_id, student_id::text student_id from public.enrollments where tenant_id=${t} and id=${enrollmentId}`;
+  if (!enr || (expectedStudentId && enr.student_id !== expectedStudentId)) return { error: '수강 기록을 찾을 수 없습니다' };
+  const endDate = String(enr.start_date) > date ? String(enr.start_date) : date;
+  try {
+    await asAuthenticated(sql, s => (notes
+      ? s`update public.enrollments set end_date=${endDate}::date, withdrawal_reason=${reason}, withdrawal_detail=${notes.detail}, withdrawal_memo=${notes.memo} where id=${enrollmentId}`
+      : s`update public.enrollments set end_date=${endDate}::date, withdrawal_reason=${reason} where id=${enrollmentId}`));
+  } catch (e) { return { error: why(X, e, 'students.enrollmentSync.endOne', FALLBACK) }; }
+  return { error: null, endDate, classId: enr.class_id ?? null, studentId: enr.student_id ?? null };
+}
+
+/** holdSingleEnrollment(_prev, formData) — 명단에서 대기로(이미 종료면 거절 · 이미 대기면 그대로 통과). */
+async function holdSingleEnrollment(sql, t, R, X, actorId, [, fd]) {
+  const actor = await statusActAs(sql, t, R, X, actorId);
+  if (!actor) return { error: X.STUDENT_STATUS_DENIED };
+  const enrollmentId = String(fd.get('enrollmentId') ?? '').trim(), studentId = String(fd.get('studentId') ?? '').trim();
+  const date = String(fd.get('date') ?? '').trim() || R.kstToday();
+  if (!enrollmentId) return { error: '수강 ID가 누락되었습니다' };
+  const [row] = UUID.test(enrollmentId) ? await sql`select id::text id, class_id::text class_id, student_id::text student_id, end_date::text end_date, on_hold
+    from public.enrollments where tenant_id=${t} and id=${enrollmentId}` : [];
+  if (!row || (studentId && studentId !== row.student_id)) return { error: '수강 기록을 찾을 수 없습니다' };
+  if (row.end_date) return { error: '이미 종료된 수강입니다' };
+  if (!row.on_hold) {
+    try { await asAuthenticated(sql, s => s`update public.enrollments set on_hold=true where id=${enrollmentId}`); }
+    catch (e) { return { error: why(X, e, 'students.holdSingleEnrollment', '수강을 대기로 바꾸지 못했습니다. 잠시 후 다시 시도해 주세요.') }; }
+    await audit(sql, t, actor, 'enrollment_hold', 'student', { studentId: row.student_id, classId: row.class_id, date, source: 'timetable_integrated_drag' });
+  }
+  return undefined;
+}
+
+/** endSingleEnrollment(_prev, formData) — 단일 수강 종료(사유 필수 · 마지막 반이면 퇴원보고서로). */
+async function endSingleEnrollment(sql, t, R, X, actorId, [, fd]) {
+  const actor = await statusActAs(sql, t, R, X, actorId);
+  if (!actor) return { error: X.STUDENT_STATUS_DENIED };
+  const enrollmentId = String(fd.get('enrollmentId') ?? '').trim(), studentId = String(fd.get('studentId') ?? '').trim();
+  const date = String(fd.get('date') ?? '').trim() || R.kstToday();
+  if (!enrollmentId) return { error: '수강 ID가 누락되었습니다' };
+  const picked = X.readReasonForm(fd, '종료');
+  if (picked.error !== undefined) return { error: picked.error };
+  const reason = picked.reason;
+  const lastCourse = await lastCourseViaReport(sql, t, X, { studentId: studentId || null, enrollmentIds: [enrollmentId], date });
+  if (lastCourse) return { error: lastCourse };
+  const res = await endEnrollmentById(sql, t, X, enrollmentId, date, reason, { detail: picked.detail, memo: picked.memo }, studentId || undefined);
+  if (res.error) return { error: res.error };
+  await audit(sql, t, actor, 'enrollment_end', 'student', { studentId: res.studentId || null, classId: res.classId ?? null, date: res.endDate, reason, detail: picked.detail, memo: picked.memo });
+  return undefined;
+}
+
 // ── 2.0 features/timetable/server/move-actions.ts ──────────────────────────────────────────────────────────────────────
 // 반 블록(화면의 한 칸 = 배치 여러 줄)을 다른 요일·교시로 — 판정 순서·문구 2.0 그대로.
 // ⚠️ 2.0은 '적용일 이후 그 교시로 찍힌 출결' 확인에서 attendance_records의 `date` 칸을 읽는데, 그 표의 날짜 칸은 `session_date`다
@@ -338,6 +471,8 @@ const ACTIONS = {
   moveEnrollmentsBatch: { module: ENROLLMENTS, args: moveArgs, run: moveEnrollmentsBatch },
   updateEnrollmentsAttendanceBatch: { module: ENROLLMENTS, args: daysArgs, run: updateEnrollmentsAttendanceBatch },
   moveClassSlots: { module: 'features/timetable/server/move-actions.ts', args: slotMoveArgs, run: moveClassSlots },
+  holdSingleEnrollment: { module: 'features/students/server/actions.ts', args: formArgs, run: holdSingleEnrollment },
+  endSingleEnrollment: { module: 'features/students/server/actions.ts', args: formArgs, run: endSingleEnrollment },
 };
 
 /** 공통 틀(v2-screens.mjs)의 actions — 2.0 함수 이름 그대로. rules = importV2 => 시간표 화면의 2.0 순수 모듈 묶음,
