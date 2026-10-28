@@ -1,13 +1,39 @@
 // 2.0 화면 · 출석부 (V2-SCREENS.md · 원장 2026-10-28 *"바로가기를 만들지말고 새 페이지를 만들어 db는 docker로"*).
-// 2.0 `/attendance`(src/app/(shell)/attendance/page.tsx)의 월별 출석부를 Docker 복사본에서 같은 규칙으로 다시 조립한다.
-//  · 읽기 = 2.0 `getMonthlyAttendanceMatrix`·`loadClassAxisRows`·`getDailyProcessingStatus`(features/attendance/server/*)의
-//    표·칸·조건을 SQL로 그대로. 서버 전용 모듈(supabase·server-only)이라 불러올 수 없어 조회만 옮기고, 판정은 2.0 순수 함수를
-//    importV2로 그대로 쓴다(귀속 `ownsAttendanceSlot` · 하루 접기 `rollupDay` · 칸 표기 `cellDisplay` · 파생 `deriveMarksFromReports` …).
-//  · 화면 조립 = page.tsx·matrix-table.tsx·matrix-row.tsx·attendance-cell.tsx의 계산(보기 모드·반 목록·정렬·칸 성격·표식)을 같은 함수로.
-//    .tsx 안에만 있는 몇 줄(31칸 채우기·날짜축·담당 강사 합집합·역할 판정)과 불러올 수 없는 resolve.ts의 설정 병합은 아래 PORTED에
-//    옮겼다 — verify가 2.0 원문과 맞는지 잡는다.
+// 화면 = 2.0 부품 그대로 — v2-host/src/attendance.tsx(진입점)·attendance-page.tsx(2.0 page.tsx의 JSX)가 2.0 React 부품과 2.0 CSS를
+// 같은 출처 iframe(/v2-host/attendance.html?…)에 그리고, 3.0 `#v2-attendance`(v2-screen-attendance.js)는 그 iframe 껍데기다.
+// 이 파일 = 그 부품들이 2.0에서 서버로부터 받던 것:
+//  · load = 2.0 page.tsx가 클라이언트 부품에 넘기는 props(같은 이름 · 같은 모양 — attendance-page.tsx의 AttendanceData).
+//    읽기는 2.0 `getMonthlyAttendanceMatrix`·`loadClassAxisRows`·`getDailyProcessingStatus`(features/attendance/server/*)의 표·칸·조건을
+//    SQL로 그대로(서버 전용 모듈이라 불러올 수 없어 조회만 옮긴다), 판정은 2.0 순수 함수를 importV2로 그대로 쓴다
+//    (귀속 `ownsAttendanceSlot` · 하루 접기 `rollupDay` · 칸 표기 `cellDisplay` · 파생 `deriveMarksFromReports` · 시수 `autoUnitsByDate` …).
+//    .tsx 안에만 있는 몇 줄(31칸 채우기·날짜축·담당 강사 합집합·역할 판정)과 불러올 수 없는 resolve.ts의 설정 병합은 아래 PORTED —
+//    verify가 2.0 원문과 맞는지 잡는다.
+//  · actions = 2.0 "use server" 함수와 1:1(이름 = 2.0 export 이름 · 인자 = 2.0 인자 · 같은 표·칸·감사로그). 호스트 shim이
+//    POST /api/v2/attendance/<함수> { module, actor, args }로 부른다(actor = 3.0 띠에서 고른 출결 전체 권한 직원 — 로그인 대신).
+//      2.0 모듈 · 함수                                              → 여기
+//      features/attendance/server/actions.ts      setAttendanceCell   → actions.setAttendanceCell (관리자 경로 · attendance_cell/_clear/_note)
+//      features/attendance/server/prefs-actions.ts saveAttendanceSort · saveAttendancePeriodMode · saveAttendanceHideRetired ·
+//                                                 saveAttendanceCollapsed → actions.같은 이름 (users.ui_prefs.attendance · 감사로그 없음 = 2.0과 같다)
+//      hub-search-actions.ts searchAttendanceHubStudents · intake/server/actions.ts searchIntakeStudents · previewAbsenceIntake ·
+//                                                 recordAbsenceIntake → actions.같은 이름 — 아직 옮기지 않아 **그 함수의 2.0 실패 모양**으로
+//                                                 답한다(쓰기 없음). shim 공통 거절 `{ok:false}`로는 부품이 결과를 읽다 깨진다.
+//      아직 받지 않는 것(shim이 '복사본 보기 전용' `{ok:false,error}`로 거절 — 부르는 2.0 부품이 모두 `"error" in res`로 읽는다):
+//        actions.ts setAttendanceRange(범위 지우기·채우기) · setAttendanceBulk · saveAttendance · linkMakeupToAbsence · searchMakeupStudents
+//        makeup-reservation-actions.ts getMakeupPeriodOptions · reserveMakeup · cancelMakeupReservation · setReservationReportMode
+//        prefs-actions.ts loadAttendanceViewPrefs(서버 전용 — load가 같은 값)
 // "오늘"은 복사본 기준일(백업 시각의 KST 날짜) — 3.0 다른 화면과 같은 날이다.
-// 2단계(저장) = 아래 `actions.cell` — 2.0 `setAttendanceCell`의 관리자 경로를 같은 표·칸·감사로그로(파일 끝 주석).
+//
+// ── 호스트에 붙일 때(v2-host 빌드가 출석부 진입점에서 닿는 것 — 2.0 Next에만 있는 경계) ──
+//  · "use server" 모듈 5개(빌드가 serverAction 자리표시로 바꾼다): features/attendance/server/actions.ts ·
+//    features/attendance/server/prefs-actions.ts · features/attendance/server/makeup-reservation-actions.ts ·
+//    features/attendance/server/hub-search-actions.ts · features/attendance/intake/server/actions.ts
+//  · next/navigation(shims/next-navigation): attendance/_components의 grid-context · cell-popover · sort-select · period-mode-toggle ·
+//    hide-retired-toggle · makeup-reserve-dialog · absence-intake-dialog, components의 filter-select · href-select · period-nav ·
+//    excel-import/excel-import-dialog · workspace/print-window · forms/recording-runtime · forms/use-frame-recordings · workspace/use-recording-lock
+//  · next/link: components/embed-link · components/workspace/window-link  · next/image: components/empty-state
+//  · server-only·next/cache: 닿는 곳 없음(서버 액션 모듈 안에만 있고, 그 모듈은 자리표시로 바뀐다).
+//  · 서버 부품이라 브라우저에 못 싣는 것 = page.tsx 자체(쿠키·세션·DB) → 이 파일의 load. 금액 열(청구액·등록 차수·단가·실급여)은
+//    회차 확정·금액 이월·강사 몫 조회를 아직 옮기지 않아 세우지 않는다(값 없는 열 = 거짓).
 import { readFile } from 'node:fs/promises';
 import { activeBackup } from './full-db-paths.mjs';
 import { scrub } from './domain-snapshot-core.mjs';
@@ -30,11 +56,11 @@ const MODULES = {
   studentTone: 'features/timetable/lib/student-tone.ts', seat: 'features/attendance/seat/seat.ts', effective: 'features/attendance/effective-records.ts',
   units: 'features/attendance/session-units.ts', edit: 'features/attendance/edit-window.ts', attHref: 'app/(shell)/attendance/_components/att-href.ts',
   holidaySheet: 'features/class-sheets/lib/holiday.ts', grid: 'features/attendance/grid/model.ts', pool: 'features/classes/makeup-pool.ts',
-  search: 'features/attendance/student-search.ts', viewPrefs: 'features/attendance/view-prefs.ts',
+  search: 'features/attendance/student-search.ts', viewPrefs: 'features/attendance/view-prefs.ts', hubSearch: 'features/attendance/hub-search.ts',
   // 2단계(저장) — setAttendanceCell이 쓰는 순수 규칙.
   typing: 'features/attendance/grid/typing.ts', scopeOwn: 'features/attendance/scope-ownership.ts', scopedSplit: 'features/attendance/scoped-split.ts',
   ghost: 'features/attendance/ghost-transfer.ts', saveTargets: 'features/attendance/save-targets.ts', unitsAudit: 'features/attendance/units-audit.ts',
-  perms: 'lib/permissions.ts', roles: 'lib/auth/role-hierarchy.ts', delegWin: 'features/classes/delegation-window.ts', tlabel: 'features/timetable/lib/teacher-label.ts',
+  payslip: 'features/payroll/payslip-access.ts', perms: 'lib/permissions.ts', roles: 'lib/auth/role-hierarchy.ts', delegWin: 'features/classes/delegation-window.ts', tlabel: 'features/timetable/lib/teacher-label.ts',
 };
 let rulesPromise = null;
 /** 2.0 순수 모듈 — 모듈마다 이름공간(같은 이름의 함수가 여러 모듈에 있다: monthBounds·addDays …). 실패하면 다음 요청에서 다시. */
@@ -149,8 +175,6 @@ export async function copyDay() {
   if (!asOfDay) { const { directory } = await activeBackup(); const m = JSON.parse(await readFile(new URL('manifest.json', directory), 'utf8')); asOfDay = new Date(new Date(m.capturedAt).getTime() + 9 * 3600000).toISOString().slice(0, 10); }
   return asOfDay;
 }
-const group = (rows, key) => { const m = new Map(); for (const r of rows) (m.get(key(r)) ?? m.set(key(r), []).get(key(r))).push(r); return m; };
-
 /** 학원 설정 — 2.0 `getTenantSettings`→`resolveSettings`의 운영·모듈·프리셋 칸. */
 export async function readSettings(sql, t, R) {
   const [row] = await sql`select s.data, tn.name from public.tenants tn left join public.tenant_settings s on s.tenant_id=tn.id where tn.id=${t}`;
@@ -537,52 +561,53 @@ async function readSubstituteCells(sql, t, R, teacherId, month, excludeClassIds)
     .sort((a, b) => a.date.localeCompare(b.date) || a.className.localeCompare(b.className, 'ko') || a.studentName.localeCompare(b.studentName, 'ko'));
 }
 
-/** 화면 문구 — 2.0 사전(`sheetT`/`sheetTf`, 한국어)을 그대로. 화면은 이 표만 읽는다(문구를 다시 적지 않는다). */
-const LABEL_KEYS = ['att.filter.subject', 'att.filter.subjectAll', 'att.filter.teacher', 'att.filter.teacherAll', 'att.filter.class', 'att.filter.classAll', 'att.nav.prev', 'att.nav.next', 'att.nav.current',
-  'att.period', 'att.period.aria', 'att.period.session', 'att.period.month', 'att.period.disabledTeacher', 'att.period.disabledNoClass', 'att.view', 'att.view.class', 'att.view.teacher', 'att.view.pickTeacher',
-  'att.sort', 'att.sort.aria', 'att.hideRetired', 'att.hideRetired.on', 'att.hideRetired.off', 'att.retired', 'att.scopeChip', 'att.scopeChip.title', 'att.stat.enrolled', 'att.stat.people', 'att.stat.rate',
-  'att.stat.noRecord', 'att.stat.absent', 'att.stat.late', 'att.stat.times', 'att.columns.toggle', 'att.columns.all', 'att.col.name', 'att.col.schoolGrade', 'att.col.schoolGradeTitle', 'att.col.lessonCount',
-  'att.col.lessonCountTitle', 'att.legend', 'att.legend.mixed', 'att.legend.classDay', 'att.legend.off', 'att.legend.holiday', 'att.legend.outside', 'att.legend.today', 'att.units.guide', 'att.units.math',
-  'att.units.eie', 'att.units.bridge', 'att.units.injaewon', 'att.cell.reserved', 'att.collapseAll', 'att.group.slotTitle', 'att.group.sinceTitle', 'att.group.workerReport', 'att.group.workerAttendance',
-  'att.totals.all', 'att.totals.search', 'att.totals.searching', 'att.totals.classes', 'att.totals.units', 'att.help.briefPre', 'att.help.brief', 'att.help.full', 'att.searchEmpty.where', 'att.search.ph',
-  'att.search.clear', 'att.search.totalsNote', 'att.hub.title', 'att.hub.hint', 'att.hub.seats', 'att.hub.seatOpen', 'att.hub.seatClosed', 'att.hub.monthly', 'att.hub.day', 'att.hub.prep', 'att.hub.open',
-  'att.hub.retired', 'att.hub.classesSuffix', 'att.hub.todayPre', 'att.hub.todayPost', 'att.hub.today.b', 'att.hub.today.c', 'att.hub.today.d', 'att.hub.noHomeroom', 'att.empty.desc', 'att.sub.readonly',
-  'att.sub.desc', 'att.row.split.mark', 'att.row.split.title', 'att.title', 'att.expandAll', 'att.search.count', 'att.search.none', 'att.cell.unmarked', 'att.cell.andNPeriods',
-  'att.cell.reservedShort', 'att.notices'];
-const labels = R => Object.fromEntries(LABEL_KEYS.map(k => [k, R.i18n.sheetT('ko', k)]));
-const SORT_KEYS = ['class', 'name', 'grade', 'role'];
+const SEARCH_SEED_MAX = 40; // 2.0 `HUB_SEARCH_MAX_QUERY`(att-search-seed.ts가 쓰는 길이) — verify가 원문과 맞춘다.
+
+/** 보는 사람 = 2.0의 로그인한 사람(관리자 보기) — 3.0엔 로그인이 없어 호스트가 고른 직원(출결 '전체' 권한)을 주소 `viewer`로 보낸다. */
+function pickViewer(editors, wanted) {
+  return editors.find(e => e.id === wanted) ?? editors.find(e => e.role === 'master') ?? editors[0] ?? null;
+}
 
 export const screen = {
   id: 'attendance', label: '출석부', order: 4,
+  // 2.0 `/attendance` searchParams(class·month·teacher·subject·mode·q) + 보는 사람(viewer).
   params: {
     month: /^\d{4}-(0[1-9]|1[0-2])$/, subject: /^[a-z][a-z0-9_]{0,30}$/, teacher: /^(?:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|seat:[a-z]{2,8})$/,
-    class: UUID, mode: /^(class|teacher)$/, sort: /^(class|name|grade|role)$/, period: /^(session|month)$/, retired: /^show$/,
+    class: UUID, mode: /^[a-z]{1,12}$/, q: /^[^\u0000-\u001f]{1,80}$/u, viewer: UUID,
   },
+  /**
+   * 2.0 page.tsx(서버 부품)가 JSX에 넘기는 값을 같은 이름·같은 모양으로 — 그리기는 호스트의 2.0 부품(attendance-page.tsx)이 한다.
+   * 그룹마다 `matrix`는 2.0 `AttendanceMatrix` 그대로다(단, 표가 안 읽는 `classes` 목록은 그룹마다 싣지 않고 맨 위 `base.classes` 한 벌만).
+   */
   async load({ sql, params, tenantId: t, importV2 }) {
-    const R = await loadRules(importV2), today = await copyDay(), L = labels(R);
-    // 정렬·날짜축·퇴직 숨김은 2.0에선 계정 보기 설정(ui_prefs.attendance) — 3.0엔 로그인이 없어 주소에 둔다(기본값은 2.0 DEFAULT_ATTENDANCE_PREFS).
-    const month = params.month ?? today.slice(0, 7), sortKey = R.sort.parseAttendanceSortKey(params.sort), periodMode = R.viewPrefs.parsePeriodMode(params.period);
-    const hideRetired = params.retired !== 'show', range = R.date.monthRange(month);
+    const R = await loadRules(importV2), today = await copyDay();
     const [settings, transitions] = await Promise.all([readSettings(sql, t, R), readTransitions(sql, t, R)]);
+    const editors = await actorsOf(sql, t, R, settings), viewer = pickViewer(editors, params.viewer);
+    // 2.0 `loadAttendanceViewPrefs` — 보는 사람의 users.ui_prefs.attendance(없으면 2.0 기본값).
+    const [prefRow] = viewer ? await sql`select ui_prefs from public.users where tenant_id=${t} and id=${viewer.id}` : [];
+    const viewPrefs = R.viewPrefs.parseAttendanceViewPrefs(prefRow?.ui_prefs?.attendance);
+    const searchSeed = String(params.q ?? '').trim().slice(0, SEARCH_SEED_MAX);
+    const month = params.month ?? today.slice(0, 7), sortKey = viewPrefs.sort, range = R.date.monthRange(month);
     const allClasses = await readClassAxis(sql, t, R, range.from, range.to, transitions);
     const ctx = { sql, t, R, settings, today, classes: allClasses, defs: new Map() };
     const { operations } = settings, disabled = settings.modules.disabled, on = id => R.modules.isModuleEnabled(disabled, id);
-    const seatOn = on('seat_attendance'), eieOn = on('eie'), subjectMaps = R.subjects.buildSubjectMaps(operations.subjects);
-    const holidays = R.cal.buildHolidayMap(operations.holidays);
+    const seatOn = on('seat_attendance'), payrollOn = on('payroll'), sessionBillingOn = on('session_billing'), eieOn = on('eie');
+    const subjectMaps = R.subjects.buildSubjectMaps(operations.subjects), T = key => R.i18n.sheetT('ko', key), Tf = (key, v) => R.i18n.sheetTf('ko', key, v);
 
-    // ── 과목 → 강사 → 반 계층(2.0 page.tsx 그대로). 관리자 보기 — 강사 본인 렌즈(myTeacherId)는 없다. ──
+    // ── 과목 → 강사 → 반 계층(2.0 page.tsx 그대로). 보는 사람은 관리자 계열(강사 렌즈 myTeacherId = null). ──
     const presentSubjects = new Set(allClasses.map(c => c.subject).filter(Boolean));
     const subjectOptions = [...subjectMaps.options.filter(o => presentSubjects.has(o.value)), ...[...presentSubjects].filter(s => !subjectMaps.options.some(o => o.value === s)).map(s => ({ value: s, label: subjectMaps.labelOf(s) }))];
     const effectiveSubject = params.subject && presentSubjects.has(params.subject) ? params.subject : null;
     const classesForSubject = effectiveSubject ? allClasses.filter(c => c.subject === effectiveSubject) : allClasses;
     const allTeacherOptions = [...new Map(classesForSubject.flatMap(c => classTeachers(c)).map(x => [x.id, { name: x.name, retired: !x.active }]))]
-      .map(([value, x]) => ({ value, label: x.retired ? R.i18n.sheetTf('ko', 'att.teacher.retiredName', { name: x.name }) : x.name, retired: x.retired }))
+      .map(([value, x]) => ({ value, label: x.retired ? Tf('att.teacher.retiredName', { name: x.name }) : x.name, retired: x.retired }))
       .sort((a, b) => Number(a.retired) - Number(b.retired) || a.label.localeCompare(b.label, 'ko'));
     const retiredCount = allTeacherOptions.filter(x => x.retired).length;
     const showSeats = seatOn && (!effectiveSubject || effectiveSubject === 'english');
-    const seatOptions = showSeats ? R.seat.SEAT_KEYS.map(k => ({ value: R.seat.seatFilterValue(k), label: `${R.seat.SEAT_NAME[k]} ${R.seat.SEAT_ROOM[k]}`, hint: R.i18n.sheetT('ko', 'att.seat.hint'), seat: true })) : [];
+    const seatOptions = showSeats ? R.seat.SEAT_KEYS.map(k => ({ value: R.seat.seatFilterValue(k), label: `${R.seat.SEAT_NAME[k]} ${R.seat.SEAT_ROOM[k]}`, hint: T('att.seat.hint') })) : [];
     const teacherOptions = [...allTeacherOptions.filter(x => !x.retired).map(({ value, label }) => ({ value, label })), ...seatOptions,
-      ...allTeacherOptions.filter(x => x.retired && (!hideRetired || x.value === params.teacher)).map(({ value, label }) => ({ value, label, hint: L['att.retired'], retired: true }))];
+      ...allTeacherOptions.filter(x => x.retired && (!viewPrefs.hideRetired || x.value === params.teacher)).map(({ value, label }) => ({ value, label, hint: T('att.retired') }))];
+    // 강사 드롭다운에서 자리를 고르면 2.0은 자리 화면으로 보낸다(redirect) — 호스트는 그 주소를 알려 주기만 한다.
     const seatPick = R.seat.parseSeatFilterValue(params.teacher);
     const effectiveTeacher = !seatPick && params.teacher && teacherOptions.some(x => x.value === params.teacher) ? params.teacher : null;
     const classesForFilters = classesForSubject.filter(c => !effectiveTeacher || R.sheet.classTaughtBy(c, effectiveTeacher));
@@ -592,15 +617,14 @@ export const screen = {
     const requestedMode = R.attHref.resolveViewMode({ modeParam: params.mode, classParam: effectiveClassId ?? undefined, isTeacher: false });
     const taughtClasses = effectiveTeacher ? classesForSubject.filter(c => R.sheet.classTaughtBy(c, effectiveTeacher)) : [];
     const mode = requestedMode === 'teacher' && taughtClasses.length > 0 ? 'teacher' : 'class';
-    const sinceIdx = mode === 'teacher' && effectiveTeacher ? R.asOf.buildHomeroomSinceIndex(transitions, R.asOf.historyWindowStart(today)) : null;
-    const sheetScope = R.sheet.teacherSheetClasses({ classes: classesForSubject, teacherId: effectiveTeacher, window: range, sinceIdx });
+    const homeroomSinceIdx = mode === 'teacher' && effectiveTeacher ? R.asOf.buildHomeroomSinceIndex(transitions, R.asOf.historyWindowStart(today)) : null;
+    const sheetScope = R.sheet.teacherSheetClasses({ classes: classesForSubject, teacherId: effectiveTeacher, window: range, sinceIdx: homeroomSinceIdx });
     const teacherClasses = sheetScope.classes;
     const base = await buildMatrix(ctx, { month, classId: null });
     const teacherMatrices = [];
     if (mode === 'teacher') for (const c of teacherClasses) teacherMatrices.push(await buildMatrix(ctx, { month, classId: c.id, periodMode: 'month', scopeTeacherId: effectiveTeacher, scopeSince: sheetScope.sinceByClass.get(c.id) ?? null }));
-    const matrix = mode === 'teacher' ? teacherMatrices[0] ?? base : effectiveClassId ? await buildMatrix(ctx, { month, classId: effectiveClassId, periodMode }) : base;
-
-    // 보이지 않는 '보강' 반(0241a) — 강사 전체 보기에만 한 묶음으로 붙인다.
+    const matrix = mode === 'teacher' ? teacherMatrices[0] ?? base : effectiveClassId ? await buildMatrix(ctx, { month, classId: effectiveClassId, periodMode: viewPrefs.periodMode }) : base;
+    // 보이지 않는 '보강' 반(0241a) — 강사 전체 보기에만 한 묶음(2.0 `loadMakeupPool`).
     const [pool] = mode === 'teacher' && effectiveTeacher ? await sql`select id from public.classes where tenant_id=${t} and teacher_id=${effectiveTeacher} and is_makeup_pool limit 1` : [];
     const poolMatrix = pool ? await buildMatrix(ctx, { month, classId: pool.id, periodMode: 'month' }) : null;
     const workerClassIds = mode === 'teacher' ? teacherClasses.map(c => c.id) : effectiveClassId ? [effectiveClassId] : [];
@@ -610,14 +634,15 @@ export const screen = {
     ]);
     const workerOf = id => { const w = workers.get(id) ?? null; return { workerLabel: R.worker.classWorkerLabel(w, 'ko'), workerSource: w?.source ?? null }; };
     const dayLabel = ymd => `${Number(ymd.slice(5, 7))}/${Number(ymd.slice(8, 10))}`;
+    const slim = m => ({ ...m, classes: [] });
     const groups = mode === 'teacher'
       ? teacherClasses.map((c, i) => ({ classId: c.id, className: R.className.classNameFor(c.className, 'ko'), subjectLabel: subjectMaps.labelOf(c.subject), unitSuffix: R.suffix.attendanceUnitSuffix(c.subject, operations.subjects),
-        isSpecial: c.isSpecial, matrix: teacherMatrices[i],
-        roleLabel: sheetScope.roles.get(c.id) === 'slot' ? R.i18n.sheetT('ko', 'att.role.slot') : c.teacherId !== effectiveTeacher && c.historicalTeachers?.some(x => x.id === effectiveTeacher) ? R.i18n.sheetT('ko', 'att.role.former') : null,
-        ...workerOf(c.id), sinceLabel: sheetScope.sinceByClass.get(c.id) ? R.i18n.sheetTf('ko', 'att.since', { date: dayLabel(sheetScope.sinceByClass.get(c.id)) }) : null }))
+        isSpecial: c.isSpecial, matrix: slim(teacherMatrices[i]),
+        roleLabel: sheetScope.roles.get(c.id) === 'slot' ? T('att.role.slot') : c.teacherId !== effectiveTeacher && c.historicalTeachers?.some(x => x.id === effectiveTeacher) ? T('att.role.former') : null,
+        ...workerOf(c.id), sinceLabel: sheetScope.sinceByClass.get(c.id) ? Tf('att.since', { date: dayLabel(sheetScope.sinceByClass.get(c.id)) }) : null }))
       : effectiveClassId && selectedClass ? [{ classId: effectiveClassId, className: R.className.classNameFor(selectedClass.className, 'ko'), subjectLabel: subjectMaps.labelOf(selectedClass.subject),
-        unitSuffix: R.suffix.attendanceUnitSuffix(selectedClass.subject, operations.subjects), isSpecial: selectedClass.isSpecial, matrix, ...workerOf(effectiveClassId) }] : [];
-    const makeupGroup = pool && poolMatrix && poolMatrix.students.length > 0 ? { classId: pool.id, className: R.attLabel.attendanceLabelOf('makeup', 'ko') ?? R.pool.MAKEUP_POOL_PREFIX, subjectLabel: '', matrix: poolMatrix } : null;
+        unitSuffix: R.suffix.attendanceUnitSuffix(selectedClass.subject, operations.subjects), isSpecial: selectedClass.isSpecial, matrix: slim(matrix), ...workerOf(effectiveClassId) }] : [];
+    const makeupGroup = pool && poolMatrix && poolMatrix.students.length > 0 ? { classId: pool.id, className: R.attLabel.attendanceLabelOf('makeup', 'ko') ?? R.pool.MAKEUP_POOL_PREFIX, subjectLabel: '', matrix: slim(poolMatrix) } : null;
     const allGroups = makeupGroup ? [...groups, makeupGroup] : groups;
     const statsCount = R.totals.sumCounts(allGroups.map(g => R.totals.sumCounts(g.matrix.students.map(s => R.totals.countMarks(g.matrix.marks[s.id] ?? {}, g.matrix.units[s.id] ?? {})))));
     const totalStudents = mode === 'teacher' ? new Set(teacherMatrices.flatMap(m => m.students.map(s => s.id))).size : matrix.stats.totalStudents;
@@ -629,138 +654,45 @@ export const screen = {
     const orderedRows = R.sort.sortAttendanceRows(allGroups.flatMap(g => g.matrix.students.map(s => ({ classId: g.classId, className: g.className, studentId: s.id, name: s.name, grade: s.grade,
       role: roleSessions ? roleFor(R, roleSessions, s.id, subjectOfClass.get(g.classId) ?? null, roleAnchorTeacher) : null }))), sortKey);
     const visibleDays = padTo31(matrix.days);
-
-    // 안내문(2.0 '안내 N' 토글 안) — 관리자 보기라 7일 잠금 안내는 없다.
+    // 도구 — 2.0 page.tsx 조건 그대로(보는 사람 = 관리자 계열).
+    const printClass = mode === 'class' && effectiveClassId && selectedClass && matrix.students.length > 0 ? { id: selectedClass.id, className: selectedClass.className } : null;
+    const payslipPolicy = { viewerIds: settings.permissions?.specialAccess?.payslipViewerIds ?? [], managerIds: settings.permissions?.specialAccess?.payslipManagerIds ?? [] };
+    const canOpenPayslip = mode === 'teacher' && !!effectiveTeacher && !!viewer && payrollOn && R.payslip.canViewPayslip({ id: viewer.id, systemRole: viewer.role }, payslipPolicy);
+    const tools = { printClass, showUnitsMaster: hubShown && !!viewer && ['master', 'admin', 'manager'].includes(viewer.role), canIntakeAbsence: !!viewer, canOpenPayslip };
+    // 안내문 — 2.0 `notices`(관리자 보기라 7일 잠금·실급여 축 안내는 없다). 굵은 낱말은 'b'.
     const notices = allGroups.length === 0 || sheetEmpty ? [] : [
-      mode === 'teacher' ? [['', R.i18n.sheetT('ko', 'att.notice.scope.a')], ['b', R.i18n.sheetT('ko', 'att.notice.scope.b')], ['', R.i18n.sheetT('ko', 'att.notice.scope.c')], ['b', R.i18n.sheetT('ko', 'att.notice.scope.d')], ['', R.i18n.sheetT('ko', 'att.notice.scope.e')]] : null,
-      statsCount.recorded === 0 && !allGroups.some(g => g.matrix.derivedActive) ? [['', R.i18n.sheetT('ko', mode === 'teacher' ? 'att.notice.empty.teacherPre' : 'att.notice.empty.classPre')], ['b', R.i18n.sheetT('ko', mode === 'teacher' ? 'att.notice.empty.teacherBold' : 'att.notice.empty.classBold')], ['', R.i18n.sheetT('ko', 'att.notice.empty.c')]] : null,
-      allGroups.some(g => g.matrix.derivedActive) ? [['', R.i18n.sheetT('ko', 'att.notice.derived.a')], ['b', R.attLabel.attendanceLabelOf('present', 'ko')], ['', R.i18n.sheetT('ko', 'att.notice.derived.b')], ['b', R.attLabel.attendanceLabelOf('absent', 'ko')], ['', R.i18n.sheetT('ko', 'att.notice.derived.c')], ['b', R.i18n.sheetT('ko', 'att.notice.derived.d')], ['', R.i18n.sheetT('ko', 'att.notice.derived.e')]] : null,
+      mode === 'teacher' ? { key: 'scope', parts: [['', T('att.notice.scope.a')], ['b', T('att.notice.scope.b')], ['', T('att.notice.scope.c')], ['b', T('att.notice.scope.d')], ['', T('att.notice.scope.e')]] } : null,
+      statsCount.recorded === 0 && !allGroups.some(g => g.matrix.derivedActive) ? { key: 'empty', parts: [['', T(mode === 'teacher' ? 'att.notice.empty.teacherPre' : 'att.notice.empty.classPre')], ['b', T(mode === 'teacher' ? 'att.notice.empty.teacherBold' : 'att.notice.empty.classBold')], ['', T('att.notice.empty.c')]] } : null,
+      allGroups.some(g => g.matrix.derivedActive) ? { key: 'derived', parts: [['', T('att.notice.derived.a')], ['b', R.attLabel.attendanceLabelOf('present', 'ko')], ['', T('att.notice.derived.b')], ['b', R.attLabel.attendanceLabelOf('absent', 'ko')], ['', T('att.notice.derived.c')], ['b', T('att.notice.derived.d')], ['', T('att.notice.derived.e')]] } : null,
     ].filter(Boolean);
     const teacherLabel = teacherOptions.find(x => x.value === effectiveTeacher)?.label;
-    const selectedClassLabel = mode === 'teacher' ? R.i18n.sheetTf('ko', 'att.teacherAll', { name: teacherLabel ?? R.i18n.sheetT('ko', 'att.teacherFallback'), n: teacherClasses.length }) : effectiveClassId ? classOptions.find(o => o.value === effectiveClassId)?.label : null;
-    const current = today.slice(0, 7);
-
-    let hub = null;
+    const selectedClassLabel = mode === 'teacher' ? Tf('att.teacherAll', { name: teacherLabel ?? T('att.teacherFallback'), n: teacherClasses.length }) : effectiveClassId ? classOptions.find(o => o.value === effectiveClassId)?.label ?? null : null;
+    let hubTeachers = [], hubHoliday = null;
     if (hubShown) {
-      const [processing, holidayName] = [await readProcessing(sql, t, R, settings, today), R.holidaySheet.holidayNameOn(holidays, today)];
-      const holiday = holidayName ? { name: holidayName, activity: await readHolidayActivity(sql, t, R, today, effectiveSubject).catch(() => null) } : null;
-      const teachers = buildHubTeachers(classesForFilters, subjectOptions, processing).filter(x => !hideRetired || !x.retired)
-        .map(x => ({ ...x, subjects: x.subjects.map(s => ({ key: s, label: subjectMaps.labelOf(s), color: subjectMaps.colorOf(s) })) }));
-      hub = { teachers, holiday, todayLabel: hubTodayLabel(today), seats: showSeats ? R.seat.SEAT_KEYS.map(k => ({ key: k, name: R.seat.SEAT_NAME[k], room: R.seat.SEAT_ROOM[k], open: R.seat.USABLE_SEAT_KEYS.includes(k) })) : [],
-        holidayLine: holiday ? hubHolidayLine(R, hubTodayLabel(today), holiday) : null, noClassesLine: R.i18n.sheetTf('ko', 'att.hub.noClasses', { date: hubTodayLabel(today) }), todayPre: R.i18n.sheetTf('ko', 'att.hub.today.a', { date: hubTodayLabel(today) }) };
+      const holidayName = R.holidaySheet.holidayNameOn(R.cal.buildHolidayMap(operations.holidays), today);
+      hubTeachers = buildHubTeachers(classesForFilters, subjectOptions, await readProcessing(sql, t, R, settings, today));
+      hubHoliday = holidayName ? { name: holidayName, activity: await readHolidayActivity(sql, t, R, today, effectiveSubject).catch(() => null) } : null;
     }
-    const grid = !hubShown && !sheetEmpty ? buildGridModel(R, { groups: allGroups, days: visibleDays, ordered: orderedRows, holidays, showGroups, today, eieOn }) : null;
-    // 2단계 — 저장하는 사람(출결 '전체' 권한 직원)과 강사 전체 보기의 몫 범위(2.0 `attendanceScope`: 그 강사 반만 · 보강 묶음 제외).
-    const actors = grid ? await actorsOf(sql, t, R, settings) : [];
-    const scope = mode === 'teacher' && effectiveTeacher ? { teacherId: effectiveTeacher, classIds: teacherClasses.map(c => c.id) } : null;
     return {
-      asOf: today, month, monthLabel: R.i18n.sheetMonthLabel(month, `${month.slice(0, 4)}년 ${Number(month.slice(5, 7))}월`, 'ko'), prevMonth: shiftMonth(month, -1), nextMonth: shiftMonth(month, 1), currentMonth: current,
-      relation: month === current ? 'current' : month < current ? 'past' : 'future', L,
-      filters: { subject: effectiveSubject ?? (selectedClass ? selectedClass.subject : null), subjectValue: selectedClass ? selectedClass.subject : effectiveSubject, subjectOptions,
-        teacher: effectiveTeacher, teacherValue: selectedClass ? selectedClass.teacherId : effectiveTeacher, teacherOptions, retiredCount, hideRetired,
-        classValue: effectiveClassId, classOptions },
-      seatPick, mode, sort: sortKey, sortOptions: SORT_KEYS.map(k => ({ value: k, label: R.sort.attendanceSortLabelOf(k, 'ko') })),
-      period: { mode: periodMode, label: R.windowLabel.periodWindowLabel(matrix.window, 'ko'), disabledReason: mode === 'teacher' ? L['att.period.disabledTeacher'] : !effectiveClassId ? L['att.period.disabledNoClass'] : null },
-      selectedClassLabel: selectedClassLabel ?? null, scopeChip: mode === 'teacher' && allGroups.length > 0, notices,
-      stats: { totalStudents, ...statsCount, rate: R.totals.rateDecimal(statsCount) },
-      actors: actors.map(a => ({ id: a.id, name: a.name, roleLabel: R.roles.ROLE_LABEL?.[a.role] ?? '' })), scope, popover: popoverLabels(R),
-      hub, empty: !hubShown && sheetEmpty ? { title: R.i18n.sheetT('ko', mode === 'teacher' ? 'att.empty.teacher' : 'att.empty.class'), desc: L['att.empty.desc'] } : null, grid,
-      substitute: substituteCells.length ? { title: R.i18n.sheetTf('ko', 'att.sub.title', { n: substituteCells.length, units: R.units.formatSessionUnits(substituteCells.reduce((s, c) => s + c.units, 0)) }),
-        items: substituteCells.slice(0, 24).map(c => `${Number(c.date.slice(5, 7))}/${Number(c.date.slice(8, 10))} · ${c.className || '—'} · ${c.studentName || '—'} · ${R.attLabel.attendanceLabelOf(c.status, 'ko') ?? c.status} ${R.units.formatSessionUnits(c.units)}`),
-        more: substituteCells.length > 24 ? R.i18n.sheetTf('ko', 'att.sub.more', { n: substituteCells.length - 24 }) : null } : null,
+      asOf: today, lang: 'ko', month, currentMonth: today.slice(0, 7),
+      host: { operations: { subjects: operations.subjects, gradeLevels: operations.gradeLevels, jobTitles: operations.jobTitles, jobTitlesByDepartment: operations.jobTitlesByDepartment, holidays: operations.holidays },
+        disabledModules: disabled, preset: settings.preset },
+      editors: editors.map(e => ({ id: e.id, name: e.name, role: R.roles.ROLE_LABEL?.[e.role] ?? '' })), viewer: viewer?.id ?? null, viewPrefs,
+      seatPick, seatOn, payrollOn, sessionBillingOn, eieOn, base: { classes: base.classes },
+      subjectOptions, effectiveSubject, subjectValue: selectedClass ? selectedClass.subject : effectiveSubject,
+      teacherOptions, effectiveTeacher, teacherValue: selectedClass ? selectedClass.teacherId : effectiveTeacher, retiredCount,
+      classOptions, effectiveClassId, mode, matrixWindow: matrix.window, groups: allGroups, orderedRows, visibleDays, showGroups,
+      statsCount, totalStudents, sheetEmpty, hubShown, notices, selectedClassLabel, searchSeed,
+      attendanceScope: mode === 'teacher' && effectiveTeacher ? { teacherId: effectiveTeacher, classIds: teacherClasses.map(c => c.id) } : null,
+      lockBefore: null, substituteCells, tools,
+      hub: hubShown ? { teachers: hubTeachers.filter(x => !viewPrefs.hideRetired || !x.retired), holiday: hubHoliday, todayLabel: hubTodayLabel(today),
+        seats: showSeats ? R.seat.SEAT_KEYS.map(k => ({ key: k, name: R.seat.SEAT_NAME[k], room: R.seat.SEAT_ROOM[k], href: `/attendance/seat/${k}`, monthHref: `/attendance/seat/${k}/month?month=${month}`, open: R.seat.USABLE_SEAT_KEYS.includes(k) })) : [] } : null,
     };
   },
 };
 
-/**
- * 표 모델 — 2.0 `MatrixTable`·`MatrixRow`·`AttendanceCell`이 칸마다 하는 판정(칸 성격·표기·표식·카드 줄)을 같은 함수로 미리 계산한다.
- * 칸 클래스(2.0 Tailwind 이름 그대로)는 사전 `K`에 한 번만 싣고 칸은 번호로 가리킨다(강사 전체 보기는 칸이 수천 개다).
- */
-function buildGridModel(R, { groups, days, ordered, holidays, showGroups, today, eieOn }) {
-  const K = [], kIdx = new Map(), k = cls => { if (!kIdx.has(cls)) { kIdx.set(cls, K.length); K.push(cls); } return kIdx.get(cls); };
-  const T = key => R.i18n.sheetT('ko', key), Tf = (key, vars) => R.i18n.sheetTf('ko', key, vars);
-  const classDows = new Set(groups.flatMap(g => g.matrix.classDows));
-  const ownDateUnion = groups.some(g => g.matrix.ownDates) ? new Set(groups.flatMap(g => (g.matrix.ownDates ?? []).filter(date => { const day = days.find(x => x.date === date); return !!day && g.matrix.classDows.includes(day.dow); }))) : null;
-  const { DAY_TONE, TODAY_HEAD } = R.cell;
-  const head = days.map(d => {
-    if (d.placeholder) return { date: d.date, placeholder: true };
-    const holiday = holidays[d.date], isClassDay = (ownDateUnion ? ownDateUnion.has(d.date) : classDows.has(d.dow)) && !holiday;
-    const bg = d.isToday ? TODAY_HEAD.bg : isClassDay ? DAY_TONE.classDay : holiday ? DAY_TONE.holiday : d.isWeekend ? DAY_TONE.weekend : 'bg-card';
-    const fg = d.isToday ? TODAY_HEAD.fg : holiday || d.dow === 0 ? 'text-att-holiday-ink' : isClassDay ? 'text-foreground' : d.isWeekend ? 'text-text-dim' : 'text-text-faint';
-    return { date: d.date, day: d.day, label: d.label, k: k(`${bg} ${fg}`), holiday: holiday ?? null };
-  });
-  const noTransfer = R.transfer.suppressedTransferRows(groups.map(g => ({ classId: g.classId, className: g.className, isSpecial: g.isSpecial, students: g.matrix.students.map(s => ({ id: s.id, spans: s.spans })) })));
-  const realDates = days.filter(d => !d.placeholder).map(d => d.date), monthLast = realDates.at(-1) ?? today;
-  // 2.0 `encodeTip` 규칙 — 빈 값 줄은 빼고, 줄도 문장도 없으면 카드를 달지 않는다.
-  const tipOf = (rows, lines) => { const r = rows.filter(x => Array.isArray(x) && String(x[1] ?? '').trim() !== '').map(x => [x[0], String(x[1]).trim()]), l = lines.filter(x => x && String(x).trim() !== ''); return r.length || l.length ? { ...(r.length ? { r } : {}), ...(l.length ? { l } : {}) } : null; };
-  const rowOf = (g, s) => {
-    const m = g.matrix, marks = m.marks[s.id] ?? {}, units = m.units[s.id] ?? {}, splitMarks = m.splits?.[s.id] ?? {};
-    const splitNotes = [...new Set(Object.values(splitMarks).map(x => x.note))], attendDows = new Set(s.attendDows), ownDates = m.ownDates ? new Set(m.ownDates) : null;
-    const attendLabel = R.cal.formatDows(s.attendDows), nameTone = R.tone.attendanceNameTone(s.spans, s.withdrawnAt, monthLast < today ? monthLast : today, s.badges);
-    const shownBadges = noTransfer.has(R.transfer.transferRowKey(g.classId, s.id)) ? s.badges.filter(b => b.kind !== 'transferIn' && b.kind !== 'transferOut') : s.badges;
-    const placed = R.place.placeLifecycleBadges(shownBadges, realDates, date => !R.span.isEnrolledOn(date, s.spans) && !marks[date]);
-    const count = R.totals.countMarks(marks, units);
-    const cells = days.map(d => {
-      if (d.placeholder) return null;
-      const holiday = holidays[d.date], outside = !R.span.isEnrolledOn(d.date, s.spans), notOwnDay = !!ownDates && !ownDates.has(d.date);
-      const attend = attendDows.has(d.dow) && !holiday && !outside && !notOwnDay, muted = !!holiday || (!attend && d.isWeekend);
-      const status = marks[d.date] ?? null, u = units[d.date] ?? null, note = m.notes[s.id]?.[d.date] ?? null, derived = !!m.derived[s.id]?.[d.date];
-      const daySlots = m.slots[s.id]?.[d.date], day = daySlots && daySlots.length > 1 ? R.cell.rollupDay(daySlots) : null;
-      const display = R.cell.cellDisplay(status, u, { attendDay: attend, muted, holiday: !!holiday, outside, day, ghost: false, ghostMark: null });
-      const reservation = m.reservations?.[s.id]?.[d.date] ?? null, reservedShown = !!reservation && !status, shownNote = note ? scrub(note) : null;
-      const tip = tipOf([
-        status ? [T('att.tip.status'), R.cell.statusTextOf(status, 'ko')] : null,
-        day ? [T('att.tip.periods'), Tf('att.cell.nPeriods', { n: day.count, breakdown: R.cell.slotBreakdown(day.slots, 'ko') })] : null,
-        reservation && !status ? [T('att.cell.reserved'), R.reserve.reservationDetail({ ...reservation, makeupDate: d.date }, { createdByName: reservation.createdByName })] : null,
-        shownNote ? [T('att.tip.memo'), shownNote] : null,
-      ], [outside ? T(status ? 'att.cell.outsideRecord' : 'att.cell.outside') : null, m.dayAxis[s.id]?.[d.date] ? T('att.cell.sharedDay') : null, derived ? T('att.cell.fromReport') : null]);
-      const b = placed.get(d.date);
-      return { x: reservedShown ? '' : display.text, k: k(reservedShown ? R.reserve.RESERVED_CELL_CLASS : display.className), ...(display.style?.background ? { bg: display.style.background } : {}),
-        ...(shownNote ? { m: 1 } : {}), ...(reservedShown ? { rv: 1 } : {}), ...(tip ? { tip } : {}), ...(splitMarks[d.date] ? { sp: splitMarks[d.date].dir } : {}),
-        ...(b ? { b: { align: b.align, list: b.badges.map(x => ({ label: R.span.badgeLabelOf(x.kind, 'ko'), k: k(R.cell.BADGE_TONE[x.kind]) })) } } : {}),
-        ...(status ? { s: status } : {}), ...(u != null ? { u } : {}), ...(derived ? { d: 1 } : {}), ...(day ? { n: day.count } : {}),
-        ...(shownNote ? { nt: shownNote, ...(shownNote !== note ? { nm: 1 } : {}) } : {}), ...(reservation ? { rs: { span: R.reserve.reservationDetail({ ...reservation, makeupDate: d.date }, { createdByName: reservation.createdByName }) } } : {}),
-        ...(m.autoUnits?.[d.date] !== undefined && !status ? { au: m.autoUnits[d.date] } : {}) };
-    });
-    const schoolGrade = R.school.schoolGradeLabel(s.school, s.grade) || '';
-    return { key: R.grid.rowKey(g.classId, s.id), classId: g.classId, studentId: s.id, name: s.name, tone: k(nameTone ? R.studentTone.VIVID_STUDENT_TONE_STICKY[nameTone] : 'text-foreground bg-card'),
-      attend: attendLabel || null, attendTitle: attendLabel ? Tf('att.row.attendDows', { dows: attendLabel }) : null, split: splitNotes.length ? splitNotes : null,
-      school: schoolGrade || '—', schoolTitle: [s.school, s.grade].filter(Boolean).join(' · ') || null, units: count.units > 0 ? R.suffix.formatUnitsWithSuffix(count.units, g.unitSuffix ?? null) : '—', suffix: g.unitSuffix ?? null,
-      c: [count.recorded, count.present, count.absent, count.late, count.makeup, count.units], find: [s.name, s.school, s.grade, schoolGrade].filter(Boolean), cells };
-  };
-  const byClass = new Map(groups.map(g => [g.classId, g]));
-  const flat = showGroups ? null : ordered.map(r => { const g = byClass.get(r.classId), s = g?.matrix.students.find(x => x.id === r.studentId); return g && s ? rowOf(g, s) : null; }).filter(Boolean);
-  const grouped = showGroups ? groups.map(g => ({ classId: g.classId, className: g.className, subjectLabel: g.subjectLabel, roleLabel: g.roleLabel ?? null, workerLabel: g.workerLabel ?? null,
-    workerTitle: g.workerLabel ? T(g.workerSource === 'attendance' ? 'att.group.workerAttendance' : 'att.group.workerReport') : null, sinceLabel: g.sinceLabel ?? null,
-    count: Tf('att.group.students', { n: g.matrix.students.length }), rows: g.matrix.students.map(s => rowOf(g, s)) })) : null;
-  const totals = R.colTotals.columnTotals(groups.flatMap(g => g.matrix.students.map(s => Object.entries(g.matrix.marks[s.id] ?? {}).map(([date, st]) => [date, { s: st, u: g.matrix.units[s.id]?.[date] ?? null }]))));
-  const suffixes = new Set(groups.map(g => g.unitSuffix ?? null)), totalsSuffix = suffixes.size === 1 ? ([...suffixes][0] ?? null) : null;
-  const mixed = R.cell.cellDisplay('present', 1, { day: R.cell.rollupDay([{ slot: '15:00', status: 'present', units: 1 }, { slot: '17:00', status: 'absent', units: null }]) });
-  const legend = {
-    units: [groups.some(g => g.unitSuffix === 'T') ? T('att.units.math') : null, ...(groups.some(g => g.unitSuffix === 'U') ? [T(eieOn ? 'att.units.eie' : 'att.units.bridge'), T('att.units.injaewon')] : [])].filter(Boolean),
-    statuses: ['present', 'late', 'early_leave', 'makeup', 'absent'].map(st => { const c = R.cell.cellDisplay(st, null); return { text: c.text, k: k(c.className), label: R.cell.statusTextOf(st, 'ko') }; }),
-    mixed: { text: mixed.text, k: k(mixed.className), bg: mixed.style?.background ?? null }, reserved: k(R.reserve.RESERVED_CELL_CLASS),
-    swatches: [['att.legend.classDay', DAY_TONE.classDay], ['att.legend.off', DAY_TONE.weekend], ['att.legend.holiday', DAY_TONE.holiday], ['att.legend.outside', DAY_TONE.outside], ...(days.some(d => d.isToday) ? [['att.legend.today', TODAY_HEAD.bg]] : [])].map(([key, cls]) => ({ label: T(key), k: k(cls) })),
-  };
-  return { K, head, groups: grouped, rows: flat, showGroups, classCount: groups.length, reservedChars: [...R.reserve.RESERVED_CELL_CHARS], totals: { units: R.suffix.formatUnitsWithSuffix(totals.units, totalsSuffix), suffix: totalsSuffix,
-    days: Object.fromEntries(Object.entries(totals.dayUnits).map(([d, u]) => [d, R.suffix.formatUnitsWithSuffix(u, null)])) }, legend };
-}
-
-/** 칸 팝오버 문구 — 2.0 사전(`att.pop.*`)·상태 표기 그대로. */
-function popoverLabels(R) {
-  const keys = ['att.pop.aria', 'att.pop.reserve', 'att.pop.reserveHint', 'att.pop.reserved', 'att.pop.reservedTip', 'att.pop.unitsPh', 'att.pop.unitsPhAuto', 'att.pop.unitsAria', 'att.pop.unitsTitle',
-    'att.pop.notePh', 'att.pop.save', 'att.pop.pickFirst', 'att.pop.clear', 'att.pop.saving', 'att.pop.saveNote', 'att.pop.noteAnytime', 'att.pop.noRecord'];
-  return { L: Object.fromEntries(keys.map(k => [k, R.i18n.sheetT('ko', k)])), statuses: ['present', 'absent', 'late', 'early_leave', 'makeup'].map(st => ({ value: st, label: R.cell.statusTextOf(st, 'ko'), tone: R.cell.STATUS_TONE[st] })) };
-}
-
-/** 허브 '오늘' 표기 — 2.0은 `Intl.DateTimeFormat('ko-KR', { timeZone: 'Asia/Seoul', month:'long', day:'numeric', weekday:'short' })`(복사본 기준일로). */
+/** 허브 '오늘' 표기 — 2.0은 `Intl.DateTimeFormat('ko-KR', { timeZone: 'Asia/Seoul', month:'long', day:'numeric', weekday:'short' })`(3.0은 복사본 기준일로). */
 const hubTodayLabel = ymd => new Intl.DateTimeFormat('ko-KR', { timeZone: 'Asia/Seoul', month: 'long', day: 'numeric', weekday: 'short' }).format(new Date(`${ymd}T12:00:00+09:00`));
-function hubHolidayLine(R, date, holiday) {
-  const head = R.i18n.sheetTf('ko', 'att.hub.holiday', { date, name: holiday.name }), a = holiday.activity;
-  if (a === null) return head + R.i18n.sheetT('ko', 'att.hub.holiday.failed');
-  if (!R.holidayAct.hasHolidayActivity(a)) return head + R.i18n.sheetT('ko', 'att.hub.holiday.none');
-  return head + (a.students > 0 ? R.i18n.sheetTf('ko', 'att.hub.holiday.recorded', { students: a.students, classes: a.classes }) : '') + (a.reservations > 0 ? R.i18n.sheetTf('ko', 'att.hub.holiday.reserved', { n: a.reservations }) : '');
-}
 
 // ── 2단계: 칸 저장 = 2.0 `setAttendanceCell`(features/attendance/server/actions.ts) ─────────────────────────────
 // 원장 2026-10-28 "연습용이므로 모두 docker" — 같은 표(attendance_records)·같은 칸·같은 감사로그(attendance_cell · attendance_note ·
@@ -772,17 +704,34 @@ function hubHolidayLine(R, date, holiday) {
 const VIA = '3.0 연습 복사본';
 const STATUSES = ['present', 'absent', 'late', 'excused', 'makeup', 'early_leave'];
 const bad = () => new V2Error(400, 'invalid_request', '입력 값을 확인해 주세요.');
-function cellBody(raw) {
-  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw bad();
-  for (const k of ['actor', 'studentId', 'classId']) if (typeof raw[k] !== 'string' || !UUID.test(raw[k])) throw bad();
-  if (typeof raw.date !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(raw.date)) throw bad();
-  const optStr = (v, max) => { if (v === undefined) return undefined; if (typeof v !== 'string' || v.length > max) throw bad(); return v; };
-  if (raw.status !== undefined && raw.status !== null && !STATUSES.includes(raw.status)) throw new V2Error(400, 'invalid_status', '잘못된 상태입니다');
-  if (raw.scopeTeacherId !== undefined && raw.scopeTeacherId !== null && (typeof raw.scopeTeacherId !== 'string' || !UUID.test(raw.scopeTeacherId))) throw bad();
-  if (raw.noteOnly !== undefined && typeof raw.noteOnly !== 'boolean') throw bad();
-  return { actor: raw.actor, studentId: raw.studentId, classId: raw.classId, sessionDate: raw.date, status: raw.status ?? null, typed: optStr(raw.typed, 8),
-    units: optStr(raw.units, 10), note: raw.note === null ? null : optStr(raw.note, 2000), noteOnly: raw.noteOnly === true, scopeTeacherId: raw.scopeTeacherId ?? null };
+/**
+ * 호스트(shims/server-action.ts)가 보내는 모양 — `{ module, actor, args }`(2.0 함수 인자 그대로 · actor = 3.0 띠에서 고른 사람).
+ * 그 2.0 모듈의 그 함수가 아니면 받지 않는다(같은 이름이 다른 모듈에 있어도 섞이지 않게).
+ */
+function hostCall(raw, module, arity) {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw) || raw.module !== module || !Array.isArray(raw.args) || raw.args.length > arity) throw bad();
+  if (typeof raw.actor !== 'string' || !UUID.test(raw.actor)) throw new V2Error(400, 'actor_missing', '저장하는 사람을 먼저 고르세요.');
+  return { actor: raw.actor, args: raw.args };
 }
+const ACTIONS_MODULE = 'features/attendance/server/actions.ts', PREFS_MODULE = 'features/attendance/server/prefs-actions.ts';
+/** 2.0 `setAttendanceCell(input)`의 입력 — 월별 출석부가 보내는 칸(교시 지정·당일 출결·보강 추가·빗금 옮기기·비파괴 쓰기 갈래는 아직 없다). */
+function cellBody(raw) {
+  const { actor, args: [input] } = hostCall(raw, ACTIONS_MODULE, 1);
+  if (!input || typeof input !== 'object' || Array.isArray(input)) throw bad();
+  for (const k of ['studentId', 'classId']) if (typeof input[k] !== 'string' || !UUID.test(input[k])) throw bad();
+  if (typeof input.sessionDate !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(input.sessionDate)) throw bad();
+  const optStr = (v, max) => { if (v === undefined || v === null) return undefined; if (typeof v !== 'string' || v.length > max) throw bad(); return v; };
+  if (input.status !== undefined && input.status !== null && !STATUSES.includes(input.status)) throw new V2Error(400, 'invalid_status', '잘못된 상태입니다');
+  if (input.scopeTeacherId !== undefined && input.scopeTeacherId !== null && (typeof input.scopeTeacherId !== 'string' || !UUID.test(input.scopeTeacherId))) throw bad();
+  for (const k of ['noteOnly', 'quiet', 'onlyIfEmpty', 'allowMakeup', 'ghostTransfer']) if (input[k] !== undefined && typeof input[k] !== 'boolean') throw bad();
+  if (input.slotStart || input.source || input.onlyIfEmpty || input.allowMakeup || input.ghostTransfer) {
+    throw new V2Error(409, 'not_in_copy', '이 저장 방식(교시 지정·당일 출결·보강 추가·다른 선생님 교시 옮기기)은 이 연습 화면에 아직 없습니다 — 바뀐 것은 없습니다.');
+  }
+  return { actor, studentId: input.studentId, classId: input.classId, sessionDate: input.sessionDate, status: input.status ?? null,
+    units: optStr(input.units, 10), note: input.note === null ? null : optStr(input.note, 2000), noteOnly: input.noteOnly === true, scopeTeacherId: input.scopeTeacherId ?? null };
+}
+/** 2.0 prefs-actions의 네 함수 — 인자 하나(정렬 · 날짜축 · 퇴직 숨김 · 접은 반). 값 정리는 2.0 parse 함수가 run에서 한다. */
+const prefsBody = check => raw => { const { actor, args: [v] } = hostCall(raw, PREFS_MODULE, 1); if (!check(v)) throw bad(); return { actor, value: v }; };
 
 /** 저장할 수 있는 사람 — 출결 '전체' 권한(2.0 권한 표: 역할 기본 + 학원 설정 덮어쓰기 + 개인 예외). 운영자 계정은 뺀다. */
 async function actorsOf(sql, t, R, settings) {
@@ -792,7 +741,9 @@ async function actorsOf(sql, t, R, settings) {
   ]);
   const operators = new Set(supers.map(s => s.id)), base = R.perms.resolveMatrix(settings.permissions?.overrides ?? []), userOverrides = settings.permissions?.userOverrides ?? [];
   return users.filter(u => !operators.has(u.id) && R.perms.accessLevel(u.role, 'attendance', R.perms.applyUserOverrides(base, u.id, u.role, userOverrides)) === 'full')
-    .map(u => ({ id: u.id, name: u.display_name, role: u.role }));
+    .map(u => ({ id: u.id, name: u.display_name, role: u.role }))
+    // 원장 먼저(2.0 `ROLE_HIERARCHY` 순) — 호스트 shim이 고른 사람이 없으면 첫 사람으로 저장한다.
+    .sort((a, b) => (R.roles.ROLE_HIERARCHY[a.role] ?? 99) - (R.roles.ROLE_HIERARCHY[b.role] ?? 99) || a.name.localeCompare(b.name, 'ko'));
 }
 
 /** 이 사람이 그날 이 반을 가르치나 → recorded_via('teacher'|'desk') — 2.0 `resolveWriteVia`(담당 반 ∪ 그날 위임 ∪ 그날 교시 담당 ∪ JJ 담당). */
@@ -848,8 +799,7 @@ async function setCell(sql, t, b, R) {
   const actor = (await actorsOf(sql, t, R, settings)).find(a => a.id === b.actor);
   if (!actor) throw new V2Error(403, 'actor_not_allowed', '출석 관리 권한이 없습니다');
   // 격자 타이핑(2.0 `commitBuffer`) — 0 = 결석, 1·1.5·2 = 출석 + 시수. 숫자로 읽을 수 없으면 2.0처럼 아무것도 하지 않는다.
-  let { status, units } = b;
-  if (b.typed !== undefined) { const v = R.typing.commitBuffer(b.typed); if (!v) return { ok: true, skipped: true }; status = v.status; units = v.units; }
+  const { status, units } = b;
   const { studentId, classId, sessionDate } = b, noteOnly = b.noteOnly, noteProvided = b.note !== undefined, noteVal = (b.note ?? '').trim() || null;
   if (noteOnly && !noteProvided) throw new V2Error(400, 'note_missing', '메모가 없습니다');
   const unitsProvided = units !== undefined;
@@ -962,6 +912,44 @@ async function setCell(sql, t, b, R) {
   return insertedAuto !== undefined ? { ok: true, autoUnits: insertedAuto } : { ok: true };
 }
 
-screen.actions = { cell: { validate: cellBody, run: async ({ sql, body, tenantId, importV2 }) => setCell(sql, tenantId, body, await loadRules(importV2)) } };
+/**
+ * 2.0 `mergeAttendancePrefs`(prefs-actions.ts) — 그 사람의 users.ui_prefs.attendance만 2.0 parse를 거쳐 갈아끼운다(다른 화면 설정은 그대로).
+ * 2.0은 로그인한 사람, 3.0은 고른 사람(보는 사람 = 저장하는 사람). 감사로그는 2.0도 남기지 않는다.
+ */
+async function mergeAttendancePrefs(sql, t, R, actorId, update) {
+  const settings = await readSettings(sql, t, R);
+  if (!(await actorsOf(sql, t, R, settings)).some(a => a.id === actorId)) throw new V2Error(403, 'actor_not_allowed', '출석 관리 권한이 없습니다');
+  const [row] = await sql`select ui_prefs from public.users where tenant_id=${t} and id=${actorId}`;
+  const raw = row?.ui_prefs && typeof row.ui_prefs === 'object' && !Array.isArray(row.ui_prefs) ? row.ui_prefs : {};
+  await sql`update public.users set ui_prefs=${sql.json({ ...raw, attendance: update(R.viewPrefs.parseAttendanceViewPrefs(raw.attendance)) })} where tenant_id=${t} and id=${actorId}`;
+  return { ok: true };
+}
+/**
+ * 아직 옮기지 않은 2.0 조회 셋 — 그 함수의 **2.0 실패 모양**으로 답한다(쓰기 없음 · 저장하는 사람 불필요).
+ * shim의 공통 거절(`{ ok:false, error }`)은 이 셋의 결과 모양이 아니라 2.0 부품이 `r.hits`·`r.students`·`p.cells`를 읽다 깨진다.
+ */
+function readCall(raw, module, arity) {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw) || raw.module !== module || !Array.isArray(raw.args) || raw.args.length > arity) throw bad();
+  return {};
+}
+const HUB_MODULE = 'features/attendance/server/hub-search-actions.ts', INTAKE_MODULE = 'features/attendance/intake/server/actions.ts';
+const INTAKE_NOT_YET = '결석 통보 접수는 이 연습 화면에 아직 없습니다 — 바뀐 것은 없습니다.';
+const notYet = (module, arity, reply) => ({ validate: raw => readCall(raw, module, arity), run: async ({ importV2 }) => reply(await loadRules(importV2)) });
 
-export const __test = { readProcessing, readClassAxis, readTransitions, buildGridModel, actorsOf };
+const prefs = (check, update) => ({ validate: prefsBody(check), run: async ({ sql, body, tenantId, importV2 }) => { const R = await loadRules(importV2); return mergeAttendancePrefs(sql, tenantId, R, body.actor, prev => update(R, prev, body.value)); } });
+
+// 2.0 "use server" 함수와 1:1 — 이름 = 2.0 export 이름(호스트가 그 이름으로 부른다), 인자 = 2.0 인자 그대로.
+screen.actions = {
+  setAttendanceCell: { validate: cellBody, run: async ({ sql, body, tenantId, importV2 }) => setCell(sql, tenantId, body, await loadRules(importV2)) },
+  saveAttendanceSort: prefs(v => typeof v === 'string' && v.length <= 20, (R, prev, v) => ({ ...prev, sort: R.sort.parseAttendanceSortKey(v) })),
+  saveAttendancePeriodMode: prefs(v => typeof v === 'string' && v.length <= 20, (R, prev, v) => ({ ...prev, periodMode: R.viewPrefs.parsePeriodMode(v) })),
+  saveAttendanceHideRetired: prefs(v => typeof v === 'boolean', (R, prev, v) => ({ ...prev, hideRetired: v !== false })),
+  saveAttendanceCollapsed: prefs(v => Array.isArray(v) && v.length <= 400 && v.every(x => typeof x === 'string' && x.length <= 64), (R, prev, v) => ({ ...prev, collapsed: R.viewPrefs.parseAttendanceViewPrefs({ collapsed: v }).collapsed })),
+  // 아직 없는 조회 — 2.0 실패 모양(HubSearchResult.error · IntakeStudentSearch.note · 미리보기 error).
+  searchAttendanceHubStudents: notYet(HUB_MODULE, 1, R => ({ hits: [], truncated: false, limit: R.hubSearch.HUB_SEARCH_LIMIT, where: '', error: '강사를 고르기 전 학생 검색은 이 연습 화면에 아직 없습니다 — 강사를 고른 뒤 표 위 검색을 쓰세요.' })),
+  searchIntakeStudents: notYet(INTAKE_MODULE, 1, () => ({ students: [], note: INTAKE_NOT_YET, truncated: false })),
+  previewAbsenceIntake: notYet(INTAKE_MODULE, 1, () => ({ student: null, cells: [], error: INTAKE_NOT_YET })),
+  recordAbsenceIntake: notYet(INTAKE_MODULE, 1, () => ({ error: INTAKE_NOT_YET })),
+};
+
+export const __test = { readProcessing, readClassAxis, readTransitions, actorsOf };
