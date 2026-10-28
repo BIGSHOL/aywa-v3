@@ -160,8 +160,14 @@ function cond(sql, al, col, op, value, negate = false, typeOf = () => null) {
   } else if (op === 'like' || op === 'ilike') out = sql`${c} ${sql.unsafe(OPS[op])} ${String(value).replace(/\*/g, '%')}`;
   else if (OPS[op]) out = value === null ? sql`${c} ${sql.unsafe(OPS[op])} null` : sql`${c} ${sql.unsafe(OPS[op])} ${lit(scalar(value))}`;
   else if (op === 'cs' || op === 'cd' || op === 'ov') {
-    const arr = Array.isArray(value) ? `{${value.map(x => `"${String(x).replace(/"/g, '\\"')}"`).join(',')}}` : String(value);
-    out = sql`${c} ${sql.unsafe(op === 'cs' ? '@>' : op === 'cd' ? '<@' : '&&')} ${arr}`;
+    if (udt === 'jsonb' && (op === 'cs' || op === 'cd')) {
+      // PostgREST의 jsonb 포함은 객체/배열 자체를 JSON으로 보낸다. String(value)는
+      // '[object Object]'라는 JSON 문자열로 비교되어, 실제 근거가 있어도 0행이 된다.
+      out = sql`${c} ${sql.unsafe(op === 'cs' ? '@>' : '<@')} ${sql.json(value)}::jsonb`;
+    } else {
+      const arr = Array.isArray(value) ? `{${value.map(x => `"${String(x).replace(/"/g, '\\"')}"`).join(',')}}` : String(value);
+      out = sql`${c} ${sql.unsafe(op === 'cs' ? '@>' : op === 'cd' ? '<@' : '&&')} ${arr}`;
+    }
   } else throw new UnsupportedShape(`거르기 연산 '${op}'`);
   return negate ? sql`not (${out})` : out;
 }

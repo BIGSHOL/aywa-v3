@@ -93,6 +93,33 @@ test('업무 흐름 판정 id = 원본 월 근거의 선생님·만족도 창으
   if (unassigned) assert.equal((await load({ judgment: unassigned.id, actor: master.id })).page, 'judgmentUnassigned');
 });
 
+test('만족도 저장 = JSONB 포함 근거를 독립 SQL과 대조 · 원본 가점 반영은 시험 트랜잭션에서만', { skip: SKIP }, async () => {
+  const id = '790d738f-4f86-4a1a-9952-78409ec1c39c';
+  const [judgment] = await db`select posted_on::text posted, state::text state from public.teacher_satisfaction_judgments where tenant_id=${t} and id=${id}`;
+  assert.ok(judgment && judgment.state === 'pending');
+  const month = judgment.posted.slice(0, 7);
+  const needle = { items: [{ id: 'satisfaction', detail: [{ source: '글', key: id }] }] };
+  const direct = await db`select teacher_id::text teacher, closed_at is not null closed from public.teacher_portfolio_months
+    where tenant_id=${t} and month=${month} and payload @> ${db.json(needle)}::jsonb`;
+  assert.equal(direct.length, 1, '독립 SQL에서 이 글의 포트폴리오 몫은 한 선생님');
+  const teacherId = direct[0].teacher;
+  const focused = await load({ judgment: id, actor: master.id });
+  assert.equal(focused.page, 'portfolio');
+  assert.equal(focused.view.selected.id, teacherId, '진입 화면의 선생님 = 원본 근거의 선생님');
+  assert.equal(focused.focusJudgment.month, month, '진입 화면의 달 = 글 날짜의 달');
+  const { results: [owner] } = await runV2Server({ steps: [{ module: `${TP}satisfaction-guards.ts`, fn: 'ownsJudgment', args: [t, teacherId, id, month] }], tenantId: t, mode: 'read' });
+  assert.deepEqual(owner.value, { closed: direct[0].closed }, '원본 .contains 결과 = 독립 SQL @> 결과');
+  const { results: [wrongMonth] } = await runV2Server({ steps: [{ module: `${TP}satisfaction-guards.ts`, fn: 'ownsJudgment', args: [t, teacherId, id, '2026-09'] }], tenantId: t, mode: 'read' });
+  assert.equal(wrongMonth.value, null, '다른 달은 열리지 않는다');
+  const { results: [saved], probes } = await runWrite(t, master.id,
+    [{ module: `${TP}satisfaction-actions.ts`, fn: 'decideJudgment', args: [id, 'plus', teacherId] }],
+    { rollback: true, probes: [{ text: 'select state::text state from public.teacher_satisfaction_judgments where tenant_id=$1 and id=$2', params: [t, id] }] });
+  assert.equal(saved.value?.ok, true, saved.value?.error);
+  assert.equal(probes[0][0].state, 'applied');
+  const [after] = await db`select state::text state from public.teacher_satisfaction_judgments where tenant_id=${t} and id=${id}`;
+  assert.equal(after.state, 'pending', '시험 뒤 원래 상태');
+});
+
 test('2.0이 보내지 않던 것은 보내지 않는다 — 실명 열람이 없으면 이름 비움 · 목록·종합 행은 코멘트·총평·문항 스냅샷 없이', () => {
   const doc = { id: 'd', header: { teacherId: 't' }, evaluators: [{ id: 'a', name: '갑', kind: 'observer' }, { id: 't', name: '을', kind: 'self' }],
     submissions: { a: { scores: [3], comment: '비밀 코멘트', submittedAt: 'x', by: { id: 'a', name: '갑' } } }, finalReview: { text: '총평', updatedAt: 'y', by: { id: 'a', name: '갑' } } };
