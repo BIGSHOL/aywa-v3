@@ -1,25 +1,45 @@
 /* 2.0 화면 · 강사 시트 · 영어(ECS) (V2-SCREENS.md, v2-screen-ecs.mjs). 2.0 `/ecs`의 반 목록(담임별) · 반 주간 시트 ·
    월간(달력 ↔ 진도표, EiE는 계획(MP)) · 오늘 면을 2.0 배치·라벨·글씨 서식 그대로, 로컬 Docker 복사본 위에 그린다.
-   문구는 서버가 내려준 2.0 사전 값(`t`)만 쓴다. 1단계는 보기 전용 — 2.0이 편집 권한이 없을 때 보여 주는 읽기 모양이다.
+   문구는 서버가 내려준 2.0 사전 값(`t`)만 쓴다. 2단계(원장 2026-10-28 "연습용이므로 모두 docker"): 서버가 저장 가능하다고 알리면
+   2.0이 그 자리에서 저장하는 것(계획 칸·줄 추가/삭제·내용 복사·학생 기록·출결·목표·메모·Shouting·계획(MP) 칸)을 같은 자리에서
+   고른 사람 이름으로 Docker 복사본에 저장한다(칸을 떠날 때 한 번). 저장 전 입력은 칸마다 기억해 다시 그려도 사라지지 않는다.
    보기 상태(면·반·주·요일·필터·JJ 표시)는 주소(#v2-ecs?…)에, 접기·계획 패널·글씨 크기는 이 탭 안에만 둔다. */
 (() => {
   'use strict';
   const S = window.V2Screens; if (!S) return;
   const h = S.esc, READONLY = '복사본 보기 전용 — 이 화면에서는 입력·저장이 되지 않습니다.', NOT_HERE = '이 연습 화면에는 아직 없는 기능입니다.';
-  let last = null, T = {};
+  let last = null, T = {}, W = false, D = null, saving = false;
+  const drafts = new Map(); // 칸 id → { v: 입력값, saved } — 다시 그려도 유지, 저장된 것은 새 자료가 도착하면 지운다
   const t = k => T[k] ?? k;
   const tf = (k, p) => Object.entries(p).reduce((s, [a, b]) => s.split(`{${a}}`).join(String(b)), t(k));
   const ui = { collapsed: new Set(), panel: true, font: 'sm', role: 'homeroom', folded: false, display: null };
-  const KEEP = ['jj'];
+  const KEEP = ['jj', 'as'];
   const href = p => { const qs = new URLSearchParams(Object.entries(p).filter(([, v]) => v !== undefined && v !== null && v !== '')).toString(); return `#v2-ecs${qs ? `?${qs}` : ''}`; };
   const keep = q => Object.fromEntries(KEEP.map(k => [k, q.get(k) || '']));
-  const off = (label, cls = '', title = READONLY) => `<button type="button" class="ec-chip ${cls}" disabled title="${h(title)}">${h(label)}</button>`;
+  const off = (label, cls = '', title = W ? NOT_HERE : READONLY) => `<button type="button" class="ec-chip ${cls}" disabled title="${h(title)}">${h(label)}</button>`;
+  const enc = o => h(JSON.stringify(o));
+  /** 저장 칸 — W(저장 가능)면 입력, 아니면 읽기 전용. 값은 저장 전 입력이 있으면 그것. data-ec-act = 저장 동작, data-p = 그 칸의 저장 재료. */
+  const box = (act, payload, value, { cls = 'ec-input', aria = '', title = '', area = false, ro = false, rows = 3, placeholder = '' } = {}) => {
+    const id = `${act}|${JSON.stringify(payload)}`, d = drafts.get(id), v = d ? d.v : (value ?? '');
+    const live = W && !ro, attrs = `class="${cls}" ${live ? `data-ec-act="${act}" data-p="${enc(payload)}" data-fid="${h(id)}"` : 'readonly'} aria-label="${h(aria)}"${title ? ` title="${h(title)}"` : ''}${placeholder ? ` placeholder="${h(placeholder)}"` : ''}`;
+    return area ? `<textarea ${attrs} rows="${rows}">${h(v)}</textarea>` : `<input ${attrs} value="${h(v)}">`;
+  };
+  const btn = (act, payload, label, { cls = 'ec-chip small', title = '', confirm = '' } = {}) => `<button type="button" class="${cls}" data-ec-btn="${act}" data-p="${enc(payload)}"${confirm ? ` data-confirm="${h(confirm)}"` : ''}${title ? ` title="${h(title)}"` : ''} ${saving ? 'disabled' : ''}>${label}</button>`;
   const md = d => `${Number(d.slice(5, 7))}/${Number(d.slice(8, 10))}`;
   const slash = d => d.slice(5).replace('-', '/');
 
   // ── 공통 머리 — 2.0 PageHeader 한 줄(eyebrow - 제목 - 설명) + 사이드바 하부탭(영어 · 수학) ──
   const head = (eyebrow, title, desc) => `<nav class="ec-subtabs" aria-label="강사 시트"><a class="on" aria-current="page" href="${href({})}">영어</a><span class="ec-subtab-off" title="수학 강사 시트(MCS)는 이 연습 화면에 아직 없습니다.">수학</span></nav>
-    <div class="ec-pagehead"><span class="ec-eyebrow">${h(eyebrow)}</span><h1>${h(title)}</h1>${desc ? `<span class="ec-desc">${h(desc)}</span>` : ''}<span class="v2s-badge">2.0 화면 · 복사본 보기 전용</span></div>`;
+    <div class="ec-pagehead"><span class="ec-eyebrow">${h(eyebrow)}</span><h1>${h(title)}</h1>${desc ? `<span class="ec-desc">${h(desc)}</span>` : ''}<span class="v2s-badge">${W ? '2.0 화면 · 연습 복사본' : '2.0 화면 · 복사본 보기 전용'}</span></div>
+    ${W ? `<p class="v2s-note ec-copynote">${h(last?.copyNote || '')}</p><div class="ec-bar ec-actorbar"><label class="ec-pick"><span class="micro">저장하는 사람</span><select data-ec="actor" aria-label="저장하는 사람">${(D?.actors || []).map(a => `<option value="${h(a.id)}" ${a.id === actorId() ? 'selected' : ''}>${h(a.name)}${a.role === 'teacher' ? '' : ` · ${h(ROLE[a.role] || '')}`}</option>`).join('')}</select></label><span class="ec-dim small">고른 사람 이름으로 저장하고 감사로그에 남깁니다 — 실제 발송은 없습니다.</span></div>` : ''}`;
+  const ROLE = { master: '원장', admin: '관리자', manager: '매니저' };
+  /** 저장하는 사람 — 주소의 as, 없으면 그 반 담임(재직 중), 없으면 첫 원장. */
+  function actorId() {
+    const as = last?.query?.get('as'), list = D?.actors || [];
+    if (as && list.some(a => a.id === as)) return as;
+    const homeroom = D?.sheet?.teacherId || D?.month?.teacherId || D?.today?.teacher?.id;
+    return (list.find(a => a.id === homeroom) || list.find(a => a.role === 'master' && !a.platform) || list.find(a => !a.platform) || list[0])?.id || '';
+  }
   /** 2.0 PeriodNav — `‹ 라벨 ›` 한 덩어리, 라벨을 누르면 이번 기간, 과거·미래면 배지와 칠한 화살표. */
   function periodNav({ label, prev, next, current, relation, prevAria, nextAria, currentTitle }) {
     const badge = relation === 'past' ? ['과거 조회', 'past'] : relation === 'future' ? ['미래 조회', 'future'] : null;
@@ -51,7 +71,7 @@
     } else if (L.panels) {
       body = `<section class="ec-landing"><div class="ec-panels">${L.panels.map(p => `<section class="ec-panel ${p.key}"><div class="ec-panel-head"><h3 class="ec-program">${h(p.label)}</h3></div>${groupFlow(p.groups, L, q, 'panel')}</section>`).join('')}</div></section>`;
     } else body = `<section class="ec-landing">${groupFlow(L.groups, L, q, 'full')}</section>`;
-    return `${head(t('landing.eyebrow'), t('landing.title'), `${t('landing.desc')} · ${L.weekLabel}`)}<p class="v2s-note">${h(READONLY)}</p>${bar}${body}`;
+    return `${head(t('landing.eyebrow'), t('landing.title'), `${t('landing.desc')} · ${L.weekLabel}`)}${W ? '' : `<p class="v2s-note">${h(READONLY)}</p>`}${bar}${body}`;
   }
   function groupFlow(groups, L, q, kind) {
     return `<div class="ec-flow ${kind}">${groups.map(g => `<section class="ec-group"><div class="ec-group-head"><h4 class="${g.unassigned ? 'unassigned' : ''}">${h(g.label)}</h4>
@@ -98,7 +118,7 @@
       <label class="ec-pick"><span class="micro">${h(t('toolbar.dow'))}</span><select data-ec="nav" aria-label="${h(t('toolbar.dow.aria'))}"><option value="${h(href(nav({ day: '' })))}">${h(t('toolbar.all'))}</option>${s.grid.days.map(x => `<option value="${h(href(nav({ day: x.date })))}" ${dayFilter === x.date ? 'selected' : ''}>${h(`${x.dowLabel} ${md(x.date)}`)}${x.holiday || x.isToday ? ` · ${h([x.holiday, x.isToday ? t('toolbar.today') : null].filter(Boolean).join(' · '))}` : ''}</option>`).join('')}</select></label>
       <span class="ec-end">${off(t('toolbar.attendance'), '', `${t('toolbar.attendance.title')} — 출석부는 '2.0 화면'의 출석부에서 봅니다.`)}
         <span class="ec-seg" title="${h(t('toolbar.jj.title'))}"><span class="ec-seg-label">${h(t('toolbar.jj'))}</span>${[['1', 'toolbar.show'], ['0', 'toolbar.hide']].map(([v, k]) => `<a class="ec-seg-item ${(q.get('jj') || '1') === v ? 'on' : ''}" href="${href({ ...nav({}), jj: v === '1' ? '' : '0' })}" aria-pressed="${(q.get('jj') || '1') === v}">${h(t(k))}</a>`).join('')}</span>
-        ${fontPick(d)}<span class="ec-status">${h(READONLY.split(' — ')[0])}</span><button type="button" class="ec-chip ${ui.panel ? 'on' : ''}" data-ec="panel" aria-pressed="${ui.panel}">${h(t('toolbar.planPanel'))}</button></span></div>`;
+        ${fontPick(d)}<span class="ec-status">${h(W ? (saving ? t('toolbar.saving') : t('toolbar.saved')) : READONLY.split(' — ')[0])}</span><button type="button" class="ec-chip ${ui.panel ? 'on' : ''}" data-ec="panel" aria-pressed="${ui.panel}">${h(t('toolbar.planPanel'))}</button></span></div>`;
     const days = dayFilter ? s.grid.days.filter(x => x.date === dayFilter) : s.grid.days;
     const grid = sheetGrid(s, days, dayFilter ? s.grid.days.findIndex(x => x.date === dayFilter) : null);
     const notes = `${s.attendanceOnly.length ? `<div class="ec-card ec-foot"><p>수업 시간표가 없는 날짜의 출석 기록: ${h(s.attendanceOnly.map(a => `${a.date} (${a.names.join(', ')})`).join(' · '))}</p></div>` : ''}
@@ -113,9 +133,11 @@
     const goalOf = (scope, role, area) => s.goals.find(g => g.scope === scope && g.role === role && g.skillArea === area && g.periodStart === (scope === 'month' ? s.monthStart : s.weekMonday));
     return `<aside class="ec-panelbox live-scroll">${SECTIONS.map(([role, scope, title], i) => `<details class="ec-goals" ${i === 0 ? 'open' : ''}><summary><span class="ec-chev" aria-hidden="true">›</span><span class="ec-goal-title">${h(t(title))}</span><span class="num ec-goal-when">${scope === 'month' ? h(s.monthStart.slice(0, 7)) : h(t('plan.panel.thisWeek'))}</span></summary>
       <div class="ec-goal-grid"><div class="ec-goal-headrow"><span></span><span>${h(t('month.goal.book'))}</span><span>${h(t('plan.panel.progress'))}</span></div>${s.goalAreas.map(a => { const g = goalOf(scope, role, a.key);
-        return `<div class="ec-goal-row"><span class="ec-area tone-${h(a.tone)}" title="${h(a.label)}">${h(a.label)}</span><input class="ec-input" readonly value="${h(g?.textbook ?? '')}" aria-label="${h(`${t(title)} ${a.label} ${t('month.goal.book')}`)}"><input class="ec-input" readonly value="${h(g?.targetProgress ?? '')}" aria-label="${h(`${t(title)} ${a.label} ${t('plan.panel.progress')}`)}"></div>`; }).join('')}</div></details>`).join('')}
-      <div class="ec-memo"><span>${h(t('plan.panel.memo'))}</span><textarea class="ec-input" readonly aria-label="${h(t('plan.panel.memo'))}">${h(s.memos.panel ?? '')}</textarea></div></aside>`;
+        return `<div class="ec-goal-row"><span class="ec-area tone-${h(a.tone)}" title="${h(a.label)}">${h(a.label)}</span>${goalBox(s.classId, scope, scope === 'month' ? s.monthStart : s.weekMonday, role, a.key, 'textbook', g?.textbook, `${t(title)} ${a.label} ${t('month.goal.book')}`)}${goalBox(s.classId, scope, scope === 'month' ? s.monthStart : s.weekMonday, role, a.key, 'targetProgress', g?.targetProgress, `${t(title)} ${a.label} ${t('plan.panel.progress')}`)}</div>`; }).join('')}</div></details>`).join('')}
+      <div class="ec-memo"><span>${h(t('plan.panel.memo'))}</span>${box('memo', { classId: s.classId, weekStart: s.weekMonday, memoKey: 'panel' }, s.memos.panel ?? '', { area: true, aria: t('plan.panel.memo'), ro: s.memoMasked?.panel, title: s.memoMasked?.panel ? MASKED : '' })}</div></aside>`;
   }
+  const MASKED = '연락처가 가려진 글이라 이 화면에서는 고치지 않습니다 — 2.0에서 고쳐 주세요.';
+  const goalBox = (classId, scope, periodStart, role, skillArea, field, value, aria, placeholder = '') => box('goal', { classId, scope, periodStart, role, skillArea, field }, value ?? '', { aria, placeholder });
   /** 2.0 sheet-grid.tsx — 요일 열 하나의 CSS grid, 머리는 sticky 밴드, 행 = 각 요일 N번째 수업(서수 배치), 카드 속살은 subgrid로 줄맞춤. */
   function sheetGrid(s, days, onlyIndex) {
     if (!days.length) return '<p class="ec-empty">이 주에는 수업이 없습니다.</p>';
@@ -129,21 +151,28 @@
   function periodBlock(s, day, slot, opt = {}) {
     const teacher = slot.teacherLabel ?? (slot.teacherId ? s.teacherNames[slot.teacherId] ?? null : null) ?? s.classTeacherName;
     const shouted = !!s.shouting[`${day.date}|${slot.slotStart}`];
-    const shout = s.isEie ? `<label class="ec-shout ${shouted ? 'on' : ''}" title="${h(t('plan.shouting.title'))}"><input type="checkbox" disabled ${shouted ? 'checked' : ''}><span>${h(t('landing.col.shouting'))}</span></label>` : '';
+    const shout = s.isEie ? `<label class="ec-shout ${shouted ? 'on' : ''}" title="${h(t('plan.shouting.title'))}"><input type="checkbox" ${W && slot.scheduled && !saving ? `data-ec-check="shouting" data-p="${enc({ classId: s.classId, date: day.date, slotStart: slot.slotStart })}"` : 'disabled'} ${shouted ? 'checked' : ''}><span>${h(t('landing.col.shouting'))}</span></label>` : '';
     return `<article class="ec-block${opt.flat ? ' flat' : ''}"><header class="ec-blockhead">${slot.periodLabel ? `<span class="ec-periodchip">${h(slot.periodLabel)}</span>` : ''}<span class="num ec-time">${h(slot.slotStart)}${slot.slotEnd ? ` ~ ${h(slot.slotEnd)}` : ''}</span>
       ${teacher ? `<span class="ec-teacher">${h(teacher)}</span>` : ''}${slot.roomLabel ? `<span class="ec-room">${h(slot.roomLabel)}</span>` : ''}${shout ? `<span class="ec-headend">${shout}</span>` : ''}</header>
-      ${planTable(s, slot)}${opt.roster === false ? '' : slot.rosterCount ? rosterTable(s, day, slot) : '<div></div>'}</article>`;
+      ${planTable(s, slot, day.date)}${opt.roster === false ? '' : slot.rosterCount ? rosterTable(s, day, slot) : '<div></div>'}</article>`;
   }
-  /** 2.0 plan-table.tsx(읽기 모양) — 평시 / 내신(EiE는 저장된 줄이 있을 때만) 구획, 구분·교재·페이지/시간·진도·과제. */
-  function planTable(s, slot) {
-    const area = k => s.skillAreas.find(a => a.key === k), terms = [['regular', 'plan.term.regular', 'reg'], ['exam', 'plan.term.exam', 'exam']];
+  /** 2.0 plan-table.tsx — 평시 / 내신(EiE는 내신 없음 — 저장된 줄이 있으면 보인다) 구획, 구분·교재·페이지/시간·진도·과제. 저장 가능하면 줄 추가 · 내용 복사 · 줄 삭제. */
+  function planTable(s, slot, date) {
+    const area = k => s.skillAreas.find(a => a.key === k), terms = [['regular', 'plan.term.regular', 'reg'], ['exam', 'plan.term.exam', 'exam']], edit = W && slot.scheduled;
+    const FIELD = { textbook: ['textbook', 'fill.book'], pageRange: ['page_range', 'plan.col.pageTime'], progress: ['progress', 'plan.col.progress'], homework: ['homework', 'plan.col.homework'] };
     return `<div class="ec-plan">${terms.map(([key, label, tone]) => {
-      const rows = slot.lines.filter(l => l.termMode === key);
-      if (!rows.length && key === 'exam') return ''; // 읽기 모양: 2.0도 편집 권한이 없으면 빈 내신 구획을 안 그린다
-      return `<div class="ec-term"><div class="ec-termhead"><span class="ec-termchip ${tone}">${h(t(label))}</span></div>${rows.length ? `<table class="ec-plantable"><colgroup><col style="width:100px"><col style="width:106px"><col style="width:64px"><col><col><col style="width:22px"></colgroup>
+      const rows = slot.lines.filter(l => l.termMode === key), termLabel = t(label);
+      if (!rows.length && key === 'exam' && (s.isEie || !edit)) return ''; // 2.0: EiE는 내신 구획 없음 · 편집 권한이 없으면 빈 내신 구획을 안 그린다
+      const tools = edit ? `${btn('planAdd', { classId: s.classId, planDate: date, slotStart: slot.slotStart, termMode: key, skillArea: s.skillAreas[0]?.key ?? 'vocab' }, h(t('plan.addRow')))}${btn('planCopy', { classId: s.classId, planDate: date, slotStart: slot.slotStart, termMode: key }, h(t('plan.copy')), { title: tf('plan.copy.title', { term: termLabel }) })}` : '';
+      return `<div class="ec-term"><div class="ec-termhead"><span class="ec-termchip ${tone}">${h(termLabel)}</span>${tools}</div>${rows.length ? `<table class="ec-plantable"><colgroup><col style="width:100px"><col style="width:106px"><col style="width:64px"><col><col><col style="width:22px"></colgroup>
         <thead><tr><th>${h(t('plan.col.kind'))}</th><th>${h(t('plan.col.book'))}</th><th title="${h(t('plan.col.pageTime.title'))}">${h(t('plan.col.pageTime'))}</th><th>${h(t('plan.col.progress'))}</th><th>${h(t('plan.col.homework'))}</th><th aria-hidden="true"></th></tr></thead>
-        <tbody>${rows.map(l => { const a = area(l.skillArea); return `<tr data-skill-area="${h(l.skillArea)}"><td><span class="ec-area tone-${h(a?.tone ?? 'neutral')}">${h(a?.label ?? l.skillArea)}</span></td>${['textbook', 'pageRange', 'progress', 'homework'].map(f => `<td><input class="ec-input" readonly value="${h(l[f] ?? '')}" aria-label="${h(t(f === 'textbook' ? 'fill.book' : f === 'pageRange' ? 'plan.col.pageTime' : f === 'progress' ? 'plan.col.progress' : 'plan.col.homework'))}"></td>`).join('')}<td></td></tr>`; }).join('')}</tbody></table>`
-        : `<p class="ec-planempty">${h(t('plan.empty'))}</p>`}</div>`;
+        <tbody>${rows.map(l => { const a = area(l.skillArea), base = { classId: s.classId, lineId: l.id };
+          const kind = edit ? `<select class="ec-area tone-${h(a?.tone ?? 'neutral')}" data-ec-act="planCell" data-p="${enc({ ...base, field: 'skill_area', expected: l.skillArea })}" aria-label="${h(t('plan.areaAria'))}">${a ? '' : `<option value="">${h(l.skillArea)} (${h(t('plan.unknownArea'))})</option>`}${s.skillAreas.map(x => `<option value="${h(x.key)}" ${x.key === l.skillArea ? 'selected' : ''}>${h(x.label)}</option>`).join('')}</select>`
+            : `<span class="ec-area tone-${h(a?.tone ?? 'neutral')}">${h(a?.label ?? l.skillArea)}</span>`;
+          const has = [l.textbook, l.pageRange, l.progress, l.homework].some(v => (v ?? '').trim() !== '');
+          return `<tr data-skill-area="${h(l.skillArea)}"><td>${kind}</td>${Object.entries(FIELD).map(([f, [col, aria]]) => `<td>${edit ? box('planCell', { ...base, field: col, expected: l[f] ?? null }, l[f] ?? '', { aria: t(aria) }) : `<input class="ec-input" readonly value="${h(l[f] ?? '')}" aria-label="${h(t(aria))}">`}</td>`).join('')}
+            <td>${edit ? btn('planDelete', base, '×', { cls: 'ec-x', title: t('plan.deleteRow'), confirm: has ? t('plan.deleteConfirm') : '' }) : ''}</td></tr>`; }).join('')}</tbody></table>`
+        : key === 'regular' ? `<p class="ec-planempty">${h(t('plan.empty'))}</p>` : ''}</div>`;
     }).join('')}</div>`;
   }
   /** 2.0 roster-table.tsx + roster-slot-cells.tsx(읽기 모양) — 재원 · 보강 · 종강 · 퇴원 · 기록 묶음, 출결·유닛·태도·자유 입력·특이사항. */
@@ -154,7 +183,7 @@
     const body = slot.groups.map(g => {
       const label = g.label ? `<tr class="ec-glabel"><td colspan="${span}" title="${h(t(`roster.group.${g.key}.hint`))}">${toggle(g.key, g.rows.length)}</td></tr>` : '';
       if (ui.collapsed.has(g.key)) return label;
-      return label + g.rows.map(r => (g.key === 'withdrawn' || g.key === 'classEnded' ? withdrawnRow(r, span) : `<tr class="${r.historical ? 'ec-hist' : ''}">${nameCell(r)}${slotCells(r, cols, false)}</tr>`)).join('');
+      return label + g.rows.map(r => (g.key === 'withdrawn' || g.key === 'classEnded' ? withdrawnRow(r, span) : `<tr class="${r.historical ? 'ec-hist' : ''}">${nameCell(r)}${slotCells(r, cols, false, { classId: s.classId, date: day.date, slotStart: slot.slotStart })}</tr>`)).join('');
     }).join('');
     return `<div class="ec-roster"><table class="ec-rostertable"><colgroup><col style="width:${nameW}"><col style="width:60px"><col style="width:40px"><col style="width:83px">${cols.map(c => `<col style="width:${c.width}px">`).join('')}<col></colgroup>
       <thead><tr><th>${toggle('active', count.active ?? 0)}</th><th class="c">${h(t('roster.col.attendance'))}</th><th class="c" title="${h(t('roster.col.unit.title'))}">${h(t('roster.col.unit'))}</th><th class="c">${h(t('roster.col.attitude'))}</th>${cols.map(c => `<th class="c" title="${h(t(c.titleKey))}">${h(t(c.labelKey))}</th>`).join('')}<th class="c"><span class="clamp2">${h(t('roster.col.note'))}</span></th></tr></thead>
@@ -163,7 +192,23 @@
   const groupToggle = (key, n) => `<button type="button" class="ec-gtoggle" data-ec="group" data-k="${h(key)}" aria-expanded="${!ui.collapsed.has(key)}" title="${h(`${tf('roster.group.listAria', { name: t(`roster.group.${key}`) })} ${t(ui.collapsed.has(key) ? 'common.expand' : 'common.collapse')}`)}"><span class="ec-chev ${ui.collapsed.has(key) ? '' : 'open'}" aria-hidden="true">›</span><span>${h(t(`roster.group.${key}`))}</span><span class="num">${n}</span></button>`;
   const withdrawnRow = (r, span) => `<tr class="ec-hist"><td colspan="${span}"><span class="ec-wname" title="${h(`${r.name} · ${tf('roster.endedTitle', { date: r.endedOn ?? '' })}${r.reason ? ` · ${r.reason}` : ''}`)}">${h(r.name)}</span>${r.summary ? `<span class="ec-dim">${h(r.summary)}</span>` : ''}${r.kept ? `<span class="ec-dim ec-kept" title="${h(r.kept)}">· ${h(r.kept)}</span>` : ''}</td></tr>`;
   /** 한 교시분 칸 — 출결 · 유닛 · 태도 · 폼별 자유 입력 · 특이사항(2.0 RosterSlotCells 읽기 모양). edge = 오늘 면 교시 경계선. */
-  const slotCells = (r, cols, edge) => `${edge ? attCell(r).replace('<td>', '<td class="edge">') : attCell(r)}${unitCell(r)}<td><span class="ec-box ${r.attitude === null ? 'faint' : r.attitudeKnown ? '' : 'dim'}">${h(r.attitudeLabel ?? r.attitude ?? '—')}</span></td>${cols.map(c => `<td><input class="ec-input center" readonly value="${h(r.texts[c.field] ?? '')}" title="${h(t(c.titleKey))}" aria-label="${h(tf('roster.cellAria', { name: r.name, field: t(c.labelKey) }))}"></td>`).join('')}<td><span class="ec-note" title="${h(r.note)}">${h(r.note)}</span></td>`;
+  const slotCells = (r, cols, edge, ctx) => {
+    const editable = W && ctx && (r.eligible || r.isMakeup), base = ctx ? { classId: ctx.classId, studentId: r.studentId, date: ctx.date, slotStart: ctx.slotStart } : null;
+    const attitude = editable ? btn('mark', { ...base, field: 'status', value: nextCycle(r.attitude, D.attitudes) }, h(r.attitudeLabel ?? r.attitude ?? t('select.choose')), { cls: `ec-box ec-cycle ${r.attitude === null ? 'faint' : r.attitudeKnown ? '' : 'dim'}`, title: r.attitude === null || r.attitudeKnown ? tf('roster.attitude.cycle', { scale: D.attitudes.join(' → ') }) : tf('roster.attitude.legacy', { value: r.attitude, first: D.attitudes[0] }) })
+      : `<span class="ec-box ${r.attitude === null ? 'faint' : r.attitudeKnown ? '' : 'dim'}">${h(r.attitudeLabel ?? r.attitude ?? '—')}</span>`;
+    const att = editable ? attButton(r, base) : attCell(r);
+    return `${edge ? att.replace('<td>', '<td class="edge">') : att}${unitCell(r)}<td>${attitude}</td>${cols.map(c => `<td>${editable ? box('mark', { ...base, field: c.field }, r.texts[c.field] ?? '', { cls: 'ec-input center', aria: tf('roster.cellAria', { name: r.name, field: t(c.labelKey) }), title: t(c.titleKey) }) : `<input class="ec-input center" readonly value="${h(r.texts[c.field] ?? '')}" title="${h(t(c.titleKey))}" aria-label="${h(tf('roster.cellAria', { name: r.name, field: t(c.labelKey) }))}">`}</td>`).join('')}<td>${editable && !r.noteMasked ? box('mark', { ...base, field: 'progressNote' }, r.note, { aria: `${r.name} 특이사항` }) : `<span class="ec-note" title="${h(r.noteMasked ? MASKED : r.note)}">${h(r.note)}</span>`}</td>`;
+  };
+  /** 2.0 mark-cycle nextCycleValue — 매우 좋음 → … → 매우 안좋음 → 선택 안 함, 옛 표기는 첫 값으로. */
+  const nextCycle = (cur, options) => { const cycle = [...options, null], i = cycle.indexOf(cur); return cycle[(i + 1) % cycle.length]; };
+  /** 2.0 attendance-check — 누를 때마다 출석 → 결석 → 지각 → 선택 안 함(사유가 적힌 칸은 지우기를 건너뛰고 출석). 조퇴·공결·보강은 바꾸지 않는다. */
+  function attButton(r, base) {
+    const a = r.att, cur = a?.status ?? null;
+    if (cur && !['present', 'late', 'absent'].includes(cur)) return attCell(r);
+    let next = nextCycle(cur, D.attCycle.filter(Boolean)); if (next === null && a?.note) next = 'present';
+    const tone = ATT_TONE[cur] || '', label = a ? a.label : t('select.choose');
+    return `<td>${btn('attendance', { ...base, slot: a && a.status !== 'makeup' ? a.slot : base.slotStart, status: next }, `${tone ? `<i aria-hidden="true">${ATT_ICON[cur]}</i>` : ''}<span>${h(label)}</span>${a?.note ? '<b class="ec-dot" aria-hidden="true">●</b>' : ''}`, { cls: `ec-box att ec-cycle ${tone} ${a ? '' : 'faint'}`, title: a?.note ? `${a.note}` : '' })}</td>`;
+  }
   const nameCell = r => `<td><div class="ec-namecell"><button type="button" class="ec-name ${r.historical ? 'dim' : ''}" data-ec="student" data-id="${h(r.studentId)}" title="${h(`${r.name}${r.schoolGrade ? ` · ${r.schoolGrade}` : ''} — ${t('studentEnglishName.detailsHint')}`)}">${h(r.name)}</button>${r.schoolGrade ? `<span class="ec-sg" title="${h(`${r.name}/${r.schoolGrade}`)}">/${h(r.schoolGrade)}</span>` : ''}${r.endedOn ? `<span class="num ec-dim">${h(r.endedOn.slice(5))}</span>` : ''}</div>${r.secondary ? `<span class="ec-secondary">${h(r.secondary)}</span>` : ''}</td>`;
   const ATT_TONE = { present: 'ok', late: 'warn', absent: 'bad' }, ATT_ICON = { present: '✓', late: '◷', absent: '×' };
   function attCell(r) {
@@ -190,7 +235,7 @@
       <span class="ec-end">${m.textbooksOn ? off(t('fill.open'), '', `${t('fill.open.title')} — ${READONLY}`) : ''}${view === 'mp' ? `${toggle('actual', t('month.toggle.actual'), t('month.toggle.actual.title'))}${off(t('month.print'), '', NOT_HERE)}` : `${toggle('homework', t('plan.col.homework'), t('month.toggle.homework.title'))}${toggle('seat', t('month.toggle.seat'), t('month.toggle.seat.title'))}`}</span></div>`;
     const body = view === 'mp' ? mpDoc(m, cur) : view === 'cal' ? `${goalStrip(m)}${monthMemo(m)}${calendar(m, cur)}` : rail(m, cur);
     const desc = view === 'mp' ? m.monthLabel : `${m.monthLabel} · 계획 ${m.fill.filled}/${m.fill.total}교시`;
-    return `${head('수업 운영', `영어 강사 시트 · 월간 — ${m.className}`, desc)}<p class="v2s-note">${h(READONLY)}</p>${widthGate(`${bar}<div class="ec-month"${zoomStyle(d)}>${body}</div>`, q)}`;
+    return `${head('수업 운영', `영어 강사 시트 · 월간 — ${m.className}`, desc)}${W ? '' : `<p class="v2s-note">${h(READONLY)}</p>`}${widthGate(`${bar}<div class="ec-month"${zoomStyle(d)}>${body}</div>`, q)}`;
   }
   function goalStrip(m) {
     const role = ui.role, map = m.goals[role], strip = m.strip[role];
@@ -201,9 +246,9 @@
       ${ui.folded ? '' : `<div class="ec-stripgrid">${m.skillAreas.map(a => { const g = map[a.key] ?? {}, x = strip[a.key] ?? { actual: [], off: [] };
         const line = !x.actual.length ? h(t('month.goal.none')) : x.off.length ? `${h(t('month.goal.actual'))} <b class="ec-amber-ink">${h(x.off[0])}</b>${x.off.length > 1 ? `<span class="num">${h(tf('month.goal.more', { n: x.off.length - 1 }))}</span>` : ''}`
           : g.textbook ? `${h(t('month.goal.actual'))} <b class="ec-green-ink">${h(t('month.goal.onTarget'))}</b>` : `${h(t('month.goal.actual'))} ${h(x.actual[0])}${x.actual.length > 1 ? `<span class="num">${h(tf('month.goal.more', { n: x.actual.length - 1 }))}</span>` : ''}`;
-        return `<div class="ec-stripcell"><div class="ec-stripinputs"><span class="ec-area tone-${h(a.tone)}" title="${h(a.label)}">${h(a.label)}</span><input class="ec-input" readonly value="${h(g.textbook ?? '')}" placeholder="${h(t('month.goal.book'))}" aria-label="${h(tf('month.goal.bookAria', { area: a.label }))}"><input class="ec-input" readonly value="${h(g.targetProgress ?? '')}" placeholder="${h(t('month.goal.target'))}" aria-label="${h(tf('month.goal.targetAria', { area: a.label }))}"></div><p class="ec-stripline">${line}</p></div>`; }).join('')}</div>`}</div>`;
+        return `<div class="ec-stripcell"><div class="ec-stripinputs"><span class="ec-area tone-${h(a.tone)}" title="${h(a.label)}">${h(a.label)}</span>${goalBox(m.classId, 'month', `${m.month}-01`, role, a.key, 'textbook', g.textbook, tf('month.goal.bookAria', { area: a.label }), t('month.goal.book'))}${goalBox(m.classId, 'month', `${m.month}-01`, role, a.key, 'targetProgress', g.targetProgress, tf('month.goal.targetAria', { area: a.label }), t('month.goal.target'))}</div><p class="ec-stripline">${line}</p></div>`; }).join('')}</div>`}</div>`;
   }
-  const monthMemo = m => `<div class="ec-strip"><div class="ec-striphead"><span>${h(t('roster.col.note'))}</span><span class="num ec-faint">${h(m.monthLabel)}</span></div><textarea class="ec-monthmemo" readonly aria-label="${h(t('month.memo.aria'))}">${h(m.memo)}</textarea></div>`;
+  const monthMemo = m => `<div class="ec-strip"><div class="ec-striphead"><span>${h(t('roster.col.note'))}</span><span class="num ec-faint">${h(m.monthLabel)}</span></div>${box('monthMemo', { classId: m.classId, month: m.month }, m.memo, { cls: 'ec-monthmemo', area: true, aria: t('month.memo.aria'), placeholder: W ? t('month.memo.placeholder') : '', ro: m.memoMasked, title: m.memoMasked ? MASKED : '' })}</div>`;
   function calendar(m, cur) {
     if (!m.dows.length) return `<p class="ec-empty">${h(t('month.noClasses'))}</p>`;
     const cols = `44px repeat(${m.dows.length}, minmax(0, 1fr))`;
@@ -238,7 +283,7 @@
     return `<div class="ec-railwrap live-scroll" data-scroll-key="ecs-rail"><table class="ec-rail"><thead><tr><th class="ec-railgoal">${h(t('month.rail.goalHead'))} <span class="ec-faint">${h(t('month.goal.sameAsWeek'))}</span></th>${days.map(dt => { const holi = m.holidays[dt];
       return `<th class="${offDays.has(dt) ? 'offgoal' : holi ? 'holiday' : ''}"><a href="${href({ view: 'sheet', class: m.classId, week: mondayOf(dt), day: dt, ...keep(last.query) })}" title="${h(holi ? tf('month.cell.holiday.view', { holiday: holi }) : t('month.cell.view'))}"><span class="num">${h(slash(dt))}</span><br><span class="ec-faint">${h(holi ?? DOWK[new Date(`${dt}T00:00:00Z`).getUTCDay()])}</span></a></th>`; }).join('')}</tr></thead>
       <tbody>${m.skillAreas.map(a => { const g = m.goals.homeroom[a.key] ?? {};
-        return `<tr><th class="ec-railgoal"><span class="ec-area w74 tone-${h(a.tone)}">${h(a.label)}</span><div class="ec-railinputs"><input class="ec-input" readonly value="${h(g.textbook ?? '')}" placeholder="${h(t('month.goal.book'))}" aria-label="${h(tf('month.goal.bookAria', { area: a.label }))}"><input class="ec-input" readonly value="${h(g.targetProgress ?? '')}" placeholder="${h(t('month.goal.target'))}" aria-label="${h(tf('month.goal.targetAria', { area: a.label }))}"></div></th>
+        return `<tr><th class="ec-railgoal"><span class="ec-area w74 tone-${h(a.tone)}">${h(a.label)}</span><div class="ec-railinputs">${goalBox(m.classId, 'month', `${m.month}-01`, 'homeroom', a.key, 'textbook', g.textbook, tf('month.goal.bookAria', { area: a.label }), t('month.goal.book'))}${goalBox(m.classId, 'month', `${m.month}-01`, 'homeroom', a.key, 'targetProgress', g.targetProgress, tf('month.goal.targetAria', { area: a.label }), t('month.goal.target'))}</div></th>
           ${days.map(dt => { const cs = cellsOf(dt, a.key); return `<td class="${!cs.length ? 'empty' : offDays.has(dt) ? 'offday' : ''}">${cs.map(({ l, seat }) => `<div class="ec-railitem ${seat ? 'seat' : ''}">${l.pageRange ? `<span class="num ec-bold">${seat ? '<span class="ec-jj">JJ</span>' : ''}${h(l.pageRange)}</span>` : ''}${l.progress ? `<span class="ec-dim">${h(l.progress)}</span>` : ''}<span class="${l.off ? 'ec-amber-ink ec-bold' : 'ec-faint'}" title="${h(l.textbook ?? '')}">${h(l.textbook ?? '')}</span>${cur.homework && l.homework ? `<span class="ec-faint"><b>${h(t('plan.col.homework'))}</b> ${h(l.homework)}</span>` : ''}</div>`).join('')}</td>`; }).join('')}</tr>`; }).join('')}</tbody>
       <tfoot><tr><th class="ec-railgoal">${h(t('month.rail.footer'))}</th>${days.map(dt => { const f = m.fillByDate[dt] ?? { filled: 0, total: 0, short: false }; return `<td><span class="num ${f.short ? 'ec-amber-ink ec-bold' : 'ec-faint'}">${f.filled}/${f.total}</span></td>`; }).join('')}</tr></tfoot></table></div>`;
   }
@@ -262,16 +307,18 @@
       <div class="ec-mpside" style="${h(st.side)}"><div class="ec-mpteacher" style="${h(st.teacher)}">${h(p.teacherLabel ?? '')}</div>${p.legend.map(l => `<p class="ec-mplegend" style="${h(st.legend)}">${h(l)}</p>`).join('')}</div></div>`;
     const colsOf = dow => p.weeks.find(w => w.days.find(x => x.dow === dow && x.cols?.length))?.days.find(x => x.dow === dow)?.cols ?? [];
     const width = dow => Math.max(1, colsOf(dow).length);
-    const thead = `<thead><tr><th class="ec-mpsticky" style="${h(st.dayCorner)}">Day</th>${p.dows.map(dow => `<th colspan="${width(dow)}" style="${h(st.day)}">${h(p.dowLabels[dow])}</th>`).join('')}</tr></thead>`;
+    const ebook = dow => { if (!W) return ''; const has = colsOf(dow).some(c => c.col === 'ebook'), dates = p.classDatesByDow[dow] || [], written = p.weeks.flatMap(w => w.days.filter(x => x.dow === dow)).filter(x => x.cols.some(c => c.col === 'ebook' && c.body.trim())).length;
+      return btn('mpCell', { classId: m.classId, dates, colKind: 'ebook', body: has ? null : '', intent: { kind: 'ebookColumn', show: !has } }, h(t(has ? 'mp.ebook.drop' : 'mp.ebook.add')), { cls: 'ec-mpbtn', title: t(has ? 'mp.ebook.drop.title' : 'mp.ebook.add.title'), confirm: has && written ? tf('mp.ebook.dropConfirm', { dow: p.dowLabels[dow], n: written }) : '' }); };
+    const thead = `<thead><tr><th class="ec-mpsticky" style="${h(st.dayCorner)}">Day</th>${p.dows.map(dow => `<th colspan="${width(dow)}" style="${h(st.day)}"><span class="ec-mpdow">${h(p.dowLabels[dow])}${ebook(dow)}</span></th>`).join('')}</tr></thead>`;
     const weeks = p.weeks.map(w => {
-      const dateRow = `<tr><th class="ec-mpsticky" style="${h(st.dateCorner)}">Date</th>${w.days.map(x => `<td colspan="${x.cols.length || width(x.dow)}" style="${h(x.kind === 'off' ? st.offBand : st.date)}"><span class="ec-mpdate"><span class="num">${h(x.md ?? '—')}</span>${x.date && !x.teaches ? `<span>${h(t('mp.noClassDay'))}</span>` : ''}${x.holiday && x.kind !== 'off' ? `<span class="ec-tone inert">${h(x.holiday)}</span>` : ''}${x.verdict && x.verdict.tone ? `<span class="ec-tone ${h(x.verdict.tone)}" title="${h(x.verdict.hint)}">${h(x.verdict.label)}</span>` : ''}</span></td>`).join('')}</tr>`;
+      const dateRow = `<tr><th class="ec-mpsticky" style="${h(st.dateCorner)}">Date</th>${w.days.map(x => `<td colspan="${x.cols.length || width(x.dow)}" style="${h(x.kind === 'off' ? st.offBand : st.date)}"><span class="ec-mpdate"><span class="num">${h(x.md ?? '—')}</span>${x.date && !x.teaches ? `<span>${h(t('mp.noClassDay'))}</span>` : ''}${x.holiday && x.kind !== 'off' ? `<span class="ec-tone inert">${h(x.holiday)}</span>` : ''}${x.verdict && x.verdict.tone ? `<span class="ec-tone ${h(x.verdict.tone)}" title="${h(x.verdict.hint)}">${h(x.verdict.label)}</span>` : ''}${W && x.date && x.teaches ? btn('mpCell', { classId: m.classId, dates: [x.date], colKind: 'off', body: null, intent: { kind: 'dayOff', off: !x.off } }, h(t(x.off ? 'mp.off.undo' : 'mp.off')), { cls: 'ec-mpbtn', title: t(x.off ? 'mp.off.undo.title' : 'mp.off.title') }) : ''}</span></td>`).join('')}</tr>`;
       const labelRow = `<tr><th class="ec-mpsticky" rowspan="${cur.actual ? 3 : 2}" style="${h(st.week)}">Week <span class="num">${w.index}</span></th>${w.days.map(x => (x.kind === 'off' ? `<td colspan="${x.cols.length || width(x.dow)}" style="${h(st.offBand)}">${h(x.offLabel)}</td>` : x.kind === 'none' ? `<td colspan="${width(x.dow)}" style="${h(st.blank)}"></td>` : x.cols.map(c => `<th title="${h(c.hint)}" style="${h(st.colHead[c.col])}">${h(c.label)}</th>`).join(''))).join('')}</tr>`;
-      const valueRow = `<tr>${w.days.map(x => (x.kind === 'none' ? (colsOf(x.dow).length ? colsOf(x.dow) : [{ col: 'in_class' }]).map(c => `<td style="${h(st.valueNone[c.col])}"></td>`).join('') : x.cols.map(c => `<td style="${h(x.kind === 'off' ? st.valueOff : st.value[c.col])}${x.warnBook && c.col === 'in_class' ? ';box-shadow:inset 0 0 0 2px var(--e-amber)' : ''}"><div class="ec-mpvalue" style="${h(x.kind === 'off' ? st.inputMuted[c.col] : st.input[c.col])}" title="${h(c.hint)}" aria-label="${h(`${x.md} ${c.label}`)}">${h(c.body)}</div></td>`).join(''))).join('')}</tr>`;
+      const valueRow = `<tr>${w.days.map(x => (x.kind === 'none' ? (colsOf(x.dow).length ? colsOf(x.dow) : [{ col: 'in_class' }]).map(c => `<td style="${h(st.valueNone[c.col])}"></td>`).join('') : x.cols.map(c => `<td style="${h(x.kind === 'off' ? st.valueOff : st.value[c.col])}${x.warnBook && c.col === 'in_class' ? ';box-shadow:inset 0 0 0 2px var(--e-amber)' : ''}">${W && x.kind === 'live' ? box('mpCell', { classId: m.classId, dates: [x.date], colKind: c.col }, c.body, { cls: 'ec-mpvalue ec-mpedit', area: true, aria: `${x.md} ${c.label}`, title: c.hint }).replace('<textarea ', `<textarea style="${h(st.input[c.col])}" `) : `<div class="ec-mpvalue" style="${h(x.kind === 'off' ? st.inputMuted[c.col] : st.input[c.col])}" title="${h(c.hint)}" aria-label="${h(`${x.md} ${c.label}`)}">${h(c.body)}</div>`}</td>`).join(''))).join('')}</tr>`;
       const actualRow = cur.actual ? `<tr>${w.days.map(x => `<td colspan="${x.cols.length || width(x.dow)}" style="${h(st.actual)}">${x.actual.length ? `<span class="ec-mpactual">${h(x.actual.join(' / '))}</span>` : `<span class="ec-mpnone">${x.date && x.teaches ? h(t('mp.noRecord')) : ''}</span>`}</td>`).join('')}</tr>` : '';
       return `<tbody>${dateRow}${labelRow}${valueRow}${actualRow}</tbody>`;
     }).join('');
     return `<div class="ec-mpwrap live-scroll" data-scroll-key="ecs-mp"><div class="ec-mpdoc" style="${h(st.outer)}">${headBlock}<table class="ec-mptable" style="${h(st.table)}">${thead}${weeks}</table>
-      <div class="ec-mpfooter" style="${h(st.footer)}">${p.sessionLine ? `<p>${h(p.sessionLine)}</p>` : ''}<div class="ec-mpfootertext">${h(p.footer)}</div></div></div></div>`;
+      <div class="ec-mpfooter" style="${h(st.footer)}">${p.sessionLine ? `<p>${h(p.sessionLine)}</p>` : ''}${W ? box('mpCell', { classId: m.classId, dates: [p.footerDate], colKind: 'footer' }, p.footer, { cls: 'ec-mpfootertext ec-mpedit', area: true, rows: Math.max(4, p.footer.split('\n').length), aria: t('mp.footerAria'), title: t('mp.footerTitle') }) : `<div class="ec-mpfootertext">${h(p.footer)}</div>`}</div></div></div>`;
   }
 
   // ── 오늘 — 2.0 EcsTodayFace(시트 모드): 고른 선생님의 그날 반, 반마다 그날 열 · 본인 교시만 ──
@@ -294,7 +341,7 @@
     const top = `<div class="ec-todaytop"><div style="width:${ts.nameW}px;flex-shrink:0" aria-hidden="true"></div>${day.slots.map(slot => `<div class="ec-todayslot" style="width:${ts.slotW}px">${periodBlock(data, day, slot, { flat: true, roster: false })}</div>`).join('')}</div>`;
     return `<section class="ec-todaycard live-scroll" data-scroll-key="ecs-today-${h(c.classId)}"><div class="ec-todayinner" style="width:${ts.width + 16}px">
       <div class="ec-todayhead" style="width:${ts.width}px">${link}${c.classTeacherName ? `<span class="ec-dim">${h(t('chrome.homeroom'))} ${h(c.classTeacherName)}</span>` : ''}</div>${top}
-      ${ts.hasRoster ? `<div class="ec-todaysep"></div>${todayRoster(day, ts)}` : ''}</div></section>`;
+      ${ts.hasRoster ? `<div class="ec-todaysep"></div>${todayRoster(day, { ...ts, classId: c.classId })}` : ''}</div></section>`;
   }
   function todayRoster(day, ts) {
     const slots = day.slots, span = 1 + slots.reduce((n, s) => n + 4 + s.textCols.length, 0), count = Object.fromEntries(ts.groups.map(g => [g.key, g.rows.length]));
@@ -305,33 +352,62 @@
       const label = g.label ? `<tr class="ec-glabel"><td colspan="${span}" title="${h(t(`roster.group.${g.key}.hint`))}">${groupToggle(g.key, g.rows.length)}</td></tr>` : '';
       if (ui.collapsed.has(g.key)) return label;
       return label + g.rows.map(r => (g.key === 'withdrawn' || g.key === 'classEnded' ? withdrawnRow(r, span)
-        : `<tr class="${r.historical ? 'ec-hist' : ''}">${nameCell(r)}${slots.map((s, i) => (r.cells[i] ? slotCells({ ...r, ...r.cells[i] }, s.textCols, true) : offCells(s))).join('')}</tr>`)).join('');
+        : `<tr class="${r.historical ? 'ec-hist' : ''}">${nameCell(r)}${slots.map((s, i) => (r.cells[i] ? slotCells({ ...r, ...r.cells[i] }, s.textCols, true, { classId: ts.classId, date: day.date, slotStart: s.slotStart }) : offCells(s))).join('')}</tr>`)).join('');
     }).join('');
     return `<table class="ec-rostertable ec-todayroster" style="width:${ts.width}px"><colgroup><col style="width:${ts.nameW}px">${ts.slotCols.map(ws => ws.map(w => `<col style="width:${w}px">`).join('')).join('')}</colgroup><thead>${head}</thead><tbody>${body}</tbody></table>`;
   }
 
   S.register({ id: 'ecs', label: '강사 시트', render(ctx) {
-    last = ctx;
+    last = ctx; W = !!ctx.writable;
     const q = ctx.query, view = q.get('view') || (q.get('class') ? 'sheet' : 'list');
     const params = Object.fromEntries(['view', 'class', 'week', 'month', 'mv', 'period', 'track', 'teacher', 'date', 'jj'].map(k => [k, q.get(k) || '']));
     if (view === 'month' && params.mv === '') delete params.mv;
     const e = ctx.load(params);
     if (e.status === 'loading') return `${head('수업 운영', '영어 강사 시트', '')}<p class="v2s-note">불러오는 중입니다…</p>`;
     if (e.status === 'error') return `${head('수업 운영', '영어 강사 시트', '')}<p class="v2s-note">${h(e.error)}</p><button type="button" class="ec-chip" data-ec="retry">다시 불러오기</button>`;
-    const d = e.data; T = d.t || {}; last.faceTitle = d.faceTitle;
+    const d = e.data; T = d.t || {}; last.faceTitle = d.faceTitle; D = d;
+    if (!e.refreshing) for (const [k, x] of drafts) if (x.saved) drafts.delete(k);
     if (d.error) return `${head('수업 운영', '영어 강사 시트', '반별 주간 수업계획서/출석부')}<div class="ec-card ec-foot"><p>${h(d.error)}</p><a class="ec-link" href="${href({ view: 'list', ...keep(q) })}">반 목록으로</a></div>`;
     const html = d.view === 'list' ? listView(d, q) : d.view === 'today' ? todayView(d, q) : d.view === 'month' ? monthView(d, q) : sheetView(d, q);
     return `<div class="ec">${html}</div>`;
   } });
 
+  /** 저장 한 번 — 끝나면 공통 틀이 같은 화면 자료를 다시 받아 그린다. 거절은 2.0 문구 그대로 알림. */
+  async function save(act, body, fid) {
+    if (!last?.act || saving) return;
+    const actor = actorId(); if (!actor) { last.api?.toast?.('저장하는 사람을 골라 주세요.'); return; }
+    saving = true; rerender();
+    try {
+      const res = await last.act(act, { ...body, actor });
+      if (act === 'planCell' && res?.status === 'conflict') last.api?.toast?.(`${t('cell.conflict.server')} ${res.serverValue ?? t('cell.conflict.empty')} — 다른 사람이 먼저 고쳤습니다. 새 값으로 다시 그립니다.`);
+      else if (act === 'planCopy') last.api?.toast?.(res?.copied ? `지난 수업(${res.sourceDate ?? ''})에서 ${res.copied}칸을 채웠습니다.` : '채울 빈 칸이나 가져올 지난 수업이 없습니다.');
+      if (fid) drafts.set(fid, { v: body.value ?? body.body ?? '', saved: true });
+    } catch (error) { last.api?.toast?.(error.message || '저장하지 못했습니다.'); }
+    finally { saving = false; rerender(); }
+  }
   // 한 리스너: 선택 = 주소 이동(뒤로·새로고침이 같은 화면), 접기·패널·글씨·역할은 이 탭 안의 보기 상태.
   const rerender = () => last?.api?.render?.();
   document.addEventListener('change', ev => {
     const el = ev.target.closest?.('[data-v2-screen="ecs"] [data-ec]'); if (!el) return;
     if (el.dataset.ec === 'nav' && el.value.startsWith('#v2-ecs')) location.hash = el.value.slice(1);
+    else if (el.dataset.ec === 'actor') { const p = Object.fromEntries(last.query); p.as = el.value; last.go(p); }
     else if (el.dataset.ec === 'font') { ui.font = el.value; rerender(); }
   });
+  // 칸 저장 — 입력을 떠날 때(change) 한 번. 타이핑은 기억만 한다(다시 그려도 유지).
+  document.addEventListener('input', ev => { const el = ev.target.closest?.('[data-v2-screen="ecs"] [data-fid]'); if (el) drafts.set(el.dataset.fid, { v: el.value, saved: false }); });
+  document.addEventListener('change', ev => {
+    const el = ev.target.closest?.('[data-v2-screen="ecs"] [data-ec-act], [data-v2-screen="ecs"] [data-ec-check]'); if (!el) return;
+    const p = JSON.parse(el.dataset.p);
+    if (el.dataset.ecCheck === 'shouting') return void save('shouting', { ...p, value: el.checked });
+    const act = el.dataset.ecAct, v = el.value;
+    if (act === 'planCell') save(act, { ...p, value: v }, el.dataset.fid);
+    else if (act === 'mark' || act === 'goal') save(act, { ...p, value: v }, el.dataset.fid);
+    else if (act === 'memo' || act === 'monthMemo') save(act, { ...p, body: v }, el.dataset.fid);
+    else if (act === 'mpCell') save(act, { ...p, body: v }, el.dataset.fid);
+  });
   document.addEventListener('click', ev => {
+    const b = ev.target.closest?.('[data-v2-screen="ecs"] [data-ec-btn]');
+    if (b && !b.disabled) { if (b.dataset.confirm && !window.confirm(b.dataset.confirm)) return; return void save(b.dataset.ecBtn, JSON.parse(b.dataset.p)); }
     const el = ev.target.closest?.('[data-v2-screen="ecs"] [data-ec]'); if (!el || el.disabled) return;
     const k = el.dataset.ec;
     if (k === 'panel') { ui.panel = !ui.panel; rerender(); }

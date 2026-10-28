@@ -35,14 +35,16 @@ export const MODULES = [
   'features/class-sheets/lib/shift-visible.ts', 'features/class-sheets/shouting.ts', 'features/class-sheets/landing-groups.ts',
   'features/class-sheets/landing-programs.ts', 'features/class-sheets/landing-shouting.ts', 'features/class-sheets/landing-summary.ts',
   'features/class-sheets/landing-teacher.ts', 'features/class-sheets/face-nav.ts', 'features/class-sheets/chrome.ts',
-  'features/class-sheets/view-prefs.ts', 'features/class-sheets/today-order.ts', 'features/teacher-view/i18n.ts',
+  'features/class-sheets/view-prefs.ts', 'features/class-sheets/lib/mark-cycle.ts', 'features/class-sheets/today-order.ts', 'features/teacher-view/i18n.ts',
   'features/teacher-view/school-grade.ts', 'features/teacher-view/student-name.ts', 'features/teacher-view/attitude-label.ts',
   'features/onescreen/attitude.ts', 'features/owner/month-plan-texts.ts', 'features/attendance/effective-records.ts',
   'features/attendance/calendar.ts', 'features/attendance/live/seating-floors.ts', 'features/timetable/lib/week.ts',
   'features/timetable/lib/periods.ts', 'features/timetable/lib/teacher-label.ts', 'features/timetable/scheduled-import.ts',
   'features/classes/english-track.ts', 'features/classes/class-name-as-of.ts', 'features/withdrawals/types.ts',
   'features/owner/defaults.ts', 'features/owner/preset.ts', 'features/periods/resolve.ts', 'features/textbooks/plan-expand.ts',
-  'features/textbooks/plan-compare.ts', 'features/textbooks/shift-key.ts', 'lib/modules.ts', 'lib/date-kst.ts', 'lib/ui-prefs/font-size.ts', 'features/class-sheets/font-size.ts',
+  'features/textbooks/plan-compare.ts', 'features/textbooks/shift-key.ts', 'features/class-sheets/lib/edit-audit.ts',
+  'features/enrollments/eligibility.ts', 'features/attendance/save-targets.ts', 'features/attendance/auto-units.ts', 'features/attendance/edit-window.ts',
+  'features/owner/lesson-profile.ts', 'lib/modules.ts', 'lib/date-kst.ts', 'lib/ui-prefs/font-size.ts', 'features/class-sheets/font-size.ts',
 ];
 
 // ── PORTED: 2.0 원문 그대로(불러올 수 없는 자리 — 설정 타입 파일이 아이콘 tsx를 끌어온다). verify가 원문과 비교한다. ──
@@ -322,8 +324,10 @@ async function sheetWeek(sql, t, R, env, names, cls, weekParam, today, opts = {}
   for (const a of eff) { const raw = a.slot_start ?? null, cell = raw ? R.normalizeSlotTime(raw) : (first[a.session_date] ?? '');
     att[`${a.student_id}|${a.session_date}|${cell}`] = { status: a.status, note: a.note ? scrub(a.note) : null, units: a.session_units ?? null, slot: raw ? R.normalizeSlotTime(raw) : null }; }
   const markMap = {};
-  for (const m of markRows) markMap[`${m.studentId}|${m.markDate}|${R.normalizeSlotTime(m.slotStart)}`] = { status: m.status, progressNote: m.progressNote ? scrub(m.progressNote) : m.progressNote, score: m.score, listeningLevel: m.listeningLevel, memorizedWords: m.memorizedWords };
-  const memoMap = Object.fromEntries(memos.map(m => [m.memo_key, scrub(m.body)]));
+  // 자유 글의 연락처는 3.0 전 화면처럼 가린다 — 가려진 글은 고치면 가린 글자가 저장되므로 그 칸만 읽기 전용(noteMasked).
+  for (const m of markRows) markMap[`${m.studentId}|${m.markDate}|${R.normalizeSlotTime(m.slotStart)}`] = { status: m.status, progressNote: m.progressNote ? scrub(m.progressNote) : m.progressNote,
+    noteMasked: !!m.progressNote && scrub(m.progressNote) !== m.progressNote, score: m.score, listeningLevel: m.listeningLevel, memorizedWords: m.memorizedWords };
+  const memoMap = Object.fromEntries(memos.map(m => [m.memo_key, scrub(m.body)])), memoMasked = Object.fromEntries(memos.map(m => [m.memo_key, scrub(m.body) !== m.body]));
   const renamed = R.classNameForWeek(nameIndex, classId, weekMonday, weekSunday, cls.class_name, today);
   const fill = R.sheetFillStats(grid);
   return { classId, className: renamed?.name ?? cls.class_name, classNameUpcoming: renamed?.upcoming ? { date: R.monthDay(renamed.upcoming.date), name: renamed.upcoming.name } : null,
@@ -331,7 +335,7 @@ async function sheetWeek(sql, t, R, env, names, cls, weekParam, today, opts = {}
     teacherId: cls.teacher_id ?? null, classTeacherName: cls.teacher_id ? (teacherNames[cls.teacher_id] ?? null) : null, teacherNames,
     skillAreas: env.skillAreas.map(a => ({ ...a, tone: skillAreaColorOf(env.skillAreas, a.key) })), goalAreas: R.goalAreasFor(cls.track, env.skillAreas).map(a => ({ ...a, tone: skillAreaColorOf(R.goalAreasFor(cls.track, env.skillAreas), a.key) })),
     grid: sheetGridModel(R, grid, students, periodLabel, markMap, att, today), students, attendance: att, marks: markMap, memos: memoMap,
-    goals: goals.map(g => ({ scope: g.scope, periodStart: g.period_start, role: g.role, skillArea: g.skill_area, textbook: g.textbook ?? null, targetProgress: g.target_progress ?? null })),
+    memoMasked, goals: goals.map(g => ({ scope: g.scope, periodStart: g.period_start, role: g.role, skillArea: g.skill_area, textbook: g.textbook ?? null, targetProgress: g.target_progress ?? null })),
     shouting: R.shoutingMapOf(flags), fill, showSelfStudy, splitRows: splitCount[0]?.n ?? 0,
     attendanceOnly: grid.attendanceOnly.map(a => ({ date: a.date, names: a.studentIds.map(id => students[id]?.name ?? '?') })), hiddenSpecial: grid.hiddenSpecial,
     // 원장(전체 범위)의 눈 — 2.0에서 출결 권한이 full이면 7일 창 없이 모든 날짜가 열린다.
@@ -347,7 +351,7 @@ function rowBase(R, students, entry) {
 }
 function slotCell(R, marks, att, date, slot, entry, cols) {
   const key = `${entry.studentId}|${date}|${slot.slotStart}`, mark = marks[key] ?? null, a = R.attendanceOrMakeup(att[key], entry.isMakeup), v = mark?.status ?? null;
-  return { att: a ? { status: a.status, label: R.attendanceLabelOf(a.status, 'ko'), note: a.note ?? null, units: a.units ?? null } : null,
+  return { att: a ? { status: a.status, label: R.attendanceLabelOf(a.status, 'ko'), note: a.note ?? null, units: a.units ?? null, slot: a.slot ?? null } : null, noteMasked: !!mark?.noteMasked,
     attitude: v, attitudeLabel: R.attitudeLabelFor(v, 'ko'), attitudeKnown: v === null || R.ATTITUDE.includes(v), texts: Object.fromEntries(cols.map(c => [c.field, mark?.[c.field] ?? ''])), note: mark?.progressNote ?? '' };
 }
 const slotRecord = (R, marks, att, date, slot, studentId, cols) => {
@@ -456,11 +460,11 @@ async function monthView(sql, t, R, env, names, cls, q, today) {
   const cells = Object.fromEntries(Object.keys(slotsByDate).map(d => [d, cellOf(d)]));
   const offDays = Object.values(cells).filter(c => c.offGoal > 0).length;
   const sessionNote = periodMode === 'session' && win.kind !== 'session';
-  return { classId: cls.id, className: cls.class_name, teacherName: classTeacher, month, monthLabel: R.monthLabel(month), today, currentMonth, isEie: cls.isEie, track: cls.track,
+  return { classId: cls.id, className: cls.class_name, teacherId: cls.teacher_id ?? null, teacherName: classTeacher, month, monthLabel: R.monthLabel(month), today, currentMonth, isEie: cls.isEie, track: cls.track,
     period: { mode: periodMode, kind: win.kind, start: from, end: to }, sessionNote, view, dows: R.activeDowsOf(Object.keys(slotsByDate)).filter(d => R.DOW_ORDER.includes(d)),
     dowLabels: Object.fromEntries(R.DOW_ORDER.map(d => [d, R.sheetDowLabel(d, 'ko')])), weeks: weeks.map(w => ({ ...w, hasClass: w.dates.some(d => R.hasClassOnDate(slotsByDate, d)) })),
     cells, goals, skillAreas: env.skillAreas.map(a => ({ ...a, tone: skillAreaColorOf(env.skillAreas, a.key) })), holidays, fill: R.monthFillStats(slotsByDate, hasLines, holidays),
-    offDays, lines: lines.map(l => ({ ...l, off: R.isOffGoalLine(l, hg) })), memo: scrub(memoRows[0]?.body ?? ''), textbooksOn: env.textbooksOn, weekHref: R.weekForMonth({ month, today, fromWeek, weeks, hasClassOn: d => R.hasClassOnDate(slotsByDate, d),
+    offDays, lines: lines.map(l => ({ ...l, off: R.isOffGoalLine(l, hg) })), memo: scrub(memoRows[0]?.body ?? ''), memoMasked: scrub(memoRows[0]?.body ?? '') !== (memoRows[0]?.body ?? ''), textbooksOn: env.textbooksOn, weekHref: R.weekForMonth({ month, today, fromWeek, weeks, hasClassOn: d => R.hasClassOnDate(slotsByDate, d),
       ...(periodMode === 'session' && win.kind === 'session' ? { range: { start: from, end: to } } : {}) }),
     display: Object.fromEntries(['cal', 'rail', 'mp'].map(v => [v, R.readEcsMonthDisplay(null, v)])),
     ...railModel(R, lines, env.skillAreas, goals, slotsByDate, linesBySlot, holidays),
@@ -546,7 +550,9 @@ function mpModel(R, { month, weeks, slotsByDate, holidays, cells, linesBySlot, c
   const texts = chrome.texts;
   return { dows, dowLabels: Object.fromEntries(dows.map(d => [d, R.MP_DOW_LABEL_EN[d]])), weeks: rows, style, title, titleTip: R.mpDocTitle(className, month),
     notices: R.monthPlanLines(texts.notices), legend: R.monthPlanLines(texts.bookLegend), teacherLabel: chrome.teacherLabel, sessionLine: R.mpSessionLine(month, chrome.periodRange),
-    footer: R.mpResolveFooter(map, month, R.defaultMonthPlanFooter(texts)), summary: R.mpSummarize(Object.keys(slotsByDate).sort().map(verdictOf)) };
+    footer: R.mpResolveFooter(map, month, R.defaultMonthPlanFooter(texts)), footerDate: R.mpFooterDate(month),
+    // e-book 열 켜고 끄기의 대상 = 그 요일의 수업일 전부(2.0 classDatesOfDow).
+    classDatesByDow: Object.fromEntries(dows.map(dow => [dow, monthDates.filter(d => R.dowKeyOf(d) === dow && hasClassOn(d))])), summary: R.mpSummarize(Object.keys(slotsByDate).sort().map(verdictOf)) };
 }
 
 // ── 오늘(view=today) — 2.0 EcsTodayFace 시트 모드: 고른 선생님의 그날 반, 각 반은 주간 시트를 그날·본인 교시로 ────────
@@ -595,15 +601,327 @@ async function todayView(sql, t, R, env, names, q, today) {
   return { date, today, dateLabel: R.formatKoreanDate(date), teachers: teachers.map(x => ({ id: x.id, name: x.name })), teacher, holiday, hasAnyClass: scope.length > 0, classes: ordered };
 }
 
+// ── 2단계 저장(원장 2026-10-28 "연습용이므로 모두 docker") ─────────────────────────────────────────────────────────────
+// 2.0 서버 액션(class-sheets/server/actions.ts · plan-write.ts · plan-edit-audit.ts · edit-audit-actions.ts ·
+// month-plan-actions.ts · month-memo-actions.ts, 출결은 attendance/server/actions.ts setAttendanceCell)이 바꾸는 표·칸을
+// 같은 값으로, 같은 RPC(ecs_create_plan_line · ecs_delete_plan_line · ecs_copy_slot · ecs_clear_present)로 Docker 복사본에
+// 쓴다. 감사로그도 2.0과 같은 action 이름·metadata에 via = '3.0 연습 복사본'. 행위자 = 화면에서 고른 사람.
+// 2.0은 칸 값을 타이핑마다 저장하고 칸을 떠날 때 감사 한 줄을 남긴다 — 여기선 칸을 떠날 때 저장과 감사 한 줄을 함께 한다.
+const VIA = '3.0 연습 복사본';
+/** 2.0 plan-codec PLAN_PATCH_FIELDS(검증은 동기라 여기 둔다 — verify가 2.0 값과 같은지 잡는다). */
+export const PLAN_PATCH_FIELDS = ['skill_area', 'textbook', 'page_range', 'progress', 'homework'];
+const bad = (msg = '입력 값을 확인해 주세요.') => new V2Error(400, 'invalid_request', msg);
+const uuid = v => { if (typeof v !== 'string' || !UUID.test(v)) throw bad(); return v; };
+const ymd = v => { if (typeof v !== 'string' || !DAY.test(v)) throw bad('잘못된 요청입니다(날짜)'); return v; };
+const hhmm = v => { if (typeof v !== 'string' || !/^\d{2}:\d{2}$/.test(v)) throw bad('잘못된 요청입니다(날짜/시각)'); return v; };
+const text = (v, max) => { if (v === null || v === undefined) return null; if (typeof v !== 'string' || v.length > max) throw bad('입력이 너무 깁니다'); return v; };
+const obj = raw => { if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw bad(); return raw; };
+const term = v => { if (v !== 'regular' && v !== 'exam') throw bad('잘못된 요청입니다(시기)'); return v; };
+const ROLES = ['master', 'admin', 'manager', 'teacher'];
+
+/** lib/auth/super-admin.ts displayRoleFor — 일반 지점 화면에서 플랫폼 계정은 '관리자'로 보인다(실제 권한·보호는 그대로). */
+export function displayRoleFor(userId, realRole, superAdminIds) {
+  return superAdminIds.has(userId) && realRole === "master" ? "admin" : realRole;
+}
+/** 저장하는 사람 후보 — 재직 중인 원장·관리자·매니저·선생님(2.0에서 ECS 쓰기 권한이 있는 역할). 역할은 표시 역할로. */
+async function actorOptions(sql, t) {
+  const [users, sa] = await Promise.all([
+    sql`select id::text id, display_name name, system_role::text role from public.users where tenant_id=${t} and status='active' and system_role::text = any(${ROLES}) order by display_name`,
+    sql`select id::text id from public.super_admins`,
+  ]);
+  const ids = new Set(sa.map(r => r.id));
+  return users.map(u => ({ id: u.id, name: u.name, role: displayRoleFor(u.id, u.role, ids), platform: ids.has(u.id) }));
+}
+/** 2.0 requireEcsClassAccess({ write: true }) — 선생님은 담당 반(담임 ∪ 교시 담당 ∪ 위임 ±7일)만, 그 밖 역할은 전체. */
+async function writeGate(sql, t, R, body) {
+  const env = await readSettings(sql, t, R), cls = await readClass(sql, t, R, env, body.classId), today = await copyDay();
+  const [actor] = await sql`select id::text id, display_name, system_role::text role from public.users where tenant_id=${t} and id=${body.actor} and status='active'`;
+  if (!actor || !ROLES.includes(actor.role)) throw new V2Error(403, 'no_actor', '저장하는 사람을 골라 주세요(재직 중인 직원).');
+  if (actor.role === 'teacher') {
+    const [{ ok }] = await sql`select (exists (select 1 from public.classes c where c.id=${cls.id} and c.teacher_id=${actor.id})
+        or exists (select 1 from public.class_schedules s where s.class_id=${cls.id} and s.teacher_id=${actor.id})
+        or exists (select 1 from public.class_delegations d where d.tenant_id=${t} and d.class_id=${cls.id} and d.revoked_at is null and d.delegate_user_id=${actor.id}
+          and d.from_date <= ${R.shiftDays(today, 7)} and d.to_date >= ${R.shiftDays(today, -7)})) ok`;
+    if (!ok) throw new V2Error(409, 'not_my_class', '담당 반이 아닙니다');
+  }
+  return { env, cls, actor, today };
+}
+const audit = (sql, t, actor, action, targetType, targetLabel, metadata) => sql`insert into public.audit_logs (tenant_id, actor_id, actor_name, action, target_type, target_label, metadata)
+  values (${t}, ${actor.id}, ${actor.display_name}, ${action}, ${targetType}, ${targetLabel}, ${sql.json({ ...metadata, via: VIA })})`;
+const rpcError = e => { if (String(e?.message ?? '').includes('ECS_MAX_LINES')) return new V2Error(409, 'max_lines', '한 교시에 담을 수 있는 줄 수(20)를 넘었습니다'); throw e; };
+
+/** 2.0 checkStudentEligibleOn — 그날 실수강(입퇴반·등원요일·학원 퇴원) 또는 그날 출결이 있는 보강 학생만 쓴다. */
+async function eligibleOn(sql, t, R, classId, studentId, date) {
+  const enrs = await sql`select e.start_date::text start_date, e.end_date::text end_date, e.on_hold, e.is_transferred, e.attendance_days, s.withdrawn_at::text withdrawn_at
+    from public.enrollments e join public.students s on s.id=e.student_id where e.tenant_id=${t} and e.class_id=${classId} and e.student_id=${studentId}`;
+  const dow = R.dowKeyOf(date);
+  if (enrs.some(e => !(e.withdrawn_at && e.withdrawn_at < date) && R.isEnrollmentActiveOn({ startDate: e.start_date, endDate: e.end_date, onHold: e.on_hold, isTransferred: e.is_transferred ?? undefined }, date)
+    && R.enrollmentAttendsOnDay(e.attendance_days, dow))) return true;
+  const [{ n }] = await sql`select count(*)::int n from public.attendance_records where tenant_id=${t} and class_id=${classId} and student_id=${studentId} and session_date=${date}`;
+  return n > 0;
+}
+
+/** 2.0 resolveAutoUnits — 그 교시의 수업 길이로 정한 시수(수업 길이 프로필이 켜진 학원만). 새 행과 '손 안 댄 기록' 판정이 같은 값을 쓴다. */
+async function autoUnitsFor(sql, t, R, cls, date, slot) {
+  const [s] = await sql`select data->>'preset' preset from public.tenant_settings where tenant_id=${t}`;
+  if (!R.lessonProfileOf({ preset: s?.preset ?? R.DEFAULT_SETTINGS.preset }).autoUnits) return null;
+  const sch = await sql`select day_of_week::text day_of_week, start_time::text start_time, end_time::text end_time, valid_from::text valid_from, valid_to::text valid_to, slot_teacher_label, lab_separate
+    from public.class_schedules where tenant_id=${t} and class_id=${cls.id} and valid_from<=${date} and (valid_to is null or valid_to>=${date})`;
+  const plan = R.planAutoUnits([{ classId: cls.id, date, slotStart: slot }], new Map([[cls.id, cls.subject ?? null]]), new Map([[cls.id, sch.map(x => R.toAutoUnitsSchedule(x))]]),
+    new Map([[cls.id, cls.track]]), new Map([[cls.id, cls.class_name]]));
+  return plan.get(R.autoUnitsKey(cls.id, date, slot)) ?? null;
+}
+
+const ACTIONS = {
+  /** 계획 칸 — 2.0 applyPlanPatches(필드 CAS) + logPlanCellEdits(ecs_plan_cell_edit). */
+  planCell: {
+    validate: raw => { const r = obj(raw); if (!PLAN_PATCH_FIELDS.includes(r.field)) throw bad('허용되지 않는 항목입니다');
+      return { classId: uuid(r.classId), actor: uuid(r.actor), lineId: uuid(r.lineId), field: r.field, expected: text(r.expected, 500), value: text(r.value, 500) }; },
+    async run({ sql, body: b, tenantId: t, importV2 }) {
+      const R = await loadRules(importV2), { env, cls, actor } = await writeGate(sql, t, R, b);
+      const [row] = await sql`select id::text id, class_id::text class_id, plan_date::text plan_date, slot_start::text slot_start from public.class_sheet_plan_lines where tenant_id=${t} and id=${b.lineId}`;
+      if (!row) return { status: 'gone' };
+      if (row.class_id !== cls.id) throw new V2Error(409, 'foreign', '다른 반의 행이 섞여 있어 저장을 거부했습니다');
+      const expected = R.normalizePlanText(b.expected), next = R.normalizePlanText(b.value);
+      if (b.field === 'skill_area' && (next === null || !R.SKILL_AREA_SLUG_RE.test(next))) throw new V2Error(400, 'bad_area', '영역 값이 올바르지 않습니다');
+      const col = sql(b.field);
+      const updated = expected === null
+        ? await sql`update public.class_sheet_plan_lines set ${col} = ${next}, updated_by = ${actor.id} where tenant_id=${t} and class_id=${cls.id} and id=${b.lineId} and ${col} is null returning id`
+        : await sql`update public.class_sheet_plan_lines set ${col} = ${next}, updated_by = ${actor.id} where tenant_id=${t} and class_id=${cls.id} and id=${b.lineId} and ${col} = ${expected} returning id`;
+      if (!updated.length) {
+        const [cur] = await sql`select ${col} v from public.class_sheet_plan_lines where tenant_id=${t} and class_id=${cls.id} and id=${b.lineId}`;
+        const server = R.normalizePlanText(cur?.v ?? null);
+        return server === next ? { status: 'already_applied' } : { status: 'conflict', serverValue: server };
+      }
+      if (R.auditValueChanged(expected, next)) {
+        const shown = v => (b.field === 'skill_area' && v ? (env.skillAreas.find(a => a.key === v)?.label ?? v) : v);
+        await audit(sql, t, actor, 'ecs_plan_cell_edit', 'class_sheet_plan', null, { classId: cls.id, kind: 'plan', lineId: b.lineId, planDate: row.plan_date.slice(0, 10),
+          slotStart: row.slot_start.slice(0, 5), field: b.field, fieldLabel: R.PLAN_FIELD_LABEL[b.field], before: R.clipAuditValue(shown(expected)), after: R.clipAuditValue(shown(next)) });
+      }
+      return { status: 'applied' };
+    },
+  },
+  /** 줄 추가 — 2.0 insertPlanLine(ecs_create_plan_line) + ecs_plan_line_add. */
+  planAdd: {
+    validate: raw => { const r = obj(raw); if (typeof r.skillArea !== 'string' || !/^[a-z0-9_]{1,24}$/.test(r.skillArea)) throw bad('잘못된 요청입니다(영역)');
+      return { classId: uuid(r.classId), actor: uuid(r.actor), planDate: ymd(r.planDate), slotStart: hhmm(r.slotStart), termMode: term(r.termMode), skillArea: r.skillArea }; },
+    async run({ sql, body: b, tenantId: t, importV2 }) {
+      const R = await loadRules(importV2), { cls, actor } = await writeGate(sql, t, R, b);
+      const lines = await sql`select * from public.ecs_create_plan_line(${t}::uuid, ${actor.id}::uuid, ${cls.id}::uuid, ${b.planDate}::date, ${b.slotStart}::time, ${b.termMode}::text, ${b.skillArea}::text)`.catch(rpcError);
+      await audit(sql, t, actor, 'ecs_plan_line_add', 'class_sheet_plan', null, { classId: cls.id, planDate: b.planDate, slotStart: b.slotStart, termMode: b.termMode, skillArea: b.skillArea });
+      return { lines: lines.length };
+    },
+  },
+  /** 줄 삭제 — 2.0 removePlanLine(ecs_delete_plan_line) + ecs_plan_line_delete. 이미 지운 줄은 멱등 성공. */
+  planDelete: {
+    validate: raw => { const r = obj(raw); return { classId: uuid(r.classId), actor: uuid(r.actor), lineId: uuid(r.lineId) }; },
+    async run({ sql, body: b, tenantId: t, importV2 }) {
+      const R = await loadRules(importV2), { cls, actor } = await writeGate(sql, t, R, b);
+      const [row] = await sql`select class_id::text class_id, plan_date::text plan_date, slot_start::text slot_start from public.class_sheet_plan_lines where tenant_id=${t} and id=${b.lineId}`;
+      if (!row) return { deleted: false };
+      if (row.class_id !== cls.id) throw new V2Error(409, 'foreign', '다른 반의 행입니다');
+      await sql`select * from public.ecs_delete_plan_line(${t}::uuid, ${b.lineId}::uuid)`;
+      await audit(sql, t, actor, 'ecs_plan_line_delete', 'class_sheet_plan', null, { classId: cls.id, lineId: b.lineId, planDate: row.plan_date.slice(0, 10), slotStart: row.slot_start.slice(0, 5) });
+      return { deleted: true };
+    },
+  },
+  /** 내용 복사(지난 수업) — 2.0 copyPlanSlotFromPrevious(ecs_copy_slot: 같은 교시·같은 요일의 지난 수업, 빈 칸만) + ecs_plan_copy. */
+  planCopy: {
+    validate: raw => { const r = obj(raw); return { classId: uuid(r.classId), actor: uuid(r.actor), planDate: ymd(r.planDate), slotStart: hhmm(r.slotStart), termMode: term(r.termMode) }; },
+    async run({ sql, body: b, tenantId: t, importV2 }) {
+      const R = await loadRules(importV2), { cls, actor } = await writeGate(sql, t, R, b);
+      const [{ r }] = await sql`select public.ecs_copy_slot(${t}::uuid, ${actor.id}::uuid, ${cls.id}::uuid, ${b.planDate}::date, ${b.slotStart}::time, ${b.termMode}::text) r`;
+      const res = r ?? {};
+      if ((res.copied ?? 0) > 0) await audit(sql, t, actor, 'ecs_plan_copy', 'class_sheet_plan', null, { classId: cls.id, planDate: b.planDate, slotStart: b.slotStart, termMode: b.termMode,
+        copied: res.copied ?? 0, sourceDate: res.sourceDate ?? null, carried: 0 });
+      return { copied: res.copied ?? 0, sourceDate: res.sourceDate ?? null, reason: res.reason ?? null, truncated: res.truncated ?? 0 };
+    },
+  },
+  /** 학생 기록 칸(태도·시험 점수·듣기 레벨·누적 암기 단어수·특이사항) — 2.0 upsertStudentMark(넘긴 칸만) + ecs_mark_edit. */
+  mark: {
+    validate: raw => { const r = obj(raw); if (!['status', 'progressNote', 'score', 'listeningLevel', 'memorizedWords'].includes(r.field)) throw bad();
+      return { classId: uuid(r.classId), actor: uuid(r.actor), studentId: uuid(r.studentId), date: ymd(r.date), slotStart: hhmm(r.slotStart), field: r.field, value: text(r.value, 500) }; },
+    async run({ sql, body: b, tenantId: t, importV2 }) {
+      const R = await loadRules(importV2), { cls, actor } = await writeGate(sql, t, R, b);
+      const value = R.normalizePlanText(b.value), col = { status: 'status', progressNote: 'progress_note', score: 'score', listeningLevel: 'listening_level', memorizedWords: 'memorized_words' }[b.field];
+      if (b.field === 'status' && (value?.length ?? 0) > 50) throw new V2Error(400, 'too_long', '상태는 50자 이내로 입력하세요');
+      if (['score', 'listeningLevel', 'memorizedWords'].includes(b.field) && (value?.length ?? 0) > 30) throw new V2Error(400, 'too_long', `${R.markFieldLabel(b.field)}은(는) 30자 이내로 입력하세요`);
+      const [prev] = await sql`select * from public.class_sheet_student_marks where tenant_id=${t} and class_id=${cls.id} and student_id=${b.studentId} and mark_date=${b.date} and slot_start=${b.slotStart}`;
+      const before = prev?.[col] ?? null;
+      // 비우는 방향은 수강이 끝난 뒤에도 허용(2.0 looksEmpty 예외) — 값을 넣을 때만 그날 수강을 본다.
+      if (value !== null && !(await eligibleOn(sql, t, R, cls.id, b.studentId, b.date))) throw new V2Error(409, 'not_eligible', '그 날짜에 이 반을 수강하지 않는 학생입니다(기록 행은 읽기 전용)');
+      await sql`insert into public.class_sheet_student_marks ${sql({ tenant_id: t, class_id: cls.id, student_id: b.studentId, mark_date: b.date, slot_start: b.slotStart, [col]: value, updated_by: actor.id, updated_at: new Date() })}
+        on conflict (tenant_id, class_id, student_id, mark_date, slot_start) do update set ${sql(col)} = excluded.${sql(col)}, updated_by = excluded.updated_by, updated_at = excluded.updated_at`;
+      // 다 비었으면 빈 행을 남기지 않는다(2.0 — 남으면 그 학생이 '기록' 줄로 계속 선다).
+      await sql`delete from public.class_sheet_student_marks where tenant_id=${t} and class_id=${cls.id} and student_id=${b.studentId} and mark_date=${b.date} and slot_start=${b.slotStart}
+        and status is null and progress_note is null and score is null and listening_level is null and memorized_words is null`;
+      if (R.auditValueChanged(before, value)) await audit(sql, t, actor, 'ecs_mark_edit', 'class_sheet', cls.class_name, { classId: cls.id, kind: 'mark', studentId: b.studentId, date: b.date,
+        slotStart: b.slotStart, field: b.field, fieldLabel: R.markFieldLabel(b.field), before: R.clipAuditValue(before), after: R.clipAuditValue(value) });
+      return { ok: true };
+    },
+  },
+  /** 목표(담임/부담임 × 월간/주간 × 영역의 교재명·목표 진도) — 2.0 upsertGoal(둘 다 비면 행 삭제) + ecs_goal_edit. */
+  goal: {
+    validate: raw => { const r = obj(raw); if (!['month', 'week'].includes(r.scope) || !['homeroom', 'assistant'].includes(r.role) || !['textbook', 'targetProgress'].includes(r.field)) throw bad();
+      if (typeof r.skillArea !== 'string' || !/^[a-z0-9_]{1,24}$/.test(r.skillArea)) throw bad('잘못된 요청입니다(영역)');
+      return { classId: uuid(r.classId), actor: uuid(r.actor), scope: r.scope, periodStart: ymd(r.periodStart), role: r.role, skillArea: r.skillArea, field: r.field, value: text(r.value, 500) }; },
+    async run({ sql, body: b, tenantId: t, importV2 }) {
+      const R = await loadRules(importV2), { env, cls, actor } = await writeGate(sql, t, R, b);
+      if (!R.isGoalAreaAllowed(cls.track, env.skillAreas, b.skillArea)) throw new V2Error(409, 'bad_area', '이 반의 목표 항목이 아닙니다(반 구분이 바뀌었으면 새로고침하세요)');
+      const periodStart = R.normalizePeriodStart(b.scope, b.periodStart);
+      const [prev] = await sql`select textbook, target_progress from public.class_sheet_goals where tenant_id=${t} and class_id=${cls.id} and scope=${b.scope} and period_start=${periodStart} and role=${b.role} and skill_area=${b.skillArea}`;
+      const textbook = R.normalizePlanText(b.field === 'textbook' ? b.value : prev?.textbook ?? null), target = R.normalizePlanText(b.field === 'targetProgress' ? b.value : prev?.target_progress ?? null);
+      if (textbook === null && target === null) await sql`delete from public.class_sheet_goals where tenant_id=${t} and class_id=${cls.id} and scope=${b.scope} and period_start=${periodStart} and role=${b.role} and skill_area=${b.skillArea}`;
+      else await sql`insert into public.class_sheet_goals (tenant_id, class_id, scope, period_start, role, skill_area, textbook, target_progress, updated_by, updated_at)
+        values (${t}, ${cls.id}, ${b.scope}, ${periodStart}, ${b.role}, ${b.skillArea}, ${textbook}, ${target}, ${actor.id}, now())
+        on conflict (tenant_id, class_id, scope, period_start, role, skill_area) do update set textbook=excluded.textbook, target_progress=excluded.target_progress, updated_by=excluded.updated_by, updated_at=excluded.updated_at`;
+      const before = b.field === 'textbook' ? prev?.textbook ?? null : prev?.target_progress ?? null, after = b.field === 'textbook' ? textbook : target;
+      if (R.auditValueChanged(before, after)) await audit(sql, t, actor, 'ecs_goal_edit', 'class_sheet', cls.class_name, { classId: cls.id, kind: 'goal', scope: b.scope, periodStart, role: b.role,
+        skillArea: b.skillArea, areaLabel: R.goalAreasFor(cls.track, env.skillAreas).find(a => a.key === b.skillArea)?.label ?? null, fieldLabel: R.GOAL_FIELD_LABEL[b.field], before: R.clipAuditValue(before), after: R.clipAuditValue(after) });
+      return { ok: true };
+    },
+  },
+  /** 주간 메모 — 2.0 saveMemo(빈 글 = 행 삭제) + ecs_memo_edit. */
+  memo: {
+    validate: raw => { const r = obj(raw); if (typeof r.memoKey !== 'string' || !/^(week|panel)$/.test(r.memoKey)) throw bad('잘못된 요청입니다(메모 위치)');
+      return { classId: uuid(r.classId), actor: uuid(r.actor), weekStart: ymd(r.weekStart), memoKey: r.memoKey, body: text(r.body, 2000) ?? '' }; },
+    async run({ sql, body: b, tenantId: t, importV2 }) {
+      const R = await loadRules(importV2), { cls, actor } = await writeGate(sql, t, R, b);
+      const weekStart = R.mondayOf(b.weekStart), body = b.body.trim();
+      const [prev] = await sql`select body from public.class_sheet_memos where tenant_id=${t} and class_id=${cls.id} and week_start=${weekStart} and memo_key=${b.memoKey}`;
+      if (body === '') await sql`delete from public.class_sheet_memos where tenant_id=${t} and class_id=${cls.id} and week_start=${weekStart} and memo_key=${b.memoKey}`;
+      else await sql`insert into public.class_sheet_memos (tenant_id, class_id, week_start, memo_key, body, updated_by, updated_at) values (${t}, ${cls.id}, ${weekStart}, ${b.memoKey}, ${body}, ${actor.id}, now())
+        on conflict (tenant_id, class_id, week_start, memo_key) do update set body=excluded.body, updated_by=excluded.updated_by, updated_at=excluded.updated_at`;
+      const after = body === '' ? null : body;
+      if (R.auditValueChanged(prev?.body ?? null, after)) await audit(sql, t, actor, 'ecs_memo_edit', 'class_sheet', cls.class_name, { classId: cls.id, kind: 'memo', weekStart, memoKey: b.memoKey,
+        fieldLabel: R.memoKeyLabel(b.memoKey), before: R.clipAuditValue(prev?.body ?? null), after: R.clipAuditValue(after) });
+      return { ok: true };
+    },
+  },
+  /** 월 특이사항 메모 — 2.0 saveMonthMemo + ecs_memo_edit(kind monthMemo). */
+  monthMemo: {
+    validate: raw => { const r = obj(raw); if (typeof r.month !== 'string' || !/^\d{4}-\d{2}$/.test(r.month)) throw bad('잘못된 요청입니다(달)');
+      return { classId: uuid(r.classId), actor: uuid(r.actor), month: r.month, body: text(r.body, 2000) ?? '' }; },
+    async run({ sql, body: b, tenantId: t, importV2 }) {
+      const R = await loadRules(importV2), { cls, actor } = await writeGate(sql, t, R, b);
+      const first = `${b.month}-01`, body = b.body.trim();
+      const [prev] = await sql`select body from public.class_sheet_month_memos where tenant_id=${t} and class_id=${cls.id} and month=${first}`;
+      if (body === '') await sql`delete from public.class_sheet_month_memos where tenant_id=${t} and class_id=${cls.id} and month=${first}`;
+      else await sql`insert into public.class_sheet_month_memos (tenant_id, class_id, month, body, updated_by, updated_at) values (${t}, ${cls.id}, ${first}, ${body}, ${actor.id}, now())
+        on conflict (tenant_id, class_id, month) do update set body=excluded.body, updated_by=excluded.updated_by, updated_at=excluded.updated_at`;
+      const after = body === '' ? null : body;
+      if (R.auditValueChanged(prev?.body ?? null, after)) await audit(sql, t, actor, 'ecs_memo_edit', 'class_sheet', cls.class_name, { classId: cls.id, kind: 'monthMemo', month: b.month,
+        fieldLabel: R.MONTH_MEMO_LABEL, before: R.clipAuditValue(prev?.body ?? null), after: R.clipAuditValue(after) });
+      return { ok: true };
+    },
+  },
+  /** Shouting 체크(EiE 반만) — 2.0 setSlotShouting(해제 = 행 삭제) + ecs_shouting_toggle(바뀐 때만). */
+  shouting: {
+    validate: raw => { const r = obj(raw); if (typeof r.value !== 'boolean') throw bad(); return { classId: uuid(r.classId), actor: uuid(r.actor), date: ymd(r.date), slotStart: hhmm(r.slotStart), value: r.value }; },
+    async run({ sql, body: b, tenantId: t, importV2 }) {
+      const R = await loadRules(importV2), { cls, actor } = await writeGate(sql, t, R, b);
+      if (cls.track !== 'eie') throw new V2Error(409, 'not_eie', 'Shouting 체크는 EiE 반에서만 사용합니다');
+      let changed;
+      if (!b.value) changed = (await sql`delete from public.class_sheet_slot_flags where tenant_id=${t} and class_id=${cls.id} and flag_date=${b.date} and slot_start=${b.slotStart} returning id`).length > 0;
+      else { const [existed] = await sql`select id from public.class_sheet_slot_flags where tenant_id=${t} and class_id=${cls.id} and flag_date=${b.date} and slot_start=${b.slotStart}`;
+        await sql`insert into public.class_sheet_slot_flags (tenant_id, class_id, flag_date, slot_start, shouting, updated_by, updated_at) values (${t}, ${cls.id}, ${b.date}, ${b.slotStart}, true, ${actor.id}, now())
+          on conflict (tenant_id, class_id, flag_date, slot_start) do update set shouting=true, updated_by=excluded.updated_by, updated_at=excluded.updated_at`;
+        changed = !existed; }
+      if (changed) await audit(sql, t, actor, 'ecs_shouting_toggle', 'class_sheet', cls.class_name, { classId: cls.id, date: b.date, slotStart: b.slotStart, checked: b.value });
+      return { ok: true };
+    },
+  },
+  /** 출결 체크(출석 → 결석 → 지각 → 선택 안 함) — 설정은 2.0 setAttendanceCell(교시 칸), 지우기는 clearPresentAttendance(ecs_clear_present). */
+  attendance: {
+    validate: raw => { const r = obj(raw); if (!(r.status === null || ['present', 'late', 'absent'].includes(r.status))) throw new V2Error(400, 'invalid_status', '잘못된 상태입니다');
+      return { classId: uuid(r.classId), actor: uuid(r.actor), studentId: uuid(r.studentId), date: ymd(r.date), slotStart: hhmm(r.slotStart), slot: r.slot === null ? null : hhmm(r.slot), status: r.status }; },
+    async run({ sql, body: b, tenantId: t, importV2 }) {
+      const R = await loadRules(importV2), { env, cls, actor, today } = await writeGate(sql, t, R, b);
+      if (actor.role === 'teacher' && !R.isWithinAttendanceEditWindow(b.date, today)) throw new V2Error(409, 'attendance_locked', R.attendanceLockMessage(b.date, today));
+      // 2.0 resolveWriteVia: 그 반을 그날 가르치는 사람 = teacher. 데스크 기록(수업 시간 판정)은 이 연습 화면에 없다 — 가르치는 사람으로만 저장한다.
+      const [{ teaches }] = await sql`select (exists (select 1 from public.classes c where c.id=${cls.id} and c.teacher_id=${actor.id})
+          or exists (select 1 from public.class_schedules s where s.class_id=${cls.id} and s.teacher_id=${actor.id} and s.valid_from <= ${b.date} and (s.valid_to is null or s.valid_to >= ${b.date}))
+          or exists (select 1 from public.class_delegations d where d.class_id=${cls.id} and d.revoked_at is null and d.delegate_user_id=${actor.id} and d.from_date <= ${b.date} and d.to_date >= ${b.date})) teaches`;
+      if (!teaches) throw new V2Error(409, 'not_teaching', '이 연습 화면에서는 그 반을 가르치는 선생님 이름으로만 출결을 저장합니다(데스크 기록 규칙은 2.0 출석부에서).');
+      const [stu] = await sql`select name from public.students where tenant_id=${t} and id=${b.studentId}`;
+      const backdated = b.date < today ? { backdated: true } : {};
+      if (b.status === null) {
+        // 2.0 clearPresentAttendance: 교시 칸이면 그 교시 자동 시수를 넘겨 'ECS가 넣은 그대로'인 기록을 지울 수 있게 한다.
+        const auto = b.slot ? await autoUnitsFor(sql, t, R, cls, b.date, b.slot) : null;
+        const [{ r }] = await sql`select public.ecs_clear_present(${t}::uuid, ${actor.id}::uuid, ${cls.id}::uuid, ${b.studentId}::uuid, ${b.date}::date, ${auto}::numeric, ${b.slot}::time) r`;
+        if (r?.blocked === 'rich') throw new V2Error(409, 'rich', '결석·지각이거나 출석부에서 사유·시수를 적어 둔 기록입니다 — 출석부에서 수정하세요');
+        if ((r?.cleared ?? 0) > 0) await audit(sql, t, actor, 'ecs_attendance_clear', 'attendance', stu?.name ?? null, { classId: cls.id, date: b.date, rows: r.cleared });
+        return { status: null, cleared: r?.cleared ?? 0 };
+      }
+      // 2.0 setAttendanceCell(강사 범위): 그날 이 반 수강(시작·종료만) 또는 그날 기록이 있으면 쓴다. 원장·관리자 범위는 수강을 묻지 않는다.
+      if (actor.role === 'teacher') {
+        const [{ ok }] = await sql`select (exists (select 1 from public.enrollments where tenant_id=${t} and class_id=${cls.id} and student_id=${b.studentId}
+            and (start_date is null or start_date <= ${b.date}) and (end_date is null or end_date >= ${b.date}))
+          or exists (select 1 from public.attendance_records where tenant_id=${t} and class_id=${cls.id} and student_id=${b.studentId} and session_date=${b.date})) ok`;
+        if (!ok) throw new V2Error(409, 'not_my_student', '이 반 수강생이 아닙니다');
+      }
+      // 칸이 보고 있던 행의 교시 — null = 옛 '그날 전체' 행(2.0 dbSlot: 제자리에서 고친다, 새 교시 행을 만들지 않는다).
+      const slot = b.slot;
+      const rows = await sql`select id::text id, status::text status, slot_start::text slot_start, session_units::float8 units from public.attendance_records
+        where tenant_id=${t} and class_id=${cls.id} and student_id=${b.studentId} and session_date=${b.date} order by recorded_at desc, id desc`;
+      const { updateIds, promoteIds } = R.pickSaveTargets(rows.map(r => ({ ...r, slot_start: r.slot_start ? r.slot_start.slice(0, 5) : null })), slot);
+      if (updateIds.length || promoteIds.length) {
+        const prevStatus = rows.find(r => updateIds.includes(r.id) || promoteIds.includes(r.id))?.status ?? null;
+        if (promoteIds.length) await sql`update public.attendance_records set status=${b.status}, recorded_by=${actor.id}, recorded_at=now(), recorded_via='teacher', slot_start=${slot} where id = any(${promoteIds}::uuid[])`;
+        if (updateIds.length) await sql`update public.attendance_records set status=${b.status}, recorded_by=${actor.id}, recorded_at=now(), recorded_via='teacher' where id = any(${updateIds}::uuid[])`;
+        await audit(sql, t, actor, 'attendance_cell', 'attendance', null, { studentId: b.studentId, classId: cls.id, date: b.date, ...(slot ? { slotStart: slot } : {}), status: b.status, overwrote: true, prevStatus, ...backdated });
+        return { status: b.status };
+      }
+      // 새 행 — 2.0 resolveAutoUnits(수업 길이 프로필) → newRowUnits.
+      if (slot === null) throw new V2Error(409, 'no_slot', '교시를 알 수 없어 저장하지 않았습니다 — 새로 고쳐 다시 시도해 주세요.');
+      const lookedUp = R.autoUnitsApply({ rawUnits: undefined, slotStart: slot, status: b.status }) ? await autoUnitsFor(sql, t, R, cls, b.date, slot) : undefined;
+      const units = R.newRowUnits(undefined, null, lookedUp), insertedAuto = units.auto === undefined ? undefined : units.units;
+      await sql`insert into public.attendance_records (tenant_id, class_id, student_id, session_date, slot_start, status, note, session_units, recorded_by, recorded_via)
+        values (${t}, ${cls.id}, ${b.studentId}, ${b.date}, ${slot}, ${b.status}, null, ${units.units}, ${actor.id}, 'teacher')`;
+      await audit(sql, t, actor, 'attendance_cell', 'attendance', null, { studentId: b.studentId, classId: cls.id, date: b.date, slotStart: slot, status: b.status, created: true,
+        ...(insertedAuto != null ? { autoUnits: insertedAuto } : {}), ...backdated });
+      return { status: b.status, autoUnits: insertedAuto ?? null };
+    },
+  },
+  /** 계획(MP) 칸 — 2.0 saveMonthPlanCells(EiE 반만, 값 칸·e-book·휴강·하단 문구) + ecs_month_plan_edit(칸 편집 · 구조 변경). */
+  mpCell: {
+    validate: raw => { const r = obj(raw); if (!['in_class', 'homework', 'ebook', 'test', 'off', 'footer'].includes(r.colKind)) throw bad('잘못된 요청입니다(칸 종류)');
+      if (r.colKind === 'off' && !(r.intent?.kind === 'dayOff' && typeof r.intent.off === 'boolean')) throw bad('잘못된 요청입니다(휴강 표시)');
+      if (r.intent !== undefined && !(r.intent && typeof r.intent === 'object' && ['ebookColumn', 'dayOff'].includes(r.intent.kind))) throw bad();
+      const dates = Array.isArray(r.dates) ? r.dates.map(ymd) : [ymd(r.date)];
+      if (!dates.length || dates.length > 60) throw bad('한 번에 저장할 칸이 너무 많습니다');
+      return { classId: uuid(r.classId), actor: uuid(r.actor), dates, colKind: r.colKind, body: text(r.body, 2000), intent: r.intent ?? null }; },
+    async run({ sql, body, tenantId: t, importV2 }) {
+      let b = body;
+      const R = await loadRules(importV2), { env, cls, actor } = await writeGate(sql, t, R, b);
+      if (!(cls.track === 'eie' && env.eieOn)) throw new V2Error(409, 'not_eie', '월간 계획서는 EiE 반에서만 사용합니다');
+      if (b.colKind === 'off') b = { ...b, body: R.mpOffToggleValue(b.dates[0], env.holidays, b.intent.off) };
+      const prev = new Map((await sql`select plan_date::text d, body from public.class_month_plan_cells where tenant_id=${t} and class_id=${cls.id} and col_kind=${b.colKind} and plan_date = any(${b.dates}::date[])`).map(r => [r.d, r.body]));
+      if (b.body === null) await sql`delete from public.class_month_plan_cells where tenant_id=${t} and class_id=${cls.id} and col_kind=${b.colKind} and plan_date = any(${b.dates}::date[])`;
+      else for (const d of b.dates) await sql`insert into public.class_month_plan_cells (tenant_id, class_id, plan_date, col_kind, body, updated_by, updated_at) values (${t}, ${cls.id}, ${d}, ${b.colKind}, ${b.body}, ${actor.id}, now())
+        on conflict (tenant_id, class_id, plan_date, col_kind) do update set body=excluded.body, updated_by=excluded.updated_by, updated_at=excluded.updated_at`;
+      const structural = R.mpStructuralChange(b.intent, b.dates.map(d => ({ date: d, colKind: b.colKind, body: b.body })));
+      if (structural) await audit(sql, t, actor, 'ecs_month_plan_edit', 'class_sheet', cls.class_name, { classId: cls.id, ...structural });
+      else if (b.dates.length === 1 && b.colKind !== 'off' && R.auditValueChanged(prev.get(b.dates[0]) ?? null, b.body))
+        await audit(sql, t, actor, 'ecs_month_plan_edit', 'class_sheet', cls.class_name, { classId: cls.id, kind: 'mpCell', date: b.dates[0], colKind: b.colKind, fieldLabel: R.mpCellLabel(b.colKind),
+          before: R.clipAuditValue(prev.get(b.dates[0]) ?? null), after: R.clipAuditValue(b.body) });
+      return { ok: true };
+    },
+  },
+};
+
 export const screen = {
   id: ID, label: '강사 시트', order: 3,
   params: { view: /^(list|sheet|month|today)$/, class: UUID, week: DAY, month: /^\d{4}-\d{2}$/, mv: /^(cal|rail|mp)$/, period: /^(month|session)$/,
-    track: /^(all|eie|injaewon)$/, teacher: /^(all|none|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/, date: DAY, day: DAY, jj: /^[01]$/ },
+    track: /^(all|eie|injaewon)$/, teacher: /^(all|none|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/, date: DAY, day: DAY, jj: /^[01]$/, as: UUID },
+  actions: ACTIONS,
   async load({ sql, params: q, tenantId: t, importV2 }) {
     const R = await loadRules(importV2), today = await copyDay(), env = await readSettings(sql, t, R);
     const view = q.view || (q.class ? 'sheet' : 'list');
     const common = { asOf: today, view, t: dictOf(R), tracks: { eie: R.ENGLISH_TRACK_LABEL.eie, injaewon: R.ENGLISH_TRACK_LABEL.injaewon },
+      attitudes: [...R.ATTITUDE], attCycle: [...R.ATTENDANCE_CYCLE],
       fonts: R.UI_FONT_SIZES.map(k => ({ key: k, labelKey: R.FONT_SIZE_KEY[k], zoom: R.UI_FONT_SIZE_ZOOM[k] })), faceTitle: Object.fromEntries(['week', 'cal', 'rail', 'mp'].map(f => [f, R.sheetT('ko', `face.${f}.title`)])) };
+    common.actors = await actorOptions(sql, t);
     if (view === 'list') return { ...common, list: await landing(sql, t, R, env, q, today) };
     const names = await readNames(sql, t, R);
     if (view === 'today') return { ...common, today: await todayView(sql, t, R, env, names, q, today) };

@@ -311,3 +311,21 @@ a.ec-todaytitle:hover{text-decoration:underline}
 .ec-narrowcard p{margin:0;font-size:14px;line-height:1.6}
 .ec-narrowtitle{font-size:17px!important;font-weight:700;color:var(--e-ink)}
 @media screen and (max-width:479.98px) and (pointer:fine){.ec-widthgate{display:none}.ec-toonarrow{display:block}}
+
+/* 2단계 — 저장 가능한 칸(2.0 편집 모양): 체크 순환 칸 · 줄 삭제 · MP 칸 편집 · 저장하는 사람 */
+.ec-actorbar{padding:0 2px}
+.ec-copynote{color:#5d3a08;background:var(--e-amber-s);border-radius:10px;padding:6px 10px}
+button.ec-cycle{cursor:pointer;background:var(--e-card)}
+button.ec-cycle:hover{background:var(--e-soft)}
+button.ec-cycle.att.ok{background:var(--e-green-s)}button.ec-cycle.att.warn{background:var(--e-amber-s)}button.ec-cycle.att.bad{background:var(--e-danger-s)}
+button.ec-cycle:disabled{cursor:wait;opacity:.6}
+.ec-x{border:0;background:none;color:#6f7682;font-size:16px;line-height:1;padding:2px 4px;border-radius:4px;cursor:pointer}
+.ec-x:hover{color:var(--e-danger)}
+select.ec-area{display:block;cursor:pointer;appearance:auto;font:inherit;font-size:14px;font-weight:700;line-height:normal;padding:0 2px;height:26px}
+.ec-input:not([readonly]):focus,textarea.ec-monthmemo:not([readonly]):focus{outline:2px solid var(--e-primary);outline-offset:-1px}
+.ec-mpdow{display:inline-flex;align-items:center;gap:8px}
+.ec-mpbtn{border:1px solid rgba(0,0,0,.4);background:rgba(255,255,255,.7);border-radius:999px;padding:0 6px;font:700 12px Arial,Helvetica,sans-serif;cursor:pointer;color:#333}
+.ec-mpbtn:hover{background:#fff}
+textarea.ec-mpedit{display:block;width:100%;height:100%;resize:none;border:0;background:rgba(255,255,255,.55);padding:2px;outline:none}
+textarea.ec-mpedit:focus{background:rgba(255,255,255,.85);box-shadow:inset 0 0 0 2px var(--e-primary)}
+textarea.ec-mpfootertext{width:100%;font:inherit;text-align:center;resize:vertical}

@@ -1,7 +1,8 @@
 // 2.0 화면 · 강사 시트 · 영어(ECS) 시험 — node --test experiments/owner-concept/verify-v2-screen-ecs.mjs
 // ① 옮긴 본문(설정 병합·영역 설정)이 2.0 원문과 같다 ② 2.0 함수로 만든 모델이 복사본의 독립 SQL과 맞는다(반 목록·주간 작성률·
 // 이력 행 #88·월간 작성률·계획 줄) ③ 매개변수 거절 ④ 화면 파일에 운영 주소·끼워 넣기·보기 중 쓰기 요청이 없다 ⑤ 실제 모델로 그린 화면이
-// 2.0 문구를 쓰고 원문 코드를 내보이지 않는다. 복사본이 꺼져 있으면 복사본 단계만 건너뛴다.
+// 2.0 문구를 쓰고 원문 코드를 내보이지 않는다 ⑥ 2단계: 저장 동작이 2.0과 같은 표·칸·감사로그를 남긴다(테스트 학생 '학원이'·테스트 반,
+// 한 트랜잭션 안에서 하고 늘 되돌린다 — 복사본은 그대로). 복사본이 꺼져 있으면 복사본 단계만 건너뛴다.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
@@ -32,6 +33,32 @@ test('옮긴 본문(deepMerge·normalizeHolidays·normalizeSubjects·resolveSkil
   assert.equal(E.css({ fontSize: 20, lineHeight: 1.3, backgroundColor: '#fff', flex: '1 1 0' }), 'font-size:20px;line-height:1.3;background-color:#fff;flex:1 1 0');
 });
 
+test('옮긴 displayRoleFor가 2.0 원문과 같다(플랫폼 계정은 일반 화면에서 관리자)', async () => {
+  const ts = (await import('typescript')).default, mine = await here('./v2-screen-ecs.mjs'), orig = await src('lib/auth/super-admin.ts');
+  const body = (text, name) => { const t = text.replace(/\r\n/g, '\n'), i = t.indexOf(`function ${name}`); return t.slice(i, t.indexOf('\n}\n', i) + 2); };
+  const norm = code => ts.transpileModule(code, { compilerOptions: { target: ts.ScriptTarget.ES2022, removeComments: true } }).outputText.replace(/[\s;]+/g, '').replace(/,(?=[)\]}])/g, '');
+  assert.equal(norm(body(mine, 'displayRoleFor')), norm(body(orig, 'displayRoleFor')));
+});
+
+test('저장 검증 상수가 2.0과 같다(계획 칸 필드)', async () => {
+  const codec = await importV2('features/class-sheets/lib/plan-codec.ts');
+  assert.deepEqual(E.PLAN_PATCH_FIELDS, [...codec.PLAN_PATCH_FIELDS]);
+});
+
+test('저장 검증: 모양이 아닌 입력은 복사본에 닿기 전에 거절', () => {
+  const A = screen.actions, base = { classId: 'e175fd4d-a655-409a-905e-71850ab1b848', actor: '09705ab8-05cf-48ab-8f06-d54a3d990b5c' };
+  assert.throws(() => A.planCell.validate({ ...base, lineId: 'x', field: 'textbook' }), /입력 값/);
+  assert.throws(() => A.planCell.validate({ ...base, lineId: base.classId, field: 'updated_by' }), /허용되지 않는 항목/);
+  assert.throws(() => A.planCell.validate({ ...base, lineId: base.classId, field: 'textbook', value: 'x'.repeat(501) }), /너무 깁니다/);
+  assert.throws(() => A.planAdd.validate({ ...base, planDate: '2026-09-22', slotStart: '17:15', termMode: 'regular', skillArea: 'Vocab!' }), /영역/);
+  assert.throws(() => A.planAdd.validate({ ...base, planDate: '2026-09-22', slotStart: '5pm', termMode: 'regular', skillArea: 'vocab' }), /날짜\/시각/);
+  assert.throws(() => A.mark.validate({ ...base, studentId: base.classId, date: '2026-09-22', slotStart: '17:15', field: 'recorded_by' }), /입력 값/);
+  assert.throws(() => A.attendance.validate({ ...base, studentId: base.classId, date: '2026-09-22', slotStart: '17:15', slot: null, status: 'makeup' }), /잘못된 상태/);
+  assert.throws(() => A.mpCell.validate({ ...base, date: '2026-09-22', colKind: 'off', body: 'off' }), /휴강 표시/, '휴강 값은 서버가 학원 휴일로 정한다');
+  assert.throws(() => A.memo.validate({ ...base, weekStart: '2026-09-21', memoKey: 'slot:x', body: '' }), /메모 위치/);
+  assert.throws(() => A.planCell.validate({ ...base, actor: 'me', lineId: base.classId, field: 'textbook' }), /입력 값/);
+});
+
 test('2.0 모듈을 한 객체로 펼쳐도 같은 이름에 다른 값이 없다(불러온 함수가 서로 덮이지 않는다)', async () => {
   const seen = new Map();
   for (const p of E.MODULES) for (const [k, v] of Object.entries(await importV2(p))) { if (seen.has(k)) assert.equal(seen.get(k)[1], v, `${k}: ${seen.get(k)[0]} ↔ ${p}`); seen.set(k, [p, v]); }
@@ -39,10 +66,11 @@ test('2.0 모듈을 한 객체로 펼쳐도 같은 이름에 다른 값이 없�
 
 test('매개변수: 면·반·주·달·보기·기간·프로그램·담임·날짜·JJ만, 모양이 아니면 거절', () => {
   const P = screen.params, ok = (k, v) => P[k].test(v);
-  assert.deepEqual(Object.keys(P).sort(), ['class', 'date', 'day', 'jj', 'month', 'mv', 'period', 'teacher', 'track', 'view', 'week']);
+  assert.deepEqual(Object.keys(P).sort(), ['as', 'class', 'date', 'day', 'jj', 'month', 'mv', 'period', 'teacher', 'track', 'view', 'week']);
   for (const [k, v] of [['view', 'sheet'], ['view', 'today'], ['class', 'e175fd4d-a655-409a-905e-71850ab1b848'], ['week', '2026-10-26'], ['month', '2026-10'], ['mv', 'mp'], ['period', 'session'], ['track', 'eie'], ['teacher', 'none'], ['jj', '0']]) assert.ok(ok(k, v), `${k}=${v}`);
   for (const [k, v] of [['view', 'admin'], ['class', 'x'], ['week', '2026-10-26T00'], ['month', '2026-1'], ['mv', 'week'], ['period', 'year'], ['track', 'all,eie'], ['teacher', 'kim'], ['jj', '2']]) assert.ok(!ok(k, v), `${k}=${v} 거절`);
-  assert.equal(screen.actions, undefined, '1단계(보기)는 저장 동작이 없다');
+  assert.deepEqual(Object.keys(screen.actions), ['planCell', 'planAdd', 'planDelete', 'planCopy', 'mark', 'goal', 'memo', 'monthMemo', 'shouting', 'attendance', 'mpCell']);
+  assert.ok(P.as.test('09705ab8-05cf-48ab-8f06-d54a3d990b5c') && !P.as.test('me'), '저장하는 사람(as)은 사람 id만');
 });
 
 test('화면 파일: 운영 주소·끼워 넣기·외부 요청·보기 중 쓰기가 없다', async () => {
@@ -52,8 +80,8 @@ test('화면 파일: 운영 주소·끼워 넣기·외부 요청·보기 중 쓰
     assert.ok(!/<iframe|<embed|<object/i.test(text), `${f}: 끼워 넣기`);
   }
   const page = await here('v2-screen-ecs.js');
-  assert.ok(!/\bfetch\(|XMLHttpRequest|sendBeacon|\.act\(/.test(page), '보기 화면은 서버에 쓰지 않는다(조회는 공통 틀 ctx.load만)');
-  assert.ok(!/class="ec-input[^"]*"(?![^>]*\b(?:readonly|disabled)\b)[^>]*>/.test(page), '입력 칸은 모두 읽기 전용');
+  assert.ok(!/\bfetch\(|XMLHttpRequest|sendBeacon/.test(page), '조회는 공통 틀 ctx.load, 저장은 ctx.act뿐');
+  assert.ok((page.match(/last\.act\(/g) || []).length === 1, '저장 통로는 한 곳(save → ctx.act)');
 });
 
 const load = params => db.begin('isolation level repeatable read read only', sql => screen.load({ sql, params, tenantId: TENANT, importV2 }));
@@ -130,12 +158,135 @@ test('복사본: 오늘 면 = 고른 선생님의 그날 반 · 각 반은 그�
   }
 });
 
-async function page(data, query = '') {
+// 2단계 — 테스트 학생 '학원이' · 테스트 반 '학원이(영어 테스트)'(원장 시험용), 담임 '테스터'. 한 트랜잭션 안에서 하고 늘 되돌린다.
+const T_CLASS = 'e175fd4d-a655-409a-905e-71850ab1b848', T_STU = '6219e442-aa57-455f-a5bc-834b222d9e1c', T_ACTOR = '09705ab8-05cf-48ab-8f06-d54a3d990b5c', ROLLBACK = Symbol('rollback');
+async function inRollback(fn) {
+  const run = (sql, name, raw) => screen.actions[name].run({ sql, body: screen.actions[name].validate(raw), tenantId: TENANT, importV2 });
+  await db.begin(async sql => { await fn({ sql, run }); throw ROLLBACK; }).catch(e => { if (e !== ROLLBACK) throw e; });
+}
+const code = c => e => e?.code === c;
+/** 한 트랜잭션 안의 감사로그는 시각(now())이 같다 — 순서가 아니라 내용으로 찾는다. */
+const find = (list, pred, what) => { const hit = list.find(a => pred(a.metadata)); assert.ok(hit, `감사로그 없음: ${what}`); return hit.metadata; };
+
+test('복사본(되돌림): 계획 칸·줄·복사·학생 기록·목표·메모가 2.0과 같은 행·감사로그를 남긴다', { skip: !db && 'local database not running' }, async () => {
+  const before = await db`select (select count(*)::int from public.audit_logs) audits, (select count(*)::int from net.http_request_queue) net, (select count(*)::int from public.class_sheet_plan_lines where class_id=${T_CLASS}) lines`;
+  await inRollback(async ({ sql, run }) => {
+    const base = { classId: T_CLASS, actor: T_ACTOR };
+    const audits = action => sql`select actor_id::text actor_id, actor_name, target_label, metadata from public.audit_logs where tenant_id=${TENANT} and action=${action} and metadata->>'classId'=${T_CLASS} and metadata->>'via'='3.0 연습 복사본' order by created_at desc, id desc`;
+    // 범위·사람 게이트(2.0 requireEcsClassAccess): 남의 반 선생님은 거절, 수학 반은 대상 아님.
+    const [other] = await sql`select u.id::text id from public.users u where u.tenant_id=${TENANT} and u.status='active' and u.system_role='teacher' and u.id <> ${T_ACTOR}
+      and not exists (select 1 from public.classes c where c.id=${T_CLASS} and c.teacher_id=u.id) and not exists (select 1 from public.class_schedules s where s.class_id=${T_CLASS} and s.teacher_id=u.id) limit 1`;
+    await assert.rejects(run(sql, 'planAdd', { ...base, actor: other.id, planDate: '2026-09-22', slotStart: '17:15', termMode: 'regular', skillArea: 'vocab' }), code('not_my_class'));
+    await assert.rejects(run(sql, 'memo', { ...base, classId: '50d2ece7-6514-4474-8cfc-dd8983d15c18', weekStart: '2026-09-21', memoKey: 'panel', body: 'x' }), /영어 강사 시트 대상이 아닙니다/);
+    // 줄 추가(ecs_create_plan_line) → 줄 하나, 2.0 감사 한 줄.
+    await run(sql, 'planAdd', { ...base, planDate: '2026-09-22', slotStart: '17:15', termMode: 'regular', skillArea: 'vocab' });
+    const [line] = await sql`select id::text id, skill_area, line_no, updated_by::text updated_by from public.class_sheet_plan_lines where class_id=${T_CLASS} and plan_date='2026-09-22' and slot_start='17:15' and term_mode='regular' order by line_no desc limit 1`;
+    assert.equal(line.skill_area, 'vocab'); assert.equal(line.updated_by, T_ACTOR);
+    const [add] = await audits('ecs_plan_line_add');
+    assert.deepEqual([add.actor_id, add.metadata.planDate, add.metadata.slotStart, add.metadata.termMode, add.metadata.skillArea], [T_ACTOR, '2026-09-22', '17:15', 'regular', 'vocab']);
+    // 계획 칸(필드 CAS): 기대값이 맞으면 저장 + ecs_plan_cell_edit(before→after · 열 이름), 틀리면 충돌(감사 없음).
+    assert.equal((await run(sql, 'planCell', { ...base, lineId: line.id, field: 'textbook', expected: null, value: '  시험 교재  ' })).status, 'applied');
+    assert.equal((await sql`select textbook from public.class_sheet_plan_lines where id=${line.id}`)[0].textbook, '시험 교재', '2.0 normalizePlanText(앞뒤 공백 제거)');
+    const cell = find(await audits('ecs_plan_cell_edit'), m => m.field === 'textbook', '계획 칸');
+    assert.deepEqual([cell.kind, cell.lineId, cell.fieldLabel, cell.before, cell.after], ['plan', line.id, '교재 / 내신교과서', null, '시험 교재']);
+    const conflict = await run(sql, 'planCell', { ...base, lineId: line.id, field: 'textbook', expected: '옛 값', value: '새 값' });
+    assert.deepEqual(conflict, { status: 'conflict', serverValue: '시험 교재' });
+    assert.equal((await audits('ecs_plan_cell_edit')).length, 1, '충돌은 감사로그를 남기지 않는다');
+    await run(sql, 'planCell', { ...base, lineId: line.id, field: 'skill_area', expected: 'vocab', value: 'grammar' });
+    assert.deepEqual([find(await audits('ecs_plan_cell_edit'), m => m.field === 'skill_area', '구분').before, find(await audits('ecs_plan_cell_edit'), m => m.field === 'skill_area', '구분').after], ['Vocab', 'Grammar'], '구분은 영역 이름으로 남긴다');
+    await assert.rejects(run(sql, 'planCell', { ...base, lineId: line.id, field: 'skill_area', expected: 'grammar', value: '' }), code('bad_area'));
+    // 내용 복사(ecs_copy_slot) — 같은 교시·같은 요일의 지난 수업(9/22 화 → 9/29 화), 빈 칸만.
+    const copied = await run(sql, 'planCopy', { ...base, planDate: '2026-09-29', slotStart: '17:15', termMode: 'regular' });
+    assert.ok(copied.copied >= 1 && copied.sourceDate === '2026-09-22', JSON.stringify(copied));
+    assert.equal((await audits('ecs_plan_copy'))[0].metadata.copied, copied.copied);
+    // 줄 삭제(ecs_delete_plan_line) — 지운 줄의 날짜·교시를 감사에 남기고, 이미 지운 줄은 멱등.
+    await run(sql, 'planDelete', { ...base, lineId: line.id });
+    assert.equal((await sql`select count(*)::int n from public.class_sheet_plan_lines where id=${line.id}`)[0].n, 0);
+    const del = find(await audits('ecs_plan_line_delete'), m => m.lineId === line.id, '줄 삭제');
+    assert.deepEqual([del.planDate, del.slotStart], ['2026-09-22', '17:15']);
+    assert.deepEqual(await run(sql, 'planDelete', { ...base, lineId: line.id }), { deleted: false });
+    // 학생 기록 칸 — 넘긴 칸만, 다 비면 행 삭제, ecs_mark_edit(칸 이름 = 로스터 라벨).
+    const mk = { ...base, studentId: T_STU, date: '2026-09-22', slotStart: '17:15' };
+    await run(sql, 'mark', { ...mk, field: 'status', value: '좋음' });
+    await run(sql, 'mark', { ...mk, field: 'score', value: '18/20' });
+    const [m1] = await sql`select status, score, progress_note, updated_by::text updated_by from public.class_sheet_student_marks where class_id=${T_CLASS} and student_id=${T_STU} and mark_date='2026-09-22' and slot_start='17:15'`;
+    assert.deepEqual({ ...m1 }, { status: '좋음', score: '18/20', progress_note: null, updated_by: T_ACTOR });
+    assert.deepEqual((await audits('ecs_mark_edit')).map(a => a.metadata.fieldLabel).sort(), ['시험 점수', '태도'].sort());
+    await run(sql, 'mark', { ...mk, field: 'status', value: null }); await run(sql, 'mark', { ...mk, field: 'score', value: '' });
+    assert.equal((await sql`select count(*)::int n from public.class_sheet_student_marks where class_id=${T_CLASS} and student_id=${T_STU} and mark_date='2026-09-22'`)[0].n, 0, '다 비면 빈 행을 남기지 않는다');
+    await assert.rejects(run(sql, 'mark', { ...mk, date: '2026-10-27', field: 'status', value: '좋음' }), code('not_eligible'), '수강하지 않은 날은 기록 행 읽기 전용');
+    // 목표 · 주간 메모 · 월 메모.
+    await run(sql, 'goal', { ...base, scope: 'month', periodStart: '2026-09-17', role: 'homeroom', skillArea: 'vocab', field: 'textbook', value: '목표 교재' });
+    const [g] = await sql`select period_start::text p, textbook, target_progress from public.class_sheet_goals where class_id=${T_CLASS} and scope='month' and role='homeroom' and skill_area='vocab'`;
+    assert.deepEqual({ ...g }, { p: '2026-09-01', textbook: '목표 교재', target_progress: null }, '월간 목표는 그 달 1일(2.0 normalizePeriodStart)');
+    const goal = find(await audits('ecs_goal_edit'), m => m.skillArea === 'vocab', '목표');
+    assert.deepEqual([goal.areaLabel, goal.fieldLabel, goal.after], ['Vocab', '교재명', '목표 교재']);
+    await assert.rejects(run(sql, 'goal', { ...base, scope: 'month', periodStart: '2026-09-01', role: 'homeroom', skillArea: 'in_class', field: 'textbook', value: 'x' }), code('bad_area'), 'EiE 칸은 인재원 반 목표가 아니다');
+    await run(sql, 'memo', { ...base, weekStart: '2026-09-23', memoKey: 'panel', body: '주간 메모' });
+    assert.equal((await sql`select week_start::text w from public.class_sheet_memos where class_id=${T_CLASS} and memo_key='panel'`)[0].w, '2026-09-21');
+    await run(sql, 'monthMemo', { ...base, month: '2026-09', body: '월 메모' });
+    assert.deepEqual((await audits('ecs_memo_edit')).map(a => `${a.metadata.kind}:${a.metadata.fieldLabel}`).sort(), ['memo:주간 메모', 'monthMemo:특이사항 메모']);
+    assert.equal((await sql`select count(*)::int n from net.http_request_queue`)[0].n, before[0].net, '바깥으로 나가려는 요청 없음');
+  });
+  const after = await db`select (select count(*)::int from public.audit_logs) audits, (select count(*)::int from public.class_sheet_plan_lines where class_id=${T_CLASS}) lines`;
+  assert.deepEqual([after[0].audits, after[0].lines], [before[0].audits, before[0].lines], '되돌렸다 — 복사본은 그대로');
+});
+
+test('복사본(되돌림): 출결 체크 · Shouting · 계획(MP) 칸이 2.0 규칙대로(EiE 반만 · 7일 창 · ecs_clear_present)', { skip: !db && 'local database not running' }, async () => {
+  const before = await db`select (select count(*)::int from public.audit_logs) audits, (select count(*)::int from net.http_request_queue) net`;
+  await inRollback(async ({ sql, run }) => {
+    const base = { classId: T_CLASS, actor: T_ACTOR }, day = '2026-10-27'; // 복사본 기준일(화) — 강사 7일 창 안
+    await assert.rejects(run(sql, 'shouting', { ...base, date: '2026-09-22', slotStart: '17:15', value: true }), code('not_eie'), '인재원 영어·미분류 반은 Shouting 없음');
+    await assert.rejects(run(sql, 'attendance', { ...base, studentId: T_STU, date: '2026-09-22', slotStart: '17:15', slot: '17:15', status: 'present' }), code('attendance_locked'), '강사는 7일 창(2.0 문구)');
+    // 시험용으로만(되돌림): 테스트 반을 EiE로 · 수업·수강을 기준일 주까지 늘린다.
+    await sql`update public.classes set english_track='eie' where id=${T_CLASS}`;
+    await sql`update public.class_schedules set valid_to=null where class_id=${T_CLASS}`;
+    await sql`update public.enrollments set end_date=null where class_id=${T_CLASS} and student_id=${T_STU}`;
+    const att = () => sql`select status::text status, slot_start::text slot, recorded_via, recorded_by::text by, session_units::float8 units from public.attendance_records where class_id=${T_CLASS} and student_id=${T_STU} and session_date=${day}`;
+    const audits = action => sql`select metadata from public.audit_logs where tenant_id=${TENANT} and action=${action} and metadata->>'classId'=${T_CLASS} and metadata->>'via'='3.0 연습 복사본' order by created_at desc, id desc`;
+    const cellKey = { ...base, studentId: T_STU, date: day, slotStart: '17:15' };
+    await sql`delete from public.attendance_records where class_id=${T_CLASS} and student_id=${T_STU} and session_date=${day}`; // 깨끗한 칸에서 시작(되돌림 안)
+    await run(sql, 'attendance', { ...cellKey, slot: '17:15', status: 'present' });
+    const [a1] = await att();
+    assert.deepEqual([a1.status, a1.slot, a1.recorded_via, a1.by], ['present', '17:15:00', 'teacher', T_ACTOR], '교시 칸 출결(0196a) · 가르치는 사람 기록');
+    find(await audits('attendance_cell'), m => m.created === true && m.status === 'present' && m.slotStart === '17:15', '새 출결');
+    await run(sql, 'attendance', { ...cellKey, slot: '17:15', status: 'absent' });
+    assert.equal((await att()).length, 1, '같은 칸은 제자리에서 고친다(pickSaveTargets)');
+    assert.equal((await att())[0].status, 'absent');
+    find(await audits('attendance_cell'), m => m.overwrote === true && m.status === 'absent' && m.prevStatus === 'present', '고친 출결');
+    await run(sql, 'attendance', { ...cellKey, slot: '17:15', status: null });
+    assert.equal((await att()).length, 0); find(await audits('ecs_attendance_clear'), m => m.rows === 1 && m.date === day, '출결 지우기');
+    await sql`insert into public.attendance_records (tenant_id, class_id, student_id, session_date, slot_start, status, note, recorded_by, recorded_via) values (${TENANT}, ${T_CLASS}, ${T_STU}, ${day}, '17:15', 'late', '버스 늦음', ${T_ACTOR}, 'teacher')`;
+    await assert.rejects(run(sql, 'attendance', { ...cellKey, slot: '17:15', status: null }), code('rich'), '사유가 붙은 기록은 ecs_clear_present가 거절');
+    // 옛 '그날 전체' 행(slot null)은 제자리에서 고친다 — 새 교시 행을 만들지 않는다(2.0 dbSlot).
+    await sql`delete from public.attendance_records where class_id=${T_CLASS} and student_id=${T_STU} and session_date=${day}`;
+    await sql`insert into public.attendance_records (tenant_id, class_id, student_id, session_date, slot_start, status, recorded_by, recorded_via) values (${TENANT}, ${T_CLASS}, ${T_STU}, ${day}, null, 'present', ${T_ACTOR}, 'teacher')`;
+    await run(sql, 'attendance', { ...cellKey, slot: null, status: 'late' });
+    assert.deepEqual((await att()).map(r => [r.status, r.slot]), [['late', null]]);
+    // Shouting — 체크하면 행, 풀면 행 삭제, 바뀐 때만 감사.
+    await run(sql, 'shouting', { ...base, date: day, slotStart: '17:15', value: true });
+    await run(sql, 'shouting', { ...base, date: day, slotStart: '17:15', value: true });
+    await run(sql, 'shouting', { ...base, date: day, slotStart: '17:15', value: false });
+    assert.deepEqual((await audits('ecs_shouting_toggle')).map(a => a.metadata.checked).sort(), [false, true], '두 번 체크해도 한 줄(바뀐 때만)');
+    // 계획(MP) — 값 칸 · e-book 열(구조) · 휴강(학원 휴일 기준으로 서버가 off/open을 정한다).
+    await run(sql, 'mpCell', { ...base, dates: [day], colKind: 'in_class', body: 'SB p.10' });
+    assert.equal(find(await audits('ecs_month_plan_edit'), m => m.kind === 'mpCell', 'MP 칸').fieldLabel, 'In-class');
+    await run(sql, 'mpCell', { ...base, dates: [day, '2026-10-20'], colKind: 'ebook', body: '', intent: { kind: 'ebookColumn', show: true } });
+    assert.equal(find(await audits('ecs_month_plan_edit'), m => m.change === 'ebookColumn', 'e-book 열').days, 2);
+    await run(sql, 'mpCell', { ...base, dates: [day], colKind: 'off', body: null, intent: { kind: 'dayOff', off: true } });
+    assert.equal((await sql`select body from public.class_month_plan_cells where class_id=${T_CLASS} and plan_date=${day} and col_kind='off'`)[0].body, 'off');
+    assert.equal(find(await audits('ecs_month_plan_edit'), m => m.change === 'dayOff', '휴강').off, true);
+    assert.equal((await sql`select count(*)::int n from net.http_request_queue`)[0].n, before[0].net, '되돌릴 트랜잭션 안에서도 바깥 요청을 늘리지 않았다');
+  });
+  assert.equal((await db`select count(*)::int n from public.audit_logs`)[0].n, before[0].audits, '되돌렸다');
+});
+
+async function page(data, query = '', extra = {}) {
   const srcText = await here('v2-screen-ecs.js');
   let def = null;
   const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   vm.runInNewContext(srcText, { window: { V2Screens: { register: x => { def = x; }, esc } }, document: { addEventListener() {} }, location: { hash: '' }, URLSearchParams });
-  return def.render({ query: new URLSearchParams(query), load: () => ({ status: 'ready', data }), go() {}, refresh() {}, api: {} });
+  return def.render({ query: new URLSearchParams(query), load: () => ({ status: 'ready', data }), go() {}, refresh() {}, api: {}, ...extra });
 }
 const visible = html => html.replace(/<[^>]+>/g, ' ').replace(/&[a-z#0-9]+;/g, ' ');
 
@@ -158,6 +309,18 @@ test('화면: 실제 모델로 그린 네 면이 2.0 문구를 쓰고, 원문 �
   const evil = structuredClone(sheetData); evil.sheet.className = '<img src=x onerror=alert(1)>';
   const evilHtml = await page(evil, `view=sheet&class=${INJAEWON}`);
   assert.ok(!evilHtml.includes('<img src=x') && evilHtml.includes('&lt;img src=x'), '반 이름 이스케이프');
+});
+
+test('화면(저장 가능): 2.0 편집 자리 — 계획 칸 입력 · 줄 추가 · 내용 복사 · 체크 순환 · 저장하는 사람 · 복사본 안내', { skip: !db && 'local database not running' }, async () => {
+  const ctx = { writable: true, copyNote: '연습용 복사본(Docker)에 저장됩니다.' };
+  const sheet = await page(await load({ view: 'sheet', class: INJAEWON, week: WEEK }), `view=sheet&class=${INJAEWON}&week=${WEEK}`, ctx);
+  for (const l of ['연습용 복사본(Docker)에 저장됩니다.', '저장하는 사람', '2.0 화면 · 연습 복사본', '줄 추가', '내용 복사']) assert.ok(sheet.includes(l), l);
+  assert.ok(/data-ec-act="planCell"/.test(sheet) && /data-ec-btn="planAdd"/.test(sheet) && /data-ec-btn="attendance"/.test(sheet) && /data-ec-btn="mark"/.test(sheet), '편집 자리');
+  assert.ok(/data-ec-act="goal"/.test(sheet) && /data-ec-act="memo"/.test(sheet), '계획 패널 저장');
+  const mp = await page(await load({ view: 'month', class: EIE, month: '2026-10' }), `view=month&class=${EIE}&month=2026-10`, ctx);
+  assert.ok(/data-ec-act="mpCell"/.test(mp) && mp.includes('e-book') !== null, '계획(MP) 칸 저장');
+  const ro = await page(await load({ view: 'sheet', class: INJAEWON, week: WEEK }), `view=sheet&class=${INJAEWON}&week=${WEEK}`);
+  assert.ok(!/data-ec-act=|data-ec-btn=/.test(ro), '저장 불가로 알리면 2.0 읽기 모양');
 });
 
 test.after(async () => { await db?.end(); });
