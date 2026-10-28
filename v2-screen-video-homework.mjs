@@ -409,10 +409,9 @@ async function ledgerRoundWriteError(w, input) {
   try { return (await w.sql.savepoint(sp => isOwnVideoHomework(sp, w.t, { userId: w.u.id, classId: input.classId, studentId: input.studentId, date: input.homeworkDate }))) ? null : '내가 낸 숙제만 기록할 수 있습니다.'; }
   catch { return '숙제를 낸 사람을 확인하지 못했습니다. 잠시 후 다시 시도해 주세요.'; }
 }
-/** videoHomeworkWriteError — 수업보고서 전체 권한이거나, 그날 그 반을 맡은 강사(담임 · 위임 · JJ 보고서 담당). */
-async function videoHomeworkWriteError(w, classId, date) {
-  if (w.full) return null;
-  if (!writable(w.level('teacher_onescreen'))) return '수정 권한이 없습니다.';
+/** getTeachingClassIds — 그날 이 사람이 맡은 반(담임 · 위임 · JJ 보고서 담당 = 2.0 getTeachingClassIds + 안의 fetchJjManagedClassIds).
+ *  w = 쓰기 문맥({ sql, t, R, u, people }). 원스크린 영상 검사 칸 저장도 같은 판정을 이걸로 쓴다(같은 데이터는 같은 원본). */
+async function getTeachingClassIds(w, date) {
   const { sql, t, R, u } = w;
   const own = (await sql`select id::text id from public.classes where tenant_id=${t} and teacher_id=${u.id}`).map(r => r.id);
   const delegations = await J(sql`select to_jsonb(x) j from (select class_id, delegate_user_id, from_date, to_date, revoked_at from public.class_delegations
@@ -425,7 +424,13 @@ async function videoHomeworkWriteError(w, classId, date) {
     jj = rows.filter(r => { const slot = { teacherId: r.teacher_id, slotTeacherLabel: r.slot_teacher_label, validFrom: String(r.valid_from).slice(0, 10), validTo: r.valid_to ? String(r.valid_to).slice(0, 10) : null };
       return R.isSeatSlot(slot) && R.specialSlotLabel(r.slot_teacher_label) === R.SELF_STUDY_ROOM_LABEL && R.slotLiveOn(slot, date); }).map(r => r.class_id);
   }
-  return [...own, ...delegated, ...jj].includes(classId) ? null : '담당 반만 수정할 수 있습니다.';
+  return [...own, ...delegated, ...jj];
+}
+/** videoHomeworkWriteError — 수업보고서 전체 권한이거나, 그날 그 반을 맡은 강사(담임 · 위임 · JJ 보고서 담당). */
+async function videoHomeworkWriteError(w, classId, date) {
+  if (w.full) return null;
+  if (!writable(w.level('teacher_onescreen'))) return '수정 권한이 없습니다.';
+  return (await getTeachingClassIds(w, date)).includes(classId) ? null : '담당 반만 수정할 수 있습니다.';
 }
 /** loadVideoHomeworkTarget — 반·학생이 있고 지금 설정으로 검사 대상인가(감사로그 이름). */
 async function loadTarget(w, classId, studentId) {
@@ -872,4 +877,4 @@ export const screen = {
   },
   load: build,
 };
-export { loadRules, ADMIN_PATH, videoHomeworkWriteError, loadTarget, writeMark };
+export { loadRules, ADMIN_PATH, videoHomeworkWriteError, getTeachingClassIds, loadTarget, writeMark };
