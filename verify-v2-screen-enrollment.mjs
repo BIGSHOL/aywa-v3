@@ -198,8 +198,9 @@ test('화면 글자 — 2.0·내부 이름이 보이지 않는다 · 껍데기�
   }
   assert.ok(!/https?:\/\//.test(code(shell)), '껍데기에 바깥 주소');
   assert.ok(!/method:\s*['"]POST/.test(shell), '껍데기에서 쓰기 요청');
-  // 진입점의 쓰기 요청은 상담 삭제 단추 하나뿐(2.0 redirect를 호스트 이동으로 받으려고 직접 보낸다) — 보기 경로엔 없다.
-  assert.equal((entry.match(/method:\s*['"]POST/g) ?? []).length, 1, '진입점 쓰기 요청 = 삭제 하나');
+  // 진입점의 별도 쓰기 요청은 삭제(주소 이동)와 상태 변경(상세 다시 읽기)뿐이다.
+  assert.equal((entry.match(/method:\s*['"]POST/g) ?? []).length, 2, '진입점 별도 쓰기 요청 = 삭제·상태 변경');
+  assert.ok(/fetch\(`\/api\/v2\/\$\{SCREEN\}\/setEnrollmentOutcome`/.test(entry), '상태 변경도 원본 액션 경로');
   assert.ok(/fetch\(`\/api\/v2\/\$\{SCREEN\}\/deleteEnrollmentConsultation`/.test(entry), '그 쓰기 요청은 삭제 저장 경로');
 });
 

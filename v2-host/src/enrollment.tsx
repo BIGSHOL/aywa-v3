@@ -6,7 +6,7 @@ import { createRoot } from 'react-dom/client';
 import { useEffect, useState } from 'react';
 import { AppProviders } from '@/lib/providers/app-providers';
 import { OperationsProvider } from '@/features/owner/operations-context';
-import { hostNavigate, onHostRefresh } from '../shims/host-nav';
+import { hostNavigate, hostRefresh, onHostRefresh } from '../shims/host-nav';
 import { NOT_SUPPORTED, hostActor, registerHostHandler, setHostEditors, type HostEditor } from '../shims/server-action';
 import { usePathname, useSearchParams } from '../shims/next-navigation';
 import { useWindowStore } from '@/components/workspace/window-store';
@@ -47,6 +47,22 @@ const notSupported = async () => ({ error: NOT_SUPPORTED });
 registerHostHandler('features/enrollment/server/actions.ts', 'regenerateConsultationAnalysis', notSupported);
 registerHostHandler('features/enrollment/server/prep-actions.ts', 'generatePrepBrief', notSupported);
 registerHostHandler('features/media/server/upload-actions.ts', 'issueAudioUploadTicket', notSupported);
+
+/** 2.0 setEnrollmentOutcome은 상세 주소를 revalidatePath한다. 호스트는 저장 성공 뒤 같은 상세 GET을 다시 읽는다. */
+registerHostHandler('features/enrollment/server/actions.ts', 'setEnrollmentOutcome', async (_prev, fd) => {
+  let res: Response;
+  try {
+    res = await fetch(`/api/v2/${SCREEN}/setEnrollmentOutcome`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify({ module: 'features/enrollment/server/actions.ts', actor: hostActor(),
+        args: [null, { $formData: [...(fd as FormData).entries()].filter(([, v]) => typeof v === 'string') }] }),
+    });
+  } catch { return { error: '연습 서버에 닿지 못했습니다 — 바뀐 것은 없습니다' }; }
+  const body = (await res.json().catch(() => null)) as { ok?: boolean; result?: { ok?: boolean; error?: string } | null; message?: string } | null;
+  if (!res.ok || !body?.ok) return { error: body?.message || '상태를 바꾸지 못했습니다 — 바뀐 것은 없습니다' };
+  if (body.result?.ok) hostRefresh();
+  return body.result ?? { error: '상태를 바꾸지 못했습니다 — 바뀐 것은 없습니다' };
+});
 
 /**
  * 통계 보기의 계정 보기 설정(학교별 점유율 정렬 · 추이 카드 보기 방식 · 끈 선) — 3.0엔 계정이 없어 저장하지 않는다(보기는 그 화면 안에서만 · 기간은 주소로).
