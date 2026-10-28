@@ -2,7 +2,7 @@
  "integrations-face.tsx": [
   [
    "{active === \"slack\" ? <SlackCard /> : null}",
-   "{active === \"slack\" ? <OwnerServerFace face=\"slack\" /> : null}"
+   "{active === \"slack\" && d.slack ? <OwnerSlackCard state={d.slack} /> : null}"
   ],
   [
    "        <SheetsFace\n          subjects={settings.operations.subjects}\n          page={page}\n          isEmbed={isEmbed}\n          makeeduOn={active === \"makeedu\"}\n          sheetsOn={active === \"sheets\"}\n        />",

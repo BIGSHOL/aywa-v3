@@ -6,11 +6,12 @@
 //  · 면별 조회 = 강의실 사용 현황(classroom-queries.ts) · 과목별 강사 라벨(timetable getTeacherLabelsBySubject) · 세션 기간(periods getPeriodDefsForEditor) ·
 //    개인별 권한의 이름 · 직원 선택지(getPermissionStaffOptions — 운영자 계정 제외)
 // 3.0엔 로그인이 없다 — '보는 사람'을 고르고(학원 설정의 어느 면이든 열 수 있는 재직 직원 · 운영자 계정 제외 · 원장 먼저) 그 사람의 권한 표로 2.0과 같게 낸다.
-// 아직 그리지 않는 면(데이터 정리 · 감사로그 · 연동 · 팝업 · 대시보드 · 가져오기 · 강사평가 · 기여도)은 호스트가 '아직' 안내를 세운다(owner-server-face.tsx).
+// 아직 그리지 않는 하위 카드(숙제영상 드라이브 · 오늘 수학 · 연동 PC · makeedu 동기화)는 호스트가 '아직' 안내를 세운다(owner-server-face.tsx).
 // 지점 화면에는 운영자(슈퍼관리자) 설정 면을 세우지 않는다(CLAUDE.md '지점과 슈퍼관리자 설정 분리') — 2.0 page.tsx도 세우지 않는다.
 import { UUID, loadRules } from './v2-mcs-core.mjs';
 import { ownerActions } from './v2-owner-save.mjs';
 import { integrationsView, integrationActions } from './v2-owner-integrations.mjs';
+import { slackActions } from './v2-owner-slack.mjs';
 import { listPopups, popupActions } from './v2-owner-popups.mjs';
 import { loadOwnerAudit } from './v2-owner-audit.mjs';
 import { loadOwnerData, ownerDataActions } from './v2-owner-data.mjs';
@@ -213,7 +214,7 @@ async function ownerPage({ sql, t, R, O, sp, viewers, viewer, settings, row, imp
     hiddenPermissionIds: permissionPeople.filter(id => operators.has(id)).filter((id, i, a) => a.indexOf(id) === i),
     hiddenSettingKeys,
     navigationGates: tab === 'navigation' ? await loadNavigationGates(sql, t, R, O, settings, importV2) : null,
-    integrations: tab === 'sheets' ? await integrationsView(sql, t, R, settings, viewer) : null,
+    integrations: tab === 'sheets' ? await integrationsView(sql, t, R, settings, viewer, sp, importV2) : null,
     popups: tab === 'popups' ? await listPopups(sql, t, importV2) : null,
     audit, data, dashboard,
     importRows: tab === 'import' ? await loadOwnerImport(importV2, O.modules, settings.modules.disabled, viewer) : null,
@@ -235,7 +236,7 @@ async function ownerIo(sql, t, importV2) {
 export const screen = {
   id: ID, label: '학원 설정', order: 20,
   // 저장 = 2.0 saveOwnerSection(v2-owner-save.mjs) — 저장하는 사람 = 보는 사람.
-  actions: { ...ownerActions(ownerIo), ...integrationActions(ownerIo), ...popupActions(ownerIo), ...ownerDataActions(ownerIo), ...evaluationActions(ownerIo), ...contributionActions(ownerIo) },
+  actions: { ...ownerActions(ownerIo), ...integrationActions(ownerIo), ...slackActions(ownerIo), ...popupActions(ownerIo), ...ownerDataActions(ownerIo), ...evaluationActions(ownerIo), ...contributionActions(ownerIo) },
   params: { viewer: UUID, tab: /^[a-z_]{1,24}$/, year: /^\d{4}$/, sub: /^[a-zA-Z_]{1,24}$/, page: /^\d{1,4}$/,
     action: /^[a-z0-9_]{1,80}$/, q: /^[\s\S]{0,200}$/, from: /^\d{4}-\d{2}-\d{2}$/, to: /^\d{4}-\d{2}-\d{2}$/,
     read: /^dashboard_preview$/ },

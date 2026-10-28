@@ -6,6 +6,7 @@
 import { V2Error } from './v2-screens.mjs';
 import { audit, asAuthenticated } from './v2-timetable-save.mjs';
 import { UUID } from './v2-mcs-core.mjs';
+import { loadOwnerSlack } from './v2-owner-slack.mjs';
 
 const bad = () => new V2Error(400, 'invalid_request', '입력 값을 확인해 주세요.');
 const plain = v => !!v && typeof v === 'object' && !Array.isArray(v);
@@ -21,7 +22,7 @@ async function license(sql, t, feature) {
 }
 
 /** integrations-face.tsx의 켜진 연동 탭 — 슬랙(지점 스위치 ∧ 연동 설정 열람) · makeedu · 구글 시트(모듈 ∧ 라이선스) · 숙제영상(ClassNote) · 연동 PC · 오늘 수학. */
-export async function integrationsView(sql, t, R, settings, viewer) {
+export async function integrationsView(sql, t, R, settings, viewer, sp, importV2) {
   const on = id => !settings.modules.disabled.includes(id);
   const [slack, sheetsLic, math] = await Promise.all([license(sql, t, 'slack'), license(sql, t, 'google_sheets'), license(sql, t, 'todays_math')]);
   const integ = viewer.level('integration_settings');
@@ -42,7 +43,10 @@ export async function integrationsView(sql, t, R, settings, viewer) {
     const spreadsheetId = row?.spreadsheet_id || fallbackId;
     return { connected: !!spreadsheetId, enabled: row?.sync_enabled === true, spreadsheetId, lastSyncedAt: row?.last_synced_at ?? null, lastError: row?.last_error ?? null };
   });
-  return { available, sheetStatuses, saEmail: null };
+  const wanted = sp.sub ?? (Number(sp.page) > 1 ? 'makeedu' : '');
+  const active = available.includes(wanted) ? wanted : available[0];
+  const slackState = active === 'slack' ? await loadOwnerSlack(sql, t, viewer, importV2) : null;
+  return { available, sheetStatuses, saEmail: null, slack: slackState };
 }
 
 // ── integrations/server/actions.ts ─────────────────────────────────────────────────────────────────────────────────────

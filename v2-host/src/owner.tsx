@@ -8,13 +8,30 @@ import { AppProviders } from '@/lib/providers/app-providers';
 import { OperationsProvider } from '@/features/owner/operations-context';
 import { OwnerHostPage, type OwnerPageData } from './owner-page';
 import { hostNavigate, onHostRefresh } from '../shims/host-nav';
-import { setHostEditors, type HostEditor } from '../shims/server-action';
+import { setHostEditors, registerHostHandler, VIEW_ONLY, type HostEditor } from '../shims/server-action';
 import { useHostSearch } from '../shims/next-navigation';
 import { HostFrame, HostMessage } from './host-frame';
 
 /** 진입점 표식(build.mjs가 찾는다) — 창 제목과 이 화면의 2.0 주소. */
 export const HOST_TITLE = '학원 설정';
 export const HOST_ROUTE = '/owner';
+
+// 슬랙 API 조회·발송은 외부 서비스에 닿는다. 2.0 부품의 함수 호출을 이 화면에서 즉시 거절한다.
+for (const [module, names] of [
+  ['features/slack/server/connection-actions.ts', ['saveSlackToken', 'resendSlackFailures', 'listSlackChannels']],
+  ['features/slack/server/rule-actions.ts', ['sendSlackRuleSample']],
+  ['features/slack/server/link-actions.ts', ['loadSlackPeople', 'linkSlackByEmail', 'unlinkSlackUser']],
+] as const) for (const name of names) registerHostHandler(module, name,
+  async () => ({ error: name === 'listSlackChannels' ? '연습 화면에서는 슬랙 채널 목록을 불러올 수 없습니다'
+    : name === 'loadSlackPeople' ? '연습 화면에서는 슬랙 직원 목록을 불러올 수 없습니다' : VIEW_ONLY }));
+
+// 슬랙 API 조회·발송은 외부 서비스에 닿는다. 2.0 부품의 함수 호출을 이 화면에서 즉시 거절한다.
+for (const [module, names] of [
+  ['features/slack/server/connection-actions.ts', ['saveSlackToken', 'resendSlackFailures', 'listSlackChannels']],
+  ['features/slack/server/rule-actions.ts', ['sendSlackRuleSample']],
+  ['features/slack/server/link-actions.ts', ['loadSlackPeople', 'linkSlackByEmail', 'unlinkSlackUser']],
+] as const) for (const name of names) registerHostHandler(module, name,
+  async () => ({ error: name === 'listSlackChannels' ? '연습 화면에서는 슬랙 채널 목록을 불러올 수 없습니다' : VIEW_ONLY }));
 
 type Data = {
   page?: OwnerPageData;

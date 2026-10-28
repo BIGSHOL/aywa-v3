@@ -1,6 +1,6 @@
 // 2.0 학원 설정 '연동' 면(app/(shell)/owner/_components/integrations-face.tsx · sheets-face.tsx)의 그리기 — 둘 다 서버 컴포넌트라 그대로 못 불러와서,
 // 서버가 하던 판정(켜진 연동 탭 · 고른 탭)·조회(과목별 구글 시트 상태)는 /api/v2/owner?tab=sheets(v2-screen-owner.mjs)가 하고 여기서는 두 파일의 본문을 **글자 그대로** 옮겼다.
-// 바꾼 곳 = 아직 옮기지 않은 서버 카드(슬랙 · 숙제영상 드라이브 · 오늘 수학 · 연동 PC · makeedu 동기화)를 '아직' 자리로 — owner-integrations.swaps.json, verify가 대조한다.
+// 바꾼 곳 = 아직 옮기지 않은 서버 카드(숙제영상 드라이브 · 오늘 수학 · 연동 PC · makeedu 동기화)를 '아직' 자리로 — owner-integrations.swaps.json, verify가 대조한다.
 // 구글 시트 절(과목별 카드 · 켜기 · 대상 시트)은 그대로 — 저장은 v2-owner-integrations.mjs(2.0 setSheetsExportEnabled · setSubjectSheetTarget).
 import { FaceTabs, type Face } from "@/components/face-tabs";
 import { EyIcon } from "@/components/icons/aywa-icons";
@@ -10,11 +10,12 @@ import type { IntegrationStatus } from "@/features/integrations/server/queries";
 import type { TenantSettings } from "@/features/owner/settings-types";
 import { SubjectSheetCard } from "@/app/(shell)/owner/_components/subject-sheet-card";
 import { OwnerServerFace } from "./owner-server-face";
+import { OwnerSlackCard } from "./owner-slack";
 
 export type IntegrationSub = "slack" | "makeedu" | "sheets" | "video" | "agent" | "todaysMath";
 
 /** /api/v2/owner?tab=sheets — integrations-face.tsx가 계산하던 값(켜진 탭 · 고른 탭)과 sheets-face.tsx의 시트 상태. */
-export type OwnerIntegrationsData = { available: IntegrationSub[]; sheetStatuses: IntegrationStatus[]; saEmail: string | null };
+export type OwnerIntegrationsData = { available: IntegrationSub[]; sheetStatuses: IntegrationStatus[]; saEmail: string | null; slack: import("@/features/slack/server/queries").SlackCardState | null };
 
 const LABEL: Record<IntegrationSub, string> = { slack: "슬랙", makeedu: "makeedu 동기화", sheets: "구글 시트", video: "숙제영상 드라이브", agent: "연동 PC", todaysMath: "오늘 수학" };
 
@@ -119,7 +120,7 @@ export function OwnerIntegrationsFace({ d, settings, sub, page }: { d: OwnerInte
   return (
     <div className="space-y-4">
       {available.length > 1 ? <FaceTabs faces={faces} active={active} level="secondary" ariaLabel="연동 종류 전환" /> : null}
-      {active === "slack" ? <OwnerServerFace face="slack" /> : null}
+      {active === "slack" && d.slack ? <OwnerSlackCard state={d.slack} /> : null}
       {active === "makeedu" || active === "sheets" ? (
         <OwnerSheetsFace
           subjects={settings.operations.subjects}
