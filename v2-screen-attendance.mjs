@@ -9,16 +9,18 @@
 //    .tsx 안에만 있는 몇 줄(31칸 채우기·날짜축·담당 강사 합집합·역할 판정)과 불러올 수 없는 resolve.ts의 설정 병합은 아래 PORTED —
 //    verify가 2.0 원문과 맞는지 잡는다.
 //  · actions = 2.0 "use server" 함수와 1:1(이름 = 2.0 export 이름 · 인자 = 2.0 인자 · 같은 표·칸·감사로그). 호스트 shim이
-//    POST /api/v2/attendance/<함수> { module, actor, args }로 부른다(actor = 3.0 띠에서 고른 출결 전체 권한 직원 — 로그인 대신).
+//    POST /api/v2/attendance/<함수> { module, actor, args }로 부른다(actor = 3.0 띠에서 고른 출결 권한 직원 — 로그인 대신).
 //      2.0 모듈 · 함수                                              → 여기
-//      features/attendance/server/actions.ts      setAttendanceCell   → actions.setAttendanceCell (관리자 경로 · attendance_cell/_clear/_note)
+//      features/attendance/server/actions.ts      setAttendanceCell   → actions.setAttendanceCell (그날 칸 · 교시 지정 칸(slotStart) · 당일 출결
+//                                                 source 'live' 데스크 게이트 · 강사(담당 반만) 게이트 · attendance_cell/_clear/_note)
+//                                                 setAttendanceBulk   → actions.setAttendanceBulk (빈 칸만 · 교시 · 데스크 게이트 · attendance_bulk)
 //      features/attendance/server/prefs-actions.ts saveAttendanceSort · saveAttendancePeriodMode · saveAttendanceHideRetired ·
 //                                                 saveAttendanceCollapsed → actions.같은 이름 (users.ui_prefs.attendance · 감사로그 없음 = 2.0과 같다)
 //      hub-search-actions.ts searchAttendanceHubStudents · intake/server/actions.ts searchIntakeStudents · previewAbsenceIntake ·
 //                                                 recordAbsenceIntake → actions.같은 이름 — 아직 옮기지 않아 **그 함수의 2.0 실패 모양**으로
 //                                                 답한다(쓰기 없음). shim 공통 거절 `{ok:false}`로는 부품이 결과를 읽다 깨진다.
 //      아직 받지 않는 것(shim이 '복사본 보기 전용' `{ok:false,error}`로 거절 — 부르는 2.0 부품이 모두 `"error" in res`로 읽는다):
-//        actions.ts setAttendanceRange(범위 지우기·채우기) · setAttendanceBulk · saveAttendance · linkMakeupToAbsence · searchMakeupStudents
+//        actions.ts setAttendanceRange(범위 지우기·채우기) · saveAttendance · linkMakeupToAbsence · searchMakeupStudents
 //        makeup-reservation-actions.ts getMakeupPeriodOptions · reserveMakeup · cancelMakeupReservation · setReservationReportMode
 //        prefs-actions.ts loadAttendanceViewPrefs(서버 전용 — load가 같은 값)
 //  · 하위 주소(v2path) — 2.0 `/attendance/seat/<자리>`(자리 하루: SeatAllDay·SeatJjAllDay·SeatBoard) · `…/month`(자리 월간: MonthlyTable) ·
@@ -33,8 +35,8 @@
 //  · `/attendance/quick`(출결 모드 — 2.0 quick/page.tsx: 오늘 고정 · 내 수업만 · 휴원일이면 읽기 전용 패널) = v2-attendance-live.mjs
 //    (getLiveBoard(오늘, selfOnly) · getHolidayDayActivity). 보는 사람 = 출결을 쓸 수 있는 직원(전체 ∪ 담당 반만 — 강사 포함).
 //    2.0과 다른 점: 화면 언어는 늘 한국어(3.0은 관리자 셸로 연다 — 월별·자리와 같다) · '출결 모드 종료' 링크는 강사 계정이면 담임 반
-//    과목으로만 고른다(2.0 teacherViewHome은 교시 담당·보조 반·ECS 권한까지 본다). 저장(setAttendanceCell 교시 지정 · setAttendanceBulk)은 아직 —
-//    교시 지정 칸은 칸 저장이 409로 거절하고, 일괄은 shim 거절(둘 다 2.0 부품이 `"error" in res`로 되돌린다).
+//    과목으로만 고른다(2.0 teacherViewHome은 교시 담당·보조 반·ECS 권한까지 본다). 저장 = setAttendanceCell(교시 지정 · source 'live') ·
+//    setAttendanceBulk(아래 actions). 알림 벨(반 출결 완료·결석 확인·미출결 → 출석)은 칸 저장처럼 만들지 않는다.
 // "오늘"은 복사본 기준일(백업 시각의 KST 날짜) — 3.0 다른 화면과 같은 날이다. 자리 화면의 기본 교시는 복사본 기준 시각으로 고른다.
 //
 // ── 호스트에 붙일 때(v2-host 빌드가 출석부 진입점에서 닿는 것 — 2.0 Next에만 있는 경계) ──
@@ -56,9 +58,9 @@ import { readFile } from 'node:fs/promises';
 import { activeBackup } from './full-db-paths.mjs';
 import { scrub } from './domain-snapshot-core.mjs';
 import { V2Error } from './v2-screens.mjs';
-import { loadSeatRules, seatDayProps, seatMonthProps } from './v2-attendance-seat.mjs';
+import { loadSeatRules, seatDayProps, seatMonthProps, copyClock } from './v2-attendance-seat.mjs';
 import * as SeatSave from './v2-attendance-seat-save.mjs';
-import { loadLiveRules, quickProps } from './v2-attendance-live.mjs';
+import { loadLiveRules, quickProps, attendanceWritersOf, readTaughtClassSet } from './v2-attendance-live.mjs';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const MODULES = {
@@ -783,11 +785,15 @@ function cellBody(raw) {
   if (input.status !== undefined && input.status !== null && !STATUSES.includes(input.status)) throw new V2Error(400, 'invalid_status', '잘못된 상태입니다');
   if (input.scopeTeacherId !== undefined && input.scopeTeacherId !== null && (typeof input.scopeTeacherId !== 'string' || !UUID.test(input.scopeTeacherId))) throw bad();
   for (const k of ['noteOnly', 'quiet', 'onlyIfEmpty', 'allowMakeup', 'ghostTransfer']) if (input[k] !== undefined && typeof input[k] !== 'boolean') throw bad();
-  if (input.slotStart || input.source || input.onlyIfEmpty || input.allowMakeup || input.ghostTransfer) {
-    throw new V2Error(409, 'not_in_copy', '이 저장 방식(교시 지정·당일 출결·보강 추가·다른 선생님 교시 옮기기)은 이 연습 화면에 아직 없습니다 — 바뀐 것은 없습니다.');
+  if (input.onlyIfEmpty || input.allowMakeup || input.ghostTransfer) {
+    throw new V2Error(409, 'not_in_copy', '이 저장 방식(비파괴 첫 체크·보강 추가·다른 선생님 교시 옮기기)은 이 연습 화면에 아직 없습니다 — 바뀐 것은 없습니다.');
   }
+  // 교시 지정(0196a "HH:MM[:SS]") · 화면 교시(데스크 10분 판정) · 당일 출결 화면(source 'live' — 데스크 게이트).
+  const time = v => { if (v === undefined || v === null) return null; if (typeof v !== 'string' || !/^\d{2}:\d{2}(:\d{2})?$/.test(v)) throw bad(); return v; };
+  if (input.source !== undefined && input.source !== null && input.source !== 'live') throw bad();
   return { actor, studentId: input.studentId, classId: input.classId, sessionDate: input.sessionDate, status: input.status ?? null,
-    units: optStr(input.units, 10), note: input.note === null ? null : optStr(input.note, 2000), noteOnly: input.noteOnly === true, scopeTeacherId: input.scopeTeacherId ?? null };
+    units: optStr(input.units, 10), note: input.note === null ? null : optStr(input.note, 2000), noteOnly: input.noteOnly === true, scopeTeacherId: input.scopeTeacherId ?? null,
+    slotStart: time(input.slotStart), periodStart: time(input.periodStart), source: input.source ?? undefined };
 }
 /** 2.0 prefs-actions의 네 함수 — 인자 하나(정렬 · 날짜축 · 퇴직 숨김 · 접은 반). 값 정리는 2.0 parse 함수가 run에서 한다. */
 const prefsBody = check => raw => { const { actor, args: [v] } = hostCall(raw, PREFS_MODULE, 1); if (!check(v)) throw bad(); return { actor, value: v }; };
@@ -853,9 +859,10 @@ const audit = (sql, t, actor, action, metadata) => sql`insert into public.audit_
   values (${t}, ${actor.id}, ${actor.name}, ${action}, 'attendance', null, ${sql.json({ ...metadata, via: VIA })})`;
 const backdated = (date, today) => (date < today ? { backdated: true } : {});
 
-async function setCell(sql, t, b, R) {
+async function setCell(sql, t, b, R, L) {
   const [settings, today] = await Promise.all([readSettings(sql, t, R), copyDay()]);
-  const actor = (await actorsOf(sql, t, R, settings)).find(a => a.id === b.actor);
+  // 2.0 `canWriteTenant(role, 'attendance')` — 출결 '전체' ∪ '담당 반만'(강사). 강사는 아래 게이트를 함께 지난다.
+  const actor = await attendanceWriterOf(sql, t, R, settings, b.actor);
   if (!actor) throw new V2Error(403, 'actor_not_allowed', '출석 관리 권한이 없습니다');
   // 격자 타이핑(2.0 `commitBuffer`) — 0 = 결석, 1·1.5·2 = 출석 + 시수. 숫자로 읽을 수 없으면 2.0처럼 아무것도 하지 않는다.
   const { status, units } = b;
@@ -865,11 +872,19 @@ async function setCell(sql, t, b, R) {
   let unitsVal = null;
   if (unitsProvided) { const parsed = R.units.parseSessionUnits(units); if (!parsed.ok) throw new V2Error(400, 'invalid_units', parsed.error); unitsVal = parsed.value; }
   if (b.scopeTeacherId != null && !R.scopeOwn.isScopeTeacherId(b.scopeTeacherId)) throw new V2Error(400, 'invalid_scope', R.scopedSplit.SCOPE_INVALID_MESSAGE);
+  if (actor.level === 'scoped') await scopedCellGate(sql, t, R, L, settings, today, actor, b);
   const [[cls], [stu]] = await Promise.all([sql`select id from public.classes where tenant_id=${t} and id=${classId}`, sql`select id from public.students where tenant_id=${t} and id=${studentId}`]);
   if (!cls || !stu) throw new V2Error(404, 'not_found', '반 또는 학생을 찾지 못했습니다.');
   const [resv] = await sql`select 1 from public.makeup_reservations where tenant_id=${t} and class_id=${classId} and student_id=${studentId} and makeup_date=${sessionDate} and status in ('reserved','done') limit 1`;
   if (resv) throw new V2Error(409, 'reservation_cell', '보강 예약이 걸린 칸입니다 — 2.0은 이 저장에서 예약 이행(결석 칸 메모·시수)까지 함께 바꾸는데, 이 연습 화면은 아직 그 부분이 없어 저장하지 않습니다.');
   const via = await writeViaOf(sql, t, R, settings, actor.id, classId, sessionDate);
+  // 데스크 게이트(2.0 `assertDeskMayWrite`) — 당일 출결 화면에서 그 반을 안 가르치는 사람은 10분 뒤 미출결 칸만 · 지우기 금지.
+  const periodStart = b.periodStart ?? b.slotStart ?? null;
+  const deskGate = async (currentStatus, nextStatus) => {
+    const reason = await deskDenied(sql, t, L, { via, classId, date: sessionDate, periodStart, currentStatus, nextStatus, source: b.source });
+    if (reason) throw new V2Error(409, 'desk_gate', reason);
+  };
+  if (b.slotStart) return slotCell(sql, t, R, { settings, today, actor, b, via, periodStart, base: { studentId, classId, date: sessionDate }, noteVal, noteProvided, unitsProvided, unitsVal, deskGate });
   const scopeTeacherId = b.scopeTeacherId ?? null;
   const scopeShareOf = facts => {
     if (!R.scopeOwn.scopeTeaches(facts.get(classId), scopeTeacherId, sessionDate)) throw new V2Error(409, 'scope_not_taught', R.scopedSplit.SCOPE_NOT_TAUGHT_MESSAGE);
@@ -899,11 +914,9 @@ async function setCell(sql, t, b, R) {
   }
 
   if (status === null) {
-    // 지우기 — 보강 보고서가 가리키는 반의 칸은 지우지 않는다(2.0 `makeupAnchorDeleteBlock`).
-    const [anchor] = await sql`select classnote_status, classnote_sent_at from public.lesson_reports where tenant_id=${t} and makeup and class_id is null and student_id=${studentId} and makeup_class_id=${classId} and report_date=${sessionDate} limit 1`;
-    if (anchor) throw new V2Error(409, 'makeup_anchor', anchor.classnote_sent_at || anchor.classnote_status === 'success'
-      ? '이 칸은 학부모에게 발송된 보강 보고서의 반입니다 — 지울 수 없습니다(보고서와 출석부 반이 갈라집니다)'
-      : "이 칸은 보강 보고서가 가리키는 반입니다 — 원스크린에서 '보강 빼기'로 보고서와 함께 지우거나, 보강 반을 바꿔 주세요");
+    // 지우기 — 당일 출결 화면은 데스크 삭제를 막는다 · 보강 보고서가 가리키는 반의 칸은 지우지 않는다(2.0 `makeupAnchorDeleteBlock`).
+    await deskGate('present', null);
+    await makeupAnchorGate(sql, t, studentId, classId, sessionDate);
     let skippedSeatRows = 0;
     if (scopeTeacherId) {
       const [rows, facts] = await Promise.all([dayRows(), scopeFactsOf(sql, t, R, classId, sessionDate)]);
@@ -914,7 +927,7 @@ async function setCell(sql, t, b, R) {
       const { write, seat } = R.scopedSplit.splitOutSeatRows(rows, seatOf(share), ownerOf(share)); skippedSeatRows = seat.length;
       if (write.length) await sql`delete from public.attendance_records where id = any(${write.map(r => r.id)}::uuid[])`;
     } else await sql`delete from public.attendance_records where tenant_id=${t} and class_id=${classId} and student_id=${studentId} and session_date=${sessionDate}`;
-    await audit(sql, t, actor, 'attendance_clear', { ...base, ...(scopeTeacherId ? { scopeTeacherId } : {}), ...(skippedSeatRows > 0 ? { skippedSeatRows } : {}), ...backdated(sessionDate, today) });
+    await audit(sql, t, actor, 'attendance_clear', { ...base, ...(scopeTeacherId ? { scopeTeacherId } : {}), ...(skippedSeatRows > 0 ? { skippedSeatRows } : {}), ...(b.source ? { source: b.source } : {}), ...backdated(sessionDate, today) });
     return { ok: true };
   }
 
@@ -928,6 +941,7 @@ async function setCell(sql, t, b, R) {
   if (scopedPlan?.kind === 'reject') throw new V2Error(409, scopedPlan.reason, R.ghost.SCOPED_REJECT_MESSAGE[scopedPlan.reason]);
   const createOwn = scopedPlan?.kind === 'create', writeIds = createOwn ? [] : split.write.map(r => r.id);
   const targetIds = new Set(writeIds), prevRow = rows.find(r => targetIds.has(r.id)), prevStatus = prevRow?.status ?? null;
+  await deskGate(prevStatus, status);
   const overwrote = !createOwn && updateIds.length > 0;
   const unitsArg = unitsProvided ? unitsVal ?? (R.units.isDefaultUnitsRaw(units) ? null : 1) : undefined;
   let unitsAudit = null, insertedAuto, createdSlots, createdDefaultTotal;
@@ -966,10 +980,235 @@ async function setCell(sql, t, b, R) {
   }
   await audit(sql, t, actor, 'attendance_cell', { ...base, status, ...(overwrote ? { overwrote: true, prevStatus } : { created: true }), ...(unitsProvided ? { units: unitsVal } : {}),
     ...(unitsAudit ? { prevUnits: unitsAudit.prevUnits, nextUnits: unitsAudit.nextUnits } : {}), ...(insertedAuto != null ? { autoUnits: insertedAuto } : {}),
-    ...(scopeTeacherId ? { scopeTeacherId } : {}), ...(split.seat.length > 0 ? { skippedSeatRows: split.seat.length } : {}), ...(createdSlots ? { createdSlots } : {}), ...backdated(sessionDate, today) });
+    ...(scopeTeacherId ? { scopeTeacherId } : {}), ...(split.seat.length > 0 ? { skippedSeatRows: split.seat.length } : {}), ...(createdSlots ? { createdSlots } : {}),
+    ...(b.source ? { source: b.source } : {}), ...backdated(sessionDate, today) });
   if (createdDefaultTotal !== undefined) return { ok: true, autoUnits: createdDefaultTotal };
   return insertedAuto !== undefined ? { ok: true, autoUnits: insertedAuto } : { ok: true };
 }
+
+// ── 당일 출결 저장(출결 모드 · 오늘 출결) — 2.0 setAttendanceCell의 강사 게이트·데스크 게이트·교시 지정 갈래 + setAttendanceBulk ──
+/** 출결을 쓸 수 있는 사람(2.0 `canWriteTenant(role, 'attendance')` — 전체 ∪ 담당 반만) 중 그 사람. */
+const attendanceWriterOf = async (sql, t, R, settings, id) => (await attendanceWritersOf(sql, t, R, settings)).find(w => w.id === id) ?? null;
+
+/** 2.0 `lookupPeriodPhase`(live/server/write-policy.ts) — 그 교시가 지금 어느 국면인가(복사본 기준 시각). */
+async function lookupPeriodPhase(sql, t, L, classId, date, periodStart) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return 'before';
+  const { day: today, hm } = await copyClock();
+  if (date < today) return 'ended';
+  if (date > today) return 'before';
+  const dow = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'][new Date(`${date}T00:00:00Z`).getUTCDay()];
+  const rows = (await sql`select start_time::text start_time, end_time::text end_time from public.class_schedules where tenant_id=${t} and class_id=${classId} and day_of_week::text=${dow}
+    and valid_from<=${date} and (valid_to is null or valid_to>=${date})`).map(r => ({ start: L.signals.hhmm(r.start_time), end: r.end_time ? L.signals.hhmm(r.end_time) : null }));
+  const hit = periodStart ? rows.find(r => r.start === periodStart) : [...rows].sort((a, b) => (a.start < b.start ? -1 : 1))[0];
+  if (!hit) return 'ended';
+  const start = L.signals.hhmmToMin(hit.start);
+  if (start == null) return 'ended';
+  const [h, m] = hm.split(':').map(Number);
+  return L.signals.slotPhase(h * 60 + m, start, L.signals.hhmmToMin(hit.end));
+}
+/** 2.0 `assertDeskMayWrite` — 당일 출결 화면(source 'live')에서 데스크(그 반을 안 가르치는 사람)는 10분 뒤 미출결 칸만 · 지우기 금지. 거절 = 2.0 문구. */
+async function deskDenied(sql, t, L, { via, classId, date, periodStart, currentStatus, nextStatus, source }) {
+  const phase = L.mark.shouldEnforceDeskGate(source) && via === 'desk' && nextStatus !== null ? await lookupPeriodPhase(sql, t, L, classId, date, periodStart) : 'ended';
+  return L.mark.deskWriteDenied({ source, via, currentStatus, nextStatus, phase });
+}
+/** 2.0 `splitIntoKeys`(class-splits/server/queries.ts) — 그날 나눔으로 들어오는 (학생, 반) 키(`학생::반`). toSplit·기간 판정은 2.0 규칙 그대로. */
+async function splitIntoKeys(sql, t, R, classIds, date) {
+  if (classIds.length === 0) return new Set();
+  const rows = await sql`select id::text id, student_id::text student_id, source_class_id::text source_class_id, target_class_id::text target_class_id, day_of_week, start_time::text start_time,
+      end_time::text end_time, valid_from::text valid_from, valid_to::text valid_to, period_kind, note
+    from public.class_splits where tenant_id=${t} and (source_class_id = any(${classIds}::uuid[]) or target_class_id = any(${classIds}::uuid[])) and valid_from<=${date}`;
+  return new Set(rows.map(r => toSplit(R, r)).filter(s => s && R.splitPeriod.splitOverlapsRange(s, date, date) && R.splitPeriod.splitActiveOn(s, date)).map(s => `${s.studentId}::${s.targetClassId}`));
+}
+/** 2.0 `reservedCellKeys`(makeup-reservation-queries.ts) — 그날 '예약됨' 보강이 있는 (학생, 반)(`학생::반`). */
+async function reservedKeysOn(sql, t, classIds, date) {
+  if (classIds.length === 0) return new Set();
+  return new Set((await sql`select student_id::text s, class_id::text c from public.makeup_reservations where tenant_id=${t} and status='reserved' and makeup_date=${date} and class_id = any(${classIds}::uuid[])`).map(r => `${r.s}::${r.c}`));
+}
+const RESERVATION_CELL = '보강 예약이 걸린 칸입니다 — 2.0은 이 저장에서 예약 이행(결석 칸 메모·시수)까지 함께 바꾸는데, 이 연습 화면은 아직 그 부분이 없어 저장하지 않습니다.';
+const NATIVE_MAKEUP = '새 보강 체계(보강 참여)로 연 칸은 이 연습 화면에 아직 없습니다 — 바뀐 것은 없습니다.';
+
+/**
+ * 2.0 setAttendanceCell의 강사(scoped) 게이트 — 자기 출석부로만 · 7일 창(메모만은 면제) · 담당 반(담임 ∪ 위임 ∪ JJ 담당 ∪ 교시 담당) ·
+ * 그 날짜 기준 수강생(수강행 · 기록 · 보강 예약 · 수업 나누기). 거절 문구 = 2.0.
+ */
+async function scopedCellGate(sql, t, R, L, settings, today, actor, b) {
+  if (b.scopeTeacherId != null && b.scopeTeacherId !== actor.id) throw new V2Error(409, 'invalid_scope', R.scopedSplit.SCOPE_INVALID_MESSAGE);
+  if (!b.noteOnly && !R.edit.isWithinAttendanceEditWindow(b.sessionDate, today)) throw new V2Error(409, 'edit_window', R.edit.attendanceLockMessage(b.sessionDate, today));
+  const [teaching, [en], [ex]] = await Promise.all([
+    readTaughtClassSet(sql, t, R, settings, actor.id, b.sessionDate),
+    sql`select count(*)::int n from public.enrollments where tenant_id=${t} and class_id=${b.classId} and student_id=${b.studentId}
+      and (start_date is null or start_date<=${b.sessionDate}) and (end_date is null or end_date>=${b.sessionDate})`,
+    sql`select count(*)::int n from public.attendance_records where tenant_id=${t} and class_id=${b.classId} and student_id=${b.studentId} and session_date=${b.sessionDate}`,
+  ]);
+  if (!teaching.has(b.classId)) throw new V2Error(403, 'not_teaching', '담당 반이 아닙니다');
+  const enrolled = en.n > 0, hasRecord = ex.n > 0;
+  const allowMakeup = !enrolled && !hasRecord && ((await reservedKeysOn(sql, t, [b.classId], b.sessionDate)).has(`${b.studentId}::${b.classId}`)
+    || (await splitIntoKeys(sql, t, R, [b.classId], b.sessionDate)).has(`${b.studentId}::${b.classId}`));
+  if (!L.makeupWrite.canWriteAttendanceStudent({ enrolled, hasRecord, allowMakeup })) {
+    // 2.0 `nativeWriteAllowance` — 새 보강 체계가 켜진 학원만 보강 참여로 연다(이 복사본에 그 갈래는 아직 없다).
+    if (L.makeupTypes.featureLive(settings.makeups?.mode)) throw new V2Error(409, 'native_makeup', NATIVE_MAKEUP);
+    throw new V2Error(403, 'not_enrolled', '이 반 수강생이 아닙니다');
+  }
+}
+
+/** 2.0 setAttendanceCell — 교시를 지정한 저장(`slotStart`, ECS·당일 출결의 교시별 반). 강사 보기 몫(scopeTeacherId)은 이 갈래에 뜻이 없다(2.0과 같다). */
+async function slotCell(sql, t, R, ctx) {
+  const { settings, today, actor, b, via, periodStart, base, noteVal, noteProvided, unitsProvided, unitsVal, deskGate } = ctx;
+  const slot = b.slotStart, { classId, studentId, sessionDate, status } = b;
+  const extra = { slotStart: slot };
+  if (b.noteOnly) {
+    const [row] = await sql`select id::text id from public.attendance_records where tenant_id=${t} and class_id=${classId} and student_id=${studentId} and session_date=${sessionDate} and slot_start=${slot}
+      order by recorded_at desc, id desc limit 1`;
+    if (!row) throw new V2Error(409, 'no_record', '그날 출결 기록이 없어 메모만 남길 수 없습니다 — 먼저 출결을 입력하세요');
+    await sql`update public.attendance_records set note=${noteVal} where id=${row.id}`;
+    await audit(sql, t, actor, 'attendance_note', { ...base, ...extra, cleared: noteVal === null, ...backdated(sessionDate, today) });
+    return { ok: true };
+  }
+  if (status === null) {
+    await deskGate('present', null);
+    await makeupAnchorGate(sql, t, studentId, classId, sessionDate);
+    await sql`delete from public.attendance_records where tenant_id=${t} and class_id=${classId} and student_id=${studentId} and session_date=${sessionDate} and slot_start=${slot}`;
+    await audit(sql, t, actor, 'attendance_clear', { ...base, ...extra, ...(b.source ? { source: b.source } : {}), ...backdated(sessionDate, today) });
+    return { ok: true };
+  }
+  // 그 교시 + 옛 "그날 전체" 행을 함께 본다(두 세대 공존 — pickSaveTargets가 승격까지 정한다).
+  const rows = await sql`select id::text id, slot_start::text slot_start, status::text status, session_units::float8 session_units from public.attendance_records
+    where tenant_id=${t} and class_id=${classId} and student_id=${studentId} and session_date=${sessionDate} order by recorded_at desc, id desc`;
+  const { updateIds, promoteIds } = R.saveTargets.pickSaveTargets(rows, slot), rowById = new Map(rows.map(r => [r.id, r]));
+  const targetIds = new Set([...updateIds, ...promoteIds]), prevStatus = rows.find(r => targetIds.has(r.id))?.status ?? null;
+  await deskGate(prevStatus, status);
+  const overwrote = updateIds.length > 0 || promoteIds.length > 0;
+  let unitsAudit = null, insertedAuto;
+  if (overwrote) {
+    const patch = { status, recorded_by: actor.id, recorded_at: new Date().toISOString(), recorded_via: via, ...(noteProvided ? { note: noteVal } : {}), ...(unitsProvided ? { session_units: unitsVal } : {}) };
+    // 교시 지정 저장의 대상 = 그 교시 + 옛 그날 전체 행 = 같은 한 수업이라 친 값 그대로(더하지 않는다 — spread 'each').
+    if (unitsProvided) unitsAudit = R.unitsAudit.unitsAuditFields({ rows: [...updateIds, ...promoteIds].map(id => ({ status: String(rowById.get(id)?.status ?? ''), units: rowById.get(id)?.session_units ?? null })),
+      status, unitsVal, spread: 'each' });
+    if (promoteIds.length) await sql`update public.attendance_records set ${sql({ ...patch, slot_start: slot })} where id = any(${promoteIds}::uuid[])`;
+    if (updateIds.length) await sql`update public.attendance_records set ${sql(patch)} where id = any(${updateIds}::uuid[])`;
+  } else {
+    const lookedUp = R.auto.autoUnitsApply({ rawUnits: b.units, slotStart: slot, status })
+      ? ((await autoUnitsOf(sql, t, R, settings, [{ classId, date: sessionDate, slotStart: slot }])).get(R.auto.autoUnitsKey(classId, sessionDate, slot)) ?? null) : undefined;
+    const ins = R.auto.newRowUnits(b.units, unitsVal, lookedUp);
+    insertedAuto = ins.auto === undefined ? undefined : ins.units;
+    await sql`insert into public.attendance_records (tenant_id, class_id, student_id, session_date, slot_start, status, note, session_units, recorded_by, recorded_via)
+      values (${t}, ${classId}, ${studentId}, ${sessionDate}, ${slot}, ${status}, ${noteProvided ? noteVal : null}, ${ins.units}, ${actor.id}, ${via})`;
+  }
+  await audit(sql, t, actor, 'attendance_cell', { ...base, ...extra, status, ...(overwrote ? { overwrote: true, prevStatus } : { created: true }), ...(unitsProvided ? { units: unitsVal } : {}),
+    ...(unitsAudit ? { prevUnits: unitsAudit.prevUnits, nextUnits: unitsAudit.nextUnits } : {}), ...(insertedAuto != null ? { autoUnits: insertedAuto } : {}),
+    ...(b.source ? { source: b.source } : {}), ...backdated(sessionDate, today) });
+  return insertedAuto !== undefined ? { ok: true, autoUnits: insertedAuto } : { ok: true };
+}
+/** 2.0 `makeupAnchorDeleteBlock` — 보강 보고서가 가리키는 반의 칸은 지우지 않는다. */
+async function makeupAnchorGate(sql, t, studentId, classId, date) {
+  const [anchor] = await sql`select classnote_status, classnote_sent_at from public.lesson_reports where tenant_id=${t} and makeup and class_id is null and student_id=${studentId} and makeup_class_id=${classId} and report_date=${date} limit 1`;
+  if (anchor) throw new V2Error(409, 'makeup_anchor', anchor.classnote_sent_at || anchor.classnote_status === 'success'
+    ? '이 칸은 학부모에게 발송된 보강 보고서의 반입니다 — 지울 수 없습니다(보고서와 출석부 반이 갈라집니다)'
+    : "이 칸은 보강 보고서가 가리키는 반입니다 — 원스크린에서 '보강 빼기'로 보고서와 함께 지우거나, 보강 반을 바꿔 주세요");
+}
+
+const BULK_STATUSES = ['present', 'late', 'absent'], BULK_CELL_LIMIT = 300;
+/** 2.0 `setAttendanceBulk(input)`의 입력 — 같은 날짜의 여러 (학생·반). */
+function bulkBody(raw) {
+  const { actor, args: [input] } = hostCall(raw, ACTIONS_MODULE, 1);
+  if (!input || typeof input !== 'object' || Array.isArray(input) || !Array.isArray(input.cells) || input.cells.length > 2000) throw bad();
+  if (typeof input.sessionDate !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(input.sessionDate)) throw bad();
+  if (!BULK_STATUSES.includes(input.status)) throw new V2Error(400, 'invalid_status', '잘못된 상태입니다');
+  const cells = input.cells.map(c => { if (!c || typeof c !== 'object' || typeof c.studentId !== 'string' || !UUID.test(c.studentId) || typeof c.classId !== 'string' || !UUID.test(c.classId)) throw bad(); return { studentId: c.studentId, classId: c.classId }; });
+  const time = v => { if (v === undefined || v === null || v === '') return null; if (typeof v !== 'string' || !/^\d{2}:\d{2}(:\d{2})?$/.test(v.trim())) throw bad(); return v.trim(); };
+  if (input.fillEmptyOnly !== undefined && typeof input.fillEmptyOnly !== 'boolean') throw bad();
+  if (input.source !== undefined && input.source !== null && input.source !== 'live') throw bad();
+  if (input.units !== undefined && input.units !== null && (typeof input.units !== 'string' || input.units.length > 10)) throw bad();
+  return { actor, sessionDate: input.sessionDate, status: input.status, cells, fillEmptyOnly: input.fillEmptyOnly === true, slotStart: time(input.slotStart), periodStart: time(input.periodStart),
+    source: input.source ?? undefined, units: input.units ?? undefined };
+}
+
+/** 2.0 `setAttendanceBulk` — 한 번의 왕복으로 여러 칸. 게이트는 셀 저장과 같은 규칙을 집합 단위로(권한 → 강사면 기간 → 담당 반 → 그날 수강생). */
+async function setBulk(sql, t, b, R, L) {
+  const [settings, today] = await Promise.all([readSettings(sql, t, R), copyDay()]);
+  const actor = await attendanceWriterOf(sql, t, R, settings, b.actor);
+  if (!actor) throw new V2Error(403, 'actor_not_allowed', '출석 관리 권한이 없습니다');
+  const { sessionDate, status } = b;
+  const unitsProvided = b.units !== undefined && String(b.units).trim() !== '';
+  let unitsVal = null;
+  if (unitsProvided) { const parsed = R.units.parseSessionUnits(b.units); if (!parsed.ok) return { error: parsed.error }; unitsVal = parsed.value; }
+  const seen = new Set(), cells = [];
+  for (const c of b.cells) { const k = `${c.studentId}::${c.classId}`; if (seen.has(k)) continue; seen.add(k); cells.push(c); }
+  if (cells.length === 0) return { error: '기록할 대상이 없습니다' };
+  if (cells.length > BULK_CELL_LIMIT) return { error: `한 번에 ${BULK_CELL_LIMIT}건까지만 기록할 수 있습니다 — 범위를 좁혀 주세요` };
+  let allowed = cells;
+  if (actor.level === 'scoped') {
+    if (!R.edit.isWithinAttendanceEditWindow(sessionDate, today)) return { error: R.edit.attendanceLockMessage(sessionDate, today) };
+    const classIds = [...new Set(cells.map(c => c.classId))], studentIds = [...new Set(cells.map(c => c.studentId))];
+    const [teaching, enrolled] = await Promise.all([
+      readTaughtClassSet(sql, t, R, settings, actor.id, sessionDate),
+      sql`select class_id::text class_id, student_id::text student_id from public.enrollments where tenant_id=${t} and class_id = any(${classIds}::uuid[]) and student_id = any(${studentIds}::uuid[])
+        and (start_date is null or start_date<=${sessionDate}) and (end_date is null or end_date>=${sessionDate})`,
+    ]);
+    const enrolledSet = new Set(enrolled.map(e => `${e.student_id}::${e.class_id}`));
+    const [reservedKeys, splitKeys] = await Promise.all([reservedKeysOn(sql, t, classIds, sessionDate), splitIntoKeys(sql, t, R, classIds, sessionDate)]);
+    allowed = cells.filter(c => teaching.has(c.classId) && (enrolledSet.has(`${c.studentId}::${c.classId}`) || splitKeys.has(`${c.studentId}::${c.classId}`) || reservedKeys.has(`${c.studentId}::${c.classId}`)));
+    if (allowed.length === 0) return { error: '담당 반 수강생이 아니어서 기록할 수 없습니다' };
+  }
+  const classIds = [...new Set(allowed.map(c => c.classId))], studentIds = [...new Set(allowed.map(c => c.studentId))];
+  const slot = b.slotStart, periodStart = b.periodStart ?? slot;
+  const existing = await sql`select id::text id, class_id::text class_id, student_id::text student_id, slot_start::text slot_start from public.attendance_records
+    where tenant_id=${t} and session_date=${sessionDate} and class_id = any(${classIds}::uuid[]) and student_id = any(${studentIds}::uuid[]) order by recorded_at desc, id desc`;
+  const rowsByKey = new Map();
+  for (const r of existing) { const k = `${r.student_id}::${r.class_id}`; (rowsByKey.get(k) ?? rowsByKey.set(k, []).get(k)).push(r); }
+  const targetsByKey = new Map();
+  for (const [k, list] of rowsByKey) { const tg = R.saveTargets.pickSaveTargets(list, slot); if (R.saveTargets.hasSaveTarget(tg)) targetsByKey.set(k, tg); }
+  if (b.fillEmptyOnly) {
+    allowed = allowed.filter(c => !targetsByKey.has(`${c.studentId}::${c.classId}`));
+    if (allowed.length === 0) return { ok: true, applied: [], blocked: cells.length };
+  }
+  const viaByClass = new Map();
+  for (const classId of classIds) viaByClass.set(classId, await writeViaOf(sql, t, R, settings, actor.id, classId, sessionDate));
+  if (b.source === 'live') {
+    const gates = new Map(), open = [];
+    for (const c of allowed) {
+      const via = viaByClass.get(c.classId) ?? 'desk', current = targetsByKey.has(`${c.studentId}::${c.classId}`) ? 'present' : null, key = `${c.classId}|${current ?? ''}`;
+      if (!gates.has(key)) gates.set(key, await deskDenied(sql, t, L, { via, classId: c.classId, date: sessionDate, periodStart, currentStatus: current, nextStatus: status, source: 'live' }));
+      if (gates.get(key)) continue;
+      open.push(c);
+    }
+    allowed = open;
+  }
+  // 보강 예약이 걸린 칸이 끼면 — 2.0은 쓰고 나서 예약 이행을 본다(이 복사본엔 그 갈래가 아직 없다) → 아무것도 쓰지 않는다.
+  if (allowed.length) {
+    const [hit] = await sql`select 1 from public.makeup_reservations where tenant_id=${t} and makeup_date=${sessionDate} and status in ('reserved','done')
+      and (student_id, class_id) in (select * from unnest(${allowed.map(c => c.studentId)}::uuid[], ${allowed.map(c => c.classId)}::uuid[])) limit 1`;
+    if (hit) throw new V2Error(409, 'reservation_cell', RESERVATION_CELL);
+  }
+  const inserts = allowed.filter(c => !targetsByKey.has(`${c.studentId}::${c.classId}`));
+  const nowIso = new Date().toISOString(), byVia = new Map();
+  for (const c of allowed) {
+    const tg = targetsByKey.get(`${c.studentId}::${c.classId}`);
+    if (!tg) continue;
+    const via = viaByClass.get(c.classId) ?? 'teacher', bucket = byVia.get(via) ?? byVia.set(via, { updateIds: [], promoteIds: [] }).get(via);
+    bucket.updateIds.push(...tg.updateIds); bucket.promoteIds.push(...tg.promoteIds);
+  }
+  for (const [via, bucket] of byVia) {
+    if (bucket.updateIds.length) await sql`update public.attendance_records set status=${status}, recorded_by=${actor.id}, recorded_at=${nowIso}, recorded_via=${via} where id = any(${bucket.updateIds}::uuid[])`;
+    if (bucket.promoteIds.length) await sql`update public.attendance_records set status=${status}, recorded_by=${actor.id}, recorded_at=${nowIso}, recorded_via=${via}, slot_start=${slot} where id = any(${bucket.promoteIds}::uuid[])`;
+  }
+  const wantsAuto = inserts.length > 0 && R.auto.autoUnitsApply({ rawUnits: b.units, slotStart: slot, status });
+  const auto = wantsAuto ? await autoUnitsOf(sql, t, R, settings, inserts.map(c => ({ classId: c.classId, date: sessionDate, slotStart: slot }))) : new Map();
+  const unitsOf = c => R.auto.newRowUnits(b.units, unitsVal, wantsAuto ? (auto.get(R.auto.autoUnitsKey(c.classId, sessionDate, slot)) ?? null) : undefined);
+  if (inserts.length) await sql`insert into public.attendance_records ${sql(inserts.map(c => ({ tenant_id: t, class_id: c.classId, student_id: c.studentId, session_date: sessionDate, status,
+    recorded_by: actor.id, slot_start: slot, session_units: unitsOf(c).units, recorded_via: viaByClass.get(c.classId) ?? 'teacher' })))}`;
+  if (allowed.length > 0) {
+    const wrote = [...new Set(allowed.map(c => c.classId))];
+    await audit(sql, t, actor, 'attendance_bulk', { ...(wrote.length === 1 ? { classId: wrote[0] } : {}), classIds: wrote, date: sessionDate, status, count: allowed.length, created: inserts.length,
+      blocked: cells.length - allowed.length, studentIds: [...new Set(allowed.map(c => c.studentId))], ...(slot ? { slotStart: slot } : {}), ...(b.fillEmptyOnly ? { fillEmptyOnly: true } : {}),
+      ...(b.source ? { source: b.source } : {}), ...(unitsProvided ? { units: unitsVal } : {}),
+      ...R.auto.autoUnitsLogFields(inserts.map(c => unitsOf(c).auto).filter(v => typeof v === 'number')), ...backdated(sessionDate, today) });
+  }
+  const created = new Set(inserts.map(c => `${c.studentId}::${c.classId}`));
+  return { ok: true, applied: allowed.map(c => { const isNew = created.has(`${c.studentId}::${c.classId}`), autoUnits = isNew ? unitsOf(c).auto : undefined;
+    return { ...c, created: isNew, ...(typeof autoUnits === 'number' ? { autoUnits } : {}) }; }), blocked: cells.length - allowed.length };
+}
+
 
 /**
  * 2.0 `mergeAttendancePrefs`(prefs-actions.ts) — 그 사람의 users.ui_prefs.attendance만 2.0 parse를 거쳐 갈아끼운다(다른 화면 설정은 그대로).
@@ -1012,7 +1251,8 @@ const prefs = (check, update) => ({ validate: prefsBody(check), run: async ({ sq
 
 // 2.0 "use server" 함수와 1:1 — 이름 = 2.0 export 이름(호스트가 그 이름으로 부른다), 인자 = 2.0 인자 그대로.
 screen.actions = {
-  setAttendanceCell: { validate: cellBody, run: async ({ sql, body, tenantId, importV2 }) => setCell(sql, tenantId, body, await loadRules(importV2)) },
+  setAttendanceCell: { validate: cellBody, run: async ({ sql, body, tenantId, importV2 }) => setCell(sql, tenantId, body, await loadRules(importV2), await loadLiveRules(importV2)) },
+  setAttendanceBulk: { validate: bulkBody, run: async ({ sql, body, tenantId, importV2 }) => setBulk(sql, tenantId, body, await loadRules(importV2), await loadLiveRules(importV2)) },
   saveAttendanceSort: prefs(v => typeof v === 'string' && v.length <= 20, (R, prev, v) => ({ ...prev, sort: R.sort.parseAttendanceSortKey(v) })),
   saveAttendancePeriodMode: prefs(v => typeof v === 'string' && v.length <= 20, (R, prev, v) => ({ ...prev, periodMode: R.viewPrefs.parsePeriodMode(v) })),
   saveAttendanceHideRetired: prefs(v => typeof v === 'boolean', (R, prev, v) => ({ ...prev, hideRetired: v !== false })),

@@ -86,7 +86,7 @@ test('매개변수는 정해진 값만 받는다(나머지는 공통 틀이 400)
   assert.equal(screen.id, 'attendance'); assert.equal(screen.order, 4); assert.equal(screen.label, '출석부');
   assert.deepEqual(Object.keys(screen.actions).sort(), ['clearSeatPeriodChoices', 'commitSeatJjEdits', 'fillSeatPrevAbsent', 'fillSeatSlot', 'moveSeatStudentPeriod', 'previewAbsenceIntake',
     'pullSeatMemorizedWords', 'recordAbsenceIntake', 'resetSeatPlacements', 'saveAttendanceCollapsed', 'saveAttendanceHideRetired', 'saveAttendancePeriodMode', 'saveAttendanceSort',
-    'saveSeatMonthlyCollapsed', 'searchAttendanceHubStudents', 'searchIntakeStudents', 'setAttendanceCell', 'setSeatCell', 'setSeatJjField']);
+    'saveSeatMonthlyCollapsed', 'searchAttendanceHubStudents', 'searchIntakeStudents', 'setAttendanceBulk', 'setAttendanceCell', 'setSeatCell', 'setSeatJjField']);
 });
 
 test('아직 옮기지 않은 조회 셋은 그 함수의 2.0 실패 모양으로 답한다(부품이 결과를 읽다 깨지지 않게 · 쓰기 없음)', async () => {
@@ -280,7 +280,8 @@ test('저장: 입력 검사는 복사본에 닿기 전에 거절한다', () => {
   assert.throws(() => v(call('setAttendanceCell', A1, { ...cell, scopeTeacherId: 'x' })), /입력 값/);
   assert.throws(() => v(call('setAttendanceCell', A1, { ...cell, noteOnly: 'yes' })), /입력 값/);
   assert.throws(() => v(call('setAttendanceCell', A1, { ...cell, note: 'x'.repeat(2001) })), /입력 값/);
-  for (const k of [{ slotStart: '16:20' }, { source: 'daily' }, { onlyIfEmpty: true }, { allowMakeup: true }, { ghostTransfer: true }]) assert.throws(() => v(call('setAttendanceCell', A1, { ...cell, ...k })), e => e.code === 'not_in_copy', JSON.stringify(k));
+  for (const k of [{ onlyIfEmpty: true }, { allowMakeup: true }, { ghostTransfer: true }]) assert.throws(() => v(call('setAttendanceCell', A1, { ...cell, ...k })), e => e.code === 'not_in_copy', JSON.stringify(k));
+  assert.throws(() => v(call('setAttendanceCell', A1, { ...cell, source: 'daily' })), /입력 값/, 'source is live or nothing');
   assert.equal(v(call('setAttendanceCell', A1, cell)).status, null); assert.equal(v(call('setAttendanceCell', A1, { ...cell, note: null })).note, null);
   const p = (name, val) => screen.actions[name].validate(call(name, A1, val));
   assert.throws(() => p('saveAttendanceSort', 1), /입력 값/); assert.throws(() => p('saveAttendanceHideRetired', 'yes'), /입력 값/);
@@ -713,6 +714,90 @@ test('복사본(되돌림): 출결 모드 — 휴원일이면 명단 없이 그�
     assert.equal(d.activity.officeScope, false, 'selfOnly — 내 반만');
     assert.ok(Array.isArray(d.activity.rows) && d.activity.date === TODAY);
   });
+});
+
+// ── 출결 모드 저장 = 2.0 setAttendanceCell(교시 지정 · source 'live' · 강사 게이트 · 데스크 게이트) + setAttendanceBulk ──
+const ACT = 'features/attendance/server/actions.ts';
+test('저장: 교시 지정·당일 출결 입력은 받고, 일괄 입력은 정해진 모양만 받는다', () => {
+  const v = (name, input) => screen.actions[name].validate({ module: ACT, actor: CLASS, args: [input] });
+  const c = { studentId: STUDENT, classId: CLASS, sessionDate: '2026-10-27', status: 'present' };
+  const got = v('setAttendanceCell', { ...c, slotStart: '22:00', periodStart: '22:00', source: 'live' });
+  assert.deepEqual([got.slotStart, got.periodStart, got.source], ['22:00', '22:00', 'live']);
+  assert.equal(v('setAttendanceCell', c).slotStart, null);
+  for (const bad of [{ slotStart: '2200' }, { periodStart: 9 }, { source: 'daily' }]) assert.throws(() => v('setAttendanceCell', { ...c, ...bad }), /입력 값/, JSON.stringify(bad));
+  const bulk = { sessionDate: '2026-10-27', status: 'present', cells: [{ studentId: STUDENT, classId: CLASS }], fillEmptyOnly: true, slotStart: '22:00', source: 'live' };
+  assert.deepEqual(v('setAttendanceBulk', bulk).cells, [{ studentId: STUDENT, classId: CLASS }]);
+  for (const bad of [{ status: 'excused' }, { cells: [{ studentId: 'x', classId: CLASS }] }, { cells: 'x' }, { fillEmptyOnly: 'yes' }, { slotStart: '9' }, { source: 'daily' }, { sessionDate: '2026-10' }])
+    assert.throws(() => v('setAttendanceBulk', { ...bulk, ...bad }), /입력 값|잘못된 상태/, JSON.stringify(bad));
+});
+
+test('저장(복사본, 되돌림): 출결 모드 — 교시 칸 쓰기·덮어쓰기·메모·지우기·승격, 강사 게이트, 데스크 게이트, 일괄(빈 칸만)이 2.0과 같은 행·감사로그', { skip: !db && 'local database not running' }, async () => {
+  const before = await db`select (select count(*)::int from public.audit_logs) audits, (select count(*)::int from net.http_request_queue) net`;
+  const TODAY = await A.copyDay(), DOW = R.cal.DOW_KEYS[new Date(`${TODAY}T00:00:00Z`).getUTCDay()], SLOT = '22:00', CLASS2 = '50d2ece7-6514-4474-8cfc-dd8983d15c18';
+  const L = await (await import('./v2-attendance-live.mjs')).loadLiveRules(importV2);
+  await inRollback(async ({ sql, run, t }) => {
+    const settings = await A.readSettings(sql, t, R), writers = await (await import('./v2-attendance-live.mjs')).attendanceWritersOf(sql, t, R, settings);
+    const teacher = writers.find(w => w.level === 'scoped'), desk = writers.find(w => w.level === 'full' && w.role !== 'master');
+    assert.ok(teacher && desk, 'a scoped teacher and a full-access desk member');
+    // 그 강사를 테스트 반의 오늘 22:00 교시 담당으로(되돌리는 거래 안) — 담당 반 = 교시 담당(2.0 userTaughtClassSet).
+    await sql`insert into public.class_schedules (tenant_id, class_id, day_of_week, start_time, end_time, valid_from, teacher_id) values (${t}, ${CLASS}, ${DOW}, ${SLOT}, '22:40', '2026-10-01', ${teacher.id})`;
+    await sql`delete from public.attendance_records where class_id = any(${[CLASS, CLASS2]}::uuid[]) and session_date=${TODAY}`;
+    const cellAs = (actor, input) => run(sql, 'setAttendanceCell', { module: ACT, actor: actor.id, args: [{ studentId: STUDENT, classId: CLASS, sessionDate: TODAY, ...input }] });
+    const live = { slotStart: SLOT, periodStart: SLOT, source: 'live' };
+    const rows = () => sql`select status::text status, slot_start::text slot_start, recorded_via, recorded_by::text recorded_by, note from public.attendance_records where class_id=${CLASS} and student_id=${STUDENT} and session_date=${TODAY} order by slot_start nulls first`;
+    const audits = action => sql`select metadata from public.audit_logs where tenant_id=${t} and action=${action} and metadata->>'via'='3.0 연습 복사본' and metadata->>'date'=${TODAY}`;
+    const refused = async p => { try { await p; return null; } catch (e) { return e.message; } };
+    // 강사(담당 반만) — 교시 칸 새로 쓰기 → 그 교시 한 행 · 입력자 = 강사 · recorded_via teacher.
+    // 새 칸 + 시수를 안 고른 저장 = 2.0도 실제 넣은 시수(autoUnits — 수학 자동 시수, 못 찾으면 null)를 돌려준다.
+    const first = await cellAs(teacher, { status: 'present', ...live });
+    assert.deepEqual(Object.keys(first).sort(), ['autoUnits', 'ok']); assert.equal(first.ok, true);
+    assert.deepEqual((await rows()).map(r => ({ ...r })), [{ status: 'present', slot_start: '22:00:00', recorded_via: 'teacher', recorded_by: teacher.id, note: null }]);
+    assert.equal((await sql`select session_units::float8 u from public.attendance_records where class_id=${CLASS} and student_id=${STUDENT} and session_date=${TODAY}`)[0].u, first.autoUnits);
+    let [a] = await audits('attendance_cell');
+    assert.deepEqual([a.metadata.slotStart, a.metadata.created, a.metadata.source, a.metadata.status], [SLOT, true, 'live', 'present']);
+    // 덮어쓰기(같은 교시) · 메모만(그 교시 최신 행) · 지우기(그 교시만).
+    await cellAs(teacher, { status: 'late', note: '버스', ...live });
+    assert.deepEqual((await rows()).map(r => [r.status, r.note]), [['late', '버스']]);
+    assert.ok((await audits('attendance_cell')).some(x => x.metadata.overwrote === true && x.metadata.prevStatus === 'present'));
+    await cellAs(teacher, { status: null, note: '버스 늦음', noteOnly: true, slotStart: SLOT });
+    assert.deepEqual((await rows()).map(r => [r.status, r.note]), [['late', '버스 늦음']]);
+    [a] = await audits('attendance_note'); assert.deepEqual([a.metadata.slotStart, a.metadata.cleared], [SLOT, false]); assert.ok(!JSON.stringify(a.metadata).includes('버스'));
+    await cellAs(teacher, { status: null, ...live });
+    assert.equal((await rows()).length, 0);
+    [a] = await audits('attendance_clear'); assert.deepEqual([a.metadata.slotStart, a.metadata.source], [SLOT, 'live']);
+    // 승격 — 옛 '그날 전체' 행만 있으면 그 행을 이 교시로 옮겨 쓴다(행이 늘지 않는다 — 2.0 pickSaveTargets).
+    await sql`insert into public.attendance_records (tenant_id, class_id, student_id, session_date, slot_start, status, recorded_by) values (${t}, ${CLASS}, ${STUDENT}, ${TODAY}, null, 'present', ${desk.id})`;
+    await cellAs(teacher, { status: 'absent', ...live });
+    assert.deepEqual((await rows()).map(r => [r.status, r.slot_start]), [['absent', '22:00:00']]);
+    // 강사 게이트 — 담당 아닌 반 · 7일 창 밖 · 수강생 아님(2.0 문구).
+    assert.equal(await refused(run(sql, 'setAttendanceCell', { module: ACT, actor: teacher.id, args: [{ studentId: STUDENT, classId: CLASS2, sessionDate: TODAY, status: 'present', ...live }] })), '담당 반이 아닙니다');
+    const old = new Date(Date.parse(`${TODAY}T00:00:00Z`) - 9 * 86400000).toISOString().slice(0, 10);
+    assert.equal(await refused(cellAs(teacher, { status: 'present', sessionDate: old, ...live })), R.edit.attendanceLockMessage(old, TODAY));
+    const [other] = await sql`select id::text id from public.students where tenant_id=${t} and is_test and id <> ${STUDENT} and id not in (select student_id from public.enrollments where class_id=${CLASS}) limit 1`;
+    assert.equal(await refused(run(sql, 'setAttendanceCell', { module: ACT, actor: teacher.id, args: [{ studentId: other.id, classId: CLASS, sessionDate: TODAY, status: 'present', ...live }] })), '이 반 수강생이 아닙니다');
+    // 데스크 게이트 — 그 반을 안 가르치는 사람: 지우기 금지 · 이미 찍힌 칸 금지 · 시작 전 금지(복사본 시각 기준).
+    assert.equal(await refused(cellAs(desk, { status: null, ...live })), L.mark.deskWriteDenied({ source: 'live', via: 'desk', currentStatus: 'present', nextStatus: null, phase: 'ended' }));
+    assert.equal(await refused(cellAs(desk, { status: 'present', ...live })), L.mark.deskMarkDeniedReason('absent', 'ended'));
+    await sql`delete from public.attendance_records where class_id=${CLASS} and student_id=${STUDENT} and session_date=${TODAY}`;
+    assert.match(await refused(cellAs(desk, { status: 'present', ...live })), /아직 수업 시작 전입니다/);
+    // 일괄(빈 칸만) — 강사: 새로 쓴 칸만 applied · 두 번째는 0 · 담당 아닌 반 칸은 blocked.
+    const bulkAs = (actor, cells) => run(sql, 'setAttendanceBulk', { module: ACT, actor: actor.id, args: [{ sessionDate: TODAY, status: 'present', cells, fillEmptyOnly: true, slotStart: SLOT, periodStart: SLOT, source: 'live' }] });
+    const [stu2] = await sql`select student_id::text id from public.enrollments where class_id=${CLASS2} limit 1`;
+    const res = await bulkAs(teacher, [{ studentId: STUDENT, classId: CLASS }, { studentId: stu2.id, classId: CLASS2 }]);
+    assert.deepEqual(res, { ok: true, applied: [{ studentId: STUDENT, classId: CLASS, created: true }], blocked: 1 });
+    assert.deepEqual((await rows()).map(r => [r.status, r.slot_start, r.recorded_via]), [['present', '22:00:00', 'teacher']]);
+    [a] = await audits('attendance_bulk');
+    assert.deepEqual([a.metadata.count, a.metadata.created, a.metadata.blocked, a.metadata.slotStart, a.metadata.fillEmptyOnly, a.metadata.source, a.metadata.classId], [1, 1, 1, SLOT, true, 'live', CLASS]);
+    assert.deepEqual(await bulkAs(teacher, [{ studentId: STUDENT, classId: CLASS }]), { ok: true, applied: [], blocked: 1 });
+    // 보강 예약이 걸린 칸 — 2.0은 예약 이행까지 바꾸므로 쓰지 않고 사유를 말한다(칸 하나 · 일괄 모두).
+    await sql`delete from public.attendance_records where class_id=${CLASS} and student_id=${STUDENT} and session_date=${TODAY}`;
+    await sql`insert into public.makeup_reservations (tenant_id, student_id, class_id, absence_date, makeup_date, slot_start, slot_end, status) values (${t}, ${STUDENT}, ${CLASS}, '2026-10-20', ${TODAY}, ${SLOT}, '22:40', 'reserved')`;
+    assert.match(await refused(cellAs(teacher, { status: 'present', ...live })), /보강 예약이 걸린 칸/);
+    assert.match(await refused(bulkAs(teacher, [{ studentId: STUDENT, classId: CLASS }])), /보강 예약이 걸린 칸/);
+    assert.equal((await rows()).length, 0);
+    assert.equal((await sql`select count(*)::int n from net.http_request_queue`)[0].n, before[0].net);
+  });
+  assert.equal((await db`select count(*)::int n from public.audit_logs`)[0].n, before[0].audits, 'rolled back — the copy is unchanged');
 });
 
 test.after(async () => { await db?.end(); });
