@@ -90,8 +90,10 @@ function commit(state, c, before, events, at, summary) {
 /**
  * Seeds new source cases and re-judges stored ones (server start and reloadSource). Returns
  * { created, updated, closed, reopened, unchanged, changes:[{caseId,title,outcome,tags,events}] }.
+ * mode 'seed' = the behaviour before re-judging (new cases + the open signal's current wording only) —
+ * flow-service.mjs runs that unless OWNER_CONCEPT_FLOW_RECONCILE=apply.
  */
-export function reconcileSource(state, source, { at } = {}) {
+export function reconcileSource(state, source, { at, mode = 'apply' } = {}) {
   const when = at || source.loadedAt || source.identity.capturedAt, seededAt = source.identity.capturedAt;
   const summary = { created: 0, updated: 0, closed: 0, reopened: 0, unchanged: 0, changes: [] }, seen = new Set();
   const run = (key, create, judge) => {
@@ -99,10 +101,19 @@ export function reconcileSource(state, source, { at } = {}) {
     const id = state.seededKeys[key], c = id && state.cases[id];
     if (!c) { const made = create(); state.seededKeys[key] = made; summary.created += 1; summary.changes.push({ caseId: made, title: state.cases[made].title, outcome: 'created', tags: [], events: [] }); return; }
     const before = JSON.stringify(c);
+    if (mode === 'seed') { if (reword(c, key)) { summary.updated += 1; summary.changes.push({ caseId: c.id, title: c.title, outcome: 'updated', tags: ['wording'], events: [] }); } else summary.unchanged += 1; return; }
     commit(state, c, before, judge(c), when, summary);
+  };
+  // seed mode: an open signal case follows the signal's current title/summary (seedSource before 10-28 did exactly this).
+  const reword = (c, key) => {
+    const sg = key.startsWith('signal:') && source.signals.find(x => `signal:${x.familyId}:${x.signal.id}` === key);
+    if (!sg || c.state === 'done' || (c.title === sg.signal.title && (c.summary ?? '') === (sg.signal.summary ?? ''))) return false;
+    for (const st of c.steps || []) if (st.key === 'source_check' && typeof st.label === 'string' && st.label.startsWith(c.title)) st.label = sg.signal.title + st.label.slice(c.title.length);
+    c.title = sg.signal.title; c.summary = sg.signal.summary; return true;
   };
   for (const t of source.tasks) run(`task:${t.id}`, () => { createTask(state, source, t, seededAt); return `src-task-${t.id}`; }, c => reconcileTask(source, c, t, when));
   for (const sg of source.signals) run(`signal:${sg.familyId}:${sg.signal.id}`, () => { createSignal(state, source, sg, when); return `src-sig-${sg.familyId}-${sg.signal.id}`.replace(/[^a-z0-9-]/gi, '-'); }, c => reconcileSignal(source, c, sg, when));
+  if (mode === 'seed') return summary;
   // Stored source cases whose row / signal is gone. A family that was not read (or an empty task list) closes nothing.
   const families = Array.isArray(source.signalFamilies) ? new Set(source.signalFamilies) : null;
   for (const [key, id] of Object.entries(state.seededKeys)) {

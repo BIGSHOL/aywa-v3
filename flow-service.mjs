@@ -23,17 +23,24 @@ export function defaultStoreDir({ dataRoot, identity, env = process.env }) {
   return namespaceDir({ root, namespace: env.OWNER_CONCEPT_FLOW_NAMESPACE || basename(REPO), tenantSlug: identity.tenantSlug, capturedAt: identity.capturedAt });
 }
 
-export async function createFlowService({ source, dir, ai, tenantName = '', lock = true, now = () => new Date().toISOString(), waitMs, hierarchy, env = process.env }) {
+export async function createFlowService({ source, dir, ai, tenantName = '', lock = true, now = () => new Date().toISOString(), waitMs, hierarchy, env = process.env, reconcile: reconcileOption, log = m => console.log(m) }) {
   const store = await openStore({ dir, identity: source.identity, lock });
-  // Seed + re-judge the stored source cases (flow-reconcile.mjs, AX-H1). Idempotent; writes only when something changed.
-  const reconcile = next => store.transact(async draft => {
-    const summary = reconcileSource(draft, next, { at: next.loadedAt || now() });
+  // Re-judging stored source cases (flow-reconcile.mjs, AX-H1) is written only with OWNER_CONCEPT_FLOW_RECONCILE=apply
+  // (or reconcile:'apply'). Otherwise the store gets what seedSource did (new cases + open signal wording) and the
+  // re-judging is only previewed on a copy of the state (log + reconcilePreview) — nothing else is written.
+  const apply = (reconcileOption ?? env.OWNER_CONCEPT_FLOW_RECONCILE) === 'apply';
+  const write = (next, mode) => store.transact(async draft => {
+    const summary = reconcileSource(draft, next, { at: next.loadedAt || now(), mode });
     if (!changedCount(summary)) return { next: null, result: summary };
     draft.revision += 1;
     return { next: draft, result: summary };
   });
-  const reconciled = await reconcile(source);
+  const preview = next => reconcileSource(structuredClone(store.state), next, { at: next.loadedAt || now() });
+  const counts = s => `created ${s.created} · updated ${s.updated} · closed ${s.closed} · reopened ${s.reopened} · unchanged ${s.unchanged}`;
+  const reconciled = await write(source, apply ? 'apply' : 'seed');
   const seeded = changedCount(reconciled);
+  let reconcilePreview = apply ? null : preview(source);
+  log(apply ? `Flow reconcile applied: ${counts(reconciled)}` : `Flow reconcile preview (not written; OWNER_CONCEPT_FLOW_RECONCILE=apply writes it): ${counts(reconcilePreview)}`);
   // A judgment still pending on disk belonged to a process that is gone: record it as interrupted
   // (visible, review kept). No case judgment is re-run on start (the hierarchy queue below is separate).
   const interrupted = await store.transact(async draft => {
@@ -56,21 +63,25 @@ export async function createFlowService({ source, dir, ai, tenantName = '', lock
   const runtime = createHierarchyRuntime({ getSource: () => source, getState: () => store.state, overlay, providers, disabledReason: reason, budget: hierarchy?.budget, clock: hierarchy?.clock, log: hierarchy?.log || (m => console.log(m)) });
   runtime.start();
   return {
-    store, seeded, reconciled, interrupted, hierarchyRuntime: runtime,
+    store, seeded, reconciled, interrupted, hierarchyRuntime: runtime, reconcileApplied: apply,
     get source() { return source; },
+    /** What re-judging would change now, when it is not applied: { created, updated, closed, reopened, unchanged, changes }. */
+    get reconcilePreview() { return reconcilePreview; },
     /**
      * AX-H2 contract: re-reads come in as a whole new source (loadFlowSource of the same copy). Under the store's write
      * queue the stored source cases are re-judged against it and saved; then it becomes the source every view, command
      * and the hierarchy use. Returns { created, updated, closed, reopened, unchanged, changes, revision }. The same
      * source twice changes nothing (no write, same revision). Another tenant or copy (capturedAt) is refused: the store
-     * folder is keyed by the copy, so a reload never moves or resets it.
+     * folder is keyed by the copy, so a reload never moves or resets it. Without OWNER_CONCEPT_FLOW_RECONCILE=apply
+     * nothing is written and the source is not swapped: the result is the preview, with applied:false.
      */
     reloadSource: async next => {
       if (!next?.identity || next.identity.tenantId !== source.identity.tenantId || next.identity.capturedAt !== source.identity.capturedAt) throw new StoreError('flow_state_mismatch', '다른 지점 또는 다른 복사본의 원본입니다. 섞지 않고 멈췄습니다.');
-      const summary = await reconcile(next);
+      if (!apply) { reconcilePreview = preview(next); log(`Flow reconcile preview on reload (not written): ${counts(reconcilePreview)}`); return { ...reconcilePreview, applied: false, revision: store.state.revision }; }
+      const summary = await write(next, 'apply');
       source = next;
       runtime.notify();
-      return { ...summary, revision: store.state.revision };
+      return { ...summary, applied: true, revision: store.state.revision };
     },
     view: (params = {}) => buildView(store.state, source, { aiStatus: ai.status(), tenantName, inFlight: jobs, ...params }),
     hierarchy: caseId => runtime.view(caseId),

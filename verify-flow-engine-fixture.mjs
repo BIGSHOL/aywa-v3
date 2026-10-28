@@ -55,9 +55,9 @@ export function gatedAI(mode = 'auto') {
   return { calls, release: () => waiting.splice(0).forEach(r => r()), route: async (c, s) => { await wait(); return inner.route(c, s); }, analyze: async (c, s) => { await wait(); return inner.analyze(c, s); }, status: inner.status };
 }
 
-export async function service({ dir, mode, calls, ai, waitMs, source = fixtureSource(), lock = false } = {}) {
+export async function service({ dir, mode, calls, ai, waitMs, source = fixtureSource(), lock = false, reconcile = 'apply' } = {}) {
   const d = dir || await mkdtemp(join(tmpdir(), 'flow-test-'));
-  return { dir: d, svc: await createFlowService({ source, dir: d, ai: ai || fakeAI(mode, calls), lock, waitMs, tenantName: '테스트 지점' }) };
+  return { dir: d, svc: await createFlowService({ source, dir: d, ai: ai || fakeAI(mode, calls), lock, waitMs, tenantName: '테스트 지점', reconcile, log: () => {} }) };
 }
 
 let n = 0;

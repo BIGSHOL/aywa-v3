@@ -174,7 +174,7 @@ test('reloadSource contract: refuses another copy; the store folder never moves;
   const other = fixtureSource(); other.identity = { ...other.identity, capturedAt: '2026-11-01T00:00:00.000Z' };
   await assert.rejects(svc.reloadSource(other), e => e.code === 'flow_state_mismatch');
   const r = await svc.reloadSource(sourceWith({ tasks: { 't-open': { status: 'cancelled', closeReason: 'not_absent', closedAt: '2026-10-26T01:00:00Z' } } }));
-  assert.deepEqual(Object.keys(r).sort(), ['changes', 'closed', 'created', 'reopened', 'revision', 'unchanged', 'updated']);
+  assert.deepEqual(Object.keys(r).sort(), ['applied', 'changes', 'closed', 'created', 'reopened', 'revision', 'unchanged', 'updated']); assert.equal(r.applied, true);
   assert.deepEqual(r.changes.map(x => [x.caseId, x.outcome, x.events]), [['src-task-t-open', 'closed', ['source.task_closed']]]);
   assert.equal(svc.store.dir, dir); assert.deepEqual((await readdir(dir)).filter(n => n.endsWith('.json')), ['state.json']);
   await svc.close();
@@ -182,6 +182,23 @@ test('reloadSource contract: refuses another copy; the store folder never moves;
   const back = await service({ dir });
   assert.deepEqual([back.svc.reconciled.reopened, stored(back.svc, 'src-task-t-open').state], [1, 'open']);
   await back.svc.close();
+});
+
+test('switch: without OWNER_CONCEPT_FLOW_RECONCILE=apply only new cases are written; re-judging is a preview, reload writes nothing', async () => {
+  const closedAt = '2026-10-26T03:00:00Z', closing = sourceWith({ tasks: { 't-open': { status: 'done', closeReason: 'desk_settled', closedAt } } });
+  const first = await service({ reconcile: 'seed' });
+  assert.deepEqual([first.svc.seeded, first.svc.reconcileApplied], [5, false], 'a fresh store is seeded as before');
+  const rev = first.svc.view().revision, before = JSON.stringify(first.svc.store.state);
+  const r = await first.svc.reloadSource(closing);
+  assert.deepEqual([r.applied, r.closed, r.revision, JSON.stringify(first.svc.store.state) === before, first.svc.source.tasks.find(t => t.id === 't-open').status], [false, 1, rev, true, 'open'], 'preview only: no write, source kept');
+  assert.equal(first.svc.reconcilePreview.closed, 1);
+  await first.svc.close();
+  const back = await service({ dir: first.dir, source: closing, reconcile: 'seed' });
+  assert.deepEqual([back.svc.seeded, stored(back.svc, 'src-task-t-open').state, back.svc.reconcilePreview.closed, back.svc.view().revision], [0, 'open', 1, rev], 'restart without apply: stored cases untouched, preview says what would close');
+  await back.svc.close();
+  const env = await service({ dir: first.dir, source: closing, reconcile: null }); // null = read OWNER_CONCEPT_FLOW_RECONCILE (unset here)
+  assert.equal(stored(env.svc, 'src-task-t-open').state, 'open', 'no option + no env = not applied');
+  await env.svc.close();
 });
 
 test('AX-H5 wiring: every snapshot signal names its record table; gaps are reported, not hidden; owners per record type', async () => {
