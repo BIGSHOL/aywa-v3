@@ -5,13 +5,16 @@
 // 감사로그 metadata에는 via = '3.0 연습 복사본'이 붙는다(2.0이 via 칸을 쓰는 makeup_remove는 2.0 값을 from 칸으로 옮긴다).
 // 2.0과 다른 것(이유):
 //  · 알림(반 출결 완료·결석 확인·미출결 → 출석)·슬랙 깨우기는 만들지 않는다 — 저장 뒤 따로 도는 바깥 알림이라 연습 복사본에선 끈다.
-//  · 보강 예약이 걸린 출결 칸은 저장하지 않는다 — 2.0은 같은 저장에서 예약 이행까지 바꾸는데 그 갈래를 옮기지 않았다(출석부 화면과 같은 규약).
+//  · 보강 예약 이행·되돌림(2.0 completeMakeupReservations)은 출석부 화면의 옮긴 본문(v2-attendance-makeup.mjs)을 그대로 부른다 — 2.0 setAttendanceCell과 같은 두 자리
+//    (지우기 뒤 · 저장 끝). 새 보강 체계가 켜진 학원은 그 연결 갈래가 없어 보강 예약이 걸린 칸 저장을 거절한다(출석부 화면과 같은 규약).
 //  · 지난 수업 내용 복사(copySlotFromPrevious)는 계획 줄만 — JJ실 기록 이어받기(carrySelfStudyMarks)는 아직 옮기지 않았다(carried = []).
 //  · 보강 연동 표(makeups adapter)의 허용·차단(nativeWriteAllowance · mappedMakeupDeleteBlock)은 없다 — 복사본에 그 표 연동이 꺼져 있다.
 //  · 연락처가 든 자유 글(가려서 보인 칸)은 화면 글이 가린 그대로면 원문을 지키고, 고쳐 쓰면 거절한다(가린 글자가 저장되지 않게).
 import { z } from 'zod';
 import { V2Error } from './v2-screens.mjs';
 import { plannedLines } from './v2-ecs-props.mjs';
+import { loadRules as loadAttendanceRules, readSettings as readAttendanceSettings } from './v2-screen-attendance.mjs';
+import { completeMakeupReservations, completionKey, loadMakeupRules, nativeMakeupsOn } from './v2-attendance-makeup.mjs';
 import { UUID, DAY, canWriteLevel, classAccess, copyDay, isoAt, isoDay, jjManagedClassIds, loadRules, masked, readSettings, readViewers, shown, skillAreaLabelOf } from './v2-ecs-core.mjs';
 
 const VIA = '3.0 연습 복사본';
@@ -408,7 +411,7 @@ export const ACTIONS = {
     return { ok: true, cleared: r.cleared ?? 0 };
   }),
   /** setAttendanceCell(input) — 2.0 출결 저장의 **교시 칸 갈래**(ECS가 보내는 slotStart 지정 저장). 그날 전체 칸은 출석부 화면 몫. */
-  setAttendanceCell: serverFn(MODULE.attendance, 1, async ({ sql, t, R, env, user, today }, raw) => {
+  setAttendanceCell: serverFn(MODULE.attendance, 1, async ({ sql, t, R, env, user, today, importV2 }, raw) => {
     const input = obj(raw);
     if (!canWriteLevel(user.levels.attendance)) return { error: '출석 관리 권한이 없습니다' };
     const { studentId, classId, sessionDate, status } = input;
@@ -434,8 +437,13 @@ export const ACTIONS = {
       // 보강 추가(allowMakeup) · 보강 예약 — 2.0처럼 강사의 수강생 게이트에만 쓴다(수업 나누기는 복사본 0행).
       if (!R.canWriteAttendanceStudent({ enrolled: enrolled > 0, hasRecord: existing > 0, allowMakeup: input.allowMakeup === true || (enrolled === 0 && existing === 0 && resv) })) return { error: '이 반 수강생이 아닙니다' };
     }
-    const [resvCell] = await sql`select 1 from public.makeup_reservations where tenant_id=${t} and class_id=${classId} and student_id=${studentId} and makeup_date=${sessionDate} and status in ('reserved','done') limit 1`;
-    if (resvCell) throw new V2Error(409, 'reservation_cell', '보강 예약이 걸린 칸은 연습 화면에서 아직 저장하지 않습니다. 바뀐 것은 없습니다.');
+    // 보강 예약 이행 — 출석부 화면과 같은 규칙 묶음·설정으로 2.0 completeMakeupReservations(옮긴 본문)를 부른다.
+    const [AR, M] = await Promise.all([loadAttendanceRules(importV2), loadMakeupRules(importV2)]), settings = await readAttendanceSettings(sql, t, AR);
+    if (nativeMakeupsOn(M, settings)) {
+      const [resvCell] = await sql`select 1 from public.makeup_reservations where tenant_id=${t} and class_id=${classId} and student_id=${studentId} and makeup_date=${sessionDate} and status in ('reserved','done') limit 1`;
+      if (resvCell) throw new V2Error(409, 'reservation_cell', '보강 예약이 걸린 칸은 연습 화면에서 아직 저장하지 않습니다. 바뀐 것은 없습니다.');
+    }
+    const complete = cells => completeMakeupReservations({ sql, t, R: AR, M, settings, actor: { id: user.id, name: user.name } }, cells);
     const slot = String(input.slotStart), via = (await teachesOn(sql, t, user.id, classId, sessionDate, { R, env })) ? 'teacher' : 'desk';
     const base = { studentId, classId, date: sessionDate, slotStart: slot };
     if (noteOnly) {
@@ -451,6 +459,8 @@ export const ACTIONS = {
       if (anchored) return { error: anchored };
       await sql`delete from public.attendance_records where tenant_id=${t} and class_id=${classId} and student_id=${studentId} and session_date=${sessionDate} and slot_start=${slot}`;
       await audit(sql, t, user, 'attendance_clear', 'attendance', null, { ...base, ...backdatedFlag([sessionDate], today) });
+      // 보강 예약 되돌림 — 이행된 예약의 보강일 칸을 지웠으면 reserved로(2.0과 같은 자리).
+      await complete([{ studentId, classId, date: sessionDate, status: null }]);
       return { ok: true };
     }
     const rows = await sql`select id::text id, slot_start::text slot_start, seat_label, recorded_via, recorded_at, status::text status, note, session_units::float8 session_units
@@ -473,6 +483,10 @@ export const ACTIONS = {
     }
     await audit(sql, t, user, 'attendance_cell', 'attendance', null, { ...base, status, ...(overwrote ? { overwrote: true, prevStatus } : { created: true }), ...(unitsProvided ? { units: unitsVal } : {}),
       ...(unitsAudit ? { prevUnits: unitsAudit.prevUnits, nextUnits: unitsAudit.nextUnits } : {}), ...(insertedAuto != null ? { autoUnits: insertedAuto } : {}), ...backdatedFlag([sessionDate], today) });
+    // 보강 예약 이행 — 이 칸에 걸린 예약이 있고 시수를 쓰는 상태가 찍혔으면 done + 메모(2.0과 같은 자리 · 실패는 저장을 되돌리지 않는다).
+    const completed = await complete([{ studentId, classId, date: sessionDate, status, unitsExplicit: unitsProvided && !R.isDefaultUnitsRaw(input.units), created: !overwrote }]);
+    const completedUnits = completed.get(completionKey({ studentId, classId, date: sessionDate }));
+    if (completedUnits !== undefined) insertedAuto = completedUnits;
     return insertedAuto !== undefined ? { ok: true, autoUnits: insertedAuto } : { ok: true };
   }),
   /** commitSheetEdits({ classId, edits }) — 칸을 떠날 때 '전 → 후' 감사 한 줄(2.0 logSheetEdits: 계획 칸은 logPlanCellEdits, 그 밖은 지금 값과 비교). */
