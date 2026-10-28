@@ -4,8 +4,8 @@ const DATE = /(?<!\d)\d{4}[-./]\d{1,2}(?:[-./]\d{1,2})?(?!\d)/gu;
 const MD = /(?<!\d)\d{1,2}\/\d{1,2}(?!\d)/gu;
 const TIME = /(?<!\d)\d{1,2}:\d{2}(?!\d)/gu;
 const UNIT = /(?<![\dA-Za-z])[-+−]?\d[\d,]*(?:\.\d+)?\s*(?:억원|만원|천원|학년|개월|시간|원|건|명|개|회|점|%|분|초|일|월|년|배|권|줄|칸)(?![가-힣A-Za-z])/gu;
-const BIG = /(?<![\dA-Za-z,])(?:\d{1,3}(?:,\d{3})+|\d{3,})(?:\.\d+)?(?![\dA-Za-z,])/gu;
-const amount = s => String(Number(String(s).replaceAll(',', '')));
+const BIG = /(?<![\dA-Za-z,])[-+−]?(?:\d{1,3}(?:,\d{3})+|\d{3,})(?:\.\d+)?(?![\dA-Za-z,])/gu;
+const amount = s => String(Number(String(s).replaceAll(',', '').replace('−', '-')));
 const dateKey = raw => {
   const parts = raw.replace(/[./]/g, '-').split('-').map(Number);
   return parts.length === 3 ? `date:${parts[0]}-${String(parts[1]).padStart(2, '0')}-${String(parts[2]).padStart(2, '0')}` : `month:${parts[0]}-${String(parts[1]).padStart(2, '0')}`;
@@ -22,8 +22,8 @@ const collect = (input, { bare = false } = {}) => {
   for (const m of s.matchAll(MD)) { const [month, day] = m[0].split('/').map(Number); out.add(`md:${month}/${day}`); }
   for (const m of s.matchAll(TIME)) out.add(`time:${m[0]}`);
   for (const m of s.matchAll(UNIT)) {
-    const [, digits, unit] = /^[-+−]?(\d[\d,]*(?:\.\d+)?)\s*(.*)$/.exec(m[0]);
-    out.add(`unit:${amount(digits)}${unit}`);
+    const [, sign, digits, unit] = /^([-+−]?)(\d[\d,]*(?:\.\d+)?)\s*(.*)$/.exec(m[0]);
+    out.add(`unit:${amount(`${sign}${digits}`)}${unit}`);
   }
   if (bare) for (const m of s.matchAll(BIG)) out.add(`bare:${amount(m[0])}`);
   return out;

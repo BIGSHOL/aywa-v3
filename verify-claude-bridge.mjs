@@ -152,6 +152,8 @@ test('서버 근거와 다른 건수·금액·기간은 AI 호출 없이 답변 
   ]) assert.throws(() => normalizeAnswer({ ...base, ...changed }, { facts }), error => error.code === 'unverified_fact');
   assert.throws(() => normalizeAnswer({ answer: '청구 999건입니다.' }, { facts }), error => error.code === 'unverified_fact');
   assert.throws(() => normalizeAnswer({ headline: '정리', keyFacts: [{ label: '건수', value: '999' }] }, { facts: { facts: [{ n: 1, text: '1,999건' }] } }), error => error.code === 'unverified_fact');
+  assert.throws(() => normalizeAnswer({ ...base, headline: '전월 대비 +100건' }, { facts: { facts: [{ n: 1, text: '전월 대비 -100건 · 남은 금액 50,000원 · 10/27 확인' }] } }), error => error.code === 'unverified_fact');
+  assert.throws(() => normalizeAnswer({ ...base, keyFacts: [{ label: '증감', value: '+1,000', ref: 1 }] }, { facts: { facts: [{ n: 1, text: '2026-10 기준 청구 100건 · 남은 금액 50,000원 · 증감 -1,000 · 10/27 확인' }] } }), error => error.code === 'unverified_fact');
 });
 
 test('subprocess: prompt only via stdin, stripped env, fixed argv', async () => {
