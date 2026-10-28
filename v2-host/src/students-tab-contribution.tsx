@@ -46,7 +46,7 @@ export function StudentContributionView({ studentId, params }: { studentId: stri
         : <p>학생 기록 연결을 열람할 수 없습니다.</p>}
   </StudentContributionScope>;
   if (params.contribution === "list") return <StudentContributionScope studentId={studentId} back={params.back}>
-    {tab.list ? <ContributionList studentId={studentId} data={{ ...tab.list, gate: { ...tab.list.gate, canWrite: false } }} />
+    {tab.list ? <ContributionList studentId={studentId} data={tab.list} />
       : <p>기여도 목록을 열람할 수 없습니다.</p>}
   </StudentContributionScope>;
   if (params.contribution === "referrals") return <StudentContributionScope studentId={studentId} back={params.back}>

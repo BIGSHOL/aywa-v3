@@ -12,6 +12,7 @@ import { originalSignalFunction } from './v2-students-contribution-actions.mjs';
 import { originalListFunction, originalRecentFunction } from './v2-students-contribution-list.mjs';
 import { runV2Server } from './v2-server-runner.mjs';
 import { originalSettingsRead, originalSettingsWrite } from './v2-students-contribution-settings.mjs';
+import { originalRefreshFunctions } from './v2-students-contribution-refresh.mjs';
 
 const db = await openFullDatabase();
 test('기여도 기본 면 = 원본 월별 점수·근거 조회 · 다른 학생 자료 없음 · 읽기 전용', async () => {
@@ -163,6 +164,38 @@ test('배점 미리보기는 원본 조회 본문으로 집계하고 저장은 �
     });
   } catch (error) { if (error !== rollback) throw error; }
   const [after] = await db`select revision, config from public.student_contribution_settings where tenant_id=${tenantId}`;
+  assert.deepEqual(after, before);
+  assert.equal((await db`select count(*)::int n from net.http_request_queue`)[0].n, queueBefore.n);
+});
+test('수동 집계는 원본 본문으로 Docker만 갱신하고 AI·바깥 요청 없이 되돌린다', async () => {
+  const source = await originalRefreshFunctions();
+  assert.ok(source.action.text.includes('refreshStudentContribution(createAdminClient(), gate.tenantId, { deadline: Date.now() + 85_000 })'));
+  assert.ok(source.refresh.text.includes('if (options.nightly) result.judged'));
+  assert.ok(source.activities.text.includes('getAssignedVideoHomework(tenant, from, today)'));
+  const base = await db.begin('read only', (sql) => studentsBase({ sql, tenantId, importV2 }));
+  const body = screen.actions.refreshContribution.validate({ module: 'features/student-contribution/server/actions.ts', actor: base.viewer.id, args: [] });
+  const [before] = await db`select revision, referral_review->>'checkedAt' checked_at, refresh_token::text refresh_token
+    from public.student_contribution_settings where tenant_id=${tenantId}`;
+  const [queueBefore] = await db`select count(*)::int n from net.http_request_queue`;
+  const rollback = new Error('rollback');
+  try {
+    await db.begin(async (sql) => {
+      const result = await screen.actions.refreshContribution.run({ sql, body, tenantId, importV2 });
+      assert.equal(result.ok, true, result.error);
+      assert.match(result.message, /집계/);
+      const [during] = await sql`select revision, referral_review->>'checkedAt' checked_at, refresh_token::text refresh_token
+        from public.student_contribution_settings where tenant_id=${tenantId}`;
+      assert.notEqual(during.checked_at, before.checked_at);
+      assert.equal(during.refresh_token, null);
+      const audit = await sql`select action, metadata->>'judged' judged, metadata->>'via' via from public.audit_logs
+        where tenant_id=${tenantId} and action='student_contribution_refresh' and created_at=now()`;
+      assert.deepEqual([...audit], [{ action: 'student_contribution_refresh', judged: '0', via: '3.0 연습 복사본' }]);
+      assert.equal((await sql`select count(*)::int n from net.http_request_queue`)[0].n, queueBefore.n);
+      throw rollback;
+    });
+  } catch (error) { if (error !== rollback) throw error; }
+  const [after] = await db`select revision, referral_review->>'checkedAt' checked_at, refresh_token::text refresh_token
+    from public.student_contribution_settings where tenant_id=${tenantId}`;
   assert.deepEqual(after, before);
   assert.equal((await db`select count(*)::int n from net.http_request_queue`)[0].n, queueBefore.n);
 });
