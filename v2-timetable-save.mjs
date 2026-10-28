@@ -597,4 +597,4 @@ export function timetableActions(rules, readers) {
 
 export { loadExtra };
 // 다른 화면(수업목록)의 저장이 같은 신분·감사로그·사용자 역할 쓰기를 쓴다 — 규칙이 두 벌이 되지 않게.
-export { actAs, audit, asAuthenticated, notifyClassAssignment, lastCourseViaReport };
+export { actAs, audit, asAuthenticated, notifyClassAssignment, lastCourseViaReport, endEnrollmentById };
