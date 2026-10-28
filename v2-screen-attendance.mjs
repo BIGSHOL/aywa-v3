@@ -464,7 +464,7 @@ export async function buildMatrix(ctx, { month, classId, periodMode = 'month', s
 }
 
 /** 2.0 `toSplit`(features/class-splits/server/queries.ts) — 요일·기간 종류를 2.0 규칙으로. */
-function toSplit(R, r) {
+export function toSplit(R, r) {
   if (!R.splitRules.isSplitDay(r.day_of_week)) return null;
   const kind = r.period_kind === 'day' || r.period_kind === 'month' ? r.period_kind : 'forever';
   return { id: r.id, studentId: r.student_id, sourceClassId: r.source_class_id, targetClassId: r.target_class_id, dayOfWeek: r.day_of_week, startTime: String(r.start_time).slice(0, 5), endTime: String(r.end_time).slice(0, 5),

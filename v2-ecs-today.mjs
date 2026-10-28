@@ -9,12 +9,12 @@
 //  · 출결 사유·학생 특이사항의 연락처는 3.0 전 화면처럼 가린다(가린 칸은 저장이 덮지 않는다 — 주간 시트와 같은 규약).
 //  · 출결 기록 시각은 마이크로초까지 같은 꼴의 글자로 견준다(2.0은 PostgREST 글자 — 같은 순서, 꼬리 0을 지운 글자보다 오히려 고르다).
 //  · 표가 없을 때 2.0이 오류를 삼키는 조회(보강 예약 · 수업 나누기 · Shouting · ClassNote 게시)는 읽기 전용 트랜잭션이 깨지지 않게 표가 있는지 먼저 묻는다.
-//  · 오늘 출석 미입력 줄 · 내 할 일 줄(서버 부품 TodayAttendanceStrip · MyTasksStrip)은 아직 옮기지 않았다 — 다른 화면(오늘 출결 보드 · 할 일)의 조회라 그 화면을 옮길 때 함께.
 //  · 저장은 이미 옮긴 액션 그대로(시트 모드 = 주간 시트와 같은 교시 칸). 요약 카드의 출결(출석·지각·결석 = 그날 전체 칸 setAttendanceCell, '전원 출석' = setAttendanceBulk)은
 //    출석부 저장 본문을 함께 쓰고, '선택 안 함'(clearPresentAttendance)과 반 순서도 저장된다.
 import { canWriteLevel, delegatedClassIds, isoAt, readClassNameAsOf, shown, teacherScopeOf } from './v2-ecs-core.mjs';
 import { sheetWeekData, textbookOptions, visibleClassFilter } from './v2-ecs-props.mjs';
 import { teachingClassIds } from './v2-ecs-seat.mjs';
+import { myTasksStrip, todayAttendanceStrip } from './v2-ecs-strip.mjs';
 
 /** class-splits/rules.ts · period.ts — period.ts가 addDays·dowOf를 다른 뜻으로 내보내 공용 묶음(R)에 펼치지 않고 따로 둔다. */
 let splitRulesPromise = null;
@@ -361,7 +361,12 @@ export async function todayFaceData(sql, t, R, env, viewer, q, today, importV2) 
   const mode = q.mode === 'cards' ? 'cards' : 'sheet';
   // 2.0 effectiveTeacherId — 3.0엔 겸직 강사뷰 쿠키가 없어 선생님 역할이면 그 사람.
   const myTeacherId = viewer.systemRole === 'teacher' ? viewer.id : null;
-  const [todayRes, options] = await Promise.all([ecsTodayData(sql, t, R, env, viewer, q.date ?? null, today, importV2), textbookOptions(sql, t)]);
+  const [todayRes, options, attendanceStrip, tasksStrip] = await Promise.all([
+    ecsTodayData(sql, t, R, env, viewer, q.date ?? null, today, importV2),
+    textbookOptions(sql, t),
+    !q.date || q.date === today ? todayAttendanceStrip(sql, t, viewer, today, importV2) : null,
+    myTasksStrip(sql, t, viewer),
+  ]);
   let sheets = null;
   if (mode === 'sheet' && todayRes.ok && todayRes.cards.length > 0) {
     const results = await Promise.all(todayRes.cards.map(c => sheetWeekData(sql, t, R, env, viewer, c.classId, todayRes.weekMonday)));
@@ -371,5 +376,5 @@ export async function todayFaceData(sql, t, R, env, viewer, q, today, importV2) 
     sheets = R.applyTodayOrder(sheets, todayRes.todayOrder);
   }
   return { res: todayRes.ok ? { ...todayRes, cards: R.applyTodayOrder(todayRes.cards, todayRes.todayOrder) } : todayRes,
-    mode, sheets, myTeacherId, canReorder: true, textbookOptions: options };
+    mode, sheets, myTeacherId, canReorder: true, textbookOptions: options, attendanceStrip, tasksStrip };
 }

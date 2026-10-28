@@ -79,6 +79,8 @@ import { TEXTBOOK_ACTIONS, readAssignableTextbooks, readClassTextbookPlans, read
 import { PLAN_UNDO_ACTIONS } from './v2-ecs-plan-undo.mjs';
 import { SHIFT_ACTIONS } from './v2-ecs-shift.mjs';
 import { screen as attendanceScreen } from './v2-screen-attendance.mjs';
+import { requestDeskConfirm } from './v2-ecs-strip.mjs';
+import { runV2Server } from './v2-server-runner.mjs';
 
 /** 2.0 주소 — /ecs · /ecs/<반> · /ecs/<반>/month · /ecs/goals · /ecs/plan-gap. */
 const ROUTE = /^\/ecs(?:\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})(\/month)?|\/(goals|plan-gap))?$/;
@@ -99,9 +101,10 @@ export const screen = {
   params: { v2path: ROUTE, viewer: UUID, week: DAY, view: /^(week|room|today|cal|rail|mp)$/, date: DAY, mode: /^(sheet|cards)$/, month: /^\d{4}-\d{2}$/,
     period: /^(month|session)$/, day: DAY, readonly: /^1$/,
     // 읽기 서버 액션(호스트 registerHostHandler) — 그 2.0 함수의 인자 칸만.
-    read: /^(dayPlan|compare|slotChoices|textbookPlans|assignable)$/, class: UUID, slot: /^\d{2}:\d{2}(?::\d{2})?$/ },
+    read: /^(dayPlan|compare|slotChoices|textbookPlans|assignable|taskList|taskDetail)$/, class: UUID, slot: /^\d{2}:\d{2}(?::\d{2})?$/,
+    filter: /^(open|late|closed|all)$/, page: /^(?:0|[1-9]\d{0,2})$/, taskId: UUID },
   actions: { ...ACTIONS, ...MAKEUP_ACTIONS, ...GOALS_ACTIONS, ...TEXTBOOK_ACTIONS, ...PLAN_UNDO_ACTIONS, ...SHIFT_ACTIONS,
-    setAttendanceCell: attendanceCell, setAttendanceBulk: attendanceBulk },
+    setAttendanceCell: attendanceCell, setAttendanceBulk: attendanceBulk, requestDeskConfirm },
   async load({ sql, params: q, tenantId: t, importV2 }) {
     const R = await loadRules(importV2), today = await copyDay(), env = await readSettings(sql, t, R);
     const viewers = await readViewers(sql, t, R, env);
@@ -109,6 +112,16 @@ export const screen = {
       // 2.0 서버 액션의 반환 그대로 — 보는 사람은 고른 사람만(없으면 거절: 첫 사람으로 대신 읽지 않는다).
       const user = viewers.find(v => v.id === q.viewer);
       if (!user) return { ok: false, error: '접근 권한이 없습니다' };
+      if (q.read === 'taskList' || q.read === 'taskDetail') {
+        const module = 'features/staff-tasks/server/queries.ts';
+        const fn = q.read === 'taskList' ? 'listTasks' : 'taskDetail';
+        if (fn === 'taskDetail' && !q.taskId) return null;
+        const args = fn === 'listTasks'
+          ? [{ tenantId: t, assigneeId: user.id, filter: q.filter ?? 'open', page: Number(q.page ?? 0) }]
+          : [t, q.taskId, { userId: user.id, canMonitor: false }];
+        const { results: [result] } = await runV2Server({ actorId: user.id, tenantId: t, mode: 'read', steps: [{ module, fn, args }] });
+        return result.value ?? null;
+      }
       const ctx = { sql, t, R, env, user, today };
       if (q.read === 'dayPlan') return readDayPlan(ctx, { classId: q.class, planDate: q.date });
       if (q.read === 'compare') return readSlotCompare(ctx, { classId: q.class, date: q.date, slotStart: q.slot });

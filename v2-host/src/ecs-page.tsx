@@ -2,9 +2,12 @@
 // 서버가 하던 조회만 /api/v2/ecs(복사본)의 props로 바꾸고, 머리글·툴바·본문 배치는 page.tsx 순서 그대로 옮겼다.
 //  · EcsLandingPage = ecs/page.tsx 주간 면 · EcsSheetPage = [classId]/page.tsx · EcsMonthPage = [classId]/month/page.tsx
 //  · EcsTodayPage = ecs/page.tsx 오늘 면(EcsTodayFace) · EcsGoalsPage · EcsPlanGapPage · EcsRoomPage(JJ실)
-// 2.0 page.tsx에 있는데 여기 없는 것: 오늘 출석 미입력 스트립·내 할 일 줄(오늘 면 전용 서버 부품), ModuleBoundary(영어 강사 시트 모듈이 켜진 학원만 이 화면이 있다).
+// 2.0 page.tsx의 서버 부품은 같은 조회를 넘긴 props로 감싼다. ModuleBoundary는 호스트 화면 진입 게이트가 맡는다.
 import Link from 'next/link';
 import type { ComponentProps } from 'react';
+import { StripSlot } from '@/features/attendance/live/components/strip-slot';
+import { MyTasksStripButton } from '@/features/staff-tasks/components/my-tasks-strip-button';
+import { EcsTaskFetchBridge } from './ecs-task-fetch-bridge';
 import { PageHeader } from '@/components/page-header';
 import { BigStat } from '@/components/atoms/big-stat';
 import { Toolbar, ToolbarButton } from '@/components/toolbar';
@@ -397,12 +400,13 @@ export type TodayRes = Fail | {
 };
 /** 2.0 ecs/page.tsx TodaySheet — 반 1개분 시트 결과를 통째로(한 반이 실패해도 나머지는 그린다). */
 type TodaySheet = { classId: string; className: string; res: Fail | { ok: true; data: SheetProps['data'] } };
-export type TodayData = { res: TodayRes; mode: ComponentProps<typeof EcsTodayModeTabs>['mode']; sheets: TodaySheet[] | null; myTeacherId: string | null; canReorder: boolean; textbookOptions: TextbookOptionItem[] };
+export type TodayData = { res: TodayRes; mode: ComponentProps<typeof EcsTodayModeTabs>['mode']; sheets: TodaySheet[] | null; myTeacherId: string | null; canReorder: boolean; textbookOptions: TextbookOptionItem[];
+  attendanceStrip: { date: string; slots: (ComponentProps<typeof StripSlot> & { key: string })[] } | null;
+  tasksStrip: { open: number; late: number; lang: 'ko' | 'en' } | null };
 
-/** 2.0 ecs/page.tsx `EcsTodayFace` — 오늘 면(시트 기본 · 요약 카드). 원문 JSX 순서 그대로.
- *  2.0에 있는데 여기 없는 것: 오늘 출석 미입력 줄(TodayAttendanceStrip) · 내 할 일 줄(MyTasksStrip) — 둘 다 서버 부품(다른 화면의 조회)이라 그 화면을 옮길 때 함께. */
+/** 2.0 ecs/page.tsx `EcsTodayFace` — 오늘 면(시트 기본 · 요약 카드). 원문 JSX 순서 그대로. */
 export function EcsTodayPage({ today, scoped, lang }: { today: TodayData; scoped: boolean; lang: SheetLang }) {
-  const { res, mode, sheets, myTeacherId, canReorder, textbookOptions } = today;
+  const { res, mode, sheets, myTeacherId, canReorder, textbookOptions, attendanceStrip, tasksStrip } = today;
   if (!res.ok) {
     return (
       <div className="space-y-4">
@@ -450,6 +454,20 @@ export function EcsTodayPage({ today, scoped, lang }: { today: TodayData; scoped
           {sheetT(lang, 'today.weekHint.after')}
         </p>
       ) : null}
+      {isToday && attendanceStrip ? (
+        <section className="border-amber/40 bg-amber/5 space-y-2 rounded-2xl border p-3">
+          <header className="flex flex-wrap items-center gap-x-2 gap-y-1">
+            <h2 className="text-amber text-sm font-bold">{sheetT(lang, 'strip.title')}</h2>
+            <span className="num text-text-dim text-xs">{sheetTf(lang, 'strip.count', { slots: attendanceStrip.slots.length,
+              students: attendanceStrip.slots.reduce((n, slot) => n + slot.pendingIds.length, 0) })}</span>
+            <Link href="/attendance/live" className="text-primary ml-auto text-xs font-semibold hover:underline">{sheetT(lang, 'strip.detailLink')}</Link>
+          </header>
+          <div className="grid grid-cols-[repeat(auto-fill,minmax(min(34rem,100%),1fr))] gap-2">
+            {attendanceStrip.slots.map(slot => <StripSlot key={slot.key} {...slot} />)}
+          </div>
+        </section>
+      ) : null}
+      {tasksStrip ? <><EcsTaskFetchBridge viewer={res.userId} /><MyTasksStripButton {...tasksStrip} /></> : null}
       <TextbookOptionsProvider options={textbookOptions}>
         {res.cards.length === 0 ? (
           <p className="bg-card shadow-card text-text-dim rounded-2xl px-4 py-6 text-sm">

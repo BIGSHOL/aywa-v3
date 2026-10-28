@@ -8,6 +8,7 @@ import assert from 'node:assert/strict';
 import { readFile, access } from 'node:fs/promises';
 import * as C from './v2-ecs-core.mjs';
 import { screen } from './v2-screen-ecs.mjs';
+import { myTasksStrip, todayAttendanceStrip } from './v2-ecs-strip.mjs';
 import { importV2 } from './v2-bridge.mjs';
 
 const src = p => readFile(new URL(`../../src/${p}`, import.meta.url), 'utf8');
@@ -34,9 +35,9 @@ test('2.0 모듈을 한 객체로 펼쳐도 같은 이름에 다른 값이 없�
 
 test('매개변수: 2.0 주소(v2path)·2.0 쿼리·보는 사람만, 모양이 아니면 거절', () => {
   const P = screen.params, ok = (k, v) => P[k].test(v), U = 'e175fd4d-a655-409a-905e-71850ab1b848';
-  assert.deepEqual(Object.keys(P).sort(), ['class', 'date', 'day', 'mode', 'month', 'period', 'read', 'readonly', 'slot', 'v2path', 'view', 'viewer', 'week']);
-  for (const [k, v] of [['read', 'dayPlan'], ['read', 'compare'], ['read', 'slotChoices'], ['read', 'textbookPlans'], ['read', 'assignable'], ['class', U], ['slot', '17:15'], ['slot', '17:15:00']]) assert.ok(ok(k, v), `${k}=${v}`);
-  for (const [k, v] of [['read', 'flushSheetPatches'], ['class', 'x'], ['slot', '7:15'], ['slot', '17:15:00.1']]) assert.ok(!ok(k, v), `${k}=${v} 거절`);
+  assert.deepEqual(Object.keys(P).sort(), ['class', 'date', 'day', 'filter', 'mode', 'month', 'page', 'period', 'read', 'readonly', 'slot', 'taskId', 'v2path', 'view', 'viewer', 'week']);
+  for (const [k, v] of [['read', 'dayPlan'], ['read', 'compare'], ['read', 'slotChoices'], ['read', 'textbookPlans'], ['read', 'assignable'], ['read', 'taskList'], ['read', 'taskDetail'], ['class', U], ['taskId', U], ['slot', '17:15'], ['slot', '17:15:00'], ['filter', 'open'], ['page', '0']]) assert.ok(ok(k, v), `${k}=${v}`);
+  for (const [k, v] of [['read', 'flushSheetPatches'], ['class', 'x'], ['taskId', 'x'], ['slot', '7:15'], ['slot', '17:15:00.1'], ['filter', 'mine'], ['page', '-1']]) assert.ok(!ok(k, v), `${k}=${v} 거절`);
   for (const v of ['/ecs', `/ecs/${U}`, `/ecs/${U}/month`, '/ecs/goals', '/ecs/plan-gap']) assert.ok(ok('v2path', v), v);
   for (const v of ['/ecs/x', '/timetable', `/ecs/${U}/month/x`, `/ecs/${U}?week=1`, 'ecs']) assert.ok(!ok('v2path', v), `${v} 거절`);
   for (const [k, v] of [['view', 'week'], ['view', 'today'], ['view', 'mp'], ['week', '2026-10-26'], ['month', '2026-10'], ['period', 'session'], ['mode', 'cards'], ['readonly', '1'], ['viewer', U]]) assert.ok(ok(k, v), `${k}=${v}`);
@@ -239,6 +240,55 @@ test('복사본(되돌림): JJ 지난 수업 기록은 빈 칸만 이어받고 �
       and metadata->>'classId'=${T_CLASS} and metadata->>'planDate'='2026-09-29' and metadata->>'via'='3.0 연습 복사본' order by id desc limit 1`;
     assert.equal(audit.metadata.carried, copied.carried.length);
   });
+});
+test('복사본: 오늘 출석 미입력 줄은 시작한 본인 교시만, 내 할 일 줄은 열린 건수만 보인다', { skip: !db && 'local database not running' }, async () => {
+  const viewer = { id: 'c5353d38-92f2-42c4-86f2-d7c0edcd5df5', systemRole: 'teacher', lang: 'ko' };
+  const date = await C.copyDay();
+  const strip = await db.begin('isolation level repeatable read read only', sql => todayAttendanceStrip(sql, TENANT, viewer, date, importV2));
+  assert.ok(strip?.slots.length > 0, '복사 시각에 시작한 미입력 교시');
+  for (const slot of strip.slots) {
+    assert.equal(slot.date, date);
+    assert.equal(slot.pendingIds.length, slot.pendingStudents.length);
+    assert.equal(new Set(slot.pendingIds).size, slot.pendingIds.length);
+    assert.ok(slot.pendingIds.length > 0);
+  }
+  await inRollback(async ({ sql }) => {
+    const [task] = await sql`insert into public.staff_tasks (tenant_id, kind, subject_id, title, due_at)
+      values (${TENANT}, 'test', gen_random_uuid(), '복사본 할 일', now() - interval '1 day') returning id::text id`;
+    await sql`insert into public.staff_task_assignees (tenant_id, task_id, user_id) values (${TENANT}, ${task.id}, ${viewer.id})`;
+    const mine = await myTasksStrip(sql, TENANT, viewer);
+    assert.ok(mine?.open >= 1 && mine.late >= 1, JSON.stringify(mine));
+    const other = await myTasksStrip(sql, TENANT, { ...viewer, id: T_ACTOR });
+    assert.equal(other?.open ?? 0, 0, '다른 직원 할 일이 새지 않는다');
+  });
+});
+test('복사본(되돌림): 데스크 확인 요청은 미입력 교시만 발송하고 같은 bucket을 두 번 쓰지 않는다', { skip: !db && 'local database not running' }, async () => {
+  const viewer = 'c5353d38-92f2-42c4-86f2-d7c0edcd5df5', classId = 'cfc74e7d-cdc7-4759-94e9-cc85c0356f4d';
+  const day = await C.copyDay();
+  await inRollback(async ({ sql, run }) => {
+    const input = { classId, sessionDate: day, slotStart: '14:20' };
+    assert.deepEqual(await run(sql, 'requestDeskConfirm', viewer, { ...input, slotStart: 1420 }), { error: '잘못된 교시입니다' });
+    const first = await run(sql, 'requestDeskConfirm', viewer, input);
+    assert.deepEqual(first, { ok: true, sent: true });
+    assert.deepEqual(await run(sql, 'requestDeskConfirm', viewer, input), { ok: true, sent: false });
+    const [notice] = await sql`select count(*)::int n from public.notifications where tenant_id=${TENANT} and type='attendance_desk_confirm_request'
+      and actor_id=${viewer} and link like '/attendance/live?tab=desk%'`;
+    assert.equal(notice.n, 2, '데스크 수신자 두 명에게 한 번씩');
+    const [audit] = await sql`select metadata from public.audit_logs where tenant_id=${TENANT} and action='attendance_desk_confirm_request'
+      and actor_id=${viewer} and metadata->>'classId'=${classId} order by id desc limit 1`;
+    assert.deepEqual([audit.metadata.via, audit.metadata.recipients, audit.metadata.slotStart], ['3.0 연습 복사본', 2, '14:20']);
+  });
+});
+test('복사본: 내 할 일 창의 원본 목록 조회는 본인 범위, 상세는 맡지 않은 기록을 숨긴다', { skip: !db && 'local database not running' }, async () => {
+  const viewer = 'c5353d38-92f2-42c4-86f2-d7c0edcd5df5';
+  const list = await db.begin('isolation level repeatable read read only', sql => screen.load({ sql, params: { read: 'taskList', viewer, filter: 'open', page: '0' }, tenantId: TENANT, importV2 }));
+  assert.ok(Array.isArray(list.items) && Number.isInteger(list.total) && list.page === 0);
+  assert.ok(list.items.every(item => item.assignees.some(assignee => assignee.id === viewer)), '다른 사람의 할 일이 섞이지 않는다');
+  const [foreign] = await db`select task.id::text id from public.staff_tasks task where task.tenant_id=${TENANT}
+    and not exists (select 1 from public.staff_task_assignees a where a.task_id=task.id and a.user_id=${viewer}) limit 1`;
+  assert.ok(foreign, '다른 직원의 할 일 시험 행');
+  const detail = await db.begin('isolation level repeatable read read only', sql => screen.load({ sql, params: { read: 'taskDetail', viewer, taskId: foreign.id }, tenantId: TENANT, importV2 }));
+  assert.equal(detail, null);
 });
 /** 한 트랜잭션 안의 감사로그는 시각(now())이 같다 — 순서가 아니라 내용으로 찾는다. */
 const find = (list, pred, what) => { const hit = list.find(a => pred(a.metadata)); assert.ok(hit, `감사로그 없음: ${what}`); return hit.metadata; };
@@ -772,7 +822,7 @@ test('복사본: 오늘 면(강사 · 시트 기본) = 2.0 EcsTodayFace props ·
   const text = (await src('features/class-sheets/server/today.ts')).replace(/\r\n/g, '\n'), R = await C.loadRules(importV2), t = await topEnglishTeacher();
   const d = await load({ viewer: t, date: TODAY_DAY });
   assert.equal(d.route, 'today'); assert.equal(d.scoped, true, '선생님 = 강사 스코프 → 오늘 면이 기본');
-  assert.deepEqual(Object.keys(d.today).sort(), ['canReorder', 'mode', 'myTeacherId', 'res', 'sheets', 'textbookOptions'], '2.0 EcsTodayFace props(scoped·lang은 화면 공통)');
+  assert.deepEqual(Object.keys(d.today).sort(), ['attendanceStrip', 'canReorder', 'mode', 'myTeacherId', 'res', 'sheets', 'tasksStrip', 'textbookOptions'], '2.0 EcsTodayFace props(scoped·lang은 화면 공통)');
   const { res } = d.today;
   assert.equal(res.ok, true); sameShape(res, todayOkKeys(text), 'EcsTodayResult');
   assert.deepEqual([res.date, res.today, res.weekMonday, d.today.mode, d.today.myTeacherId, d.today.canReorder], [TODAY_DAY, TODAY_DAY, '2026-10-26', 'sheet', t, true]);
