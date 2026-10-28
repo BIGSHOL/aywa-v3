@@ -90,7 +90,7 @@
       if (hostOk === null) fetch(HOST, { method: 'HEAD' }).then(r => r.ok, () => false).then(ok => { if (hostOk === null) { hostOk = ok; api?.render?.(); } });
       else if (hostOk) requestAnimationFrame(() => { ensureFrame(query); place(); });
       const wait = hostOk === false ? '2.0 부품 화면이 이 서버에 아직 연결되지 않았습니다.' : hostOk === null ? '강사 시트를 여는 중…' : '';
-      return `<div class="v2h-note" role="note"><p><b>연습 복사본(Docker)</b> 2.0 강사 시트(영어) 부품 그대로입니다. 고른 사람의 화면(권한·담당 반·보기 설정)으로 열리고, 저장은 이 PC의 복사본에만 됩니다(실제 발송 없음). 계획 칸·학생 기록·출결·목표·메모·Shouting·월간 계획서·학생 영어 이름은 저장되고, 아직 잇지 않은 것(교재 배정·되돌리기·미룸/당김·보강 추가·단어 수 가져오기·오늘 면·JJ실)은 같은 자리에서 '복사본 보기 전용'으로 알립니다.</p><span data-v2h-actor-slot>${actorPicker()}</span></div>
+      return `<div class="v2h-note" role="note"><p><b>연습 복사본(Docker)</b> 2.0 강사 시트(영어) 부품 그대로입니다. 고른 사람의 화면(권한·담당 반·보기 설정)으로 열리고, 저장은 이 PC의 복사본에만 됩니다(실제 발송 없음). 계획 칸·학생 기록·출결·목표·메모·Shouting·월간 계획서·학생 영어 이름·보강 추가는 저장되고, 아직 잇지 않은 것(교재 배정·되돌리기·미룸/당김·단어 수 가져오기·오늘 면·JJ실)은 같은 자리에서 '복사본 보기 전용'으로 알립니다.</p><span data-v2h-actor-slot>${actorPicker()}</span></div>
         <div class="v2h-slot" data-v2-host-slot style="position:relative;min-height:420px">${wait ? `<p class="v2h-wait">${esc(wait)}</p>` : ''}</div>`;
     },
   });

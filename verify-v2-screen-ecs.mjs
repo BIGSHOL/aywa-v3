@@ -75,13 +75,13 @@ test('actions = 2.0 서버 액션과 1:1 — 같은 모듈("use server")의 같�
     const actor = '09705ab8-05cf-48ab-8f06-d54a3d990b5c';
     assert.throws(() => a.validate({ module: 'features/other/server/actions.ts', actor, args: [] }), /입력 값/, `${name}: 다른 모듈`);
     assert.throws(() => a.validate({ module: a.module, args: [] }), /저장하는 사람/, `${name}: 사람 없음`);
-    assert.throws(() => a.validate({ module: a.module, actor, args: [1, 2, 3] }), /입력 값/, `${name}: 인자가 많다`);
+    assert.throws(() => a.validate({ module: a.module, actor, args: Array.from({ length: a.arity + 1 }, (_, i) => i) }), /입력 값/, `${name}: 인자가 많다`);
     assert.deepEqual(a.validate({ module: a.module, actor, args: [{ x: 1 }] }), { actor, args: [{ x: 1 }] });
   }
   const names = Object.keys(screen.actions);
   for (const n of ['flushSheetPatches', 'createPlanLine', 'movePlanLine', 'deletePlanLine', 'copyWeekFromPrevious', 'copySlotFromPrevious', 'upsertGoal', 'upsertStudentMark', 'saveMemo',
     'setSlotShouting', 'removeMakeupAttendee', 'markPresentIfAbsent', 'clearPresentAttendance', 'setAttendanceCell', 'commitSheetEdits', 'saveMonthPlanCells', 'saveMonthMemo', 'getEcsDayPlan', 'getSlotPlanCompare',
-    'updateStudentEnglishName']) assert.ok(names.includes(n), n);
+    'updateStudentEnglishName', 'searchMakeupStudents', 'fetchMakeupAbsences', 'noteMakeupAgainstAbsence']) assert.ok(names.includes(n), n);
   // 2.0 ECS 서버 액션 파일의 setMyEcs* 열은 전부 잇는다(보기 설정은 그 사람 계정에).
   const sheetActions = await src('features/class-sheets/server/actions.ts');
   for (const m of sheetActions.matchAll(/export async function (setMyEcs\w+)\(/g)) assert.ok(names.includes(m[1]), m[1]);
@@ -375,6 +375,70 @@ test('복사본(되돌림): 학생 영어 이름(updateStudentEnglishName) = 2.0
   });
   const after = await db`select (select count(*)::int from public.audit_logs) audits, (select english_name from public.students where id=${T_STU}) name`;
   assert.deepEqual([after[0].audits, after[0].name], [before[0].audits, before[0].name], '되돌렸다');
+});
+
+test('보강: 옮긴 pickAbsenceNoteTarget이 2.0 원문(absence-cell.ts)과 같고 2.0 순서(이 줄 → 빈 칸 → 최신)로 고른다', async () => {
+  const ts = (await import('typescript')).default;
+  const body = (text, name) => { const t = text.replace(/\r\n/g, '\n'), i = t.indexOf(`function ${name}(`); return t.slice(i, t.indexOf('\n}\n', i) + 2); };
+  const norm = code => ts.transpileModule(code, { compilerOptions: { target: ts.ScriptTarget.ES2022, removeComments: true } }).outputText.replace(/[\s;]+/g, '').replace(/'/g, '"');
+  const mine = await here('./v2-ecs-makeup.mjs'), orig = await src('features/attendance/server/absence-cell.ts');
+  assert.equal(norm(body(mine, 'pickAbsenceNoteTarget')), norm(body(orig, 'pickAbsenceNoteTarget')));
+  const re = text => /const MADE_UP_RE = (\/.+\/);/.exec(text)?.[1];
+  assert.equal(re(mine), re(orig), 'MADE_UP_RE');
+  const { pickAbsenceNoteTarget, makeupRules } = await import('./v2-ecs-makeup.mjs');
+  await makeupRules(importV2); // hasMemoLine = 2.0 함수(불러온 것)
+  const rows = [{ id: 'c', note: '10/1 보강 예정' }, { id: 'b', note: null }, { id: 'a', note: '10/27 보강 예정' }];
+  assert.equal(pickAbsenceNoteTarget(rows, '10/27 보강 예정').id, 'a', '이미 그 줄이 있는 칸');
+  assert.equal(pickAbsenceNoteTarget(rows, '10/30 보강 예정').id, 'b', '아직 보강이 안 적힌 칸');
+  assert.equal(pickAbsenceNoteTarget([], 'x'), null);
+});
+
+test('복사본(되돌림): 보강 추가 = 학생 찾기 → 결석 후보 → 보강 칸(allowMakeup) → 결석·보강 칸 메모(attendance_makeup_link) — 2.0 흐름 그대로', { skip: !db && 'local database not running' }, async () => {
+  const MAKEUP_STU = '7831862b-0af4-46a8-b0ea-3e963880810f', day = '2026-10-27', absent = '2026-10-20';
+  const before = await db`select (select count(*)::int from public.audit_logs) audits, (select count(*)::int from net.http_request_queue) net,
+    (select count(*)::int from public.attendance_records where student_id=${MAKEUP_STU}) rec`;
+  await inRollback(async ({ sql, run }) => {
+    assert.equal((await sql`select count(*)::int n from public.enrollments where class_id=${T_CLASS} and student_id=${MAKEUP_STU}`)[0].n, 0, '보강 학생은 이 반 수강생이 아니다');
+    // 시험용으로만(되돌림): 테스트 반 수업을 기준일 주까지 · 결석 하나(10/20, 같은 반).
+    await sql`update public.class_schedules set valid_to=null where class_id=${T_CLASS}`;
+    await sql`insert into public.attendance_records (tenant_id, class_id, student_id, session_date, slot_start, status, recorded_by, recorded_via) values (${TENANT}, ${T_CLASS}, ${MAKEUP_STU}, ${absent}, '17:15', 'absent', ${T_ACTOR}, 'teacher')`;
+    // ① 학생 찾기 — 담당 반 강사만(남의 반이면 빈 배열) · 퇴원 제외 · 2.0 반환 칸.
+    const found = await run(sql, 'searchMakeupStudents', T_ACTOR, T_CLASS, '학원이', day);
+    const hit = found.find(s => s.id === MAKEUP_STU);
+    assert.ok(hit, '학원이A'); assert.deepEqual(Object.keys(hit).sort(), ['englishName', 'grade', 'id', 'label', 'name', 'school']);
+    assert.deepEqual(await run(sql, 'searchMakeupStudents', T_ACTOR, MATH, '학원이', day), [], '담당 반이 아니면 빈 배열');
+    assert.deepEqual(await run(sql, 'searchMakeupStudents', T_ACTOR, T_CLASS, ' (,) ', day), []);
+    // ② 결석 후보 — 그 반 과목의 결석(공결 포함, 1년), 2.0 MakeupAbsenceList 모양.
+    const list = await run(sql, 'fetchMakeupAbsences', T_ACTOR, MAKEUP_STU, day, T_CLASS);
+    assert.ok(Array.isArray(list.options) && typeof list.hiddenBySubject === 'number');
+    assert.ok(list.options.some(o => o.date === absent && o.classId === T_CLASS), JSON.stringify(list).slice(0, 300));
+    // ③ 보강 칸 — 수강생이 아니라 allowMakeup 없이는 거절, 켜면 그 교시 칸에 makeup.
+    const cell = { classId: T_CLASS, studentId: MAKEUP_STU, sessionDate: day, slotStart: '17:15', status: 'makeup', units: '1' };
+    assert.deepEqual(await run(sql, 'setAttendanceCell', T_ACTOR, cell), { error: '이 반 수강생이 아닙니다' });
+    assert.equal((await run(sql, 'setAttendanceCell', T_ACTOR, { ...cell, allowMakeup: true })).ok, true);
+    const [made] = await sql`select status::text status, slot_start::text slot, recorded_by::text by from public.attendance_records where class_id=${T_CLASS} and student_id=${MAKEUP_STU} and session_date=${day}`;
+    assert.deepEqual({ ...made }, { status: 'makeup', slot: '17:15:00', by: T_ACTOR });
+    // 유닛 직접 입력 — 기록이 있는 보강 칸은 allowMakeup 없이 고친다(hasRecord) · session_units · 감사에 전/후 시수.
+    assert.equal((await run(sql, 'setAttendanceCell', T_ACTOR, { ...cell, units: '2' })).ok, true);
+    assert.equal((await sql`select session_units::float8 u from public.attendance_records where class_id=${T_CLASS} and student_id=${MAKEUP_STU} and session_date=${day}`)[0].u, 2);
+    const unitLog = (await sql`select metadata from public.audit_logs where tenant_id=${TENANT} and action='attendance_cell' and metadata->>'studentId'=${MAKEUP_STU} and metadata->>'via'='3.0 연습 복사본'`).map(r => r.metadata).find(m => m.units === 2);
+    assert.ok(unitLog && unitLog.overwrote === true && 'prevUnits' in unitLog && 'nextUnits' in unitLog, JSON.stringify(unitLog));
+    // ④ 메모 연결 — 결석 칸 "10/27 보강 예정" · 보강 칸 "10/20 결석분 보강" · 감사 한 줄, 두 번째는 alreadyLinked(감사 없음).
+    const link = { studentId: MAKEUP_STU, makeupClassId: T_CLASS, makeupDate: day, absentClassId: T_CLASS, absentDate: absent };
+    assert.deepEqual(await run(sql, 'noteMakeupAgainstAbsence', T_ACTOR, link), { ok: true, absenceNoted: true, alreadyLinked: false });
+    const notes = Object.fromEntries((await sql`select session_date::text d, note from public.attendance_records where class_id=${T_CLASS} and student_id=${MAKEUP_STU}`).map(r => [r.d, r.note]));
+    assert.deepEqual(notes, { [absent]: '10/27 보강 예정', [day]: '10/20 결석분 보강' });
+    assert.deepEqual(await run(sql, 'noteMakeupAgainstAbsence', T_ACTOR, link), { ok: true, absenceNoted: true, alreadyLinked: true });
+    const logs = await sql`select actor_id::text actor_id, metadata from public.audit_logs where tenant_id=${TENANT} and action='attendance_makeup_link' and metadata->>'studentId'=${MAKEUP_STU} and metadata->>'via'='3.0 연습 복사본'`;
+    assert.equal(logs.length, 1, '붙인 칸이 있을 때만 감사');
+    assert.deepEqual([logs[0].actor_id, logs[0].metadata.memoOnly, logs[0].metadata.absenceNoted, logs[0].metadata.absentDate], [T_ACTOR, true, true, absent]);
+    assert.deepEqual(await run(sql, 'noteMakeupAgainstAbsence', T_ACTOR, { ...link, absentDate: day }), { error: '결석한 날과 보강한 날이 같습니다' });
+    // 강사 보강 기한(결석한 달의 다음 달 말일) — 8월 결석을 10월에 잇지 못한다.
+    assert.match((await run(sql, 'noteMakeupAgainstAbsence', T_ACTOR, { ...link, absentDate: '2026-08-20' })).error, /보강/);
+    assert.equal((await sql`select count(*)::int n from net.http_request_queue`)[0].n, before[0].net, '바깥 요청 없음');
+  });
+  const after = await db`select (select count(*)::int from public.audit_logs) audits, (select count(*)::int from public.attendance_records where student_id=${MAKEUP_STU}) rec`;
+  assert.deepEqual([after[0].audits, after[0].rec], [before[0].audits, before[0].rec], '되돌렸다');
 });
 
 test.after(async () => { await db?.end(); });

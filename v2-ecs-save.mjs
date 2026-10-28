@@ -35,20 +35,20 @@ function hostCall(raw, module, arity) {
   return { actor: raw.actor, args: raw.args };
 }
 /** 2.0 서버 액션 하나 — 인자 모양은 2.0 함수가 run 안에서 검사한다(같은 거절 문구를 같은 자리에서). */
-const serverFn = (module, arity, run) => ({
-  module,
+export const serverFn = (module, arity, run) => ({
+  module, arity,
   validate: raw => hostCall(raw, module, arity),
   async run({ sql, body, tenantId: t, importV2 }) {
     const R = await loadRules(importV2), env = await readSettings(sql, t, R);
     const user = (await readViewers(sql, t, R, env)).find(v => v.id === body.actor);
     if (!user) throw new V2Error(403, 'actor_not_allowed', '저장하는 사람을 다시 골라 주세요(강사 시트를 쓸 수 있는 재직 직원).');
-    return run({ sql, t, R, env, user, today: await copyDay() }, ...body.args);
+    return run({ sql, t, R, env, user, today: await copyDay(), importV2 }, ...body.args);
   },
 });
-const obj = v => (v && typeof v === 'object' && !Array.isArray(v) ? v : {});
-const str = v => (typeof v === 'string' ? v : '');
+export const obj = v => (v && typeof v === 'object' && !Array.isArray(v) ? v : {});
+export const str = v => (typeof v === 'string' ? v : '');
 /** 2.0 logAction과 같은 칸 — 행위자 = 고른 사람. */
-const audit = (sql, t, user, action, targetType, targetLabel, metadata) => sql`insert into public.audit_logs (tenant_id, actor_id, actor_name, action, target_type, target_label, metadata)
+export const audit = (sql, t, user, action, targetType, targetLabel, metadata) => sql`insert into public.audit_logs (tenant_id, actor_id, actor_name, action, target_type, target_label, metadata)
   values (${t}, ${user.id}, ${user.name}, ${action}, ${targetType}, ${targetLabel ?? null}, ${sql.json({ ...metadata, via: VIA })})`;
 /** DB 함수가 거절하면(예: 한 교시 20줄) 트랜잭션을 깨지 않고 2.0처럼 { ok:false, error }로 — 저장점 안에서 부른다. */
 async function guarded(sql, fn) {
@@ -105,7 +105,7 @@ async function resolveAutoUnits(sql, t, R, env, classId, date, slot) {
   return plan.get(R.autoUnitsKey(classId, date, slot)) ?? null;
 }
 /** 2.0 `userTaughtClassSet`(write-gate-axis)의 한 반 — 담임 ∪ 그날 위임 ∪ 그날 교시 담당. */
-async function teachesOn(sql, t, userId, classId, date) {
+export async function teachesOn(sql, t, userId, classId, date) {
   const [{ ok }] = await sql`select (exists (select 1 from public.classes where tenant_id=${t} and id=${classId} and teacher_id=${userId})
       or exists (select 1 from public.class_delegations where tenant_id=${t} and class_id=${classId} and delegate_user_id=${userId} and revoked_at is null and from_date <= ${date} and to_date >= ${date})
       or exists (select 1 from public.class_schedules where tenant_id=${t} and class_id=${classId} and teacher_id=${userId} and valid_from <= ${date} and (valid_to is null or valid_to >= ${date}))) ok`;
@@ -417,8 +417,8 @@ export const ACTIONS = {
     if (!UUID.test(str(studentId)) || !UUID.test(str(classId)) || !DAY.test(str(sessionDate))) return { error: '필수 값이 누락되었습니다' };
     if (noteOnly && !noteProvided) return { error: '메모가 없습니다' };
     if (!noteOnly && status !== null && !['present', 'absent', 'late', 'excused', 'makeup', 'early_leave'].includes(status)) return { error: '잘못된 상태입니다' };
-    if (!input.slotStart || !R.HHMM_RE.test(String(input.slotStart).slice(0, 5)) || input.source || input.onlyIfEmpty || input.allowMakeup || input.ghostTransfer || input.scopeTeacherId != null) {
-      throw new V2Error(409, 'not_in_copy', '이 저장 방식(그날 전체 칸·당일 출결·보강 추가·다른 선생님 교시)은 이 연습 화면에 없습니다 — 출석부 화면에서 하세요. 바뀐 것은 없습니다.');
+    if (!input.slotStart || !R.HHMM_RE.test(String(input.slotStart).slice(0, 5)) || input.source || input.onlyIfEmpty || input.ghostTransfer || input.scopeTeacherId != null) {
+      throw new V2Error(409, 'not_in_copy', '이 저장 방식(그날 전체 칸·당일 출결·다른 선생님 교시)은 이 연습 화면에 없습니다 — 출석부 화면에서 하세요. 바뀐 것은 없습니다.');
     }
     const unitsProvided = input.units !== undefined;
     let unitsVal = null;
@@ -430,7 +430,8 @@ export const ACTIONS = {
           (select count(*)::int from public.attendance_records where tenant_id=${t} and class_id=${classId} and student_id=${studentId} and session_date=${sessionDate}) existing,
           exists (select 1 from public.makeup_reservations where tenant_id=${t} and class_id=${classId} and student_id=${studentId} and makeup_date=${sessionDate} and status in ('reserved','done')) resv`]);
       if (!teaching) return { error: '담당 반이 아닙니다' };
-      if (!R.canWriteAttendanceStudent({ enrolled: enrolled > 0, hasRecord: existing > 0, allowMakeup: enrolled === 0 && existing === 0 && resv })) return { error: '이 반 수강생이 아닙니다' };
+      // 보강 추가(allowMakeup) · 보강 예약 — 2.0처럼 강사의 수강생 게이트에만 쓴다(수업 나누기는 복사본 0행).
+      if (!R.canWriteAttendanceStudent({ enrolled: enrolled > 0, hasRecord: existing > 0, allowMakeup: input.allowMakeup === true || (enrolled === 0 && existing === 0 && resv) })) return { error: '이 반 수강생이 아닙니다' };
     }
     const [resvCell] = await sql`select 1 from public.makeup_reservations where tenant_id=${t} and class_id=${classId} and student_id=${studentId} and makeup_date=${sessionDate} and status in ('reserved','done') limit 1`;
     if (resvCell) throw new V2Error(409, 'reservation_cell', '보강 예약이 걸린 칸입니다 — 2.0은 이 저장에서 예약 이행(결석 칸 메모·시수)까지 함께 바꾸는데, 이 연습 화면은 아직 그 부분이 없어 저장하지 않습니다.');

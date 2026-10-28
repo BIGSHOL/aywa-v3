@@ -32,14 +32,17 @@
 //   class-sheets/server/month-memo-actions.ts  saveMonthMemo     class_sheet_month_memos                          (commitSheetEdits가)
 //   attendance/server/actions.ts               setAttendanceCell attendance_records(교시 칸 갈래)                attendance_cell · attendance_note · attendance_clear
 //   students/server/english-name.ts            updateStudentEnglishName students.english_name(CAS · 지점 중복)   student_english_name_update
+//   보강 추가(v2-ecs-makeup.mjs): attendance/server/actions.ts searchMakeupStudents(읽기) · makeup-actions.ts fetchMakeupAbsences(읽기) ·
+//     setAttendanceCell(status makeup · allowMakeup — 칸과 시수) · makeup-note-action.ts noteMakeupAgainstAbsence  attendance_records.note   attendance_makeup_link
 //   class-sheets/server/day-plan.ts            getEcsDayPlan     (읽기 — 호스트는 GET ?read=dayPlan)
 //   textbooks/server/compare-actions.ts        getSlotPlanCompare (읽기 — 호스트는 GET ?read=compare)
 //   출석부(로그인 JJ실 = 2.0 ECS_PLAN_API)가 같은 이름으로 쓰는 것: flushSheetPatches · createPlanLine · movePlanLine · deletePlanLine ·
 //   copySlotFromPrevious · commitSheetEdits · getSlotPlanCompare(screen.actions.<이름> — 모듈 경로까지 2.0과 같아야 받는다).
-//   아직 잇지 않은 2.0 서버 액션(호스트가 '복사본 보기 전용'으로 거절 — 반환 모양이 { ok, error }가 아닌 셋은 ecs.tsx가 2.0 실패 모양을 정한다):
+//   반환 모양이 { ok, error }가 아닌 셋(searchMakeupStudents · fetchMakeupAbsences · fetchMakeupHostClasses)은 저장이 안 될 때 ecs.tsx가 2.0 실패 모양을 정한다.
+//   아직 잇지 않은 2.0 서버 액션(호스트가 '복사본 보기 전용'으로 거절):
 //   class-sheets/server/memorized-actions.ts pullEcsMemorizedWords · textbooks/server/plan-actions.ts(교재 배정·미룸/당김 setLessonShift …) ·
 //   textbooks/server/{import-undo,plan-delete,shift-undo}-actions.ts(되돌리기) · attendance/server/actions.ts setAttendanceBulk(오늘 면) ·
-//   searchMakeupStudents · attendance/server/makeup-actions.ts fetchMakeupAbsences · fetchMakeupHostClasses · makeup-note-action.ts noteMakeupAgainstAbsence(보강 추가).
+//   attendance/server/makeup-actions.ts fetchMakeupHostClasses(원스크린 보강 반 고르기 — ECS 흐름은 안 부른다).
 //
 // ■ 호스트에 붙일 때(v2-host 빌드 메타 기준 — 2.0 ECS 묶음이 끌어오는 것)
 //   Next 전용 모듈: next/navigation(useRouter·useSearchParams·usePathname) · next/link · next/dynamic · next/image — shims/ 그대로. server-only·next/cache 0.
@@ -53,6 +56,7 @@
 import { DAY, UUID, canWriteLevel, copyDay, editorsOf, loadRules, readSettings, readViewers, teacherEnglishNames, teacherScopeOf } from './v2-ecs-core.mjs';
 import { classOptionsOf, landingData, monthData, sheetWeekData, textbookOptions } from './v2-ecs-props.mjs';
 import { ACTIONS, readDayPlan, readSlotCompare } from './v2-ecs-save.mjs';
+import { MAKEUP_ACTIONS } from './v2-ecs-makeup.mjs';
 
 /** 2.0 주소 — /ecs · /ecs/<반> · /ecs/<반>/month · /ecs/goals · /ecs/plan-gap. */
 const ROUTE = /^\/ecs(?:\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})(\/month)?|\/(goals|plan-gap))?$/;
@@ -63,7 +67,7 @@ export const screen = {
     period: /^(month|session)$/, day: DAY, readonly: /^1$/,
     // 읽기 서버 액션(호스트 registerHostHandler) — 그 2.0 함수의 인자 칸만.
     read: /^(dayPlan|compare)$/, class: UUID, slot: /^\d{2}:\d{2}(?::\d{2})?$/ },
-  actions: ACTIONS,
+  actions: { ...ACTIONS, ...MAKEUP_ACTIONS },
   async load({ sql, params: q, tenantId: t, importV2 }) {
     const R = await loadRules(importV2), today = await copyDay(), env = await readSettings(sql, t, R);
     const viewers = await readViewers(sql, t, R, env);

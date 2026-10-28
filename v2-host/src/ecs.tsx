@@ -43,7 +43,7 @@ registerHostHandler('features/textbooks/server/compare-actions.ts', 'getSlotPlan
   return readOnServer('compare', { class: classId, date, slot: slotStart });
 });
 
-/** 아직 잇지 않은 2.0 함수 중 반환이 { ok, error }가 아닌 것 — 2.0이 실패 때 내던 모양(부품이 그 모양으로 읽는다). 보강 추가 흐름(EcsMakeupAdder → MakeupAddFlow). */
+/** 반환이 { ok, error }가 아닌 2.0 함수 — 저장이 안 될 때(받지 않는 함수 · 거절 · 불통) 2.0이 실패 때 내던 모양(부품이 그 모양으로 읽는다). 보강 추가 흐름(EcsMakeupAdder → MakeupAddFlow). */
 registerHostFallback('features/attendance/server/actions.ts', 'searchMakeupStudents', () => []);
 registerHostFallback('features/attendance/server/makeup-actions.ts', 'fetchMakeupAbsences', () => ({ options: [], hiddenBySubject: 0 }));
 registerHostFallback('features/attendance/server/makeup-actions.ts', 'fetchMakeupHostClasses', () => ({ options: [], failed: true }));
