@@ -62,7 +62,7 @@ export const AREAS = [
     actions: [
       nav('dashboard.kpi', '지표 다시 보기', 'kpi', ['refreshOverview', 'refreshClassroomPreview', 'saveDashboardChartKind', 'setOnboardingDismissed'], '재원생·강좌수·퇴원·신규문의 등 상단 지표와 카드 묶음을 엽니다.'),
       pre('dashboard.announcement', '학원 공지 작성', [f('title', '제목', 'text', { required: true }), f('body', '내용', 'textarea', { required: true }), f('pinned', '위에 고정', 'checkbox')], ['createAnnouncement'], '학원 공지 미리보기', '직원에게 보일 공지 문구를 미리 확인합니다.'),
-      pre('dashboard.briefing', '일일 브리핑 상태', [], ['regenerateDailyBriefing'], '일일 브리핑', '2.0의 일일 브리핑 생성은 현재 꺼져 있습니다. 이 화면의 이슈 정리로 대신 봅니다.', '꺼진 기능 안내'),
+      pre('dashboard.briefing', '일일 브리핑 상태', [], ['regenerateDailyBriefing'], '일일 브리핑', '일일 브리핑 생성은 현재 꺼져 있습니다. 이 화면의 이슈 정리로 대신 봅니다.', '꺼진 기능 안내'),
       nav('dashboard.layout', '역할별 대시보드 배치', 'dashboard', [], '원장이 역할마다 카드 배치를 정하는 설정 면으로 이동합니다.', 'workspace-owner-settings'),
     ] },
   { id: 'calendar', label: '캘린더', group: 'home', viewKind: 'timeline', summary: '학원 공용 일정과 보강 약속을 날짜로 봅니다.',
@@ -75,15 +75,15 @@ export const AREAS = [
     facets: [fc('open', '열린 일', text(KINDS, '열린 일'), 'filter'), fc('late', '늦음', text(KINDS, '늦음'), 'filter'), fc('closed', '끝난 일', text(KINDS, '끝난 일'), 'filter'), fc('inbox', '알림함', route('/dashboard'), 'face')],
     actions: [
       nav('tasks-notifications.inbox', '알림함 열기', null, ['markNotificationsRead'], '안 읽은 알림과 보관함을 봅니다.', 'inbox'),
-      pre('tasks-notifications.kind', '할 일 종류별 보기', [sel('kind', '할 일 종류', 'staffTaskKind'), sel('filter', '상태', 'staffTaskFilter')], ['api-staff-tasks'], '할 일 목록', '2.0 할 일은 기록이 바뀌면 저절로 닫힙니다. 여기서는 종류와 상태로 거른 목록을 봅니다.'),
+      pre('tasks-notifications.kind', '할 일 종류별 보기', [sel('kind', '할 일 종류', 'staffTaskKind'), sel('filter', '상태', 'staffTaskFilter')], ['api-staff-tasks'], '할 일 목록', '자동 할 일은 기록이 바뀌면 저절로 닫힙니다. 여기서는 종류와 상태로 거른 목록을 봅니다.'),
       req('tasks-notifications.follow', '할 일 후속 요청', [sel('kind', '할 일 종류', 'staffTaskKind'), memo('요청 내용', true)], ['api-staff-tasks'], '할 일 처리 확인 요청', '아래 종류의 할 일이 어떻게 처리되고 있는지 확인해 알려 주세요. 할 일은 원래 기록이 바뀌어야 닫힙니다.'),
     ] },
   // ───────── 수업 ─────────
-  { id: 'onescreen', label: '선생님 수업보고서', group: 'class', viewKind: 'sheet', summary: '선생님이 수업보고서를 쓰고 보내며 출결·공지·보강까지 한곳에서 마감하는 화면(2.0 원스크린)을 봅니다.',
+  { id: 'onescreen', label: '선생님 수업보고서', group: 'class', viewKind: 'sheet', summary: '선생님이 수업보고서를 쓰고 보내며 출결·공지·보강까지 한곳에서 마감하는 화면을 봅니다.',
     facets: [fc('reports', '수업보고서', route('/onescreen')), fc('video', '영상 제출 현황', route('/onescreen/video-homework'), 'face'), fc('notice', '학부모 공지', text('src/features/onescreen/server/notice-actions.ts', 'sendOnescreenNotice'))],
     actions: [
       req('onescreen.unwritten', '보고서 작성 요청', [cls(), date(), memo()], ['saveLessonReport', 'saveMyReportTemplate', 'issueReportAttachmentUploadTicket'], '수업보고서 작성 요청', '아래 반·날짜의 수업보고서를 작성해 주세요. 작성하면 발송 큐에 올라갑니다.'),
-      pre('onescreen.ment', 'AI 멘트 미리보기', [student(), f('notes', '선생님 특이사항', 'textarea', { required: true })], ['generateReportComment', 'savePrompt'], 'AI 멘트 미리보기', '이 시안은 외부 AI를 부르지 않습니다. 2.0의 자동작성 입력 칸을 확인하는 양식입니다.', '입력 확인 — AI 호출 없음'),
+      pre('onescreen.ment', 'AI 멘트 미리보기', [student(), f('notes', '선생님 특이사항', 'textarea', { required: true })], ['generateReportComment', 'savePrompt'], 'AI 멘트 미리보기', '이 화면은 AI를 부르지 않습니다. 자동작성에 들어가는 입력 칸을 확인하는 양식입니다.', '입력 확인 — AI 호출 없음'),
       pre('onescreen.notice', '학부모 공지 초안', [cls(), f('body', '공지 내용', 'textarea', { required: true })], ['sendOnescreenNotice'], '학부모 공지 미리보기', '반 학부모에게 보낼 공지 문구를 미리 봅니다. 실제 ClassNote 발송은 하지 않습니다.'),
       pre('onescreen.makeup', '보강 학생 등록', [student(), cls(), date('date', '보강일')], ['registerMakeupEntries'], '보강 학생 등록 미리보기', '보강 학생을 수업 명단에 올리는 내용을 확인합니다.'),
       req('onescreen.share', '공유 링크 재발급 요청', [student(), memo('사유', true)], ['reissueShareLink'], '보고서 공유 링크 재발급', '학부모 공유 링크를 다시 발급해 주세요.'),
@@ -390,10 +390,10 @@ export const AREAS = [
       pre('parent-portal.change', '학부모 변경 요청 미리보기', [student(), date(), f('kind', '변경', 'select', { required: true, options: [{ value: 'absent', label: '안 탐' }, { value: 'stop', label: '정류장 변경' }], evidence: { file: 'src/features/shuttle/ride-change/server/parent-ride-actions.ts', has: ['absentParentRide', 'changeParentRideStop'] } })], ['absentParentRide', 'changeRegularRide'], '학부모 변경 요청', '학부모가 등하원을 바꿨을 때 직원에게 보이는 내용을 확인합니다.'),
       req('parent-portal.ack', '변경 확인 요청', [student(), memo()], ['ackShuttleHistory'], '학부모 변경 확인', '학부모가 바꾼 등하원 내역을 확인해 주세요.'),
     ] },
-  { id: 'student-portal', label: '학생 화면', group: 'roles', viewKind: 'report', summary: '학생이 보는 내 학습 화면을 미리 봅니다(2.0은 데모 데이터).',
+  { id: 'student-portal', label: '학생 화면', group: 'roles', viewKind: 'report', summary: '학생이 보는 내 학습 화면을 미리 봅니다(예시 데이터).',
     facets: [fc('summary', '내 학습 현황', route('/my-learning')), fc('report', '데일리 리포트', route('/my-learning/report'), 'face')],
     actions: [
-      nav('student-portal.preview', '학생 화면 미리보기', 'summary', ['page-my-learning'], '학생 화면 구성을 봅니다. 2.0은 실제 학생 데이터가 아닌 데모 데이터로 그립니다.'),
+      nav('student-portal.preview', '학생 화면 미리보기', 'summary', ['page-my-learning'], '학생 화면 구성을 봅니다. 실제 학생 데이터가 아닌 예시 데이터로 그립니다.'),
     ] },
   { id: 'public-sites', label: '학원 공개 페이지', group: 'roles', viewKind: 'report', summary: '학부모에게 보이는 학원 공개 페이지를 미리 봅니다.',
     facets: [fc('academy', '학원 공개 페이지', route('/academy'))],

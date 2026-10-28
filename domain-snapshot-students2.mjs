@@ -25,7 +25,7 @@ export async function lifecycleFamilies({ sql, t, asOf, month, monthStart, stude
     metrics: [metric('재등록 캠페인 대상', rt.c, '명')], sourceLabel: '재등록 캠페인 대상', recordSource: 'reenrollment_campaign_targets',
     evidence: targets.map(r => record({ id: r.id, label: r.name, date: r.d, status: CAMPAIGN[r.status] || '대상', facets: [r.status && `status:${r.status}`] })),
     facetLabels: Object.fromEntries(Object.entries(CAMPAIGN).map(([k, v]) => [`status:${k}`, v])),
-    coverageNote: '2.0 이탈 방어 화면의 위험 표시는 출결·성적·상담·수납 기록으로 화면을 열 때 계산되며 저장되지 않습니다. 이 시안은 위험 점수를 새로 만들지 않고, 저장된 캠페인 대상만 보여 줍니다.',
+    coverageNote: '이탈 방어 화면의 위험 표시는 출결·성적·상담·수납 기록으로 화면을 열 때 계산되며 저장되지 않습니다. 이 시안은 위험 점수를 새로 만들지 않고, 저장된 캠페인 대상만 보여 줍니다.',
     sources: [{ table: 'reenrollment_campaign_targets', rows: rt.c }],
   });
 
@@ -54,7 +54,7 @@ export async function lifecycleFamilies({ sql, t, asOf, month, monthStart, stude
     trend: monthlyTrend('월별 퇴원', '명', Object.entries(Object.groupBy(dated, r => r.d.slice(0, 7))).map(([m, list]) => ({ month: m, value: list.length })), asOf),
     evidence: exits.map(r => record({ id: r.id, label: r.name, date: r.bulk ? '' : r.d, status: r.bulk ? '시스템 정리(날짜 미상)' : (r.key ? REASON_LABEL[r.key] : '사유 미기재'), fields: [field('퇴원일', r.bulk ? '날짜 미상' : r.d)], facets: [`reason:${r.key || 'none'}`, r.bulk ? 'system-bulk' : r.d >= year && 'this-year', r.d >= monthStart && !r.bulk && 'this-month'] })),
     facetOrder: ['this-month', 'this-year', ...Object.keys(REASON_LABEL).map(k => `reason:${k}`), 'reason:none', 'system-bulk'], facetLabels: { 'this-month': '이번 달', 'this-year': '올해', ...Object.fromEntries(Object.entries(REASON_LABEL).map(([k, v]) => [`reason:${k}`, v])), 'reason:none': '사유 미기재', 'system-bulk': '시스템 정리(날짜 미상)' }, recordSource: 'students',
-    sourceLabel: '원생 퇴원 기록 · 수강 종료', coverageNote: `근거 목록은 퇴원한 원생 전체입니다. 수업 기록이 없는 장부 정리 퇴원 ${rows.length - exits.length}명은 2.0 퇴원관리처럼 뺍니다. 사유 메모는 보여 주지 않습니다.`,
+    sourceLabel: '원생 퇴원 기록 · 수강 종료', coverageNote: `근거 목록은 퇴원한 원생 전체입니다. 수업 기록이 없는 장부 정리 퇴원 ${rows.length - exits.length}명은 퇴원관리처럼 뺍니다. 사유 메모는 보여 주지 않습니다.`,
     sources: [{ table: 'students', rows: rows.length }],
   });
 

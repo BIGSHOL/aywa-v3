@@ -269,17 +269,20 @@ async function weekly({ sql, asOf, tenantId: t, importV2, n }) {
   const sum = (rows) => Object.fromEntries(SUMS.map((k) => [k, rows.reduce((s, r) => s + (Number(r[k]) || 0), 0)]));
   // 발송·학부모 확인·영상 출제는 2.0 카드처럼 수업보고서 줄(reportSource 'lesson')만 — 알림장(영어)·작성 제외 줄은 그 칸이 '—'(teacher-work-card.tsx).
   const totals = works.map((w) => sum(w.rows)), lessonTotals = works.map((w) => sum(w.rows.filter((r) => r.reportSource === 'lesson')));
-  const head = '2.0 운영실 강사별 업무 현황과 같은 판정 · ';
-  const of = (label, f, basis, videoOnly = false) => kpi(label, '%', windows.map((w, i) => ({ label: w.label,
-    value: videoOnly && (!videoFrom || w.to < videoFrom) ? null : f(totals[i], lessonTotals[i]) })), { better: 'up', basis: head + basis });
+  // 학부모 열람률의 기간·유예 = 판정이 쓰는 그 값(UNREAD_WINDOW_DAYS · UNREAD_GRACE_HOURS) — 문구가 계산과 어긋나지 않게.
+  const [{ UNREAD_GRACE_HOURS: graceHours }, unreadDays] = await Promise.all([rules(load), unreadWindowDays()]);
+  // 이름은 무엇을 세는지 그대로(원장 10-28 "무엇을 발송했다는것의 확인율인지 명확하지 않음"), 기간은 span(제목 오른쪽), basis = 분자 ÷ 분모를 말로.
+  // 화면 문구에 '2.0'을 적지 않는다(원장 10-28 "2.0과 관련된 멘트는 일단 제거") — 판정이 2.0 함수라는 것은 이 파일의 주석이 말한다.
+  const of = (label, span, f, basis, videoOnly = false) => kpi(label, '%', windows.map((w, i) => ({ label: w.label,
+    value: videoOnly && (!videoFrom || w.to < videoFrom) ? null : f(totals[i], lessonTotals[i]) })), { better: 'up', span, basis });
   const kpis = [
-    of('보고서 작성률', (a) => rate(a.reports, a.reportTarget), '최근 7일'),
-    of('발송 확인율', (a, l) => rate(l.sent, l.reports - l.recalled), '최근 7일 · 수업보고서'),
-    of('학부모 확인율', (a, l) => rate(l.unreadJudged - l.unread, l.unreadJudged), '수업일 30일 · 48시간 유예'),
-    of('출결 입력률', (a) => rate(a.attendanceDays - a.attendanceUnrecorded, a.attendanceDays), '어제까지 7일'),
-    of('영상 숙제 출제율', (a, l) => rate(l.videoIssuedReports, l.reportsWritten), '최근 7일 · 수업보고서', true),
+    of('수업보고서 작성률', '최근 7일', (a) => rate(a.reports, a.reportTarget), '써야 할 수업보고서 중 쓴 것'),
+    of('수업보고서 발송률', '최근 7일', (a, l) => rate(l.sent, l.reports - l.recalled), '쓴 수업보고서 중 학부모에게 보낸 것(회수한 보고서 제외)'),
+    of('학부모 열람률', `최근 ${unreadDays}일`, (a, l) => rate(l.unreadJudged - l.unread, l.unreadJudged), `보낸 수업보고서 중 학부모가 읽은 것 · 보낸 지 ${graceHours}시간이 안 된 것은 빼고 셈`),
+    of('출결 입력률', '어제까지 7일', (a) => rate(a.attendanceDays - a.attendanceUnrecorded, a.attendanceDays), '수업한 날 출결 칸 중 입력된 것'),
+    of('영상 숙제 출제율', '최근 7일', (a, l) => rate(l.videoIssuedReports, l.reportsWritten), '쓴 수업보고서 중 영상 숙제를 낸 것', true),
     // 원장 10-28: '영상 업로드가 숙제 출제에 비해 잘되고 있냐 안되고 있냐'
-    of('영상 제출률', (a) => rate(a.videoSubmitted, a.videoAssigned), '최근 7일 숙제', true),
+    of('영상 제출률', '최근 7일', (a) => rate(a.videoSubmitted, a.videoAssigned), '낸 영상 숙제 중 학생이 영상을 올린 것', true),
   ];
-  return { windows, totals, lessonTotals, kpis, basis: head + '창마다 그 창 마지막 날의 같은 시각 기준' };
+  return { windows, totals, lessonTotals, kpis, basis: '변화 = 7일 전 값과 비교 · 날마다 같은 시각까지 셈' };
 }

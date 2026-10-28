@@ -143,7 +143,7 @@ const shortTitle = f => f.title.split('(')[0].trim();
 const domainLine = f => STATE_NOTE[f.dataState] ? `- ${shortTitle(f)}: ${STATE_NOTE[f.dataState]}` : `- ${shortTitle(f)}: ${f.metrics.slice(0, 6).map(m => `${m.label} ${m.value === null ? '—' : Number.isInteger(m.value) ? n(m.value) : m.value.toFixed(1)}${m.unit}`).join(', ')}`;
 function domainContext(ws) {
   if (!ws?.families) return null;
-  const header = `[업무 영역 집계] ${ws.asOf} 기준 2.0 기능 영역별 지표(서버 계산).`;
+  const header = `[업무 영역 집계] ${ws.asOf} 기준 기능 영역별 지표(서버 계산).`;
   return Object.freeze({
     all: [header, ...Object.values(ws.families).filter(f => f.dataState !== 'not-applicable').map(domainLine)].join('\n'),
     byIssue: Object.freeze(Object.fromEntries(Object.entries(ISSUE_FAMILY).filter(([, id]) => ws.families[id]).map(([issue, id]) => [issue, `${header}\n${domainLine(ws.families[id])}`]))),

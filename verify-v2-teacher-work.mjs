@@ -169,9 +169,10 @@ test('teacherWorkWeekly: six KPIs over 8 weekly windows — 2.0 card scope (less
     assert.equal(teacherWorkWeekly({ sql, asOf, importV2 }), first, 'same transaction, tenant by default = same computation');
     const { windows, kpis } = await first;
     assert.equal(windows.length, 8); assert.equal(windows.at(-1).to, asOf);
-    assert.deepEqual(kpis.map((k) => k.label), ['보고서 작성률', '발송 확인율', '학부모 확인율', '출결 입력률', '영상 숙제 출제율', '영상 제출률']);
+    assert.deepEqual(kpis.map((k) => k.label), ['수업보고서 작성률', '수업보고서 발송률', '학부모 열람률', '출결 입력률', '영상 숙제 출제율', '영상 제출률']);
     assert(kpis.every((k) => k.kind === 'kpi' && k.unit === '%' && k.better === 'up' && k.points.length === 8));
-    assert.match(kpis[3].basis, /어제까지 7일/); assert.match(kpis[2].basis, /30일/);
+    assert.equal(kpis[3].span, '어제까지 7일'); assert.match(kpis[2].span, /^최근 \d+일$/); assert.match(kpis[2].basis, /\d+시간이 안 된 것/);
+    for (const k of kpis) assert.doesNotMatch(`${k.label} ${k.span} ${k.basis}`, /2\.0/,'화면 문구에 2.0을 적지 않는다(원장 10-28)');
     // Every window is cut at the same time of day as the copy (the last window ends at the capture).
     const at = (d) => clock.at.getTime() - (Date.parse(`${asOf}T00:00:00Z`) - Date.parse(`${d}T00:00:00Z`));
     assert(windows.every((w) => new Date(at(w.to) + 9 * 3600000).toISOString().slice(11, 19) === new Date(clock.at.getTime() + 9 * 3600000).toISOString().slice(11, 19)));

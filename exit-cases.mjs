@@ -52,7 +52,7 @@ export function buildCaseFile(ix, v2, sid, { mask, at = null }) {
   else if (ex.kind === 'cleanup') {
     const b = ex.basis, basis = [b.lastBilled && `마지막 청구 ${b.lastBilled}`, b.lastAttended && `마지막 출석 ${b.lastAttended}`, b.rule === 'enrollment_end' && `마지막 수강 종료 ${b.lastEnded}(장부 날짜일 수 있음)`].filter(Boolean).join(' · ');
     push({ kind: 'timing', label: '이탈 시점(추정)', text: `${ex.month ? `${ex.month} 이탈로 추정` : '이탈 시점 미상'} · 일괄 정리(장부 퇴원일 ${ex.ledgerDate || '없음'})${basis ? ` · ${basis}` : ''}`, estimate: true, source: { table: 'students', id: sid }, open: { family: 'students', id: sid }, claude: '일괄 정리로 퇴원 처리되어 실제로 그만둔 때는 청구와 출석으로 추정함' });
-    if (ex.v2BookkeepingOnly) push({ kind: 'timing', label: '2.0 판정', text: '2.0 화면은 이 학생을 퇴원으로 세지 않음(수업 기록 없는 장부 정리) — 청구·출석 기록은 있음', source: { table: 'students', id: sid }, open: null });
+    if (ex.v2BookkeepingOnly) push({ kind: 'timing', label: '퇴원 통계', text: '수업 기록이 없는 장부 정리라 퇴원 통계에서 빠짐 — 청구·출석 기록은 있음', source: { table: 'students', id: sid }, open: null });
   } else push({ kind: 'timing', label: '현재 상태', text: ex.kind === 'on_hold' ? '현재 휴원 · 뒤 달 청구 없음' : ex.kind === 'enrolled' ? '현재 재원 · 뒤 달 청구 없음' : '퇴원·휴원·재원이 아닌 상태', source: { table: 'students', id: sid }, open: { family: 'students', id: sid }, claude: ex.kind === 'on_hold' ? '현재 휴원 중' : ex.kind === 'enrolled' ? '현재 재원 중이지만 뒤 달 청구가 없음' : null });
   // 2 recorded reason (bulk clean-up memos are not shown — the same as 2.0)
   if (ex.kind === 'withdrawn' && (meta.reason || meta.memo)) {
@@ -81,7 +81,7 @@ export function buildCaseFile(ix, v2, sid, { mask, at = null }) {
   if (ex.kind === 'withdrawn' && ref) for (const subject of new Set(classes.map(c => c.subject))) {
     const { endMonth, rows: ended } = j.endedOf(sid, subject, ref); if (!ended.length) continue;
     const ids = j.teachersOf(sid, subject, endMonth); churn.push({ subject, teacherIds: ids, month: endMonth });
-    push({ kind: 'churn', label: '퇴원율 담당(2.0 판정)', text: `${ix.subjectLabel(subject)} · ${endMonth} 퇴원율 · ${ids.length ? ids.map(name).join(', ') : '담당 미반영(2.0 퇴원율에 잡히지 않음)'}`, source: { table: 'enrollments', id: ended.at(-1).id }, open: null,
+    push({ kind: 'churn', label: '퇴원율 담당', text: `${ix.subjectLabel(subject)} · ${endMonth} 퇴원율 · ${ids.length ? ids.map(name).join(', ') : '담당 미반영(퇴원율에 잡히지 않음)'}`, source: { table: 'enrollments', id: ended.at(-1).id }, open: null,
       claude: ids.length ? '퇴원율을 맡은 선생님이 정해짐' : '퇴원율 담당 선생님이 정해지지 않음', ids: { teacherIds: ids } });
   }
   // 4 hand-overs before the exit (homeroom changes from audit logs; period teachers starting in the window)

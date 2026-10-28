@@ -1,7 +1,7 @@
 /* 2.0 form language: globals.css type scale v5 + control-scale.ts.
    Same Pretendard, white surfaces, #121212 ink, #153e75 primary and 8px controls.
    The structure is new: left-side chrome, critical signals first, issue detail by page scroll. */
-:root{--ax-ink:#121212;--ax-primary:#153e75;--ax-white:#fff;--ax-line:rgba(29,29,31,.14);--ax-soft:#e9edf4;--ax-positive:#0d7743;--ax-warning:#995709;--ax-danger:#a12f2f;--ax-placeholder:#b3b3b8;--ax-xs:14px;--ax-sm:16px;--ax-base:18px;--ax-lg:20px;--ax-xl:24px;--ax-2xl:28px;--ax-control-fill:.62;--ax-control-label:18px;--ax-control-h:calc(var(--ax-control-label)/var(--ax-control-fill));--ax-control-sm:16px;--ax-control-h-sm:calc(var(--ax-control-sm)/var(--ax-control-fill))}
+:root{--ax-ink:#121212;--ax-primary:#153e75;--ax-white:#fff;--ax-line:rgba(29,29,31,.14);--ax-soft:#e9edf4;--ax-positive:#0d7743;--ax-warning:#995709;--ax-danger:#a12f2f;--ax-good:#c62828;--ax-bad:#1f5fbf;--ax-placeholder:#b3b3b8;--ax-xs:14px;--ax-sm:16px;--ax-base:18px;--ax-lg:20px;--ax-xl:24px;--ax-2xl:28px;--ax-control-fill:.62;--ax-control-label:18px;--ax-control-h:calc(var(--ax-control-label)/var(--ax-control-fill));--ax-control-sm:16px;--ax-control-h-sm:calc(var(--ax-control-sm)/var(--ax-control-fill))}
 .ax-enabled{background:var(--ax-white);color:var(--ax-ink);font-size:var(--ax-sm);--ink:var(--ax-ink);--muted:var(--ax-ink);--line:var(--ax-line);--primary:var(--ax-primary)}
 
 /* Shell: everything on the left. No desktop header band; phones get one slim menu bar. */

@@ -106,7 +106,7 @@ export function buildExitIndex(src, v2, { asOf }) {
     return judge;
   }
 
-  return { asOf, thisMonth, studentById, userById, classById, subjectLabel, regular, reasonLabel: k => v2.REASON_LABEL[k] || '미기재', detailLabel: k => v2.reasonDetailOf(k)?.label || '세부 미기재', real, enrollmentsBy, attendanceBy, lastAttended, lastBilled, monthly, owner,
+  return { asOf, thisMonth, studentById, userById, classById, subjectLabel, regular, reasonLabel: k => v2.REASON_LABEL[k] || '미기재', normalizeReason: r => v2.normalizeReason(r || null), detailLabel: k => v2.reasonDetailOf(k)?.label || '세부 미기재', real, enrollmentsBy, attendanceBy, lastAttended, lastBilled, monthly, owner,
     subjectsOf, sessionsOf: (sid, month) => sessions.get(`${sid}|${month}`) ?? null, exitOf, siblingsOf, teacherJudge, teacherOfLabel,
     consultationsBy: group(src.consultations, 'student_id'), gradesBy: group(src.grades, 'student_id'), reportsBy: group(src.reports, 'student_id'), archivesBy: group(src.archives, 'student_id'),
     schedulesBy: group(src.schedules, 'class_id'), transitions: toTransitions(src.transitions), enrollmentsByClass: group(src.enrollments, 'class_id') };

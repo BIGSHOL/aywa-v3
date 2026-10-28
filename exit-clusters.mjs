@@ -63,7 +63,7 @@ export function buildClusters(cases, ix, { amountOf = () => 0 } = {}) {
   for (const [tid, set] of [...perTeacher].filter(([, s]) => s.size >= 3).sort((a, b) => b[1].size - a[1].size)) {
     const members = [...set], reasons = Object.entries(Object.groupBy(members, c => c.reasonKey || 'none')).sort((a, b) => b[1].length - a[1].length);
     add('teacher', tid, `${name(tid)} 선생님 담당 학생 퇴원 집중`, members, [
-      fact(`teacher-count:${tid}`, `2.0 퇴원율 판정으로 ${name(tid)} 선생님 담당인 퇴원 ${members.length}명(이 비교의 실제 퇴원 ${real.length}명 중)${inactive(tid) ? ' · 현재 재직 아님' : ''}`, `퇴원율 판정으로 이 선생님 담당인 퇴원이 몰림${inactive(tid) ? ' · 이 선생님은 현재 재직 아님' : ''}`, { source: { table: 'users', id: tid }, open: { family: 'staff', id: tid }, counts: { students: members.length, cohort: real.length }, ids: { teacherId: tid } }),
+      fact(`teacher-count:${tid}`, `퇴원율 판정으로 ${name(tid)} 선생님 담당인 퇴원 ${members.length}명(이 비교의 실제 퇴원 ${real.length}명 중)${inactive(tid) ? ' · 현재 재직 아님' : ''}`, `퇴원율 판정으로 이 선생님 담당인 퇴원이 몰림${inactive(tid) ? ' · 이 선생님은 현재 재직 아님' : ''}`, { source: { table: 'users', id: tid }, open: { family: 'staff', id: tid }, counts: { students: members.length, cohort: real.length }, ids: { teacherId: tid } }),
       fact(`teacher-reasons:${tid}`, `사유: ${reasons.map(([k, l]) => `${k === 'none' ? '미기재' : ix.reasonLabel(k)} ${l.length}`).join(' · ')}`, `이 선생님 담당 퇴원의 주된 사유: ${reasons[0][0] === 'none' ? '미기재' : ix.reasonLabel(reasons[0][0])}`),
     ], { teacherIds: [tid] });
   }
@@ -78,8 +78,23 @@ export function buildClusters(cases, ix, { amountOf = () => 0 } = {}) {
   // 5 grade · 6 siblings · 7 classmates · 8 moves · 9 other academies
   for (const [grade, list] of Object.entries(Object.groupBy(left.filter(c => c.grade), c => c.grade)).filter(([, l]) => l.length >= 3 && l.length >= left.length * 0.2))
     add('grade', grade, `${grade} 학년 집중`, list, [fact(`grade:${grade}`, `${grade} ${list.length}명(이 비교의 퇴원 ${left.length}명 중) · 진로·졸업 사유 ${list.filter(c => ['career', 'graduated'].includes(c.reasonKey)).length}명`, '같은 학년 학생의 퇴원이 몰림', { counts: { students: list.length, cohort: left.length } })]);
+  // 형제마다 누가·언제·무슨 사유로(원장 10-28 "이게 무슨 말이야? … 이해를 못하겠는데" — 인원만 적은 근거로는 AI 정리도 제목을 되풀이할 뿐이었다).
+  // 화면 근거엔 이름, AI에 넘기는 문장엔 이름 없이 간격·사유만.
   const sib = left.filter(c => c.siblingsLeft.length);
-  if (sib.length) add('siblings', 'all', '형제 동반 퇴원', sib, [fact('siblings', `형제와 같은 시기(31일 안)에 퇴원한 학생 ${sib.length}명`, '형제가 같은 시기에 함께 그만둠', { counts: { students: sib.length } })]);
+  if (sib.length) {
+    // 이 비교 밖의 형제도 사례 파일과 같은 정리 함수로(원본 사유 글자를 그대로 쓰면 '미기재'로 보인다).
+    const reasonOf = s => cases.find(c => c.studentId === s)?.reasonKey ?? ix.normalizeReason(ix.studentById.get(s)?.withdrawal_metadata?.reason);
+    const day = d => (d ? `${Number(d.slice(5, 7))}/${Number(d.slice(8, 10))}` : '날짜 미기재');
+    const groups = new Map();
+    for (const c of sib) { const ids = uniq([c.studentId, ...c.siblingsLeft]).sort(); groups.set(ids.join(','), ids); }
+    const named = [...groups.values()].map(ids => ids.map(id => ({ name: ix.studentById.get(id)?.name || '이름 없음', date: ix.exitOf(id)?.date || '', reason: reasonOf(id) ? ix.reasonLabel(reasonOf(id)) : '사유 미기재' })).sort((a, b) => a.date.localeCompare(b.date)));
+    const facts = named.map((rows, i) => {
+      const dates = rows.map(r => r.date).filter(Boolean), gap = dates.length > 1 ? Math.round((Date.parse(dates.at(-1)) - Date.parse(dates[0])) / 86_400_000) : 0;
+      return fact(`siblings:${[...groups.keys()][i]}`, `${rows.map(r => `${r.name} ${day(r.date)} 퇴원 · ${r.reason}`).join(' / ')}`,
+        `형제 ${rows.length}명이 ${gap ? `${gap}일 사이에` : '같은 날'} 함께 퇴원함 · 기록된 퇴원 사유: ${uniq(rows.map(r => r.reason)).join(', ')}`, { counts: { students: rows.length } });
+    });
+    add('siblings', 'all', named.length === 1 ? `${named[0].map(r => r.name).join('·')} 형제 함께 퇴원` : `형제가 함께 퇴원한 가족 ${named.length}곳`, sib, facts);
+  }
   const classChains = new Map();
   for (const c of left) for (const f of c.facts.filter(f => f.kind === 'classmates')) { const e = classChains.get(f.ids.classId) ?? classChains.set(f.ids.classId, { members: new Set(), all: new Set() }).get(f.ids.classId); e.members.add(c); e.all.add(c.studentId); f.ids.studentIds.forEach(id => e.all.add(id)); }
   for (const [cid, e] of [...classChains].filter(([, e]) => e.members.size >= 2 && e.all.size >= 3))
@@ -90,7 +105,7 @@ export function buildClusters(cases, ix, { amountOf = () => 0 } = {}) {
   if (rival.length >= 2) add('competitor', 'all', '다른 학원으로 이동', rival, [fact('competitor', `타 학원 이동 ${rival.length}명 · ${Object.entries(Object.groupBy(rival, c => c.detailKey || 'none')).map(([k, l]) => `${k === 'none' ? '세부 미기재' : ix.detailLabel(k)} ${l.length}`).join(' · ')}`, '다른 학원으로 옮긴 학생이 있음', { counts: { students: rival.length } })]);
   // 10 bulk clean-ups (re-timed) · 11 not withdrawn (hold / enrolled without a bill)
   const bulk = cases.filter(c => c.exit.kind === 'cleanup');
-  if (bulk.length) add('cleanup', 'all', '일괄 정리(이탈 달 추정)', bulk, [fact('cleanup', `일괄 정리로 퇴원 처리된 학생 ${bulk.length}명 · 실제 이탈 달은 청구·출석으로 추정${bulk.some(c => c.exit.v2BookkeepingOnly) ? ` · 그중 ${bulk.filter(c => c.exit.v2BookkeepingOnly).length}명은 2.0 화면에서 퇴원으로 세지 않음` : ''}`, '일괄 정리로 퇴원 처리되어 사유 기록이 없음', { counts: { students: bulk.length } })]);
+  if (bulk.length) add('cleanup', 'all', '일괄 정리(이탈 달 추정)', bulk, [fact('cleanup', `일괄 정리로 퇴원 처리된 학생 ${bulk.length}명 · 실제 이탈 달은 청구·출석으로 추정${bulk.some(c => c.exit.v2BookkeepingOnly) ? ` · 그중 ${bulk.filter(c => c.exit.v2BookkeepingOnly).length}명은 수업 기록이 없는 장부 정리라 퇴원 통계에서 빠짐` : ''}`, '일괄 정리로 퇴원 처리되어 사유 기록이 없음', { counts: { students: bulk.length } })]);
   const kept = cases.filter(c => ['on_hold', 'enrolled', 'other'].includes(c.exit.kind));
   if (kept.length) add('not_left', 'all', '퇴원 아님(휴원·재원 · 뒤 달 청구 없음)', kept, [fact('not_left', `휴원 ${kept.filter(c => c.exit.kind === 'on_hold').length}명 · 재원 ${kept.filter(c => c.exit.kind === 'enrolled').length}명 · 그 밖 ${kept.filter(c => c.exit.kind === 'other').length}명`, '퇴원하지 않고 휴원했거나 재원 중이지만 청구가 없음', { counts: { students: kept.length } })]);
   // Same members as a cluster of a more specific kind (a closed class's chain = that teacher's closure) → keep the specific one.

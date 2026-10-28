@@ -82,8 +82,8 @@ const server=createServer(async(req,res)=>{
  if(path===assistant.path){try{await assistant.handle(req,res);}catch{if(!res.headersSent)reject(500,'로컬 비서를 실행하지 못했습니다.');}return;}
  if(flowRoute.handles(path)){try{await flowRoute.handle(req,res,path);}catch{if(!res.headersSent)reject(500,'업무 흐름을 처리하지 못했습니다.');}return;}
  if(insightRoute.handles(path)){try{insightRoute.handle(req,res);}catch{if(!res.headersSent)reject(500,'이탈 분석을 처리하지 못했습니다.');}return;}
- if(v2HostRoute.handles(path)){try{await v2HostRoute.handle(req,res,path);}catch{if(!res.headersSent)reject(500,'2.0 화면 파일을 읽지 못했습니다.');}return;}
- if(v2ScreenRoute.handles(path)){try{await v2ScreenRoute.handle(req,res,path);}catch{if(!res.headersSent)reject(500,'2.0 화면을 불러오지 못했습니다.');}return;}
+ if(v2HostRoute.handles(path)){try{await v2HostRoute.handle(req,res,path);}catch{if(!res.headersSent)reject(500,'화면 파일을 읽지 못했습니다.');}return;}
+ if(v2ScreenRoute.handles(path)){try{await v2ScreenRoute.handle(req,res,path);}catch{if(!res.headersSent)reject(500,'화면을 불러오지 못했습니다.');}return;}
  // JSON endpoints answer their own method errors; cross-site requests still fall through to the guards below.
  if(req.headers['sec-fetch-site']!=='cross-site'){try{if(handleWorkspaceRecords(req,res,headers))return;}catch{if(!res.headersSent)reject(500,'기록을 읽지 못했습니다.');return;}}
  if(!['GET','HEAD'].includes(req.method)){reject(405,'Read-only preview');return;}

@@ -165,7 +165,7 @@ window.AxCatalog = {
      "mode": "preview",
      "draft": {
       "title": "일일 브리핑",
-      "body": "2.0의 일일 브리핑 생성은 현재 꺼져 있습니다. 이 화면의 이슈 정리로 대신 봅니다."
+      "body": "일일 브리핑 생성은 현재 꺼져 있습니다. 이 화면의 이슈 정리로 대신 봅니다."
      },
      "fields": [],
      "result": {
@@ -374,7 +374,7 @@ window.AxCatalog = {
      "mode": "preview",
      "draft": {
       "title": "할 일 목록",
-      "body": "2.0 할 일은 기록이 바뀌면 저절로 닫힙니다. 여기서는 종류와 상태로 거른 목록을 봅니다."
+      "body": "자동 할 일은 기록이 바뀌면 저절로 닫힙니다. 여기서는 종류와 상태로 거른 목록을 봅니다."
      },
      "fields": [
       {
@@ -562,7 +562,7 @@ window.AxCatalog = {
    "group": "수업",
    "groupId": "class",
    "page": "workspace-onescreen",
-   "summary": "선생님이 수업보고서를 쓰고 보내며 출결·공지·보강까지 한곳에서 마감하는 화면(2.0 원스크린)을 봅니다.",
+   "summary": "선생님이 수업보고서를 쓰고 보내며 출결·공지·보강까지 한곳에서 마감하는 화면을 봅니다.",
    "viewKind": "sheet",
    "facets": [
     {
@@ -625,7 +625,7 @@ window.AxCatalog = {
      "mode": "preview",
      "draft": {
       "title": "AI 멘트 미리보기",
-      "body": "이 시안은 외부 AI를 부르지 않습니다. 2.0의 자동작성 입력 칸을 확인하는 양식입니다."
+      "body": "이 화면은 AI를 부르지 않습니다. 자동작성에 들어가는 입력 칸을 확인하는 양식입니다."
      },
      "fields": [
       {
@@ -7921,7 +7921,7 @@ window.AxCatalog = {
    "group": "역할별 화면",
    "groupId": "roles",
    "page": "workspace-student-portal",
-   "summary": "학생이 보는 내 학습 화면을 미리 봅니다(2.0은 데모 데이터).",
+   "summary": "학생이 보는 내 학습 화면을 미리 봅니다(예시 데이터).",
    "viewKind": "report",
    "facets": [
     {
@@ -7946,7 +7946,7 @@ window.AxCatalog = {
      },
      "draft": {
       "title": "학생 화면 미리보기",
-      "body": "학생 화면 구성을 봅니다. 2.0은 실제 학생 데이터가 아닌 데모 데이터로 그립니다."
+      "body": "학생 화면 구성을 봅니다. 실제 학생 데이터가 아닌 예시 데이터로 그립니다."
      },
      "fields": [],
      "result": {

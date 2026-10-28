@@ -25,17 +25,18 @@
 .xi-totals>div+div{border-left:1px solid var(--ax-line)}
 .xi-totals span{font-size:var(--ax-xs,14px)}
 .xi-totals strong{font-size:var(--ax-xl,24px);font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
-.xi-totals strong.neg,.xi-bar.neg strong{color:var(--ax-danger,#a12f2f)}
+/* 청구 증가(좋아짐) = 빨강 · 감소(나빠짐) = 파랑(원장 10-28 "긍정적인건 빨간색으로, 부정적인건 파란색으로") */
+.xi-totals strong.neg,.xi-bar.neg strong{color:var(--ax-bad,#1f5fbf)}.xi-totals strong.pos,.xi-bar.pos strong{color:var(--ax-good,#c62828)}
 .xi-bars{display:flex;flex-direction:column;gap:6px;outline-offset:4px}
 .xi-bar{display:grid;grid-template-columns:minmax(0,15em) minmax(80px,1fr) 9.5em 7em;gap:10px;align-items:center;min-height:34px;padding:2px 4px;border-radius:6px;font-size:var(--ax-xs,14px)}
 .xi-bar.head{margin-top:6px;font-weight:700}
 .xi-bar.active{background:var(--ax-soft)}
 .xi-bar-label{min-width:0;overflow-wrap:anywhere}
 .xi-bar-track{position:relative;height:12px;border-radius:3px;background:linear-gradient(to right,transparent calc(50% - .5px),var(--ax-line) calc(50% - .5px),var(--ax-line) calc(50% + .5px),transparent calc(50% + .5px))}
-.xi-bar-track i{position:absolute;top:0;bottom:0;min-width:2px;border-radius:3px;background:#7f93c4}
-.xi-bar.neg .xi-bar-track i{background:#c98585}
-.xi-bar.head .xi-bar-track i{background:#5d72ad}
-.xi-bar.head.neg .xi-bar-track i{background:#a85c5c}
+.xi-bar-track i{position:absolute;top:0;bottom:0;min-width:2px;border-radius:3px;background:#e09a9a}
+.xi-bar.neg .xi-bar-track i{background:#8fa8d8}
+.xi-bar.head .xi-bar-track i{background:#c94c4c}
+.xi-bar.head.neg .xi-bar-track i{background:#4a6fb8}
 .xi-bar strong{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
 .xi-ai-line{display:flex;flex-wrap:wrap;align-items:center;gap:8px;font-size:var(--ax-xs,14px)}
 .xi-overall{padding:14px 16px;border:1px solid #bccce0;border-radius:8px;background:#f8fafd;gap:8px}

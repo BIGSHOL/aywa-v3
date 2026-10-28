@@ -8,7 +8,7 @@ window.V2Screens = (() => {
   'use strict';
   const screens = new Map(), cache = new Map();
   let api = null, index = null;
-  const COPY_NOTE = '연습용 복사본(Docker)에 저장됩니다. 2.0 운영 데이터와 실제 발송(ClassNote·알림톡·슬랙)에는 닿지 않습니다.';
+  const COPY_NOTE = '연습용 복사본에 저장됩니다. 운영 데이터와 실제 발송(ClassNote·알림톡·슬랙)에는 닿지 않습니다.';
   const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const parse = page => { const m = /^v2-([a-z][a-z0-9-]{0,30})(?:\?(.*))?$/.exec(page || ''); return m ? { id: m[1], query: new URLSearchParams(m[2] || '') } : null; };
   const current = () => parse(location.hash.slice(1));
@@ -57,7 +57,7 @@ window.V2Screens = (() => {
   function sidebar(page) {
     const list = (index || []).filter(s => screens.has(s.id)); if (!list.length) return '';
     const active = parse(page)?.id;
-    return `<div class="nav-group">2.0 화면</div>${list.map(s => `<a class="nav-item ${active === s.id ? 'active' : ''}" href="#v2-${esc(s.id)}" ${active === s.id ? 'aria-current="page"' : ''}><span>${esc(s.label)}</span></a>`).join('')}`;
+    return `<div class="nav-group">업무 화면</div>${list.map(s => `<a class="nav-item ${active === s.id ? 'active' : ''}" href="#v2-${esc(s.id)}" ${active === s.id ? 'aria-current="page"' : ''}><span>${esc(s.label)}</span></a>`).join('')}`;
   }
   function bind(a) {
     api = a;

@@ -11,7 +11,8 @@
 .ws-metric span{font-size:var(--ax-xs)}
 .ws-metric strong{font-size:var(--ax-xl);font-weight:700;line-height:1.25;color:var(--ax-primary);font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
 .ws-metric small{font-size:var(--ax-xs);overflow-wrap:anywhere}
-.ws-kpi-change{font-weight:600}.ws-kpi-change.good{color:var(--ax-positive)}.ws-kpi-change.bad{color:var(--ax-danger)}
+.ws-kpi-title{display:flex;align-items:baseline;justify-content:space-between;gap:2px 8px;flex-wrap:wrap}.ws-kpi-title em{font-style:normal;font-size:var(--ax-xs);font-weight:600;white-space:nowrap}
+.ws-kpi-change{font-weight:600}.ws-kpi-change.good{color:var(--ax-good)}.ws-kpi-change.bad{color:var(--ax-bad)} /* 좋아짐 = 빨강 · 나빠짐 = 파랑(원장 10-28) */
 .ws-kpi-spark{display:flex;height:40px;margin-top:2px}.ws-kpi-spark .chart-line{flex:1 1 auto}
 .ws-kpi-basis{grid-column:1/-1;margin:0;font-size:var(--ax-xs);color:var(--ax-ink)}
 .ws-trend{min-width:0;padding:14px 16px;border:1px solid var(--ax-line);border-radius:8px}

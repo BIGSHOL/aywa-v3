@@ -51,7 +51,7 @@ export async function supportFamilies({ sql, t, asOf, month, monthStart, subject
     metrics: [metric('재직 강사', teachers.length, '명'), metric('영어 화면 강사', teachers.filter(x => x.lang === 'en').length, '명'), metric('보고서 이름 지정', teachers.filter(x => x.custom_name).length, '명'), metric("이번 달 '다른 강사 뷰' 열람", tw.views, '회'), metric('수업 위임 기록', tw.delegations, '건')],
     evidence: teachers.map(x => record({ id: x.id, label: x.display_name, status: x.lang === 'en' ? 'English 화면' : '한국어 화면', fields: [field('담임 반', x.classes), field('보고서 이름', x.custom_name ? '지정함' : '기본')], facets: [`lang:${x.lang}`, x.classes ? 'has-classes' : 'no-classes'] })),
     facetLabels: { 'lang:ko': '한국어 화면', 'lang:en': 'English 화면', 'has-classes': '담임 반 있음', 'no-classes': '담임 반 없음' }, recordSource: 'users',
-    sourceLabel: '강사 계정 설정 · 강사뷰 열람 기록 · 수업 위임', coverageNote: '근거 목록은 재직 강사 전체입니다. 2.0 강사뷰에는 원장 요청을 받는 수신함이 없어, 이 화면의 수신함은 시안 안에서만 동작하는 미리보기입니다.',
+    sourceLabel: '강사 계정 설정 · 강사뷰 열람 기록 · 수업 위임', coverageNote: '근거 목록은 재직 강사 전체입니다. 강사뷰의 원장 요청 수신함은 아직 미리보기입니다.',
     sources: [{ table: 'users', rows: teachers.length }, { table: 'class_delegations', rows: tw.delegations }],
   });
 

@@ -22,7 +22,7 @@ export const JOURNAL = new URL('v2-writes.jsonl', fullDbRoot);
 export class V2Error extends Error { constructor(status, code, message) { super(message); this.status = status; this.code = code; } }
 const DB_REFUSAL = {
   23505: '이미 같은 기록이 있어 저장하지 않았습니다.', 23503: '이어진 기록이 없어 저장하지 않았습니다.', 23502: '빠진 값이 있어 저장하지 않았습니다.',
-  23514: '값이 2.0 규칙에 맞지 않아 저장하지 않았습니다.', '23P01': '같은 기간의 기록과 겹쳐 저장하지 않았습니다.', 42501: '2.0이 막아 둔 기록이라 저장하지 않았습니다.',
+  23514: '값이 규칙에 맞지 않아 저장하지 않았습니다.', '23P01': '같은 기간의 기록과 겹쳐 저장하지 않았습니다.', 42501: '수정이 막힌 기록이라 저장하지 않았습니다.',
 };
 const refusal = e => e instanceof V2Error ? e
   : DB_REFUSAL[e?.code] ? new V2Error(409, 'db_refused', DB_REFUSAL[e.code])
