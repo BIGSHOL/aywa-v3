@@ -86,7 +86,7 @@ test('매개변수는 정해진 값만 받는다(나머지는 공통 틀이 400)
   assert.equal(screen.id, 'attendance'); assert.equal(screen.order, 4); assert.equal(screen.label, '출석부');
   assert.deepEqual(Object.keys(screen.actions).sort(), ['cancelMakeupReservation', 'clearSeatPeriodChoices', 'commitSeatJjEdits', 'fillSeatPrevAbsent', 'fillSeatSlot', 'generateRecapSummary', 'getMakeupPeriodOptions',
     'moveSeatStudentPeriod', 'previewAbsenceIntake', 'pullSeatMemorizedWords', 'recordAbsenceIntake', 'recordFollowup', 'requestAttendanceInput', 'reserveMakeup', 'resetSeatPlacements', 'saveAttendanceCollapsed', 'saveAttendanceHideRetired', 'saveAttendancePeriodMode', 'saveAttendanceSort',
-    'saveLiveSubjectFilter', 'saveSeatMonthlyCollapsed', 'searchAttendanceHubStudents', 'searchIntakeStudents', 'setAttendanceBulk', 'setAttendanceCell', 'setSeatCell', 'setSeatJjField']);
+    'saveLiveSubjectFilter', 'saveSeatMonthlyCollapsed', 'searchAttendanceHubStudents', 'searchIntakeStudents', 'setAttendanceBulk', 'setAttendanceCell', 'setAttendanceRange', 'setSeatCell', 'setSeatJjField']);
 });
 
 test('아직 옮기지 않은 조회 셋은 그 함수의 2.0 실패 모양으로 답한다(부품이 결과를 읽다 깨지지 않게 · 쓰기 없음)', async () => {
@@ -589,6 +589,122 @@ test('저장(복사본, 되돌림): 보강 예약 창·취소 — 교시 선택�
   const after = await db`select (select count(*)::int from public.audit_logs) audits, (select count(*)::int from public.makeup_reservations) resv`;
   assert.deepEqual([after[0].audits, after[0].resv], [before[0].audits, before[0].resv], 'rolled back — the copy is unchanged');
 });
+
+test('범위 채우기: 입력은 2.0 인자 모양만 받고, 빗금 칸 옮기기는 아직 받지 않는다(바뀌는 것 없음)', () => {
+  const v = (args, actor = CLASS, module = ACTIONS) => screen.actions.setAttendanceRange.validate({ module, actor, args });
+  const cellsOf = (...xs) => xs.map(d => ({ studentId: STUDENT, classId: CLASS, sessionDate: d }));
+  assert.throws(() => v([{ cells: cellsOf('2026-10-26'), status: 'present' }], 'x'), /저장하는 사람을 먼저 고르세요/);
+  assert.throws(() => v([{ cells: cellsOf('2026-10-26'), status: 'present' }], CLASS, PREFS), /입력 값/);
+  assert.throws(() => v([{ cells: cellsOf('2026-10-26'), status: 'present' }, {}]), /입력 값/);
+  assert.throws(() => v([{ cells: cellsOf('2026-10-26'), status: 'gone' }]), /잘못된 상태/);
+  assert.throws(() => v([{ cells: cellsOf('2026-10-26'), status: 'present', units: 1 }]), /입력 값/);
+  assert.throws(() => v([{ cells: cellsOf('2026-10-26'), status: 'present', scopeClassIds: 'x' }]), /입력 값/);
+  assert.throws(() => v([{ cells: [{ ...cellsOf('2026-10-26')[0], ghost: true }], status: 'present' }]), e => e.code === 'not_in_copy' && /아직 지원하지 않는 저장/.test(e.message));
+  assert.deepEqual(v([{ cells: cellsOf('2026-10-26'), status: null, units: '', quiet: true }]).status, null);
+});
+
+test('저장(복사본, 되돌림): 범위 채우기·지우기 — 새 칸·덮어쓰기·상태만·지우기(이력 행까지) · 강사 게이트 · 강사 보기 자리 행 보존 · 예약 이행이 2.0과 같은 행·감사로그', { skip: !db && 'local database not running' }, async () => {
+  const before = await db`select (select count(*)::int from public.audit_logs) audits, (select count(*)::int from net.http_request_queue) net`;
+  const LV = await import('./v2-attendance-live.mjs');
+  const TODAY = await A.copyDay(), addDays = (d, n) => new Date(Date.parse(`${d}T00:00:00Z`) + n * 86400000).toISOString().slice(0, 10);
+  const dowOf = d => ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'][new Date(`${d}T00:00:00Z`).getUTCDay()];
+  const D1 = addDays(TODAY, -2), D2 = addDays(TODAY, -1);
+  await inRollback(async ({ sql, run, t }) => {
+    const settings = await A.readSettings(sql, t, R), writers = await LV.attendanceWritersOf(sql, t, R, settings);
+    const [{ teacher_id: homeroom }] = await sql`select teacher_id from public.classes where id=${CLASS}`;
+    const full = writers.find(w => w.level === 'full' && w.id === homeroom) ?? writers.find(w => w.level === 'full'), teacher = writers.find(w => w.level === 'scoped' && w.id !== homeroom);
+    assert.ok(full && teacher);
+    const range = (who, input) => run(sql, 'setAttendanceRange', { module: ACTIONS, actor: who.id ?? who, args: [input] });
+    const cellsOf = (...ds) => ds.map(d => ({ studentId: STUDENT, classId: CLASS, sessionDate: d }));
+    const rows = d => sql`select id::text id, status::text status, session_units::float8 units, slot_start::text slot, seat_label, recorded_by::text by, recorded_via via from public.attendance_records
+      where class_id=${CLASS} and student_id=${STUDENT} and session_date=${d} order by slot_start nulls first, recorded_at desc`;
+    const audits = action => sql`select actor_id::text actor_id, metadata from public.audit_logs where tenant_id=${t} and action=${action} and metadata->>'via'='3.0 연습 복사본' and metadata->'studentIds' ? ${STUDENT}`;
+    await sql`delete from public.attendance_records where class_id=${CLASS} and student_id=${STUDENT} and session_date in (${D1}, ${D2})`;
+    // 기대 자동 시수(독립 SQL) — 그날 그 반 수업 분 → 수학 ceil(분/60)/2, 1이면 저장은 null.
+    const autoOf = async d => {
+      const [{ m }] = await sql`select coalesce(sum(m), 0)::int m from (select start_time, max(extract(epoch from (end_time - start_time)) / 60) m from public.class_schedules
+        where class_id=${CLASS} and day_of_week=${dowOf(d)} and slot_teacher_label is null and valid_from<=${d} and (valid_to is null or valid_to>=${d}) group by start_time) x`;
+      const u = m > 0 ? Math.ceil(m / 60) / 2 : null; return u === 1 ? null : u;
+    };
+    const [a1, a2] = [await autoOf(D1), await autoOf(D2)];
+
+    // 거절 — 저장하는 사람 · 대상 없음 · 한도(2.0 문장).
+    const [outsider] = await sql`select id::text id from public.users where tenant_id=${t} and status='active' and not (id::text = any(${writers.map(w => w.id)}::text[])) limit 1`;
+    assert.deepEqual(await range(outsider, { cells: cellsOf(D1), status: 'present' }), { error: '출석 관리 권한이 없습니다' });
+    assert.deepEqual(await range(full, { cells: [{ studentId: 'x', classId: CLASS, sessionDate: D1 }], status: 'present' }), { error: '기록할 대상이 없습니다' });
+    const many = Array.from({ length: 301 }, (_, i) => ({ studentId: STUDENT, classId: CLASS, sessionDate: addDays('2025-01-01', i) }));
+    assert.deepEqual(await range(full, { cells: many, status: 'present' }), { error: '한 번에 300칸까지만 채울 수 있습니다 — 범위를 좁혀 주세요' });
+
+    // ① 새 칸 채우기(숫자 안 침) — 칸마다 그날 한 행 · 수학 자동 시수 · 같은 칸 두 번은 한 번 · 응답 autoUnits = 저장값.
+    const first = await range(full, { cells: [...cellsOf(D1, D2), ...cellsOf(D1)], status: 'present', quiet: true });
+    assert.deepEqual(first, { ok: true, applied: 2, blocked: 0, autoUnits: [{ studentId: STUDENT, classId: CLASS, sessionDate: D1, units: a1 }, { studentId: STUDENT, classId: CLASS, sessionDate: D2, units: a2 }] });
+    for (const [d, u] of [[D1, a1], [D2, a2]]) assert.deepEqual((await rows(d)).map(r => [r.status, r.units, r.slot, r.by, r.via]), [['present', u, null, full.id, 'teacher']], d);
+    let [log] = await audits('attendance_range');
+    assert.deepEqual([log.actor_id, log.metadata.classId, log.metadata.dates, log.metadata.status, log.metadata.count, log.metadata.created, log.metadata.blocked, log.metadata.backdated],
+      [full.id, CLASS, [D1, D2].sort(), 'present', 2, 2, 0, true]);
+    // ② 덮어쓰기 + 시수 1.5(그날 합계) — 기존 행을 고치고(행이 안 는다) 바뀐 칸 수·전후 합을 적는다.
+    assert.deepEqual(await range(desk(writers, homeroom), { cells: cellsOf(D1, D2), status: 'late', units: '1.5' }), { ok: true, applied: 2, blocked: 0 });
+    for (const d of [D1, D2]) assert.deepEqual((await rows(d)).map(r => [r.status, r.units, r.via]), [['late', 1.5, 'desk']], d);
+    log = (await audits('attendance_range')).find(x => x.metadata.status === 'late');
+    // 시수가 실제로 바뀐 칸만(이미 1.5였던 칸은 빠진다 — 2.0 unitsAuditFields).
+    const changedPrev = [a1 ?? 1, a2 ?? 1].filter(u => u !== 1.5);
+    assert.deepEqual([log.metadata.units, log.metadata.unitsChangedCells, log.metadata.prevUnits, log.metadata.nextUnits, log.metadata.created],
+      changedPrev.length > 0 ? [1.5, changedPrev.length, changedPrev.reduce((s, u) => s + u, 0), 1.5 * changedPrev.length, 0] : [1.5, undefined, undefined, undefined, 0]);
+    // ③ 상태만(숫자 안 침) — 시수는 그대로 · 응답은 칸의 실제 합계(결석 = 0 → null).
+    assert.deepEqual(await range(full, { cells: cellsOf(D1, D2), status: 'absent' }), { ok: true, applied: 2, blocked: 0,
+      autoUnits: [{ studentId: STUDENT, classId: CLASS, sessionDate: D1, units: null }, { studentId: STUDENT, classId: CLASS, sessionDate: D2, units: null }] });
+    assert.deepEqual((await rows(D1)).map(r => [r.status, r.units]), [['absent', 1.5]]);
+    assert.deepEqual((await range(full, { cells: cellsOf(D1), status: 'present' })).autoUnits, [{ studentId: STUDENT, classId: CLASS, sessionDate: D1, units: 1.5 }]);
+    // ④ 지우기 — 그 칸의 모든 행(정정 이력 포함) · 지운 행 수를 적는다.
+    await sql`insert into public.attendance_records (tenant_id, class_id, student_id, session_date, status, recorded_by, recorded_at) values (${t}, ${CLASS}, ${STUDENT}, ${D1}, 'absent', ${full.id}, now() - interval '1 day')`;
+    assert.deepEqual(await range(full, { cells: cellsOf(D1, D2), status: null }), { ok: true, applied: 2, blocked: 0 });
+    assert.deepEqual([(await rows(D1)).length, (await rows(D2)).length], [0, 0]);
+    [log] = await audits('attendance_range_clear');
+    assert.deepEqual([log.metadata.count, log.metadata.rows, log.metadata.classIds, log.metadata.dates], [2, 3, [CLASS], [D1, D2].sort()]);
+
+    // ⑤ 강사(담당 반만) — 그날 담당 반(담임 ∪ 그날 유효한 교시 담당 — 2.0도 요일은 안 본다)의 칸만 · 7일 지난 칸은 그 칸만 건너뜀 · 남의 출석부 보기 거절 · 전부 걸리면 사유.
+    assert.deepEqual(await range(teacher, { cells: cellsOf(D1, D2), status: 'present' }), { error: '담당 반 수강생이 아니어서 기록할 수 없습니다' });
+    const old = addDays(TODAY, -9);
+    assert.deepEqual(await range(teacher, { cells: cellsOf(old), status: 'present' }), { error: R.edit.attendanceLockMessage(old, TODAY) });
+    assert.deepEqual(await range(teacher, { cells: cellsOf(D2), status: 'present', scopeTeacherId: full.id }), { error: R.scopedSplit.SCOPE_INVALID_MESSAGE });
+    await sql`insert into public.class_schedules (tenant_id, class_id, day_of_week, start_time, end_time, valid_from, teacher_id) values (${t}, ${CLASS}, ${dowOf(D2)}, '22:00', '22:40', '2026-09-01', ${teacher.id})`;
+    await sql`delete from public.attendance_records where class_id=${CLASS} and student_id=${STUDENT} and session_date=${old}`;
+    const mixed = await range(teacher, { cells: cellsOf(old, D2), status: 'present' });
+    assert.deepEqual([mixed.ok, mixed.applied, mixed.blocked], [true, 1, 1]);
+    assert.deepEqual([(await rows(old)).length, (await rows(D2)).map(r => [r.status, r.by, r.via])], [0, [['present', teacher.id, 'teacher']]]);
+    await sql`delete from public.attendance_records where class_id=${CLASS} and student_id=${STUDENT} and session_date in (${D1}, ${D2})`;
+
+    // ⑥ 강사 전체 보기(scopeTeacherId) — 그 달에 이 반을 안 맡은 선생님이면 거절 · 자리(랩실) 행은 채우기·지우기 모두 안 건드린다.
+    const [stranger] = await sql`select id::text id from public.users where tenant_id=${t} and system_role='teacher' and status='active' and id not in (select coalesce(teacher_id,'00000000-0000-0000-0000-000000000000') from public.classes where id=${CLASS})
+      and id not in (select teacher_id from public.class_schedules where class_id=${CLASS} and teacher_id is not null) limit 1`;
+    assert.deepEqual(await range(full, { cells: cellsOf(D1), status: 'present', scopeTeacherId: stranger.id }), { error: R.scopedSplit.SCOPE_NOT_TAUGHT_MESSAGE });
+    await sql`insert into public.class_schedules (tenant_id, class_id, day_of_week, start_time, end_time, valid_from, slot_teacher_label) values (${t}, ${CLASS}, ${dowOf(D1)}, '21:00', '21:40', '2026-09-01', 'LAB')`;
+    await sql`insert into public.attendance_records (tenant_id, class_id, student_id, session_date, slot_start, status, seat_label, recorded_by, recorded_via) values (${t}, ${CLASS}, ${STUDENT}, ${D1}, '21:00', 'late', 'LAB', ${full.id}, 'seat')`;
+    const scoped = await range(full, { cells: cellsOf(D1), status: 'present', scopeTeacherId: homeroom });
+    assert.equal(scoped.ok, true);
+    const seatRow = async () => (await rows(D1)).find(r => r.seat_label === 'LAB');
+    assert.deepEqual([(await seatRow()).status, (await seatRow()).via], ['late', 'seat'], 'the lab row keeps its status');
+    assert.ok((await rows(D1)).some(r => r.seat_label === null && r.status === 'present'), 'the teacher gets an own row');
+    assert.deepEqual(await range(full, { cells: cellsOf(D1), status: null, scopeTeacherId: homeroom }), { ok: true, applied: 1, blocked: 0 });
+    assert.deepEqual((await rows(D1)).map(r => [r.seat_label, r.status]), [['LAB', 'late']], 'clearing in a teacher view leaves the lab row');
+    log = (await audits('attendance_range_clear')).find(x => x.metadata.scopeTeacherId === homeroom);
+    assert.equal(log.metadata.skippedSeatRows, 1);
+    await sql`delete from public.attendance_records where class_id=${CLASS} and student_id=${STUDENT} and session_date in (${D1}, ${D2})`;
+
+    // ⑦ 보강 예약 — 범위로 찍으면 이행, 범위로 지우면 되돌림(2.0 completeMakeupReservations).
+    const [resv] = await sql`insert into public.makeup_reservations (tenant_id, student_id, class_id, absence_date, makeup_date, slot_start, slot_end, status)
+      values (${t}, ${STUDENT}, ${CLASS}, ${addDays(TODAY, -6)}, ${D2}, '16:20', '17:15', 'reserved') returning id::text id`;
+    const resvStatus = async () => (await sql`select status from public.makeup_reservations where id=${resv.id}`)[0].status;
+    await range(full, { cells: cellsOf(D2), status: 'present' });
+    assert.equal(await resvStatus(), 'done');
+    await range(full, { cells: cellsOf(D2), status: null });
+    assert.equal(await resvStatus(), 'reserved');
+    assert.equal((await sql`select count(*)::int n from net.http_request_queue`)[0].n, before[0].net);
+  });
+  assert.equal((await db`select count(*)::int n from public.audit_logs`)[0].n, before[0].audits, 'rolled back — the copy is unchanged');
+});
+/** 담임이 아닌 출결 전체 권한 직원(쓰는 문 'desk'). */
+const desk = (writers, homeroom) => writers.find(w => w.level === 'full' && w.id !== homeroom && w.role !== 'master') ?? writers.find(w => w.level === 'full' && w.id !== homeroom);
 
 test('저장(복사본, 되돌림): 보기 설정 4종 = 2.0 prefs-actions — 그 사람의 ui_prefs.attendance만, 다른 화면 설정은 그대로', { skip: !db && 'local database not running' }, async () => {
   const before = await db`select (select count(*)::int from net.http_request_queue) net`;

@@ -14,6 +14,8 @@
 //      features/attendance/server/actions.ts      setAttendanceCell   → actions.setAttendanceCell (그날 칸 · 교시 지정 칸(slotStart) · 당일 출결
 //                                                 source 'live' 데스크 게이트 · 강사(담당 반만) 게이트 · attendance_cell/_clear/_note)
 //                                                 setAttendanceBulk   → actions.setAttendanceBulk (빈 칸만 · 교시 · 데스크 게이트 · attendance_bulk)
+//                                                 setAttendanceRange  → actions.setAttendanceRange (v2-attendance-range.mjs — 범위 채우기·지우기 ·
+//                                                 강사 보기 몫 · 자리 행 보존 · attendance_range/_range_clear · 빗금 칸 옮기기는 아직 없음)
 //      server/makeup-reservation-complete.ts completeMakeupReservations → 위 두 저장과 자리 저장이 쓰고 나서 같은 자리에서 부른다
 //                                                 (v2-attendance-makeup.mjs — 옛 예약 갈래: 이행·되돌림 · makeup_reserve_done/_revert).
 //                                                 2.0과 다른 점: 새 보강 체계(보강관리 켜짐·정리 중)인 학원의 보강 예약 칸은 그 연결 갈래를
@@ -27,7 +29,7 @@
 //                                                 recordAbsenceIntake → actions.같은 이름 — 아직 옮기지 않아 **그 함수의 2.0 실패 모양**으로
 //                                                 답한다(쓰기 없음). shim 공통 거절 `{ok:false}`로는 부품이 결과를 읽다 깨진다.
 //      아직 받지 않는 것(shim이 '복사본 보기 전용' `{ok:false,error}`로 거절 — 부르는 2.0 부품이 모두 `"error" in res`로 읽는다):
-//        actions.ts setAttendanceRange(범위 지우기·채우기) · saveAttendance · linkMakeupToAbsence · searchMakeupStudents
+//        actions.ts saveAttendance · linkMakeupToAbsence · searchMakeupStudents
 //        makeup-reservation-actions.ts setReservationReportMode · moveReservationToRegular · checkMakeupReservation(원스크린이 부른다)
 //        prefs-actions.ts loadAttendanceViewPrefs(서버 전용 — load가 같은 값)
 //  · 하위 주소(v2path) — 2.0 `/attendance/seat/<자리>`(자리 하루: SeatAllDay·SeatJjAllDay·SeatBoard) · `…/month`(자리 월간: MonthlyTable) ·
@@ -73,6 +75,7 @@ import { loadSeatRules, seatDayProps, seatMonthProps, copyClock } from './v2-att
 import * as SeatSave from './v2-attendance-seat-save.mjs';
 import * as LiveSave from './v2-attendance-live-save.mjs';
 import * as Reserve from './v2-attendance-reserve.mjs';
+import * as Range from './v2-attendance-range.mjs';
 import { loadMakeupRules, completeMakeupReservations, nativeMakeupsOn, completionKey } from './v2-attendance-makeup.mjs';
 import { loadLiveRules, quickProps, liveProps, pollFingerprint, attendanceWritersOf, readTaughtClassSet } from './v2-attendance-live.mjs';
 
@@ -812,7 +815,7 @@ function cellBody(raw) {
   if (input.scopeTeacherId !== undefined && input.scopeTeacherId !== null && (typeof input.scopeTeacherId !== 'string' || !UUID.test(input.scopeTeacherId))) throw bad();
   for (const k of ['noteOnly', 'quiet', 'onlyIfEmpty', 'allowMakeup', 'ghostTransfer']) if (input[k] !== undefined && typeof input[k] !== 'boolean') throw bad();
   if (input.onlyIfEmpty || input.allowMakeup || input.ghostTransfer) {
-    throw new V2Error(409, 'not_in_copy', '이 저장(보강 추가·다른 선생님 교시로 옮기기 등)은 연습 화면에서 아직 지원하지 않습니다. 바뀐 것은 없습니다.');
+    throw new V2Error(409, 'not_in_copy', '보강 추가·다른 선생님 교시로 옮기기는 연습 화면에서는 아직 지원하지 않는 저장입니다. 바뀐 것은 없습니다.');
   }
   // 교시 지정(0196a "HH:MM[:SS]") · 화면 교시(데스크 10분 판정) · 당일 출결 화면(source 'live' — 데스크 게이트).
   const time = v => { if (v === undefined || v === null) return null; if (typeof v !== 'string' || !/^\d{2}:\d{2}(:\d{2})?$/.test(v)) throw bad(); return v; };
@@ -1324,6 +1327,17 @@ const prefs = (check, update) => ({ validate: prefsBody(check), run: async ({ sq
 screen.actions = {
   setAttendanceCell: { validate: cellBody, run: async ({ sql, body, tenantId, importV2 }) => setCell(sql, tenantId, body, await loadRules(importV2), await loadLiveRules(importV2), await loadMakeupRules(importV2)) },
   setAttendanceBulk: { validate: bulkBody, run: async ({ sql, body, tenantId, importV2 }) => setBulk(sql, tenantId, body, await loadRules(importV2), await loadLiveRules(importV2), await loadMakeupRules(importV2)) },
+  // 범위 채우기·지우기(2.0 setAttendanceRange — v2-attendance-range.mjs). 저장하는 사람 = 출결을 쓸 수 있는 직원(아니면 2.0 실패 모양).
+  setAttendanceRange: {
+    validate: Range.rangeBody,
+    run: async ({ sql, body, tenantId, importV2 }) => {
+      const [R, M] = await Promise.all([loadRules(importV2), loadMakeupRules(importV2)]);
+      const [settings, today] = await Promise.all([readSettings(sql, tenantId, R), copyDay()]);
+      const actor = await attendanceWriterOf(sql, tenantId, R, settings, body.actor);
+      if (!actor) return { error: '출석 관리 권한이 없습니다' };
+      return Range.setAttendanceRange({ sql, t: tenantId, R, M, settings, today, actor, h: { writeViaOf, autoUnitsOf, audit, RESERVATION_CELL } }, body);
+    },
+  },
   saveAttendanceSort: prefs(v => typeof v === 'string' && v.length <= 20, (R, prev, v) => ({ ...prev, sort: R.sort.parseAttendanceSortKey(v) })),
   saveAttendancePeriodMode: prefs(v => typeof v === 'string' && v.length <= 20, (R, prev, v) => ({ ...prev, periodMode: R.viewPrefs.parsePeriodMode(v) })),
   saveAttendanceHideRetired: prefs(v => typeof v === 'boolean', (R, prev, v) => ({ ...prev, hideRetired: v !== false })),
