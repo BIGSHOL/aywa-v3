@@ -6,7 +6,7 @@
   'use strict';
   const ID = 'enrollment', LABEL = '신규 콜&상담', HOST = `/v2-host/${ID}.html`, S = window.V2Screens; if (!S) return;
   // 2.0 page.tsx가 읽는 주소 열쇠 그대로 + v2path(2.0 하위 경로).
-  const KEEP = ['v2path', 'view', 'month', 'consultant', 'q', 'outcome', 'page', 'range', 'year', 'received', 'from',
+  const KEEP = ['v2path', 'form', 'view', 'month', 'consultant', 'q', 'outcome', 'page', 'range', 'year', 'received', 'from',
     'trend', 'trendMonth', 'trendFrom', 'trendTo', 'trendSpan', 'pg', 'pgMonth', 'pgFrom', 'pgTo', 'pgSpan'];
   let api = null, frame = null, requested = null, hostOk = null, wired = false, editors = [], actor = null;
   const ACTOR_KEY = `v2-host-actor:${ID}`, SEL = `[data-v2-screen="${ID}"]`;

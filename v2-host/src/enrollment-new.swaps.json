@@ -1,0 +1,9 @@
+{
+ "page": [
+  [
+   "export default async function NewEnrollmentPage({\n  searchParams,\n}: {\n  searchParams: Promise<{ form?: string }>;\n}) {\n  const viewer = await requireAccess(\"enrollment\");\n  // 작성 화면 한 벌 = `form` — 녹음이 걸린 상담이 있을 때 연 새 작성 화면(recording-resume.ts). 같은 주소에서 쿼리만\n  // 바뀌면 Next가 폼을 그대로 두므로 key로 갈라 새로 그린다.\n  const { form } = await searchParams;\n  // 소개한 사람 칸(0362a)이 DB에 있을 때만 그린다(#95) — 행을 받지 않는 확인 한 번.\n  const referrerReady = await referrerColumnsReady((await createClient()) as unknown as SupabaseClient);",
+   "export function NewEnrollmentPage({\n  data,\n  sp: searchParams,\n}: {\n  data: EnrollmentNewData;\n  sp: { form?: string };\n}) {\n  const viewer = data.viewer;\n  const { form } = searchParams;\n  const referrerReady = data.referrerReady;"
+  ]
+ ],
+ "removed": []
+}

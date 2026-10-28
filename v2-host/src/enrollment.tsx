@@ -1,5 +1,5 @@
 // 2.0 부품 호스트 — 신규 콜&상담 진입점(작업자 v2-enrollment). 3.0 `#v2-enrollment`가 같은 출처 iframe(/v2-host/enrollment.html?…)으로 연다.
-// 2.0 주소: /enrollment(칸반 · 목록 · 통계 — enrollment-page.tsx) · /enrollment/<id>(상세 — enrollment-detail.tsx) · /enrollment/<id>/edit(수정 — enrollment-edit.tsx).
+// 2.0 주소: /enrollment(칸반 · 목록 · 통계 — enrollment-page.tsx) · /enrollment/new(새 상담 — enrollment-new.tsx) · /enrollment/<id>(상세 — enrollment-detail.tsx) · /enrollment/<id>/edit(수정 — enrollment-edit.tsx).
 // 데이터 = /api/v2/enrollment?…(Docker 복사본, v2-screen-enrollment.mjs) — 2.0 서버 컴포넌트가 부품에 넘기던 값.
 // 저장하는 사람 = 3.0 띠에서 고른 직원 — 끌기·칸 수정 권한이 그 사람의 것이라 조회에도 싣는다(?actor=).
 import { createRoot } from 'react-dom/client';
@@ -13,12 +13,13 @@ import { HostFrame, HostMessage } from './host-frame';
 import { EnrollmentPage, type EnrollmentListData } from './enrollment-page';
 import { EnrollmentDetailPage, type EnrollmentDetailData } from './enrollment-detail';
 import { EditEnrollmentPage, type EnrollmentEditData } from './enrollment-edit';
+import { NewEnrollmentPage, type EnrollmentNewData } from './enrollment-new';
 
 export const HOST_TITLE = '신규 콜&상담';
 export const HOST_ROUTE = '/enrollment';
 const SCREEN = 'enrollment';
 
-type Base = { editors: HostEditor[]; operations: Record<string, unknown>; modules: { disabled: string[] }; page: 'list' | 'detail' | 'edit' | 'redirect' | 'missing' | 'noMenu' | 'notFound'; to?: string };
+type Base = { editors: HostEditor[]; operations: Record<string, unknown>; modules: { disabled: string[] }; page: 'list' | 'detail' | 'edit' | 'new' | 'redirect' | 'missing' | 'noMenu' | 'notFound'; to?: string };
 
 /**
  * 20초 건수 폴링(2.0 getConsultationTotalCount — 늘었으면 router.refresh) — 읽기라 쓰기 경로(POST)가 아니라 읽기 경로(GET ?poll=count)로
@@ -64,7 +65,7 @@ function useActor() {
 const DETAIL = /^\/enrollment\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}(?:\/edit)?$/i;
 function App() {
   const path = usePathname(), search = useSearchParams(), actor = useActor();
-  const known = path === HOST_ROUTE || DETAIL.test(path);
+  const known = path === HOST_ROUTE || path === '/enrollment/new' || DETAIL.test(path);
   const q = new URLSearchParams(search.toString());
   q.delete('actor');
   if (path !== HOST_ROUTE) q.set('v2path', path);
@@ -101,6 +102,7 @@ function App() {
     <OperationsProvider subjects={ops.subjects} gradeLevels={ops.gradeLevels} jobTitles={ops.jobTitles} jobTitlesByDepartment={ops.jobTitlesByDepartment} disabledModules={data.modules.disabled as never}>
       {data.page === 'detail' ? <EnrollmentDetailPage key={path} data={data as unknown as EnrollmentDetailData} id={path.split('/')[2]!} />
         : data.page === 'edit' ? <EditEnrollmentPage key={path} data={data as unknown as EnrollmentEditData} />
+        : data.page === 'new' ? <NewEnrollmentPage key={path} data={data as unknown as EnrollmentNewData} sp={sp} />
         : <EnrollmentPage key={state.query} data={data as unknown as EnrollmentListData} sp={sp} />}
     </OperationsProvider>
   );

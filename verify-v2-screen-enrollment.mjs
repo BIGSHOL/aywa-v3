@@ -299,3 +299,74 @@ test('소개한 사람 목록(2.0 loadReferrerOptions) — 원생(퇴원·시험
     assert.equal(d.result.options.filter((o) => o.value.startsWith('s:')).length, s);
   });
 });
+
+// ── 3단계: 새 상담 · 칸반 끌기(상태) · 목록 칸 수정 ────────────────────────────────────────────────────────────────────
+const call = (sql, name, actor, args) => {
+  const body = screen.actions[name].validate({ module: 'features/enrollment/server/actions.ts', actor, args });
+  return screen.actions[name].run({ sql, body, tenantId: t, importV2 });
+};
+const fdOf = (values) => ({ $formData: Object.entries(values).map(([k, v]) => [k, String(v)]) });
+
+test('새 상담 그리기 = 2.0 new/page.tsx 본문 그대로(swaps 짝만)', async () => {
+  await swapCheck('app/(shell)/enrollment/new/page.tsx', './v2-host/src/enrollment-new.tsx', './v2-host/src/enrollment-new.swaps.json', 'export default async function NewEnrollmentPage',
+    ['requireAccess', 'referrerColumnsReady', 'createClient'], 'export function NewEnrollmentPage');
+});
+
+test('새 상담 = 2.0 createEnrollmentConsultation — 상담 경로 필수 · 후속 조치 필수 · 상담자 계정(빈칸 = 추가한 사람) · 학교 표기 통일 · 감사로그', { skip: SKIP }, async () => {
+  const F = await importV2('features/enrollment/follow-up.ts');
+  await rollback(async (sql) => {
+    const d = await load(sql, { v2path: '/enrollment/new' });
+    assert.equal(d.page, 'new'); assert.equal(d.referrerReady, true);
+    const owner = d.editors[0];
+    const form = { prospectName: '시험새상담', prospectGrade: '초5', prospectSchool: '옥산초등학교', parentPhone: '01077778888', consultationPath: '지인 소개', subject: 'math' };
+    assert.deepEqual(await call(sql, 'createEnrollmentConsultation', owner.id, [null, fdOf({ ...form, consultationPath: '' })]), { error: '상담 경로를 선택해주세요' });
+    assert.deepEqual(await call(sql, 'createEnrollmentConsultation', owner.id, [null, fdOf(form)]), { error: F.FOLLOW_UP_REQUIRED_ERROR });
+    const res = await call(sql, 'createEnrollmentConsultation', owner.id, [null, fdOf({ ...form, followUpResult: 'unregistered', prevAcademy: '옛 학원' })]);
+    assert.match(res.id, /^[0-9a-f-]{36}$/);
+    const [r] = await sql`select prospect_school, outcome::text o, consultant_id::text cid, learning_history, tenant_id::text tid from public.enrollment_consultations where id=${res.id}`;
+    assert.equal(r.prospect_school, '옥산초'); assert.equal(r.cid, owner.id); assert.equal(r.tid, t);
+    assert.equal(r.o, (await importV2('features/enrollment/board-stages.ts')).outcomeForDrop('unregistered', 'consulted'));
+    assert.deepEqual(r.learning_history, { prevAcademy: '옛 학원' });
+    const [log] = await sql`select action, actor_id::text a, metadata from public.audit_logs where tenant_id=${t} and metadata->>'consultationId'=${res.id}`;
+    assert.equal(log.action, 'enrollment_consultation_create'); assert.equal(log.a, owner.id); assert.equal(log.metadata.followUp, 'unregistered'); assert.equal(log.metadata.via, '3.0 연습 복사본');
+  });
+});
+
+test('상태 바꾸기(칸반 끌기) = 2.0 setEnrollmentOutcome — 바뀐 것만 감사로그 · 등록 완료는 거절·상담 완료로 못 돌림 · 반 배정된 상담은 등록 칸 밖으로 못 감', { skip: SKIP }, async () => {
+  const B = await importV2('features/enrollment/board-stages.ts');
+  await rollback(async (sql) => {
+    const f = await editFixture(sql);
+    const set = (id, outcome) => call(sql, 'setEnrollmentOutcome', f.owner.id, [null, fdOf({ id, outcome })]);
+    assert.deepEqual(await set(f.id, 'nope'), { error: '유효한 상태가 아닙니다' });
+    assert.deepEqual(await set(f.id, 'consulted'), { ok: true });
+    assert.equal((await sql`select 1 from public.audit_logs where tenant_id=${t} and metadata->>'consultationId'=${f.id}`).length, 0, '같은 상태는 감사로그 없음');
+    assert.deepEqual(await set(f.id, 'enrolled'), { ok: true });
+    assert.deepEqual(await set(f.id, 'consulted'), { error: B.ENROLLED_REVERT_BLOCKED });
+    assert.deepEqual(await set(f.id, 'declined'), { ok: true });
+    const logs = await sql`select metadata->>'from' f, metadata->>'to' t2 from public.audit_logs where tenant_id=${t} and action='enrollment_consultation_outcome' and metadata->>'consultationId'=${f.id} order by created_at, id`;
+    assert.deepEqual(logs.map((l) => `${l.f}>${l.t2}`).sort(), ['consulted>enrolled', 'enrolled>declined'].sort());
+    // 반 배정된 상담
+    const [{ id: assignedId }] = await sql`select c.id::text id from public.enrollment_consultations c where c.tenant_id=${t} and c.outcome='enrolled' and c.student_id is not null and c.subject is null
+      and exists(select 1 from public.enrollments e join public.classes k on k.id=e.class_id where e.student_id=c.student_id and (e.end_date is null or e.end_date >= (now() at time zone 'Asia/Seoul')::date)) limit 1`;
+    assert.deepEqual(await set(assignedId, 'consulted'), { error: B.ASSIGNED_DRAG_BLOCKED });
+  });
+});
+
+test('목록 칸 수정 = 2.0 patchConsultationCells — 준 칸만 · 학원설정 과목만 · 모르는 칸 거절 · 재직 상담사만 · 감사로그(surface list)', { skip: SKIP }, async () => {
+  await rollback(async (sql) => {
+    const f = await editFixture(sql, { parent_phone: '0100000', counselor: '그대로' });
+    const patchCells = (patch, id = f.id) => call(sql, 'patchConsultationCells', f.owner.id, [id, patch]);
+    assert.deepEqual(await patchCells({}), { error: '바꿀 칸이 없습니다' });
+    assert.deepEqual(await patchCells({ nope: 1 }), { error: '입력값을 확인해주세요' });
+    assert.deepEqual(await patchCells({ prospectName: '' }), { error: '학생 이름을 입력해주세요' });
+    assert.deepEqual(await patchCells({ subject: '없는과목' }), { error: '학원설정에 없는 과목입니다' });
+    const [gone] = await sql`select id::text id from public.users where tenant_id=${t} and status::text<>'active' limit 1`;
+    if (gone) assert.deepEqual(await patchCells({ consultantId: gone.id }), { error: '상담사를 찾을 수 없습니다' });
+    assert.deepEqual(await patchCells({ prospectName: '시험상담2', prospectSchool: '옥산초등학교' }), { ok: true });
+    const [r] = await sql`select prospect_name, prospect_school, parent_phone, counselor from public.enrollment_consultations where id=${f.id}`;
+    assert.deepEqual(r, { prospect_name: '시험상담2', prospect_school: '옥산초', parent_phone: '0100000', counselor: '그대로' });
+    const [log] = await sql`select target_label, metadata from public.audit_logs where tenant_id=${t} and metadata->>'consultationId'=${f.id}`;
+    assert.equal(log.target_label, '시험상담2'); assert.equal(log.metadata.surface, 'list'); assert.equal(log.metadata.via, '3.0 연습 복사본');
+    assert.deepEqual(await patchCells({ prospectName: 'x' }, '00000000-0000-4000-8000-000000000000'), { error: '상담을 불러오지 못했습니다. 다시 시도해 주세요.' });
+  });
+});

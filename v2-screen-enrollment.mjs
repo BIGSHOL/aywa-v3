@@ -11,7 +11,10 @@
 //  | loadReferrerOptions(server/referrer-actions.ts) — 소개한 사람 목록 | 읽기 — GET ?referrers=1(쓰기 권한 필요) |
 //  | updateEnrollmentConsultation(server/actions.ts) — 상담 수정      | actions.updateEnrollmentConsultation(v2-enrollment-save.mjs) |
 //  | regenerateConsultationAnalysis · generatePrepBrief(prep-actions) · issueAudioUploadTicket(media) — AI·녹음 | 호스트가 보내지 않고 { error: 지원하지 않는 기능 } |
-//  | 그 밖의 저장(끌기·칸 수정·새 상담·삭제·수업 배정·병합·보고서 섹션·보기 설정) | 아직 없음 — 2.0 실패 모양으로 거절 |
+//  | createEnrollmentConsultation(server/actions.ts) — 새 상담        | actions.createEnrollmentConsultation |
+//  | setEnrollmentOutcome(server/actions.ts) — 칸반 끌기·상태 칸·상태 변경 | actions.setEnrollmentOutcome |
+//  | patchConsultationCells(server/actions.ts) — 목록 칸 수정        | actions.patchConsultationCells |
+//  | 그 밖의 저장(삭제·수업 배정·병합·보고서 섹션·요약 붙이기·보기 설정) | 아직 없음 — 2.0 실패 모양으로 거절 |
 //
 // 호스트에 붙일 때(의존)
 //  · Next 전용: next/link · next/navigation(useRouter — enrollment-kanban · column-cards · sheet-editable-cells · new-consultation-watcher · month-picker) ·
@@ -25,7 +28,7 @@ import { UUID, deepMerge, readPeople, serverCall } from './v2-proc-people.mjs';
 import { buildList, getConsultationTotalCount, listRules } from './v2-enrollment-list.mjs';
 import { activeClasses, canViewClasses, detailRules, findMergeSuccessor, getAssignedClasses, getEnrollmentConsultationById, getSiblingConsultations,
   listReferrerOptions, loadConsultationReferrer, referrerCandidatesFor } from './v2-enrollment-detail.mjs';
-import { formDataOf, updateEnrollmentConsultation } from './v2-enrollment-save.mjs';
+import { createEnrollmentConsultation, formDataOf, patchConsultationCells, setEnrollmentOutcome, updateEnrollmentConsultation } from './v2-enrollment-save.mjs';
 
 const ID = 'enrollment', MENU = 'enrollment', ACTIONS = 'features/enrollment/server/actions.ts';
 const UUID_BODY = UUID.source.slice(1, -1);
@@ -88,6 +91,11 @@ async function load({ sql, params, tenantId: t, importV2 }) {
     return { page: 'referrers', result: { ok: true, options: await listReferrerOptions(sql, await detailRules(importV2), t) } };
   }
   const path = params.v2path ?? '/enrollment';
+  // 새 상담(2.0 new/page.tsx) — 보는 사람 + 소개 칸이 DB에 있는지(2.0 referrerColumnsReady — #95).
+  if (path === '/enrollment/new') {
+    const [col] = await sql`select 1 from information_schema.columns where table_schema = 'public' and table_name = 'enrollment_consultations' and column_name = 'referrer_name'`;
+    return { ...base, page: 'new', viewer: { id: v.u.id, tenantId: t, displayName: v.u.display_name }, referrerReady: !!col };
+  }
   const detail = DETAIL.exec(path);
   if (detail) return { ...base, ...(await buildDetail({ sql, t, importV2, v, operations, modules, id: detail[1].toLowerCase(), edit: !!detail[2] })) };
   if (path !== '/enrollment') return { ...base, page: 'notFound' };
@@ -124,10 +132,13 @@ export const screen = {
     view: /^(?:kanban|table|stats)$/, month: /^.{0,10}$/, consultant: /^.{0,40}$/, q: /^[\s\S]{0,100}$/, outcome: /^[a-z_]{0,20}$/, page: /^\d{1,5}$/,
     range: /^[0-9a-z]{0,4}$/, year: /^[0-9y]{1,4}$/, received: /^.{0,10}$/, from: /^[a-z]{0,20}$/,
     trend: /^[a-z]{0,10}$/, trendMonth: YM, trendFrom: YMD, trendTo: YMD, trendSpan: /^[0-9a-z]{0,6}$/,
-    pg: /^[a-z]{0,10}$/, pgMonth: YM, pgFrom: YMD, pgTo: YMD, pgSpan: /^[0-9a-z]{0,6}$/, referrers: /^1$/,
+    pg: /^[a-z]{0,10}$/, pgMonth: YM, pgFrom: YMD, pgTo: YMD, pgSpan: /^[0-9a-z]{0,6}$/, referrers: /^1$/, form: /^[A-Za-z0-9_-]{1,64}$/,
   },
   actions: {
     updateEnrollmentConsultation: ACT(2, (c, args) => updateEnrollmentConsultation(c, formDataOf(args[1]))),
+    createEnrollmentConsultation: ACT(2, (c, args) => createEnrollmentConsultation(c, formDataOf(args[1]))),
+    setEnrollmentOutcome: ACT(2, (c, args) => setEnrollmentOutcome(c, formDataOf(args[1]))),
+    patchConsultationCells: ACT(2, (c, args) => patchConsultationCells(c, args[0], args[1])),
   },
   load,
 };
