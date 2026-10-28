@@ -12,6 +12,7 @@ import { createFlowAI } from './flow-decision.mjs';
 import { createFlowService, defaultStoreDir, startFlow } from './flow-service.mjs';
 import { createFlowRoute } from './flow-http.mjs';
 import { createExitRoute, startExitInsight } from './exit-http.mjs';
+import { createV2ScreenRoute, loadScreens, screenAsset } from './v2-screens.mjs';
 
 const port=Number(process.env.OWNER_CONCEPT_PORT||4310);
 if(!Number.isInteger(port)||port<1024||port>65535)throw new Error('Invalid local dev port');
@@ -37,6 +38,8 @@ const routes=new Map([
  ['/context-picker.css',['context-picker.css','text/css; charset=utf-8']],
  ['/exit-insight.js',['exit-insight.js','text/javascript; charset=utf-8']],
  ['/exit-insight.css',['exit-insight.css','text/css; charset=utf-8']],
+ ['/v2-screens.js',['v2-screens.js','text/javascript; charset=utf-8']],
+ ['/v2-screens.css',['v2-screens.css','text/css; charset=utf-8']],
  ['/fonts/PretendardVariable.woff2',['../../public/fonts/PretendardVariable.woff2','font/woff2']],
 ]);
 const headers={
@@ -53,6 +56,8 @@ const flowRoute=createFlowRoute({flow,origins,headers,enabled:flowEnabled});
 // '왜 줄었나' exit insight (INSIGHT-EXITS.md): code decomposition + case files; AI results beside the flow store, GET only.
 const insight=flowEnabled?startExitInsight({snapshot,dir:defaultStoreDir({dataRoot:fullDbRoot,identity:{tenantId,tenantSlug:'cs',capturedAt:snapshot.meta.importedAt}})}):{service:null,failure:null};
 const insightRoute=createExitRoute({insight,headers,enabled:flowEnabled});
+// 2.0 화면 (V2-SCREENS.md): 2.0 형태의 새 3.0 페이지, 복사본 DB 읽기 전용. v2-screen-<id>.mjs 파일마다 한 화면(공용 파일 수정 없음).
+const v2ScreenRoute=createV2ScreenRoute({screens:loadScreens(),headers});
 async function documentFile(id){
  const db=await openFullDatabase();let document;
  try{[document]=await db.begin('read only',sql=>sql`select file_path,file_name from public.academy_documents where id=${id} and tenant_id=${tenantId}`);}finally{await db.end();}
@@ -72,6 +77,7 @@ const server=createServer(async(req,res)=>{
  if(path===assistant.path){try{await assistant.handle(req,res);}catch{if(!res.headersSent)reject(500,'로컬 비서를 실행하지 못했습니다.');}return;}
  if(flowRoute.handles(path)){try{await flowRoute.handle(req,res,path);}catch{if(!res.headersSent)reject(500,'업무 흐름을 처리하지 못했습니다.');}return;}
  if(insightRoute.handles(path)){try{insightRoute.handle(req,res);}catch{if(!res.headersSent)reject(500,'이탈 분석을 처리하지 못했습니다.');}return;}
+ if(v2ScreenRoute.handles(path)){try{await v2ScreenRoute.handle(req,res,path);}catch{if(!res.headersSent)reject(500,'2.0 화면을 불러오지 못했습니다.');}return;}
  // JSON endpoints answer their own method errors; cross-site requests still fall through to the guards below.
  if(req.headers['sec-fetch-site']!=='cross-site'){try{if(handleWorkspaceRecords(req,res,headers))return;}catch{if(!res.headersSent)reject(500,'기록을 읽지 못했습니다.');return;}}
  if(!['GET','HEAD'].includes(req.method)){reject(405,'Read-only preview');return;}
@@ -85,7 +91,7 @@ const server=createServer(async(req,res)=>{
    res.writeHead(200,{...headers,'Content-Type':'application/octet-stream','Content-Length':file.size,'Content-Disposition':`attachment; filename="document"; filename*=UTF-8''${name}`});
    if(req.method==='HEAD'){res.end();return;}const stream=createReadStream(file.path);stream.on('error',()=>res.destroy());res.on('close',()=>stream.destroy());stream.pipe(res);return;
   }
-  const file=routes.get(path);if(!file){reject(404,'Not found');return;}
+  const file=routes.get(path)||screenAsset(path);if(!file){reject(404,'Not found');return;}
   const data=await readFile(fileURLToPath(new URL(file[0],root)));res.writeHead(200,{'Content-Type':file[1],'Content-Length':data.length,...headers});res.end(req.method==='HEAD'?undefined:data);
  }catch{reject(500,'로컬 시안을 불러오지 못했습니다. DB와 파일 준비 상태를 확인해 주세요.');}
 });

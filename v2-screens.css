@@ -1,0 +1,9 @@
+/* 2.0 화면 (V2-SCREENS.md): shared frame of the 2.0-form pages; each screen adds its own v2-screen-<id>.css. 2.0 typography
+   and labels — dense tables and grids are the work surface here, not cards. */
+.v2s{display:flex;flex-direction:column;gap:12px;min-width:0}
+.v2s-head{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px}
+.v2s-head h1{margin:0;font-size:1.5rem}
+.v2s-note{margin:0;color:var(--muted,#5f6b7a);font-size:.875rem}
+.v2s-badge{display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:999px;background:var(--surface-2,#eef2f7);font-size:.8125rem}
+.v2s-scroll{overflow:auto;scrollbar-width:none;max-width:100%}
+.v2s-scroll::-webkit-scrollbar{display:none}

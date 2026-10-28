@@ -4,11 +4,16 @@
 import { register } from 'node:module';
 
 const SRC = new URL('../../src/', import.meta.url);
-let loading = null;
+let loading = null, hooked = false;
+// Any other 2.0 pure module (a 2.0 화면 needs its own rules — timetable grid, attendance sheet …): same hooks, imported as is.
+export function importV2(path) {
+  if (!hooked) { register('./v2-ts-hooks.mjs', import.meta.url, { data: { src: SRC.href } }); hooked = true; }
+  return import(new URL(path, SRC).href);
+}
 
 export function loadV2() {
   loading ??= (async () => {
-    register('./v2-ts-hooks.mjs', import.meta.url, { data: { src: SRC.href } });
+    if (!hooked) { register('./v2-ts-hooks.mjs', import.meta.url, { data: { src: SRC.href } }); hooked = true; }
     const at = path => import(new URL(path, SRC).href);
     const [types, detail, bulk, reasonKey, overlay, churnModel, context, students, config, special, merged, window, consult] = await Promise.all([
       at('features/withdrawals/types.ts'), at('features/withdrawals/reason-detail.ts'), at('features/withdrawals/system-bulk.ts'),

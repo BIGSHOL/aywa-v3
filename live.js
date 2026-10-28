@@ -148,6 +148,7 @@
   const ax=window.createOwnerWorkspace(api);
   const ws=typeof window.createWorkspaces==='function'?window.createWorkspaces({...api,ax}):null;
   ax.useWorkspaces?.(ws);
+  window.V2Screens?.bind(api); // 2.0 화면 (v2-screens.js): 2.0 형태의 새 3.0 페이지 — #v2-<id>
   // '왜 줄었나' (exit-insight.js, INSIGHT-EXITS.md): entry buttons on the billing/student cards; fetched only when pressed; records open by exact id.
   const insight=typeof window.createExitInsight==='function'?window.createExitInsight({...api,showWorkspaceRecord:(family,id)=>ws?ws.showRecord(family,id):toast('이 기록은 여기서 바로 열 수 없습니다.')}):null;
   api.insightEntry=(from,to,label)=>insight?.entry(from,to,label)||'';
@@ -155,7 +156,7 @@
   // Durable work flow (GET /api/flow): preview selector, role views, request store. Absent → session-only requests.
   const flowUI=typeof window.createFlowUI==='function'?window.createFlowUI({...api,ax,familyLabel:id=>ws?.area(id)?.label||'',showWorkspaceRecord:(family,record)=>ws?.showRecord(family,record)}):null;
   ax.useFlow?.(flowUI);
-  const viewFor=page=>{if(!page)return null;if(views[page])return views[page];const id=ws?.familyOf(page);return id&&ws.has(id)?()=>ws.view(id):null;};
+  const viewFor=page=>{if(!page)return null;if(views[page])return views[page];const v2=window.V2Screens?.view(page);if(v2)return v2;const id=ws?.familyOf(page);return id&&ws.has(id)?()=>ws.view(id):null;};
   const mobileNav=matchMedia('(max-width: 760px)');
   const scrollObserver=new ResizeObserver(entries=>entries.forEach(e=>fade(e.target)));
   function fade(node){const top=Math.max(0,node.scrollTop),bottom=Math.max(0,node.scrollHeight-node.clientHeight-top),left=Math.max(0,node.scrollLeft),right=Math.max(0,node.scrollWidth-node.clientWidth-left);node.style.setProperty('--fade-top',`${Math.min(26,top)}px`);node.style.setProperty('--fade-bottom',`${Math.min(26,bottom>1?bottom:0)}px`);node.style.setProperty('--fade-left',`${Math.min(26,left)}px`);node.style.setProperty('--fade-right',`${Math.min(26,right>1?right:0)}px`);}
@@ -212,7 +213,7 @@
   }
   function shell(){
     const offset=$('.nav-scroll')?.scrollTop||0;
-    $('#sidebar').innerHTML=`<a href="#home" class="brand"><span class="brand-mark">${icon('trend')}</span><div><div class="brand-name">aywa</div><div class="brand-caption">학원을 잇는 경영 공간</div></div></a><div class="academy-box"><span class="academy-symbol">${icon('building')}</span><div class="grow"><strong>${h(db.meta.tenant)}</strong><small>원장 · 경영자</small></div>${icon('down')}</div><nav class="nav-scroll" aria-label="학원 업무">${pages.filter(p=>p[0]!=='settings').map(([id,label,symbol,section])=>`${section?`<div class="nav-group">${section}</div>`:''}<a class="nav-item ${state.page===id?'active':''}" href="#${id}" ${state.page===id?'aria-current="page"':''}>${icon(symbol)}<span>${label}</span>${id==='approvals'?`<span class="nav-count">${db.approvals.filter(a=>a.status==='pending').length}</span>`:''}</a>`).join('')}</nav><div class="sidebar-bottom"><a class="nav-item ${state.page==='settings'?'active':''}" href="#settings">${icon('settings')}학원 설정</a><div class="profile">${avatar('원장')}<div class="grow"><strong>원장님</strong><small>${h(db.meta.tenant)} · 원장실</small></div>${icon('chevron')}</div></div>`;
+    $('#sidebar').innerHTML=`<a href="#home" class="brand"><span class="brand-mark">${icon('trend')}</span><div><div class="brand-name">aywa</div><div class="brand-caption">학원을 잇는 경영 공간</div></div></a><div class="academy-box"><span class="academy-symbol">${icon('building')}</span><div class="grow"><strong>${h(db.meta.tenant)}</strong><small>원장 · 경영자</small></div>${icon('down')}</div><nav class="nav-scroll" aria-label="학원 업무">${pages.filter(p=>p[0]!=='settings').map(([id,label,symbol,section])=>`${section?`<div class="nav-group">${section}</div>`:''}<a class="nav-item ${state.page===id?'active':''}" href="#${id}" ${state.page===id?'aria-current="page"':''}>${icon(symbol)}<span>${label}</span>${id==='approvals'?`<span class="nav-count">${db.approvals.filter(a=>a.status==='pending').length}</span>`:''}</a>`).join('')}${window.V2Screens?.sidebar(state.page)||''}</nav><div class="sidebar-bottom"><a class="nav-item ${state.page==='settings'?'active':''}" href="#settings">${icon('settings')}학원 설정</a><div class="profile">${avatar('원장')}<div class="grow"><strong>원장님</strong><small>${h(db.meta.tenant)} · 원장실</small></div>${icon('chevron')}</div></div>`;
     $('.nav-scroll').scrollTop=offset;
     // Desktop has no header band: search, notes and channels live in the sidebar. Phones keep a menu bar (decorated by ax.js).
     $('#topbar').innerHTML=`<button class="icon-button mobile-menu" data-action="menu" aria-controls="sidebar" aria-label="메뉴 열기" aria-expanded="false">${icon('menu')}</button><strong>${pages.find(p=>p[0]===state.page)?.[1]||'경영 흐름'}</strong>`;
