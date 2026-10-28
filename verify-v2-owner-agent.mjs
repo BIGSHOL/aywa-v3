@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
 import { openFullDatabase, tenantId } from './full-db.mjs';
 import { importV2 } from './v2-bridge.mjs';
 import { screen } from './v2-screen-owner.mjs';
@@ -19,6 +20,11 @@ try {
   assert.equal(agent.data.release, null, '운영 설치 URL은 브라우저로 내보내지 않는다');
   assert.doesNotMatch(JSON.stringify(agent), /token_hash|code_hash|installer_url/);
   passed++;
+  const [worker] = await db`select hostname, last_seen from public.makeedu_sync_workers where tenant_id=${tenantId} order by last_seen desc limit 1`;
+  assert.equal(base.page.integrations.agentWorkers[0]?.hostname ?? null, worker?.hostname ?? null);
+  assert.equal(base.page.integrations.agentWorkers[0]?.online ?? null,
+    worker ? base.page.integrations.agentNowMs - new Date(worker.last_seen).getTime() < 150_000 : null);
+  passed++;
   const badViewer = await load({ tab: 'sheets', sub: 'agent', read: 'agent_dashboard', viewer: '00000000-0000-4000-8000-000000000001' });
   assert.equal(badViewer.route, 'denied');
   const badDate = await load({ tab: 'sheets', sub: 'agent', read: 'agent_dashboard', viewer: base.viewer.id, agentDate: '2026-99-99' });
@@ -30,5 +36,12 @@ try {
     assert.equal(limited.page?.integrations?.agent ?? null, null);
   }
   passed++;
+  const source = (await readFile(new URL('../../src/app/(shell)/owner/_components/integrations-face.tsx', import.meta.url), 'utf8')).replace(/\r\n/g, '\n');
+  const host = (await readFile(new URL('./v2-host/src/owner-integrations.tsx', import.meta.url), 'utf8')).replace(/\r\n/g, '\n');
+  const swaps = JSON.parse(await readFile(new URL('./v2-host/src/owner-integrations.swaps.json', import.meta.url), 'utf8'));
+  let body = source.slice(source.indexOf('  if (available.length === 0) {'), source.indexOf('\n}\n', source.indexOf('  return (\n    <div className="space-y-4">')) + 1);
+  for (const [from, to] of swaps['integrations-face.tsx']) body = body.replace(from, to);
+  assert.ok(host.includes(body), '연동 PC를 포함한 원본 연동 면과 호스트 본문 동등');
+  passed++;
 } finally { await db.end(); }
-console.log(`v2 owner agent: ${passed}/4 checks passed`);
+console.log(`v2 owner agent: ${passed}/6 checks passed`);

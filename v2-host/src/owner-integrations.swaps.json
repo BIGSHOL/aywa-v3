@@ -22,7 +22,7 @@
   ],
   [
    "{active === \"agent\" ? <AgentCard classnoteOn={classnoteModuleOn(settings)} makeeduOn={modulesOn.makeedu}\n        legacyPC={modulesOn.makeedu?<LegacyMakeeduPC />:null} /> : null}",
-   "{active === \"agent\" ? <AgentCard classnoteOn={available.includes(\"video\")} makeeduOn={available.includes(\"makeedu\")} /> : null}"
+   "{active === \"agent\" ? <AgentCard classnoteOn={available.includes(\"video\")} makeeduOn={available.includes(\"makeedu\")}\n        legacyPC={available.includes(\"makeedu\") && d.agentWorkers.length ? <section className=\"space-y-2\"><h2 className=\"text-sm font-bold\">기존 동기화 PC</h2><MakeeduWorkerStatus workers={d.agentWorkers} nowMs={d.agentNowMs} /></section> : null} /> : null}"
   ]
  ],
  "sheets-face.tsx": [

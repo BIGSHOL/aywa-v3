@@ -16,11 +16,13 @@ import { TodaysMathCard } from "@/app/(shell)/owner/_components/todays-math-card
 import { TodaysMathMenusCard } from "@/app/(shell)/owner/_components/todays-math-menus-card";
 import { AgentCard } from "@/app/(shell)/owner/_components/agent-card";
 import { OwnerMakeeduFace, type OwnerMakeeduData } from "./owner-makeedu";
+import { MakeeduWorkerStatus } from "@/app/(shell)/owner/_components/makeedu-worker-status";
+import type { MakeeduWorker } from "@/features/integrations/server/makeedu-sync";
 
 export type IntegrationSub = "slack" | "makeedu" | "sheets" | "video" | "agent" | "todaysMath";
 
 /** /api/v2/owner?tab=sheets — integrations-face.tsx가 계산하던 값(켜진 탭 · 고른 탭)과 sheets-face.tsx의 시트 상태. */
-export type OwnerIntegrationsData = { available: IntegrationSub[]; sheetStatuses: IntegrationStatus[]; saEmail: string | null; slack: import("@/features/slack/server/queries").SlackCardState | null; video: OwnerVideoData | null; agent: unknown; makeedu: OwnerMakeeduData | null };
+export type OwnerIntegrationsData = { available: IntegrationSub[]; sheetStatuses: IntegrationStatus[]; saEmail: string | null; slack: import("@/features/slack/server/queries").SlackCardState | null; video: OwnerVideoData | null; agent: unknown; makeedu: OwnerMakeeduData | null; agentWorkers: MakeeduWorker[]; agentNowMs: number };
 
 const LABEL: Record<IntegrationSub, string> = { slack: "슬랙", makeedu: "makeedu 동기화", sheets: "구글 시트", video: "숙제영상 드라이브", agent: "연동 PC", todaysMath: "오늘 수학" };
 
@@ -139,7 +141,8 @@ export function OwnerIntegrationsFace({ d, settings, sub, page, isMaster }: { d:
       {active === "video" ? <OwnerVideoCard view={d.video} /> : null}
       {active === "todaysMath" ? <TodaysMathCard report={settings.report} /> : null}
       {active === "todaysMath" && isMaster ? <TodaysMathMenusCard /> : null}
-      {active === "agent" ? <AgentCard classnoteOn={available.includes("video")} makeeduOn={available.includes("makeedu")} /> : null}
+      {active === "agent" ? <AgentCard classnoteOn={available.includes("video")} makeeduOn={available.includes("makeedu")}
+        legacyPC={available.includes("makeedu") && d.agentWorkers.length ? <section className="space-y-2"><h2 className="text-sm font-bold">기존 동기화 PC</h2><MakeeduWorkerStatus workers={d.agentWorkers} nowMs={d.agentNowMs} /></section> : null} /> : null}
     </div>
   );
 }

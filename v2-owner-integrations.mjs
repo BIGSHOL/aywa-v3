@@ -52,7 +52,14 @@ export async function integrationsView(sql, t, R, settings, viewer, sp, importV2
   const video = active === 'video' ? await loadOwnerVideo(sql, t, viewer).catch(() => null) : null;
   const agent = active === 'agent' && sp.read === 'agent_dashboard' ? await loadOwnerAgent(sql, t, sp, settings) : null;
   const makeedu = active === 'makeedu' ? await loadOwnerMakeedu(sql, t, sp.page, importV2) : null;
-  return { available, sheetStatuses, saEmail: null, slack: slackState, video, agent, makeedu };
+  const agentNowMs = Date.now();
+  const workerRows = active === 'agent' && on('makeedu')
+    ? await sql`select hostname, last_seen, started_at from public.makeedu_sync_workers where tenant_id=${t} order by last_seen desc`
+    : [];
+  const agentWorkers = workerRows.map(w => ({ hostname: w.hostname, lastSeen: new Date(w.last_seen).toISOString(),
+    startedAt: w.started_at ? new Date(w.started_at).toISOString() : null,
+    online: agentNowMs - new Date(w.last_seen).getTime() < 150_000 }));
+  return { available, sheetStatuses, saEmail: null, slack: slackState, video, agent, makeedu, agentWorkers, agentNowMs };
 }
 
 // ── integrations/server/actions.ts ─────────────────────────────────────────────────────────────────────────────────────
