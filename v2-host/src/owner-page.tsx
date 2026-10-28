@@ -28,6 +28,7 @@ import { OwnerAuditFace, type OwnerAuditData } from "./owner-audit";
 import { OwnerDataFace, type OwnerData } from "./owner-data";
 import { OwnerDashboardFace, type OwnerDashboardData } from "./owner-dashboard";
 import { OwnerImportFace, type OwnerImportRow } from "./owner-import";
+import { OwnerEvaluationFace, type OwnerEvaluationData } from "./owner-evaluation";
 
 type Sp = Record<string, string | undefined>;
 
@@ -72,6 +73,7 @@ export type OwnerPageData = {
   data: OwnerData | null;
   dashboard: OwnerDashboardData | null;
   importRows: OwnerImportRow[] | null;
+  evaluation: OwnerEvaluationData | null;
 };
 
 function facesFor(canReadAudit: boolean, showModules: boolean, showMakeups: boolean, showEvaluation: boolean, showContribution: boolean): OwnerFaceDef[] {
@@ -100,7 +102,7 @@ function fmt(iso: string | null): string {
 export function OwnerHostPage({ d, sp }: { d: OwnerPageData; sp: Sp }) {
   const { settings, meta, tab, canEditSettings, canReadAudit, isMaster, showMakeups, showEvaluation, showContribution, showsOperations, canEditOperations, settingsUnreadable,
     operationsTokens, operationsForClient, seatPin, classrooms, canImportClassrooms, teacherLabelsBySubject, periodDefs, sessionYear, holidayDates, permissionsSource,
-    permissionsTok, userOverrideNames, permissionStaff, hiddenPermissionIds, hiddenSettingKeys, navigationGates, integrations, popups, audit, data, dashboard, importRows } = d;
+    permissionsTok, userOverrideNames, permissionStaff, hiddenPermissionIds, hiddenSettingKeys, navigationGates, integrations, popups, audit, data, dashboard, importRows, evaluation } = d;
   // 2.0 page.tsx와 같은 식 — 연동 면 makeedu 실행 이력 쪽(지금은 '아직')이 쓴다.
   const page = Math.max(1, Number(sp.page) || 1);
   const allowedTabs = new Map<OwnerFaceKey, boolean>(d.allowedTabEntries);
@@ -258,7 +260,7 @@ export function OwnerHostPage({ d, sp }: { d: OwnerPageData; sp: Sp }) {
           · 데이터 가져오기: 줄마다 그 메뉴의 전체 권한으로 버튼이 선다(올리기 주소도 같은 판정).
           · 감사로그: 고치는 것이 없다 — 조회 조건(기간·검색) 입력이 설정 읽기 전용 때문에 잠기면 안 된다.
           · 강사평가: 원장 게이트(직원 포트폴리오와 같은 문)를 지난 사람만 온다(위 redirect). 잠금은 면이 저장 액션과 같은 쓰기 판정으로 직접 한다. */}
-      {tab === "evaluation" && showEvaluation ? <OwnerServerFace face="evaluation" /> : null}
+      {tab === "evaluation" && showEvaluation ? <OwnerEvaluationFace d={evaluation!} /> : null}
       {tab === "contribution" && showContribution ? <OwnerServerFace face="contribution" /> : null}
       {tab === "data" ? (
         <div className="space-y-10">

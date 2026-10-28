@@ -12,6 +12,7 @@ import { importV2 } from './v2-bridge.mjs';
 import * as M from './v2-screen-owner.mjs';
 import { validateDashboardAssignments } from './v2-owner-dashboard.mjs';
 import { IMPORT_MENU, loadOwnerImport } from './v2-owner-import.mjs';
+import { portfolioGate } from './v2-owner-evaluation.mjs';
 import { build } from './v2-host/build.mjs';
 import { readV2, runV2Server, stopV2Server } from './v2-server-runner.mjs';
 
@@ -38,7 +39,7 @@ await check('그리기 = 2.0 owner/page.tsx 글자 그대로 — 바꾼 곳은 �
     const i = page.indexOf(a); assert.ok(mine.includes(page.slice(i, page.indexOf(b, i) + b.length)), a);
   }
   // 바꾼 자리 = 서버 값 셋(자리 PIN 상태 · 휴일 · 권한 token) + 서버 컴포넌트 면 — 2.0 클라 부품(섹션 폼)은 손대지 않았다
-  assert.equal(swaps.filter(([, to]) => /OwnerServerFace|OwnerIntegrationsFace|OwnerAuditFace|OwnerDataFace|OwnerDashboardFace|OwnerImportFace|PopupsManager/.test(to)).length, swaps.length - 3);
+  assert.equal(swaps.filter(([, to]) => /OwnerServerFace|OwnerIntegrationsFace|OwnerAuditFace|OwnerDataFace|OwnerDashboardFace|OwnerImportFace|OwnerEvaluationFace|PopupsManager/.test(to)).length, swaps.length - 3);
   assert.ok(swaps.some(([from, to]) => from === '<PopupsFace />' && to === '<PopupsManager items={popups ?? []} />'), '팝업 공지 = popups-face.tsx 본문(<PopupsManager items={items} />) 그대로');
   assert.match(lf(await src('app/(shell)/owner/_components/popups-face.tsx')), /const items = await listPopups\(\);\n  return <PopupsManager items=\{items\} \/>;/);
   // 연동 면 = integrations-face.tsx · sheets-face.tsx 본문 그대로(서버 카드만 '아직' — owner-integrations.swaps.json)
@@ -89,6 +90,47 @@ const load = params => db.begin('isolation level repeatable read read only', sql
 try {
   const base = await load({});
   const admin = base.editors.find(e => e.role === '관리자');
+
+  await check('강사평가 = getPortfolioGate의 원장·직원 평가 접근 조건, 월별 원자료·설정·구성은 해당 면에서만', async () => {
+    assert.equal(portfolioGate({ systemRole: 'admin', level: () => 'full' }), false, '평가를 위임받아도 전 강사 포트폴리오 설정은 불가');
+    assert.equal(portfolioGate({ systemRole: 'master', level: () => 'none' }), false);
+    const d = await load({ tab: 'evaluation' });
+    assert.equal(d.route, 'page'); assert.equal(d.page.showEvaluation, true);
+    assert.equal(d.page.evaluation.readOnly, false);
+    const [{ n }] = await db`select count(*)::int n from public.teacher_portfolio_months where tenant_id=${tenantId} and month=${d.page.evaluation.preview.month} and raws is not null`;
+    assert.equal(d.page.evaluation.preview.rows.length, n);
+    assert.equal((await load({ tab: 'profile' })).page.evaluation, null);
+    if (admin) {
+      const a = await load({ tab: 'evaluation', viewer: admin.id });
+      assert.equal(a.route, 'redirect'); assert.equal(a.redirect, '/owner');
+    }
+  });
+
+  await check('강사평가 저장(되돌림) = 원장만 · 설정 스키마 · 구성 저장·삭제 · 다른 지점 ID 차단 · 감사로그', async () => {
+    const original = (await load({ tab: 'evaluation' })).page.evaluation.initial;
+    const ROLL = new Error('rollback');
+    try {
+      await db.begin(async sql => {
+        const call = async (name, module, args, actor = base.viewer.id) => {
+          const a = M.screen.actions[name];
+          return a.run({ sql, body: a.validate({ module, actor, args }), tenantId, importV2 });
+        };
+        assert.equal((await call('saveEvaluationSettings', 'features/teacher-portfolio/server/evaluation-actions.ts', [null])).ok, false);
+        if (admin) assert.deepEqual(await call('saveEvaluationSettings', 'features/teacher-portfolio/server/evaluation-actions.ts', [original], admin.id), { ok: false, error: '강사평가 설정을 바꿀 권한이 없습니다' });
+        const saved = await call('saveEvaluationSettings', 'features/teacher-portfolio/server/evaluation-actions.ts', [original]);
+        assert.equal(saved.ok, true); assert.match(saved.notice, /월간 점수 다시 매기기는 아직 지원하지 않습니다/);
+        const preset = await call('saveEvaluationPreset', 'features/teacher-portfolio/server/preset-actions.ts', ['시험 구성', original]);
+        assert.equal(preset.ok, true);
+        const [{ id }] = await sql`select id::text id from public.teacher_evaluation_presets where tenant_id=${tenantId} and name='시험 구성'`;
+        assert.equal((await call('deleteEvaluationPreset', 'features/teacher-portfolio/server/preset-actions.ts', ['00000000-0000-4000-8000-000000000001'])).ok, false);
+        assert.equal((await call('deleteEvaluationPreset', 'features/teacher-portfolio/server/preset-actions.ts', [id])).ok, true);
+        const logs = await sql`select action, metadata->>'via' via from public.audit_logs where tenant_id=${tenantId} and created_at=now() and action like 'teacher_evaluation_%'`;
+        assert.deepEqual(logs.map(l => l.action).sort(), ['teacher_evaluation_preset_delete', 'teacher_evaluation_preset_save', 'teacher_evaluation_settings_save']);
+        assert.ok(logs.every(l => l.via === '3.0 연습 복사본'));
+        throw ROLL;
+      });
+    } catch (e) { if (e !== ROLL) throw e; }
+  });
 
   await check('데이터 가져오기 면 = 현재 지점 모듈·보는 사람 권한으로 줄만 전달, 다른 면은 읽지 않음', async () => {
     const master = await load({ tab: 'import' });
