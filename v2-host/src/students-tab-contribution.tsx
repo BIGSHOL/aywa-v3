@@ -24,6 +24,7 @@ import type { getContributionOntology } from "@/features/student-contribution/se
 import type { getCurrentOntologyScope } from "@/features/student-contribution/server/live-scope-query";
 import type { getContributionList } from "@/features/student-contribution/server/queries";
 import { ContributionList } from "./students-contribution-list";
+import { ContributionReferrals } from "./students-contribution-referrals";
 
 type ContributionData = Awaited<ReturnType<typeof getContributionStudent>>;
 type ContributionTabData = { contribution?: ContributionData; live?: LiveConnections | null;
@@ -31,7 +32,8 @@ type ContributionTabData = { contribution?: ContributionData; live?: LiveConnect
   ontologyMode?: "monthly" | "current";
   ontology?: Awaited<ReturnType<typeof getContributionOntology>>;
   currentScope?: Awaited<ReturnType<typeof getCurrentOntologyScope>>;
-  list?: Awaited<ReturnType<typeof getContributionList>> };
+  list?: Awaited<ReturnType<typeof getContributionList>>;
+  referrals?: Parameters<typeof ContributionReferrals>[0]["data"] | null };
 
 export function StudentContributionView({ studentId, params }: { studentId: string; params: Record<string, string | undefined> }) {
   const tab = useStudentTab<ContributionTabData>();
@@ -45,12 +47,16 @@ export function StudentContributionView({ studentId, params }: { studentId: stri
     {tab.list ? <ContributionList studentId={studentId} data={{ ...tab.list, gate: { ...tab.list.gate, canWrite: false } }} />
       : <p>기여도 목록을 열람할 수 없습니다.</p>}
   </StudentContributionScope>;
+  if (params.contribution === "referrals") return <StudentContributionScope studentId={studentId} back={params.back}>
+    {tab.referrals ? <ContributionReferrals studentId={studentId} data={tab.referrals} />
+      : <p>소개 확인 목록을 열람할 수 없습니다.</p>}
+  </StudentContributionScope>;
   if (params.contribution && params.contribution !== "student") return <MissingTab />;
   const { contribution: data, live, summary } = tab;
   if (!data) return <p>기여도 기록을 열람할 수 없습니다.</p>;
   return <StudentContributionScope studentId={studentId} back={params.back}>
     <div className="w-full min-w-0 space-y-5 pb-6">
-      <ContributionHeader studentId={studentId} title={`${data.student.name}의 기여도와 기록`} description="월별 점수와 계산 근거를 확인하세요." active="students"
+      <ContributionHeader studentId={studentId} title={`${data.student.name}의 기여도와 기록`} description="월별 점수와 계산 근거를 확인하세요." active="students" canConfigure={data.gate.canConfigure}
         actions={<Link href="/student-contribution" className="rounded-lg border border-line px-3 py-2 text-sm hover:bg-muted">전체 기여도 목록</Link>} />
       <ContributionStudentPanel studentId={studentId} month={params.month} data={data} />
       <details key={studentId} id={`current-connections-${studentId}`} tabIndex={-1} className="group rounded-xl border border-line" aria-label="현재 연결">

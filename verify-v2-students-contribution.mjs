@@ -10,6 +10,7 @@ import { screen } from './v2-screen-students.mjs';
 import { studentsBase } from './v2-students-common.mjs';
 import { originalSignalFunction } from './v2-students-contribution-actions.mjs';
 import { originalListFunction, originalRecentFunction } from './v2-students-contribution-list.mjs';
+import { runV2Server } from './v2-server-runner.mjs';
 
 const db = await openFullDatabase();
 test('기여도 기본 면 = 원본 월별 점수·근거 조회 · 다른 학생 자료 없음 · 읽기 전용', async () => {
@@ -74,6 +75,53 @@ test('기간별 증감과 미확인 항목은 2.0 함수의 Docker 읽기 경로
   assert.ok(recent.result.rows.every((row) => row.studentId && row.recent));
   const pending = await load('pending');
   assert.ok(pending.result === null || (Array.isArray(pending.result.details) && pending.result.computedAt));
+});
+test('지난 소개 확인은 현재 상담 원본과 지점 후보로 표시한다', async () => {
+  const [student] = await db`select id::text id from public.students where tenant_id=${tenantId}
+    and status='enrolled' and not coalesce(is_test,false) order by id limit 1`;
+  const data = await db.begin('read only', (sql) => buildStudentDetail({ sql, tenantId, id: student.id,
+    sp: { tab: 'contribution', contribution: 'referrals' }, importV2 }));
+  const referral = data.tab.data.referrals;
+  assert.equal(referral.gate.tenantId, tenantId);
+  assert.ok(referral.gate.canConfigure);
+  assert.ok(referral.report.rows.length > 0);
+  const first = referral.report.rows[0];
+  const [source] = await db`select prospect_name from public.enrollment_consultations where tenant_id=${tenantId}
+    and id=${first.consultationId}`;
+  assert.equal(first.prospectName, source?.prospect_name ?? null);
+  assert.ok(referral.students.every((s) => s.id && s.name));
+});
+test('소개자 검색·연결은 2.0 함수를 쓰고 연결·감사로그를 Docker에서 되돌린다', async () => {
+  const [student] = await db`select id::text id from public.students where tenant_id=${tenantId}
+    and status='enrolled' and not coalesce(is_test,false) order by id limit 1`;
+  const base = await db.begin('read only', (sql) => studentsBase({ sql, tenantId, importV2 }));
+  const data = await db.begin('read only', (sql) => buildStudentDetail({ sql, tenantId, id: student.id,
+    sp: { tab: 'contribution', contribution: 'referrals' }, importV2 }));
+  const candidate = data.tab.data.referrals.report.rows.find((row) => row.candidates.length && row.state !== 'linked');
+  assert.ok(candidate);
+  const sourceModule = 'features/student-contribution/server/referral-actions.ts';
+  const action = screen.actions.linkReviewedReferral;
+  const input = { consultationId: candidate.consultationId, studentId: candidate.candidates[0], reason: '복사본 롤백 확인' };
+  assert.deepEqual(action.validate({ module: sourceModule, actor: base.viewer.id, args: [input] }).args, [input]);
+  assert.throws(() => action.validate({ module: sourceModule, actor: null, args: [input] }));
+  const search = await screen.actions.searchReviewedReferrers.run({ body: { actor: base.viewer.id, args: ['김민'] }, tenantId });
+  assert.ok(Array.isArray(search.options), search.error);
+  const [before] = await db`select referrer_student_id::text referrer_student_id from public.enrollment_consultations
+    where tenant_id=${tenantId} and id=${candidate.consultationId}`;
+  const [queueBefore] = await db`select count(*)::int n from net.http_request_queue`;
+  const { results: [result], probes } = await runV2Server({ steps: [{ module: sourceModule, fn: 'linkReviewedReferral', args: [input] }],
+    actorId: base.viewer.id, tenantId, mode: 'write', rollback: true,
+    probes: [
+      { text: 'select referrer_student_id::text referrer_student_id from public.enrollment_consultations where tenant_id=$1 and id=$2', params: [tenantId, candidate.consultationId] },
+      { text: "select action, metadata->>'via' via from public.audit_logs where tenant_id=$1 and action='student_contribution_referral_link' and metadata->>'consultationId'=$2 and created_at=now()", params: [tenantId, candidate.consultationId] },
+    ] });
+  assert.equal(result.value.ok, true, result.value.error);
+  assert.equal(probes[0][0].referrer_student_id, candidate.candidates[0]);
+  assert.deepEqual(probes[1], [{ action: 'student_contribution_referral_link', via: '3.0 연습 복사본' }]);
+  const [after] = await db`select referrer_student_id::text referrer_student_id from public.enrollment_consultations
+    where tenant_id=${tenantId} and id=${candidate.consultationId}`;
+  assert.deepEqual(after, before);
+  assert.equal((await db`select count(*)::int n from net.http_request_queue`)[0].n, queueBefore.n);
 });
 test('학생 기록 연결의 월별·현재 관점을 원본 Docker 읽기 함수로 받는다', async () => {
   const [student] = await db`select id::text id from public.students where tenant_id=${tenantId}
