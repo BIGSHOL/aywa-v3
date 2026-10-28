@@ -10,6 +10,10 @@ import { onHostRefresh } from '../shims/host-nav';
 import { useHostSearch } from '../shims/next-navigation';
 import { HostFrame, HostMessage } from './host-frame';
 
+/** 진입점 표식(build.mjs가 찾는다) — 창 제목과 이 화면의 2.0 주소. */
+export const HOST_TITLE = '시간표';
+export const HOST_ROUTE = '/timetable';
+
 type Raw = Omit<TimetableData, 'allSlots'> & { allSlots: Omit<TimetableData['allSlots'][number], 'students'>[]; rosters: Record<string, TimetableData['allSlots'][number]['students']> };
 
 /** 반별로 받은 명단을 2.0 모양(배치마다 students)으로 다시 붙인다 — 같은 반 배치는 같은 명단 배열(2.0과 같다). */

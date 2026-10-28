@@ -1,6 +1,6 @@
 // next/navigation 대체 — 2.0 부품의 useRouter/usePathname/useSearchParams를 호스트 iframe 주소로.
 import { useMemo, useSyncExternalStore } from 'react';
-import { currentScreen, hostNavigate, hostRefresh, subscribeLocation } from './host-nav';
+import { currentRoute, hostNavigate, hostRefresh, subscribeLocation } from './host-nav';
 
 const router = {
   push: (href: string) => hostNavigate(href, 'push'),
@@ -11,7 +11,7 @@ const router = {
   prefetch: () => {},
 };
 export function useRouter() { return router; }
-export function usePathname() { return `/${currentScreen()}`; }
+export function usePathname() { return currentRoute(); }
 /** 지금 주소의 쿼리 — 호스트 안 이동(history)·뒤로 가기에 따라 바뀐다. */
 export function useHostSearch() { return useSyncExternalStore(subscribeLocation, () => location.search, () => ''); }
 export function useSearchParams() { const s = useHostSearch(); return useMemo(() => new URLSearchParams(s), [s]); }

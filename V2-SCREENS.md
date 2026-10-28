@@ -54,6 +54,11 @@
 - `v2-screen-<id>.css` — 그 화면 스타일(선택). 공통 틀은 `v2-screens.css`.
 - `verify-v2-screen-<id>.mjs` — 시험.
 
+**2.0 부품 호스트로 그리기(`v2-host/`)** — 진입점 붙이는 법(`build.mjs`는 고치지 않는다):
+1. `v2-host/src/<id>.tsx`를 만들고 `export const HOST_TITLE = '화면 이름'`과 `export const HOST_ROUTE = '/2.0주소'`(없으면 `/<id>`)를 적는다 — 빌드가 이 표식으로 진입점을 찾고(`discoverEntries`), 2.0 부품이 그 주소로 이동하면 iframe 안에서 그 화면으로 간다.
+2. 그 파일은 `createRoot`로 `AppProviders` › `HostFrame`(`./host-frame`) › 2.0 레이아웃 컨텍스트(`OperationsProvider` 등) › 2.0 `page.tsx` 조립을 옮긴 부품(2.0 부품·함수는 `@/…`로 그대로 import)을 그리고, 데이터는 `GET /api/v2/<id>`(load = 2.0 page가 서버에서 받던 모양)로 받는다. 서버 액션(`"use server"`)은 빌드가 자리표시로 바꾼다(`shims/server-action.ts`). 시간표가 본보기(`src/timetable.tsx`·`timetable-page.tsx`).
+3. `node experiments/owner-concept/v2-host/build.mjs` → `dist/<id>.html`(4310은 새로고침으로 반영, 시작 때 `isBuilt()`가 거짓이면 스스로 짓는다). 3.0 화면 `v2-screen-<id>.js`는 같은 출처 iframe `/v2-host/<id>.html?…`을 자리 위에 한 번만 겹쳐 둔다(`v2-screen-timetable.js`). `shims/`·`host-frame.tsx`·`host.css`는 공용 — 더 필요하면 시간표 세션에 `[요청]`.
+
 ## 지킬 것
 
 - **같은 데이터는 같은 원본**: 2.0이 화면을 만드는 순수 함수(격자 만들기·명단·라벨·판정)는 `importV2('features/…/x.ts')`로 **그대로** 불러 쓴다(원인 추적의 `v2-bridge.mjs`와 같은 방식). 새로 계산해 2.0과 다른 값을 내지 않는다. 운영 enum(과목·학년·교시 라벨)은 학원 설정에서 읽는다.
