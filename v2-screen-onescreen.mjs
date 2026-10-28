@@ -270,13 +270,14 @@ async function actAs(sql, t, actorId) {
 const menuMatrix = (R, env, actor) => R.applyUserOverrides(R.resolveMatrix(env.permissions.overrides || []), actor.id, actor.role, env.permissions.userOverrides || []);
 /** 2.0 getTeachingClassIds: own classes (any state) + delegations active that day + JJ classes for the JJ report managers. */
 async function teachingClassIds(sql, t, R, env, actorId, date) {
-  const jjManager = (env.permissions.specialAccess?.jjReportManagerIds || []).includes(actorId), dow = jjManager ? R.axisDowOf(date) : null;
+  // JJ 반 = 2.0 fetchJjManagedClassIds — 요일을 보지 않는다(그날 살아 있는 자리 교시가 하나라도 있는 반). 화면 명단에서 그날 수업 없는 반을 숨기는 것은 load의 일이다.
+  const jjManager = (env.permissions.specialAccess?.jjReportManagerIds || []).includes(actorId);
   const [own, dels, jj] = await Promise.all([
     sql`select id::text id from public.classes where tenant_id=${t} and teacher_id=${actorId}`,
     sql`select class_id::text class_id, delegate_user_id::text delegate_user_id, from_date::text from_date, to_date::text to_date, revoked_at from public.class_delegations
       where tenant_id=${t} and revoked_at is null and from_date<=${date} and to_date>=${date}`,
-    dow ? sql`select class_id::text class_id, teacher_id, slot_teacher_label, valid_from::text valid_from, valid_to::text valid_to from public.class_schedules
-      where tenant_id=${t} and day_of_week::text=${dow} and teacher_id is null and slot_teacher_label is not null` : []]);
+    jjManager ? sql`select class_id::text class_id, teacher_id, slot_teacher_label, valid_from::text valid_from, valid_to::text valid_to from public.class_schedules
+      where tenant_id=${t} and teacher_id is null and slot_teacher_label is not null` : []]);
   const ownIds = own.map(c => c.id), ownSet = new Set(ownIds);
   const jjIds = jj.filter(r => { const slot = { teacherId: r.teacher_id, slotTeacherLabel: r.slot_teacher_label, validFrom: r.valid_from.slice(0, 10), validTo: r.valid_to ? r.valid_to.slice(0, 10) : null };
     return R.isSeatSlot(slot) && R.specialSlotLabel(r.slot_teacher_label) === R.SELF_STUDY_ROOM_LABEL && R.slotLiveOn(slot, date); }).map(r => r.class_id);
@@ -582,3 +583,6 @@ async function runSession(sql, t, R, b) {
     returning to_json(updated_at)#>>'{}' updated_at`;
   return row ? { ok: true, updatedAt: row.updated_at } : { ok: true, skipped: true };
 }
+
+/** 시험용 — 원스크린 권한 판정의 담당 반(2.0 getTeachingClassIds)을 영상 제출 현황 판정과 견준다(verify-v2-onescreen-save-extra.mjs). */
+export const forTests = { teachingClassIds, settingsOf, rules };

@@ -209,6 +209,31 @@ test('복사본(강사 권한): 담당 반 · 7일 잠금 · 수강생 확인 �
   }).catch((e) => { if (e !== ROLLBACK) throw e; });
 });
 
+test('복사본: 담당 반 판정(JJ 보고서 담당) = 영상 제출 현황 판정(2.0 getTeachingClassIds) — 요일이 다른 두 날 모두, 요일로 거르지 않는다', { skip: !db && 'local database not running' }, async () => {
+  const { tenantId: t } = await import('./full-db.mjs'), { importV2 } = await import('./v2-bridge.mjs');
+  const { forTests } = await import('./v2-screen-onescreen.mjs');
+  const { loadRules: vhRules, videoHomeworkWriteError } = await import('./v2-screen-video-homework.mjs');
+  await db.begin('isolation level repeatable read read only', async (sql) => {
+    const R = await forTests.rules(importV2), env = await forTests.settingsOf(sql, t, R);
+    const [manager] = env.permissions.specialAccess?.jjReportManagerIds ?? [];
+    assert(manager, '복사본에 JJ 보고서 담당이 있다');
+    // R 판정의 '담당 반' 갈래만 보게 — 전체 권한 지름길을 끄고 원스크린 쓰기는 연다.
+    const w = { R: await vhRules(importV2), people: { settings: { permissions: env.permissions } }, u: { id: manager }, full: false, level: () => 'full', sql, t };
+    const { asOf: day } = await screen.load({ sql, params: { teacher: TEACHER }, tenantId: t, importV2 });
+    const seatClasses = (await sql`select distinct class_id::text id from public.class_schedules where tenant_id=${t} and teacher_id is null and slot_teacher_label is not null`).map((r) => r.id);
+    for (const date of [day, shift(day, 1)]) {
+      const mine = new Set(await forTests.teachingClassIds(sql, t, R, env, manager, date));
+      const dow = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'][new Date(`${date}T00:00:00Z`).getUTCDay()];
+      for (const id of seatClasses) assert.equal(mine.has(id), (await videoHomeworkWriteError(w, id, date)) === null, `${date} ${id}`);
+      // 그날 요일에 자리 교시가 없는 JJ 반도 담당 반이다(2.0 fetchJjManagedClassIds는 요일을 보지 않는다).
+      const offDay = (await sql`select class_id::text id from public.class_schedules s where tenant_id=${t} and teacher_id is null and slot_teacher_label='JJ'
+        and valid_from<=${date} and (valid_to is null or valid_to>=${date}) and not exists (select 1 from public.class_schedules x where x.class_id=s.class_id
+        and x.teacher_id is null and x.slot_teacher_label='JJ' and x.day_of_week::text=${dow} and x.valid_from<=${date} and (x.valid_to is null or x.valid_to>=${date})) limit 1`)[0];
+      assert(offDay && mine.has(offDay.id), `${date}: 그 요일에 JJ 교시가 없는 JJ 반도 들어간다`);
+    }
+  });
+});
+
 test('이동: /onescreen/video-homework만 #v2-video-homework?view=mine으로(2.0 page 열쇠 그대로 + 지금 선생님 actor)', async () => {
   const src = await readFile(new URL('./v2-screen-onescreen.js', import.meta.url), 'utf8');
   const m = /function videoHomeworkTarget\(href, actorId\) \{[\s\S]*?\n  \}/.exec(src);
