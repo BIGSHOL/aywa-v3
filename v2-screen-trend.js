@@ -101,13 +101,31 @@
     return `<div class="chart-box tr-chart${many ? ' has-series' : ''}" data-chart tabindex="0" role="group" aria-label="${esc(name)} 추세 — 화살표 키로 기간을 옮기며 수치를 확인합니다${sub ? `. Enter로 그 기간을 ${sub}로 나눠 봅니다` : ''}"><svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(name)} ${d.windows.map((w, i) => `${w.label} ${shown(d.total[i]?.value, d.metric.unit)}`).join(', ')}">${grid}${base ? `<g class="tr-line base">${path(base.total)}</g>` : ''}${lines}<g class="tr-line">${path(d.total)}</g>${cols}</svg></div>${legend}`;
   }
 
-  // 기준별 표의 정보 칸(원장 10-28 "각 선생님의 과목, 담당 반 수, 담당 학생 수 표시") — 서버가 줄마다 meta로 준다(지금 재원 수강 기준).
-  const META_COLS = { teacher: [['subjects', '과목'], ['classes', '담당 반'], ['students', '담당 학생']], class: [['subjects', '과목'], ['teacher', '담임'], ['students', '학생']], subject: [['classes', '반'], ['students', '학생']] };
-  const metaCell = (k, v) => (v == null || v === '' ? '' : k === 'classes' ? `${fmt(v)}개` : k === 'students' ? `${fmt(v)}명` : String(v));
+  // 기준별 표의 정보 칸(원장 10-28 "각 선생님의 과목, 담당 반 수, 담당 학생 수 표시") — 서버가 줄마다 meta로 준다(화면에 보이는 범위에 운영된 반 · 수강이 겹친 학생 기준).
+  // [열쇠, 제목, 맞춤] — 제목과 값은 같은 쪽(원장 10-28 "각 항목별로 가운데정렬할지 왼쪽 혹은 오른쪽 정렬할지는 알아서"): 수(반 수·학생 수) 오른쪽 · 짧은 글(과목·담임·학교학년) 가운데 · 긴 글(학생의 반 목록) 왼쪽.
+  const META_COLS = {
+    teacher: [['subjects', '과목', 'c'], ['classes', '담당 반', 'r'], ['students', '담당 학생', 'r']],
+    class: [['subjects', '과목', 'c'], ['teacher', '담임', 'c'], ['students', '학생', 'r']],
+    subject: [['classes', '반', 'r'], ['students', '학생', 'r']],
+    student: [['school', '학교·학년', 'c'], ['classes', '반', 'l']],
+  };
+  const metaCell = (k, v) => (v == null || v === '' ? '' : typeof v !== 'number' ? String(v) : k === 'classes' ? `${fmt(v)}개` : k === 'students' ? `${fmt(v)}명` : fmt(v));
+  // 쉬운 거르기(원장 10-28 "전체 선택 및 필터링 쉽게 가능하게") — 표 위 한 줄: 이름 찾기 + 정보 칸의 빠른 칩(과목 · 담임 — 값이 2~8가지인 글 칸).
+  // 화면 안에서만 거른다(서버를 다시 부르지 않는다) · 칩은 한 칸 안에선 '또는', 칸끼리는 '그리고' · 지표·기준·필터가 바뀌면 처음으로. 그래프 선은 거르지 않는다(선은 표의 칸이 정한다).
+  const CHIP_MAX = 8;
+  const splitMeta = v => (typeof v === 'string' ? v.split(', ').map(s => s.trim()).filter(Boolean) : []);
+  const finder = { view: '', q: '', chips: new Set() };
+  const findOf = d => { const k = viewKey(d); if (finder.view !== k) Object.assign(finder, { view: k, q: '', chips: new Set() }); return finder; };
+  const chipGroups = (d, metaCols) => metaCols.filter(([, , a]) => a === 'c')
+    .map(([k, l]) => ({ k, l, values: [...new Set(rowsOf(d).flatMap(r => splitMeta(r.meta?.[k])))].sort((a, b) => a.localeCompare(b, 'ko')) }))
+    .filter(g => g.values.length >= 2 && g.values.length <= CHIP_MAX);
+  const matcher = (f, groups) => { const q = f.q.trim().toLowerCase();
+    return r => (!q || String(r.label).toLowerCase().includes(q)) && groups.every(g => { const on = g.values.filter(v => f.chips.has(`${g.k}:${v}`)); return !on.length || splitMeta(r.meta?.[g.k]).some(v => on.includes(v)); }); };
   function table(d, api) {
-    const li = d.windows.length - 1, dim = d.metric.dims.find(x => x.id === d.by), unit = d.metric.unit, better = d.metric.better;
-    const order = new Map(rowsOf(d).map((r, i) => [r.key, i])), on = shownKeys(d), metaCols = d.rows.some(r => r.meta) ? META_COLS[d.by] || [] : [];
-    const rows = rowsOf(d).map(r => ({ ...r, now: r.points[li], prev: li ? r.points[li - 1] : null }));
+    const li = d.windows.length - 1, dim = d.metric.dims.find(x => x.id === d.by), unit = d.metric.unit, better = d.metric.better, noun = dim?.label.replace(/별$/, '') || '이름';
+    const all = rowsOf(d), order = new Map(all.map((r, i) => [r.key, i])), on = shownKeys(d), metaCols = d.rows.some(r => r.meta) ? META_COLS[d.by] || [] : [];
+    const f = findOf(d), groups = chipGroups(d, metaCols), hit = matcher(f, groups);
+    const rows = all.filter(hit).map(r => ({ ...r, now: r.points[li], prev: li ? r.points[li - 1] : null }));
     const val = r => r.now?.value, sign = better === 'down' ? 1 : -1;
     const cmp = {
       value: (a, b) => (val(a) == null) - (val(b) == null) || (val(a) - val(b)) * (sort.dir ? sign : -sign) || (b.now?.den ?? 0) - (a.now?.den ?? 0),
@@ -116,16 +134,27 @@
       change: (a, b) => { const ch = r => (r.now?.value != null && r.prev?.value != null ? r.now.value - r.prev.value : null); return (ch(a) == null) - (ch(b) == null) || (ch(a) - ch(b)) * (sort.dir ? sign : -sign); },
     }[sort.key];
     rows.sort((a, b) => rankOf(a.key) - rankOf(b.key) || cmp(a, b));
-    const head = (key, label, cls = '') => `<th class="${cls}"><button type="button" data-tr-sort="${key}" aria-pressed="${sort.key === key}">${label}${sort.key === key ? (sort.dir ? ' ↑' : ' ↓') : ''}</button></th>`;
+    // 정렬 화살표는 제목 옆에 떠 있게(자리를 차지하면 가운데·오른쪽 제목이 값과 어긋난다) — 오른쪽 맞춤 칸은 제목 왼쪽에.
+    const head = (key, label, a) => `<th class="${a}"><button type="button" data-tr-sort="${key}" aria-pressed="${sort.key === key}">${label}${sort.key === key ? `<i class="tr-arrow" aria-hidden="true">${sort.dir ? '↑' : '↓'}</i>` : ''}</button></th>`;
     const cut = showAll ? rows : rows.slice(0, 20), w = d.windows[li];
-    return `<section class="tr-break"><h3>${esc(dim?.label || '기준별')} <span>${esc(dayName(w))}</span></h3>`
-      + `<div class="tr-table-wrap"><table class="tr-table"><thead><tr><th class="tr-pick"><span class="ax-visually-hidden">그래프에 표시</span></th>${head('name', dim?.label.replace(/별$/, '') || '이름')}${metaCols.map(([k, l]) => `<th class="tr-meta ${k === 'subjects' || k === 'teacher' ? '' : 'num'}">${l}</th>`).join('')}${head('value', '값', 'num')}${head('change', '직전 대비', 'num')}${unit === '%' ? head('den', '대상', 'num') : ''}<th>추세</th><th></th></tr></thead><tbody>`
-      + cut.map(r => { const c = changeOf(r.now, r.prev, unit, better), color = colorOf(d, r, order.get(r.key));
-        return `<tr><td class="tr-pick"><label><input type="checkbox" data-tr-line="${esc(r.key)}" ${on.has(r.key) ? 'checked' : ''} aria-label="${esc(r.label)} 그래프에 표시"><i style="background:${color}"></i></label></td><th scope="row">${esc(r.label)}</th>`
-          + metaCols.map(([k]) => `<td class="tr-meta ${k === 'subjects' || k === 'teacher' ? '' : 'num'}">${esc(metaCell(k, r.meta?.[k]))}</td>`).join('')
-          + `<td class="num"><strong>${shown(r.now?.value, unit)}</strong></td><td class="num ${c.tone}">${c.text}</td>${unit === '%' ? `<td class="num">${ratio(r.now)}</td>` : ''}`
-          + `<td class="tr-spark">${api.lineChart(r.points.map((p, i) => ({ label: d.windows[i].label, value: p?.value ?? null })), { key: 'value', label: r.label, unit, compare: '직전', better })}</td>`
-          + `<td><button type="button" class="ax-text-link" data-tr-filter="${esc(r.key)}">자세히 보기</button></td></tr>`; }).join('')
+    // 전체 선택 = 거른 줄 모두(보이지 않는 '나머지'까지) — 그래프 선 켜고 끄기와 같은 picked. 일부만 켜졌으면 반쯤(indeterminate, 그린 뒤 render가 건다).
+    const keys = rows.map(r => r.key), lit = keys.filter(k => on.has(k)).length; last.visibleKeys = keys;
+    const pickAll = `<input type="checkbox" data-tr-all ${keys.length && lit === keys.length ? 'checked' : ''} ${lit && lit < keys.length ? 'data-mixed' : ''} ${keys.length ? '' : 'disabled'} aria-label="보이는 ${esc(noun)} 모두 그래프에 표시">`;
+    const tools = all.length >= 6 || f.q || f.chips.size
+      ? `<div class="tr-tools"><input type="search" id="tr-find" class="tr-find" data-tr-find value="${esc(f.q)}" placeholder="${esc(noun)} 찾기" aria-label="${esc(noun)} 이름으로 거르기" autocomplete="off">`
+        + groups.map(g => `<div class="tr-chips" role="group" aria-label="${esc(g.l)}">${g.values.map(v => `<button type="button" class="tr-chip" data-tr-chip="${esc(`${g.k}:${v}`)}" aria-pressed="${f.chips.has(`${g.k}:${v}`)}">${esc(v)}</button>`).join('')}</div>`).join('') + '</div>'
+      : '';
+    const ncols = 2 + metaCols.length + 2 + (unit === '%' ? 1 : 0) + 2;
+    return `<section class="tr-break"><h3>${esc(dim?.label || '기준별')} <span>${esc(dayName(w))}</span></h3>${tools}`
+      + `<div class="tr-table-wrap"><table class="tr-table"><thead><tr><th class="tr-pick c"><label>${pickAll}<i class="tr-pick-pad" aria-hidden="true"></i></label></th>${head('name', esc(noun), 'l')}${metaCols.map(([k, l, a]) => `<th class="tr-meta ${a}${a === 'l' ? ' wide' : ''}">${l}</th>`).join('')}`
+      + `${head('value', '값', 'r num')}${head('change', '직전 대비', 'c num')}${unit === '%' ? head('den', '대상', 'c num') : ''}<th class="c">추세</th><th class="r"></th></tr></thead><tbody>`
+      + (cut.length ? cut.map(r => { const c = changeOf(r.now, r.prev, unit, better), color = colorOf(d, r, order.get(r.key));
+        return `<tr><td class="tr-pick c"><label><input type="checkbox" data-tr-line="${esc(r.key)}" ${on.has(r.key) ? 'checked' : ''} aria-label="${esc(r.label)} 그래프에 표시"><i style="background:${color}"></i></label></td><th scope="row" class="l">${esc(r.label)}</th>`
+          + metaCols.map(([k, , a]) => `<td class="tr-meta ${a}${a === 'r' ? ' num' : ''}${a === 'l' ? ' wide' : ''}">${esc(metaCell(k, r.meta?.[k]))}</td>`).join('')
+          + `<td class="r num"><strong>${shown(r.now?.value, unit)}</strong></td><td class="c num ${c.tone}">${c.text}</td>${unit === '%' ? `<td class="c num">${ratio(r.now)}</td>` : ''}`
+          + `<td class="tr-spark c">${api.lineChart(r.points.map((p, i) => ({ label: d.windows[i].label, value: p?.value ?? null })), { key: 'value', label: r.label, unit, compare: '직전', better })}</td>`
+          + `<td class="r"><button type="button" class="ax-text-link" data-tr-filter="${esc(r.key)}">자세히 보기</button></td></tr>`; }).join('')
+        : `<tr><td class="c" colspan="${ncols}">맞는 줄이 없습니다</td></tr>`)
       + `</tbody></table></div>${rows.length > cut.length ? `<button type="button" class="button" data-tr-more>나머지 ${fmt(rows.length - cut.length)}개 더 보기</button>` : ''}</section>`;
   }
 
@@ -167,6 +196,9 @@
     setTimeout(next, 800);
   }
 
+  // '전체 선택'의 반쯤 상태는 속성이 아니라 그린 뒤의 값이다 — render가 끝나고(live.js가 같은 차례에 화면에 넣은 뒤) 건다.
+  const markMixed = () => queueMicrotask(() => { const el = document.querySelector('[data-v2-screen="trend"] [data-tr-all][data-mixed]'); if (el) el.indeterminate = true; });
+
   function render(ctx) {
     // from·to·up = 쪼개 보는 범위(점을 누른 그 기간)와 나눈 창의 단위 — 주소에 실어 새로고침·뒤로 가기에도 같은 보기.
     const q = ctx.query, params = Object.fromEntries(['metric', 'grain', 'by', 'f', 'from', 'to', 'up'].map(k => [k, q.get(k) || '']));
@@ -174,6 +206,7 @@
     const e = ctx.load(params);
     if (!e.data) {
       if (e.status === 'error') return `<p class="v3s-note">${esc(e.error || '불러오지 못했습니다.')}</p>`;
+      if (lastHtml) markMixed();
       return lastHtml ? lastHtml.replace('<div class="tr">', '<div class="tr is-loading" aria-busy="true">') : '<div class="tr"><p class="v3s-note">추세를 계산하는 중…</p></div>';
     }
     const d = e.data; last.by = d.by; last.view = viewKey(d); last.d = d;
@@ -187,12 +220,13 @@
     const picker = CP ? CP.html({ id: 'tr-metric', name: 'tr-metric', label: '지표', clearable: false, selected: [d.metric.id], ...CP.lists.choices({ items, columns: [{ key: 'name', label: '지표' }], noun: '지표', unit: '개' }) }) : '';
     const seg = (attr, list, cur) => list.map(x => `<button type="button" class="tab ${x.id === cur ? 'active' : ''}" ${attr}="${esc(x.id)}" aria-pressed="${x.id === cur}">${esc(x.label)}</button>`).join('');
     lastHtml = `<div class="tr"><div class="page-heading"><div><p class="ws-group">확장 추세</p><h1>${esc(d.metric.label)}</h1></div><div class="heading-actions">${picker}</div></div>`
-      + `<div class="tr-bar"><div class="tr-seg" role="group" aria-label="기간 단위">${seg('data-tr-grain', d.grains, d.grain)}</div><div class="tr-seg" role="group" aria-label="기준">${seg('data-tr-by', d.metric.dims.filter(x => x.id !== d.filter?.dim), d.by)}</div>`
+      + `<div class="tr-bar"><div class="tr-seg" role="group" aria-label="기간 단위">${seg('data-tr-grain', d.grains, d.grain)}</div><div class="tr-seg" role="group" aria-label="기준">${seg('data-tr-by', d.metric.dims.filter(x => x.id !== d.filter?.dim && (!x.needsFilter || d.filter)), d.by)}</div>`
       + (d.range ? `<span class="tr-filter tr-range"><strong>${esc(d.range.label)}</strong> ${esc(grainName(d, d.grain))}<button type="button" class="icon-button" data-tr-undrill aria-label="나눠 보기 닫기 — ${esc(grainName(d, d.range.up))} 보기로">×</button></span>` : '')
       + (d.filter ? `<span class="tr-filter"><strong>${esc(d.filter.label)}</strong>만 보는 중<button type="button" class="icon-button" data-tr-unfilter aria-label="필터 풀기">×</button></span>` : '') + '</div>'
       + `<section class="tr-main"><div class="tr-now"><span>${esc(d.windows[li] ? dayName(d.windows[li]) : '')}</span><strong>${shown(p?.value, d.metric.unit)}</strong><small class="${c.tone}">${li ? `직전 대비 ${c.text}` : ''}</small><small>${ratio(p, d.metric.unit)}</small></div>${bigChart(d, base, seriesOf(d))}</section>`
       + (d.rows.length ? table(d, ctx.api) : '<p class="v3s-note">이 조건의 기록이 없습니다.</p>') + roster(d, ctx.api) + '</div>';
     warm(d, params.grain);
+    markMixed();
     return lastHtml;
   }
 
@@ -235,8 +269,9 @@
     if (!t.closest?.('[data-v2-screen="trend"]')) return;
     const col = t.closest('.tr-chart .chart-col[data-tr-drill]');
     if (col) { if (!down?.touch || down.armed) drill(col); return; }
-    const b = t.closest('[data-tr-grain],[data-tr-by],[data-tr-filter],[data-tr-unfilter],[data-tr-undrill],[data-tr-sort],[data-tr-more],[data-tr-open]'); if (!b) return;
+    const b = t.closest('[data-tr-grain],[data-tr-by],[data-tr-filter],[data-tr-unfilter],[data-tr-undrill],[data-tr-sort],[data-tr-more],[data-tr-open],[data-tr-chip]'); if (!b) return;
     if (b.dataset.trOpen) { last.api.openRecord?.(b.dataset.trOpen); return; } // 명단의 이름 = 그 기록 창
+    if (b.dataset.trChip) { const k = b.dataset.trChip; if (finder.chips.has(k)) finder.chips.delete(k); else finder.chips.add(k); showAll = false; last.api.render(); return; }
     // 기간 단위를 바꾸면 쪼개 보기도 끝난다(쪼개 보는 중 눌린 단추 = 나눈 단위 — 누르면 그 단위의 보통 보기).
     if (b.dataset.trGrain) go({ grain: b.dataset.trGrain, ...UNDRILL });
     else if (b.hasAttribute('data-tr-undrill')) go({ grain: last.d?.range?.up || last.params.up || last.params.grain, ...UNDRILL });
@@ -246,7 +281,16 @@
     else if (b.dataset.trSort) { sort.dir = sort.key === b.dataset.trSort ? 1 - sort.dir : 0; sort.key = b.dataset.trSort; last.api.render(); }
     else if (b.hasAttribute('data-tr-more')) { showAll = true; last.api.render(); }
   });
+  // 이름 찾기 — 글자마다 바로 거른다(화면 안에서만). 한글은 조합이 끝났을 때(조합 중에 다시 그리면 글자가 깨진다). 초점·커서는 live.js render가 id로 되살린다.
+  const onFind = ev => { const el = ev.target; if (!last || el?.id !== 'tr-find' || ev.isComposing || finder.q === el.value) return; finder.q = el.value; showAll = false; last.api.render(); };
+  document.addEventListener('input', onFind); document.addEventListener('compositionend', onFind);
   document.addEventListener('change', ev => {
+    // 전체 선택 = 거른 줄 모두 켜기(이미 다 켜져 있으면 모두 끄기).
+    if (ev.target.matches?.('[data-v2-screen="trend"] [data-tr-all]') && last) {
+      const set = picked.get(last.view), keys = last.visibleKeys || [];
+      if (set) { const allOn = keys.every(k => set.has(k)); keys.forEach(k => (allOn ? set.delete(k) : set.add(k))); }
+      last.api.render(); return;
+    }
     // 표의 칸 = 그 줄의 꺾은선 켜고 끄기(그 지표·기준·필터에서만 기억).
     const line = ev.target.closest?.('[data-v2-screen="trend"] [data-tr-line]');
     if (line && last) { const set = picked.get(last.view); if (set) { if (line.checked) set.add(line.dataset.trLine); else set.delete(line.dataset.trLine); } last.api.render(); return; }

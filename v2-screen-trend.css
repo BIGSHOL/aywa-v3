@@ -76,3 +76,23 @@
 .tr-roster-table td{font-variant-numeric:tabular-nums}
 .tr-roster-more{margin:0;font-size:var(--ax-xs);color:var(--ax-ink)}
 .tr-roster-table .ax-text-link{font:inherit;min-height:0;padding:0;line-height:inherit;color:inherit}
+/* 기준별 표 열 맞춤(원장 10-28 "각 항목별로 가운데정렬할지 왼쪽 혹은 오른쪽 정렬할지는 알아서. 추세는 가운데 정렬이 좋을듯 행제목을") — 제목과 값은 같은 쪽:
+   이름 왼쪽 · 과목·담임·학교학년·직전 대비·대상 가운데 · 반 수·학생 수·값 오른쪽(자리 맞춤) · 추세 가운데. 정렬 화살표는 제목 옆에 떠서 제목 자리를 밀지 않는다. */
+.tr-table th.l,.tr-table td.l{text-align:left}
+.tr-table th.c,.tr-table td.c{text-align:center}
+.tr-table th.r,.tr-table td.r{text-align:right}
+.tr-table td.num,.tr-table td.tr-meta{font-variant-numeric:tabular-nums}
+.tr-table .tr-meta.wide{width:14em}
+.tr-table thead th button{position:relative}
+.tr-arrow{position:absolute;left:100%;top:0;margin-left:3px;font-style:normal;font-weight:400}
+.tr-table th.r .tr-arrow{left:auto;right:100%;margin:0 3px 0 0}
+.tr-table .tr-pick input[data-tr-all]{width:15px;height:15px;margin:0;vertical-align:middle;cursor:pointer}
+/* 표 위 한 줄 — 이름 찾기 + 빠른 칩(눌린 칩 = 진한 테두리). 칸 높이는 기간·기준 단추와 같다. */
+.tr-tools{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px}
+.tr-find{height:var(--ax-control-h-sm);min-width:12rem;padding:0 10px;border:1px solid var(--ax-line);border-radius:6px;background:#fff;font:inherit;font-size:var(--ax-xs);color:var(--ax-ink)}
+.tr-find:focus-visible{outline:2px solid var(--ax-primary);outline-offset:1px}
+.tr-chips{display:flex;flex-wrap:wrap;gap:4px}
+.tr-chip{min-height:var(--ax-control-h-sm);padding:0 10px;border:1px solid var(--ax-line);border-radius:999px;background:#fff;font:inherit;font-size:var(--ax-xs);color:var(--ax-ink);cursor:pointer;white-space:nowrap}
+.tr-chip:hover{background:var(--ax-soft)}
+.tr-chip[aria-pressed="true"]{border-color:var(--ax-primary);background:var(--ax-soft);color:var(--ax-primary);font-weight:650}
+.tr-table .tr-pick i.tr-pick-pad{visibility:hidden} /* 머리 체크 칸을 줄의 체크 칸(옆에 색 칸)과 같은 자리에 */

@@ -76,28 +76,53 @@ const remember = (key, make) => {
 async function nameOf(sql, tenantId, dim, key) {
   if (dim === 'teacher') return key === 'unassigned' ? '담당 미지정' : (await sql`select display_name from public.users where tenant_id=${tenantId} and id::text=${key}`)[0]?.display_name ?? null;
   if (dim === 'class') return (await sql`select class_name from public.classes where tenant_id=${tenantId} and id::text=${key}`)[0]?.class_name ?? null;
+  // 학생(학생 줄의 '자세히 보기') — 필터 없이 학생별로 나눈 답(학원 전체 학생)을 이름 찾자고 계산하지 않는다.
+  if (dim === 'student') return (await sql`select name from public.students where tenant_id=${tenantId} and id::text=${key}`)[0]?.name ?? null;
   return null;
 }
 
-// 기준별 줄의 정보 칸(원장 10-28 "각 선생님의 과목, 담당 반 수, 담당 학생 수 표시") — 지금 운영 중인 반과 오늘 재원 수강 기준.
-// 선생님 = 담당 반의 과목 · 반 수 · 학생 수(겹치는 학생은 한 번) / 반 = 과목 · 담임 · 학생 수 / 과목 = 반 수 · 학생 수. 과목 열쇠는 영어 중 EiE를 가른다.
+// 기준별 줄의 정보 칸(원장 10-28 "각 선생님의 과목, 담당 반 수, 담당 학생 수 표시") — 화면에 보이는 범위(첫 창 from ~ 마지막 창 to) 기준
+// (원장 10-28 "당연히 기간내에 존재하는 항목들로만 할것. 퇴원학생이나 종강된 반이 기간내에 있으면 넣고 없으면 뺄것"):
+//   반 = 그 범위에 하루라도 운영된 반 — 수강이 범위와 겹쳤거나, 폐지되지 않았고 범위 끝 전에 만들어져 범위 시작 뒤에 종강(closed_at = 운영 종료일)했거나 아직 운영 중
+//   학생 = 수강 기간이 범위와 겹친 학생(지금 퇴원생이어도 넣음 · 테스트 학생만 뺌 · 반이동으로 끝난 수강은 끝난 날을 넣지 않음 — 반열림)
+//   담임 = 범위 끝날의 담임 이력(2.0 teacher-as-of homeroomTeacherOnDate — 인수인계·담임 변경 감사로그), 이력이 없으면 지금 담임.
+// 선생님 = 그 범위 반의 과목 · 반 수 · 학생 수(겹치는 학생은 한 번) / 반 = 과목 · 담임 · 학생 수 / 과목 = 반 수 · 학생 수. 과목 열쇠는 영어 중 EiE를 가른다.
+// 학생 기준 등 여기 없는 기준은 지표가 줄에 실어 보낸 meta를 그대로 쓴다.
 const META_DIMS = new Set(['teacher', 'class', 'subject']);
-async function rowMeta(sql, tenantId, asOf, by, subjectName) {
-  if (!META_DIMS.has(by)) return null;
-  const classes = await sql`select c.id::text id, c.subject, c.english_track, c.teacher_id::text teacher_id, u.display_name teacher
-    from public.classes c left join public.users u on u.id = c.teacher_id and u.tenant_id = c.tenant_id
-    where c.tenant_id = ${tenantId} and c.is_active = true and (c.closed_at is null or c.closed_at > ${asOf})`;
+async function homeroomAt(sql, tenantId, importV2, classes, day) {
+  try {
+    const [A, K] = await Promise.all([importV2('features/classes/teacher-as-of.ts'), importV2('lib/date-kst.ts')]);
+    const logs = await sql`select metadata, target_label, to_json(created_at)#>>'{}' created_at from public.audit_logs
+      where tenant_id=${tenantId} and action = any(${['class_handover_apply', 'class_update']}) and metadata->>'newTeacherId' is not null order by created_at, id`;
+    const byName = A.buildUniqueClassNameIndex(classes.map((c) => ({ id: c.id, name: c.class_name })));
+    const history = A.buildHomeroomHistoryIndex(logs.map((l) => ({
+      classId: A.resolveTransitionClassId({ metaClassId: l.metadata?.classId ?? null, targetLabel: l.target_label, classIdByUniqueName: byName }) ?? '',
+      date: K.kstDateOf(l.metadata?.effectiveDate) ?? K.kstDateOf(l.created_at) ?? '', teacherId: l.metadata?.newTeacherId ?? null,
+      previousTeacherId: typeof l.metadata?.previousTeacherId === 'string' ? l.metadata.previousTeacherId : null, teacherName: null,
+    })).filter((x) => x.classId && x.teacherId && x.date));
+    return (c) => A.homeroomTeacherOnDate(history.get(c.id), c.teacher_id, day) ?? c.teacher_id;
+  } catch (e) { console.error(`확장 추세 담임 이력: ${e.message}`); return (c) => c.teacher_id; } // 이력을 못 읽으면 지금 담임
+}
+async function rowMeta(sql, tenantId, importV2, from, to, by, subjectName) {
+  if (!META_DIMS.has(by) || !from || !to) return null;
+  const all = await sql`select c.id::text id, c.class_name, c.subject, c.english_track, c.teacher_id::text teacher_id, c.is_active, c.closed_at::text closed_at,
+      (c.created_at at time zone 'Asia/Seoul')::date::text created from public.classes c where c.tenant_id = ${tenantId}`;
   const seats = await sql`select e.class_id::text class_id, e.student_id::text student_id from public.enrollments e
-    join public.students s on s.id = e.student_id and s.tenant_id = e.tenant_id and s.is_test = false and s.status = 'enrolled'
-    where e.tenant_id = ${tenantId} and e.start_date <= ${asOf} and (e.end_date is null or e.end_date >= ${asOf})`;
+    join public.students s on s.id = e.student_id and s.tenant_id = e.tenant_id and s.is_test = false
+    where e.tenant_id = ${tenantId} and e.start_date <= ${to} and (e.end_date is null or e.end_date > ${from} or (e.end_date = ${from} and not e.is_transferred))`;
   const studentsOf = new Map(); for (const x of seats) { if (!studentsOf.has(x.class_id)) studentsOf.set(x.class_id, new Set()); studentsOf.get(x.class_id).add(x.student_id); }
-  const keyOf = (c) => (by === 'teacher' ? c.teacher_id ?? 'unassigned' : by === 'class' ? c.id : c.subject === 'english' && c.english_track === 'eie' ? 'eie' : c.subject);
+  const classes = all.filter((c) => studentsOf.has(c.id) || (c.is_active && c.created <= to && (!c.closed_at || c.closed_at > from)));
+  const teacherOf = by === 'subject' ? (c) => c.teacher_id : await homeroomAt(sql, tenantId, importV2, all, to);
+  const ids = by === 'class' ? [...new Set(classes.map(teacherOf).filter(Boolean))] : []; // 담임 이름은 반 기준에서만 보인다
+  const nameOfUser = new Map(ids.length ? (await sql`select id::text id, display_name from public.users where tenant_id=${tenantId} and id = any(${ids}::uuid[])`).map((u) => [u.id, u.display_name]) : []);
+  const keyOf = (c) => (by === 'teacher' ? teacherOf(c) ?? 'unassigned' : by === 'class' ? c.id : c.subject === 'english' && c.english_track === 'eie' ? 'eie' : c.subject);
   const groups = new Map(); for (const c of classes) { const k = keyOf(c); if (!groups.has(k)) groups.set(k, []); groups.get(k).push(c); }
   const meta = new Map();
   for (const [k, list] of groups) {
     const students = new Set(list.flatMap((c) => [...(studentsOf.get(c.id) ?? [])]));
-    const subjects = [...new Set(list.map((c) => (c.subject === 'english' && c.english_track === 'eie' ? 'EiE' : subjectName(c.subject))))].join(', ');
-    meta.set(k, by === 'class' ? { subjects, teacher: list[0].teacher ?? '담당 미지정', students: students.size } : by === 'teacher' ? { subjects, classes: list.length, students: students.size } : { classes: list.length, students: students.size });
+    const subjects = [...new Set(list.map((c) => subjectName(c.subject === 'english' && c.english_track === 'eie' ? 'eie' : c.subject)))].join(', ');
+    const teacher = teacherOf(list[0]); // 반 기준은 반 하나
+    meta.set(k, by === 'class' ? { subjects, teacher: (teacher && nameOfUser.get(teacher)) || '담당 미지정', students: students.size } : by === 'teacher' ? { subjects, classes: list.length, students: students.size } : { classes: list.length, students: students.size });
   }
   return meta;
 }
@@ -111,46 +136,67 @@ export const screen = {
     const grains = metric.grains ? GRAINS.filter((g) => metric.grains.includes(g.id)) : GRAINS;
     const grain = grains.some((g) => g.id === params.grain) ? params.grain : grains.some((g) => g.id === 'week') ? 'week' : grains[0].id;
     const dims = metric.dims, fdim = params.f?.slice(0, params.f.indexOf(':'));
-    const filter = params.f && dims.some((d) => d.id === fdim) ? { dim: fdim, key: params.f.slice(fdim.length + 1) } : null;
-    // 필터를 건 기준으로 다시 나눠 봐야 줄이 하나뿐이다 — 필터와 다른 기준이 기본(선생님을 골랐으면 반별).
-    const by = dims.some((d) => d.id === params.by) && params.by !== filter?.dim ? params.by : (dims.find((d) => d.id !== filter?.dim) ?? dims[0]).id;
     const asOf = (await copyClock()).day, end = metric.endsYesterday ? addDays(asOf, -1) : asOf;
     // 쪼개 보기 = 주소의 범위 — 단위가 그 지표가 받는 그대로일 때만(받지 않아 기본 단위로 바뀌었으면 범위도 버린다).
     const ranged = params.from && params.to && grain === params.grain ? rangeWindows(grain, params.from, params.to, end) : null;
     const windows = ranged ?? windowsFor(grain, end);
     const range = ranged ? (({ from, to }) => { const up = upOf(grain, params.up, from, to); return { from, to, up, label: rangeLabel(up, from, to) }; })({ from: ranged[0].from, to: ranged.at(-1).to }) : null;
     const span = range ? `${grain}@${range.from}~${range.to}` : grain; // 기억 키 — 같은 단위라도 범위가 다르면 다른 답
-    const raw = await remember(`${tenantId}|${asOf}|${metric.id}|${span}|${by}|${params.f ?? ''}`, () => metric.series({ sql, asOf, tenantId, importV2, windows, by, filter }));
+    // 필터 없이 그 기준으로 나눈 답(필터 이름 찾기 · 옛 열쇠 확인) — 보통 보기와 같은 기억을 쓴다.
+    const whole = (dim) => remember(`${tenantId}|${asOf}|${metric.id}|${span}|${dim}|`, () => metric.series({ sql, asOf, tenantId, importV2, windows, by: dim, filter: null }));
+    let filter = params.f && dims.some((d) => d.id === fdim) ? { dim: fdim, key: params.f.slice(fdim.length + 1) } : null;
+    // 옛 열쇠 — 재원생 '수강 구성별'의 mix:both는 EiE를 쓰는 학원에서 englishMath · eieMath · eieEnglishMath로 갈렸다(원스크린 세션 49b63ec90).
+    // 저장된 주소가 그 줄이 없는 지금 이 열쇠로 오면 '기록 없음' 대신 필터 없이 그 기준으로 보여 준다(칩 없음).
+    let legacyBy = null;
+    if (filter?.dim === 'mix' && filter.key === 'both' && !(await whole('mix')).rows.some((r) => r.key === 'both')) { legacyBy = 'mix'; filter = null; }
+    const fkey = filter ? `${filter.dim}:${filter.key}` : '';
+    // 기준 = 옛 열쇠의 기준 → 주소의 기준 → 지표의 필터별 기본 기준(defaultBy — 반을 고르면 학생별) → 필터와 다른 첫 기준.
+    // 필터와 같은 기준은 안 된다(다시 나눠 봐야 줄이 하나뿐) · 필터가 있어야 하는 기준(needsFilter — 학생별)은 필터가 있을 때만(주소로 와도 무시).
+    const usable = (id) => !!id && id !== filter?.dim && dims.some((d) => d.id === id && (!d.needsFilter || filter));
+    const by = [legacyBy, params.by, metric.defaultBy?.[filter?.dim]].find(usable) ?? (dims.find((d) => usable(d.id)) ?? dims[0]).id;
+    const raw = await remember(`${tenantId}|${asOf}|${metric.id}|${span}|${by}|${fkey}`, () => metric.series({ sql, asOf, tenantId, importV2, windows, by, filter }));
     const pt = (p) => (p ? { num: p[0], den: p[1], value: metric.unit === '%' ? rate(p[0], p[1]) : p[0] } : null);
     const has = (p) => !!p && (metric.unit === '%' ? p.den > 0 : p.num != null);
     // 앞쪽의 '분자 0' 창 = 이 기록을 쓰기 시작하기 전(대상만 있고 기록이 없다) — 0%로 그리지 않고 잘라 낸다.
     // raw.since = 그 지표를 믿을 수 있는 첫날(지표가 알려 줄 때) — 그보다 앞서 끝난 창도 잘라 낸다.
     // 쪼개 본 범위는 since로만 자른다 — 기록이 있는 기간 안의 0건인 날은 진짜 0이다(9/9~9/15의 첫날이 0건이라고 9/10부터 그리면 칩과 어긋난다).
     const total = raw.total.map(pt), start = Math.max(0, raw.since ? windows.findIndex((w) => w.to >= raw.since) : range ? 0 : total.findIndex((p) => has(p) && p.num > 0));
-    const subjects = by === 'subject' || filter?.dim === 'subject' || META_DIMS.has(by) ? new Map(((await sql`select data->'operations'->'subjects' s from public.tenant_settings where tenant_id=${tenantId}`)[0]?.s ?? []).map((s) => [s.key, s.label])) : new Map();
-    const label = (dim, key, fallback) => (dim === 'subject' ? subjects.get(key) ?? fallback ?? key : fallback);
-    // 필터 이름 = 학원 설정(과목) · DB(선생님·반)에 있으면 그 이름, 없으면 필터 없이 그 기준으로 나눈 줄의 이름
+    const conf = by === 'subject' || filter?.dim === 'subject' || META_DIMS.has(by) ? (await sql`select data->'operations'->'subjects' s, data->'modules'->'disabled' m from public.tenant_settings where tenant_id=${tenantId}`)[0] : null;
+    const subjects = new Map((conf?.s ?? []).map((s) => [s.key, s.label]));
+    // 줄 이름 = 지표가 준 이름이 먼저(서버가 '인재원 영어'로 보낸 english 줄이 학원 설정 이름 '영어'로 덮이던 것 — 원스크린 세션 49b63ec90),
+    // 지표가 이름을 안 줬거나 열쇠 그대로면 학원 설정의 과목 이름.
+    const label = (dim, key, given) => (dim === 'subject' ? (given && given !== key ? given : subjects.get(key) ?? given ?? key) : given);
+    // 필터 이름 = DB(선생님·반) 이름 → 필터 없이 그 기준으로 나눈 줄의 이름 → (과목) 학원 설정 이름
     // (과목 설정에 없는 열쇠 — 청구·레벨테스트의 '과목 모름'(unknown) · EiE — 가 열쇠 그대로 'unknown'으로 보였다).
     const filterName = async () => {
-      const named = filter.dim === 'subject' ? subjects.get(filter.key) : await nameOf(sql, tenantId, filter.dim, filter.key);
+      const named = filter.dim === 'subject' ? null : await nameOf(sql, tenantId, filter.dim, filter.key);
       if (named) return named;
-      const whole = await remember(`${tenantId}|${asOf}|${metric.id}|${span}|${filter.dim}|`, () => metric.series({ sql, asOf, tenantId, importV2, windows, by: filter.dim, filter: null }));
-      return whole.rows.find((r) => r.key === filter.key)?.label ?? (filter.dim === 'class' ? '반 확인 필요' : '이름 확인 필요');
+      if (dims.find((d) => d.id === filter.dim)?.needsFilter) return '이름 확인 필요'; // 필터 없이는 나누지 않는 기준(학생별)
+      const row = (await whole(filter.dim)).rows.find((r) => r.key === filter.key)?.label, nm = label(filter.dim, filter.key, row);
+      return nm && nm !== filter.key ? nm : filter.dim === 'class' ? '반 확인 필요' : '이름 확인 필요'; // 열쇠 그대로는 내보내지 않는다
     };
-    const meta = await remember(`meta|${tenantId}|${asOf}|${by}`, () => rowMeta(sql, tenantId, asOf, by, (k) => subjects.get(k) ?? k)).catch(() => null);
+    const shown = windows.slice(start), from = shown[0]?.from, to = shown.at(-1)?.to;
+    // 정보 칸의 과목 이름도 줄 이름과 같은 규칙 — 2.0 programLabel(EiE를 쓰는 학원은 영어 = '인재원 영어' · EiE = 'EiE', 안 쓰면 학원의 영어 과목 이름).
+    // EiE 사용 = 학원 설정 modules.disabled에 'eie'가 없음(2.0 isModuleEnabled — 기본값은 빈 목록이라 원자료로 판정해도 같다).
+    const subjectName = async () => {
+      const P = await importV2('features/students/enrollment/program.ts'), own = [...subjects].map(([key, label]) => ({ key, label })), eieOn = !(conf?.m ?? []).includes('eie');
+      return (k) => (k === 'eie' ? P.programLabel('eie', own, eieOn) : k === 'english' ? P.programLabel('injaewon', own, eieOn) : subjects.get(k) ?? k);
+    };
+    const meta = await remember(`meta|${tenantId}|${asOf}|${by}|${from}~${to}`, async () => rowMeta(sql, tenantId, importV2, from, to, by, await subjectName()))
+      .catch((e) => { console.error(`확장 추세 정보 칸: ${e.message}`); return null; });
     return {
       asOf, grain, by,
       // range = 지금 쪼개 보는 범위(없으면 null) · drill = 점을 누르면 쪼갤 단위(쪼개 보는 중이거나 더 잘게 못 나누면 null — 그 점은 누를 수 없다).
       range, drill: range ? null : drillOf(grain, grains.map((g) => g.id)),
-      metric: { id: metric.id, label: metric.label, unit: metric.unit, better: metric.better, dims },
-      metrics: TREND_METRICS.map((m) => ({ id: m.id, label: m.label, group: m.group })),
+      metric: { id: metric.id, label: metric.label, unit: metric.unit, better: metric.better, dims: dims.map((d) => ({ id: d.id, label: d.label, ...(d.needsFilter ? { needsFilter: true } : {}) })) },
+      metrics: TREND_METRICS.map((m) => ({ id: m.id, label: m.label, group: m.group, dims: m.dims.map((d) => ({ id: d.id, ...(d.needsFilter ? { needsFilter: true } : {}) })) })),
       grains,
-      filter: filter ? { ...filter, label: label(filter.dim, filter.key, await filterName()) } : null,
-      windows: windows.slice(start),
+      filter: filter ? { ...filter, label: await filterName() } : null,
+      windows: shown,
       total: total.slice(start),
       // 지금 보이는 창 모두에서 0이거나 기록 없는 줄은 뺀다(원장 10-28 "구간 전체에 대해서 0이면 그냥 보여주지말것. 구간 내에 최소 1이라도 있어야 그래프든 리스트든") —
       // 비율은 분자가 아니라 값(0%)으로 보고, 분모 0은 기록 없음. 쪼개 보면 그 창들로 다시 본다. 전체(total)는 늘 남는다.
-      rows: raw.rows.map((r) => ({ key: r.key, label: label(by, r.key, r.label), points: r.points.map(pt).slice(start), ...(meta?.has(r.key) ? { meta: meta.get(r.key) } : {}) })).filter((r) => r.points.some((p) => has(p) && p.value !== 0)),
+      rows: raw.rows.map((r) => ({ key: r.key, label: label(by, r.key, r.label), points: r.points.map(pt).slice(start), ...(meta?.has(r.key) ? { meta: meta.get(r.key) } : r.meta ? { meta: r.meta } : {}) })).filter((r) => r.points.some((p) => has(p) && p.value !== 0)),
       ...(filter && Array.isArray(raw.records) && raw.records.length === windows.length ? { records: raw.records.slice(start) } : {}),
     };
   },
