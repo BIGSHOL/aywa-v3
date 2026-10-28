@@ -11,7 +11,7 @@ import { openFullDatabase, tenantId } from './full-db.mjs';
 import { importV2 } from './v2-bridge.mjs';
 import * as M from './v2-screen-owner.mjs';
 import { build } from './v2-host/build.mjs';
-import { readV2, stopV2Server } from './v2-server-runner.mjs';
+import { readV2, runV2Server, stopV2Server } from './v2-server-runner.mjs';
 
 const done = [];
 const check = async (name, fn) => { await fn(); done.push(name); };
@@ -36,7 +36,7 @@ await check('그리기 = 2.0 owner/page.tsx 글자 그대로 — 바꾼 곳은 �
     const i = page.indexOf(a); assert.ok(mine.includes(page.slice(i, page.indexOf(b, i) + b.length)), a);
   }
   // 바꾼 자리 = 서버 값 셋(자리 PIN 상태 · 휴일 · 권한 token) + 서버 컴포넌트 면 — 2.0 클라 부품(섹션 폼)은 손대지 않았다
-  assert.equal(swaps.filter(([, to]) => /OwnerServerFace|OwnerIntegrationsFace|OwnerAuditFace|PopupsManager/.test(to)).length, swaps.length - 3);
+  assert.equal(swaps.filter(([, to]) => /OwnerServerFace|OwnerIntegrationsFace|OwnerAuditFace|OwnerDataFace|PopupsManager/.test(to)).length, swaps.length - 3);
   assert.ok(swaps.some(([from, to]) => from === '<PopupsFace />' && to === '<PopupsManager items={popups ?? []} />'), '팝업 공지 = popups-face.tsx 본문(<PopupsManager items={items} />) 그대로');
   assert.match(lf(await src('app/(shell)/owner/_components/popups-face.tsx')), /const items = await listPopups\(\);\n  return <PopupsManager items=\{items\} \/>;/);
   // 연동 면 = integrations-face.tsx · sheets-face.tsx 본문 그대로(서버 카드만 '아직' — owner-integrations.swaps.json)
@@ -245,6 +245,58 @@ try {
     if (admin) {
       const denied = await load({ tab: 'audit', viewer: admin.id });
       assert.ok(denied.route !== 'page' || denied.page.audit === null, '위임 계정은 감사로그 데이터를 받지 않는다');
+    }
+  });
+  await check('데이터 정리 = 세 원본 조회 독립 실행 · 면 밖 미조회 · 고아/중복/동명이인 원본 JSX · 설정 원본 차단', async () => {
+    const p = (await load({ tab: 'data' })).page;
+    assert.ok(p.data && Array.isArray(p.data.report?.studentsWithoutEnrollments));
+    const calls = ['findOrphans', 'findDuplicateStudents', 'findSameNameStudents'];
+    const expected = [];
+    for (const fn of calls) expected.push(await readV2('features/admin/server/queries.ts', fn, [], { actorId: base.viewer.id, tenantId }));
+    assert.deepEqual(p.data.report, expected[0].value);
+    assert.deepEqual(p.data.review, expected[1].value);
+    assert.deepEqual(p.data.groups, expected[2].value);
+    assert.equal(p.data.duplicateFailed, false); assert.equal(p.data.sameNameFailed, false);
+    assert.equal((await load({ tab: 'profile' })).page.data, null);
+    assert.ok(!('permissions' in p.settings) && !('operations' in p.settings));
+    const generated = lf(await here('./v2-host/src/owner-data.tsx'));
+    for (const name of ['data-face.tsx', 'duplicates-face.tsx', 'same-name-face.tsx']) {
+      const source = lf(await src(`app/(shell)/owner/_components/${name}`));
+      const start = source.indexOf('  return (', source.indexOf('export async function'));
+      const end = source.indexOf('\n  );\n}', start) + '\n  );'.length;
+      assert.ok(generated.includes(source.slice(start, end)), `${name} JSX`);
+    }
+  });
+  await check('데이터 정리 저장 = 원본 다섯 함수만 · 잘못된 인자 거절 · 비로그인 거절 · 정상 확인 쓰기와 감사로그는 되돌림', async () => {
+    const module = 'features/admin/server/actions.ts', studentModule = 'features/students/server/actions.ts';
+    const fake = '00000000-0000-4000-8000-000000000001';
+    for (const name of ['mergeStudents', 'closeOrphanEnrollments', 'bulkWithdrawStudents', 'bulkDeleteStudents']) {
+      const a = M.screen.actions[name]; assert.ok(a, name);
+      assert.throws(() => a.validate({ module: studentModule, actor: base.viewer.id, args: [null, fd({})] }));
+      assert.throws(() => a.validate({ module, actor: base.viewer.id, args: [null, { bad: 1 }] }));
+      const result = await a.run({ sql: db, body: a.validate({ module, actor: null, args: [null, fd({})] }), tenantId, importV2 });
+      assert.deepEqual(result, { error: '로그인이 필요합니다' }, name);
+    }
+    const clear = M.screen.actions.clearDupSuspect;
+    assert.throws(() => clear.validate({ module: studentModule, actor: base.viewer.id, args: ['bad'] }));
+    assert.deepEqual(await clear.run({ sql: db, body: clear.validate({ module: studentModule, actor: null, args: [fake] }), tenantId, importV2 }), { error: '로그인이 필요합니다' });
+    for (const [fn, form] of [
+      ['mergeStudents', { keeperId: fake, mergeeId: '00000000-0000-4000-8000-000000000002' }],
+      ['closeOrphanEnrollments', {}],
+      ['bulkWithdrawStudents', { ids: fake }],
+      ['bulkDeleteStudents', { ids: fake }],
+    ]) {
+      const { results: [r] } = await runV2Server({ steps: [{ module, fn, args: [null, fd(form)] }], actorId: base.viewer.id, tenantId,
+        mode: 'write', rollback: true }, { timeoutMs: 280_000 });
+      assert.ok(r.value && typeof r.value === 'object', `${fn} 원본 반환`);
+    }
+    const [student] = await db`select id::text id, dup_suspect from public.students where tenant_id=${tenantId} order by id limit 1`;
+    if (student) {
+      const trial = await runV2Server({ steps: [{ module: studentModule, fn: 'clearDupSuspect', args: [student.id] }], actorId: base.viewer.id, tenantId,
+        mode: 'write', rollback: true, probes: [{ text: 'select dup_suspect from public.students where id=$1', params: [student.id] }] });
+      assert.deepEqual(trial.results[0].value, { ok: true });
+      assert.equal(trial.probes[0][0].dup_suspect, false);
+      assert.equal((await db`select dup_suspect from public.students where id=${student.id}`)[0].dup_suspect, student.dup_suspect, '되돌림');
     }
   });
 } finally { await stopV2Server(); await db.end(); }

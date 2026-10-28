@@ -25,6 +25,7 @@ import { OwnerIntegrationsFace, type OwnerIntegrationsData } from "./owner-integ
 import { PopupsManager } from "@/app/(shell)/owner/_components/popups-manager";
 import type { AdminPopup } from "@/features/notices/server/queries";
 import { OwnerAuditFace, type OwnerAuditData } from "./owner-audit";
+import { OwnerDataFace, type OwnerData } from "./owner-data";
 
 type Sp = Record<string, string | undefined>;
 
@@ -66,6 +67,7 @@ export type OwnerPageData = {
   popups: AdminPopup[] | null;
   /** 감사로그 면(tab=audit)에서만 읽은 원본 조회 결과. */
   audit: OwnerAuditData | null;
+  data: OwnerData | null;
 };
 
 function facesFor(canReadAudit: boolean, showModules: boolean, showMakeups: boolean, showEvaluation: boolean, showContribution: boolean): OwnerFaceDef[] {
@@ -94,7 +96,7 @@ function fmt(iso: string | null): string {
 export function OwnerHostPage({ d, sp }: { d: OwnerPageData; sp: Sp }) {
   const { settings, meta, tab, canEditSettings, canReadAudit, isMaster, showMakeups, showEvaluation, showContribution, showsOperations, canEditOperations, settingsUnreadable,
     operationsTokens, operationsForClient, seatPin, classrooms, canImportClassrooms, teacherLabelsBySubject, periodDefs, sessionYear, holidayDates, permissionsSource,
-    permissionsTok, userOverrideNames, permissionStaff, hiddenPermissionIds, hiddenSettingKeys, navigationGates, integrations, popups, audit } = d;
+    permissionsTok, userOverrideNames, permissionStaff, hiddenPermissionIds, hiddenSettingKeys, navigationGates, integrations, popups, audit, data } = d;
   // 2.0 page.tsx와 같은 식 — 연동 면 makeedu 실행 이력 쪽(지금은 '아직')이 쓴다.
   const page = Math.max(1, Number(sp.page) || 1);
   const allowedTabs = new Map<OwnerFaceKey, boolean>(d.allowedTabEntries);
@@ -256,7 +258,7 @@ export function OwnerHostPage({ d, sp }: { d: OwnerPageData; sp: Sp }) {
       {tab === "contribution" && showContribution ? <OwnerServerFace face="contribution" /> : null}
       {tab === "data" ? (
         <div className="space-y-10">
-          <OwnerServerFace face="data" />
+          <OwnerDataFace d={data!} page={page} />
         </div>
       ) : null}
       {tab === "import" ? <OwnerServerFace face="import" /> : null}

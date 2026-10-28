@@ -33,7 +33,7 @@
  ],
  [
   "          <DataFace canManage={canManageData} />\n          <DuplicatesFace page={page} isEmbed={isEmbed} canManage={canManageData} />\n          <SameNameFace />",
-  "          <OwnerServerFace face=\"data\" />"
+  "          <OwnerDataFace d={data!} page={page} />"
  ],
  [
   "<ImportHubFace />",
