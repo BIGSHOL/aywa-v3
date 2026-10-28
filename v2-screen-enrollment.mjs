@@ -146,6 +146,8 @@ const YM = /^\d{4}-\d{2}$/, YMD = /^\d{4}-\d{2}-\d{2}$/;
 export const screen = {
   id: ID, label: '신규 콜&상담', order: 30,
   params: {
+    // embed=1 — 2.0 칸반 카드가 상세를 창으로 열 때 붙인다(호스트 이동이 그대로 실어 온다). 연습 화면엔 창 셸이 없어 받기만 하고 쓰지 않는다(Codex 검수 10-28: 없으면 400).
+    embed: /^1$/,
     actor: UUID, v2path: new RegExp(`^/enrollment(?:/new|/${UUID_BODY}(?:/edit)?)?$`, 'i'), poll: /^count$/,
     view: /^(?:kanban|table|stats)$/, month: /^.{0,10}$/, consultant: /^.{0,40}$/, q: /^[\s\S]{0,100}$/, outcome: /^[a-z_]{0,20}$/, page: /^\d{1,5}$/,
     range: /^[0-9a-z]{0,4}$/, year: /^[0-9y]{1,4}$/, received: /^.{0,10}$/, from: /^[a-z]{0,20}$/,
