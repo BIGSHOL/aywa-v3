@@ -4,7 +4,7 @@
 // when every record is reported handled and reopen only for records nobody handled — the records are never edited.
 // People's decisions stay: a step a manager reassigned (case.reassign) or someone confirmed (ack) keeps its people.
 // Idempotent (the same source twice changes nothing) and pure over the draft state; the caller persists.
-import { CLOSE_REASON, TASK_EVENT_LABEL, TASK_KINDS, TASK_STATE_LABEL } from './flow-rules.mjs';
+import { CLOSE_REASON, FACT_SIGNALS, SIGNAL_DONE_RULE, TASK_EVENT_LABEL, TASK_KINDS, TASK_STATE_LABEL } from './flow-rules.mjs';
 import { entityRef, newEvent, refreshCase, step } from './flow-engine.mjs';
 import { assignees, clearSignal, createSignal, human, json, reconcileSignal, reopenStatus, routeOf, sameRoute } from './flow-reconcile-signals.mjs';
 export { coveredRefs, isFactSignal, settleFact, signalGroups, stepRecords } from './flow-reconcile-signals.mjs';
@@ -104,12 +104,14 @@ export function reconcileSource(state, source, { at, mode = 'apply' } = {}) {
     if (mode === 'seed') { if (reword(c, key)) { summary.updated += 1; summary.changes.push({ caseId: c.id, title: c.title, outcome: 'updated', tags: ['wording'], events: [] }); } else summary.unchanged += 1; return; }
     commit(state, c, before, judge(c), when, summary);
   };
-  // seed mode: an open signal case follows the signal's current title/summary (seedSource before 10-28 did exactly this).
+  // seed mode: an open signal case follows its current wording and closure rule. Old cases gain a newly declared fact rule on restart.
   const reword = (c, key) => {
     const sg = key.startsWith('signal:') && source.signals.find(x => `signal:${x.familyId}:${x.signal.id}` === key);
-    if (!sg || c.state === 'done' || (c.title === sg.signal.title && (c.summary ?? '') === (sg.signal.summary ?? ''))) return false;
+    if (!sg || c.state === 'done') return false;
+    const doneRule = FACT_SIGNALS[sg.signal.id]?.doneRule ?? SIGNAL_DONE_RULE;
+    if (c.title === sg.signal.title && (c.summary ?? '') === (sg.signal.summary ?? '') && c.doneRule === doneRule) return false;
     for (const st of c.steps || []) if (st.key === 'source_check' && typeof st.label === 'string' && st.label.startsWith(c.title)) st.label = sg.signal.title + st.label.slice(c.title.length);
-    c.title = sg.signal.title; c.summary = sg.signal.summary; return true;
+    c.title = sg.signal.title; c.summary = sg.signal.summary; c.doneRule = doneRule; return true;
   };
   for (const t of source.tasks) run(`task:${t.id}`, () => { createTask(state, source, t, seededAt); return `src-task-${t.id}`; }, c => reconcileTask(source, c, t, when));
   for (const sg of source.signals) run(`signal:${sg.familyId}:${sg.signal.id}`, () => { createSignal(state, source, sg, when); return `src-sig-${sg.familyId}-${sg.signal.id}`.replace(/[^a-z0-9-]/gi, '-'); }, c => reconcileSignal(source, c, sg, when));

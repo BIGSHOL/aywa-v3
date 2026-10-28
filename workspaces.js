@@ -234,7 +234,7 @@ window.createWorkspaces = function createWorkspaces(api) {
   function signalCard(id,s,withFamily=false){
     const a=area(id);
     // 출처 줄(s.source — '수납관리 · 청구·할인·수납 기록' 같은 집계 출처)은 싣지 않는다(원장 10-28).
-    return `<article class="ws-signal"><div class="ax-issue-meta">${pill(s.priority||'확인 필요',s.priority==='결정 필요'?'amber':'blue')}${withFamily?pill(a?.label||id):''}${s.recordIds?.length?`<span>근거 ${s.recordIds.length}건</span>`:''}</div><h3>${h(s.title)}</h3><p>${h(s.summary||'')}</p><div class="ax-actions">${btn('근거 보기','signal-evidence',`data-id="${h(id)}" data-signal="${h(s.id)}"`)}${btn('업무 요청','signal-request',`data-id="${h(id)}" data-signal="${h(s.id)}"`,true)}</div></article>`;
+    return `<article class="ws-signal"><div class="ax-issue-meta">${pill(s.priority||'확인 필요',s.priority==='결정 필요'?'amber':'blue')}${withFamily?pill(a?.label||id):''}${s.recordIds?.length?`<span>근거 ${s.recordIds.length}건</span>`:''}</div><h3>${h(s.title)}</h3><p>${h(s.summary||'')}</p>${s.id==='billing-remaining'?'<p class="ax-note">수납 반영은 메이크에듀 동기화로 들어옵니다 — 학부모 안내 등 처리 뒤 보고로 닫기</p>':''}<div class="ax-actions">${btn('근거 보기','signal-evidence',`data-id="${h(id)}" data-signal="${h(s.id)}"`)}${btn('업무 요청','signal-request',`data-id="${h(id)}" data-signal="${h(s.id)}"`,true)}</div></article>`;
   }
   function signalList(a){const list=[...(data(a.id)?.signals||[])].sort(byPriority);return list.length?`<section class="ws-signals" aria-label="이 작업 공간의 신호"><h2>지금 올라온 신호 ${list.length}건</h2><div class="ws-signal-grid">${list.map(s=>signalCard(a.id,s)).join('')}</div></section>`:'';}
 

@@ -4,12 +4,13 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readdir, readFile } from 'node:fs/promises';
 import { IDS, fixtureSource, send, service } from './verify-flow-engine-fixture.mjs';
-import { CLOSE_REASON, FACT_SIGNALS } from './flow-rules.mjs';
+import { CLOSE_REASON, FACT_SIGNALS, SIGNAL_DONE_RULE } from './flow-rules.mjs';
 import { SIGNAL_RECORD_TABLE, TYPE_OF_TABLE, deskCloseResult, signalWiring } from './flow-source.mjs';
 import { importV2 } from './v2-bridge.mjs';
 import { signalOwner } from './flow-engine.mjs';
 import { signalStepRefs } from './flow-hierarchy.mjs';
 import { coveredRefs } from './flow-reconcile.mjs';
+import { reconcileSource } from './flow-reconcile.mjs';
 
 const SIG = 'src-sig-attendance-attendance-repeat-absence', BILL = 'src-sig-billing-billing-remaining';
 const changed = s => s.created + s.updated + s.closed + s.reopened;
@@ -167,11 +168,41 @@ test('AX-H4 fact signal: reports close it without touching records; only a new r
   assert.deepEqual([stored(svc, SIG).state, typesOf(svc, SIG).at(-1)], ['open', 'source.signal_reopened'], 'a newer narrower report beats the older one');
   await send(svc, { actorId: IDS.t1, kind: 'case.report', caseId: SIG, payload: { note: '보강 확정', recordRefs: ['attendance:a3'] } });
   assert.equal(stored(svc, SIG).state, 'done');
-  // Other source facts keep the old rule: a report becomes a linked follow-up and the case stays open.
-  const f = await send(svc, { actorId: IDS.manager, kind: 'case.report', caseId: BILL, payload: { note: '입금 확인 중' } });
-  assert(f.caseId.startsWith('loc-')); assert.equal(stored(svc, BILL).state, 'open');
   const view = svc.view().cases.find(x => x.id === SIG);
   assert(view.evidence.every(e => !('coveredRefs' in e) && Number.isInteger(e.coveredCount)), 'view carries counts only');
+  await svc.close();
+});
+
+test('미수 청구는 청구별 보고로 닫고 새 청구에만 다시 열린다', async () => {
+  assert(FACT_SIGNALS['billing-remaining']);
+  const bills = ids => {
+    const src = fixtureSource(), sg = src.signals.find(s => s.signal.id === 'billing-remaining');
+    for (const id of ids.filter(id => id !== 'i1')) {
+      src.entities.set(`invoice:${id}`, { type: 'invoice', id, label: `${id} 미수 청구`, familyId: 'billing', recordId: id, remaining: 20000 });
+      src.relations.push({ id: `rel-${id}`, type: 'billed_to', from: { type: 'invoice', id }, to: { type: 'student', id: 's2' }, source: 'invoices.student_id' });
+    }
+    sg.signal.recordIds = ids; sg.refs = ids.map(id => `invoice:${id}`);
+    return src;
+  };
+  const original = bills(['i1', 'i2']), beforeSource = JSON.stringify(original.signals.find(s => s.signal.id === 'billing-remaining'));
+  const { svc } = await service({ source: original });
+  assert.equal(svc.view().cases.find(c => c.id === BILL).factSignal, true);
+  const legacy = structuredClone(svc.store.state); legacy.cases[BILL].doneRule = SIGNAL_DONE_RULE;
+  assert.equal(reconcileSource(legacy, original, { mode: 'seed' }).updated, 1, 'restart seed migrates the old closure rule');
+  assert.equal(legacy.cases[BILL].doneRule, FACT_SIGNALS['billing-remaining'].doneRule);
+  await send(svc, { actorId: IDS.manager, kind: 'case.report', caseId: BILL, payload: { note: '첫 청구 학부모 안내', outcome: 'done', recordRefs: ['invoice:i1'] } });
+  assert.deepEqual([stored(svc, BILL).state, stored(svc, BILL).evidence.at(-1).coveredRefs], ['open', ['invoice:i1']]);
+  await send(svc, { actorId: IDS.manager, kind: 'case.report', caseId: BILL, payload: { note: '둘째 청구 확인 중', outcome: 'needs_review', recordRefs: ['invoice:i2'] } });
+  assert.equal(stored(svc, BILL).state, 'open', '검토 필요는 처리 완료가 아니다');
+  await send(svc, { actorId: IDS.manager, kind: 'case.report', caseId: BILL, payload: { note: '둘째 청구 학부모 안내', outcome: 'done', recordRefs: ['invoice:i2'] } });
+  assert.deepEqual([stored(svc, BILL).state, stored(svc, BILL).closedBy, stored(svc, BILL).linkedCaseIds.length], ['done', 'handled', 0]);
+  assert.equal(JSON.stringify(original.signals.find(s => s.signal.id === 'billing-remaining')), beforeSource, '보고가 청구 원본을 바꾸지 않는다');
+  assert.equal(changed(await svc.reloadSource(bills(['i1', 'i2']))), 0, '같은 근거는 다시 열지 않는다');
+  const added = await svc.reloadSource(bills(['i1', 'i2', 'i3']));
+  assert.deepEqual([added.reopened, stored(svc, BILL).state, stored(svc, BILL).sourceRecords.length], [1, 'open', 3]);
+  assert.equal(stored(svc, BILL).evidence.length, 3, '앞선 보고는 유지한다');
+  await send(svc, { actorId: IDS.manager, kind: 'case.report', caseId: BILL, payload: { note: '새 청구 학부모 안내', outcome: 'done', recordRefs: ['invoice:i3'] } });
+  assert.equal(stored(svc, BILL).state, 'done');
   await svc.close();
 });
 
