@@ -13,16 +13,36 @@
 
 → 3.0은 2.0을 **대체**하려고 만든다. 2.0 사이트로 보내는 링크·끼워 넣기는 하지 않는다(10-28 바로가기 시안은 커밋하지 않고 걷어 냄). 2.0에서만 하던 일은 3.0 안의 새 페이지가 **같은 형태로 같은 일**을 한다. 데이터는 로컬 Docker 복사본.
 
-## 대상 (V2-TAB-USAGE.md 'A · 2.0 형태 유지', 우선순위 순)
+## 대상과 맡은 세션 (원장 10-28 *"그렇게하고 진행해"* — `V2-CONFUSION-RISK.md`의 상·중 전부를 2.0 부품 그대로)
 
-| 순위 | 화면 | 2.0 원본(읽을 곳) | 핵심 형태 |
-|---|---|---|---|
-| 1 | 선생님 원스크린(수업보고서 작성·발송 포함) | `src/app/(shell)/onescreen/**`, `src/features/onescreen/**`, `src/features/lesson-reports/**` | 반별 학생 줄 × 출결·진도·숙제·테스트·특이사항 칸, 보고서 미리보기·발송 상태 |
-| 2 | 시간표 | `src/app/(shell)/timetable/**`, `src/features/timetable/**` | 교시 × 강의실/강사 격자, 반 블록·학생 명단, 보기 전환(기본·강사·통합), 과목·주 |
-| 3 | 강사 시트 · 영어(ECS) | `src/app/(shell)/ecs/**`, `src/features/class-sheets/**` | 반 주간 시트(영역 × 날짜), 월간 달력·진도표 |
-| 4 | 출석부 | `src/app/(shell)/attendance/**`, `src/features/attendance/**` | 학생 × 날짜 월별 격자, 출결 모드, 자리 출석부 |
-| 5 | 영상 제출 현황 | `src/app/(shell)/lesson-reports/video-homework/**`, `src/features/video-homework/**` | 학생 × 회차 장부 |
-| 6 | 수납 교재 처리·회차 확정 | `src/app/(shell)/billing/**`(tab=textbooks·sessions), `src/features/billing/**` | 줄마다 확인·회차·금액 확정 표 |
+바뀌면 혼란을 주는 화면 전수는 `V2-CONFUSION-RISK.md`. 그 문서의 **상과 중 모두** 2.0 부품 그대로 3.0 안에 둔다. 하(재고·데이터베이스·고객센터·신규생·셔틀·이탈 방어·기여도·전자결재·지출결의서·보강관리·캘린더·도움말)는 지금의 3.0 작업 공간 그대로. 3.0이 새로 주는 기능(왜 줄었나·업무 흐름·요청·AI)은 2.0 화면을 바꾸지 않고 옆이나 위에 더한다.
+
+맡은 세션: **T** = 시간표 세션(`term_8c081f9a`, 부품 호스트 `v2-host/`도) · **O** = 원스크린 세션(`term_235e25c2`) · **L** = 팀장 세션(`term_3d5da021`, 작업자 최대 둘). 앞 줄이 끝나면 다음 줄로.
+
+| id | 화면 | 위험 | 2.0 원본(읽을 곳) | 맡음 |
+|---|---|---|---|---|
+| `timetable` | 시간표(기본·강사·통합) — **호스트 시범** | 상 | `src/app/(shell)/timetable/**`, `src/features/timetable/**` | T |
+| `onescreen` | 선생님 원스크린(보고서 작성·발송·공지, 격자 보기) | 상 | `src/app/(shell)/onescreen/**`, `src/features/onescreen/**`, `src/features/lesson-reports/**` | O |
+| `ecs` | 강사 시트 · 영어(목록·주간·월간·MP·레일·오늘) | 상 | `src/app/(shell)/ecs/**`, `src/features/class-sheets/**` | L |
+| `attendance` | 출석부(월별·출결 모드·오늘 출결·자리 출석부 메뉴) | 상 | `src/app/(shell)/attendance/**`, `src/features/attendance/**` | L |
+| `video-homework` | 영상 제출 현황(관리자 장부·강사 '내가 낸') | 상 | `src/app/(shell)/lesson-reports/video-homework/**`, `src/app/(shell)/onescreen/video-homework/**`, `src/features/video-homework/**` | L |
+| `billing` | 수납관리 전체(수납·교재·지출·회차 확정·환불·계산기) | 상(교재·지출·회차) | `src/app/(shell)/billing/**`, `src/features/billing/**` | L |
+| `dashboard` | 운영실(KPI 9칸·카드·역할별 배치) | 상 | `src/app/(shell)/dashboard/**`, `src/features/dashboard/**` | O |
+| `students` | 원생목록 · 원생 상세(13탭) | 상 | `src/app/(shell)/students/**`, `src/features/students/**` | O |
+| `classes` | 수업목록 · 반 상세 · 반 수정 | 중 | `src/app/(shell)/classes/**`, `src/features/classes/**` | T |
+| `mcs` | 강사 시트 · 수학(MCS) | 중 | `src/app/(shell)/mcs/**`, `src/features/class-sheets/**` | T |
+| `enrollment` | 신규 콜&상담(칸반·상세·수정·통계) | 중 | `src/app/(shell)/enrollment/**`, `src/features/enrollment/**` | L |
+| `meetings` | 회의록 | 중 | `src/app/(shell)/meetings/**`, `src/features/meetings/**` | L |
+| `consultations` | 원생상담 | 중 | `src/app/(shell)/consultations/**`, `src/features/consultations/**` | O |
+| `exams` | 성적관리 | 중 | `src/app/(shell)/exams/**`, `src/features/grades/**` 등 | O |
+| `lesson-reports` | 수업보고서 관리(목록·발송 큐·공지·학부모 글) | 중 | `src/app/(shell)/lesson-reports/**`, `src/features/report-admin/**` | O |
+| `textbooks` · `textbook-requests` | 교재목록 · 교재 요청 | 중 | `src/app/(shell)/textbooks/**`, `src/app/(shell)/textbook-requests/**` | T |
+| `class-review` | 직원 평가(채점·포트폴리오) | 중 | `src/app/(shell)/class-review/**` | L |
+| `staff` | 직원관리 | 중 | `src/app/(shell)/staff/**`, `src/features/staff/**` | L |
+| `withdrawals` · `withdrawal-reports` | 퇴원관리 · 퇴원보고서 | 중 | `src/app/(shell)/withdrawals/**`, `src/app/(shell)/withdrawal-reports/**` | L |
+| `owner` | 학원 설정(18면) | 중 | `src/app/(shell)/owner/**`, `src/features/owner/**` | T |
+
+**메인이 하는 공통 요소**(`V2-CONFUSION-RISK.md` §3): 3.0 사이드바를 2.0 메뉴 묶음·이름·순서로(3.0 새 기능은 별도 묶음), 강사 입구(수학 = 원스크린 · 영어 전담 = ECS), 숫자 정의는 2.0 함수로. 앱 밖 결과물(학부모 보고서 형식·공지·`/v`·자리 PIN·공유 링크·인쇄·엑셀)은 형식을 바꾸지 않는다.
 
 ## 만드는 법 (공통 틀 — 공용 파일을 고치지 않는다)
 
