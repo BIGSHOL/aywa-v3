@@ -54,6 +54,8 @@ function nextBoundary(report) {
   return {
     name: 'v2-next-boundary',
     setup(b) {
+      // 브라우저 Supabase 클라이언트 = 접속 없는 대체(실시간 구독은 아무 일도 안 함 · 직접 조회는 오류) — 운영실 호스트 요청 10-28.
+      b.onResolve({ filter: /^@\/lib\/supabase\/client$/ }, () => ({ path: path.join(HERE, 'shims', 'supabase-client.ts') }));
       b.onResolve({ filter: /^@\// }, async a => b.resolve(`./${a.path.slice(2)}`, { resolveDir: SRC, kind: a.kind }));
       b.onResolve({ filter: /^(next\/(navigation|link|image|dynamic|cache)|server-only)$/ }, a => {
         if (a.path === 'server-only' || a.path === 'next/cache') report.serverOnly.add(path.relative(ROOT, a.importer));
