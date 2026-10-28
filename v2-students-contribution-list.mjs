@@ -42,7 +42,7 @@ const callOriginal = async (base, module, fn, args = []) => {
   return r.value;
 };
 
-export async function loadContributionList(base) {
+export async function loadContributionList(base, withEnrolledMonths = true) {
   const { create } = await originalListFunction();
   const { kstToday, shiftMonth, kstDateOf } = await base.load('lib/date-kst.ts');
   const deployment = JSON.parse(await readFile(new URL('../../vercel.json', import.meta.url), 'utf8'));
@@ -50,7 +50,7 @@ export async function loadContributionList(base) {
     () => callOriginal(base, 'directory.ts', 'getContributionSnapshot'),
     (...args) => contributionTotals(base, ...args),
     (...args) => callOriginal(base, 'snapshot-cache.ts', 'cachedEnrolledMonths', args), kstToday, shiftMonth, kstDateOf, deployment);
-  return fn();
+  return fn(withEnrolledMonths);
 }
 
 export { originalListFunction };

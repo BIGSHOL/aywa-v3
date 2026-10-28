@@ -2,6 +2,10 @@
 import { runV2Server } from './v2-server-runner.mjs';
 
 export async function loadTab({ base, id, sp }) {
+  if (sp.contribution === 'settings') {
+    const { loadContributionSettingsPreview } = await import('./v2-students-contribution-settings.mjs');
+    return { contributionSettings: await loadContributionSettingsPreview(base) };
+  }
   if (sp.contribution === 'referrals') {
     const { loadContributionReferrals } = await import('./v2-students-contribution-referrals.mjs');
     return { referrals: await loadContributionReferrals(base) };

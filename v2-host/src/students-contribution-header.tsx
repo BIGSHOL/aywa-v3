@@ -5,6 +5,7 @@ const tabs = [
   { key: "students", label: "원생 기여도" },
   { key: "ontology", label: "학생 기록 연결" },
   { key: "referrals", label: "지난 소개 확인" },
+  { key: "settings", label: "배점 설정" },
 ] as const;
 
 export function ContributionHeader({ studentId, title, description, active, canConfigure, actions }: {
@@ -17,7 +18,7 @@ export function ContributionHeader({ studentId, title, description, active, canC
       {actions && <div className="flex shrink-0 items-center gap-2">{actions}</div>}
     </div>
     <nav aria-label="원생 기여도 메뉴" className="flex flex-wrap gap-x-5 border-b border-line">
-      {tabs.filter((tab) => canConfigure || tab.key !== "referrals").map((tab) => <Link key={tab.key}
+      {tabs.filter((tab) => canConfigure || (tab.key !== "referrals" && tab.key !== "settings")).map((tab) => <Link key={tab.key}
         href={tab.key === "students" ? `/student-contribution/${studentId}` : `/student-contribution/${tab.key}`}
         aria-current={active === tab.key ? "page" : undefined}
         className={`border-b-2 px-1 pb-3 text-sm transition-colors focus-visible:outline-primary ${active === tab.key

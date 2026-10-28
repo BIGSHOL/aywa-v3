@@ -25,6 +25,7 @@ import type { getCurrentOntologyScope } from "@/features/student-contribution/se
 import type { getContributionList } from "@/features/student-contribution/server/queries";
 import { ContributionList } from "./students-contribution-list";
 import { ContributionReferrals } from "./students-contribution-referrals";
+import { ContributionSettings } from "./students-contribution-settings";
 
 type ContributionData = Awaited<ReturnType<typeof getContributionStudent>>;
 type ContributionTabData = { contribution?: ContributionData; live?: LiveConnections | null;
@@ -33,7 +34,8 @@ type ContributionTabData = { contribution?: ContributionData; live?: LiveConnect
   ontology?: Awaited<ReturnType<typeof getContributionOntology>>;
   currentScope?: Awaited<ReturnType<typeof getCurrentOntologyScope>>;
   list?: Awaited<ReturnType<typeof getContributionList>>;
-  referrals?: Parameters<typeof ContributionReferrals>[0]["data"] | null };
+  referrals?: Parameters<typeof ContributionReferrals>[0]["data"] | null;
+  contributionSettings?: Parameters<typeof ContributionSettings>[0]["data"] | null };
 
 export function StudentContributionView({ studentId, params }: { studentId: string; params: Record<string, string | undefined> }) {
   const tab = useStudentTab<ContributionTabData>();
@@ -50,6 +52,10 @@ export function StudentContributionView({ studentId, params }: { studentId: stri
   if (params.contribution === "referrals") return <StudentContributionScope studentId={studentId} back={params.back}>
     {tab.referrals ? <ContributionReferrals studentId={studentId} data={tab.referrals} />
       : <p>소개 확인 목록을 열람할 수 없습니다.</p>}
+  </StudentContributionScope>;
+  if (params.contribution === "settings") return <StudentContributionScope studentId={studentId} back={params.back}>
+    {tab.contributionSettings ? <ContributionSettings studentId={studentId} data={tab.contributionSettings} />
+      : <p>배점 설정을 열람할 수 없습니다.</p>}
   </StudentContributionScope>;
   if (params.contribution && params.contribution !== "student") return <MissingTab />;
   const { contribution: data, live, summary } = tab;

@@ -11,6 +11,7 @@ import { studentsBase } from './v2-students-common.mjs';
 import { originalSignalFunction } from './v2-students-contribution-actions.mjs';
 import { originalListFunction, originalRecentFunction } from './v2-students-contribution-list.mjs';
 import { runV2Server } from './v2-server-runner.mjs';
+import { originalSettingsRead, originalSettingsWrite } from './v2-students-contribution-settings.mjs';
 
 const db = await openFullDatabase();
 test('기여도 기본 면 = 원본 월별 점수·근거 조회 · 다른 학생 자료 없음 · 읽기 전용', async () => {
@@ -120,6 +121,48 @@ test('소개자 검색·연결은 2.0 함수를 쓰고 연결·감사로그를 D
   assert.deepEqual(probes[1], [{ action: 'student_contribution_referral_link', via: '3.0 연습 복사본' }]);
   const [after] = await db`select referrer_student_id::text referrer_student_id from public.enrollment_consultations
     where tenant_id=${tenantId} and id=${candidate.consultationId}`;
+  assert.deepEqual(after, before);
+  assert.equal((await db`select count(*)::int n from net.http_request_queue`)[0].n, queueBefore.n);
+});
+test('배점 미리보기는 원본 조회 본문으로 집계하고 저장은 원본 낙관적 잠금 조건을 지킨다', async () => {
+  const { text: readSource } = await originalSettingsRead();
+  const { text: writeSource } = await originalSettingsWrite();
+  for (const piece of ['getContributionList(false)', 'hasApprovedParentEventImport(', 'sumRaws('])
+    assert.ok(readSource.includes(piece), piece);
+  for (const piece of ['contributionConfigSchema.parse(value)', '.eq("revision", revision)', '.is("refresh_token", null)',
+    'student_contribution_settings_save', 'configForStorage(config)']) assert.ok(writeSource.includes(piece), piece);
+  const [student] = await db`select id::text id from public.students where tenant_id=${tenantId}
+    and status='enrolled' and not coalesce(is_test,false) order by id limit 1`;
+  const data = await db.begin('read only', (sql) => buildStudentDetail({ sql, tenantId, id: student.id,
+    sp: { tab: 'contribution', contribution: 'settings' }, importV2 }));
+  const preview = data.tab.data.contributionSettings;
+  assert.ok(preview.gate.canConfigure);
+  assert.ok(preview.ready);
+  assert.ok(preview.studentCount > 0);
+  assert.equal(typeof preview.raws.tuitionWon, 'number');
+  const action = screen.actions.saveContributionSettings;
+  const config = structuredClone(preview.config);
+  config.rates.tuitionWon.points += 0.01;
+  const body = action.validate({ module: 'features/student-contribution/server/actions.ts', actor: preview.gate.userId,
+    args: [config, preview.revision] });
+  const [before] = await db`select revision, config from public.student_contribution_settings where tenant_id=${tenantId}`;
+  const [queueBefore] = await db`select count(*)::int n from net.http_request_queue`;
+  const rollback = new Error('rollback');
+  try {
+    await db.begin(async (sql) => {
+      const result = await action.run({ sql, body, tenantId, importV2 });
+      assert.equal(result.ok, true, result.error);
+      const [saved] = await sql`select revision, config from public.student_contribution_settings where tenant_id=${tenantId}`;
+      assert.equal(Number(saved.revision), Number(before.revision) + 1);
+      assert.equal(saved.config.rates.tuitionWon.points, config.rates.tuitionWon.points);
+      const audit = await sql`select action, metadata->>'via' via from public.audit_logs where tenant_id=${tenantId}
+        and action='student_contribution_settings_save' and created_at=now()`;
+      assert.deepEqual([...audit], [{ action: 'student_contribution_settings_save', via: '3.0 연습 복사본' }]);
+      assert.equal((await sql`select count(*)::int n from net.http_request_queue`)[0].n, queueBefore.n);
+      throw rollback;
+    });
+  } catch (error) { if (error !== rollback) throw error; }
+  const [after] = await db`select revision, config from public.student_contribution_settings where tenant_id=${tenantId}`;
   assert.deepEqual(after, before);
   assert.equal((await db`select count(*)::int n from net.http_request_queue`)[0].n, queueBefore.n);
 });
