@@ -118,6 +118,28 @@ test('발송 요청 = 일반 학생 미발송 보고서가 Docker queued · 미�
   assert.equal(afterMember.status, target.member_status, '원아 매칭 시험 준비도 되돌림');
 });
 
+test('동기화 보고서 다운로드 = 2.0 본문·파일 이름 그대로 · 내려받기 감사로그 · 바깥 요청 0 · 시험 뒤 되돌림', { skip: SKIP }, async () => {
+  const { t, run, net } = await setup();
+  const module = `${RA}classnote-sync-report-actions.ts`;
+  const [{ n: beforeAudit }] = await db`select count(*)::int n from public.audit_logs
+    where tenant_id=${t} and action='classnote_board_sync_report_export'`;
+  const out = await run([{ module, fn: 'downloadClassnoteSyncReport', args: [] }], [
+    { text: `select action, metadata->>'via' via from public.audit_logs
+      where tenant_id=$1 and action='classnote_board_sync_report_export' and created_at=now()`, params: [t] },
+    { text: NET },
+  ]);
+  const report = out.results[0].value;
+  assert.equal(report.ok, true, JSON.stringify({ ok: report.ok, error: report.error }));
+  assert.match(report.filename, /^ClassNote-동기화보고서-.*\.txt$/);
+  assert.match(report.text, /동기화/);
+  assert.ok(report.text.length > 100, '본문이 비어 있지 않다');
+  assert.ok(out.probes[0].some((row) => row.action === 'classnote_board_sync_report_export' && row.via === VIA));
+  assert.equal(out.probes[1][0].n, net, 'pg_net 큐 증가 0');
+  const [{ n: afterAudit }] = await db`select count(*)::int n from public.audit_logs
+    where tenant_id=${t} and action='classnote_board_sync_report_export'`;
+  assert.equal(afterAudit, beforeAudit, '감사로그도 되돌림');
+});
+
 test('저장하는 사람 = 보고서 관리 · 보고서 설정 · AI 멘트 중 하나라도 쓰기인 재직 직원(운영자 계정 제외 · 원장 먼저) · 목록 밖 = 로그인 없음', { skip: SKIP }, async () => {
   const { editors, master, t, importV2, S } = await setup();
   assert.equal(master.role, '원장');

@@ -10,6 +10,7 @@
 //   · features/lesson-reports/stats/prefs-actions.ts saveReportStatsMode — 고른 사람의 ui_prefs.reportStats.
 //   · 보고서 설정 saveOwnerSection — 학원 설정 화면의 저장(v2-screen-owner.mjs actions · 같은 판정 · #142 섹션 머지)을 그대로, 'report' 섹션만.
 //   · 발송 요청 sendClassnoteForUnsent · retryClassnote — Docker의 queued까지만(발송 PC 없음). 바깥 요청은 러너가 차단.
+//   · 동기화 보고서 다운로드 downloadClassnoteSyncReport — 2.0 글을 그대로 돌려주고 내려받은 감사로그를 같은 트랜잭션에 남긴다.
 //  계속 거절(진입점이 그 자리에서 2.0 거절 모양): 직접 발송(saveAdminReport · saveAndQueueAdminReport · sendBulkAdminReports — 읽기 자리가 아직이라 면이 서지 않는다) ·
 //     공지 보내기·고치기·취소·회수 · 반 단체 공지 · 동기화 요청 · 답글 · 공감 · AI 미리보기.
 // · 저장하는 사람 = readLessonEditors(보고서 관리 · 보고서 설정 · AI 멘트 중 하나라도 쓰기인 재직 직원 · 운영자 계정 제외 · 원장 먼저). 그 밖이면
@@ -27,6 +28,7 @@ const ARG_LIMIT = 200 * 1024;
 export const LR_WRITES = {
   'features/report-admin/server/recall-actions.ts': ['requestReportRecall', 'requestReportRecallByShareToken'],
   'features/report-admin/server/actions.ts': ['resetStuckClassnote', 'sendClassnoteForUnsent', 'retryClassnote'],
+  'features/report-admin/server/classnote-sync-report-actions.ts': ['downloadClassnoteSyncReport'],
   'features/report-admin/server/board-roster-actions.ts': ['linkClassnoteChild', 'unlinkClassnoteChild'],
   'features/onescreen/server/prompt-actions.ts': ['savePrompt', 'resetPrompt'],
   'features/lesson-reports/stats/prefs-actions.ts': ['saveReportStatsMode'],
