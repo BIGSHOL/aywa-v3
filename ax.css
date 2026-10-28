@@ -391,3 +391,7 @@
 .ax-detail p{margin-top:4px;overflow-wrap:anywhere}
 .ax-unlinked{flex-direction:column;align-items:flex-start;opacity:.7;cursor:default}
 .ax-unlinked small{font-size:var(--ax-xs)}
+/* Spotlight after '아래에서 보기' (live.js spotlight): the rest of the page steps back a little until the reader moves. */
+.spot-dim,.spot-back{transition:opacity .28s ease,filter .28s ease}
+.spot-dim{opacity:.42;filter:blur(1.2px)}
+@media (prefers-reduced-motion:reduce){.spot-dim,.spot-back{transition:none}}

@@ -166,20 +166,44 @@
      re-render keeps the motion going and a vanished target ends it. Route changes, search-option nearest, chat
      autoscroll and restored offsets keep their immediate scrolling elsewhere. */
   const motion={frame:0,stop:null};
-  function scrollToSection(target,{instant=false}={}){
-    motion.stop?.();
+  /* Spotlight after an explicit jump ('아래에서 보기'): the destination stays as it is and the rest of the page fades a little
+     (opacity + light blur, .spot-dim) so the eye lands on it. Any move by the reader — wheel, touch drag, navigation keys, a
+     press outside the destination, the page scrolling away — a new jump or a re-render brings everything back. */
+  const spot={off:null};
+  function clearSpotlight(){
+    spot.off?.();spot.off=null;
+    document.querySelectorAll('.spot-dim').forEach(n=>{n.classList.remove('spot-dim');n.classList.add('spot-back');});
+    setTimeout(()=>document.querySelectorAll('.spot-back:not(.spot-dim)').forEach(n=>n.classList.remove('spot-back')),400);
+  }
+  function spotlight(targets){
+    clearSpotlight();
+    const keep=(Array.isArray(targets)?targets:[targets]).map(t=>typeof t==='string'?document.querySelector(t):t).filter(n=>n?.isConnected);
+    if(!keep.length)return;
+    const path=new Set();keep.forEach(n=>{for(let x=n;x&&x!==document.body;x=x.parentElement)path.add(x);});
+    path.forEach(x=>{for(const sib of x.parentElement?.children||[])if(!path.has(sib)&&!sib.matches('script,style,dialog,#chart-tip,.chart-live,#toast,.skip-link,.sidebar-scrim'))sib.classList.add('spot-dim');});
+    const y=window.scrollY,end=()=>clearSpotlight();
+    const outside=event=>{if(!keep.some(n=>n.contains(event.target)))end();};
+    const keys=event=>{if(['ArrowUp','ArrowDown','PageUp','PageDown','Home','End',' ','Tab','Escape'].includes(event.key))end();};
+    const moved=()=>{if(Math.abs(window.scrollY-y)>24)end();};
+    const on=[['wheel',end,true],['touchmove',end,true],['pointerdown',outside,true],['keydown',keys,true],['scroll',moved,false],['hashchange',end,false]];
+    on.forEach(([type,fn,capture])=>addEventListener(type,fn,{capture,passive:true}));
+    spot.off=()=>on.forEach(([type,fn,capture])=>removeEventListener(type,fn,{capture}));
+  }
+  function scrollToSection(target,{instant=false,spotlight:focusOn=null}={}){
+    motion.stop?.();clearSpotlight();
+    const land=()=>{if(focusOn)spotlight(typeof focusOn==='function'?focusOn():focusOn);};
     const root=document.scrollingElement||document.documentElement;
     const node=()=>{const n=typeof target==='string'?document.querySelector(target):target;return n?.isConnected?n:null;};
     const goal=n=>{const pad=parseFloat(getComputedStyle(root).scrollPaddingTop)||0,margin=parseFloat(getComputedStyle(n).scrollMarginTop)||0;return Math.max(0,Math.min(root.scrollHeight-root.clientHeight,n.getBoundingClientRect().top+window.scrollY-margin-pad));};
     const first=node();if(!first)return;
     const from=window.scrollY,distance=Math.abs(goal(first)-from);
-    if(instant||distance<8||matchMedia('(prefers-reduced-motion: reduce)').matches){window.scrollTo({top:goal(first),behavior:'instant'});return;}
+    if(instant||distance<8||matchMedia('(prefers-reduced-motion: reduce)').matches){window.scrollTo({top:goal(first),behavior:'instant'});land();return;}
     const duration=Math.min(1000,Math.max(550,350+distance*.4)),start=performance.now(),intent=['wheel','touchstart','pointerdown','hashchange'];
     let last=from;
     const moved=()=>{if(Math.abs(window.scrollY-last)>2)stop();};
     const key=event=>{if(!['Shift','Control','Alt','Meta'].includes(event.key))stop();};
     const stop=()=>{cancelAnimationFrame(motion.frame);intent.forEach(type=>removeEventListener(type,stop,true));removeEventListener('keydown',key,true);removeEventListener('scroll',moved);if(motion.stop===stop)motion.stop=null;};
-    const step=now=>{const n=node();if(!n){stop();return;}const t=Math.min(1,(now-start)/duration),to=goal(n);window.scrollTo({top:from+(to-from)*(1-(1-t)**3),behavior:'instant'});last=window.scrollY;if(t<1)motion.frame=requestAnimationFrame(step);else stop();};
+    const step=now=>{const n=node();if(!n){stop();return;}const t=Math.min(1,(now-start)/duration),to=goal(n);window.scrollTo({top:from+(to-from)*(1-(1-t)**3),behavior:'instant'});last=window.scrollY;if(t<1)motion.frame=requestAnimationFrame(step);else{stop();land();}};
     intent.forEach(type=>addEventListener(type,stop,{capture:true,passive:true}));addEventListener('keydown',key,{capture:true,passive:true});addEventListener('scroll',moved,{passive:true});
     motion.stop=stop;motion.frame=requestAnimationFrame(step);
   }
@@ -383,6 +407,7 @@
 
   const views={home,students,admissions,classes,learning,finance,staff,parents,shuttle,approvals,resources,calendar,settings,inbox:ax.inbox,requests:ax.requests,automation:ax.automation,...(flowUI?{flow:()=>flowUI.fullView()}:{})};
   function render(){
+    clearSpotlight();
     const focused=document.activeElement,focusId=focused?.id,selection=typeof focused?.selectionStart==='number'?focused.selectionStart:null;
     const navHref=focused?.closest('#sidebar')&&focused.getAttribute('href');
     const scrollPositions=new Map([...document.querySelectorAll('[data-scroll-key]')].map(n=>[n.dataset.scrollKey,[n.scrollTop,n.scrollLeft]]));

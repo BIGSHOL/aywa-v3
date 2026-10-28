@@ -16,6 +16,34 @@ const fresh = () => ({ revision: 0, updatedAt: null, results: {}, ledger: { jev:
 export const modelLabel = m => { const x = /^claude-(sonnet|opus|haiku)-(\d+)-(\d+)/.exec(m || ''); return x ? `Claude ${x[1][0].toUpperCase()}${x[1].slice(1)} ${x[2]}.${x[3]}` : /^jev-/.test(m || '') ? `Jev ${m.slice(4)}` : null; };
 export const openInsightStore = ({ dir, identity, lock }) => openStore({ dir: join(dir, 'exit-insight'), identity, lock });
 
+// The model writes particles for the pseudonym ("T-1a2b3c4d는"); after the local name goes in, the particle follows the name's
+// last sound (김화영 → 은, 박선생 → 이, 중3 TP4G (~26.07.09) → 9 '구' → 가). Hangul by its final consonant, digits by their Korean
+// reading, Latin letters by their spoken ending (l·m·n). Pseudonyms with no label (fact ids) drop with their particle.
+const PAIRS = [['은', '는'], ['이', '가'], ['을', '를'], ['과', '와'], ['으로', '로'], ['이며', '며'], ['이고', '고'], ['이나', '나'], ['이라', '라'], ['이다', '다'], ['이었', '였'], ['이에요', '예요']];
+const PARTICLE = Object.fromEntries(PAIRS.flatMap(pair => pair.map(p => [p, pair])));
+function lastSound(text) {
+  const ch = String(text).replace(/[^0-9A-Za-z가-힣]+$/u, '').at(-1) || '';
+  const code = ch.charCodeAt(0);
+  if (code >= 0xac00 && code <= 0xd7a3) { const j = (code - 0xac00) % 28; return { final: j > 0, rieul: j === 8 }; }
+  if (/\d/.test(ch)) return { final: '013678'.includes(ch), rieul: '178'.includes(ch) };
+  // A Latin word is read as a word (TOP 탑, Jane 제인, Green 그린, Elsa 엘사); letters without a vowel are spelled (SKY, LT).
+  const run = (String(text).replace(/[^0-9A-Za-z가-힣]+$/u, '').match(/[A-Za-z]+$/) || [''])[0].toLowerCase();
+  if (run.length >= 3 && /[aeiou]/.test(run)) return /(?:[mnl]e|[ptkmnl]|ck|ng)$/.test(run) ? { final: true, rieul: /le?$/.test(run) } : { final: false, rieul: false };
+  return { final: /[lmn]/i.test(ch), rieul: /l/i.test(ch) };
+}
+export function withParticle(name, particle) {
+  const pair = PARTICLE[particle]; if (!pair) return name + particle;
+  const { final, rieul } = lastSound(name);
+  return name + (pair[0] === '으로' ? (final && !rieul ? '으로' : '로') : final ? pair[0] : pair[1]);
+}
+const TAGGED = new RegExp(`${AI.ID.source}(${Object.keys(PARTICLE).sort((a, b) => b.length - a.length).join('|')})?`, 'g');
+/** Validated AI text → local labels with matching particles. Unknown pseudonyms stay as they are. */
+export const renderKorean = (text, labelOf) => (typeof text === 'string' ? text.replace(TAGGED, (match, particle = '') => {
+  const label = labelOf(match.slice(0, 10));
+  if (label == null) return match;
+  return label === '' ? '' : particle ? withParticle(label, particle) : label;
+}) : text);
+
 /** Pairs analysed by AI: consecutive months of the screen range whose billing fell, and the first → last month of that range. */
 export function scheduledPairs(ix, months) {
   const total = m => [...(ix.monthly.get(m)?.values() || [])].reduce((n, s) => n + s.total, 0), out = [];
@@ -123,7 +151,7 @@ export function createExitInsight({ source, v2, asOf, months, overlay, providers
   }
   function view(from, to) {
     const p = pair(from, to), a = analysis(p), labelOf = ref => { const id = p.alias.reverse(ref); if (!id) return null; if (ref[0] === 'S') return ix.studentById.get(id)?.name; if (ref[0] === 'T') return userName(id); if (ref[0] === 'C') return ix.classById.get(id)?.class_name; if (ref[0] === 'G') return p.clusters.find(c => c.id === id)?.label; return ''; };
-    const render = t => AI.renderText(t, labelOf).replace(/\s{2,}/g, ' ').trim(), factKey = ref => { const v = p.alias.reverse(ref); return v ? v.split('|').slice(1).join('|') || v : null; };
+    const render = t => renderKorean(t, labelOf).replace(/\s{2,}/g, ' ').trim(), factKey = ref => { const v = p.alias.reverse(ref); return v ? v.split('|').slice(1).join('|') || v : null; };
     const aiFor = cid => { const c = a.output?.clusters.find(x => p.alias.reverse(x.id) === cid); return c ? { summary: render(c.summary), confidence: c.confidence, chain: c.chain.map(s => ({ text: render(s.text), facts: s.factIds.map(f => ({ ref: p.alias.reverse(f)?.split('|')[0], key: factKey(f) })) })) } : null; };
     const clusterOf = new Map(); for (const c of p.clusters) for (const m of c.members) (clusterOf.get(m) ?? clusterOf.set(m, []).get(m)).push(c.id);
     const groups = part => Object.values(part.groups).filter(g => g.students || g.amount).map(g => ({ id: g.id, label: g.label, students: g.students, amount: g.amount, studentIds: g.studentIds, ...(g.estimateAmount != null ? { estimateAmount: g.estimateAmount } : {}), ...(g.sessionsChecked != null ? { sessionsChecked: g.sessionsChecked, fewerSessions: g.fewerSessions } : {}) }));
