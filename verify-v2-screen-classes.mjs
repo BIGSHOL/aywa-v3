@@ -24,7 +24,8 @@ await check('조회 조건 = 2.0 page.tsx searchParams 열쇠 그대로 + 하위
   const keys = [...block.matchAll(/(\w+)\?: string;/g)].map(m => m[1]);
   assert.ok(keys.length >= 9, '2.0 열쇠를 찾지 못함');
   assert.deepEqual(Object.keys(C.screen.params).sort(), ['v2path', ...keys].sort(), '2.0 열쇠 + 하위 주소(v2path)');
-  assert.ok(C.screen.params.v2path.test('/classes') && C.screen.params.v2path.test('/classes/e4a2c026-8992-4211-a5fe-b9e93be8a0f3') && !C.screen.params.v2path.test('/students/x'));
+  for (const ok of ['/classes', '/classes/new', '/classes/e4a2c026-8992-4211-a5fe-b9e93be8a0f3', '/classes/e4a2c026-8992-4211-a5fe-b9e93be8a0f3/edit']) assert.ok(C.screen.params.v2path.test(ok), ok);
+  for (const no of ['/students/x', '/classes/new/edit', '/classes/x', '/classes/']) assert.ok(!C.screen.params.v2path.test(no), no);
   const entry = await here('./v2-host/src/classes.tsx'), wrap = await here('./v2-screen-classes.js');
   assert.deepEqual(JSON.parse(/const KEYS = (\[[^\]]*\])/.exec(entry)[1].replace(/'/g, '"')).sort(), [...keys].sort());
   assert.deepEqual(JSON.parse(/const KEEP = (\[[^\]]*\])/.exec(wrap)[1].replace(/'/g, '"')).sort(), ['v2path', ...keys].sort());
@@ -59,6 +60,18 @@ await check('반 상세 그리기 = 2.0 [id]/page.tsx 본문 그대로(서버 �
   for (const [from, to] of swaps.history) { assert.equal(hist.split(from).length, 2, from); hist = hist.replace(from, to); }
   assert.ok(mine.includes(hist), '이력 조립');
   assert.doesNotMatch(mine.slice(mine.indexOf('export function ClassDetailPage')), /\bawait\b|getCurrentUser|createClient|supabase\./, '서버 호출이 남지 않는다');
+});
+
+await check('반 수정·새 반 그리기 = 2.0 [id]/edit · new page.tsx 본문 그대로(서버 호출 자리만 classes-form.swaps.json 짝)', async () => {
+  const lf = s => s.replace(/\r\n/g, '\n');
+  const mine = lf(await here('./v2-host/src/classes-form.tsx')), swaps = JSON.parse(await here('./v2-host/src/classes-form.swaps.json'));
+  const edit = lf(await src('app/(shell)/classes/[id]/edit/page.tsx')), fresh = lf(await src('app/(shell)/classes/new/page.tsx'));
+  let e = edit.slice(edit.indexOf('  if (!klass) notFound();\n'), edit.lastIndexOf('\n}'));
+  for (const [from, to] of swaps.edit) { assert.equal(e.split(from).length, 2, from); e = e.replace(from, to); }
+  let n = fresh.slice(fresh.indexOf('  const subjectOptions = '), fresh.lastIndexOf('\n}'));
+  for (const [from, to] of swaps.new) { assert.equal(n.split(from).length, 2, from); n = n.replace(from, to); }
+  assert.ok(mine.includes(e), '반 수정 본문'); assert.ok(mine.includes(n), '새 반 본문');
+  assert.doesNotMatch(mine, /\bawait\b|getCurrentUser|createClient|supabase\./, '서버 호출이 남지 않는다');
 });
 
 const db = await openFullDatabase();
@@ -143,6 +156,21 @@ try {
     const s = await load({ v2path: `/classes/${sched.id}` });
     assert.ok(s.scheduledRoster.some(c => c.kind === 'join' && c.date > today), '미래 시작 수강 = 예정 합류');
     assert.deepEqual(await load({ v2path: '/classes/00000000-0000-0000-0000-000000000000' }), { notFound: true });
+  });
+
+  await check('반 수정·새 반 자료 = 2.0 조회 — 강의실 선택지(보관된 강의실은 이 반에 배정된 것만) · 담임 후보 · 없는 반은 열지 않는다', async () => {
+    const [archivedHolder] = await q1`select c.id::text id, c.classroom_id::text room from public.classes c join public.classrooms r on r.id=c.classroom_id
+      where c.tenant_id=${tenantId} and r.archived_at is not null limit 1`;
+    const [open] = await q1`select count(*)::int n from public.classrooms where tenant_id=${tenantId} and archived_at is null`;
+    const fresh = await load({ v2path: '/classes/new' });
+    assert.equal(fresh.classrooms.length, open.n, '새 반 = 보관 안 된 강의실만');
+    assert.deepEqual(Object.keys(fresh).sort(), ['classrooms', 'settings', 'teachers']);
+    const any = archivedHolder ?? (await q1`select id::text id, classroom_id::text room from public.classes where tenant_id=${tenantId} and classroom_id is not null limit 1`)[0];
+    const edit = await load({ v2path: `/classes/${any.id}/edit` });
+    assert.ok(edit.classrooms.some(r => r.id === any.room), '이 반의 강의실은 보관됐어도 선택지에 남는다');
+    assert.equal(edit.classrooms.length, open.n + (archivedHolder ? 1 : 0));
+    assert.equal(edit.klass.id, any.id); assert.deepEqual(edit.teachers, fresh.teachers);
+    assert.deepEqual(await load({ v2path: '/classes/00000000-0000-0000-0000-000000000000/edit' }), { notFound: true });
   });
 } finally { await db.end(); }
 

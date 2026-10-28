@@ -7,7 +7,7 @@
 //    계정 보기 설정(users.ui_prefs.classes)은 없는 것으로 본다(기본값) — 고른 값은 주소에만 남는다(시간표 뷰 설정과 같은 판단).
 //  · 2.0은 사용자 클라이언트(RLS)로 이 지점 줄만 읽는다 — 복사본 접속은 RLS를 안 타서 모든 조회에 tenant_id를 직접 건다.
 import { deepMerge, normalizeSubjects } from './v2-screen-timetable.mjs';
-import { buildClassDetail } from './v2-classes-detail.mjs';
+import { buildClassDetail, buildClassEdit, buildClassNew } from './v2-classes-detail.mjs';
 
 const ID = 'classes';
 let rulesPromise = null;
@@ -195,20 +195,21 @@ export async function buildClassList({ sql, params: sp, tenantId: t, R }) {
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const UUID_BODY = UUID.source.slice(1, -1);
-/** 2.0 하위 주소 — /classes(목록) · /classes/<반>(상세). 수정·새 반은 다음 단계. */
-const DETAIL = new RegExp(`^/classes/(${UUID_BODY})$`);
+/** 2.0 하위 주소 — /classes(목록) · /classes/<반>(상세) · /classes/<반>/edit(반 수정) · /classes/new(새 반). */
+const SUB = new RegExp(`^/classes/(?:(new)|(${UUID_BODY})(/edit)?)$`);
 export const screen = {
   id: ID, label: '수업목록', order: 5,
   params: {
-    v2path: new RegExp(`^/classes(/${UUID_BODY})?$`),
+    v2path: new RegExp(`^/classes(?:/new|/${UUID_BODY}(?:/edit)?)?$`),
     kind: /^[a-z_]{1,20}$/, subject: /^[a-z0-9_]{1,40}$/, teacher: new RegExp(`^(all|${UUID_BODY})$`), days: /^[a-z,]{0,40}$/,
     q: /^[^\u0000-\u001f]{0,100}$/, view: /^[a-z]{1,10}$/, sort: /^[a-z_]{1,20}$/, status: /^[a-z]{1,10}$/, page: /^\d{1,4}$/,
   },
   load: async ({ sql, params, tenantId, importV2 }) => {
-    const R = await loadRules(importV2), detail = DETAIL.exec(params.v2path ?? '');
-    if (!detail) return buildClassList({ sql, params, tenantId, R });
-    return buildClassDetail({ sql, tenantId, id: detail[1], importV2, readSettings: (s, t) => readSettings(s, t, R), readTeacherOptions: (s, t) => readTeacherOptions(s, t, R),
-      buildSubjectMaps: list => R.buildSubjectMaps(list) });
+    const R = await loadRules(importV2), sub = SUB.exec(params.v2path ?? '');
+    if (!sub) return buildClassList({ sql, params, tenantId, R });
+    const io = { sql, tenantId, importV2, readSettings: (s, t) => readSettings(s, t, R), readTeacherOptions: (s, t) => readTeacherOptions(s, t, R) };
+    if (sub[1]) return buildClassNew(io);
+    return sub[3] ? buildClassEdit({ ...io, id: sub[2] }) : buildClassDetail({ ...io, id: sub[2], buildSubjectMaps: list => R.buildSubjectMaps(list) });
   },
 };
 export { loadRules };

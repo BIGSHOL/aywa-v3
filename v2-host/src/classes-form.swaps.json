@@ -1,0 +1,7 @@
+{
+ "edit": [
+  ["  if (!klass) notFound();\n", ""],
+  ["  if (!(await canWriteLoadedClass(klass.teacherId))) notFound();\n", ""]
+ ],
+ "new": []
+}

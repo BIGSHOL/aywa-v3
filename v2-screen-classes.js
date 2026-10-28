@@ -30,8 +30,12 @@
     Object.assign(frame.style, { top: `${r.top + scrollY}px`, left: `${r.left + scrollX}px`, width: `${r.width}px`, height: `${r.height}px` });
     frame.hidden = false;
   }
-  /** 2.0 주소 → 3.0 기록 창(있으면). 없으면 3.0에 아직 없는 화면이라고만 알린다(주소를 보이지 않는다). */
+  // 이 화면이 그리는 2.0 하위 주소(새 반 · 반 상세 · 반 수정) — 창 열기 알림이 와도 같은 화면에서 연다.
+  const OWN = /^\/classes(?:\/new|\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}(?:\/edit)?)?$/i;
+  /** 2.0 주소 → 이 화면(하위 주소) · 3.0 기록 창(있으면). 없으면 3.0에 아직 없는 화면이라고만 알린다(주소를 보이지 않는다). */
   function openFromHost(href) {
+    const path = String(href || '').split(/[?#]/)[0];
+    if (OWN.test(path)) { location.hash = `#v2-${ID}?${new URLSearchParams(path === '/classes' ? {} : { v2path: path })}`.replace(/\?$/, ''); return; }
     const m = /^\/(students|classes)\/([0-9a-f-]{36})(?:[/?#]|$)/i.exec(href || '');
     if (m && api?.canOpenRecord?.(m[2])) return m[1] === 'students' ? api.showStudent(m[2]) : api.openRecord(m[2]);
     api?.toast?.('이 화면은 연습 화면에서 아직 열 수 없습니다.');

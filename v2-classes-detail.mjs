@@ -233,3 +233,29 @@ export async function buildClassDetail({ sql, tenantId: t, id, importV2, readSet
   return { klass, students, stats, allEnrolledStudents: [...allEnrolledStudents], settings, teacherOptions, delegations, historyParts,
     scheduledClass, scheduledRoster, labSeparateIds: labSeparate, lang: 'ko', viewer };
 }
+
+/** getClassroomOptions({ keepForClassId }) — 보관 안 된 강의실 + (보관됐어도) 이 반에 배정된 강의실, 이름순. */
+async function readClassroomOptions(sql, t, keepForClassId) {
+  const [rows, keep] = await Promise.all([
+    sql`select id::text id, name, capacity, archived_at from public.classrooms where tenant_id=${t} order by name`,
+    keepForClassId ? sql`select classroom_id::text classroom_id from public.classes where tenant_id=${t} and id=${keepForClassId}` : [],
+  ]);
+  const keepId = keep[0]?.classroom_id ?? null;
+  return rows.filter(r => r.archived_at == null || (keepId != null && r.id === keepId)).map(r => ({ id: r.id, name: r.name, capacity: r.capacity }));
+}
+
+/** 반 수정(/classes/<id>/edit) — 2.0 Promise.all 그대로. 없거나 고칠 수 없는 반(canWriteLoadedClass)이면 { notFound: true }. */
+export async function buildClassEdit({ sql, tenantId: t, id, importV2, readSettings, readTeacherOptions }) {
+  const D = await loadDetailRules(importV2), today = D.dk.kstToday();
+  const [klass, teachers, classrooms, settings, viewer] = await Promise.all([
+    readClassDetail(sql, t, D, id, today), readTeacherOptions(sql, t), readClassroomOptions(sql, t, id), readSettings(sql, t), viewerFor(sql, t, D),
+  ]);
+  if (!klass || !viewer.canEditClass) return { notFound: true };
+  return { klass, teachers, classrooms, settings };
+}
+
+/** 새 반(/classes/new) — 2.0 Promise.all 그대로. */
+export async function buildClassNew({ sql, tenantId: t, readSettings, readTeacherOptions }) {
+  const [teachers, classrooms, settings] = await Promise.all([readTeacherOptions(sql, t), readClassroomOptions(sql, t), readSettings(sql, t)]);
+  return { teachers, classrooms, settings };
+}

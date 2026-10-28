@@ -1,13 +1,14 @@
 // 2.0 부품 호스트 — 수업목록 진입점. 3.0 `#v2-classes`가 같은 출처 iframe(/v2-host/classes.html?…)으로 연다.
 // 2.0이 창(embed)으로 열 때의 틀(AppProviders · OperationsProvider · <main class="embed-main">) 그대로 감싸고,
 // 데이터는 /api/v2/classes?…(Docker 복사본, v2-screen-classes.mjs)에서 2.0 page.tsx가 서버에서 만들던 값으로 받는다.
-// 2.0 주소: /classes(목록) · /classes/<id>(반 상세, classes-detail.tsx) — 반 수정·새 반은 다음 단계(그때까지는 안내 한 줄).
+// 2.0 주소: /classes(목록) · /classes/<id>(반 상세, classes-detail.tsx) · /classes/<id>/edit(반 수정) · /classes/new(새 반, classes-form.tsx).
 import { createRoot } from 'react-dom/client';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { AppProviders } from '@/lib/providers/app-providers';
 import { OperationsProvider } from '@/features/owner/operations-context';
 import { ClassesListPage, type ClassListData } from './classes-list';
 import { ClassDetailPage, type ClassDetailData } from './classes-detail';
+import { EditClassPage, NewClassPage, type ClassEditData, type ClassNewData } from './classes-form';
 import { onHostRefresh } from '../shims/host-nav';
 import { usePathname, useSearchParams } from '../shims/next-navigation';
 import { HostFrame, HostMessage } from './host-frame';
@@ -47,15 +48,16 @@ function List() {
   );
 }
 
-/** 반 상세(/classes/<id>) — 같은 화면의 GET(v2path)으로 읽는다. 없는 반이면 2.0 notFound 자리에 안내 한 줄. */
-function Detail({ path }: { path: string }) {
-  const [state, setState] = useState<{ path?: string; data?: ClassDetailData; missing?: boolean; error?: string }>({});
+type SubData = { settings: { operations: unknown; modules: { disabled: unknown } } };
+/** 하위 화면(반 상세 · 반 수정 · 새 반) — 같은 화면의 GET(v2path)으로 읽는다. 없는(또는 고칠 수 없는) 반이면 2.0 notFound 자리에 안내 한 줄. */
+function Sub<T extends SubData>({ path, render }: { path: string; render: (data: T) => ReactNode }) {
+  const [state, setState] = useState<{ path?: string; data?: T; missing?: boolean; error?: string }>({});
   const [tick, setTick] = useState(0);
   useEffect(() => onHostRefresh(() => setTick((n) => n + 1)), []);
   useEffect(() => {
     let live = true;
     fetch(`/api/v2/classes?${new URLSearchParams({ v2path: path })}`, { headers: { Accept: 'application/json' } })
-      .then(async (r) => { const body = await r.json().catch(() => null); if (!r.ok) throw new Error(body?.message || '반 정보를 불러오지 못했습니다.'); return body as ClassDetailData | { notFound: true }; })
+      .then(async (r) => { const body = await r.json().catch(() => null); if (!r.ok) throw new Error(body?.message || '반 정보를 불러오지 못했습니다.'); return body as T | { notFound: true }; })
       .then((body) => live && setState('notFound' in body ? { path, missing: true } : { path, data: body }))
       .catch((e: Error) => live && setState({ path, error: e.message }));
     return () => { live = false; };
@@ -63,19 +65,22 @@ function Detail({ path }: { path: string }) {
   if (state.path !== path || (!state.data && !state.missing && !state.error)) return <HostMessage text="반 정보를 불러오는 중…" />;
   if (state.missing) return <HostMessage text="찾을 수 없는 반입니다. 목록으로 돌아가 다시 골라 주세요." error />;
   if (!state.data) return <HostMessage text={state.error!} error />;
-  const ops = state.data.settings.operations as unknown as Parameters<typeof OperationsProvider>[0];
+  const ops = state.data.settings.operations as Parameters<typeof OperationsProvider>[0];
   return (
     <OperationsProvider subjects={ops.subjects} gradeLevels={ops.gradeLevels} jobTitles={ops.jobTitles} jobTitlesByDepartment={ops.jobTitlesByDepartment} disabledModules={state.data.settings.modules.disabled as never}>
-      <ClassDetailPage data={state.data} />
+      {render(state.data)}
     </OperationsProvider>
   );
 }
 
-const DETAIL_PATH = /^\/classes\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+const UUID = '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}';
+const DETAIL_PATH = new RegExp(`^/classes/${UUID}$`), EDIT_PATH = new RegExp(`^/classes/${UUID}/edit$`);
 function App() {
   const path = usePathname();
   if (path === HOST_ROUTE) return <List />;
-  if (DETAIL_PATH.test(path)) return <Detail key={path} path={path} />;
+  if (DETAIL_PATH.test(path)) return <Sub<ClassDetailData> key={path} path={path} render={(d) => <ClassDetailPage data={d} />} />;
+  if (EDIT_PATH.test(path)) return <Sub<ClassEditData> key={path} path={path} render={(d) => <EditClassPage data={d} />} />;
+  if (path === '/classes/new') return <Sub<ClassNewData> key={path} path={path} render={(d) => <NewClassPage data={d} />} />;
   return <HostMessage text="이 화면은 연습 화면에서 아직 열 수 없습니다." />;
 }
 
