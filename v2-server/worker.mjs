@@ -41,9 +41,16 @@ async function runSteps(sql, call) {
       // 시험 전용(allowRefs — 러너를 직접 부르는 시험만 켠다 · 화면 저장 경로는 켜지 않는다): { $sql } 자리 = 같은 트랜잭션에서 읽은 첫 값.
       // 앞 단계가 만든 행(가상 줄 확정으로 생긴 회차 행 id 등)을 다음 단계에 넘기려고. 켜지 않으면 그 모양은 그대로 2.0 함수로 간다(값 취급).
       // { $currentUser: true } = 그 요청의 사용자(2.0 getCurrentUser()와 같은 값 — canViewPayslipNow(user)처럼 사용자를 인자로 받는 함수용). 늘 켜져 있다(보는 사람 그 자체라 새로 여는 것이 없다).
-      const ref = async v => (v && typeof v === 'object' && v.$currentUser === true && Object.keys(v).length === 1
-        ? (actor ? { id: actor.id, tenantId: actor.tenantId, email: actor.email, displayName: actor.displayName, jobTitle: actor.jobTitle, systemRole: actor.systemRole } : null)
-        : call.allowRefs && v && typeof v === 'object' && typeof v.$sql === 'string' ? Object.values((await sql.unsafe(v.$sql, v.params ?? []))[0] ?? {})[0] ?? null : v);
+      // 시험 전용 참조는 배열·객체 안(배분 행의 termId · 이월 입력의 termId 등)까지 푼다 — allowRefs가 꺼진 화면 경로는 맨 위 자리만(종전 그대로).
+      const ref = async v => {
+        if (v && typeof v === 'object' && v.$currentUser === true && Object.keys(v).length === 1)
+          return actor ? { id: actor.id, tenantId: actor.tenantId, email: actor.email, displayName: actor.displayName, jobTitle: actor.jobTitle, systemRole: actor.systemRole } : null;
+        if (!call.allowRefs || !v || typeof v !== 'object') return v;
+        if (typeof v.$sql === 'string') return Object.values((await sql.unsafe(v.$sql, v.params ?? []))[0] ?? {})[0] ?? null;
+        if (Array.isArray(v)) { const out = []; for (const x of v) out.push(await ref(x)); return out; }
+        if (Object.getPrototypeOf(v) === Object.prototype && !('$formData' in v)) { const out = {}; for (const [k, x] of Object.entries(v)) out[k] = await ref(x); return out; }
+        return v;
+      };
       // 호스트 shim이 FormData를 { $formData: [[이름, 글자]…] }로 실어 보낸다 — 2.0 함수가 받던 FormData로 되돌린다.
       const args = [];
       for (const a of step.args ?? []) {

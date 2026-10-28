@@ -718,6 +718,81 @@ try {
     assert.equal((await db`select count(*)::int n from public.audit_logs where tenant_id=${tenantId}`)[0].n, notesBefore);
   });
 
+  await check('회차 확정 돈 규칙(되돌림 · 2.0 함수 그대로) — 같은 금액 재확정 = 배분 유지 · 이월이 실리면 받는 달 시수를 올리고 취소해도 내리지 않는다 · 26.09·26.10·26.11 학원 합계(확정액·배분·이월·실납)는 저장 전 = 독립 SQL · 저장 후 = 테스트 줄만 2.0이 정한 만큼 · 되돌린 뒤 = 저장 전', async () => {
+    const { runV2Server } = await import('./v2-server-runner.mjs');
+    const mc = await importV2('features/billing/session-terms/money-carryover.ts');
+    const mr = await importV2('features/billing/session-terms/month-roster.ts');
+    const S = 'features/billing/session-terms/server/';
+    const [stu] = await db`select id::text id from public.students where tenant_id=${tenantId} and is_test and name='학원이'`;
+    const [{ cls }] = await db`select e.class_id::text cls from public.enrollments e join public.classes c on c.id=e.class_id where e.student_id=${stu.id} and e.end_date is null and c.class_name like '학원이(테스트)%' limit 1`;
+    const MONTHS = ['2026-09', '2026-10', '2026-11'];
+    const V = p => ({ module: `${S}queries.ts`, fn: 'getSessionTermsView', args: [p, null, { lastMonth: true }] });
+    const q = (col, p) => ({ $sql: `select ${col} from public.invoice_session_terms s join public.invoices i on i.id=s.invoice_id where s.tenant_id=$1 and i.student_id=$2 and s.class_id=$3 and i.period=$4 and i.status<>'void' limit 1`, params: [tenantId, stu.id, cls, p] });
+    const term = p => q('s.id::text', p), confirmedAt = p => q(`to_char(s.confirmed_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`, p);
+    const inv = (col, p) => ({ $sql: `select ${col} from public.invoices where tenant_id=$1 and student_id=$2 and period=$3 and status<>'void' order by created_at desc limit 1`, params: [tenantId, stu.id, p] });
+    const fd = pairs => ({ $formData: pairs });
+    const confirm = (id, p) => ({ module: `${S}actions.ts`, fn: 'confirmSessionTerm', args: [null, fd([['id', id], ['period', p], ['sessions', '4'], ['unitPrice', '25000']])] });
+    const allocate = (p, amount) => ({ module: `${S}receipt-allocation-actions.ts`, fn: 'saveReceiptAllocation', args: [inv('id::text', p), inv('line_items', p), [{ termId: term(p), lineIndex: 0, amount, baseAmount: 100000, confirmedAt: confirmedAt(p) }]] });
+    const invoice = (p, amount) => ({ module: 'features/billing/server/actions.ts', fn: 'createInvoice', args: [null, fd([['studentId', stu.id], ['period', p], ['amountTotal', String(amount)]])] });
+    const carry = amount => ({ module: `${S}money-carryover-actions.ts`, fn: 'saveMoneyCarryover', args: [{ termId: term('2026-10'), amount, classId: amount ? cls : null, note: null, expectedAllocation: amount ? 125000 : null }] });
+    // 테스트 학생 학원이의 10월·11월 줄은 청구서가 없다(no_invoice) — 그래서 이 시험이 만드는 것은 테스트 줄뿐이다.
+    const pre = {}; for (const p of MONTHS) pre[p] = (await load({ tab: 'sessions', period: p })).sessions.confirm.view;
+    for (const p of ['2026-10', '2026-11']) assert.equal(pre[p].rows.find(r => r.studentId === stu.id && r.classId === cls)?.termState, 'no_invoice', `${p} 학원이 줄 = 청구서 없음`);
+    const steps = [
+      ...MONTHS.map(V),                                                                       // 0-2 저장 전
+      invoice('2026-10', 125000), confirm(mr.virtualTermId(stu.id, cls), '2026-10'), allocate('2026-10', 125000),  // 3-5
+      V('2026-10'),                                                                           // 6
+      confirm(term('2026-10'), '2026-10'), V('2026-10'),                                      // 7-8 같은 금액 재확정
+      invoice('2026-11', 100000), confirm(mr.virtualTermId(stu.id, cls), '2026-11'), allocate('2026-11', 100000), V('2026-11'),  // 9-12
+      carry(25000), V('2026-10'), V('2026-11'),                                               // 13-15 이월
+      carry(0), V('2026-11'),                                                                 // 16-17 이월 취소
+      ...MONTHS.map(V),                                                                       // 18-20 저장 후
+    ];
+    const [{ q0 }] = await db`select count(*)::int q0 from net.http_request_queue`;
+    const { results, probes } = await runV2Server({ actorId: base.viewer.id, tenantId, mode: 'write', rollback: true, allowRefs: true, steps, probes: [
+      { text: `select action, metadata->>'via' via from public.audit_logs where tenant_id = $1 and created_at = now() order by action`, params: [tenantId] },
+      { text: `select count(*)::int n from net.http_request_queue` },
+    ] });
+    const val = i => results[i].value, mine = v => v.rows.find(r => r.studentId === stu.id && r.classId === cls), others = v => v.rows.filter(r => r.studentId !== stu.id);
+    const total = v => { const rows = v.rows.filter(r => r.termState === 'term'); const sum = f => rows.reduce((s, r) => s + (f(r) ?? 0), 0);
+      return { amount: sum(r => r.amount), alloc: sum(r => r.allocatedAmount), out: sum(r => r.carryOut?.amount), inn: sum(r => (r.carryIns ?? []).reduce((a, c) => a + c.amount, 0)), net: sum(r => mc.netAllocatedAmount(r)) }; };
+    // 저장 전 = 화면이 읽은 값(앞 시험에서 독립 SQL과 맞춘 그 조회) = 트랜잭션 안 2.0 조회 · 확정액·보낸 이월 합계 = 독립 SQL
+    for (const [i, p] of MONTHS.entries()) {
+      assert.deepEqual(val(i), pre[p], `${p} 저장 전 = 화면 조회`);
+      const [sq] = await db`select coalesce(sum(s.amount), 0)::float8 amount, coalesce(sum(greatest(s.allocation_carry_out, 0)), 0)::float8 out from public.invoice_session_terms s join public.invoices i on i.id=s.invoice_id
+        where s.tenant_id=${tenantId} and i.period=${p} and i.status <> 'void'`;
+      assert.deepEqual([total(pre[p]).amount, total(pre[p]).out], [sq.amount, sq.out], `${p} 확정액 · 보낸 이월 합계 = 독립 SQL`);
+    }
+    for (const i of [4, 5, 7, 10, 11, 13, 16]) assert.equal(val(i)?.ok, true, `${steps[i].fn} ${JSON.stringify(val(i)).slice(0, 160)}`);
+    // 규칙 ① 금액이 안 바뀌면 확정·배분을 풀지 않는다 — 같은 시수·단가로 다시 확정해도 배분 125,000 그대로 · 재확인 아님
+    const a1 = mine(val(6)), a2 = mine(val(8));
+    assert.deepEqual([a1.termState, a1.confirmedSessions, a1.amount, a1.allocatedAmount, a1.allocationStale], ['term', 4, 100000, 125000, false]);
+    assert.deepEqual([a2.confirmedSessions, a2.amount, a2.allocatedAmount, a2.allocationStale], [4, 100000, 125000, false], '같은 금액 재확정 = 배분 유지');
+    // 규칙 ② 이월이 실리면 받는 달 확정 시수를 올린다(planCarrySessionSync) — 4 → 5(25,000 ÷ 25,000) · 취소해도 내리지 않고 알리기만
+    assert.deepEqual([mine(val(12)).confirmedSessions, mine(val(12)).amount], [4, 100000]);
+    assert.match(val(13).notice ?? '', /4 → 5/);
+    assert.equal(mine(val(14)).carryOut?.amount, 25000, '보내는 달 = 이월 25,000');
+    assert.deepEqual([mine(val(15)).confirmedSessions, mine(val(15)).amount, mine(val(15)).carryIns.map(c => c.amount)], [5, 125000, [25000]], '받는 달 시수 4 → 5');
+    assert.equal(typeof val(16).warning, 'string', '취소 = 덜 받음 알림');
+    assert.deepEqual([mine(val(17)).confirmedSessions, mine(val(17)).carryIns ?? []], [5, []], '이월 취소해도 시수는 내리지 않는다');
+    // 저장 후 = 테스트 줄만 바뀐다 — 다른 줄은 전부 같고, 합계 차이 = 테스트 줄의 값(2.0이 정한 만큼)
+    for (const [k, p] of MONTHS.entries()) assert.deepEqual(others(val(18 + k)), others(pre[p]), `${p} 테스트 줄 밖은 그대로`);
+    assert.deepEqual(val(18), pre['2026-09'], '9월은 통째로 그대로');
+    const d = (a, b) => Object.fromEntries(Object.keys(a).map(k => [k, a[k] - b[k]]));
+    assert.deepEqual(d(total(val(19)), total(pre['2026-10'])), { amount: 100000, alloc: 125000, out: 0, inn: 0, net: 125000 }, '10월 합계 차이 = 학원이 줄(이월 취소 뒤)');
+    assert.deepEqual(d(total(val(14)), total(pre['2026-10'])), { amount: 100000, alloc: 125000, out: 25000, inn: 0, net: mc.netAllocatedAmount(mine(val(14))) }, '이월 중 10월 = 보낸 이월 25,000');
+    assert.deepEqual(d(total(val(15)), total(pre['2026-11'])), { amount: 125000, alloc: 100000, out: 0, inn: 25000, net: mc.netAllocatedAmount(mine(val(15))) }, '이월 중 11월 = 받은 이월 25,000');
+    assert.equal(mc.netAllocatedAmount(mine(val(15))), 125000, '11월 실납 = 배분 100,000 + 받은 이월 25,000');
+    assert.deepEqual(d(total(val(20)), total(pre['2026-11'])), { amount: 125000, alloc: 100000, out: 0, inn: 0, net: 100000 }, '11월 합계 차이 = 학원이 줄(시수 5 유지)');
+    // 감사로그 = 2.0 이름 · via · 바깥 요청 0
+    const acts = new Set(probes[0].map(l => l.action));
+    for (const a of ['invoice_create', 'session_term_confirm', 'session_term_receipt_allocate', 'session_term_money_carryover', 'session_term_money_carryover_cancel', 'session_term_carry_sync']) assert.ok(acts.has(a), `${a} — ${[...acts].join(',')}`);
+    assert.ok(probes[0].every(l => l.via === '3.0 연습 복사본'));
+    assert.equal(probes[1][0].n, q0, '바깥 요청 0');
+    // 되돌린 뒤 = 저장 전 값
+    for (const p of MONTHS) assert.deepEqual((await load({ tab: 'sessions', period: p })).sessions.confirm.view, pre[p], `${p} 되돌린 뒤 = 저장 전`);
+  });
+
   await check('회차 확정 읽기 셋(배분 창 · 이월 선택지 · 지우기 미리보기) = 2.0 서버 함수를 화면 GET으로 — 쓰기 0 · 모르는 함수 거절', async () => {
     const sept = (await load({ tab: 'sessions', period: '2026-09' })).sessions.confirm.view.rows;
     const row = sept.find(r => r.termState === 'term' && r.invoiceId);
