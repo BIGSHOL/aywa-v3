@@ -64,6 +64,7 @@ import { scrub } from './domain-snapshot-core.mjs';
 import { V2Error } from './v2-screens.mjs';
 import { loadSeatRules, seatDayProps, seatMonthProps, copyClock } from './v2-attendance-seat.mjs';
 import * as SeatSave from './v2-attendance-seat-save.mjs';
+import * as LiveSave from './v2-attendance-live-save.mjs';
 import { loadLiveRules, quickProps, liveProps, pollFingerprint, attendanceWritersOf, readTaughtClassSet } from './v2-attendance-live.mjs';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
@@ -1261,6 +1262,22 @@ const seatAction = (module, need, fn) => ({
   run: async ctx => { const { c, X } = await seatCtx(ctx); return fn(c, ctx.body.input, X); },
 });
 
+// 오늘 출결 저장 — 2.0 live/server/actions.ts · prefs-actions.ts(v2-attendance-live-save.mjs).
+const LIVE_ACTIONS = 'features/attendance/live/server/actions.ts', LIVE_PREFS = 'features/attendance/live/server/prefs-actions.ts';
+const liveAction = (module, check, fn) => ({
+  validate: raw => { const { actor, args: [input] } = hostCall(raw, module, 1); if (!check(input)) throw bad(); return { actor, input }; },
+  run: async ({ sql, body, tenantId, importV2 }) => {
+    const [R, L] = await Promise.all([loadRules(importV2), loadLiveRules(importV2)]);
+    return fn({ sql, t: tenantId, R, L, settings: await readSettings(sql, tenantId, R), actorId: body.actor }, body.input);
+  },
+});
+const isObj = v => !!v && typeof v === 'object' && !Array.isArray(v);
+const optText = (v, max) => v === undefined || v === null || (typeof v === 'string' && v.length <= max);
+const followupOk = v => isObj(v) && typeof v.studentId === 'string' && UUID.test(v.studentId) && typeof v.classId === 'string' && UUID.test(v.classId) && typeof v.sessionDate === 'string'
+  && typeof v.signal === 'string' && typeof v.state === 'string' && optText(v.slotStart, 8) && optText(v.outcome, 40) && optText(v.note, 2000) && optText(v.contactedVia, 20)
+  && (v.allowFuture === undefined || typeof v.allowFuture === 'boolean');
+const requestOk = v => isObj(v) && typeof v.classId === 'string' && UUID.test(v.classId) && typeof v.sessionDate === 'string' && optText(v.slotStart, 8);
+
 const prefs = (check, update) => ({ validate: prefsBody(check), run: async ({ sql, body, tenantId, importV2 }) => { const R = await loadRules(importV2); return mergeAttendancePrefs(sql, tenantId, R, body.actor, prev => update(R, prev, body.value)); } });
 
 // 2.0 "use server" 함수와 1:1 — 이름 = 2.0 export 이름(호스트가 그 이름으로 부른다), 인자 = 2.0 인자 그대로.
@@ -1290,6 +1307,10 @@ screen.actions = {
     run: async ctx => { const { c } = await seatCtx(ctx); return SeatSave.saveSeatMonthlyCollapsed(c, ctx.body.value); },
   },
   pullSeatMemorizedWords: notYet(SEAT_MEMORIZED, 1, () => SeatSave.MEMORIZED_PULL_REFUSAL),
+  // 오늘 출결(2.0 live/server/*) — 데스크 확인 기록 · 강사에게 출결 입력 요청(벨 행까지) · 과목 필터.
+  recordFollowup: liveAction(LIVE_ACTIONS, followupOk, LiveSave.recordFollowup),
+  requestAttendanceInput: liveAction(LIVE_ACTIONS, requestOk, LiveSave.requestAttendanceInput),
+  saveLiveSubjectFilter: liveAction(LIVE_PREFS, v => typeof v === 'string' && v.length <= 40, LiveSave.saveLiveSubjectFilter),
   // 오늘 출결 '어제 출결' AI 정리 — 바깥(AI) 호출이라 부르지 않는다(2.0 실패 모양 { error } · 바뀌는 것 없음). 저장된 정리는 보인다.
   generateRecapSummary: notYet('features/attendance/recap/server/actions.ts', 2, () => ({ error: 'AI 정리는 연습 화면에서 만들지 않습니다. 바뀐 것은 없습니다.' })),
 };

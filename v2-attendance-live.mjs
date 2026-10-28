@@ -51,7 +51,7 @@ async function jjManagedClassIds(sql, t, R, settings, userId, date) {
     return R.axis.isSeatSlot(s) && R.tlabel.specialSlotLabel(r.slot_teacher_label) === R.tlabel.SELF_STUDY_ROOM_LABEL && R.axis.slotLiveOn(s, date); }).map(r => r.class_id))];
 }
 /** 2.0 `getTeachingClassIds` — 담임 반(활성 여부 무관) ∪ 그날 위임받은 반 ∪ JJ 담당 반. */
-async function teachingClassIds(sql, t, R, settings, userId, date) {
+export async function teachingClassIds(sql, t, R, settings, userId, date) {
   const [own, active, jj] = await Promise.all([sql`select id::text id from public.classes where tenant_id=${t} and teacher_id=${userId}`, activeDelegations(sql, t, R, date), jjManagedClassIds(sql, t, R, settings, userId, date)]);
   const ownIds = own.map(c => c.id), ownSet = new Set(ownIds);
   return [...ownIds, ...[...new Set([...active.filter(r => r.delegate_user_id === userId).map(r => r.class_id), ...jj])].filter(id => !ownSet.has(id))];

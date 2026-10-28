@@ -85,8 +85,8 @@ test('매개변수는 정해진 값만 받는다(나머지는 공통 틀이 400)
   assert.ok(ok('subject', 'subject_1') && !ok('subject', 'Math'));
   assert.equal(screen.id, 'attendance'); assert.equal(screen.order, 4); assert.equal(screen.label, '출석부');
   assert.deepEqual(Object.keys(screen.actions).sort(), ['clearSeatPeriodChoices', 'commitSeatJjEdits', 'fillSeatPrevAbsent', 'fillSeatSlot', 'generateRecapSummary', 'moveSeatStudentPeriod', 'previewAbsenceIntake',
-    'pullSeatMemorizedWords', 'recordAbsenceIntake', 'resetSeatPlacements', 'saveAttendanceCollapsed', 'saveAttendanceHideRetired', 'saveAttendancePeriodMode', 'saveAttendanceSort',
-    'saveSeatMonthlyCollapsed', 'searchAttendanceHubStudents', 'searchIntakeStudents', 'setAttendanceBulk', 'setAttendanceCell', 'setSeatCell', 'setSeatJjField']);
+    'pullSeatMemorizedWords', 'recordAbsenceIntake', 'recordFollowup', 'requestAttendanceInput', 'resetSeatPlacements', 'saveAttendanceCollapsed', 'saveAttendanceHideRetired', 'saveAttendancePeriodMode', 'saveAttendanceSort',
+    'saveLiveSubjectFilter', 'saveSeatMonthlyCollapsed', 'searchAttendanceHubStudents', 'searchIntakeStudents', 'setAttendanceBulk', 'setAttendanceCell', 'setSeatCell', 'setSeatJjField']);
 });
 
 test('아직 옮기지 않은 조회 셋은 그 함수의 2.0 실패 모양으로 답한다(부품이 결과를 읽다 깨지지 않게 · 쓰기 없음)', async () => {
@@ -877,6 +877,70 @@ test('복사본(되돌림): 오늘 출결 — 휴원일이면 좌석표·큐 없
     const d = await liveLoad(sql, {});
     assert.deepEqual([d.holiday, d.board, d.queue, d.holidayActivity.officeScope], ['시험 휴원일', null, null, true]);
   });
+});
+
+// ── 오늘 출결 저장 = 2.0 live/server/actions.ts(recordFollowup · requestAttendanceInput) · prefs-actions.ts(saveLiveSubjectFilter) ──
+const LIVE_MOD = 'features/attendance/live/server/actions.ts', LIVE_PREFS_MOD = 'features/attendance/live/server/prefs-actions.ts';
+test('저장: 오늘 출결 입력 검사는 복사본에 닿기 전에 거절한다', () => {
+  const v = (name, module, input) => screen.actions[name].validate({ module, actor: CLASS, args: [input] });
+  const f = { studentId: STUDENT, classId: CLASS, sessionDate: '2026-10-27', signal: 'absent', state: 'open' };
+  assert.equal(v('recordFollowup', LIVE_MOD, f).input.state, 'open');
+  for (const bad of [{ ...f, studentId: 'x' }, { ...f, note: 'x'.repeat(2001) }, { ...f, allowFuture: 'yes' }, 'x']) assert.throws(() => v('recordFollowup', LIVE_MOD, bad), /입력 값/);
+  assert.throws(() => v('requestAttendanceInput', LIVE_MOD, { classId: 'x', sessionDate: '2026-10-27' }), /입력 값/);
+  assert.throws(() => v('saveLiveSubjectFilter', LIVE_PREFS_MOD, 5), /입력 값/);
+  assert.throws(() => v('recordFollowup', LIVE_PREFS_MOD, f), /입력 값/, 'another 2.0 module');
+});
+
+test('저장(복사본, 되돌림): 오늘 출결 — 확인 기록 upsert · 강사에게 출결 입력 요청(벨 행·한 번만) · 과목 필터가 2.0과 같은 행·감사로그', { skip: !db && 'local database not running' }, async () => {
+  const before = await db`select (select count(*)::int from public.audit_logs) audits, (select count(*)::int from net.http_request_queue) net`;
+  const TODAY = await A.copyDay(), DOW = R.cal.DOW_KEYS[new Date(`${TODAY}T00:00:00Z`).getUTCDay()], SLOT = '22:00';
+  const Live = await import('./v2-attendance-live.mjs');
+  await inRollback(async ({ sql, run, t }) => {
+    const settings = await A.readSettings(sql, t, R), writers = await Live.attendanceWritersOf(sql, t, R, settings);
+    const desk = writers.find(w => w.level === 'full' && w.role !== 'master'), teacher = writers.find(w => w.level === 'scoped');
+    const act = (name, module, input, actor = desk) => run(sql, name, { module, actor: actor.id, args: [input] });
+    const audits = action => sql`select actor_id::text actor_id, metadata from public.audit_logs where tenant_id=${t} and action=${action} and metadata->>'via'='3.0 연습 복사본'`;
+    // 확인 기록 — 같은 칸(학생·날짜·교시, 교시 없음 = 그날 전체) 두 번째는 갱신 · 매듭지으면 처리자·시각.
+    const f = { studentId: STUDENT, classId: CLASS, sessionDate: TODAY, signal: 'absent' };
+    await sql`delete from public.attendance_followups where student_id=${STUDENT} and session_date=${TODAY}`;
+    const first = await act('recordFollowup', LIVE_MOD, { ...f, state: 'open', contactedVia: 'phone' });
+    assert.equal(first.ok, true); assert.match(first.id, /^[0-9a-f-]{36}$/);
+    await act('recordFollowup', LIVE_MOD, { ...f, state: 'resolved', outcome: 'sick', note: ' 열이 남 ', contactedVia: 'phone' });
+    const rows = await sql`select id::text id, state, outcome, note, contacted_via, handled_by::text handled_by, slot_start from public.attendance_followups where student_id=${STUDENT} and session_date=${TODAY}`;
+    assert.deepEqual(rows.map(r => [r.id, r.state, r.outcome, r.note, r.contacted_via, r.handled_by, r.slot_start]), [[first.id, 'resolved', 'sick', '열이 남', 'phone', desk.id, null]]);
+    const fa = await audits('attendance_followup');
+    assert.equal(fa.length, 2); assert.ok(fa.every(a => a.metadata.hasNote !== undefined && !JSON.stringify(a.metadata).includes('열이') && !('outcome' in a.metadata)), 'no note text or outcome in the audit');
+    // 2.0 거절 — 미래 날짜 · 잘못된 신호 · 강사(담당 반만)의 담당 아닌 반.
+    const future = new Date(Date.parse(`${TODAY}T00:00:00Z`) + 86400000).toISOString().slice(0, 10);
+    assert.deepEqual(await act('recordFollowup', LIVE_MOD, { ...f, sessionDate: future, state: 'open' }), { error: '아직 지나지 않은 날짜입니다' });
+    assert.deepEqual(await act('recordFollowup', LIVE_MOD, { ...f, signal: 'late', state: 'open' }), { error: '잘못된 신호입니다' });
+    assert.deepEqual(await act('recordFollowup', LIVE_MOD, { ...f, state: 'open' }, teacher), { error: '담당 반이 아닙니다' });
+    // 출결 입력 요청 — 받는 사람 = 그날 그 교시 담당 ∪ 담임 ∪ 그날 위임(나는 빼고). 같은 (반·날짜·교시)는 한 번만.
+    await sql`insert into public.class_schedules (tenant_id, class_id, day_of_week, start_time, end_time, valid_from, teacher_id) values (${t}, ${CLASS}, ${DOW}, ${SLOT}, '22:40', '2026-10-01', ${teacher.id})`;
+    await sql`delete from public.notification_events where tenant_id=${t} and event_type='attendance_input_request' and subject_key=${CLASS}`;
+    const [{ teacher_id: homeroom }] = await sql`select teacher_id::text teacher_id from public.classes where id=${CLASS}`;
+    assert.deepEqual(await act('requestAttendanceInput', LIVE_MOD, { classId: CLASS, sessionDate: TODAY, slotStart: SLOT }), { ok: true, sent: true });
+    const want = [...new Set([homeroom, teacher.id].filter(id => id && id !== desk.id))].sort();
+    const bells = await sql`select recipient_id::text r, type, title, link, actor_id::text a from public.notifications where tenant_id=${t} and type='attendance_input_request' and actor_id=${desk.id} and created_at = now()`;
+    assert.deepEqual(bells.map(b => b.r).sort(), want);
+    assert.ok(bells.every(b => b.link === '/attendance/live' && b.title.includes(SLOT)));
+    const [ra] = await audits('attendance_input_request'); assert.deepEqual([ra.metadata.recipients, [...ra.metadata.recipientIds].sort(), ra.metadata.slotStart], [want.length, want, SLOT]);
+    assert.deepEqual(await act('requestAttendanceInput', LIVE_MOD, { classId: CLASS, sessionDate: TODAY, slotStart: SLOT }), { ok: true, sent: false }, 'dedup — no second bell');
+    assert.equal((await sql`select count(*)::int n from public.notifications where tenant_id=${t} and type='attendance_input_request' and actor_id=${desk.id} and created_at = now()`)[0].n, want.length);
+    assert.deepEqual(await act('requestAttendanceInput', LIVE_MOD, { classId: CLASS, sessionDate: TODAY }, teacher), { error: '출결 요청 권한이 없습니다' });
+    // 화면 큐의 '요청함' 표식이 같은 기록을 읽는다(2.0 loadRequestMarks).
+    assert.ok((await Live.readRequestMarks(sql, t, TODAY, 'attendance_input_request')).has(`${CLASS}|${SLOT}`));
+    // 과목 필터 — 그 사람의 ui_prefs.attendanceLive만, 다른 화면 설정은 그대로.
+    const [u0] = await sql`select ui_prefs from public.users where id=${desk.id}`;
+    assert.deepEqual(await act('saveLiveSubjectFilter', LIVE_PREFS_MOD, 'math'), { ok: true });
+    const [u1] = await sql`select ui_prefs from public.users where id=${desk.id}`;
+    assert.equal(u1.ui_prefs.attendanceLive.subject, 'math');
+    same({ ...u1.ui_prefs, attendanceLive: undefined }, { ...(u0.ui_prefs ?? {}), attendanceLive: undefined });
+    const L = await Live.loadLiveRules(importV2);
+    assert.equal((await Live.readLiveViewPrefs(sql, t, L, desk.id)).subject, 'math');
+    assert.equal((await sql`select count(*)::int n from net.http_request_queue`)[0].n, before[0].net);
+  });
+  assert.equal((await db`select count(*)::int n from public.audit_logs`)[0].n, before[0].audits, 'rolled back — the copy is unchanged');
 });
 
 test.after(async () => { await db?.end(); });
