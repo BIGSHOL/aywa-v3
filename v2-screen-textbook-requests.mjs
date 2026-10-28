@@ -83,6 +83,22 @@ async function readPage(sql, t, R, X, viewer) {
   return { rows, students, isTeacher };
 }
 
+/** 업무 흐름의 한 주문으로 진입할 때: 이미 목록에 있으면 앞으로, 100건 절단 밖이면 같은 테넌트·강사 범위로 한 건만 보탠다. */
+async function focusOrder(sql, t, R, viewer, page, orderId) {
+  if (!orderId) return { ...page, focusOrderId: null };
+  let row = page.rows.find(r => r.id === orderId);
+  if (!row) {
+    const [raw] = await sql`select ${orderCols(sql, true)} from public.textbook_orders where tenant_id=${t} and id=${orderId}`;
+    if (!raw) return { ...page, focusOrderId: null };
+    if (page.isTeacher) {
+      const ids = await requestStudentIds(sql, t, R, viewer.id);
+      if (raw.created_by !== viewer.id && !ids.includes(raw.student_id)) return { ...page, focusOrderId: null };
+    }
+    row = mapOrder(raw);
+  }
+  return { ...page, rows: [row, ...page.rows.filter(r => r.id !== orderId)], focusOrderId: orderId };
+}
+
 /** 학원 설정의 이름(profile)·입금 계좌(billing) — 2.0 getTenantSettings(resolveSettings)와 같은 병합(이름이 비면 지점 이름). 계좌 고르기·기본 이름은 화면이 2.0 함수로. */
 async function readBranding(sql, t, R) {
   const [[row], [tenant]] = await Promise.all([sql`select data from public.tenant_settings where tenant_id=${t}`, sql`select name from public.tenants where id=${t}`]);
@@ -241,7 +257,7 @@ const ACTIONS = { requestTextbook: { run: requestTextbook }, updateTextbookReque
 
 export const screen = {
   id: ID, label: '교재 요청', order: 9,
-  params: { viewer: UUID, studentId: UUID, ment: /^1$/ },
+  params: { viewer: UUID, studentId: UUID, orderId: UUID, ment: /^1$/ },
   actions: Object.fromEntries(Object.entries(ACTIONS).map(([name, { run, module = MODULE, arity = 2 }]) => [name, {
     validate: raw => {
       if (!plain(raw) || raw.module !== module || !Array.isArray(raw.args) || raw.args.length !== arity || (raw.actor != null && (typeof raw.actor !== 'string' || !UUID.test(raw.actor)))) throw bad();
@@ -262,7 +278,7 @@ export const screen = {
       sql`select id::text id, title, book_detail, price from public.textbook_catalog where tenant_id=${t} and is_active order by title asc`,
       readBranding(sql, t, c.R),
     ]);
-    return { ...common, route: 'page', ...page,
+    return { ...common, route: 'page', ...await focusOrder(sql, t, c.R, viewer, page, sp.orderId),
       catalog: catalog.map(r => ({ id: r.id, title: r.title, bookDetail: r.book_detail, price: r.price == null ? 0 : Number(r.price) })),
       // page.tsx가 읽는 설정 칸(이름 · 계좌 · 모듈) — 로고는 파일 저장소·바깥 주소라 싣지 않는다(logoUrl = null).
       settings: { profile: { name: branding.profile.name }, billing: branding.billing, modules: { disabled: c.env.disabled } }, logoUrl: null,

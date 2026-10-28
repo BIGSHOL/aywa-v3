@@ -18,10 +18,11 @@ const here = p => readFile(new URL(p, import.meta.url), 'utf8');
 const lf = s => s.replace(/\r\n/g, '\n');
 const fd = obj => ({ $formData: Object.entries(obj).flatMap(([k, v]) => (Array.isArray(v) ? v : [v]).map(x => [k, String(x)])) });
 
-await check('주소 열쇠 = 2.0 page.tsx searchParams(studentId) + 보는 사람(viewer) + 작성 폼 멘트 읽기(ment)', async () => {
+await check('주소 열쇠 = 2.0 page.tsx searchParams(studentId) + 보는 사람(viewer) + 작성 폼 멘트 읽기(ment) + 업무 흐름 한 주문(orderId)', async () => {
   const page = lf(await src('app/(shell)/textbook-requests/page.tsx'));
   assert.match(page, /searchParams: Promise<\{ studentId\?: string \| string\[\] \}>/);
-  assert.deepEqual(Object.keys(M.screen.params).sort(), ['ment', 'studentId', 'viewer']);
+  assert.deepEqual(Object.keys(M.screen.params).sort(), ['ment', 'orderId', 'studentId', 'viewer']);
+  assert.match(lf(await here('./v2-host/src/textbook-requests.tsx')), /q\.set\('orderId', orderId\)/);
 });
 
 await check('그리기 = 2.0 textbook-requests/page.tsx return 본문 그대로(학원 이름 기본값 · 요청서 계좌 · ClassNote 모듈 · 소유 판정 id)', async () => {
@@ -37,6 +38,31 @@ const load = params => db.begin('isolation level repeatable read read only', sql
 try {
   const base = await load({});
   const teachers = base.editors.filter(e => e.role === '강사');
+
+  await check('업무 흐름 주문 id = 최근 100건 밖도 한 건만 더 읽어 맨 앞에 놓고, 강사 범위 밖은 노출하지 않는다', async () => {
+    const all = await db`select id::text id from public.textbook_orders where tenant_id=${tenantId}`;
+    const current = new Set(base.rows.map(r => r.id));
+    const id = all.find(r => !current.has(r.id))?.id ?? base.rows.at(-1)?.id;
+    assert.ok(id, '확인할 주문');
+    const direct = await load({ orderId: id });
+    assert.equal(direct.focusOrderId, id);
+    assert.equal(direct.rows[0].id, id);
+    assert.equal(direct.rows.filter(r => r.id === id).length, 1);
+    const notFound = await load({ orderId: '00000000-0000-4000-8000-000000000001' });
+    assert.equal(notFound.focusOrderId, null);
+    for (const teacher of teachers.slice(0, 6)) {
+      const own = await load({ viewer: teacher.id });
+      const foreign = base.rows.find(r => !own.rows.some(x => x.id === r.id));
+      if (!foreign) continue;
+      const denied = await load({ viewer: teacher.id, orderId: foreign.id });
+      assert.equal(denied.focusOrderId, null);
+      assert.ok(!denied.rows.some(r => r.id === foreign.id));
+      break;
+    }
+    const host = lf(await here('./v2-host/src/textbook-requests-page.tsx'));
+    assert.match(host, /scrollIntoView\(\{ behavior: 'instant', block: 'center' \}\)/);
+    assert.match(host, /classList\.add\('ring-2', 'ring-primary'\)/);
+  });
 
   await check('사무실 보기 = 전체 요청 앞 100건(체크 적은 것 → 신청일 최신) · 학생 = 퇴원 제외 전부 · 카탈로그 = 사용 중 단가표', async () => {
     assert.equal(base.isTeacher, false); assert.equal(base.viewer.role, '원장');

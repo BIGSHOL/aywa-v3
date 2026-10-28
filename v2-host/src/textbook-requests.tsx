@@ -54,6 +54,8 @@ function App() {
   const initialStudentIds = search.getAll('studentId').map((v) => v.trim()).filter(Boolean);
   const q = new URLSearchParams();
   if (viewer) q.set('viewer', viewer);
+  const orderId = search.get('orderId');
+  if (orderId) q.set('orderId', orderId);
   const key = q.toString();
   const [state, setState] = useState<{ key?: string; data?: Data; error?: string }>({});
   const [tick, setTick] = useState(0);
