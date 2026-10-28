@@ -67,13 +67,19 @@ try {
   await db.begin('isolation level repeatable read read only', async sql => {
     const count = async table => (await sql`select count(*)::int c from ${sql(`public.${table}`)} where tenant_id=${tenantId}`)[0].c;
     // Families whose evidence is the whole tenant table — an independent count must match.
-    for (const [id, tables] of Object.entries({ onescreen: ['classnote_notices'], approvals: ['approval_documents'], documents: ['academy_documents'], calendar: ['calendar_events'], 'tasks-notifications': ['staff_tasks'], integrations: ['makeedu_sync_runs'], slack: ['slack_rules'], inventory: ['inventory_assets'], 'withdrawal-reports': ['withdrawal_reports', 'withdrawal_report_archives'], payroll: ['payslips'], 'class-sheets': ['class_sheet_plan_lines'], 'owner-settings': ['notice_popups', 'operating_periods', 'classrooms'] })) {
+    for (const [id, tables] of Object.entries({ onescreen: ['classnote_notices'], approvals: ['approval_documents'], documents: ['academy_documents'], calendar: ['calendar_events'], 'tasks-notifications': ['staff_tasks'], slack: ['slack_rules'], inventory: ['inventory_assets'], 'withdrawal-reports': ['withdrawal_reports', 'withdrawal_report_archives'], payroll: ['payslips'], 'class-sheets': ['class_sheet_plan_lines'], 'owner-settings': ['notice_popups', 'operating_periods', 'classrooms'] })) {
       let n = 0; for (const table of tables) n += await count(table);
       assert.equal(F[id].totalRecords, n, `${id} evidence = full ${tables.join('+')}`);
     }
     // 직원 평가 = 포트폴리오 전체 + 만족도 확인 대기 글(원장 10-28 '만족도를 확인하러 가고 싶은데' — 근거로 함께 실었다).
     const [{ c: pendingSatisfaction }] = await sql`select count(*)::int c from public.teacher_satisfaction_judgments where tenant_id=${tenantId} and state='pending'`;
     assert.equal(F['class-review'].totalRecords, await count('teacher_portfolio_months') + pendingSatisfaction, 'class-review evidence = portfolio + pending satisfaction');
+    // 외부 연동 = 메이크에듀 동기화 전체 + 오류가 남은(켜진) 연동 — '연동 오류' 신호가 가리키는 근거(AX-H5).
+    const [{ c: failingLinks }] = await sql`select count(*)::int c from public.user_integrations where tenant_id=${tenantId} and coalesce(sync_enabled,false) and last_error is not null`;
+    assert.equal(F.integrations.totalRecords, await count('makeedu_sync_runs') + failingLinks, 'integrations evidence = makeedu runs + failing links');
+    const sheet = F.integrations.signals.find(s => s.id === 'sheet-sync-error');
+    if (failingLinks) assert.equal(sheet?.recordIds.length, failingLinks, 'the link-error signal points at every failing link');
+    for (const r of (F.integrations[EVIDENCE] || []).filter(x => x.facetIds.includes('link-error'))) assert.deepEqual(r.fields.map(f => f.label), ['오류 기록'], 'link records carry only the error time beside name · status · summary');
     done.push('whole-table families match independent counts');
 
     // Every evidence id is a row of its source table in this tenant, and of no other tenant.
@@ -167,7 +173,7 @@ check('signals: facet = the same record set as recordIds · at = latest record t
   const missing = [];
   for (const f of Object.values(F)) for (const s of f.signals) {
     if (s.at !== undefined) assert(/^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2}:\d{2}Z)?$/.test(s.at) && s.at.slice(0, 10) <= asOf, `${f.id} ${s.id} at ${s.at}`);
-    if (!s.recordIds.length) continue; // 기록 없이 연결 상태로만 서는 신호(구글 시트 연동 오류)
+    if (!s.recordIds.length) continue; // 기록 없이 서는 신호는 없어야 하지만(연동 오류도 이제 오류 연동 행을 가리킨다) 있으면 아래 단언이 아니라 업무 흐름 배선 검사가 잡는다
     if (!s.facet || s.at === undefined) missing.push(`${f.id} ${s.id}`);
     if (!s.facet) continue;
     const viaFacet = (f[EVIDENCE] || []).filter(r => r.facetIds.includes(s.facet)).map(r => r.id).sort();
