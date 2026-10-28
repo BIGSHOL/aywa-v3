@@ -42,8 +42,8 @@ async function setup() {
 }
 
 test('대응표 = 2.0 서버 함수 이름 그대로(그 파일이 내보내는 async 함수) · 진입점 거절 목록과 겹치지 않음 · 보고서 설정은 학원 설정 저장 그대로', async () => {
-  const { LR_WRITES, lessonReportsActions } = await import('./v2-lesson-reports-save.mjs');
-  for (const [module, names] of Object.entries(LR_WRITES)) {
+  const { LR_WRITES, LR_READS, lessonReportsActions } = await import('./v2-lesson-reports-save.mjs');
+  for (const [module, names] of [...Object.entries(LR_WRITES), ...Object.entries(LR_READS)]) {
     const code = lf(await src(module));
     for (const n of names) assert.match(code, new RegExp(`export async function ${n}\\(`), `${module}#${n}`);
   }
@@ -59,6 +59,7 @@ test('대응표 = 2.0 서버 함수 이름 그대로(그 파일이 내보내는 
     assert.ok(!refuse.includes(`"${n}"`), `${n} 거절 금지`);
     assert.match(entry, new RegExp(`registerHostHandler\\(QUEUE_MODULE, name`));
   }
+  for (const n of Object.values(LR_READS).flat()) assert.ok(n in lessonReportsActions, `${n}을 원본 읽기로 연결`);
   assert.match(entry, /연습 복사본이라 실제로 보내지지 않습니다 — 발송 대기로만 남습니다/);
   // 직접 발송·공지·답글 등은 아직 받지 않는다(진입점이 그 자리에서 거절).
   for (const n of ['saveAndQueueAdminReport', 'sendBulkAdminReports', 'sendClassNotice', 'sendClassWideNotice', 'editPostedNotice', 'cancelOnescreenNotice', 'requestParentReply', 'requestParentReaction'])
@@ -138,6 +139,33 @@ test('동기화 보고서 다운로드 = 2.0 본문·파일 이름 그대로 · 
   const [{ n: afterAudit }] = await db`select count(*)::int n from public.audit_logs
     where tenant_id=${t} and action='classnote_board_sync_report_export'`;
   assert.equal(afterAudit, beforeAudit, '감사로그도 되돌림');
+});
+
+test('직접 발송·답글 읽기 넷 = 고른 사람의 2.0 함수 · 읽기 전용 · 외부 요청 0', { skip: SKIP }, async () => {
+  const { t, S, editors, master, importV2, net } = await setup();
+  const [student] = await db`select id::text id from public.students where tenant_id=${t} and status='enrolled'
+    and not coalesce(is_test,false) limit 1`;
+  const [message] = await db`select id::text id from public.classnote_parent_messages where tenant_id=${t}
+    order by posted_at desc limit 1`;
+  const [notification] = await db`select id::text id, recipient_id::text recipient_id from public.notifications
+    where tenant_id=${t} and recipient_id = any(${editors.map((e) => e.id)}::uuid[])
+      and type in ('classnote_parent_post','classnote_parent_comment') order by created_at desc limit 1`;
+  assert.ok(student && message && notification, '원본 읽기 넷의 시험 자료');
+  const cases = [
+    [`${RA}compose-actions.ts`, 'getAdminComposeContext', [student.id], master.id, 'student'],
+    [`${RA}compose-actions.ts`, 'getAdminSendClassOptions', [{ studentId: student.id, subject: 'math' }], master.id, 'candidates'],
+    ['features/classnote-reply/server/reply-actions.ts', 'getParentReplyContext', [message.id], master.id, 'thread'],
+    ['features/classnote-reply/server/notification-reply.ts', 'getNotificationReplyContext', [notification.id], notification.recipient_id, 'thread'],
+  ];
+  for (const [module, fn, args, actor, key] of cases) {
+    const action = S.lessonReportsActions[fn];
+    const body = action.validate({ module, actor, args });
+    const result = await db.begin('read only', (sql) => action.run({ sql, body, tenantId: t, importV2 }));
+    assert.equal(result.ok, true, `${fn}: ${result.error ?? ''}`);
+    assert.ok(key in result, `${fn} 원본 반환 모양`);
+  }
+  const [{ n: afterNet }] = await db.unsafe(NET);
+  assert.equal(afterNet, net, '읽기 중 pg_net 바깥 요청 큐 증가 0');
 });
 
 test('저장하는 사람 = 보고서 관리 · 보고서 설정 · AI 멘트 중 하나라도 쓰기인 재직 직원(운영자 계정 제외 · 원장 먼저) · 목록 밖 = 로그인 없음', { skip: SKIP }, async () => {

@@ -140,11 +140,11 @@ test('다시 읽기 GET = 면 모듈 읽기 함수로(목록 · 큐 · 공지 �
   });
 });
 
-test('진입점 = 아직 옮기지 않은 읽기 넷은 읽기 안내로 · 동기화 요청(저장)은 보내지 않고 거절 — 쓰기 경로로 보내지 않는다(그 자리 처리)', async () => {
+test('진입점 = 직접 발송·답글 읽기 넷은 원본 읽기로 · 동기화 요청(저장)은 보내지 않고 거절', async () => {
   const entry = lf(await here('./v2-host/src/lesson-reports.tsx'));
   for (const fn of ['getAdminComposeContext', 'getAdminSendClassOptions', 'getParentReplyContext', 'getNotificationReplyContext'])
-    assert.ok(entry.includes(`, "${fn}", async () => NOT_YET_OPEN);`), fn);
-  assert.match(entry, /const NOT_YET_OPEN = \{ ok: false, error: "연습 화면에서는 아직 열 수 없습니다" \}/);
+    assert.ok(!entry.includes(`, "${fn}", async () =>`), `${fn} 읽기 거절 금지`);
+  assert.ok(!entry.includes('const NOT_YET_OPEN'), '직접 발송·답글 읽기 거절을 없앴다');
   assert.match(entry, /"requestClassnoteBoardSync", async \(\) => \(\{ ok: false, error: VIEW_ONLY \}\)/);
   // 통계 보기 기억(saveReportStatsMode)은 이제 실제 저장 — 진입점이 거절하지 않는다(저장 시험 = verify-v2-lesson-reports-save.mjs).
   assert.ok(!entry.includes('"saveReportStatsMode", async () =>'));

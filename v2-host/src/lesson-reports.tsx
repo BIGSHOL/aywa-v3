@@ -83,7 +83,7 @@ for (const name of ["sendClassnoteForUnsent", "retryClassnote"]) registerHostHan
 // 저장(회수 · 멈춤 복구 · 원아 연결 · 프롬프트 · 보고서 설정 · 통계 보기 기억)은 이 화면 actions(v2-lesson-reports-save.mjs)가 받는다 —
 // 여기 적지 않은 함수는 shim이 쓰기 경로로 보낸다. 아래는 그 경로가 받지 않는 저장 — 보내지 않고 그 자리에서 2.0 거절 모양으로.
 const REFUSE: Record<string, string[]> = {
-  // 직접 발송(면의 읽기 자리가 아직이라 서지 않는다) · 공지 보내기·고치기·취소·회수 · 반 단체 공지 · 답글 · 공감 — 바깥(ClassNote)으로 나가는 일.
+  // 직접 발송 저장 · 공지 보내기·고치기·취소·회수 · 반 단체 공지 · 답글 · 공감 — 바깥(ClassNote)으로 나가는 일.
   "features/report-admin/server/compose-actions.ts": ["saveAdminReport", "saveAndQueueAdminReport", "sendBulkAdminReports"],
   "features/report-admin/server/notice-actions.ts": ["sendClassNotice"],
   "features/report-admin/server/class-notice-actions.ts": ["sendClassWideNotice"],
@@ -97,13 +97,7 @@ const NO_AI = { ok: false, error: "연습 화면에서는 AI를 부르지 않습
 registerHostHandler("features/onescreen/server/actions.ts", "generateReportComment", async () => NO_AI);
 registerHostHandler("features/onescreen/server/love-note-actions.ts", "suggestLoveNote", async () => NO_AI);
 registerHostHandler("features/onescreen/server/ment-style-actions.ts", "rebuildMentStylesNow", async () => NO_AI);
-// 직접 발송 · 답글 창의 읽기 넷은 아직 옮기지 않았다 — '저장' 거절 문구가 아니라 읽기 안내로(2.0 실패 모양 { ok:false, error }).
-// 거절은 그 자리에서 돌려준다(registerHostFallback은 쓰기 경로에 한 번 보낸 뒤라 없는 경로 404가 콘솔에 남는다).
-const NOT_YET_OPEN = { ok: false, error: "연습 화면에서는 아직 열 수 없습니다" };
-registerHostHandler("features/report-admin/server/compose-actions.ts", "getAdminComposeContext", async () => NOT_YET_OPEN);
-registerHostHandler("features/report-admin/server/compose-actions.ts", "getAdminSendClassOptions", async () => NOT_YET_OPEN);
-registerHostHandler("features/classnote-reply/server/reply-actions.ts", "getParentReplyContext", async () => NOT_YET_OPEN);
-registerHostHandler("features/classnote-reply/server/notification-reply.ts", "getNotificationReplyContext", async () => NOT_YET_OPEN);
+// 직접 발송 · 답글 창의 읽기 넷은 서버 화면 actions가 2.0 함수를 읽기 전용 러너로 실행한다.
 // AI를 부르는 미리보기는 연습 화면에서 하지 않는다 · 학부모 글 공감 상태는 바깥(ClassNote) 조회라 2.0 실패 값(null) 그대로.
 registerHostHandler("features/onescreen/server/prompt-actions.ts", "testPrompt", async () => ({ ok: false, error: "연습 화면에서는 AI 미리보기를 하지 않습니다" }));
 registerHostHandler("features/classnote-reply/server/reaction-actions.ts", "getParentReactionState", async () => null);

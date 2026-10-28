@@ -11,7 +11,8 @@
 //   · 보고서 설정 saveOwnerSection — 학원 설정 화면의 저장(v2-screen-owner.mjs actions · 같은 판정 · #142 섹션 머지)을 그대로, 'report' 섹션만.
 //   · 발송 요청 sendClassnoteForUnsent · retryClassnote — Docker의 queued까지만(발송 PC 없음). 바깥 요청은 러너가 차단.
 //   · 동기화 보고서 다운로드 downloadClassnoteSyncReport — 2.0 글을 그대로 돌려주고 내려받은 감사로그를 같은 트랜잭션에 남긴다.
-//  계속 거절(진입점이 그 자리에서 2.0 거절 모양): 직접 발송(saveAdminReport · saveAndQueueAdminReport · sendBulkAdminReports — 읽기 자리가 아직이라 면이 서지 않는다) ·
+//   · 직접 발송·학부모 답글 창의 읽기 넷 — 2.0 함수를 읽기 전용 러너로, 고른 사람의 권한으로 실행한다.
+//  계속 거절(진입점이 그 자리에서 2.0 거절 모양): 직접 발송 저장(saveAdminReport · saveAndQueueAdminReport · sendBulkAdminReports) ·
 //     공지 보내기·고치기·취소·회수 · 반 단체 공지 · 동기화 요청 · 답글 · 공감 · AI 미리보기.
 // · 저장하는 사람 = readLessonEditors(보고서 관리 · 보고서 설정 · AI 멘트 중 하나라도 쓰기인 재직 직원 · 운영자 계정 제외 · 원장 먼저). 그 밖이면
 //   2.0 '로그인 없음' 자리(actor = null). 각 2.0 함수가 그 사람의 권한을 다시 본다.
@@ -34,6 +35,12 @@ export const LR_WRITES = {
   'features/lesson-reports/stats/prefs-actions.ts': ['saveReportStatsMode'],
 };
 
+export const LR_READS = {
+  'features/report-admin/server/compose-actions.ts': ['getAdminComposeContext', 'getAdminSendClassOptions'],
+  'features/classnote-reply/server/reply-actions.ts': ['getParentReplyContext'],
+  'features/classnote-reply/server/notification-reply.ts': ['getNotificationReplyContext'],
+};
+
 const RANK = ['master', 'admin', 'manager', 'counselor'];
 const WRITE_MENUS = ['lesson_reports', 'report_settings', 'ai_ment'];
 /** 이 화면에서 저장할 수 있는 사람 — 학원 설정의 역할 재정의 + 개인 예외(2.0 권한표와 같은 함수) · 운영자 계정 제외 · 원장 먼저. */
@@ -51,20 +58,27 @@ export async function readLessonEditors(base) {
     .map(({ rank, ...u }) => u);
 }
 
-const refused = (e) => (e instanceof V2ServerError
-  ? e.code === 'outbound_blocked' ? new V2Error(409, 'outbound_blocked', '이 저장이 바깥으로 요청을 보내려 해서 되돌렸습니다. 바뀐 것은 없습니다.')
-    : e.code === 'unsupported' ? new V2Error(409, 'not_supported', '연습 화면에서는 아직 지원하지 않는 저장입니다.')
-      : new V2Error(500, 'write_failed', '저장하지 못했습니다. 바뀐 것은 없습니다.')
+const refused = (e, reading = false) => (e instanceof V2ServerError
+  ? e.code === 'outbound_blocked' ? new V2Error(409, 'outbound_blocked', reading
+    ? '바깥 요청이 필요한 정보라 불러오지 못했습니다.' : '이 저장이 바깥으로 요청을 보내려 해서 되돌렸습니다. 바뀐 것은 없습니다.')
+    : e.code === 'unsupported' ? new V2Error(409, 'not_supported', reading
+      ? '연습 화면에서는 아직 이 정보를 불러올 수 없습니다.' : '연습 화면에서는 아직 지원하지 않는 저장입니다.')
+      : reading ? new V2Error(500, 'read_failed', '정보를 불러오지 못했습니다. 다시 시도해 주세요.')
+        : new V2Error(500, 'write_failed', '저장하지 못했습니다. 바뀐 것은 없습니다.')
   : e);
 
-/** 고른 사람이 저장할 수 있는 사람 목록 안이면 그 id, 아니면 null(2.0 getCurrentUser = null 자리). */
+/** 고른 사람이 이 화면의 사람 목록 안이면 그 id, 아니면 null(2.0 getCurrentUser = null 자리). */
 async function actorId(sql, t, importV2, actor) {
   if (!actor) return null;
   const base = await studentsBase({ sql, tenantId: t, importV2 });
   return (await readLessonEditors(base)).some((e) => e.id === actor) ? actor : null;
 }
 
-const runnerActions = Object.fromEntries(Object.entries(LR_WRITES).flatMap(([module, names]) => names.map((name) => [name, {
+const runnerModules = [
+  ...Object.entries(LR_WRITES).map(([module, names]) => ({ module, names, mode: 'write' })),
+  ...Object.entries(LR_READS).map(([module, names]) => ({ module, names, mode: 'read' })),
+];
+const runnerActions = Object.fromEntries(runnerModules.flatMap(({ module, names, mode }) => names.map((name) => [name, {
   validate: (raw) => {
     if (!plain(raw) || raw.module !== module || !Array.isArray(raw.args) || raw.args.length > 4) throw bad();
     if (raw.actor != null && (typeof raw.actor !== 'string' || !UUID.test(raw.actor))) throw bad();
@@ -73,9 +87,9 @@ const runnerActions = Object.fromEntries(Object.entries(LR_WRITES).flatMap(([mod
   },
   run: async ({ sql, body, tenantId: t, importV2 }) => {
     try {
-      const { results: [r] } = await runV2Server({ steps: [{ module, fn: name, args: body.args }], actorId: await actorId(sql, t, importV2, body.actor), tenantId: t, mode: 'write' });
+      const { results: [r] } = await runV2Server({ steps: [{ module, fn: name, args: body.args }], actorId: await actorId(sql, t, importV2, body.actor), tenantId: t, mode });
       return r.value ?? null;
-    } catch (e) { throw refused(e); }
+    } catch (e) { throw refused(e, mode === 'read'); }
   },
 }])));
 
