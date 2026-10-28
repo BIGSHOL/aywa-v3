@@ -1,6 +1,8 @@
 // 수업 영역 패밀리 — 원스크린·영상 숙제·시간표·강사 시트(+ 두 번째 묶음).
 import { PRIORITY, addDays, countOf, family, field, md, metric, monthlyTrend, record, signal, sumOf } from './domain-snapshot-core.mjs';
 import { attendanceFamilies } from './domain-snapshot-academic2.mjs';
+import { teacherWorkWeekly } from './v2-teacher-work.mjs';
+import { importV2 } from './v2-bridge.mjs';
 
 const DAY = { mon: '월', tue: '화', wed: '수', thu: '목', fri: '금', sat: '토', sun: '일' };
 const NOTICE = { success: '발송 완료', partial: '일부 실패', failed: '발송 실패', revoked: '회수' };
@@ -13,7 +15,11 @@ export async function academicFamilies(ctx) {
 
   // 선생님 수업보고서(2.0 원스크린, 원장 10-28 이름 변경) — 학생 칸 기록과 그 화면에서 쓴 보고서·ClassNote 공지.
   const [os] = await sql`select count(*)::int total, count(*) filter (where session_date >= ${monthStart})::int rows_m, count(distinct student_id) filter (where session_date >= ${monthStart})::int students, count(distinct class_id) filter (where session_date >= ${monthStart})::int classes, max(session_date)::text last from public.onescreen_daily_sessions where tenant_id=${t} and session_date <= ${asOf} ${notTest}`;
-  const [osReports] = await sql`select count(*)::int c from public.lesson_reports where tenant_id=${t} and source='onescreen' and report_date between ${monthStart} and ${asOf} ${notTest}`;
+  // KPI = 최근 변화(원장 10-28 "원하는건 추세"): 2.0 운영실 '강사별 업무 현황'의 판정을 최근 7일 창 8개로 — 원장 첫 화면 '운영 상태'와 같은 함수(teacherWorkWeekly).
+  // 2.0 판정을 불러오지 못하면(모듈·원본 파일) 이 KPI만 비우고 나머지 영역은 그대로 뜬다.
+  let windows = null, osKpis = [];
+  try { ({ windows, kpis: osKpis } = await teacherWorkWeekly({ sql, asOf, tenantId: t, importV2 })); } catch (e) { console.error(`workspaces.onescreen KPI: ${e.message}`); }
+  const shownPct = v => (v === null ? '기록 없음' : `${v.toFixed(1)}%`);
   // 공지마다 누가·어느 반·누구에게 보냈는지로 이름을 붙인다(원장 10-28 "전부 이름이 일치하는데 뭘 말하고 싶은건지 알 수가 없음"). 본문은 싣지 않는다.
   const notices = await sql`select n.id, n.status, to_char(n.created_at at time zone 'Asia/Seoul','YYYY-MM-DD') d, case when jsonb_typeof(n.targets)='array' then jsonb_array_length(n.targets) end targets,
     u.display_name sender, case when jsonb_typeof(n.targets)='array' then (select array_agg(distinct e->>'className') from jsonb_array_elements(n.targets) e where e->>'className' is not null) end class_names,
@@ -23,8 +29,8 @@ export async function academicFamilies(ctx) {
     return `${n.sender || '보낸 사람 모름'} → ${cls.length ? `${cls[0]}${cls.length > 1 ? ` 외 ${cls.length - 1}개 반` : ''} · ` : ''}${who}`; };
   const failedNotices = notices.filter(n => ['failed', 'partial'].includes(n.status) && n.d >= week);
   out.onescreen = family('onescreen', '선생님 수업보고서', {
-    summary: `${month} 원스크린 학생 칸 기록 ${os.rows_m}건(학생 ${os.students}명·반 ${os.classes}개), 원스크린에서 쓴 보고서 ${osReports.c}건.`,
-    metrics: [metric('이번 달 학생 칸 기록', os.rows_m, '건', '수업일 기준'), metric('기록된 학생', os.students, '명', '이번 달'), metric('원스크린에서 쓴 보고서', osReports.c, '건', '이번 달 · 수업일 기준'), metric('ClassNote 공지', notices.length, '건', '개별·반 공지 전체 기간')],
+    summary: windows ? `최근 7일(${windows.at(-1).label}) ${osKpis.map(k => `${k.label} ${shownPct(k.value)}`).join(' · ')}.` : '수업보고서 KPI 추세를 계산하지 못했습니다.',
+    metrics: osKpis,
     trend: monthlyTrend('월별 원스크린 학생 칸 기록', '건', await sql`select to_char(session_date,'YYYY-MM') as month, count(*)::int as value from public.onescreen_daily_sessions where tenant_id=${t} and session_date <= ${asOf} ${notTest} group by 1`, asOf),
     evidence: notices.map(n => record({ id: n.id, label: noticeLabel(n), date: n.d, status: NOTICE[n.status] || '기타', fields: [field('대상', n.targets === null ? null : `${n.targets}명`), field('반', (n.class_names || []).join(', ') || null)], facets: [`status:${n.status}`] })),
     facetLabels: prefixed('status', NOTICE), recordSource: 'classnote_notices',

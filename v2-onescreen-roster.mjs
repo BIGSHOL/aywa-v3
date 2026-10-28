@@ -29,7 +29,7 @@ const MODULES = ['lib/date-kst.ts', 'lib/permissions.ts', 'lib/modules.ts', 'lib
   'features/onescreen/todays-math-fill-rules.ts', 'features/onescreen/report-author-name.ts', 'features/onescreen/classnote-match.ts', 'features/onescreen/view.ts',
   'features/video-homework/assignment.ts', 'features/video-homework/lesson-marks.ts', 'features/video-homework/due.ts', 'features/video-submit/link-choice.ts'];
 let rulesP = null, copyAt = null, englishAreas = null;
-async function rules(importV2) {
+export async function rules(importV2) {
   // 이름이 겹치면 앞 모듈이 이긴다(`addDays` = lib/date-kst.ts — class-splits/period.ts에도 같은 이름이 있다). 실패는 기억하지 않는다(다음 호출에 다시).
   rulesP ??= Promise.all(MODULES.map((m) => importV2(m))).then((mods) => Object.assign({}, ...mods.reverse())).catch((e) => { rulesP = null; throw e; });
   return rulesP;
@@ -135,7 +135,7 @@ function mergeDepartmentTitles(base, stored) {
   return out;
 }
 /** navigation·dashboard·billing 정규화는 원스크린이 읽지 않아 옮기지 않았다(병합값 그대로). */
-function resolveSettings(R, stored, tenantName) {
+export function resolveSettings(R, stored, tenantName) {
   const preset = R.presetOfStored(stored), base = R.baseSettingsFor(preset);
   const storedPermissions = isPlainObject(stored) && isPlainObject(stored.permissions) ? stored.permissions : undefined;
   const merged = deepMerge(base, stored);
