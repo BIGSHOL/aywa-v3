@@ -93,11 +93,27 @@ for (const [module, names] of QUEUE_ACTIONS) for (const name of names) registerH
   } catch { return { ok: false, error: "발송 요청을 저장하지 못했습니다." }; }
 });
 
+// 학부모 답글은 2.0의 생존 PC·권한·대상 판정을 그대로 거친다. 성공해도 복사본에는 요청 상태만 남는다.
+const REPLY_MODULE = "features/classnote-reply/server/reply-actions.ts";
+for (const name of ["requestParentReply", "requestParentReplyEdit", "requestParentReplyDelete"]) registerHostHandler(REPLY_MODULE, name, async (...args) => {
+  try {
+    const response = await fetch(`/api/v2/lesson-reports/${name}`, {
+      method: "POST", headers: { "Content-Type": "application/json", Accept: "application/json" },
+      body: JSON.stringify({ module: REPLY_MODULE, actor: hostActor(), args }),
+    });
+    const body = await response.json().catch(() => null) as { ok?: boolean; result?: unknown; message?: string } | null;
+    if (!response.ok || !body?.ok) return { ok: false, error: body?.message ?? "답글 요청을 저장하지 못했습니다." };
+    const result = body.result as { ok?: boolean; message?: string } | null;
+    if (result?.ok && typeof result.message === "string" && result.message.includes(" — 연동 PC가"))
+      return { ...result, message: `${result.message.split(" — 연동 PC가")[0]} · 연습 복사본이라 실제로 보내지지 않습니다` };
+    return result;
+  } catch { return { ok: false, error: "답글 요청을 저장하지 못했습니다." }; }
+});
+
 // 저장(회수 · 멈춤 복구 · 원아 연결 · 프롬프트 · 보고서 설정 · 통계 보기 기억)은 이 화면 actions(v2-lesson-reports-save.mjs)가 받는다 —
 // 여기 적지 않은 함수는 shim이 쓰기 경로로 보낸다. 아래는 그 경로가 받지 않는 저장 — 보내지 않고 그 자리에서 2.0 거절 모양으로.
 const REFUSE: Record<string, string[]> = {
-  // 학부모 답글 · 공감 — 아직 받지 않는 일.
-  "features/classnote-reply/server/reply-actions.ts": ["requestParentReply", "requestParentReplyEdit", "requestParentReplyDelete"],
+  // 학부모 공감 — 아직 받지 않는 일.
   "features/classnote-reply/server/reaction-actions.ts": ["requestParentReaction", "requestParentReactionRemove"],
 };
 for (const [module, names] of Object.entries(REFUSE)) for (const name of names) registerHostHandler(module, name, async () => ({ ok: false, error: VIEW_ONLY }));

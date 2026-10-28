@@ -19,8 +19,9 @@
 //   · 반별 대량 직접 발송 sendBulkAdminReports — 원본 대상·제외 판정 후 Docker queued까지만.
 //   · 학부모 글 공감 상태 getParentReactionState — 원본 읽기 게이트를 그대로 통과한다.
 //   · 원스크린 공지 작성·대기 공지 수정·삭제 — 원본 대상/작성자 게이트로 Docker 대기열만 관리한다.
+//   · 학부모 답글 작성·수정·삭제 — 원본 워커 생존·권한·대상 게이트를 그대로 거쳐 대기 행만 관리한다.
 //  계속 거절(진입점이 그 자리에서 2.0 거절 모양):
-//     동기화 요청 · 답글 · 공감 · AI 미리보기.
+//     동기화 요청 · 공감 · AI 미리보기.
 // · 저장하는 사람 = readLessonEditors(보고서 관리 · 보고서 설정 · AI 멘트 중 하나라도 쓰기인 재직 직원 · 운영자 계정 제외 · 원장 먼저). 그 밖이면
 //   2.0 '로그인 없음' 자리(actor = null). 각 2.0 함수가 그 사람의 권한을 다시 본다.
 import { runV2Server, V2ServerError } from './v2-server-runner.mjs';
@@ -41,6 +42,7 @@ export const LR_WRITES = {
   'features/report-admin/server/class-notice-actions.ts': ['sendClassWideNotice'],
   'features/report-admin/server/compose-actions.ts': ['saveAdminReport', 'saveAndQueueAdminReport', 'sendBulkAdminReports'],
   'features/onescreen/server/notice-actions.ts': ['sendOnescreenNotice', 'editQueuedNotice', 'deleteQueuedNotice', 'editPostedNotice', 'cancelOnescreenNotice'],
+  'features/classnote-reply/server/reply-actions.ts': ['requestParentReply', 'requestParentReplyEdit', 'requestParentReplyDelete'],
   'features/report-admin/server/board-roster-actions.ts': ['linkClassnoteChild', 'unlinkClassnoteChild'],
   'features/onescreen/server/prompt-actions.ts': ['savePrompt', 'resetPrompt'],
   'features/lesson-reports/stats/prefs-actions.ts': ['saveReportStatsMode'],
