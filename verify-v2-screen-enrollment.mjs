@@ -574,3 +574,29 @@ test('저장 신분 = 2.0 세션 클라이언트와 같다 — 쓰기 문장은 
     if (other) assert.equal((await asViewer(sql, d.editors[0].id, (s) => s`update public.enrollment_consultations set updated_at = now() where id = ${other.id} returning id`)).data.length, 0);
   });
 });
+
+test('3.0 껍데기: 주소 actor가 명단보다 먼저 와도 명단이 오면 기억(호스트가 먼저 보는 값)에 적힌다', async () => {
+  const vm = await import('node:vm');
+  const text = await here('v2-screen-enrollment.js');
+  let def = null, onMessage = null;
+  const posted = [], stored = new Map([['v2-host-actor:enrollment', '11111111-1111-4111-8111-111111111111']]);
+  const cw = { postMessage: (m) => posted.push(JSON.parse(JSON.stringify(m))) };
+  const slot = { style: {}, getBoundingClientRect: () => ({ top: 100, left: 20, width: 900, height: 600 }) };
+  const document = { createElement: () => ({ style: {}, dataset: {}, hidden: true, contentWindow: cw, src: '' }), body: { append() {} },
+    querySelector: (sel) => (sel.includes('[data-v2-host-slot]') ? slot : sel.includes('[data-v2h-actor-slot]') ? { innerHTML: '' } : null) };
+  const A2 = '22222222-2222-4222-8222-222222222222';
+  const ctx = { window: { V2Screens: { register: (x) => { def = x; }, esc: (s) => String(s ?? '') } }, document, innerHeight: 800, scrollX: 0, scrollY: 0,
+    location: { origin: 'http://127.0.0.1:4399', hash: '#v2-enrollment?actor=' + A2, replace() {} },
+    localStorage: { getItem: (k) => stored.get(k) ?? null, setItem: (k, v) => stored.set(k, v) },
+    addEventListener: (type, fn) => { if (type === 'message') onMessage = fn; }, requestAnimationFrame: (fn) => fn(), MutationObserver: class { observe() {} },
+    fetch: () => Promise.resolve({ ok: true }), HTMLSelectElement: class {}, URLSearchParams };
+  vm.runInNewContext(text, ctx);
+  const api = { render() {}, toast() {}, canOpenRecord: () => false };
+  def.render({ api, query: new URLSearchParams('actor=' + A2) }); // 명단이 오기 전 — 기억은 아직 앞사람
+  await new Promise((r) => setTimeout(r, 0));
+  def.render({ api, query: new URLSearchParams('actor=' + A2) });
+  assert.equal(stored.get('v2-host-actor:enrollment'), '11111111-1111-4111-8111-111111111111');
+  onMessage({ origin: ctx.location.origin, source: cw, data: { type: 'v2-host-editors', screen: 'enrollment', editors: [{ id: '11111111-1111-4111-8111-111111111111', name: '원장' }, { id: A2, name: '김그린' }] } });
+  assert.equal(stored.get('v2-host-actor:enrollment'), A2, '명단이 오면 주소의 사람이 기억에 적힌다 — 호스트 저장이 그 사람으로 나간다');
+  assert.deepEqual(posted.at(-1), { type: 'v2-host-actor', id: A2 });
+});

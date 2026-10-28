@@ -53,7 +53,13 @@
     return editors[0]?.id ?? null;
   }
   const actorPicker = () => (editors.length ? `<label class="v2h-actor"><span>저장하는 사람</span><select data-att-actor aria-label="저장하는 사람">${editors.map(e => `<option value="${esc(e.id)}"${e.id === currentActor() ? ' selected' : ''}>${esc(e.role ? `${e.name} · ${e.role}` : e.name)}</option>`).join('')}</select></label>` : '');
-  const tellHost = () => { const id = currentActor(); if (id && frame?.contentWindow) frame.contentWindow.postMessage({ type: 'v2-host-actor', id }, location.origin); };
+  // 호스트(shims/server-action.ts hostActor)는 같은 출처 기억을 알림보다 먼저 본다 — 명단이 늦게 와도(주소 actor가 먼저 온 경우) 정해진 사람을 기억에도 적어야
+  // 저장이 그 사람으로 나간다(회의록 작업자 발견 10-28). currentActor는 명단 안의 사람만 돌려주므로 명단 밖 id가 기억을 지우지는 않는다.
+  const tellHost = () => {
+    const id = currentActor(); if (!id) return;
+    try { if (localStorage.getItem(ACTOR_KEY) !== id) localStorage.setItem(ACTOR_KEY, id); } catch { /* 저장소를 못 쓰면 알림만 */ }
+    if (frame?.contentWindow) frame.contentWindow.postMessage({ type: 'v2-host-actor', id }, location.origin);
+  };
   function wire() {
     if (wired) return; wired = true;
     addEventListener('message', e => {
