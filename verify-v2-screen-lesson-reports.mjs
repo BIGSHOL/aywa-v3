@@ -146,7 +146,8 @@ test('진입점 = 아직 옮기지 않은 읽기 넷은 읽기 안내로 · 동�
     assert.ok(entry.includes(`, "${fn}", async () => NOT_YET_OPEN);`), fn);
   assert.match(entry, /const NOT_YET_OPEN = \{ ok: false, error: "연습 화면에서는 아직 열 수 없습니다" \}/);
   assert.match(entry, /"requestClassnoteBoardSync", async \(\) => \(\{ ok: false, error: VIEW_ONLY \}\)/);
-  assert.match(entry, /"saveReportStatsMode", async \(\) => \(\{ ok: false, error: VIEW_ONLY \}\)/);
+  // 통계 보기 기억(saveReportStatsMode)은 이제 실제 저장 — 진입점이 거절하지 않는다(저장 시험 = verify-v2-lesson-reports-save.mjs).
+  assert.ok(!entry.includes('"saveReportStatsMode", async () =>'));
   assert.match(entry, /"getClassnoteSyncStatus", async \(\) =>\s*\(\(await ask\(\{ cnread: "sync" \}\)\)/);
   // 영상 제출 현황 링크는 iframe 문서를 바꾸지 않고 3.0에 넘긴다 · 공유·인쇄 새 탭은 열지 않고 알린다 · 그리다 던진 것은 경계가 받는다.
   assert.match(entry, /const VIDEO_ROUTE = "\/lesson-reports\/video-homework"/);

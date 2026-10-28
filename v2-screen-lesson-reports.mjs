@@ -20,8 +20,9 @@
 //  지금 이어 붙인 다시 읽기(GET 열쇠): list(listReports — v2-lesson-reports-reads.mjs readList) · cnread=queue|notices|classwide|sync + days
 //    (refreshClassnoteQueue · listClassNotices · listClassWideNotices · getClassnoteSyncStatus — v2-lesson-reports-classnote-reads.mjs readClassnote) ·
 //    promptHistory · testReports(getPromptHistory · getRecentReportsForTest — v2-lesson-reports-settings-reads.mjs). 통계 = v2-lesson-reports-stats.mjs.
-// · 읽기 전용(저장 없음 — 다음 단계).
+// · 저장 = v2-lesson-reports-save.mjs(2.0 서버 함수 그대로 · 공용 러너 write) — 저장하는 사람 고르기 목록(editors)을 화면 자료에 싣는다.
 import { studentsBase } from './v2-students-common.mjs';
+import { lessonReportsActions, readLessonEditors } from './v2-lesson-reports-save.mjs';
 
 const ID = 'lesson-reports';
 const SUB = /^\/lesson-reports(?:\/(stats))?$/;
@@ -60,7 +61,7 @@ export async function buildLessonReports({ sql: tx, tenantId: t, importV2, sp = 
   const ctx = { base, sql: base.sql, t, sp, tab, gates, settings, classnoteOn, replyMode, today: base.today, importV2: base.load };
   const face = mod ? await mod.loadFace(ctx) : null;
   return {
-    viewer: base.viewer, gates, aiOn, tab, today: base.today,
+    viewer: base.viewer, gates, aiOn, tab, today: base.today, editors: await readLessonEditors(base),
     // 부품이 읽는 학원 설정 칸만(모듈 · 보고서 · 운영 — 공급자 OperationsProvider 포함).
     settings: { modules: settings.modules, report: settings.report, operations: settings.operations },
     queue: face?.queue ?? null,
@@ -81,11 +82,16 @@ export const screen = {
     grain: /^[a-z]{1,10}$/, month: /^\d{4}-\d{2}$/, from: /^\d{4}-\d{2}-\d{2}$/, to: /^\d{4}-\d{2}-\d{2}$/, span: /^\d{1,3}$/, subject: /^[a-z0-9_]{1,30}$/,
   },
   paramMax: { list: 2000 },
+  actions: lessonReportsActions,
   load: async ({ sql, params, tenantId, importV2 }) => {
     const sub = SUB.exec(params.v2path ?? '/lesson-reports');
     if (!sub) return { notFound: true };
     const viewerId = params.viewer ?? null;
-    if (sub[1]) return (await import('./v2-lesson-reports-stats.mjs')).buildReportStats({ sql, tenantId, importV2, params, viewerId });
+    if (sub[1]) {
+      const stats = await (await import('./v2-lesson-reports-stats.mjs')).buildReportStats({ sql, tenantId, importV2, params, viewerId });
+      // 통계 화면도 저장하는 사람 고르기(기간 보기 기억 saveReportStatsMode)를 싣는다.
+      return stats.page === 'stats' ? { ...stats, editors: await readLessonEditors(await studentsBase({ sql, tenantId, importV2, viewerId })) } : stats;
+    }
     if (params.list !== undefined) return (await import('./v2-lesson-reports-reads.mjs')).readList({ sql, tenantId, importV2, list: params.list, viewerId });
     if (params.cnread !== undefined) {
       const r = await (await import('./v2-lesson-reports-classnote-reads.mjs')).readClassnote({ sql, tenantId, importV2, viewerId, cnread: params.cnread, days: params.days });

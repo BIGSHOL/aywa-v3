@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { OperationsProvider } from "@/features/owner/operations-context";
 import { setCopyDay } from "./students-shared";
 import { onHostRefresh } from "../shims/host-nav";
+import { setHostEditors } from "../shims/server-action";
 import { useSearchParams } from "../shims/next-navigation";
 import { HostMessage } from "./host-frame";
 import { PageHeader } from "@/components/page-header";
@@ -38,6 +39,7 @@ export function LessonReportsStats() {
     let live = true;
     fetch(`/api/v2/lesson-reports?${query}`, { headers: { Accept: "application/json" } })
       .then(async (r) => { const body = await r.json().catch(() => null); if (!r.ok) throw new Error(body?.message || "보고서 통계를 불러오지 못했습니다."); return body; })
+      .then((body) => { if (live && Array.isArray(body?.editors)) setHostEditors(body.editors); return body; })
       .then((body) => live && setState(body?.noAccess ? { key: query, noAccess: true } : body?.page === "stats" ? { key: query, data: body } : { key: query, error: "보고서 통계를 불러오지 못했습니다." }))
       .catch((e: Error) => live && setState({ key: query, error: e.message }));
     return () => { live = false; };
