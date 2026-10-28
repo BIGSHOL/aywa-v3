@@ -343,14 +343,107 @@ test('저장(복사본, 되돌림): 칸 입력·덮어쓰기·메모만·지우�
     await assert.rejects(save(actor, { status: 'absent', scopeTeacherId: stranger.id }), e => e.code === 'scope_not_taught');
     // 출결 '전체' 권한이 아닌 사람(강사)은 저장할 수 없다.
     await assert.rejects(save(stranger.id, { status: 'present' }), e => e.status === 403);
-    // 보강 예약이 걸린 칸 — 2.0은 예약 이행까지 바꾸므로 3.0은 저장하지 않는다(사유를 말한다).
-    await sql`insert into public.makeup_reservations (tenant_id, student_id, class_id, absence_date, makeup_date, slot_start, slot_end, status) values (${t}, ${STUDENT}, ${CLASS}, '2026-10-20', ${cell.sessionDate}, '16:20', '17:15', 'reserved')`;
-    await assert.rejects(save(actor, { status: 'present' }), e => e.code === 'reservation_cell');
+    // 보강 예약이 걸린 칸의 이행·되돌림은 아래 '보강 예약 이행' 시험이 본다.
     // 바깥으로 나가려는 요청이 없다.
     assert.equal((await sql`select count(*)::int n from net.http_request_queue`)[0].n, before[0].net);
   });
   const after = await db`select (select count(*)::int from public.audit_logs) audits`;
   assert.equal(after[0].audits, before[0].audits, 'rolled back — the copy is unchanged');
+});
+
+test('저장(복사본, 되돌림): 보강 예약 이행 — 시수 자동값 · 두 번 들어와도 한 번만 · 지우면 되돌림 · 친 시수는 그대로 · 새 보강 체계 학원은 거절', { skip: !db && 'local database not running' }, async () => {
+  const before = await db`select (select count(*)::int from public.audit_logs) audits, (select count(*)::int from net.http_request_queue) net`;
+  const MK = await import('./v2-attendance-makeup.mjs'), M = await MK.loadMakeupRules(importV2);
+  await inRollback(async ({ sql, run, t }) => {
+    const settings = await A.readSettings(sql, t, R), actors = await A.__test.actorsOf(sql, t, R, settings);
+    assert.equal(MK.nativeMakeupsOn(M, settings), false, 'this copy runs the old reservation path (2.0 classifyLegacyReservations = legacy)');
+    const [{ teacher_id: homeroom }] = await sql`select teacher_id from public.classes where id=${CLASS}`;
+    const actor = actors.find(a => a.id === homeroom) ?? actors[0];
+    const save = input => run(sql, 'setAttendanceCell', call('setAttendanceCell', actor.id, { ...cell, ...input }));
+    const ABS = '2026-10-20', DAY = cell.sessionDate;
+    assert.equal((await sql`select count(*)::int n from public.makeup_reservations where tenant_id=${t} and class_id=${CLASS} and student_id=${STUDENT} and makeup_date=${DAY}`)[0].n, 0, 'no other reservation on the cell');
+    await sql`delete from public.attendance_records where class_id=${CLASS} and student_id=${STUDENT} and session_date in (${ABS}, ${DAY})`;
+    const [resv] = await sql`insert into public.makeup_reservations (tenant_id, student_id, class_id, absence_date, makeup_date, slot_start, slot_end, status)
+      values (${t}, ${STUDENT}, ${CLASS}, ${ABS}, ${DAY}, '16:20', '17:15', 'reserved') returning id::text id`;
+    const rv = { id: resv.id, studentId: STUDENT, classId: CLASS, absenceDate: ABS, makeupDate: DAY, slotStart: '16:20', slotEnd: '17:15', periodLabel: null, note: null, status: 'reserved' };
+    await sql`insert into public.attendance_records (tenant_id, class_id, student_id, session_date, status, note, recorded_by) values (${t}, ${CLASS}, ${STUDENT}, ${ABS}, 'absent', ${M.resv.reservationAbsenceMemo(rv)}, ${actor.id})`;
+    const resvRow = async () => ({ ...(await sql`select status, attendance_record_id::text rec, done_at is not null done from public.makeup_reservations where id=${resv.id}`)[0] });
+    const mkRow = async () => (await sql`select id::text id, note, session_units::float8 units from public.attendance_records where class_id=${CLASS} and student_id=${STUDENT} and session_date=${DAY}`)[0];
+    const absNote = async () => (await sql`select note from public.attendance_records where class_id=${CLASS} and student_id=${STUDENT} and session_date=${ABS}`)[0].note;
+    const logs = action => sql`select actor_id::text actor_id, target_label, metadata from public.audit_logs where tenant_id=${t} and action=${action} and metadata->>'reservationId'=${resv.id} and metadata->>'via'='3.0 연습 복사본'`;
+    const lineCount = (note, line) => (note ?? '').split(/\r?\n/).filter(l => l.trim() === line).length;
+    const makeupLine = M.resv.reservationMakeupMemo(rv), plannedLine = M.resv.reservationAbsenceMemo(rv), doneLine = M.resv.reservationAbsenceDoneMemo(rv);
+    // 기대 시수(독립 SQL) — 그날 그 반이 돌고 정규 수강생이면 정규(수업 분 → 수학 ceil(분/60)/2) + 보강(예약 55분 → 0.5).
+    const dow = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'][new Date(`${DAY}T00:00:00Z`).getUTCDay()];
+    const [{ m }] = await sql`select coalesce(sum(m), 0)::int m from (select start_time, max(extract(epoch from (end_time - start_time)) / 60) m from public.class_schedules
+      where class_id=${CLASS} and day_of_week=${dow} and slot_teacher_label is null and valid_from<=${DAY} and (valid_to is null or valid_to>=${DAY}) group by start_time) x`;
+    const [{ n: regular }] = await sql`select count(*)::int n from public.enrollments where class_id=${CLASS} and student_id=${STUDENT} and start_date<=${DAY} and (end_date is null or end_date>=${DAY})
+      and not coalesce(on_hold, false) and not coalesce(is_transferred, false) and (attendance_days is null or cardinality(attendance_days)=0 or ${dow}=any(attendance_days::text[]))`;
+    const expected = Math.round(((regular > 0 && m > 0 ? Math.ceil(m / 60) / 2 : 0) + Math.ceil(55 / 60) / 2) * 10) / 10;
+    assert.ok(regular > 0 && m > 0, 'the test student attends the test class that day (regular + makeup)');
+
+    // ① 새 칸 출석(시수 안 침) → done · 연결 · 보강 메모 한 줄 · 시수 자동값(화면 낙관값도 같은 값) · 결석 칸 '예정 → 완료' · 감사로그 한 줄.
+    assert.deepEqual(await save({ status: 'present' }), { ok: true, autoUnits: expected });
+    let mk = await mkRow();
+    assert.equal(mk.units, expected);
+    assert.deepEqual(await resvRow(), { status: 'done', rec: mk.id, done: true });
+    assert.equal(lineCount(mk.note, makeupLine), 1);
+    assert.deepEqual([lineCount(await absNote(), plannedLine), lineCount(await absNote(), doneLine)], [0, 1]);
+    let done = await logs('makeup_reserve_done');
+    assert.equal(done.length, 1);
+    assert.deepEqual([done[0].actor_id, done[0].metadata.attendanceRecordId, done[0].metadata.status, done[0].metadata.autoUnits, done[0].metadata.absenceDate, done[0].metadata.makeupDate],
+      [actor.id, mk.id, 'present', expected, ABS, DAY]);
+    assert.match(done[0].target_label, /^학원이 · /);
+    // ② 같은 칸을 다시 찍어도(지각 · 이미 done) 한 번만 — 감사로그·메모·시수 그대로.
+    assert.deepEqual(await save({ status: 'late' }), { ok: true });
+    mk = await mkRow();
+    assert.deepEqual([mk.units, lineCount(mk.note, makeupLine), (await logs('makeup_reserve_done')).length], [expected, 1, 1]);
+    // ③ 지우기 → 되돌림(reserved · 연결·완료 시각 해제 · 결석 칸 '완료 → 예정' · 감사로그).
+    assert.deepEqual(await save({ status: null }), { ok: true });
+    assert.deepEqual(await resvRow(), { status: 'reserved', rec: null, done: false });
+    assert.deepEqual([lineCount(await absNote(), plannedLine), lineCount(await absNote(), doneLine)], [1, 0]);
+    assert.equal((await logs('makeup_reserve_revert')).length, 1);
+    // ④ 두 저장 경로가 같은 칸을 동시에 이행해도 한 번만(2.0 ① status 조건 + 0행이면 그만).
+    await sql`insert into public.attendance_records (tenant_id, class_id, student_id, session_date, status, recorded_by) values (${t}, ${CLASS}, ${STUDENT}, ${DAY}, 'present', ${actor.id})`;
+    const ctx = { sql, t, R, M, settings, actor: { id: actor.id, name: actor.name } }, cells = [{ studentId: STUDENT, classId: CLASS, date: DAY, status: 'present', created: true }];
+    const both = await Promise.all([MK.completeMakeupReservations(ctx, cells), MK.completeMakeupReservations(ctx, cells)]);
+    assert.equal(both.filter(x => x.size > 0).length, 1, 'only one path set the units');
+    assert.equal((await resvRow()).status, 'done');
+    mk = await mkRow();
+    assert.deepEqual([mk.units, lineCount(mk.note, makeupLine), (await logs('makeup_reserve_done')).length], [expected, 1, 2]);
+    // ⑤ 결석으로 고침 → 되돌림(보강 칸 메모 줄도 지운다 · 시수는 그대로).
+    await save({ status: 'absent' });
+    mk = await mkRow();
+    assert.deepEqual([(await resvRow()).status, lineCount(mk.note, makeupLine), (await logs('makeup_reserve_revert')).length], ['reserved', 0, 2]);
+    // fail-soft — 이행이 깨져도(규칙 하나를 일부러 뺌) 저장 트랜잭션은 살아 있고 예약·출결은 그대로다(2.0은 로그만 남긴다).
+    assert.equal((await MK.completeMakeupReservations({ ...ctx, R: { ...R, effective: undefined } }, cells)).size, 0);
+    assert.deepEqual([(await resvRow()).status, (await sql`select status::text s from public.attendance_records where id=${mk.id}`)[0].s], ['reserved', 'absent']);
+    // ⑥ 사람이 친 시수는 덮지 않는다(2.0 unitsExplicit) — 이행은 하되 그 숫자 그대로, 감사로그에 autoUnits 없음.
+    await save({ status: 'present', units: '2' });
+    mk = await mkRow();
+    assert.deepEqual([(await resvRow()).status, mk.units], ['done', 2]);
+    done = (await logs('makeup_reserve_done')).filter(x => x.metadata.status === 'present' && !('autoUnits' in x.metadata));
+    assert.equal(done.length, 1);
+    // ⑦ 새 보강 체계(보강관리 켜짐 · 정리 중)인 학원 — 그 연결 갈래를 옮기지 않아 보강 예약 칸은 쓰지 않는다(칸 · 교시 칸 · 일괄 모두, 바뀌는 것 없음).
+    //    보강관리 설정은 2.0 설정 명령만 바꿀 수 있어(트리거 tg_guard_makeups_settings) 그 명령의 표식(makeup.ctx)을 이 트랜잭션에서만 잠깐 세운다.
+    await save({ status: null });
+    for (const mode of ['on', 'draining']) {
+      await sql`select set_config('makeup.ctx', pg_current_xact_id()::text, true)`;
+      await sql`update public.tenant_settings set data = jsonb_set(coalesce(data, '{}'::jsonb), '{makeups}', ${sql.json({ mode, allowAdditional: false, pilotSubjects: ['math'] })}) where tenant_id=${t}`;
+      await sql`select set_config('makeup.ctx', '', true)`;
+      assert.equal(MK.nativeMakeupsOn(M, await A.readSettings(sql, t, R)), true, mode);
+      const refusal = async p => { try { await p; return null; } catch (e) { return [e.code, e.message]; } };
+      const text = '보강 예약이 걸린 칸은 연습 화면에서는 아직 지원하지 않는 저장입니다. 바뀐 것은 없습니다.';
+      assert.deepEqual(await refusal(save({ status: 'present' })), ['reservation_cell', text]);
+      assert.deepEqual(await refusal(save({ status: 'present', slotStart: '16:20' })), ['reservation_cell', text]);
+      assert.deepEqual(await refusal(run(sql, 'setAttendanceBulk', { module: ACTIONS, actor: actor.id, args: [{ sessionDate: DAY, status: 'present', cells: [{ studentId: STUDENT, classId: CLASS }] }] })), ['reservation_cell', text]);
+      assert.equal(await mkRow(), undefined, `${mode}: nothing written`);
+      assert.equal((await resvRow()).status, 'reserved');
+    }
+    assert.equal((await sql`select count(*)::int n from net.http_request_queue`)[0].n, before[0].net);
+  });
+  assert.equal((await db`select count(*)::int n from public.audit_logs`)[0].n, before[0].audits, 'rolled back — the copy is unchanged');
+  assert.equal((await db`select data->'makeups'->>'mode' m from public.tenant_settings where tenant_id=(select tenant_id from public.classes where id=${CLASS})`)[0].m, 'off', 'setting restored');
 });
 
 test('저장(복사본, 되돌림): 보기 설정 4종 = 2.0 prefs-actions — 그 사람의 ui_prefs.attendance만, 다른 화면 설정은 그대로', { skip: !db && 'local database not running' }, async () => {
@@ -538,12 +631,34 @@ test('저장(복사본, 되돌림): 자리 칸 출결·메모·지우기·남은
     assert.deepEqual(await act('setSeatCell', SEAT_ACTIONS_MOD, { ...cellOf('lab'), studentId: other.id, status: 'present' }), { error: '이 교시 명단에 없는 학생입니다' });
     assert.deepEqual(await act('setSeatCell', SEAT_ACTIONS_MOD, { ...cellOf('lab'), status: 'present' }, STUDENT), { error: '자리 출석부 입력 권한이 없습니다' });
     assert.deepEqual(await act('setSeatJjField', SEAT_MARKS_MOD, { ...cellOf('lab'), field: 'listeningLevel', value: '1' }), { error: '이 자리에는 기록 칸이 없습니다' });
-    // 보강 예약이 걸린 칸 — 2.0은 예약 이행까지 바꾸므로 쓰지 않고 사유를 말한다(칸 하나 · 일괄 모두).
+    // 보강 예약이 걸린 칸 — 2.0처럼 쓰고 나서 예약 이행(자리 새 행 · 일괄). 자리 칸 지우기는 2.0도 이행을 다시 보지 않는다(그대로 done).
     await sql`delete from public.attendance_records where class_id=${CLASS} and student_id=${STUDENT} and session_date=${TODAY}`;
     await sql`insert into public.makeup_reservations (tenant_id, student_id, class_id, absence_date, makeup_date, slot_start, slot_end, status) values (${t}, ${STUDENT}, ${CLASS}, '2026-10-20', ${TODAY}, '22:00', '22:40', 'reserved')`;
-    assert.match((await act('setSeatCell', SEAT_ACTIONS_MOD, { ...cellOf('lab'), status: 'present' })).error, /보강 예약이 걸린 칸/);
-    assert.match((await act('fillSeatSlot', SEAT_ACTIONS_MOD, { seat: 'lab', date: TODAY, slotStart: SLOT, status: 'absent' })).error, /보강 예약이 걸린 칸/);
-    assert.equal((await rows()).length, 0);
+    const seatResv = async () => (await sql`select status, attendance_record_id::text rec from public.makeup_reservations where tenant_id=${t} and student_id=${STUDENT} and makeup_date=${TODAY}`)[0];
+    assert.deepEqual(await act('setSeatCell', SEAT_ACTIONS_MOD, { ...cellOf('lab'), status: 'present' }), { ok: true, changed: 1 });
+    let [lab] = await sql`select id::text id, note from public.attendance_records where class_id=${CLASS} and student_id=${STUDENT} and session_date=${TODAY} and slot_start=${SLOT}`;
+    assert.deepEqual(await seatResv(), { status: 'done', rec: lab.id }); assert.match(lab.note ?? '', /결석분 보강/);
+    await act('setSeatCell', SEAT_ACTIONS_MOD, { ...cellOf('lab'), status: null });
+    assert.equal((await seatResv()).status, 'done', '2.0 seat clear does not re-check the reservation');
+    await sql`update public.makeup_reservations set status='reserved', attendance_record_id=null, done_at=null where tenant_id=${t} and student_id=${STUDENT} and makeup_date=${TODAY}`;
+    assert.deepEqual(await act('fillSeatSlot', SEAT_ACTIONS_MOD, { seat: 'lab', date: TODAY, slotStart: SLOT, status: 'present' }), { ok: true, changed: 1 });
+    [lab] = await sql`select id::text id from public.attendance_records where class_id=${CLASS} and student_id=${STUDENT} and session_date=${TODAY} and slot_start=${SLOT}`;
+    assert.deepEqual(await seatResv(), { status: 'done', rec: lab.id }, 'fill completes the reservation too');
+    await sql`delete from public.attendance_records where class_id=${CLASS} and student_id=${STUDENT} and session_date=${TODAY}`;
+    // 새 보강 체계(보강관리 켜짐)인 학원 — 그 연결 갈래가 없어 보강 예약 칸은 쓰지 않는다(칸 · 일괄, 바뀌는 것 없음).
+    // 보강관리 설정은 2.0 설정 명령만 바꿀 수 있어(트리거) 그 명령의 표식(makeup.ctx)을 이 트랜잭션에서만 잠깐 세운다.
+    await sql`update public.makeup_reservations set status='reserved', attendance_record_id=null, done_at=null where tenant_id=${t} and student_id=${STUDENT} and makeup_date=${TODAY}`;
+    const setMakeupMode = async mode => {
+      await sql`select set_config('makeup.ctx', pg_current_xact_id()::text, true)`;
+      await sql`update public.tenant_settings set data = jsonb_set(coalesce(data, '{}'::jsonb), '{makeups}', ${sql.json({ mode, allowAdditional: false, pilotSubjects: ['math'] })}) where tenant_id=${t}`;
+      await sql`select set_config('makeup.ctx', '', true)`;
+    };
+    await setMakeupMode('on');
+    const seatRefusal = { error: '보강 예약이 걸린 칸은 연습 화면에서는 아직 지원하지 않는 저장입니다. 바뀐 것은 없습니다.' };
+    assert.deepEqual(await act('setSeatCell', SEAT_ACTIONS_MOD, { ...cellOf('lab'), status: 'present' }), seatRefusal);
+    assert.deepEqual(await act('fillSeatSlot', SEAT_ACTIONS_MOD, { seat: 'lab', date: TODAY, slotStart: SLOT, status: 'present' }), seatRefusal);
+    assert.deepEqual([(await rows()).length, (await seatResv()).status], [0, 'reserved']);
+    await setMakeupMode('off');
     // 바깥 연동(인재원 단어수)은 부르지 않는다 · 월간 접기 = 그 사람 ui_prefs.seatMonthly.
     assert.match((await run(sql, 'pullSeatMemorizedWords', { module: 'features/attendance/seat/server/memorized-actions.ts', actor: writer.id, args: [{ seat: 'jj', date: TODAY }] })).error, /인재원 단어수 가져오기는 연습 화면에서 부르지 않습니다/);
     assert.deepEqual(await run(sql, 'saveSeatMonthlyCollapsed', { module: 'features/attendance/seat/server/monthly-prefs.ts', actor: writer.id, args: [[CLASS]] }), { ok: true });
@@ -796,12 +911,18 @@ test('저장(복사본, 되돌림): 출결 모드 — 교시 칸 쓰기·덮어�
     [a] = await audits('attendance_bulk');
     assert.deepEqual([a.metadata.count, a.metadata.created, a.metadata.blocked, a.metadata.slotStart, a.metadata.fillEmptyOnly, a.metadata.source, a.metadata.classId], [1, 1, 1, SLOT, true, 'live', CLASS]);
     assert.deepEqual(await bulkAs(teacher, [{ studentId: STUDENT, classId: CLASS }]), { ok: true, applied: [], blocked: 1 });
-    // 보강 예약이 걸린 칸 — 2.0은 예약 이행까지 바꾸므로 쓰지 않고 사유를 말한다(칸 하나 · 일괄 모두).
+    // 보강 예약이 걸린 칸 — 교시 칸·일괄 모두 쓰고 나서 예약 이행(2.0과 같다 — 교시 행은 예약 구간 안이면 이행한다).
     await sql`delete from public.attendance_records where class_id=${CLASS} and student_id=${STUDENT} and session_date=${TODAY}`;
-    await sql`insert into public.makeup_reservations (tenant_id, student_id, class_id, absence_date, makeup_date, slot_start, slot_end, status) values (${t}, ${STUDENT}, ${CLASS}, '2026-10-20', ${TODAY}, ${SLOT}, '22:40', 'reserved')`;
-    assert.match(await refused(cellAs(teacher, { status: 'present', ...live })), /보강 예약이 걸린 칸/);
-    assert.match(await refused(bulkAs(teacher, [{ studentId: STUDENT, classId: CLASS }])), /보강 예약이 걸린 칸/);
-    assert.equal((await rows()).length, 0);
+    const [qr] = await sql`insert into public.makeup_reservations (tenant_id, student_id, class_id, absence_date, makeup_date, slot_start, slot_end, status)
+      values (${t}, ${STUDENT}, ${CLASS}, '2026-10-20', ${TODAY}, ${SLOT}, '22:40', 'reserved') returning id::text id`;
+    const qStatus = async () => (await sql`select status from public.makeup_reservations where id=${qr.id}`)[0].status;
+    assert.equal((await cellAs(teacher, { status: 'present', ...live })).ok, true);
+    assert.equal(await qStatus(), 'done');
+    await cellAs(teacher, { status: 'absent', ...live });
+    assert.equal(await qStatus(), 'reserved', 'absent on the makeup day reverts');
+    await sql`delete from public.attendance_records where class_id=${CLASS} and student_id=${STUDENT} and session_date=${TODAY}`;
+    assert.equal((await bulkAs(teacher, [{ studentId: STUDENT, classId: CLASS }])).applied.length, 1);
+    assert.equal(await qStatus(), 'done', 'bulk completes it');
     assert.equal((await sql`select count(*)::int n from net.http_request_queue`)[0].n, before[0].net);
   });
   assert.equal((await db`select count(*)::int n from public.audit_logs`)[0].n, before[0].audits, 'rolled back — the copy is unchanged');

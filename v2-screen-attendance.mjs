@@ -14,6 +14,10 @@
 //      features/attendance/server/actions.ts      setAttendanceCell   → actions.setAttendanceCell (그날 칸 · 교시 지정 칸(slotStart) · 당일 출결
 //                                                 source 'live' 데스크 게이트 · 강사(담당 반만) 게이트 · attendance_cell/_clear/_note)
 //                                                 setAttendanceBulk   → actions.setAttendanceBulk (빈 칸만 · 교시 · 데스크 게이트 · attendance_bulk)
+//      server/makeup-reservation-complete.ts completeMakeupReservations → 위 두 저장과 자리 저장이 쓰고 나서 같은 자리에서 부른다
+//                                                 (v2-attendance-makeup.mjs — 옛 예약 갈래: 이행·되돌림 · makeup_reserve_done/_revert).
+//                                                 2.0과 다른 점: 새 보강 체계(보강관리 켜짐·정리 중)인 학원의 보강 예약 칸은 그 연결 갈래를
+//                                                 옮기지 않아 저장하지 않는다(사유를 말하고 바뀌는 것 없음 — 이 복사본은 꺼져 있다).
 //      features/attendance/server/prefs-actions.ts saveAttendanceSort · saveAttendancePeriodMode · saveAttendanceHideRetired ·
 //                                                 saveAttendanceCollapsed → actions.같은 이름 (users.ui_prefs.attendance · 감사로그 없음 = 2.0과 같다)
 //      hub-search-actions.ts searchAttendanceHubStudents · intake/server/actions.ts searchIntakeStudents · previewAbsenceIntake ·
@@ -65,6 +69,7 @@ import { V2Error } from './v2-screens.mjs';
 import { loadSeatRules, seatDayProps, seatMonthProps, copyClock } from './v2-attendance-seat.mjs';
 import * as SeatSave from './v2-attendance-seat-save.mjs';
 import * as LiveSave from './v2-attendance-live-save.mjs';
+import { loadMakeupRules, completeMakeupReservations, nativeMakeupsOn, completionKey } from './v2-attendance-makeup.mjs';
 import { loadLiveRules, quickProps, liveProps, pollFingerprint, attendanceWritersOf, readTaughtClassSet } from './v2-attendance-live.mjs';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
@@ -88,7 +93,7 @@ const MODULES = {
   // 2단계(저장) — setAttendanceCell이 쓰는 순수 규칙.
   typing: 'features/attendance/grid/typing.ts', scopeOwn: 'features/attendance/scope-ownership.ts', scopedSplit: 'features/attendance/scoped-split.ts',
   ghost: 'features/attendance/ghost-transfer.ts', saveTargets: 'features/attendance/save-targets.ts', unitsAudit: 'features/attendance/units-audit.ts',
-  payslip: 'features/payroll/payslip-access.ts', perms: 'lib/permissions.ts', roles: 'lib/auth/role-hierarchy.ts', delegWin: 'features/classes/delegation-window.ts', tlabel: 'features/timetable/lib/teacher-label.ts',
+  makeupConfig: 'features/makeups/config.ts', payslip: 'features/payroll/payslip-access.ts', perms: 'lib/permissions.ts', roles: 'lib/auth/role-hierarchy.ts', delegWin: 'features/classes/delegation-window.ts', tlabel: 'features/timetable/lib/teacher-label.ts',
 };
 let rulesPromise = null;
 /** 2.0 순수 모듈 — 모듈마다 이름공간(같은 이름의 함수가 여러 모듈에 있다: monthBounds·addDays …). 실패하면 다음 요청에서 다시. */
@@ -210,7 +215,9 @@ export async function readSettings(sql, t, R) {
   const merged = deepMerge(base, stored);
   return { preset, profileName: merged.profile?.name || row?.name || '', permissions: merged.permissions,
     operations: { ...merged.operations, subjects: normalizeSubjects(merged.operations.subjects, base), holidays: normalizeHolidays(merged.operations.holidays) },
-    modules: { disabled: R.modules.normalizeDisabledModules(merged.modules.disabled) } };
+    modules: { disabled: R.modules.normalizeDisabledModules(merged.modules.disabled) },
+    // 보강관리 운영(2.0 resolveSettings `normalizeMakeupSettings`) — 새 보강 체계가 켜졌는지(저장 경로가 보강 예약 칸을 다루는 갈래)를 정한다.
+    makeups: R.makeupConfig.normalizeMakeupSettings(merged.makeups) };
 }
 
 /** 담임 전이 — 2.0 `loadTeacherTransitions`(인계·담임 변경 감사로그, 반 이름은 유일할 때만). */
@@ -874,7 +881,7 @@ const audit = (sql, t, actor, action, metadata) => sql`insert into public.audit_
   values (${t}, ${actor.id}, ${actor.name}, ${action}, 'attendance', null, ${sql.json({ ...metadata, via: VIA })})`;
 const backdated = (date, today) => (date < today ? { backdated: true } : {});
 
-async function setCell(sql, t, b, R, L) {
+async function setCell(sql, t, b, R, L, M) {
   const [settings, today] = await Promise.all([readSettings(sql, t, R), copyDay()]);
   // 2.0 `canWriteTenant(role, 'attendance')` — 출결 '전체' ∪ '담당 반만'(강사). 강사는 아래 게이트를 함께 지난다.
   const actor = await attendanceWriterOf(sql, t, R, settings, b.actor);
@@ -890,8 +897,12 @@ async function setCell(sql, t, b, R, L) {
   if (actor.level === 'scoped') await scopedCellGate(sql, t, R, L, settings, today, actor, b);
   const [[cls], [stu]] = await Promise.all([sql`select id from public.classes where tenant_id=${t} and id=${classId}`, sql`select id from public.students where tenant_id=${t} and id=${studentId}`]);
   if (!cls || !stu) throw new V2Error(404, 'not_found', '반 또는 학생을 찾지 못했습니다.');
-  const [resv] = await sql`select 1 from public.makeup_reservations where tenant_id=${t} and class_id=${classId} and student_id=${studentId} and makeup_date=${sessionDate} and status in ('reserved','done') limit 1`;
-  if (resv) throw new V2Error(409, 'reservation_cell', '보강 예약이 걸린 칸은 연습 화면에서 아직 저장하지 않습니다. 바뀐 것은 없습니다.');
+  // 새 보강 체계가 켜진 학원의 보강 예약 칸만 거절(그 연결 갈래가 없다). 꺼진 학원은 저장 뒤 예약 이행(2.0 completeMakeupReservations)을 본다.
+  if (nativeMakeupsOn(M, settings)) {
+    const [resv] = await sql`select 1 from public.makeup_reservations where tenant_id=${t} and class_id=${classId} and student_id=${studentId} and makeup_date=${sessionDate} and status in ('reserved','done') limit 1`;
+    if (resv) throw new V2Error(409, 'reservation_cell', RESERVATION_CELL);
+  }
+  const complete = cells => completeMakeupReservations({ sql, t, R, M, settings, actor }, cells);
   const via = await writeViaOf(sql, t, R, settings, actor.id, classId, sessionDate);
   // 데스크 게이트(2.0 `assertDeskMayWrite`) — 당일 출결 화면에서 그 반을 안 가르치는 사람은 10분 뒤 미출결 칸만 · 지우기 금지.
   const periodStart = b.periodStart ?? b.slotStart ?? null;
@@ -899,7 +910,7 @@ async function setCell(sql, t, b, R, L) {
     const reason = await deskDenied(sql, t, L, { via, classId, date: sessionDate, periodStart, currentStatus, nextStatus, source: b.source });
     if (reason) throw new V2Error(409, 'desk_gate', reason);
   };
-  if (b.slotStart) return slotCell(sql, t, R, { settings, today, actor, b, via, periodStart, base: { studentId, classId, date: sessionDate }, noteVal, noteProvided, unitsProvided, unitsVal, deskGate });
+  if (b.slotStart) return slotCell(sql, t, R, { settings, today, actor, b, via, periodStart, base: { studentId, classId, date: sessionDate }, noteVal, noteProvided, unitsProvided, unitsVal, deskGate, complete });
   const scopeTeacherId = b.scopeTeacherId ?? null;
   const scopeShareOf = facts => {
     if (!R.scopeOwn.scopeTeaches(facts.get(classId), scopeTeacherId, sessionDate)) throw new V2Error(409, 'scope_not_taught', R.scopedSplit.SCOPE_NOT_TAUGHT_MESSAGE);
@@ -943,6 +954,8 @@ async function setCell(sql, t, b, R, L) {
       if (write.length) await sql`delete from public.attendance_records where id = any(${write.map(r => r.id)}::uuid[])`;
     } else await sql`delete from public.attendance_records where tenant_id=${t} and class_id=${classId} and student_id=${studentId} and session_date=${sessionDate}`;
     await audit(sql, t, actor, 'attendance_clear', { ...base, ...(scopeTeacherId ? { scopeTeacherId } : {}), ...(skippedSeatRows > 0 ? { skippedSeatRows } : {}), ...(b.source ? { source: b.source } : {}), ...backdated(sessionDate, today) });
+    // 보강 예약 되돌림 — 이행된 예약의 보강일 칸을 지웠으면 reserved로(2.0과 같다).
+    await complete([{ studentId, classId, date: sessionDate, status: null }]);
     return { ok: true };
   }
 
@@ -997,6 +1010,10 @@ async function setCell(sql, t, b, R, L) {
     ...(unitsAudit ? { prevUnits: unitsAudit.prevUnits, nextUnits: unitsAudit.nextUnits } : {}), ...(insertedAuto != null ? { autoUnits: insertedAuto } : {}),
     ...(scopeTeacherId ? { scopeTeacherId } : {}), ...(split.seat.length > 0 ? { skippedSeatRows: split.seat.length } : {}), ...(createdSlots ? { createdSlots } : {}),
     ...(b.source ? { source: b.source } : {}), ...backdated(sessionDate, today) });
+  // 보강 예약 이행 — 이 칸에 걸린 예약이 있고 시수를 쓰는 상태가 찍혔으면 done + 메모 · 시수(2.0과 같다). 이행이 시수를 바꿨으면 화면 낙관값도 그 값으로.
+  const completed = await complete([{ studentId, classId, date: sessionDate, status, unitsExplicit: unitsProvided && !R.units.isDefaultUnitsRaw(units), created: !overwrote }]);
+  const completedUnits = completed.get(completionKey({ studentId, classId, date: sessionDate }));
+  if (completedUnits !== undefined) insertedAuto = completedUnits;
   if (createdDefaultTotal !== undefined) return { ok: true, autoUnits: createdDefaultTotal };
   return insertedAuto !== undefined ? { ok: true, autoUnits: insertedAuto } : { ok: true };
 }
@@ -1039,8 +1056,8 @@ async function reservedKeysOn(sql, t, classIds, date) {
   if (classIds.length === 0) return new Set();
   return new Set((await sql`select student_id::text s, class_id::text c from public.makeup_reservations where tenant_id=${t} and status='reserved' and makeup_date=${date} and class_id = any(${classIds}::uuid[])`).map(r => `${r.s}::${r.c}`));
 }
-const RESERVATION_CELL = '보강 예약이 걸린 칸은 연습 화면에서 아직 저장하지 않습니다. 바뀐 것은 없습니다.';
-const NATIVE_MAKEUP = '보강 참여로 연 칸은 연습 화면에서 아직 저장하지 않습니다. 바뀐 것은 없습니다.';
+const RESERVATION_CELL = '보강 예약이 걸린 칸은 연습 화면에서는 아직 지원하지 않는 저장입니다. 바뀐 것은 없습니다.';
+const NATIVE_MAKEUP = '보강 참여로 연 칸은 연습 화면에서는 아직 지원하지 않는 저장입니다. 바뀐 것은 없습니다.';
 
 /**
  * 2.0 setAttendanceCell의 강사(scoped) 게이트 — 자기 출석부로만 · 7일 창(메모만은 면제) · 담당 반(담임 ∪ 위임 ∪ JJ 담당 ∪ 교시 담당) ·
@@ -1068,7 +1085,7 @@ async function scopedCellGate(sql, t, R, L, settings, today, actor, b) {
 
 /** 2.0 setAttendanceCell — 교시를 지정한 저장(`slotStart`, ECS·당일 출결의 교시별 반). 강사 보기 몫(scopeTeacherId)은 이 갈래에 뜻이 없다(2.0과 같다). */
 async function slotCell(sql, t, R, ctx) {
-  const { settings, today, actor, b, via, periodStart, base, noteVal, noteProvided, unitsProvided, unitsVal, deskGate } = ctx;
+  const { settings, today, actor, b, via, periodStart, base, noteVal, noteProvided, unitsProvided, unitsVal, deskGate, complete } = ctx;
   const slot = b.slotStart, { classId, studentId, sessionDate, status } = b;
   const extra = { slotStart: slot };
   if (b.noteOnly) {
@@ -1084,6 +1101,7 @@ async function slotCell(sql, t, R, ctx) {
     await makeupAnchorGate(sql, t, studentId, classId, sessionDate);
     await sql`delete from public.attendance_records where tenant_id=${t} and class_id=${classId} and student_id=${studentId} and session_date=${sessionDate} and slot_start=${slot}`;
     await audit(sql, t, actor, 'attendance_clear', { ...base, ...extra, ...(b.source ? { source: b.source } : {}), ...backdated(sessionDate, today) });
+    await complete([{ studentId, classId, date: sessionDate, status: null }]);
     return { ok: true };
   }
   // 그 교시 + 옛 "그날 전체" 행을 함께 본다(두 세대 공존 — pickSaveTargets가 승격까지 정한다).
@@ -1112,6 +1130,9 @@ async function slotCell(sql, t, R, ctx) {
   await audit(sql, t, actor, 'attendance_cell', { ...base, ...extra, status, ...(overwrote ? { overwrote: true, prevStatus } : { created: true }), ...(unitsProvided ? { units: unitsVal } : {}),
     ...(unitsAudit ? { prevUnits: unitsAudit.prevUnits, nextUnits: unitsAudit.nextUnits } : {}), ...(insertedAuto != null ? { autoUnits: insertedAuto } : {}),
     ...(b.source ? { source: b.source } : {}), ...backdated(sessionDate, today) });
+  const completed = await complete([{ studentId, classId, date: sessionDate, status, unitsExplicit: unitsProvided && !R.units.isDefaultUnitsRaw(b.units), created: !overwrote }]);
+  const completedUnits = completed.get(completionKey({ studentId, classId, date: sessionDate }));
+  if (completedUnits !== undefined) insertedAuto = completedUnits;
   return insertedAuto !== undefined ? { ok: true, autoUnits: insertedAuto } : { ok: true };
 }
 /** 2.0 `makeupAnchorDeleteBlock` — 보강 보고서가 가리키는 반의 칸은 지우지 않는다. */
@@ -1139,7 +1160,7 @@ function bulkBody(raw) {
 }
 
 /** 2.0 `setAttendanceBulk` — 한 번의 왕복으로 여러 칸. 게이트는 셀 저장과 같은 규칙을 집합 단위로(권한 → 강사면 기간 → 담당 반 → 그날 수강생). */
-async function setBulk(sql, t, b, R, L) {
+async function setBulk(sql, t, b, R, L, M) {
   const [settings, today] = await Promise.all([readSettings(sql, t, R), copyDay()]);
   const actor = await attendanceWriterOf(sql, t, R, settings, b.actor);
   if (!actor) throw new V2Error(403, 'actor_not_allowed', '출석 관리 권한이 없습니다');
@@ -1189,8 +1210,8 @@ async function setBulk(sql, t, b, R, L) {
     }
     allowed = open;
   }
-  // 보강 예약이 걸린 칸이 끼면 — 2.0은 쓰고 나서 예약 이행을 본다(이 복사본엔 그 갈래가 아직 없다) → 아무것도 쓰지 않는다.
-  if (allowed.length) {
+  // 새 보강 체계가 켜진 학원에서 보강 예약 칸이 끼면 아무것도 쓰지 않는다(그 갈래가 없다). 꺼진 학원은 쓰고 나서 예약 이행(2.0과 같다 — 아래).
+  if (allowed.length && nativeMakeupsOn(M, settings)) {
     const [hit] = await sql`select 1 from public.makeup_reservations where tenant_id=${t} and makeup_date=${sessionDate} and status in ('reserved','done')
       and (student_id, class_id) in (select * from unnest(${allowed.map(c => c.studentId)}::uuid[], ${allowed.map(c => c.classId)}::uuid[])) limit 1`;
     if (hit) throw new V2Error(409, 'reservation_cell', RESERVATION_CELL);
@@ -1220,6 +1241,9 @@ async function setBulk(sql, t, b, R, L) {
       ...R.auto.autoUnitsLogFields(inserts.map(c => unitsOf(c).auto).filter(v => typeof v === 'number')), ...backdated(sessionDate, today) });
   }
   const created = new Set(inserts.map(c => `${c.studentId}::${c.classId}`));
+  // 보강 예약 이행 — 일괄로 쓴 칸 중 예약이 걸린 것(2.0과 같다 — created = 이번에 새로 만든 행).
+  await completeMakeupReservations({ sql, t, R, M, settings, actor }, allowed.map(c => ({ studentId: c.studentId, classId: c.classId, date: sessionDate, status,
+    unitsExplicit: unitsProvided, created: created.has(`${c.studentId}::${c.classId}`) })));
   return { ok: true, applied: allowed.map(c => { const isNew = created.has(`${c.studentId}::${c.classId}`), autoUnits = isNew ? unitsOf(c).auto : undefined;
     return { ...c, created: isNew, ...(typeof autoUnits === 'number' ? { autoUnits } : {}) }; }), blocked: cells.length - allowed.length };
 }
@@ -1254,8 +1278,8 @@ const SEAT_ACTIONS = 'features/attendance/seat/server/actions.ts', SEAT_MARKS = 
 const SEAT_PREFS = 'features/attendance/seat/server/monthly-prefs.ts', SEAT_MEMORIZED = 'features/attendance/seat/server/memorized-actions.ts';
 const SEAT_PERIODS = 'features/attendance/seat/server/period-actions.ts', SEAT_PLACEMENTS = 'features/attendance/seat/server/placement-actions.ts';
 async function seatCtx({ sql, body, tenantId, importV2 }) {
-  const [R, S, X] = await Promise.all([loadRules(importV2), loadSeatRules(importV2), SeatSave.loadSeatSaveRules(importV2)]);
-  return { c: { sql, t: tenantId, R, S, settings: await readSettings(sql, tenantId, R), actorId: body.actor }, X };
+  const [R, S, X, M] = await Promise.all([loadRules(importV2), loadSeatRules(importV2), SeatSave.loadSeatSaveRules(importV2), loadMakeupRules(importV2)]);
+  return { c: { sql, t: tenantId, R, S, M, settings: await readSettings(sql, tenantId, R), actorId: body.actor }, X };
 }
 const seatAction = (module, need, fn) => ({
   validate: raw => { const { actor, args: [input] } = hostCall(raw, module, 1); return { actor, input: SeatSave.seatInput(input, need) }; },
@@ -1282,8 +1306,8 @@ const prefs = (check, update) => ({ validate: prefsBody(check), run: async ({ sq
 
 // 2.0 "use server" 함수와 1:1 — 이름 = 2.0 export 이름(호스트가 그 이름으로 부른다), 인자 = 2.0 인자 그대로.
 screen.actions = {
-  setAttendanceCell: { validate: cellBody, run: async ({ sql, body, tenantId, importV2 }) => setCell(sql, tenantId, body, await loadRules(importV2), await loadLiveRules(importV2)) },
-  setAttendanceBulk: { validate: bulkBody, run: async ({ sql, body, tenantId, importV2 }) => setBulk(sql, tenantId, body, await loadRules(importV2), await loadLiveRules(importV2)) },
+  setAttendanceCell: { validate: cellBody, run: async ({ sql, body, tenantId, importV2 }) => setCell(sql, tenantId, body, await loadRules(importV2), await loadLiveRules(importV2), await loadMakeupRules(importV2)) },
+  setAttendanceBulk: { validate: bulkBody, run: async ({ sql, body, tenantId, importV2 }) => setBulk(sql, tenantId, body, await loadRules(importV2), await loadLiveRules(importV2), await loadMakeupRules(importV2)) },
   saveAttendanceSort: prefs(v => typeof v === 'string' && v.length <= 20, (R, prev, v) => ({ ...prev, sort: R.sort.parseAttendanceSortKey(v) })),
   saveAttendancePeriodMode: prefs(v => typeof v === 'string' && v.length <= 20, (R, prev, v) => ({ ...prev, periodMode: R.viewPrefs.parsePeriodMode(v) })),
   saveAttendanceHideRetired: prefs(v => typeof v === 'boolean', (R, prev, v) => ({ ...prev, hideRetired: v !== false })),

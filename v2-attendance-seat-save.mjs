@@ -8,13 +8,14 @@
 //   placement-actions.ts resetSeatPlacements(seat_placements — seat_placement_reset) — 이동 계열 셋은 출결을 쓰지 않는다(2.0과 같다).
 //   memorized-actions.ts pullSeatMemorizedWords — 바깥(인재원 API)을 부르는 일이라 2.0 실패 모양으로 거절(바뀌는 것 없음).
 // 판정·접기는 2.0 순수 함수 그대로(seat.ts · period-choice.ts · prev-period.ts · placement.ts · save-targets.ts · edit-audit.ts · plan-codec.ts · jj-fields.ts).
-// 2.0과 다른 점(이 연습 화면에 아직 없는 갈래 — 바뀌는 것 없이 그 사유를 2.0 실패 모양 { error }로 돌려준다):
-//  · 보강 예약이 걸린 칸 — 2.0은 쓰고 나서 `completeMakeupReservations(observeOnly)`로 예약 이행·보강 관찰을 한다(보강 체계 v2 어댑터).
-//    그 갈래를 옮기기 전이라 예약(reserved·done)이 걸린 학생·반·날짜에는 쓰지 않는다(칸 하나든 일괄이든).
+// 보강 예약 이행 — 2.0처럼 쓰고 나서 `completeMakeupReservations`(v2-attendance-makeup.mjs)를 같은 자리에서 부른다(JJ 갱신 · 새 행 · 일괄).
+// 2.0과 다른 점(바뀌는 것 없이 그 사유를 2.0 실패 모양 { error }로 돌려준다):
+//  · 새 보강 체계(makeups.mode on·draining)가 켜진 학원의 보강 예약 칸 — 그 연결 이행 갈래를 옮기지 않아 쓰지 않는다(이 복사본은 꺼져 있다).
 //  · PIN(비로그인) 갈래 — 앱 밖 결과물(자리 PIN 화면)이라 이 화면 범위가 아니다. 저장하는 사람은 3.0 띠에서 고른 로그인 직원뿐.
 // 감사로그 metadata.via = '3.0 연습 복사본'(공통 규약) — 2.0이 같은 칸에 적는 갈래('menu'·'duty')는 metadata.from으로 옮긴다.
 import { V2Error } from './v2-screens.mjs';
 import { copyClock, readSeatDay, readSeatPeriodChoices, applySeatDayChoices, readSeatPlacementsForDay, readSeatStudentClasses, seatWritersOf } from './v2-attendance-seat.mjs';
+import { completeMakeupReservations, nativeMakeupsOn } from './v2-attendance-makeup.mjs';
 
 const VIA = '3.0 연습 복사본';
 const SAVE_MODULES = { editAudit: 'features/class-sheets/lib/edit-audit.ts', planCodec: 'features/class-sheets/lib/plan-codec.ts' };
@@ -35,7 +36,10 @@ async function gate(c, seat, date) {
   if (!writer) return { error: '자리 출석부 입력 권한이 없습니다' };
   const { day: today } = await copyClock();
   if (date !== today && !writer.pastWrite) return { error: '지난 날짜는 수정할 수 없습니다 — 관리자에게 요청하세요' };
-  return { ok: true, actor: { id: writer.id, name: writer.name }, from: writer.duty && !writer.menuWrite ? 'duty' : 'menu', today };
+  const actor = { id: writer.id, name: writer.name };
+  // 2.0 `completeMakeupReservations` 자리 — 이 저장의 사람으로 예약 이행·되돌림 감사로그를 남긴다.
+  c.complete = cells => completeMakeupReservations({ ...c, actor }, cells);
+  return { ok: true, actor, from: writer.duty && !writer.menuWrite ? 'duty' : 'menu', today };
 }
 
 /** 2.0 `rosterKeys`(server/gate.ts) — 그 교시 명단(교시 선택을 얹은 뒤, 모호한 반 제외). */
@@ -55,7 +59,7 @@ async function rosterKeys(c, seat, date, slotStart) {
   return { keys, classes, rosters, day, choiceLoad, period };
 }
 
-const RESERVED_CELL = '보강 예약이 걸린 칸은 연습 화면에서 아직 저장하지 않습니다. 바뀐 것은 없습니다.';
+const RESERVED_CELL = '보강 예약이 걸린 칸은 연습 화면에서는 아직 지원하지 않는 저장입니다. 바뀐 것은 없습니다.';
 /** 보강 예약(reserved·done)이 걸린 (학생, 반) — 그 날 보강일인 예약. 2.0 `completeMakeupReservations`가 이 행들을 본다. */
 async function reservedCells(c, date, pairs) {
   if (pairs.length === 0 || !(await hasTable(c.sql, 'makeup_reservations'))) return new Set();
@@ -108,12 +112,14 @@ async function writeOne(c, p) {
       }
       if (promoteIds.length > 0) await seatUpdate(c, { ...basePatch, slot_start: p.slot }, promoteIds);
       if (updateIds.length > 0) await seatUpdate(c, basePatch, updateIds);
+      await c.complete([{ studentId: p.studentId, classId: p.classId, date: p.date, status: p.status }]);
       return updateIds.length + promoteIds.length;
     }
   }
   if (p.noteOnly) return 0;
   await insertRows(c, [{ tenant_id: t, class_id: p.classId, student_id: p.studentId, session_date: p.date, slot_start: p.slot, status: p.status,
     seat_label: payroll ? S.seat.SEAT_DB_LABEL[p.seat] : null, recorded_by: p.userId, recorded_via: 'seat', ...notePatch(p.note) }]);
+  await c.complete([{ studentId: p.studentId, classId: p.classId, date: p.date, status: p.status, created: true }]);
   return 1;
 }
 
@@ -130,8 +136,8 @@ export async function setSeatCell(c, input) {
   if (!roster) return { error: '그 시각에는 이 자리 수업이 없습니다' };
   if (!roster.keys.has(`${input.classId}|${input.studentId}`)) return { error: '이 교시 명단에 없는 학생입니다' };
   const noteOnly = input.noteOnly === true;
-  // 출결을 쓰는 칸에 보강 예약이 걸렸으면 — 2.0은 쓰고 나서 예약 이행을 본다(아직 없는 갈래).
-  if (!noteOnly && input.status !== null && (await reservedCells(c, input.date, [{ classId: input.classId, studentId: input.studentId }])).size > 0) return { error: RESERVED_CELL };
+  // 새 보강 체계가 켜진 학원의 보강 예약 칸 — 그 갈래가 없어 쓰지 않는다(꺼진 학원은 쓰고 나서 예약 이행을 본다 — writeOne).
+  if (!noteOnly && input.status !== null && nativeMakeupsOn(c.M, c.settings) && (await reservedCells(c, input.date, [{ classId: input.classId, studentId: input.studentId }])).size > 0) return { error: RESERVED_CELL };
   c.viaColumn = await hasColumn(c.sql, 'attendance_records', 'recorded_via');
   const changed = await writeOne(c, { seat: input.seat, date: input.date, slot, classId: input.classId, studentId: input.studentId, status: input.status, note, noteOnly, userId: g.actor.id });
   if (typeof changed === 'string') return { error: changed };
@@ -155,9 +161,10 @@ async function insertSeatFill(c, p) {
   const taken = new Set(existing.filter(r => S.seat.hhmm(r.slot_start) === p.slot || (!payroll && r.slot_start == null)).map(r => `${r.class_id}|${r.student_id}`));
   const rows = built.filter(r => !taken.has(`${r.class_id}|${r.student_id}`));
   if (rows.length === 0) return { rows: [], skipped: built.length };
-  // 보강 예약이 걸린 학생이 끼어 있으면 — 2.0은 넣고 나서 예약 이행을 본다(아직 없는 갈래) → 아무것도 넣지 않는다.
-  if ((await reservedCells(c, p.date, rows.map(r => ({ classId: r.class_id, studentId: r.student_id })))).size > 0) return { error: RESERVED_CELL };
+  // 새 보강 체계가 켜진 학원에서 보강 예약 학생이 끼면 아무것도 넣지 않는다(그 갈래가 없다). 꺼진 학원은 넣고 나서 예약 이행(2.0과 같다).
+  if (nativeMakeupsOn(c.M, c.settings) && (await reservedCells(c, p.date, rows.map(r => ({ classId: r.class_id, studentId: r.student_id })))).size > 0) return { error: RESERVED_CELL };
   await insertRows(c, rows);
+  await c.complete(rows.map(r => ({ studentId: r.student_id, classId: r.class_id, date: p.date, status: r.status, created: true })));
   return { rows, skipped: built.length - rows.length };
 }
 
