@@ -26,7 +26,7 @@ await check('주소 열쇠 = 2.0 page.tsx · 수납관리 부품이 읽는 칸(s
   const dir = new URL('../../src/app/(shell)/billing/_components/', import.meta.url), keys = new Set();
   for (const f of [...(await readdir(dir)).filter(n => n.endsWith('.tsx')).map(n => new URL(n, dir)), new URL('../../src/app/(shell)/billing/page.tsx', import.meta.url)])
     for (const m of (await readFile(f, 'utf8')).matchAll(/\bsp\.([a-zA-Z]+)/g)) keys.add(m[1]);
-  assert.deepEqual(Object.keys(M.screen.params).filter(k => k !== 'viewer' && k !== 'v2path').sort(), [...keys].sort());
+  assert.deepEqual(Object.keys(M.screen.params).filter(k => !['viewer', 'v2path', 'ment'].includes(k)).sort(), [...keys].sort());
   const host = await here('./v2-host/src/billing.tsx'), shell = await here('./v2-screen-billing.js');
   const listOf = text => JSON.parse(`[${/KEYS = \[([^\]]+)\]|KEEP = \[([^\]]+)\]/.exec(text).slice(1).find(Boolean).replace(/'/g, '"')}]`);
   assert.deepEqual(listOf(host).sort(), ['v2path', ...keys].sort());
@@ -46,7 +46,16 @@ await check('그리기 = 2.0 billing/page.tsx · billing-content.tsx · makeedu-
   }
   // 아직 옮기지 않은 면은 자리표시 — 면 탭은 2.0 그대로.
   const page = lf(await here('./v2-host/src/billing-page.tsx'));
-  assert.equal(page.split('<HostFaceNotReady />').length - 1, 6, '교재 · 지출 · 계산기 · 환불 · 회차 확정 · 강사 정산');
+  assert.equal(page.split('<HostFaceNotReady />').length - 1, 5, '지출 · 계산기 · 환불 · 회차 확정 · 강사 정산');
+  // 교재 면 = textbooks-face · textbooks-panel · catalog-panel 글자 그대로(billing-textbooks.swaps.json)
+  const tb = JSON.parse(await here('./v2-host/src/billing-textbooks.swaps.json'));
+  for (const [key, file, mineFile] of [['face', 'textbooks-face.tsx', 'billing-textbooks-face.tsx'], ['panel', 'textbooks-panel.tsx', 'billing-textbooks-panel.tsx'],
+    ['catalog', 'catalog-panel.tsx', 'billing-catalog-panel.tsx']]) {
+    const want = applySwaps(lf(await src(`app/(shell)/billing/_components/${file}`)), tb[key], key), mine = lf(await here(`./v2-host/src/${mineFile}`));
+    assert.ok(mine.endsWith(want), `${mineFile} = 2.0 ${file} + 짝`);
+    assert.ok(mine.slice(0, mine.length - want.length).split('\n').filter(Boolean).every(l => l.startsWith('//')), `${mineFile} 앞에는 주석만`);
+    assert.doesNotMatch(want.split('\n').filter(l => !/^\s*(\/\/|\*|\/\*)/.test(l)).join('\n'), /\bawait\b|getCurrentUser|getTenantSettings|resolveBrandingSrc/, `${mineFile}: 서버 호출이 남지 않는다`);
+  }
 });
 
 const db = await openFullDatabase();
@@ -142,6 +151,104 @@ try {
     const odd = await load({ period: '2026-13' });
     assert.deepEqual(odd.billing.monthRows, []);
   });
+
+  await check('교재 면(목록) = 교재신청 전부(체크 적은 것 → 신청일 최신) · 상태 필터 · 검색 · 쪽 · 카드 숫자 = 독립 SQL · 동기화 = textbook_checks', async () => {
+    const d = await load({ tab: 'textbooks' }), L = d.textbooks.list;
+    assert.equal(d.textbooks.catalog, null);
+    const [s] = await db`select count(*)::int total, count(*) filter (where registered_at is null)::int need_reg, count(*) filter (where paid_at is null)::int need_pay,
+        count(*) filter (where ordered_at is null)::int need_order, count(*) filter (where registered_at is not null and ordered_at is not null and paid_at is not null)::int done,
+        coalesce(sum(price),0)::float8 amount, coalesce(sum(price) filter (where paid_at is null),0)::float8 unpaid from public.textbook_orders where tenant_id=${tenantId}`;
+    assert.deepEqual([L.stats.total, L.stats.needReg, L.stats.needPay, L.stats.needOrder, L.stats.done, L.stats.totalAmount, L.stats.unpaidAmount],
+      [s.total, s.need_reg, s.need_pay, s.need_order, s.done, s.amount, s.unpaid]);
+    assert.equal(L.page.total, s.total); assert.equal(L.page.rows.length, Math.min(50, s.total));
+    const cnt = r => (r.registered ? 1 : 0) + (r.paid ? 1 : 0) + (r.ordered ? 1 : 0);
+    for (let i = 1; i < L.page.rows.length; i++) {
+      const a = L.page.rows[i - 1], b = L.page.rows[i];
+      assert.ok(cnt(a) < cnt(b) || (cnt(a) === cnt(b) && (a.requestDate ?? '') >= (b.requestDate ?? '')), `정렬 ${i}`);
+    }
+    const reg = await load({ tab: 'textbooks', status: 'reg' });
+    assert.equal(reg.textbooks.list.page.total, s.need_reg); assert.ok(reg.textbooks.list.page.rows.every(r => !r.registered));
+    const done = await load({ tab: 'textbooks', status: 'done' });
+    assert.equal(done.textbooks.list.page.total, s.done);
+    const [{ n: hit }] = await db`select count(*)::int n from public.textbook_orders where tenant_id=${tenantId} and (book_name ilike '%수학%' or student_name ilike '%수학%')`;
+    assert.equal((await load({ tab: 'textbooks', q: '수학' })).textbooks.list.page.total, hit);
+    assert.equal((await load({ tab: 'textbooks', q: '%' })).textbooks.list.page.total, s.total, '% 는 글자가 아니라 지워진다(2.0 sanitize)');
+    // 행 모양 = 2.0 TextbookOrderRow · 학생 · 단가표 선택지 · 설정(로고는 비움)
+    const type = lf(await src('features/billing/server/textbook-queries.ts')), at = type.indexOf('export type TextbookOrderRow = {'), block = type.slice(at, type.indexOf('};', at));
+    assert.deepEqual(Object.keys(L.page.rows[0]).sort(), [...block.matchAll(/^\s{2}([a-zA-Z]+):/gm)].map(m => m[1]).sort());
+    const [{ n: cat }] = await db`select count(*)::int n from public.textbook_catalog where tenant_id=${tenantId} and is_active`;
+    assert.equal(L.catalog.length, cat); assert.equal(L.students.length, base.billing.students.length);
+    assert.equal(L.settings.profile.logoUrl, null); assert.ok(L.settings.profile.name.length > 0);
+    assert.deepEqual(Object.keys(d.sync), ['textbook_checks']);
+  });
+
+  await check('교재 면(교재 단가표) = 이름순 50종씩 · 학년·상태 필터 · 카드(등록 · 사용 중) = 독립 SQL', async () => {
+    const c = (await load({ tab: 'textbooks', tsub: 'catalog' })).textbooks.catalog;
+    const [s] = await db`select count(*)::int total, count(*) filter (where is_active)::int active from public.textbook_catalog where tenant_id=${tenantId}`;
+    assert.deepEqual(c.stats, { total: s.total, active: s.active }); assert.equal(c.page.total, s.total); assert.equal(c.page.rows.length, Math.min(50, s.total));
+    const inactive = (await load({ tab: 'textbooks', tsub: 'catalog', active: 'inactive' })).textbooks.catalog;
+    assert.equal(inactive.page.total, s.total - s.active); assert.ok(inactive.page.rows.every(r => !r.isActive));
+    const [{ n: mid }] = await db`select count(*)::int n from public.textbook_catalog where tenant_id=${tenantId} and grade_level='중'`;
+    assert.equal((await load({ tab: 'textbooks', tsub: 'catalog', grade: '중' })).textbooks.catalog.page.total, mid);
+  });
+
+  await check('교재 면 저장(되돌림) — 등록 · 체크(등록·주문·납부 · 해제 = 사람 소유 마커) · 수정(바뀐 칸만 감사) · 삭제 · 내 메시지 — 문구·감사로그 2.0 그대로 · 볼 수 없는 사람 거절 · 바깥 요청 0', async () => {
+    const actions = lf(await src('features/billing/server/textbook-actions.ts')), mine = lf(await here('./v2-billing-textbooks.mjs'));
+    for (const fn of ['createTextbookOrder', 'updateTextbookOrder', 'toggleTextbookCheck', 'deleteTextbookOrder']) {
+      const at = actions.indexOf(`export async function ${fn}(`), end = actions.indexOf('\nexport async function', at + 10);
+      for (const m of actions.slice(at, end < 0 ? undefined : end).matchAll(/error: "([^"]+)"|fallback: "([^"]+)"|action: "([a-z_]+)"/g))
+        assert.ok(mine.includes(m[1] ?? m[2] ?? `'${m[3]}'`), `${fn}: ${m[1] ?? m[2] ?? m[3]}`);
+    }
+    const [hak] = await db`select id::text id, name from public.students where tenant_id=${tenantId} and is_test and name like '학원이%' order by name limit 1`;
+    assert.ok(hak, '테스트 학생 학원이');
+    const ROLL = new Error('rollback');
+    const before = (await db`select count(*)::int n from public.textbook_orders where tenant_id=${tenantId}`)[0].n;
+    try {
+      await db.begin(async sql => {
+        const [{ q0 }] = await sql`select count(*)::int q0 from net.http_request_queue`;
+        const fd = pairs => ({ $formData: Object.entries(pairs).map(([k, v]) => [k, String(v)]) });
+        const act = (name, args, actor = base.viewer.id, module = 'features/billing/server/textbook-actions.ts') => {
+          const a = M.screen.actions[name]; return a.run({ sql, body: a.validate({ module, actor, args }), tenantId, importV2 });
+        };
+        // 수납관리를 볼 수 없는 사람(강사)은 보는 사람 목록에 없다 — 2.0 '로그인이 필요합니다' 자리.
+        const [teacher] = await sql`select id::text id from public.users where tenant_id=${tenantId} and system_role='teacher' and status='active' limit 1`;
+        assert.deepEqual(await act('toggleTextbookCheck', [null, fd({ id: '00000000-0000-0000-0000-000000000000', field: 'paid', checked: 'true' })], teacher.id), { error: '로그인이 필요합니다' });
+        assert.deepEqual(await act('createTextbookOrder', [null, fd({ bookName: ' ' })]), { fieldErrors: { bookName: '교재명을 입력해주세요' } });
+        const made = await act('createTextbookOrder', [null, fd({ bookName: '연습 교재 시험', studentId: hak.id, teacherName: '연습', price: '12,000', notes: ' 메모 ' })]);
+        assert.equal(made.ok, true); assert.match(made.createdId, /^[0-9a-f-]{36}$/);
+        const [row] = await sql`select student_name, price::float8 price, status, notes, created_by::text created_by, status_by_name, request_date::text rd from public.textbook_orders where id=${made.createdId}`;
+        assert.deepEqual([row.student_name, row.price, row.status, row.notes, row.created_by, row.status_by_name], [hak.name, 12000, 'requested', '메모', base.viewer.id, base.viewer.name]);
+        assert.deepEqual(await act('toggleTextbookCheck', [null, fd({ id: made.createdId, field: 'nope', checked: 'true' })]), { error: '잘못된 체크 항목입니다' });
+        assert.deepEqual(await act('toggleTextbookCheck', [null, fd({ id: '00000000-0000-0000-0000-000000000000', field: 'paid', checked: 'true' })]), { error: '교재신청을 찾을 수 없습니다' });
+        assert.deepEqual(await act('toggleTextbookCheck', [null, fd({ id: made.createdId, field: 'ordered', checked: 'true' })]), { ok: true });
+        let [st] = await sql`select status, ordered_at is not null o, check_dismissed_at from public.textbook_orders where id=${made.createdId}`;
+        assert.deepEqual([st.status, st.o, st.check_dismissed_at], ['ordered', true, null]);
+        assert.deepEqual(await act('toggleTextbookCheck', [null, fd({ id: made.createdId, field: 'paid', checked: 'true' })]), { ok: true });
+        [st] = await sql`select status from public.textbook_orders where id=${made.createdId}`; assert.equal(st.status, 'paid');
+        assert.deepEqual(await act('toggleTextbookCheck', [null, fd({ id: made.createdId, field: 'paid', checked: 'false' })]), { ok: true });
+        [st] = await sql`select status, paid_at, check_dismissed_at is not null dismissed from public.textbook_orders where id=${made.createdId}`;
+        assert.deepEqual([st.status, st.paid_at, st.dismissed], ['ordered', null, true], '납부 해제 = 사람 소유 마커');
+        assert.deepEqual(await act('updateTextbookOrder', [null, fd({ id: made.createdId, bookName: '연습 교재 시험', studentId: hak.id, teacherName: '연습', price: '15000', requestDate: row.rd, notes: '메모' })]), { ok: true });
+        assert.deepEqual(await act('deleteTextbookOrder', [null, fd({ id: '00000000-0000-0000-0000-000000000000' })]),
+          { error: '이 요청서를 지울 권한이 없습니다 — 요청서에 적힌 담당 선생님 이름이 본인과 다르면 관리자에게 요청해주세요.' });
+        assert.deepEqual(await act('deleteTextbookOrder', [null, fd({ id: made.createdId })]), { ok: true });
+        assert.equal((await sql`select count(*)::int n from public.textbook_orders where id=${made.createdId}`)[0].n, 0);
+        const logs = await sql`select action, metadata from public.audit_logs where tenant_id=${tenantId} and created_at = now() order by created_at, id`;
+        assert.deepEqual(logs.map(l => l.action).sort(), ['textbook_order_check', 'textbook_order_check', 'textbook_order_check', 'textbook_order_create', 'textbook_order_delete', 'textbook_order_update']);
+        assert.ok(logs.every(l => l.metadata.via === '3.0 연습 복사본'));
+        const unpaid = logs.find(l => l.action === 'textbook_order_check' && l.metadata.field === 'paid' && l.metadata.checked === false);
+        assert.deepEqual([unpaid.metadata.fieldLabel, unpaid.metadata.status], ['납부', 'ordered']);
+        assert.deepEqual(logs.find(l => l.action === 'textbook_order_update').metadata.changes, [{ label: '금액', from: '12,000원', to: '15,000원' }], '수정은 바뀐 칸만');
+        // 내 학부모 메시지 — 저장 → 읽기
+        assert.deepEqual(await act('saveMyTextbookMent', ['  연습 메시지 '], base.viewer.id, 'features/billing/server/textbook-notice-actions.ts'), { ok: true });
+        assert.equal((await M.screen.load({ sql, params: { ment: '1' }, tenantId, importV2 })).ment, '연습 메시지');
+        const [{ q1 }] = await sql`select count(*)::int q1 from net.http_request_queue`;
+        assert.equal(q1, q0, '바깥 요청 0');
+        throw ROLL;
+      });
+    } catch (e) { if (e !== ROLL) throw e; }
+    assert.equal((await db`select count(*)::int n from public.textbook_orders where tenant_id=${tenantId}`)[0].n, before, '되돌린 뒤 남은 연습 행 0');
+  });
 } finally { await db.end(); }
 
 await check('호스트: 2.0 부품을 고치지 않고 묶인다 — 서버 전용 유입 0 · 운영 주소·외부 호출 0', async () => {
@@ -161,7 +268,9 @@ await check('3.0 쪽: 같은 출처 iframe 자리 · 보는 사람 고르기 · 
   assert.match(js, /const ID = 'billing'/); assert.match(js, /\[data-v2h-actor\]`\)/);
   const shown = [/<p><b>연습 화면<\/b>([^<]*)<\/p>/, /<span>(보는 사람)<\/span>/, /toast\?\.\('([^']*)'\)/, /frame\.title = '([^']*)'/, /const wait = ([^;]*);/]
     .map(re => { const m = re.exec(js); assert.ok(m, String(re)); return m[1]; }).join('\n');
-  const parts = lf(await here('./v2-host/src/billing-host-parts.tsx')) + lf(await here('./v2-host/src/billing.tsx'));
+  // 주석은 화면에 안 나간다 — 주석 줄 · 줄 끝 주석을 빼고 본다.
+  const parts = (lf(await here('./v2-host/src/billing-host-parts.tsx')) + lf(await here('./v2-host/src/billing.tsx'))).split('\n')
+    .filter(l => !/^\s*\/\//.test(l)).map(l => l.replace(/\s\/\/ .*$/, '')).join('\n');
   const hostShown = [...parts.matchAll(/(?:text=\{?["'`]|>)([^<>{}"'`]*[가-힣][^<>{}"'`]*)/g)].map(m => m[1]).join('\n');
   for (const bad of [/2\.0/, /Docker|복사본|v2path|iframe|호스트|슈퍼|총괄/i]) { assert.doesNotMatch(shown, bad, String(bad)); assert.doesNotMatch(hostShown, bad, `호스트 ${bad}`); }
 });

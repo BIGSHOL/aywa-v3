@@ -1,0 +1,60 @@
+{
+ "face": [
+  [
+   "import { TextbooksPanel } from \"./textbooks-panel\";\nimport { CatalogPanel } from \"./catalog-panel\";\n",
+   "import { TextbooksPanel } from \"./billing-textbooks-panel\";\nimport { CatalogPanel } from \"./billing-catalog-panel\";\nimport type { TextbooksFaceData } from \"./billing-types\";\n"
+  ],
+  [
+   "export async function TextbooksFace({ sp }: { sp: Sp }) {",
+   "export function TextbooksFace({ sp, data }: { sp: Sp; data: TextbooksFaceData }) {"
+  ],
+  [
+   "<CatalogPanel sp={sp} base={{ tab: \"textbooks\", tsub: \"catalog\" }} />",
+   "<CatalogPanel sp={sp} base={{ tab: \"textbooks\", tsub: \"catalog\" }} data={data.catalog!} />"
+  ],
+  [
+   "<TextbooksPanel sp={sp} />",
+   "<TextbooksPanel sp={sp} data={data.list!} />"
+  ]
+ ],
+ "panel": [
+  [
+   "import {\n  getStudentOptions,\n  getTextbookOrdersPage,\n  getTextbookStats,\n  type TextbookStats,\n} from \"@/features/billing/server/textbook-queries\";\nimport { getCatalogOptions } from \"@/features/billing/server/catalog-queries\";\nimport { getTenantSettings } from \"@/features/owner/server/queries\";\n",
+   "import type { TextbookStats } from \"@/features/billing/server/textbook-queries\";\nimport type { TextbooksPanelData } from \"./billing-types\";\n"
+  ],
+  [
+   "import { getCurrentUser } from \"@/lib/auth/current-user\";\n",
+   ""
+  ],
+  [
+   "import { resolveBrandingSrc } from \"@/lib/storage/media-storage\";\nimport { TextbooksTable } from \"./textbooks-table\";\nimport styles from \"./textbooks-panel.module.css\";\n",
+   "import { TextbooksTable } from \"@/app/(shell)/billing/_components/textbooks-table\";\nimport styles from \"@/app/(shell)/billing/_components/textbooks-panel.module.css\";\n"
+  ],
+  [
+   "export async function TextbooksPanel({ sp }: { sp: Sp }) {",
+   "export function TextbooksPanel({ sp, data }: { sp: Sp; data: TextbooksPanelData }) {"
+  ],
+  [
+   "  const [{ rows, total }, stats, students, catalog, settings, user] =\n    await Promise.all([\n      getTextbookOrdersPage({ filter: status, q }, page, PAGE_SIZE),\n      getTextbookStats(),\n      getStudentOptions(),\n      getCatalogOptions(),\n      getTenantSettings(),\n      getCurrentUser(),\n    ]);\n",
+   "  const [{ rows, total }, stats, students, catalog, settings] = [data.page, data.stats, data.students, data.catalog, data.settings];\n"
+  ],
+  [
+   "  const logoUrl = user\n    ? await resolveBrandingSrc(settings.profile.logoUrl, user.tenantId)\n    : null;\n",
+   "  const logoUrl = settings.profile.logoUrl; // 학원 로고 = 파일 저장소(복사본 밖) — 자료가 비워서 보낸다\n"
+  ]
+ ],
+ "catalog": [
+  [
+   "import { getCatalogPage, getCatalogStats } from \"@/features/billing/server/catalog-queries\";\nimport { CatalogTable } from \"./catalog-table\";\n",
+   "import { CatalogTable } from \"@/app/(shell)/billing/_components/catalog-table\";\nimport type { CatalogPanelData } from \"./billing-types\";\n"
+  ],
+  [
+   "export async function CatalogPanel({ sp, base }: { sp: Sp; base: Record<string, string> }) {",
+   "export function CatalogPanel({ sp, base, data }: { sp: Sp; base: Record<string, string>; data: CatalogPanelData }) {"
+  ],
+  [
+   "  const [{ rows, total }, stats] = await Promise.all([\n    getCatalogPage({ q, gradeLevel: grade, active }, page, PAGE_SIZE),\n    getCatalogStats(),\n  ]);\n",
+   "  const [{ rows, total }, stats] = [data.page, data.stats];\n"
+  ]
+ ]
+}

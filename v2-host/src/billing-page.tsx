@@ -4,6 +4,8 @@
 // 빠진 것: 창 제목(generateMetadata — 호스트 창 제목은 HOST_TITLE) · 아직 옮기지 않은 면(교재 · 지출 · 계산기 · 회차 확정 · 환불 · 강사 정산)은 '아직 지원하지 않는 기능'.
 import { isModuleEnabled } from "@/lib/modules";
 import { BillingContent, type BillingFaceData } from "./billing-content";
+import { TextbooksFace } from "./billing-textbooks-face";
+import type { TextbooksFaceData } from "./billing-types";
 import { HostFaceNotReady, HostNoAccess, HostRedirect } from "./billing-host-parts";
 import type { MakeeduSyncState } from "@/features/integrations/server/makeedu-sync";
 import { FaceTabs, type Face } from "@/components/face-tabs";
@@ -53,6 +55,7 @@ export type BillingPageData = {
   host: { disabledModules: readonly import("@/lib/modules").ModuleId[] };
   sync: Partial<Record<"invoices" | "textbook_checks", MakeeduSyncState | null>>;
   billing: BillingFaceData | null;
+  textbooks: TextbooksFaceData | null;
 };
 
 export function BillingPage({ d, sp }: { d: BillingPageData; sp: Sp }) {
@@ -94,7 +97,7 @@ export function BillingPage({ d, sp }: { d: BillingPageData; sp: Sp }) {
         ) : null}
       </div>
       {effectiveTab === "textbooks" ? (
-        <HostFaceNotReady />
+        <TextbooksFace sp={sp} data={d.textbooks!} />
       ) : effectiveTab === "expenses" ? (
         <HostFaceNotReady />
       ) : effectiveTab === "calculator" ? (

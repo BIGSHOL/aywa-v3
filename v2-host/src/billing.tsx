@@ -7,11 +7,43 @@ import { useEffect, useRef, useState } from 'react';
 import { AppProviders } from '@/lib/providers/app-providers';
 import { OperationsProvider } from '@/features/owner/operations-context';
 import { EmbedProvider } from '@/components/workspace/embed-context';
-import { onHostRefresh } from '../shims/host-nav';
+import { hostRefresh, onHostRefresh } from '../shims/host-nav';
 import { useHostSearch } from '../shims/next-navigation';
-import { hostActor, setHostEditors, type HostEditor } from '../shims/server-action';
+import { hostActor, registerHostHandler, setHostEditors, type HostEditor } from '../shims/server-action';
 import { HostFrame, HostMessage } from './host-frame';
 import { BillingPage, type BillingPageData } from './billing-page';
+import { DEFAULT_TEXTBOOK_MENT } from '@/features/billing/textbook-notice';
+
+// ── 저장: 2.0 서버 함수 이름 그대로 보내고(POST /api/v2/billing/<함수>), 성공하면 2.0 revalidatePath('/billing')처럼 이 화면을 다시 읽는다 ──
+const NOT_SAVED = '저장하지 못했습니다 — 바뀐 것은 없습니다', UNREACHABLE = '연습 서버에 닿지 못했습니다 — 바뀐 것은 없습니다';
+const encodeArg = (v: unknown) =>
+  v instanceof FormData ? { $formData: [...v.entries()].filter(([, x]) => typeof x === 'string') } : v === undefined ? null : v;
+function saving(module: string, name: string, refresh: boolean) {
+  registerHostHandler(module, name, async (...args: unknown[]) => {
+    let res: Response;
+    try {
+      res = await fetch(`/api/v2/billing/${name}`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+        body: JSON.stringify({ module, actor: hostActor(), args: args.map(encodeArg) }),
+      });
+    } catch { return { error: UNREACHABLE, ok: false }; }
+    const body = (await res.json().catch(() => null)) as { ok?: boolean; result?: unknown; message?: string } | null;
+    if (!res.ok || !body?.ok) return { error: body?.message || NOT_SAVED, ok: false };
+    const r = body.result as { ok?: boolean } | null | undefined;
+    if (refresh && r?.ok === true) hostRefresh();
+    return r ?? undefined;
+  });
+}
+const TEXTBOOK = 'features/billing/server/textbook-actions.ts', NOTICE = 'features/billing/server/textbook-notice-actions.ts';
+for (const name of ['toggleTextbookCheck', 'createTextbookOrder', 'updateTextbookOrder', 'deleteTextbookOrder']) saving(TEXTBOOK, name, true);
+// 내 학부모 메시지 — 중간저장(2.0도 다시 그리지 않는다) · 읽기는 같은 화면의 GET(ment). 못 읽으면 기본 문구(2.0 loadMyTextbookMent의 빈 값 자리).
+saving(NOTICE, 'saveMyTextbookMent', false);
+registerHostHandler(NOTICE, 'loadMyTextbookMent', async () => {
+  const q = new URLSearchParams({ ment: '1' }); const actor = hostActor(); if (actor) q.set('viewer', actor);
+  const r = await fetch(`/api/v2/billing?${q}`, { headers: { Accept: 'application/json' } }).catch(() => null);
+  const body = r?.ok ? ((await r.json().catch(() => null)) as { ment?: unknown } | null) : null;
+  return typeof body?.ment === 'string' ? body.ment : DEFAULT_TEXTBOOK_MENT;
+});
 
 /** 진입점 표식(build.mjs가 찾는다) — 창 제목과 이 화면의 2.0 주소. */
 export const HOST_TITLE = '수납관리';

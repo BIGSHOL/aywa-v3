@@ -2,7 +2,9 @@
 // 3.0엔 로그인이 없다 — 2.0 수납관리는 사람마다 다르다(수납 권한 = 면 전체 · 급여 열람 = 강사 정산 면 · 쓰기/엑셀 넣기 = 수준).
 // 그래서 '보는 사람'을 고르고(교재목록·MCS와 같은 방식 · 운영자 계정 제외 · 원장 먼저), 그 사람의 권한 표로 2.0과 같은 게이트를 낸다.
 // 복사본 접속은 RLS를 안 타서 모든 조회에 tenant_id를 직접 건다.
-import { loadRules as loadMcsRules, readSettings } from './v2-mcs-core.mjs';
+import { loadRules as loadMcsRules, readSettings, UUID } from './v2-mcs-core.mjs';
+import { V2Error } from './v2-screens.mjs';
+import { deepMerge } from './v2-screen-timetable.mjs';
 
 export { readSettings };
 
@@ -49,6 +51,65 @@ export async function readSyncState(sql, t, R, env, domain) {
   if (!row) return null;
   return { syncedAt: row.synced_at, rowCount: row.row_count == null ? null : Number(row.row_count), status: row.status, issue: (row.error ?? null) || null };
 }
+
+const plain = v => !!v && typeof v === 'object' && !Array.isArray(v);
+/** 학원 설정의 이름·로고(profile)·입금 계좌(billing) — 2.0 getTenantSettings(resolveSettings)와 같은 병합(이름이 비면 지점 이름).
+ *  🔴 계좌는 2.0이 수납 권한 화면(교재 요청서 미리보기)에 그대로 내는 학원 입금 계좌다 — 시험·로그에 찍지 않는다. */
+export async function readBranding(sql, t, R) {
+  const [[row], [tenant]] = await Promise.all([sql`select data from public.tenant_settings where tenant_id=${t}`, sql`select name from public.tenants where id=${t}`]);
+  const stored = row?.data ?? null, base = R.preset.baseSettingsFor(R.preset.presetOfStored(stored));
+  const profile = deepMerge(base.profile, plain(stored) ? stored.profile : undefined), billing = deepMerge(base.billing, plain(stored) ? stored.billing : undefined);
+  return { profile: { ...profile, name: profile.name || tenant?.name || '' }, billing };
+}
+
+// ── 저장 도구 ──────────────────────────────────────────────────────────────────────────────────────────────────────
+export const VIA = '3.0 연습 복사본';
+export const badRequest = () => new V2Error(400, 'invalid_request', '입력 값을 확인해 주세요.');
+/** 2.0 logAction — 감사로그(actor = 보는 사람 · metadata.via = 연습 복사본). */
+export const audit = (sql, t, actor, action, targetType, metadata, targetLabel = null) => sql`insert into public.audit_logs (tenant_id, actor_id, actor_name, action, target_type, target_label, metadata)
+  values (${t}, ${actor.id}, ${actor.name}, ${action}, ${targetType ?? null}, ${targetLabel ?? null}, ${sql.json({ ...(metadata ?? {}), via: VIA })})`;
+/** 호스트가 { $formData: [[이름, 글자]…] }로 보낸 폼 → get · getAll(2.0 FormData와 같은 읽기). */
+export function formOf(v) {
+  if (!plain(v) || !Array.isArray(v.$formData) || v.$formData.length > 500) throw badRequest();
+  const pairs = v.$formData.map(p => { if (!Array.isArray(p) || p.length !== 2 || typeof p[0] !== 'string' || typeof p[1] !== 'string' || p[0].length > 100 || p[1].length > 5000) throw badRequest(); return p; });
+  return { get: k => pairs.find(p => p[0] === k)?.[1] ?? null, getAll: k => pairs.filter(p => p[0] === k).map(p => p[1]) };
+}
+/**
+ * 2.0 사용자 클라이언트 = 그 사람의 신분(JWT claims) + authenticated 역할 — RLS·보호 트리거가 2.0처럼 본다.
+ * 실패하면 저장점째 되돌아가고 supabase 오류 모양({ code, message, details, hint })으로 돌려준다.
+ * set_config(…, true)는 저장점을 '풀어도' 트랜잭션 끝까지 남는다 — 끝나면 원래 신분으로 되돌린다(교재 요청 화면의 같은 함정).
+ */
+export async function asViewer(sql, actor, fn) {
+  try {
+    return { data: await sql.savepoint(async s => {
+      const [{ prev }] = await s`select coalesce(current_setting('request.jwt.claims', true), '') prev`;
+      await s`select set_config('request.jwt.claims', ${JSON.stringify({ sub: actor.id, role: 'authenticated' })}, true)`;
+      await s`set local role authenticated`;
+      const out = await fn(s);
+      await s`reset role`;
+      await s`select set_config('request.jwt.claims', ${prev}, true)`;
+      return out;
+    }), error: null };
+  } catch (e) { return { data: null, error: { code: e?.code ?? null, message: e?.message ?? '', details: e?.detail ?? null, hint: e?.hint ?? null, constraint: e?.constraint_name ?? null } }; }
+}
+/**
+ * 2.0 서버 액션 하나 = actions 한 줄. raw = 호스트 shim 본문 { module, actor, args } — module · 인자 수가 2.0과 같아야 받는다.
+ * run(ctx, actor, args) — actor = 고른 사람(수납관리를 볼 수 있는 직원이 아니면 null → 2.0 '로그인이 필요합니다' 자리).
+ */
+export function billingAction(module, arity, run, check = () => {}) {
+  return {
+    validate: raw => {
+      if (!plain(raw) || raw.module !== module || !Array.isArray(raw.args) || raw.args.length !== arity || (raw.actor != null && (typeof raw.actor !== 'string' || !UUID.test(raw.actor)))) throw badRequest();
+      check(raw.args);
+      return { actor: raw.actor ?? null, args: raw.args };
+    },
+    run: async ({ sql, body, tenantId: t, importV2 }) => {
+      const R = await loadBillingRules(importV2), env = await readSettings(sql, t, R), viewers = await readBillingViewers(sql, t, R, env);
+      return run({ sql, t, R, env, importV2 }, viewers.find(v => v.id === body.actor) ?? null, body.args);
+    },
+  };
+}
+export const canWriteBilling = actor => !!actor && (actor.billing === 'full' || actor.billing === 'scoped');
 
 /** 2.0 page.tsx resolveTab — 모르는 값은 수납. */
 const TABS = new Set(['textbooks', 'expenses', 'calculator', 'refunds', 'sessions', 'verify', 'payroll']);
