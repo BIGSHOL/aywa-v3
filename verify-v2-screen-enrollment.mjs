@@ -139,13 +139,34 @@ test('목록(쪽 50건) · 머리 숫자 = 독립 SQL — 1쪽·2쪽 · 1년 · 
 test('매개변수 거절 · 폴링은 건수만', { skip: SKIP }, async () => {
   const ok = (k, v) => screen.params[k].test(v);
   assert.ok(ok('view', 'stats') && !ok('view', 'board'));
-  assert.ok(ok('v2path', '/enrollment/new') && ok('v2path', '/enrollment/0b6d5c1e-0000-4000-8000-000000000000/edit') && !ok('v2path', '/students'));
+  assert.ok(ok('v2path', '/enrollment/new') && ok('v2path', '/enrollment/0b6d5c1e-0000-4000-8000-000000000000/edit') && ok('v2path', '/enrollment/0b6d5c1e-0000-4000-8000-000000000000/print') && !ok('v2path', '/students'));
   assert.ok(!ok('page', '-1') && !ok('actor', 'x') && !ok('poll', 'all'));
   await run(async (sql) => {
     const d = await load(sql, { poll: 'count' });
     const [{ n }] = await sql`select count(*)::int n from public.enrollment_consultations where tenant_id=${t}`;
     assert.deepEqual(d, { page: 'poll', count: n });
     assert.equal((await load(sql, { v2path: '/enrollment/new' })).page !== 'list', true);
+  });
+});
+
+test('인수인계서 = 2.0 문서 섹션·상담일 우선순위 · 원본 상담·학원 설정으로 그린다', { skip: SKIP }, async () => {
+  const original = await src('app/(print)/enrollment/[id]/print/page.tsx');
+  const mine = await here('./v2-host/src/enrollment-print.tsx');
+  for (const label of ['신입생 인수인계서', '학부모 요구사항', '학습 이력', 'AI 진단 요약', '학습 계획', '추천 반', '담임 메모', '수납 정책 안내', '상담 흐름 수형도'])
+    assert.ok(original.includes(label) && mine.includes(label), label);
+  assert.match(mine, /<PrintActions embedded \/>/);
+  assert.match(mine, /consult\.fields\.consultationDate \?\? p\.consultedAt \?\? consult\.consultedAt/);
+  await run(async (sql) => {
+    const [row] = await sql`select c.id::text id from public.enrollment_consultations c join public.consultation_ai_analysis a on a.consultation_id=c.id where c.tenant_id=${t} order by c.consulted_at desc limit 1`;
+    assert.ok(row, 'AI 분석 상담이 있다');
+    const print = await load(sql, { v2path: `/enrollment/${row.id}/print` });
+    const detail = await load(sql, { v2path: `/enrollment/${row.id}` });
+    assert.equal(print.page, 'print');
+    assert.deepEqual(print.consult, detail.consult, '상세와 인쇄가 같은 2.0 조회를 쓴다');
+    assert.match(print.printHeader, /에이와/);
+    assert.equal(print.profile.name, '인재원');
+    assert.equal(print.logoSrc, null, '복사본에 없는 비공개 로고 경로는 2.0 실패 폴백');
+    assert.equal((await load(sql, { v2path: '/enrollment/00000000-0000-4000-8000-000000000000/print' })).page, 'missing');
   });
 });
 

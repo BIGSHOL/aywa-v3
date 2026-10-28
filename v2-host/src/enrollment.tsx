@@ -9,17 +9,19 @@ import { OperationsProvider } from '@/features/owner/operations-context';
 import { hostNavigate, onHostRefresh } from '../shims/host-nav';
 import { NOT_SUPPORTED, hostActor, registerHostHandler, setHostEditors, type HostEditor } from '../shims/server-action';
 import { usePathname, useSearchParams } from '../shims/next-navigation';
+import { useWindowStore } from '@/components/workspace/window-store';
 import { HostFrame, HostMessage } from './host-frame';
 import { EnrollmentPage, type EnrollmentListData } from './enrollment-page';
 import { EnrollmentDetailPage, type EnrollmentDetailData } from './enrollment-detail';
 import { EditEnrollmentPage, type EnrollmentEditData } from './enrollment-edit';
 import { NewEnrollmentPage, type EnrollmentNewData } from './enrollment-new';
+import { EnrollmentPrintPage, type EnrollmentPrintData } from './enrollment-print';
 
 export const HOST_TITLE = '신규 콜&상담';
 export const HOST_ROUTE = '/enrollment';
 const SCREEN = 'enrollment';
 
-type Base = { editors: HostEditor[]; operations: Record<string, unknown>; modules: { disabled: string[] }; page: 'list' | 'detail' | 'edit' | 'new' | 'redirect' | 'missing' | 'noMenu' | 'notFound'; to?: string };
+type Base = { editors: HostEditor[]; operations: Record<string, unknown>; modules: { disabled: string[] }; page: 'list' | 'detail' | 'edit' | 'new' | 'print' | 'redirect' | 'missing' | 'noMenu' | 'notFound'; to?: string };
 
 /**
  * 20초 건수 폴링(2.0 getConsultationTotalCount — 늘었으면 router.refresh) — 읽기라 쓰기 경로(POST)가 아니라 읽기 경로(GET ?poll=count)로
@@ -102,9 +104,23 @@ function useActor() {
 }
 
 const DETAIL = /^\/enrollment\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}(?:\/edit)?$/i;
+const PRINT = /^\/enrollment\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\/print$/i;
 function App() {
+  // 인쇄 창 훅이 여는 로컬 창은 호스트 iframe에 캔버스가 없어, 인쇄 항목만 같은 화면의 인쇄 주소로 보낸다.
+  useEffect(() => {
+    const original = useWindowStore.getState().open;
+    const bridged: typeof original = (kind, params, anchor) => {
+      if (kind === 'route' && params.id.startsWith('print/enrollment/') && params.href && PRINT.test(params.href.split('?')[0])) {
+        hostNavigate(params.href, 'push');
+        return true;
+      }
+      return original(kind, params, anchor);
+    };
+    useWindowStore.setState({ open: bridged });
+    return () => { if (useWindowStore.getState().open === bridged) useWindowStore.setState({ open: original }); };
+  }, []);
   const path = usePathname(), search = useSearchParams(), actor = useActor();
-  const known = path === HOST_ROUTE || path === '/enrollment/new' || DETAIL.test(path);
+  const known = path === HOST_ROUTE || path === '/enrollment/new' || DETAIL.test(path) || PRINT.test(path);
   const q = new URLSearchParams(search.toString());
   q.delete('actor');
   if (path !== HOST_ROUTE) q.set('v2path', path);
@@ -139,7 +155,8 @@ function App() {
   const sp = Object.fromEntries([...new URLSearchParams(state.query ?? '').entries()].filter(([k]) => k !== 'actor' && k !== 'v2path'));
   return (
     <OperationsProvider subjects={ops.subjects} gradeLevels={ops.gradeLevels} jobTitles={ops.jobTitles} jobTitlesByDepartment={ops.jobTitlesByDepartment} disabledModules={data.modules.disabled as never}>
-      {data.page === 'detail' ? <EnrollmentDetailPage key={path} data={data as unknown as EnrollmentDetailData} id={path.split('/')[2]!} />
+      {data.page === 'print' ? <EnrollmentPrintPage key={path} data={data as unknown as EnrollmentPrintData} />
+        : data.page === 'detail' ? <EnrollmentDetailPage key={path} data={data as unknown as EnrollmentDetailData} id={path.split('/')[2]!} />
         : data.page === 'edit' ? <EditEnrollmentPage key={path} data={data as unknown as EnrollmentEditData} />
         : data.page === 'new' ? <NewEnrollmentPage key={path} data={data as unknown as EnrollmentNewData} sp={sp} />
         : <EnrollmentPage key={state.query} data={data as unknown as EnrollmentListData} sp={sp} />}

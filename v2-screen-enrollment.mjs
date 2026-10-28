@@ -42,6 +42,9 @@ import { appendAiSummaryToConsultationContent, convertConsultationToStudent, cre
 const ID = 'enrollment', MENU = 'enrollment', ACTIONS = 'features/enrollment/server/actions.ts';
 const UUID_BODY = UUID.source.slice(1, -1);
 const DETAIL = new RegExp(`^/enrollment/(${UUID_BODY})(/edit)?$`, 'i');
+const PRINT = new RegExp(`^/enrollment/(${UUID_BODY})/print$`, 'i');
+/** 2.0 resolveBrandingSrc: 외부 URL·정적 경로는 그대로, 복사본에 없는 비공개 저장소 경로는 실패 폴백(null). */
+const printableBranding = (value) => typeof value === 'string' && (/^https?:\/\//.test(value) || value.startsWith('/')) ? value : null;
 
 let rulesP = null;
 function rules(importV2) {
@@ -110,6 +113,18 @@ async function load({ sql, params, tenantId: t, importV2 }) {
     const [col] = await sql`select 1 from information_schema.columns where table_schema = 'public' and table_name = 'enrollment_consultations' and column_name = 'referrer_name'`;
     return { ...base, page: 'new', viewer: { id: v.u.id, tenantId: t, displayName: v.u.display_name }, referrerReady: !!col };
   }
+  const print = PRINT.exec(path);
+  if (print) {
+    const consult = await getEnrollmentConsultationById(sql, await detailRules(importV2), t, print[1].toLowerCase(), operations.subjects);
+    if (!consult?.aiAnalysis) return { ...base, page: 'missing' };
+    const [tenant] = await sql`select name from public.tenants where id=${t}`;
+    const settings = (await importV2('features/owner/resolve.ts')).resolveSettings(people.settings.stored, { name: tenant?.name ?? '' });
+    const profile = Object.fromEntries(['name', 'branchLabel', 'representativeName', 'phone', 'email', 'address', 'bizRegNo'].map((key) => [key, settings.profile[key]]));
+    return { ...base, page: 'print', consult,
+      printHeader: settings.notifications.printHeader || (settings.profile.name ? `에이와 · ${settings.profile.name} 학원관리` : '에이와'),
+      profile, logoSrc: printableBranding(settings.profile.logoUrl), sealSrc: printableBranding(settings.profile.sealUrl),
+      latePolicy: settings.billing.latePolicy?.trim() ?? null };
+  }
   const detail = DETAIL.exec(path);
   if (detail) return { ...base, ...(await buildDetail({ sql, t, importV2, v, operations, modules, id: detail[1].toLowerCase(), edit: !!detail[2] })) };
   if (path !== '/enrollment') return { ...base, page: 'notFound' };
@@ -148,7 +163,7 @@ export const screen = {
   params: {
     // embed=1 — 2.0 칸반 카드가 상세를 창으로 열 때 붙인다(호스트 이동이 그대로 실어 온다). 연습 화면엔 창 셸이 없어 받기만 하고 쓰지 않는다(Codex 검수 10-28: 없으면 400).
     embed: /^1$/,
-    actor: UUID, v2path: new RegExp(`^/enrollment(?:/new|/${UUID_BODY}(?:/edit)?)?$`, 'i'), poll: /^count$/,
+    actor: UUID, v2path: new RegExp(`^/enrollment(?:/new|/${UUID_BODY}(?:/edit|/print)?)?$`, 'i'), poll: /^count$/,
     view: /^(?:kanban|table|stats)$/, month: /^.{0,10}$/, consultant: /^.{0,40}$/, q: /^[\s\S]{0,100}$/, outcome: /^[a-z_]{0,20}$/, page: /^\d{1,5}$/,
     range: /^[0-9a-z]{0,4}$/, year: /^[0-9y]{1,4}$/, received: /^.{0,10}$/, from: /^[a-z]{0,20}$/,
     trend: /^[a-z]{0,10}$/, trendMonth: YM, trendFrom: YMD, trendTo: YMD, trendSpan: /^[0-9a-z]{0,6}$/,
