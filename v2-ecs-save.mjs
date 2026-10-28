@@ -12,7 +12,7 @@
 import { z } from 'zod';
 import { V2Error } from './v2-screens.mjs';
 import { plannedLines } from './v2-ecs-props.mjs';
-import { UUID, DAY, canWriteLevel, classAccess, copyDay, isoAt, isoDay, loadRules, masked, readSettings, readViewers, shown, skillAreaLabelOf } from './v2-ecs-core.mjs';
+import { UUID, DAY, canWriteLevel, classAccess, copyDay, isoAt, isoDay, jjManagedClassIds, loadRules, masked, readSettings, readViewers, shown, skillAreaLabelOf } from './v2-ecs-core.mjs';
 
 const VIA = '3.0 연습 복사본';
 export const MODULE = {
@@ -104,12 +104,13 @@ async function resolveAutoUnits(sql, t, R, env, classId, date, slot) {
     new Map([[classId, track]]), new Map([[classId, cls.class_name]]));
   return plan.get(R.autoUnitsKey(classId, date, slot)) ?? null;
 }
-/** 2.0 `userTaughtClassSet`(write-gate-axis)의 한 반 — 담임 ∪ 그날 위임 ∪ 그날 교시 담당. */
-export async function teachesOn(sql, t, userId, classId, date) {
+/** 2.0 `userTaughtClassSet`(write-policy)의 한 반 — 담임 ∪ 그날 위임 ∪ 그날 JJ 보고서 담당 반(getTeachingClassIds) ∪ 그날 교시 담당.
+ *  ctx = { R, env } — JJ 담당 갈래(학원 설정 명단)를 볼 때 쓴다. */
+export async function teachesOn(sql, t, userId, classId, date, { R, env }) {
   const [{ ok }] = await sql`select (exists (select 1 from public.classes where tenant_id=${t} and id=${classId} and teacher_id=${userId})
       or exists (select 1 from public.class_delegations where tenant_id=${t} and class_id=${classId} and delegate_user_id=${userId} and revoked_at is null and from_date <= ${date} and to_date >= ${date})
       or exists (select 1 from public.class_schedules where tenant_id=${t} and class_id=${classId} and teacher_id=${userId} and valid_from <= ${date} and (valid_to is null or valid_to >= ${date}))) ok`;
-  return ok;
+  return ok || (await jjManagedClassIds(sql, t, R, env, userId, date)).includes(classId);
 }
 /** 2.0 `makeupAnchorDeleteBlock` — 보강 보고서가 가리키는 반의 칸은 지우지 않는다. */
 async function makeupAnchorDeleteBlock(sql, t, studentId, classId, date) {
@@ -425,7 +426,7 @@ export const ACTIONS = {
     if (unitsProvided) { const parsed = R.parseSessionUnits(input.units); if (!parsed.ok) return { error: parsed.error }; unitsVal = parsed.value; }
     if (user.levels.attendance === 'scoped') {
       if (!noteOnly && !R.isWithinAttendanceEditWindow(sessionDate, today)) return { error: R.attendanceLockMessage(sessionDate, today) };
-      const [teaching, [{ enrolled, existing, resv }]] = await Promise.all([teachesOn(sql, t, user.id, classId, sessionDate),
+      const [teaching, [{ enrolled, existing, resv }]] = await Promise.all([teachesOn(sql, t, user.id, classId, sessionDate, { R, env }),
         sql`select (select count(*)::int from public.enrollments where tenant_id=${t} and class_id=${classId} and student_id=${studentId} and (start_date is null or start_date <= ${sessionDate}) and (end_date is null or end_date >= ${sessionDate})) enrolled,
           (select count(*)::int from public.attendance_records where tenant_id=${t} and class_id=${classId} and student_id=${studentId} and session_date=${sessionDate}) existing,
           exists (select 1 from public.makeup_reservations where tenant_id=${t} and class_id=${classId} and student_id=${studentId} and makeup_date=${sessionDate} and status in ('reserved','done')) resv`]);
@@ -435,7 +436,7 @@ export const ACTIONS = {
     }
     const [resvCell] = await sql`select 1 from public.makeup_reservations where tenant_id=${t} and class_id=${classId} and student_id=${studentId} and makeup_date=${sessionDate} and status in ('reserved','done') limit 1`;
     if (resvCell) throw new V2Error(409, 'reservation_cell', '보강 예약이 걸린 칸입니다 — 2.0은 이 저장에서 예약 이행(결석 칸 메모·시수)까지 함께 바꾸는데, 이 연습 화면은 아직 그 부분이 없어 저장하지 않습니다.');
-    const slot = String(input.slotStart), via = (await teachesOn(sql, t, user.id, classId, sessionDate)) ? 'teacher' : 'desk';
+    const slot = String(input.slotStart), via = (await teachesOn(sql, t, user.id, classId, sessionDate, { R, env })) ? 'teacher' : 'desk';
     const base = { studentId, classId, date: sessionDate, slotStart: slot };
     if (noteOnly) {
       const [row] = await sql`select id::text id, note from public.attendance_records where tenant_id=${t} and class_id=${classId} and student_id=${studentId} and session_date=${sessionDate} and slot_start=${slot} order by recorded_at desc limit 1`;

@@ -7,7 +7,8 @@
 //   /ecs/<반>/month         → 2.0 `month/page.tsx`       getClassSheetMonth + getMonthPlanChrome → MonthClient(data · mpChrome · classOptions · initialView · initialDisplay · fromWeek · textbooksOn)
 //   /ecs/goals              → 2.0 `goals/page.tsx`       getGoalsBoard(date) + 강사 영어 이름 → GoalsPeriodBar · GoalsRoleSwitch · GoalsTable(v2-ecs-goals.mjs)
 //   /ecs/plan-gap           → 2.0 plan-gap/page.tsx       getPlanGapBoard(month) + 강사 영어 이름 → PeriodNav · 표(page.tsx JSX, v2-ecs-gap.mjs)
-//   /ecs (강사 · 오늘 면) · ?view=room(JJ실) → 아직 옮기지 않음(route만 알려 준다)
+//   /ecs?view=room          → 2.0 ecs/page.tsx room 갈래  getEcsSeatDay("JJ", date)          → EcsSeatDayFace(v2-ecs-seat.mjs)
+//   /ecs (강사 · 오늘 면) → 아직 옮기지 않음(route만 알려 준다)
 //   공통: editors(저장·보는 사람 = ECS 권한이 있는 재직 직원, 운영자 계정 제외) · viewer · host(OperationsProvider 값 · 화면 언어 · 영어 이름 편집 권한)
 //   읽기 서버 액션(?read=dayPlan&class&date · ?read=compare&class&date&slot) → 2.0 getEcsDayPlan · getSlotPlanCompare의 반환 그대로.
 //   호스트가 이 둘을 저장 경로(POST)가 아니라 여기(GET, 읽기 전용 트랜잭션)로 묻는다 — 보기는 쓰기 기록에 남지 않는다(시간표 loadExitOverlay와 같다).
@@ -62,6 +63,7 @@ import { ACTIONS, readDayPlan, readSlotCompare } from './v2-ecs-save.mjs';
 import { MAKEUP_ACTIONS } from './v2-ecs-makeup.mjs';
 import { GOALS_ACTIONS, goalsData } from './v2-ecs-goals.mjs';
 import { planGapData } from './v2-ecs-gap.mjs';
+import { seatDayData } from './v2-ecs-seat.mjs';
 
 /** 2.0 주소 — /ecs · /ecs/<반> · /ecs/<반>/month · /ecs/goals · /ecs/plan-gap. */
 const ROUTE = /^\/ecs(?:\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})(\/month)?|\/(goals|plan-gap))?$/;
@@ -117,7 +119,8 @@ export const screen = {
     }
     // 2.0 ecs/page.tsx — 면: 강사 스코프가 있으면 '오늘'(view=week면 주간), 없으면 주간. JJ실(view=room)은 누구나.
     const scoped = (await teacherScopeOf(sql, t, viewer)) !== null;
-    if (q.view === 'room') return { ...common, route: 'room', scoped };
+    // 2.0 ecs/page.tsx room 갈래 — getEcsSeatDay('JJ', date) → EcsSeatDayFace(showToday = 강사 스코프).
+    if (q.view === 'room') return { ...common, route: 'room', scoped, room: { res: await seatDayData(sql, t, R, env, viewer, 'JJ', q.date ?? null, today) } };
     if (scoped && q.view !== 'week') return { ...common, route: 'today', scoped };
     // 2.0: 강사 본인이면 담임/부담임으로 묶고 이름은 화면 언어대로(teacherNameFor), 사무실이면 담임별.
     const names = scoped ? await teacherEnglishNames(sql, t, viewer.lang) : {};

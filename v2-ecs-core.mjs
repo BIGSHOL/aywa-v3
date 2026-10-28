@@ -23,12 +23,12 @@ export const MODULES = [
   'features/class-sheets/lib/plan-codec.ts', 'features/class-sheets/lib/goal-areas.ts', 'features/class-sheets/lib/week.ts',
   'features/class-sheets/lib/holiday.ts', 'features/class-sheets/lib/roster-form.ts', 'features/class-sheets/lib/roster-order.ts',
   'features/class-sheets/lib/month.ts', 'features/class-sheets/lib/month-assemble.ts', 'features/class-sheets/lib/month-plan.ts',
-  'features/class-sheets/lib/plan-line.ts', 'features/class-sheets/lib/save-keys.ts', 'features/class-sheets/lib/edit-audit.ts', 'features/class-sheets/lib/goals-board.ts',
+  'features/class-sheets/lib/plan-line.ts', 'features/class-sheets/lib/save-keys.ts', 'features/class-sheets/lib/edit-audit.ts', 'features/class-sheets/lib/goals-board.ts', 'features/class-sheets/lib/seat-day.ts', 'features/class-sheets/server/seat-day-assemble.ts',
   'features/class-sheets/shouting.ts', 'features/class-sheets/landing-teacher.ts', 'features/class-sheets/face-nav.ts',
   'features/class-sheets/view-prefs.ts', 'features/class-sheets/today-order.ts', 'features/class-sheets/font-size.ts',
   'features/attendance/effective-records.ts', 'features/attendance/calendar.ts', 'features/attendance/live/seating-floors.ts',
   'features/attendance/save-targets.ts', 'features/attendance/auto-units.ts', 'features/attendance/edit-window.ts', 'features/attendance/session-units.ts',
-  'features/attendance/units-audit.ts', 'features/attendance/makeup-write.ts',
+  'features/attendance/units-audit.ts', 'features/attendance/makeup-write.ts', 'features/attendance/teacher-axis.ts',
   'features/timetable/lib/week.ts', 'features/timetable/lib/periods.ts', 'features/timetable/lib/teacher-label.ts',
   'features/classes/english-track.ts', 'features/classes/class-name-as-of.ts', 'features/owner/defaults.ts', 'features/owner/preset.ts',
   'features/owner/month-plan-texts.ts', 'features/owner/lesson-profile.ts', 'features/periods/resolve.ts', 'features/enrollments/eligibility.ts',
@@ -172,6 +172,18 @@ export async function delegatedClassIds(sql, t, R, teacherId, today) {
   const rows = await sql`select distinct class_id::text id from public.class_delegations where tenant_id=${t} and delegate_user_id=${teacherId} and revoked_at is null
     and from_date <= ${R.addDays(today, 7)} and to_date >= ${R.addDays(today, -7)}`;
   return rows.map(r => r.id);
+}
+
+/** 2.0 `fetchJjManagedClassIds`(classes/server/delegation.ts) — JJ 보고서 담당(학원 설정 specialAccess.jjReportManagerIds)이 그날 맡는 반 =
+ *  그날 JJ 자리 교시(담당 없음 + JJ 라벨)가 살아 있는 반. 명단에 없으면 조회 없이 []. 2.0 getTeachingClassIds의 위임 갈래에 함께 실린다. */
+export async function jjManagedClassIds(sql, t, R, env, userId, date) {
+  if (!(env.permissions?.specialAccess?.jjReportManagerIds ?? []).includes(userId)) return [];
+  const dow = R.axisDowOf(date);
+  if (!dow) return [];
+  const rows = await sql`select class_id::text class_id, teacher_id::text teacher_id, slot_teacher_label, valid_from::text valid_from, valid_to::text valid_to from public.class_schedules
+    where tenant_id=${t} and day_of_week::text=${dow} and teacher_id is null and slot_teacher_label is not null order by id`;
+  return [...new Set(rows.filter(r => { const slot = { teacherId: r.teacher_id, slotTeacherLabel: r.slot_teacher_label, validFrom: r.valid_from.slice(0, 10), validTo: r.valid_to ? r.valid_to.slice(0, 10) : null };
+    return R.isSeatSlot(slot) && R.specialSlotLabel(r.slot_teacher_label) === R.SELF_STUDY_ROOM_LABEL && R.slotLiveOn(slot, date); }).map(r => r.class_id))];
 }
 
 /** 2.0 `requireEcsClassAccess` — 같은 순서·같은 거절 문구. 반 표는 복사본에서 그 지점 행만. */

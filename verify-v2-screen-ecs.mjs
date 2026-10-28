@@ -523,4 +523,46 @@ test('복사본: 계획 대비 현황(/ecs/plan-gap) = 2.0 PlanGapResult 칸 그
   assert.ok(tg.ok && tg.classCount <= g.res.classCount);
 });
 
+test('복사본: JJ실 면(?view=room) = 2.0 SeatDayData 칸 그대로 · 그 날 JJ 자리 교시가 있는 영어 반(독립 SQL) · 강사는 담당 반만', { skip: !db && 'local database not running' }, async () => {
+  const types = await src('features/class-sheets/server/seat-day-types.ts'), R = await C.loadRules(importV2), day = '2026-10-27';
+  const room = (await load({ view: 'room', date: day })).room.res;
+  assert.equal(room.ok, true); sameShape(room.data, typeKeys(types, 'SeatDayData'), 'SeatDayData');
+  for (const p of room.data.periods) { sameShape(p, typeKeys(types, 'SeatDayPeriod'), 'SeatDayPeriod'); for (const s of p.students) sameShape(s, typeKeys(types, 'SeatDayStudent'), 'SeatDayStudent'); }
+  assert.ok(room.data.periods.length > 0, '10/27(화)은 JJ 교시가 있다');
+  const live = await db`select s.class_id::text class_id, s.slot_teacher_label lbl, to_char(s.start_time, 'HH24:MI') st from public.class_schedules s join public.classes c on c.id=s.class_id
+    where s.tenant_id=${TENANT} and c.subject='english' and c.is_active and (c.closed_at is null or c.closed_at >= ${day}) and s.day_of_week::text = 'tue' and s.valid_from <= ${day} and (s.valid_to is null or s.valid_to >= ${day})`;
+  const jj = live.filter(r => R.specialSlotLabel(r.lbl) === 'JJ');
+  assert.deepEqual([...new Set(room.data.periods.map(p => p.slotStart))].sort(), [...new Set(jj.map(r => r.st))].sort(), 'JJ 타임 = 그 날 JJ 자리 교시 시작시각');
+  const shownClasses = new Set(room.data.periods.flatMap(p => p.students.map(s => s.classId)));
+  for (const id of shownClasses) assert.ok(jj.some(r => r.class_id === id), '학생은 JJ 교시가 있는 반에서만');
+  assert.equal(room.data.canWriteEcs, true); assert.ok(room.data.periods.every(p => p.students.every(s => s.canMarkAttendance === s.eligible || !s.eligible)), '원장 = 7일 창 없음');
+  const [t] = await db`select u.id::text id from public.users u join public.classes c on c.teacher_id=u.id where u.tenant_id=${TENANT} and u.status='active' and u.system_role='teacher' and c.subject='english' and c.is_active group by u.id order by count(*) desc limit 1`;
+  const tr = (await load({ view: 'room', date: day, viewer: t.id })).room.res;
+  const scope = (await import('./v2-ecs-props.mjs')).visibleClassFilter;
+  await db.begin('isolation level repeatable read read only', async sql => {
+    const env = await C.readSettings(sql, TENANT, R), viewer = (await C.readViewers(sql, TENANT, R, env)).find(v => v.id === t.id);
+    const vis = new Set((await scope(sql, TENANT, R, viewer, null, day)).classIds);
+    for (const p of tr.data.periods) for (const s of p.students) assert.ok(vis.has(s.classId), '강사는 볼 수 있는 반만');
+  });
+});
+
+test('JJ 보고서 담당(학원 설정 specialAccess.jjReportManagerIds) — 그 날 JJ 자리 교시가 있는 반을 맡는다(2.0 getTeachingClassIds) · 출결 쓰기 게이트도 같은 갈래', { skip: !db && 'local database not running' }, async () => {
+  const R = await C.loadRules(importV2), { teachesOn } = await import('./v2-ecs-save.mjs'), day = '2026-10-27';
+  await db.begin('isolation level repeatable read read only', async sql => {
+    const env = await C.readSettings(sql, TENANT, R), ids = env.permissions?.specialAccess?.jjReportManagerIds ?? [];
+    assert.ok(ids.length > 0, '복사본에 JJ 담당이 있다');
+    const managed = await C.jjManagedClassIds(sql, TENANT, R, env, ids[0], day);
+    const [{ n }] = await sql`select count(distinct class_id)::int n from public.class_schedules where tenant_id=${TENANT} and day_of_week::text='tue' and teacher_id is null and slot_teacher_label is not null
+      and valid_from <= ${day} and (valid_to is null or valid_to >= ${day}) and upper(btrim(slot_teacher_label)) like 'JJ%'`;
+    assert.ok(managed.length > 0 && managed.length <= n, `${managed.length} / ${n}`);
+    const [{ id: other }] = await sql`select id::text id from public.users where tenant_id=${TENANT} and status='active' and system_role='teacher' and not (id = any(${ids}::uuid[])) limit 1`;
+    assert.deepEqual(await C.jjManagedClassIds(sql, TENANT, R, env, other, day), [], '명단에 없으면 []');
+    const cid = managed[0], [{ own }] = await sql`select (exists (select 1 from public.classes where id=${cid} and teacher_id=${ids[0]}) or exists (select 1 from public.class_schedules where class_id=${cid} and teacher_id=${ids[0]})) own`;
+    if (!own) {
+      assert.equal(await teachesOn(sql, TENANT, ids[0], cid, day, { R, env }), true, 'JJ 담당 갈래로 그 반을 맡는다');
+      assert.equal(await teachesOn(sql, TENANT, ids[0], cid, day, { R, env: { ...env, permissions: { ...env.permissions, specialAccess: {} } } }), false, '명단에서 빼면 못 맡는다');
+    }
+  });
+});
+
 test.after(async () => { await db?.end(); });

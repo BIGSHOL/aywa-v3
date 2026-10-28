@@ -54,12 +54,12 @@ async function makeupAbsenceOptions(sql, t, R, M, env, studentId, makeupDate, an
 
 export const MAKEUP_ACTIONS = {
   /** searchMakeupStudents(classId, query, onDate) — 2.0 반환 = 학생 배열(권한·담당 반이 아니면 빈 배열). */
-  searchMakeupStudents: serverFn(MODULE.attendance, 3, async ({ sql, t, importV2, user, today }, classId, query, onDate) => {
+  searchMakeupStudents: serverFn(MODULE.attendance, 3, async ({ sql, t, R, env, importV2, user, today }, classId, query, onDate) => {
     if (!canWriteLevel(user.levels.attendance)) return [];
     const q = String(query ?? '').trim().replace(/[,()]/g, ' ').trim();
     if (!q || !classId) return [];
     const when = typeof onDate === 'string' && DAY.test(onDate) ? onDate : today;
-    if (user.levels.attendance === 'scoped' && !(UUID.test(str(classId)) && await teachesOn(sql, t, user.id, classId, when))) return [];
+    if (user.levels.attendance === 'scoped' && !(UUID.test(str(classId)) && await teachesOn(sql, t, user.id, classId, when, { R, env }))) return [];
     const M = await makeupRules(importV2), like = `%${q}%`;
     const rows = await sql`select id::text id, name, english_name, grade, school from public.students
       where tenant_id=${t} and status::text <> 'withdrawn' and (name ilike ${like} or english_name ilike ${like}) order by name limit 20`;
@@ -75,7 +75,7 @@ export const MAKEUP_ACTIONS = {
     return makeupAbsenceOptions(sql, t, R, M, env, studentId, makeupDate, anchorClassId ?? null, teacherSubjects, teacher);
   }),
   /** noteMakeupAgainstAbsence(input) — 2.0 반환 = { ok, absenceNoted, alreadyLinked } | { error }. */
-  noteMakeupAgainstAbsence: serverFn(MAKEUP_MODULE.note, 1, async ({ sql, t, R, importV2, user, today }, raw) => {
+  noteMakeupAgainstAbsence: serverFn(MAKEUP_MODULE.note, 1, async ({ sql, t, R, env, importV2, user, today }, raw) => {
     if (!canWriteLevel(user.levels.attendance)) return { error: '출석 관리 권한이 없습니다' };
     const { studentId, makeupClassId, makeupDate, absentClassId, absentDate } = obj(raw);
     if (!studentId || !makeupClassId || !absentClassId) return { error: '필수 값이 누락되었습니다' };
@@ -87,7 +87,7 @@ export const MAKEUP_ACTIONS = {
     if (!M.isWithinMakeupDeadline(absentDate, makeupDate) && user.systemRole === 'teacher') return { error: M.makeupDeadlineMessage(absentDate) };
     if (user.levels.attendance === 'scoped') {
       if (!R.isWithinAttendanceEditWindow(makeupDate, today)) return { error: R.attendanceLockMessage(makeupDate, today) };
-      if (!(await teachesOn(sql, t, user.id, makeupClassId, makeupDate))) {
+      if (!(await teachesOn(sql, t, user.id, makeupClassId, makeupDate, { R, env }))) {
         // 대신 보강 — 그 학생이 그날 다니는(휴원·반이동 당일 제외) 운영 중인 반이면 받는다(2.0 loadMakeupAnchorCandidates · enrolled).
         const enr = await sql`select e.start_date::text start_date, e.end_date::text end_date, e.is_transferred, e.on_hold from public.enrollments e join public.classes c on c.id=e.class_id
           where e.tenant_id=${t} and e.student_id=${studentId} and e.class_id=${makeupClassId} and c.is_active`;

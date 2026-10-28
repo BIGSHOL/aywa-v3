@@ -30,6 +30,7 @@ import { EcsFaceTabs } from '@/app/(shell)/ecs/_components/today-nav';
 import { GoalsPeriodBar } from '@/app/(shell)/ecs/goals/_components/goals-period-bar';
 import { GoalsRoleSwitch } from '@/app/(shell)/ecs/goals/_components/goals-role-switch';
 import { GoalsTable } from '@/app/(shell)/ecs/goals/_components/goals-table';
+import { EcsSeatDayFace } from '@/features/class-sheets/components/seat-day-face';
 
 type SheetProps = ComponentProps<typeof SheetClient>;
 type MonthProps = ComponentProps<typeof MonthClient>;
@@ -378,6 +379,12 @@ function GapClassRow({ row, month, lang }: { row: PlanGapClassRow; month: string
       ) : null}
     </>
   );
+}
+
+/** 2.0 ecs/page.tsx room 갈래 — `<EcsSeatDayFace res={roomRes} showToday={scoped} />` 그대로(getEcsSeatDay("JJ") 결과). */
+export type RoomData = { res: ComponentProps<typeof EcsSeatDayFace>["res"] };
+export function EcsRoomPage({ room, scoped }: { room: RoomData; scoped: boolean }) {
+  return <EcsSeatDayFace res={room.res} showToday={scoped} />;
 }
 
 /** 아직 옮기지 않은 면 — 2.0과 같은 머리글·면 탭 아래 한 줄(빈 화면으로 두지 않는다). */
