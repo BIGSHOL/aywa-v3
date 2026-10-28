@@ -57,12 +57,13 @@ test('대응표 = 2.0 서버 함수 이름 그대로(그 파일이 내보내는 
   for (const n of ['sendClassnoteForUnsent', 'retryClassnote']) {
     assert.ok(n in lessonReportsActions, `${n}을 Docker 대기열에 연결`);
     assert.ok(!refuse.includes(`"${n}"`), `${n} 거절 금지`);
-    assert.match(entry, new RegExp(`registerHostHandler\\(QUEUE_MODULE, name`));
+    assert.match(entry, /for \(const \[module, names\] of QUEUE_ACTIONS\)/);
   }
+  for (const n of ['sendClassNotice', 'sendClassWideNotice', 'previewClassNotice']) assert.ok(n in lessonReportsActions, `${n}을 Docker에 연결`);
   for (const n of Object.values(LR_READS).flat()) assert.ok(n in lessonReportsActions, `${n}을 원본 읽기로 연결`);
   assert.match(entry, /연습 복사본이라 실제로 보내지지 않습니다 — 발송 대기로만 남습니다/);
   // 직접 발송·공지·답글 등은 아직 받지 않는다(진입점이 그 자리에서 거절).
-  for (const n of ['saveAndQueueAdminReport', 'sendBulkAdminReports', 'sendClassNotice', 'sendClassWideNotice', 'editPostedNotice', 'cancelOnescreenNotice', 'requestParentReply', 'requestParentReaction'])
+  for (const n of ['saveAndQueueAdminReport', 'sendBulkAdminReports', 'editPostedNotice', 'cancelOnescreenNotice', 'requestParentReply', 'requestParentReaction'])
     { assert.ok(refuse.includes(`"${n}"`), n); assert.ok(!(n in lessonReportsActions), n); }
   assert.match(entry, /"requestClassnoteBoardSync", async \(\) => \(\{ ok: false, error: VIEW_ONLY \}\)/);
   assert.match(entry, /"testPrompt", async \(\) =>/);
@@ -166,6 +167,51 @@ test('직접 발송·답글 읽기 넷 = 고른 사람의 2.0 함수 · 읽기 �
   }
   const [{ n: afterNet }] = await db.unsafe(NET);
   assert.equal(afterNet, net, '읽기 중 pg_net 바깥 요청 큐 증가 0');
+});
+
+test('공지 미리보기와 원생별·반 단체 발송 = 2.0 함수 · Docker queued만 · 바깥 요청 0 · 시험 뒤 되돌림', { skip: SKIP }, async () => {
+  const { t, S, master, importV2, run, net } = await setup();
+  const [target] = await db`select c.id::text id from public.classes c
+    join public.classnote_class_boards b on b.class_id=c.id and b.tenant_id=${t}
+    join public.classnote_class_board_members m on m.class_id=c.id and m.tenant_id=${t} and m.status='ok'
+    join public.enrollments e on e.class_id=c.id and e.student_id=m.student_id and e.end_date is null
+    join public.students s on s.id=e.student_id and s.status='enrolled'
+    where c.tenant_id=${t} and c.is_active and c.subject in ('math','subject_1') limit 1`;
+  assert.ok(target, '공지 미리보기 대상인 활성 반과 확인된 반 원아');
+  const module = `${RA}notice-actions.ts`;
+  const input = { classIds: [target.id], body: '연습 공지 대기열 시험', individual: {}, test: false };
+  const action = S.lessonReportsActions.previewClassNotice;
+  const preview = await db.begin('read only', (sql) => action.run({ sql, body: action.validate({ module, actor: master.id, args: [input] }), tenantId: t, importV2 }));
+  assert.equal(preview.ok, true, JSON.stringify({ ok: preview.ok, error: preview.error }));
+  assert.ok(preview.preview.studentCount > 0, '대상 미리보기가 비어 있지 않다');
+  const [{ n: beforeIndividual }] = await db`select count(*)::int n from public.classnote_notices where tenant_id=${t} and body=${input.body}`;
+  const individual = await run([{ module, fn: 'sendClassNotice', args: [{ ...input, previewFingerprint: preview.preview.fingerprint }] }], [
+    { text: 'select status, jsonb_array_length(targets)::int target_count from public.classnote_notices where tenant_id=$1 and body=$2 and created_at=now()', params: [t, input.body] },
+    { text: `select metadata->>'via' via, metadata->>'source' source from public.audit_logs where tenant_id=$1 and action='classnote_notice_send' and created_at=now()`, params: [t] },
+    { text: NET },
+  ]);
+  assert.equal(individual.results[0].value.ok, true, JSON.stringify(individual.results[0].value));
+  assert.ok(individual.results[0].value.queued > 0, '원생별 공지 대기열에 오름');
+  assert.deepEqual([...individual.probes[0]], [{ status: 'queued', target_count: individual.results[0].value.queued }]);
+  assert.ok(individual.probes[1].some((row) => row.via === VIA && row.source === 'class'));
+  assert.equal(individual.probes[2][0].n, net);
+  const [{ n: afterIndividual }] = await db`select count(*)::int n from public.classnote_notices where tenant_id=${t} and body=${input.body}`;
+  assert.equal(afterIndividual, beforeIndividual, '원생별 대기열과 감사로그 되돌림');
+
+  const title = '연습 반 단체 공지 대기열 시험';
+  const [{ n: beforeWide }] = await db`select count(*)::int n from public.classnote_class_notices where tenant_id=${t} and title=${title}`;
+  const wide = await run([{ module: `${RA}class-notice-actions.ts`, fn: 'sendClassWideNotice', args: [{ classIds: [target.id], title, body: input.body, test: false }] }], [
+    { text: 'select status, jsonb_array_length(targets)::int target_count from public.classnote_class_notices where tenant_id=$1 and title=$2 and created_at=now()', params: [t, title] },
+    { text: `select metadata->>'via' via, metadata->>'source' source from public.audit_logs where tenant_id=$1 and action='classnote_notice_send' and created_at=now()`, params: [t] },
+    { text: NET },
+  ]);
+  assert.equal(wide.results[0].value.ok, true, JSON.stringify(wide.results[0].value));
+  assert.equal(wide.results[0].value.queued, 1);
+  assert.deepEqual([...wide.probes[0]], [{ status: 'queued', target_count: 1 }]);
+  assert.ok(wide.probes[1].some((row) => row.via === VIA && row.source === 'class_wide'));
+  assert.equal(wide.probes[2][0].n, net);
+  const [{ n: afterWide }] = await db`select count(*)::int n from public.classnote_class_notices where tenant_id=${t} and title=${title}`;
+  assert.equal(afterWide, beforeWide, '반 단체 대기열과 감사로그 되돌림');
 });
 
 test('저장하는 사람 = 보고서 관리 · 보고서 설정 · AI 멘트 중 하나라도 쓰기인 재직 직원(운영자 계정 제외 · 원장 먼저) · 목록 밖 = 로그인 없음', { skip: SKIP }, async () => {

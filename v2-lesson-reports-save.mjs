@@ -12,8 +12,9 @@
 //   · 발송 요청 sendClassnoteForUnsent · retryClassnote — Docker의 queued까지만(발송 PC 없음). 바깥 요청은 러너가 차단.
 //   · 동기화 보고서 다운로드 downloadClassnoteSyncReport — 2.0 글을 그대로 돌려주고 내려받은 감사로그를 같은 트랜잭션에 남긴다.
 //   · 직접 발송·학부모 답글 창의 읽기 넷 — 2.0 함수를 읽기 전용 러너로, 고른 사람의 권한으로 실행한다.
+//   · 공지 대상 미리보기는 읽기 전용, 원생별·반 단체 공지 발송은 Docker 대기열까지만.
 //  계속 거절(진입점이 그 자리에서 2.0 거절 모양): 직접 발송 저장(saveAdminReport · saveAndQueueAdminReport · sendBulkAdminReports) ·
-//     공지 보내기·고치기·취소·회수 · 반 단체 공지 · 동기화 요청 · 답글 · 공감 · AI 미리보기.
+//     공지 고치기·취소·회수 · 동기화 요청 · 답글 · 공감 · AI 미리보기.
 // · 저장하는 사람 = readLessonEditors(보고서 관리 · 보고서 설정 · AI 멘트 중 하나라도 쓰기인 재직 직원 · 운영자 계정 제외 · 원장 먼저). 그 밖이면
 //   2.0 '로그인 없음' 자리(actor = null). 각 2.0 함수가 그 사람의 권한을 다시 본다.
 import { runV2Server, V2ServerError } from './v2-server-runner.mjs';
@@ -30,12 +31,15 @@ export const LR_WRITES = {
   'features/report-admin/server/recall-actions.ts': ['requestReportRecall', 'requestReportRecallByShareToken'],
   'features/report-admin/server/actions.ts': ['resetStuckClassnote', 'sendClassnoteForUnsent', 'retryClassnote'],
   'features/report-admin/server/classnote-sync-report-actions.ts': ['downloadClassnoteSyncReport'],
+  'features/report-admin/server/notice-actions.ts': ['sendClassNotice'],
+  'features/report-admin/server/class-notice-actions.ts': ['sendClassWideNotice'],
   'features/report-admin/server/board-roster-actions.ts': ['linkClassnoteChild', 'unlinkClassnoteChild'],
   'features/onescreen/server/prompt-actions.ts': ['savePrompt', 'resetPrompt'],
   'features/lesson-reports/stats/prefs-actions.ts': ['saveReportStatsMode'],
 };
 
 export const LR_READS = {
+  'features/report-admin/server/notice-actions.ts': ['previewClassNotice'],
   'features/report-admin/server/compose-actions.ts': ['getAdminComposeContext', 'getAdminSendClassOptions'],
   'features/classnote-reply/server/reply-actions.ts': ['getParentReplyContext'],
   'features/classnote-reply/server/notification-reply.ts': ['getNotificationReplyContext'],
