@@ -42,8 +42,9 @@ await check('호스트가 옮긴 보강 줄 조립(attachReservedLines)이 2.0 r
   assert.match(port, /data\.reservations\.filter\(\(r\) => wanted\.has\(r\.classId\)\)/, '2.0이 반 목록으로 묻던 조회를 같은 반 목록으로 좁힌다');
 });
 
-await check('매개변수는 주(week)만 받는다 — 나머지(과목·보기·구분…)는 호스트가 2.0처럼 같은 자료에서 다시 조립한다', () => {
-  assert.deepEqual(Object.keys(T.screen.params), ['week']);
+await check('매개변수는 주(week) + 시간표 X(exit·anchor)뿐 — 나머지(과목·보기·구분…)는 호스트가 2.0처럼 같은 자료에서 다시 조립한다', () => {
+  assert.deepEqual(Object.keys(T.screen.params), ['week', 'exit', 'anchor']);
+  assert.ok(T.screen.params.anchor.test('2026-09') && !T.screen.params.anchor.test('2026-9') && !T.screen.params.exit.test('Math;'));
   assert.ok(T.screen.params.week.test('2026-10-26') && !T.screen.params.week.test('2026-1-1'));
 });
 
@@ -185,6 +186,35 @@ try {
     assert.equal(fixed.log.metadata.via, '3.0 연습 복사본'); assert.equal(fixed.log.metadata.moves[0].to.start, '09:00:00');
     const [kept] = await db`select valid_to from public.class_schedules where id=${slot.id}`;
     assert.equal(kept.valid_to, null, '시험 뒤 배치는 그대로');
+  });
+
+  await check('시간표 X = 2.0 loadExitOverlay 모양 · 줄의 학생은 그 달 창에 실제로 퇴원(퇴원)·그 과목 수강을 끝낸(수강종료) 사람 — 독립 SQL', async () => {
+    const read = params => db.begin('isolation level repeatable read read only', sql => T.screen.load({ sql, params, tenantId, importV2 }));
+    assert.deepEqual(await read({ exit: 'nope' }), { ok: false, error: '과목을 찾을 수 없습니다' });
+    assert.deepEqual(await read({ exit: 'math', anchor: '2020-01' }), { ok: false, error: '볼 수 없는 달입니다' });
+    const r = await read({ exit: 'math', anchor: '2026-09' });
+    assert.equal(r.ok, true, r.error);
+    const d = r.data;
+    assert.deepEqual(d.months.map(m => m.month), ['2026-09', '2026-08', '2026-07']);
+    assert.equal(d.subjectLabel, '수학'); assert.equal(d.canNewer, true); assert.match(d.withdrawalsHref, /^\/withdrawals\?range=custom&from=2026-07-01&to=2026-09-30&subject=math$/);
+    assert.ok(d.months.every(m => m.holds === null), '지난 묶음엔 지금 휴원을 싣지 않는다');
+    for (const m of d.months) {
+      const from = `${m.month}-01`;
+      const rows = m.groups.flatMap(g => g.rows);
+      const wd = [...new Set(rows.filter(x => x.kind === 'withdrawn').map(x => x.key))], se = [...new Set(rows.filter(x => x.kind === 'subject-ended').map(x => x.key.split('|')[0]))];
+      if (wd.length) {
+        const ok = await db`select s.id::text id from public.students s where s.tenant_id=${tenantId} and s.id = any(${wd}::uuid[]) and s.status::text='withdrawn'
+          and s.withdrawn_at between ${from}::date and (${from}::date + interval '1 month' - interval '1 day')::date
+          and exists (select 1 from public.enrollments e join public.classes c on c.id=e.class_id where e.student_id=s.id and c.subject='math' and e.end_date is not null)`;
+        assert.deepEqual(ok.map(x => x.id).sort(), [...wd].sort(), `${m.month} 퇴원 줄`);
+      }
+      if (se.length) {
+        const ok = await db`select s.id::text id from public.students s where s.tenant_id=${tenantId} and s.id = any(${se}::uuid[]) and s.status::text in ('enrolled','on_hold')
+          and exists (select 1 from public.enrollments e join public.classes c on c.id=e.class_id where e.student_id=s.id and c.subject='math'
+            and e.end_date between ${from}::date and (${from}::date + interval '1 month' - interval '1 day')::date)`;
+        assert.deepEqual(ok.map(x => x.id).sort(), [...se].sort(), `${m.month} 수강종료 줄`);
+      }
+    }
   });
 } finally { await db.end(); }
 

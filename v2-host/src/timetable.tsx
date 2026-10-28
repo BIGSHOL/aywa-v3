@@ -7,9 +7,24 @@ import { AppProviders } from '@/lib/providers/app-providers';
 import { OperationsProvider } from '@/features/owner/operations-context';
 import { TimetablePage, type TimetableData } from './timetable-page';
 import { onHostRefresh } from '../shims/host-nav';
-import { setHostEditors } from '../shims/server-action';
+import { VIEW_ONLY, registerHostHandler, setHostEditors } from '../shims/server-action';
 import { useHostSearch } from '../shims/next-navigation';
 import { HostFrame, HostMessage } from './host-frame';
+
+/** 시간표 X(퇴원 겹침) — 2.0 loadExitOverlay는 읽기라 같은 화면의 GET(exit·anchor)으로 묻는다. 답은 2.0 반환 모양({ ok, data } · { ok:false, error }). */
+const EXIT_FAILED = '퇴원 목록을 불러오지 못했습니다. 잠시 뒤 다시 눌러 주세요.';
+registerHostHandler('features/withdrawals/server/exit-overlay-actions.ts', 'loadExitOverlay', async (input) => {
+  const { subject, anchor } = (input ?? {}) as { subject?: string; anchor?: string | null };
+  const q = new URLSearchParams({ exit: String(subject ?? '') });
+  if (anchor) q.set('anchor', anchor);
+  const r = await fetch(`/api/v2/timetable?${q}`, { headers: { Accept: 'application/json' } }).catch(() => null);
+  const body = r ? ((await r.json().catch(() => null)) as { ok?: unknown } | null) : null;
+  return r?.ok && body && typeof body.ok === 'boolean' ? body : { ok: false, error: EXIT_FAILED };
+});
+
+/** 뷰 설정 저장(2.0 saveTimetableViewPrefs = 로그인한 사람의 ui_prefs) — 3.0엔 로그인이 없고 화면이 열릴 때마다 동기화가 부르므로
+ *  고른 직원의 계정 설정을 덮지 않게 열지 않는다(보기는 주소로만). 서버로 보내지 않고 2.0 실패 모양으로 거절한다. */
+registerHostHandler('features/timetable/server/view-prefs-actions.ts', 'saveTimetableViewPrefs', async () => ({ ok: false, error: VIEW_ONLY }));
 
 /** 진입점 표식(build.mjs가 찾는다) — 창 제목과 이 화면의 2.0 주소. */
 export const HOST_TITLE = '시간표';

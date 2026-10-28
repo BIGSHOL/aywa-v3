@@ -37,6 +37,8 @@ import { RichGridView } from '@/app/(shell)/timetable/_components/rich-grid-view
 import { RosterMoveArea } from '@/app/(shell)/timetable/_components/roster-move';
 import { IntegratedEditBoard } from '@/app/(shell)/timetable/_components/integrated-edit-board';
 import { TimetableEditProvider, TimetableEditControls, TimetableDndArea } from '@/app/(shell)/timetable/_components/timetable-board';
+import { TimetableExitOverlay } from '@/app/(shell)/timetable/_components/exit-overlay/exit-overlay';
+import { ExitOverlayHint } from '@/app/(shell)/timetable/_components/exit-overlay/exit-overlay-hint';
 import { TimetableToolbarActions } from '@/app/(shell)/timetable/_components/toolbar-actions';
 import { TimetableViewPrefsSync } from '@/app/(shell)/timetable/_components/prefs-sync';
 import { EmptyPeriodScope } from '@/app/(shell)/timetable/_components/empty-period-scope';
@@ -256,6 +258,8 @@ export function TimetablePage({ data, search }: { data: TimetableData; search: U
           <TimetableViewPrefsSync hideEmptyDays={hideEmptyDays} collapseEmptyPeriods={collapseEmptyPeriods} hideStudents={hideStudents} subject={subject} sections={compactList} englishTrack={carriedTrack} savedHideEmptyDays={viewPrefs.hideEmptyDays} savedCollapseEmptyPeriods={viewPrefs.collapseEmptyPeriods} savedHideStudents={viewPrefs.hideStudents} savedSections={viewPrefs.compact1h?.[subject] ?? null} savedEnglishTrack={viewPrefs.englishTrack} />
           <TimetableColorPrefSync mode={viewPrefs.colorMode} />
           <TimetableFontPrefSync fontSize={viewPrefs.fontSize} />
+          {/* X 겹침 — 2.0 showExitOverlay(원장 = 퇴원관리 열람) · 교실 지도 제외. 키를 누를 때만 읽는다. */}
+          {!isRooms ? <TimetableExitOverlay subject={subject} /> : null}
           <div data-maximize-title-row="" className="shrink-0 compact-chrome:hidden">
             <PageHeader eyebrow={tt('수업 운영')} title={tt('시간표')} description={isRooms ? tt('교실 사용 현황 지도') : `${subjectMaps.labelOf(subject)} 주간표`} actions={isRooms || !showEcsShortcut ? null : <EcsShortcut week={week} />} />
           </div>
@@ -290,6 +294,7 @@ export function TimetablePage({ data, search }: { data: TimetableData; search: U
               </TimetableDndArea>
             </ClassMoveProvider>
           )}
+          {!isRooms ? <ExitOverlayHint /> : null}
         </div>
       </TimetableSearchProvider>
     </TimetableEditProvider>

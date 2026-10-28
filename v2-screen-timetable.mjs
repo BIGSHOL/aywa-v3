@@ -8,6 +8,8 @@
 // 주·과목·보기 해석과 화면 조립은 호스트가 2.0 page.tsx와 같은 함수로 한다(v2-host/src/timetable-page.tsx).
 // 저장(2단계, Docker 복사본)은 v2-timetable-save.mjs — 2.0 부품이 부르는 서버 함수를 같은 이름의 동작으로 받는다.
 import { timetableActions, readEditors, loadExtra } from './v2-timetable-save.mjs';
+// 시간표 X(퇴원 겹침)는 읽기 — 같은 GET에 exit=<과목>&anchor=<YYYY-MM>로 묻는다(v2-timetable-exit.mjs, 2.0 loadExitOverlay).
+import { loadExitOverlay } from './v2-timetable-exit.mjs';
 
 const ID = 'timetable';
 let rulesPromise = null;
@@ -363,8 +365,12 @@ async function weekSlots(sql, t, R, ref, today) {
 
 export const screen = {
   id: ID, label: '시간표', order: 2,
-  params: { week: /^\d{4}-\d{2}-\d{2}$/ },
-  load: async ({ sql, params, tenantId, importV2 }) => buildTimetableData({ sql, params, tenantId, R: await loadRules(importV2), X: await loadExtra(importV2) }),
+  params: { week: /^\d{4}-\d{2}-\d{2}$/, exit: /^[a-z][a-z0-9_]{0,30}$/, anchor: /^\d{4}-\d{2}$/ },
+  load: async ({ sql, params, tenantId, importV2 }) => {
+    const R = await loadRules(importV2);
+    if (params.exit) return loadExitOverlay(sql, tenantId, importV2, (await readSettings(sql, tenantId, R)).operations, { subject: params.exit, anchor: params.anchor ?? null });
+    return buildTimetableData({ sql, params, tenantId, R, X: await loadExtra(importV2) });
+  },
   actions: timetableActions(loadRules, { weekSlots }),
 };
 export { loadRules, weekSlots };

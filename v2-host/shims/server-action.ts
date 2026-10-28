@@ -32,6 +32,12 @@ window.addEventListener('message', (e) => {
   if (d?.type === 'v2-host-actor' && typeof d.id === 'string') picked = d.id;
 });
 
+/** 진입점이 직접 처리하는 2.0 서버 함수 — '읽기'(저장이 아닌 것)는 그 화면의 읽기 경로(GET)로, 3.0에서 열지 않는 저장은 보내지 않고
+ *  그 자리에서 거절한다. 나머지는 쓰기 경로(POST — 쓰기 기록·직렬화)로 간다. */
+type HostHandler = (...args: unknown[]) => Promise<unknown>;
+const handlers = new Map<string, HostHandler>();
+export function registerHostHandler(module: string, name: string, fn: HostHandler) { handlers.set(`${module}#${name}`, fn); }
+
 /** 2.0 인자를 JSON으로 — FormData(form action)는 [이름, 글자] 줄로 옮긴다(파일은 보내지 않는다). */
 const encodeArg = (v: unknown) =>
   typeof FormData !== 'undefined' && v instanceof FormData
@@ -40,6 +46,8 @@ const encodeArg = (v: unknown) =>
 
 export function serverAction(module: string, name: string) {
   const fn = async (...args: unknown[]) => {
+    const handler = handlers.get(`${module}#${name}`);
+    if (handler) return handler(...args);
     const screen = currentScreen();
     let res: Response;
     try {
