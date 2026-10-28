@@ -61,6 +61,17 @@
   }
   const actorPicker = () => (editors.length ? `<label class="v2h-actor"><span>보는 사람</span><select data-v2h-actor aria-label="보는 사람">${editors.map(e => `<option value="${esc(e.id)}"${e.id === currentActor() ? ' selected' : ''}>${esc(e.role ? `${e.name} · ${e.role}` : e.name)}</option>`).join('')}</select></label>` : '');
   const tellHost = () => { const id = currentActor(); if (id && frame?.contentWindow) frame.contentWindow.postMessage({ type: 'v2-host-actor', id }, location.origin); };
+  /** 주소의 actor — 고를 수 있는 사람(명단 안)일 때만 이기고 저장한다. 명단 밖이면 앞서 고른 값(저장소)을 건드리지 않는다(팀장 10-28). */
+  let pendingActor = null;
+  function applyPendingActor() {
+    if (!pendingActor || !editors.length) return;
+    const id = pendingActor; pendingActor = null;
+    if (!editors.some(e => e.id === id)) return;
+    actor = id;
+    try { localStorage.setItem(ACTOR_KEY, id); } catch { /* 이 창에서만 */ }
+    const at = document.querySelector(`${SEL} [data-v2h-actor-slot]`); if (at) at.innerHTML = actorPicker();
+    tellHost();
+  }
   function wire() {
     if (wired) return; wired = true;
     addEventListener('message', e => {
@@ -74,6 +85,7 @@
       } else if (d.type === 'v2-host-open' || d.type === 'eywa-open-window') openFromHost(String(d.href || ''));
       else if (d.type === 'v2-host-editors' && d.screen === ID && Array.isArray(d.editors)) {
         editors = d.editors.filter(x => x && typeof x.id === 'string' && typeof x.name === 'string').map(x => ({ id: x.id, name: x.name, role: typeof x.role === 'string' ? x.role : '' }));
+        applyPendingActor();
         const at = document.querySelector(`${SEL} [data-v2h-actor-slot]`);
         if (at) at.innerHTML = actorPicker();
         tellHost();
@@ -96,13 +108,11 @@
     render(ctx) {
       api = ctx.api; wire();
       // 주소의 actor=<직원 id>가 가장 먼저 이긴다(업무 흐름 '처리 화면' 단추가 그 단계 담당을 싣는다 — 메인 10-28, 퇴원보고서와 같다).
-      // 이미 떠 있는 화면에서 고른 값보다 앞서고, 고를 수 있는 사람이 아니면 currentActor가 무시한다.
+      // 이미 떠 있는 화면에서 고른 값보다 앞서고, 고를 수 있는 사람이 아니면 무시한다(저장값도 그대로).
       const asked = ctx.query.get('actor');
       if (asked && /^[0-9a-f-]{36}$/i.test(asked) && location.hash !== urlActor) {
-        urlActor = location.hash; actor = asked; // 같은 주소로 다시 와도(그 사이 사람을 바꿨어도) 다시 이긴다
-        try { localStorage.setItem(ACTOR_KEY, asked); } catch { /* 이 창에서만 */ }
-        if (editors.length) { const at = document.querySelector(`${SEL} [data-v2h-actor-slot]`); if (at) at.innerHTML = actorPicker(); }
-        tellHost();
+        urlActor = location.hash; pendingActor = asked; // 같은 주소로 다시 와도(그 사이 사람을 바꿨어도) 다시 이긴다
+        applyPendingActor(); // 명단이 아직 없으면 명단이 올 때 판정한다
       }
       const query = queryOf(ctx.query);
       if (hostOk === null) fetch(HOST, { method: 'HEAD' }).then(r => r.ok, () => false).then(ok => { if (hostOk === null) { hostOk = ok; api?.render?.(); } });
