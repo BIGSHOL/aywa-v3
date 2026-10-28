@@ -46,6 +46,14 @@ const routes=new Map([
  ['/controls.css',['controls.css','text/css; charset=utf-8']],
  ['/fonts/PretendardVariable.woff2',['../../public/fonts/PretendardVariable.woff2','font/woff2']],
 ]);
+// 2.0 public/ 의 그림 파일(출석부 '어제 출결' 아이콘 /icons/*.png · ECS 월간 계획서 /eie-logo.png …)을 같은 경로로 — 그림만, 폴더 밖으로는 못 나간다.
+const IMAGE_TYPES={png:'image/png',svg:'image/svg+xml',jpg:'image/jpeg',jpeg:'image/jpeg',webp:'image/webp',gif:'image/gif',ico:'image/x-icon'};
+async function publicAsset(path){
+ const m=path.match(/^\/((?:[\w-]+\/)*[\w-][\w.-]*\.(png|svg|jpe?g|webp|gif|ico))$/i);if(!m||m[1].includes('..'))return null;
+ const rel=`../../public/${m[1]}`;
+ try{if(!(await stat(fileURLToPath(new URL(rel,root)))).isFile())return null;}catch{return null;}
+ return [rel,IMAGE_TYPES[m[2].toLowerCase()]];
+}
 const headers={
  'Cache-Control':'no-store','X-Content-Type-Options':'nosniff','Referrer-Policy':'no-referrer',
  'Cross-Origin-Resource-Policy':'same-origin',
@@ -99,7 +107,7 @@ const server=createServer(async(req,res)=>{
    res.writeHead(200,{...headers,'Content-Type':'application/octet-stream','Content-Length':file.size,'Content-Disposition':`attachment; filename="document"; filename*=UTF-8''${name}`});
    if(req.method==='HEAD'){res.end();return;}const stream=createReadStream(file.path);stream.on('error',()=>res.destroy());res.on('close',()=>stream.destroy());stream.pipe(res);return;
   }
-  const file=routes.get(path)||screenAsset(path);if(!file){reject(404,'Not found');return;}
+  const file=routes.get(path)||screenAsset(path)||await publicAsset(path);if(!file){reject(404,'Not found');return;}
   // 엿보기 창(flow-ui.js — 업무 흐름 위에 처리 화면을 여는 창)은 이 앱을 같은 출처 iframe(/?peek=1)으로 띄운다 — 그 문서만 같은 출처 틀을 허용.
   const peekDoc=path==='/'&&/[?&]peek=1(?:&|$)/.test(req.url);
   const data=await readFile(fileURLToPath(new URL(file[0],root)));res.writeHead(200,{'Content-Type':file[1],'Content-Length':data.length,...headers,...(peekDoc?{'Content-Security-Policy':headers['Content-Security-Policy'].replace("frame-ancestors 'none'","frame-ancestors 'self'")}:{})});res.end(req.method==='HEAD'?undefined:data);
