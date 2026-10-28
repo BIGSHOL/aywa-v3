@@ -141,7 +141,6 @@ try {
           { error: '다른 창에서 이 설정이 변경되었습니다. 새로고침한 뒤 다시 저장해 주세요.' });
         if (admin) assert.deepEqual(await save({ section: 'permissions', data: perm.permissionsSource, permissionsBaseline: perm.permissionsTok }, admin.id), { error: '역할·권한은 원장만 변경할 수 있습니다' });
         assert.deepEqual(await save({ section: 'zzz', data: {} }), { error: '알 수 없는 설정 섹션입니다' });
-        assert.deepEqual(await save({ section: 'makeups', data: {} }), { error: '연습 화면에서는 아직 지원하지 않는 저장입니다' });
         assert.deepEqual([...await sql`select coalesce(current_setting('request.jwt.claims', true), '') c, coalesce(current_setting('v2.actor_claims', true), '') h`], [{ c: '', h: '' }]);
         const logs = await sql`select target_label, metadata->>'via' via, metadata->>'section' section from public.audit_logs where tenant_id=${tenantId} and created_at = now() and action='owner_settings_update'`;
         assert.deepEqual([...new Set(logs.map(l => l.section))].sort(), ['operations', 'permissions', 'profile']); assert.ok(logs.every(l => l.via === '3.0 연습 복사본'));
@@ -343,6 +342,35 @@ try {
         const logs = await sql`select metadata->>'section' section, metadata->>'via' via from public.audit_logs where tenant_id=${tenantId} and created_at=now() and action='owner_settings_update'`;
         assert.equal(logs.filter(l => l.section === 'dashboard').length, 2);
         assert.ok(logs.every(l => l.via === '3.0 연습 복사본'));
+        throw ROLL;
+      });
+    } catch (e) { if (e !== ROLL) throw e; }
+  });
+  await check('보강 운영(되돌림) = 원본 makeup_command로 켜기 · 추가 지도 거절 · 비원장 차단 · 다른 설정 보존 · 감사로그', async () => {
+    const page = (await load({ tab: 'makeups' })).page;
+    assert.ok(page?.showMakeups && page.settings.makeups);
+    const a = M.screen.actions.saveOwnerSection, initial = page.settings.makeups;
+    const ROLL = new Error('rollback');
+    try {
+      await db.begin(async sql => {
+        const save = (data, actor = base.viewer.id) => a.run({ sql, body: a.validate({ module: 'features/owner/server/actions.ts', actor,
+          args: [null, fd({ section: 'makeups', data })] }), tenantId, importV2 });
+        const [{ data: before }] = await sql`select data from public.tenant_settings where tenant_id=${tenantId}`;
+        assert.deepEqual(await save({ ...initial, allowAdditional: true }), { error: '추가 지도의 출결·수납 기준을 확정한 뒤 사용할 수 있습니다' });
+        if (admin) assert.deepEqual(await save({ ...initial, mode: 'on' }, admin.id), { error: '학원 설정 변경 권한이 없습니다' });
+        assert.equal((await save({ ...initial, mode: 'on' })).ok, true);
+        const [{ data: after }] = await sql`select data from public.tenant_settings where tenant_id=${tenantId}`;
+        assert.equal(after.makeups.mode, 'on');
+        assert.equal(after.makeups.allowAdditional, false);
+        if (after.modules?.disabled) assert.ok(!after.modules.disabled.includes('makeups'));
+        for (const k of Object.keys(before).filter(k => !['makeups', 'modules'].includes(k))) assert.deepEqual(after[k], before[k], `${k} 그대로`);
+        const commands = await sql`select action from public.makeup_commands where tenant_id=${tenantId} and action='configure' and created_at=now()`;
+        assert.equal(commands.length, 1);
+        const logs = await sql`select metadata from public.audit_logs where tenant_id=${tenantId} and action='makeup_configure' and created_at=now()`;
+        assert.equal(logs.length, 1);
+        assert.equal(logs[0].metadata.via, '3.0 연습 복사본');
+        assert.ok(logs[0].metadata.command_id);
+        assert.deepEqual([...await sql`select coalesce(current_setting('request.jwt.claims', true), '') c, coalesce(current_setting('v2.actor_claims', true), '') h`], [{ c: '', h: '' }]);
         throw ROLL;
       });
     } catch (e) { if (e !== ROLL) throw e; }

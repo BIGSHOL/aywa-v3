@@ -219,7 +219,9 @@ async function ownerPage({ sql, t, R, O, sp, viewers, viewer, settings, row, imp
 async function ownerIo(sql, t, importV2) {
   const [R, O] = await Promise.all([loadRules(importV2), loadOwnerRules(importV2)]);
   const row = await readSettingsRow(sql, t), settings = O.resolve.resolveSettings(row.data, { name: row.name });
-  return { sql, t, R, O, importV2, settings, permissionAccountIds, viewers: await readOwnerViewers(sql, t, R, O, settings) };
+  return { sql, t, R, O, importV2, settings, permissionAccountIds,
+    makeupsAvailable: () => laboratoryAvailable(sql, t, 'makeups'),
+    viewers: await readOwnerViewers(sql, t, R, O, settings) };
 }
 
 export const screen = {

@@ -5,16 +5,15 @@
 //  · 섹션 단위 머지(다른 섹션 보존) · 운영·권한 섹션은 순번(rev)을 섹션 안에 · 🔴 문서 최상위에 새 키를 두지 않는다(0335a 쓰기 가드)
 //  · 쓰기 = 2.0 사용자 클라이언트(authenticated + 그 사람 신분) — 0335a·0080a·0281a 쓰기 가드가 2.0처럼 본다 · updated_at이 읽은 값과 같을 때만(다른 창 저장 보호)
 //  · 감사로그 owner_settings_update(바뀐 칸 · 순번은 빼고) + '3.0 연습 복사본' 표시
-// ⚠️ 보강 운영(makeups — 2.0은 DB 함수 makeup_command)은 다음 면에서 받는다.
 import { V2Error } from './v2-screens.mjs';
 import { audit, asAuthenticated } from './v2-timetable-save.mjs';
 import { UUID } from './v2-mcs-core.mjs';
 import { validateDashboardAssignments } from './v2-owner-dashboard.mjs';
+import { configureOwnerMakeups } from './v2-owner-makeups.mjs';
 
 const bad = () => new V2Error(400, 'invalid_request', '입력 값을 확인해 주세요.');
 const plain = v => !!v && typeof v === 'object' && !Array.isArray(v);
 const ISO = (sql, col) => sql`to_char(${sql(col)} at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US') || '+00:00'`;
-const NOT_YET = '연습 화면에서는 아직 지원하지 않는 저장입니다';
 
 let rulesPromise = null;
 function loadSaveRules(importV2) {
@@ -71,7 +70,6 @@ export async function saveOwnerSection(io, actor, [, rawForm]) {
   }
   if (section === 'modules' && actor.systemRole !== 'master') return { error: '기능 켜기·끄기는 원장만 바꿀 수 있습니다' };
   if (section === 'dashboard' && actor.systemRole !== 'master') return { error: '대시보드 배치는 원장만 바꿀 수 있습니다' };
-  if (section === 'makeups') return { error: NOT_YET };
   let parsedJson;
   try { parsedJson = JSON.parse(String(formData.get('data') ?? 'null')); } catch { return { error: '설정 데이터 형식이 올바르지 않습니다' }; }
   let operationsRequest;
@@ -85,6 +83,7 @@ export async function saveOwnerSection(io, actor, [, rawForm]) {
   const sendsWholeSection = !operationsRequest || operationsRequest.kind === 'face';
   const result = sendsWholeSection ? schema.safeParse(parsedJson) : null;
   if (result && !result.success) return { error: S.error.settingsValidationError(section, result.error.issues[0], parsedJson) };
+  if (section === 'makeups' && result) return configureOwnerMakeups(io, actor, result.data);
   if (section === 'permissions' && result && S.canonical.hasDuplicateRoleCells(result.data.overrides)) return { error: '같은 메뉴·직급의 권한을 두 번 지정할 수 없습니다' };
 
   // 🔴 못 읽었으면 저장하지 않는다 — 빈 문서 위에 이 섹션만 얹으면 다른 섹션이 전부 지워진다(2.0 그대로).
