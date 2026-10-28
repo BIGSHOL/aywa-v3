@@ -1,0 +1,9 @@
+{
+ "page": [
+  [
+   "export async function PortfolioFace({ role, teacherId }: { role: SystemRole; teacherId: string | null }) {\n  const [view, canRefresh, prefs] = await Promise.all([getPortfolioView({ teacherId }), canWriteTenant(role, \"class_review\"), readMyUiPrefs()]);",
+   "export function PortfolioFace({ data }: { data: PortfolioFaceData }) {\n  const [view, canRefresh, prefs] = [data.view, data.canRefresh, data.prefs];"
+  ]
+ ],
+ "removed": []
+}

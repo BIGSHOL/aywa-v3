@@ -1,0 +1,37 @@
+{
+ "page": [
+  [
+   "export default async function ClassReviewDetailPage({ params }: { params: Promise<{ id: string }> }) {\n  const viewer = await requireAccess(\"class_review\");\n  const { id } = await params;",
+   "export function ClassReviewDetailPage({ data }: { data: ClassReviewDetailData }) {"
+  ],
+  [
+   "  const [found, settings, priv, canWrite, rv] = await Promise.all([\n    getClassReview(id),\n    getTenantSettings(),\n    getReviewPrivileges(),\n    // 삭제 버튼 노출 조건 = 서버 액션(deleteClassReview)의 게이트와 **같은 함수** — 화면 조건은 게이트가 아니다(#77).\n    canWriteTenant(viewer.systemRole, \"class_review\"),\n    getReviewViewer(),\n  ]);",
+   "  const [found, settings, priv, canWrite, rv] = [data.found, data.settings, data.priv, data.canWrite, data.rv];"
+  ],
+  [
+   "  if (!found) notFound();",
+   "  if (!found) return null;"
+  ],
+  [
+   "  const staffOptions = canManageObservers ? await getStaffOptions() : [];",
+   "  const staffOptions = canManageObservers ? data.staffOptions : [];"
+  ],
+  [
+   "  const observerCols = observerColumns(doc).map((c, i) => ({",
+   "  const observerCols = data.observerCols.map((c, i) => ({"
+  ],
+  [
+   "  const observerLimit = observerLimitOf(doc);",
+   "  const observerLimit = data.observerLimit;"
+  ],
+  [
+   "  const mine = myScoreSlot(doc, rv.id);",
+   "  const mine = data.mine;"
+  ],
+  [
+   "          observers={observerColumns(doc).map((c) => ({",
+   "          observers={data.observerCols.map((c) => ({"
+  ]
+ ],
+ "removed": []
+}

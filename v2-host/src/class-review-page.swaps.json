@@ -1,0 +1,25 @@
+{
+ "page": [
+  [
+   "export default async function ClassReviewPage({ searchParams }: { searchParams: Promise<Sp> }) {\n  const viewer = await requireAccess(\"class_review\");\n  const [sp, privileges] = await Promise.all([searchParams, getReviewPrivileges()]);",
+   "export function ClassReviewPage({ data, sp }: { data: ClassReviewListData; sp: Sp }) {\n  const privileges = data.priv;"
+  ],
+  [
+   "<PortfolioFace role={viewer.systemRole} teacherId={sp.teacher ?? null} />",
+   "<PortfolioFace data={data as unknown as PortfolioFaceData} />"
+  ],
+  [
+   "  const [{ rows }, settings, priv, myFilter, rv] = await Promise.all([\n    listClassReviews(),\n    getTenantSettings(),\n    getReviewPrivileges(),\n    getMyClassReviewFilter(viewer),\n    getReviewViewer(),\n  ]);",
+   "  const [{ rows }, settings, priv, myFilter, rv] = [{ rows: data.rows }, data.settings, data.priv, data.myFilter, data.rv];"
+  ],
+  [
+   "            const mine = myScoreSlot(r, rv.id);",
+   "            const mine = data.mine[r.id] ?? null;"
+  ],
+  [
+   "`선착순 ${observerLimitOf(r)}명`",
+   "`선착순 ${data.limits[r.id]}명`"
+  ]
+ ],
+ "removed": []
+}

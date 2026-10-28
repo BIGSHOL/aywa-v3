@@ -1,0 +1,9 @@
+{
+ "page": [
+  [
+   "export default async function ClassReviewScorePage({ params }: { params: Promise<{ id: string }> }) {\n  await requireAccess(\"class_review\"); // 접근 게이트 — 뷰어 판정은 getReviewViewer가 단일 소스\n  const { id } = await params;\n  const found = await getClassReview(id);\n  if (!found) notFound();\n  const { doc, areas } = found;\n\n  // 채점 슬롯 판정도 같은 단일 소스 — '다른 강사 뷰'는 그 강사 화면 그대로 보이되 저장은 쓰기 캡이 막는다.\n  const mine = myScoreSlot(doc, (await getReviewViewer()).id);\n  if (!mine) redirect(`/class-review/${id}`);\n  const mySheet = doc.submissions[mine.slot] ?? null;",
+   "export function ClassReviewScorePage({ data }: { data: ClassReviewScoreData }) {\n  const id = data.doc.id;\n  const { doc, areas } = data;\n  const mine = data.mine;\n  const mySheet = data.mySheet;"
+  ]
+ ],
+ "removed": []
+}

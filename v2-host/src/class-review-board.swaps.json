@@ -1,0 +1,9 @@
+{
+ "page": [
+  [
+   "export default async function ClassReviewBoardPage() {\n  await requireAccess(\"class_review\"); // 접근 게이트 — 뷰어 판정은 getReviewViewer가 단일 소스\n  const priv = await getReviewPrivileges();\n  if (!priv.seeNames) redirect(\"/class-review\");\n\n  const [{ rows, areas }, settings] = await Promise.all([listClassReviews(), getTenantSettings()]);",
+   "export function ClassReviewBoardPage({ data }: { data: ClassReviewBoardData }) {\n  const [{ rows, areas }, settings] = [{ rows: data.rows, areas: data.areas }, data.settings];"
+  ]
+ ],
+ "removed": []
+}

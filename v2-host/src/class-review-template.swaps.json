@@ -1,0 +1,9 @@
+{
+ "page": [
+  [
+   "export default async function ClassReviewTemplatePage({\n  searchParams,\n}: {\n  searchParams: Promise<{ set?: string; new?: string }>;\n}) {\n  const viewer = await requireAccess(\"class_review\");\n  const priv = await getReviewPrivileges();\n  if (!priv.editTemplate) redirect(\"/class-review\");\n\n  const { set, new: isNew } = await searchParams;\n  const templates = await getChecklistTemplates(viewer.tenantId);",
+   "export function ClassReviewTemplatePage({\n  data,\n  sp: searchParams,\n}: {\n  data: ClassReviewTemplateData;\n  sp: { set?: string; new?: string };\n}) {\n  const { set, new: isNew } = searchParams;\n  const templates = data.templates;"
+  ]
+ ],
+ "removed": []
+}

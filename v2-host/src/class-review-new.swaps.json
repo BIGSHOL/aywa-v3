@@ -1,0 +1,9 @@
+{
+ "page": [
+  [
+   "export default async function NewClassReviewPage() {\n  const viewer = await requireAccess(\"class_review\");\n  if ((await getReviewViewer()).selfOnly) redirect(\"/class-review\");\n  const [staff, settings, templates] = await Promise.all([\n    getStaffOptions(),\n    getTenantSettings(),\n    getChecklistTemplates(viewer.tenantId),\n  ]);",
+   "export function NewClassReviewPage({ data }: { data: ClassReviewNewData }) {\n  const [staff, settings, templates] = [data.staff, data.settings, data.templates];"
+  ]
+ ],
+ "removed": []
+}
