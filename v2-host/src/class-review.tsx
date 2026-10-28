@@ -16,6 +16,7 @@ import { ClassReviewScorePage, type ClassReviewScoreData } from './class-review-
 import { NewClassReviewPage, type ClassReviewNewData } from './class-review-new';
 import { ClassReviewTemplatePage, type ClassReviewTemplateData } from './class-review-template';
 import { ClassReviewBoardPage, type ClassReviewBoardData } from './class-review-board';
+import { JudgmentFocus, type JudgmentFocusData } from './class-review-judgment-focus';
 
 export const HOST_TITLE = '직원 평가';
 export const HOST_ROUTE = '/class-review';
@@ -23,7 +24,8 @@ const SCREEN = 'class-review';
 const CR = 'features/class-review/server/actions.ts', TP = 'features/teacher-portfolio/server/';
 
 type Base = { editors: HostEditor[]; operations: Record<string, unknown>; modules: { disabled: string[] };
-  page: 'list' | 'portfolio' | 'detail' | 'score' | 'new' | 'template' | 'board' | 'redirect' | 'missing' | 'noMenu' | 'notFound' | 'moduleOff'; to?: string };
+  page: 'list' | 'portfolio' | 'detail' | 'score' | 'new' | 'template' | 'board' | 'redirect' | 'missing' | 'noMenu' | 'notFound' | 'moduleOff' | 'judgmentMissing' | 'judgmentUnassigned';
+  to?: string; focusJudgment?: { id: string; month: string } };
 
 const UNREACHABLE = '연습 서버에 닿지 못했습니다 — 바뀐 것은 없습니다';
 /**
@@ -119,10 +121,13 @@ function App() {
   if (data.page === 'notFound' || data.page === 'moduleOff') return <HostMessage text="이 화면은 연습 화면에서 아직 열 수 없습니다." />;
   if (data.page === 'redirect') return <HostMessage text="화면을 옮기는 중…" />;
   if (data.page === 'missing') return <HostMessage text="이 평가를 찾을 수 없습니다. 지워졌을 수 있습니다." error />;
+  if (data.page === 'judgmentMissing') return <HostMessage text="이 판정 대기 글을 찾을 수 없습니다. 이미 처리됐을 수 있습니다." error />;
+  if (data.page === 'judgmentUnassigned') return <HostMessage text="이 글은 선생님 평가 근거에 연결되지 않아 여기서 판정할 수 없습니다." error />;
   const ops = data.operations as unknown as Parameters<typeof OperationsProvider>[0];
   // 2.0 page가 getTenantSettings()에서 읽던 것은 과목뿐이다(buildSubjectMaps).
   const page = { ...data, settings: { operations: { subjects: ops.subjects } } };
   const sp = Object.fromEntries([...new URLSearchParams(state.query ?? '').entries()].filter(([k]) => k !== 'actor' && k !== 'v2path' && k !== 'embed'));
+  if (data.page === 'portfolio' && data.focusJudgment) sp.tab = 'portfolio';
   return (
     <OperationsProvider subjects={ops.subjects} gradeLevels={ops.gradeLevels} jobTitles={ops.jobTitles} jobTitlesByDepartment={ops.jobTitlesByDepartment}
       disabledModules={data.modules.disabled as never}>
@@ -131,7 +136,8 @@ function App() {
         : data.page === 'new' ? <NewClassReviewPage key={path} data={page as unknown as ClassReviewNewData} />
         : data.page === 'template' ? <ClassReviewTemplatePage key={state.query} data={page as unknown as ClassReviewTemplateData} sp={sp} />
         : data.page === 'board' ? <ClassReviewBoardPage key={path} data={page as unknown as ClassReviewBoardData} />
-        : <ClassReviewPage key={state.query} data={page as unknown as ClassReviewListData} sp={sp} />}
+        : <><ClassReviewPage key={state.query} data={page as unknown as ClassReviewListData} sp={sp} />
+            {data.page === 'portfolio' && data.focusJudgment ? <JudgmentFocus key={state.query} data={page as unknown as JudgmentFocusData} /> : null}</>}
     </OperationsProvider>
   );
 }

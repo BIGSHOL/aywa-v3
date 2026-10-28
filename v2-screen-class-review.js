@@ -7,7 +7,7 @@
   'use strict';
   const ID = 'class-review', LABEL = '직원 평가', HOST = `/v2-host/${ID}.html`, S = window.V2Screens; if (!S) return;
   // 2.0 page.tsx가 읽는 주소 열쇠 그대로 + v2path(2.0 하위 경로).
-  const KEEP = ['v2path', 'tab', 'teacher', 'set', 'new'];
+  const KEEP = ['v2path', 'tab', 'teacher', 'set', 'new', 'judgment'];
   let api = null, frame = null, requested = null, hostOk = null, wired = false, editors = [], actor = null, urlActor = null;
   const ACTOR_KEY = `v2-host-actor:${ID}`, SEL = `[data-v2-screen="${ID}"]`;
   const esc = s => S.esc(s);

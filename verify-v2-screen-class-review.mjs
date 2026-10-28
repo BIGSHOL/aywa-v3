@@ -77,6 +77,22 @@ test('보는 사람 = 직원 평가 메뉴가 열린 재직 직원 · 포트폴�
   assert.equal((await load({ v2path: '/class-review/new', actor: '00000000-0000-4000-8000-000000000000' })).page, 'new');
 });
 
+test('업무 흐름 판정 id = 원본 월 근거의 선생님·만족도 창으로 진입 · 몫 없는 글과 권한 없는 사람은 분리', { skip: SKIP }, async () => {
+  const [mapped] = await db`select j.id::text id, p.teacher_id::text teacher, p.month
+    from public.teacher_satisfaction_judgments j join public.teacher_portfolio_months p on p.tenant_id=j.tenant_id and p.month=left(j.posted_on::text, 7)
+      and p.payload @> jsonb_build_object('items', jsonb_build_array(jsonb_build_object('id', 'satisfaction', 'detail', jsonb_build_array(jsonb_build_object('source', '글', 'key', j.id::text)))))
+    where j.tenant_id=${t} and j.state='pending' order by j.posted_on desc limit 1`;
+  assert.ok(mapped, '선생님 근거에 연결된 대기 글이 있다');
+  const focused = await load({ judgment: mapped.id, actor: master.id });
+  assert.equal(focused.page, 'portfolio');
+  assert.deepEqual(focused.focusJudgment, { id: mapped.id, month: mapped.month });
+  assert.equal(focused.view.selected.id, mapped.teacher);
+  assert.equal((await load({ judgment: mapped.id, actor: admin.id })).page, 'notFound', '포트폴리오 권한을 먼저 확인한다');
+  assert.equal((await load({ judgment: '00000000-0000-4000-8000-000000000000', actor: master.id })).page, 'judgmentMissing');
+  const [unassigned] = await db`select j.id::text id from public.teacher_satisfaction_judgments j where j.tenant_id=${t} and j.state='pending' and j.class_id is null limit 1`;
+  if (unassigned) assert.equal((await load({ judgment: unassigned.id, actor: master.id })).page, 'judgmentUnassigned');
+});
+
 test('2.0이 보내지 않던 것은 보내지 않는다 — 실명 열람이 없으면 이름 비움 · 목록·종합 행은 코멘트·총평·문항 스냅샷 없이', () => {
   const doc = { id: 'd', header: { teacherId: 't' }, evaluators: [{ id: 'a', name: '갑', kind: 'observer' }, { id: 't', name: '을', kind: 'self' }],
     submissions: { a: { scores: [3], comment: '비밀 코멘트', submittedAt: 'x', by: { id: 'a', name: '갑' } } }, finalReview: { text: '총평', updatedAt: 'y', by: { id: 'a', name: '갑' } } };
@@ -129,7 +145,7 @@ test('상세 · 채점 · 새 평가 · 문항 세트 · 종합 = 독립 SQL · 
 test('매개변수 거절 · 읽기 이름은 셋뿐', () => {
   const ok = (k, v) => screen.params[k].test(v);
   assert.ok(ok('v2path', '/class-review/board') && ok('v2path', '/class-review/0b6d5c1e-0000-4000-8000-000000000000/score') && !ok('v2path', '/class-review/x') && !ok('v2path', '/staff'));
-  assert.ok(ok('tab', 'portfolio') && !ok('tab', 'all') && !ok('teacher', 'x') && ok('new', '1') && !ok('new', '2'));
+  assert.ok(ok('tab', 'portfolio') && !ok('tab', 'all') && !ok('teacher', 'x') && ok('new', '1') && !ok('new', '2') && ok('judgment', '0b6d5c1e-0000-4000-8000-000000000000') && !ok('judgment', 'x'));
   assert.ok(ok('read', 'loadSatisfactionBoard') && !ok('read', 'refreshTeacherPortfolioNow') && !ok('read', 'getPortfolioView'));
   assert.deepEqual(Object.keys(READS).sort(), ['loadEvaluationEntries', 'loadPortfolioComparison', 'loadSatisfactionBoard']);
 });

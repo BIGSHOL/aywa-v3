@@ -68,6 +68,23 @@ async function load({ sql, params, tenantId: t, importV2 }) {
     const [value] = await read(t, v.id, [{ module: r.module, fn: params.read, args }]);
     return { page: 'read', result: value ?? null };
   }
+  if (params.judgment) {
+    // 만족도 관리 창은 포트폴리오 권한과 해당 강사의 월 근거 표를 모두 지나야 연다.
+    const [priv] = await read(t, v.id, [{ module: 'features/class-review/server/queries.ts', fn: 'getReviewPrivileges', args: [] }]);
+    if (!priv?.seePortfolio) return { ...base, page: 'notFound' };
+    const [judgment] = await sql`select posted_on::text posted from public.teacher_satisfaction_judgments where tenant_id=${t} and id=${params.judgment} and state='pending'`;
+    if (!judgment) return { ...base, page: 'judgmentMissing' };
+    const month = judgment.posted.slice(0, 7);
+    const [owner] = await sql`select teacher_id::text teacher from public.teacher_portfolio_months where tenant_id=${t} and month=${month}
+      and payload @> ${sql.json({ items: [{ id: 'satisfaction', detail: [{ source: '글', key: params.judgment }] }] })}::jsonb
+      order by teacher_id limit 1`;
+    if (!owner) return { ...base, page: 'judgmentUnassigned' };
+    const page = await loadClassReview({ t, v, path: '/class-review', sp: { tab: 'portfolio', teacher: owner.teacher }, importV2 });
+    const selected = page.view?.state === 'ready' ? page.view.selected : null;
+    if (page.page !== 'portfolio' || !page.canRefresh || selected?.id !== owner.teacher || !selected.periods.some((p) => p.month === month && p.items.some((m) => m.id === 'satisfaction' && !m.off)))
+      return { ...base, page: 'judgmentUnassigned' };
+    return { ...base, ...page, focusJudgment: { id: params.judgment, month } };
+  }
   const sp = { tab: params.tab, teacher: params.teacher, set: params.set, new: params.new };
   return { ...base, ...(await loadClassReview({ t, v, path: params.v2path ?? '/class-review', sp, importV2 })) };
 }
@@ -102,7 +119,7 @@ export const screen = {
   id: ID, label: '직원 평가', order: 46,
   params: {
     actor: UUID, v2path: new RegExp(`^/class-review(?:/new|/template|/board|/${UUID_BODY}(?:/score)?)?$`, 'i'),
-    tab: /^(?:review|portfolio)$/, teacher: UUID, set: UUID, new: /^1$/,
+    tab: /^(?:review|portfolio)$/, teacher: UUID, set: UUID, new: /^1$/, judgment: UUID,
     read: new RegExp(`^(?:${Object.keys(READS).join('|')})$`), args: /^\[[\s\S]*\]$/,
   },
   paramMax: { args: 4000 },
