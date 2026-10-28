@@ -64,7 +64,7 @@ const backdatedFlag = (dates, today) => (dates.some(d => d < today) ? { backdate
 function keepRaw(raw, incoming) {
   if (!masked(raw)) return { value: incoming };
   if ((incoming ?? null) === (shown(raw) ?? null)) return { value: raw };
-  return { error: '연락처가 든 글이라 이 연습 화면에서는 고치지 않습니다 — 2.0에서 고쳐 주세요' };
+  return { error: '연락처가 든 글이라 연습 화면에서는 고치지 않습니다.' };
 }
 
 // ── 계획 줄 — 2.0 actions.ts 껍데기 + plan-write.ts 밑바닥 ───────────────────────────────────────────
@@ -435,7 +435,7 @@ export const ACTIONS = {
       if (!R.canWriteAttendanceStudent({ enrolled: enrolled > 0, hasRecord: existing > 0, allowMakeup: input.allowMakeup === true || (enrolled === 0 && existing === 0 && resv) })) return { error: '이 반 수강생이 아닙니다' };
     }
     const [resvCell] = await sql`select 1 from public.makeup_reservations where tenant_id=${t} and class_id=${classId} and student_id=${studentId} and makeup_date=${sessionDate} and status in ('reserved','done') limit 1`;
-    if (resvCell) throw new V2Error(409, 'reservation_cell', '보강 예약이 걸린 칸입니다 — 2.0은 이 저장에서 예약 이행(결석 칸 메모·시수)까지 함께 바꾸는데, 이 연습 화면은 아직 그 부분이 없어 저장하지 않습니다.');
+    if (resvCell) throw new V2Error(409, 'reservation_cell', '보강 예약이 걸린 칸은 연습 화면에서 아직 저장하지 않습니다. 바뀐 것은 없습니다.');
     const slot = String(input.slotStart), via = (await teachesOn(sql, t, user.id, classId, sessionDate, { R, env })) ? 'teacher' : 'desk';
     const base = { studentId, classId, date: sessionDate, slotStart: slot };
     if (noteOnly) {

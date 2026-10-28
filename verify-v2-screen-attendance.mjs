@@ -143,7 +143,8 @@ test('3.0 껍데기: 호스트 iframe 하나를 자리 위에 겹치고, 이동�
   vm.runInNewContext(text, ctx);
   const api = { render: () => { rendered += 1; }, toast() {}, canOpenRecord: () => false };
   const first = def.render({ api, query: new URLSearchParams('month=2026-10&class=e4a2c026-8992-4211-a5fe-b9e93be8a0f3&foo=1') });
-  for (const l of ['연습 복사본(Docker)', '복사본 — 실제 발송 없음', '출석부를 여는 중…', 'data-v2-host-slot']) assert.ok(first.includes(l), l);
+  for (const l of ['연습 화면', '실제 발송은 없습니다', '출석부를 여는 중…', 'data-v2-host-slot']) assert.ok(first.includes(l), l);
+  assert.ok(!/2\.0|Docker|복사본/.test(first), '안내에 2.0·Docker·복사본 같은 말이 없다');
   await new Promise(r => setTimeout(r, 0));
   assert.deepEqual(fetches, [['/v2-host/attendance.html', 'HEAD']]); assert.equal(rendered, 1, 're-rendered once the host answered');
   def.render({ api, query: new URLSearchParams('month=2026-10&class=e4a2c026-8992-4211-a5fe-b9e93be8a0f3&foo=1') });

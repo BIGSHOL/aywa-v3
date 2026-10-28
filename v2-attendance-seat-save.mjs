@@ -55,7 +55,7 @@ async function rosterKeys(c, seat, date, slotStart) {
   return { keys, classes, rosters, day, choiceLoad, period };
 }
 
-const RESERVED_CELL = '보강 예약이 걸린 칸입니다 — 2.0은 저장하면서 보강 예약 이행까지 함께 바꾸는데, 그 갈래는 이 연습 화면에 아직 없습니다. 바뀐 것은 없습니다.';
+const RESERVED_CELL = '보강 예약이 걸린 칸은 연습 화면에서 아직 저장하지 않습니다. 바뀐 것은 없습니다.';
 /** 보강 예약(reserved·done)이 걸린 (학생, 반) — 그 날 보강일인 예약. 2.0 `completeMakeupReservations`가 이 행들을 본다. */
 async function reservedCells(c, date, pairs) {
   if (pairs.length === 0 || !(await hasTable(c.sql, 'makeup_reservations'))) return new Set();

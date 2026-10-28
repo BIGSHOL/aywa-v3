@@ -22,7 +22,7 @@
   function ensureFrame(query) {
     if (!frame) {
       frame = document.createElement('iframe');
-      frame.className = 'v2h-frame'; frame.title = '출석부(2.0 화면)'; frame.dataset.v2Host = ID; frame.hidden = true;
+      frame.className = 'v2h-frame'; frame.title = '출석부'; frame.dataset.v2Host = ID; frame.hidden = true;
       Object.assign(frame.style, { position: 'absolute', zIndex: '5', border: '0', borderRadius: '12px', background: '#fff' });
       document.body.append(frame);
     }
@@ -91,8 +91,8 @@
       const query = queryOf(ctx.query);
       if (hostOk === null) fetch(HOST, { method: 'HEAD' }).then(r => r.ok, () => false).then(ok => { if (hostOk === null) { hostOk = ok; api?.render?.(); } });
       else if (hostOk) requestAnimationFrame(() => { ensureFrame(query); place(); });
-      const wait = hostOk === false ? '2.0 부품 화면이 이 서버에 아직 연결되지 않았습니다.' : hostOk === null ? '출석부를 여는 중…' : '';
-      return `<div class="v2h-note" role="note"><p><b>연습 복사본(Docker)</b> 2.0 월별 출석부 부품 그대로입니다. 저장은 이 PC의 복사본에만 됩니다(복사본 — 실제 발송 없음). 칸 출결·메모와 보기 설정은 저장되고, 아직 잇지 않은 저장(범위 채우기·보강 예약·결석 통보 접수 등)은 같은 자리에서 '복사본 보기 전용'으로 거절됩니다. 금액 열(청구액·실급여)은 아직 없습니다.</p><span data-v2h-actor-slot>${actorPicker()}</span></div>
+      const wait = hostOk === false ? '출석부를 열지 못했습니다. 잠시 후 새로고침해 주세요.' : hostOk === null ? '출석부를 여는 중…' : '';
+      return `<div class="v2h-note" role="note"><p><b>연습 화면</b> 여기서 저장한 내용은 이 PC의 연습 자료에만 남고, 실제 발송은 없습니다. 칸 출결·메모·일괄 출결·자리 출결과 보기 설정을 저장할 수 있고, 범위 채우기·보강 예약·결석 통보 접수 등은 아직 지원하지 않습니다. 금액 열(청구액·실급여)은 아직 없습니다.</p><span data-v2h-actor-slot>${actorPicker()}</span></div>
         <div class="v2h-slot" data-v2-host-slot style="position:relative;min-height:420px">${wait ? `<p class="v2h-wait">${esc(wait)}</p>` : ''}</div>`;
     },
   });
