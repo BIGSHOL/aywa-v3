@@ -13,13 +13,13 @@ const plain = v => !!v && typeof v === 'object' && !Array.isArray(v);
 let rulesPromise = null;
 function loadSaveRules(importV2) {
   rulesPromise ??= (async () => {
-    const [name, conflict, english, color, label, notice, preserve, periods, overlap, subjects, dbErrors, eligibility, assign, dk] = await Promise.all([
+    const [name, conflict, english, color, label, notice, preserve, periods, overlap, subjects, dbErrors, eligibility, assign, dk, delegation, level] = await Promise.all([
       'features/classes/class-name.ts', 'features/classes/class-name-conflict.ts', 'features/classes/english-track.ts', 'lib/color-utils.ts',
       'features/timetable/lib/teacher-label.ts', 'features/classes/period-notice.ts', 'features/classes/schedule-preserve.ts', 'features/timetable/lib/periods.ts',
       'features/classes/overlap.ts', 'features/owner/subjects.ts', 'features/enrollments/db-errors.ts', 'features/enrollments/eligibility.ts',
-      'features/enrollments/server/assign-helpers.ts', 'lib/date-kst.ts',
+      'features/enrollments/server/assign-helpers.ts', 'lib/date-kst.ts', 'features/classes/delegation-window.ts', 'features/timetable/lib/level.ts',
     ].map(p => importV2(p)));
-    return { name, conflict, english, color, label, notice, preserve, periods, overlap, subjects, dbErrors, eligibility, assign, dk };
+    return { name, conflict, english, color, label, notice, preserve, periods, overlap, subjects, dbErrors, eligibility, assign, dk, delegation, level };
   })().catch(error => { rulesPromise = null; throw error; });
   return rulesPromise;
 }
@@ -544,6 +544,268 @@ const scheduleArgs = withDate => args => {
 };
 const labArgs = args => { if (args.length !== 2 || typeof args[0] !== 'string' || !UUID.test(args[0]) || typeof args[1] !== 'boolean') throw bad(); return args; };
 
+// ── 2.0 features/classes/server/class-term-store.ts — 종강·폐지(반 이름 바꿈 + 수강 일괄 종료 + 감사로그) ───────────────────
+// 2.0도 postgres.js로 직접 쓰는 코드라 **그 파일의 함수 본문을 글자 그대로** 읽어 돌린다(서버 전용 표시 때문에 import만 못 한다).
+// 2.0 endClassWithName은 자기 연결에서 serializable 트랜잭션을 여는데, 여기선 공통 틀의 저장 트랜잭션 안 저장점 하나로 같은 일을 한다.
+let termPromise = null;
+function loadTermStore(importV2) {
+  termPromise ??= (async () => {
+    const [{ readFile }, ts, closedName] = await Promise.all([import('node:fs/promises'), import('typescript').then(m => m.default), importV2('features/classes/closed-name.ts')]);
+    const text = (await readFile(new URL('../../src/features/classes/server/class-term-store.ts', import.meta.url), 'utf8')).replace(/\r\n/g, '\n');
+    const i = text.indexOf('export class ClassTermError'), j = text.indexOf('export async function endClassWithName');
+    if (i < 0 || j < i) throw new Error('class-term-store.ts의 종강 함수를 찾지 못했습니다');
+    const js = ts.transpileModule(text.slice(i, j).replace(/^export /gm, ''), { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.None } }).outputText;
+    return new Function('nextClosedClassName', `${js}\nreturn { ClassTermError, prepareClassTerms, applyClassTerms, rollbackClassTerms };`)(closedName.nextClosedClassName);
+  })().catch(error => { termPromise = null; throw error; });
+  return termPromise;
+}
+const TERM_ACTIONS = ['class_end_term', 'class_archive', 'class_reopen_term'];
+/** endClassWithName(actor, request) — 2.0 함수 본문 그대로(prepare → apply) + 이 트랜잭션에서 남긴 감사로그에 via. */
+async function endClassWithName(ctx, actor, request) {
+  const T = await loadTermStore(ctx.importV2);
+  await ctx.sql.savepoint(async tx => {
+    await tx`set local lock_timeout='5s'`;
+    const rows = await T.prepareClassTerms(tx, ctx.t, [request]);
+    await T.applyClassTerms(tx, { id: actor.id, tenantId: ctx.t, displayName: actor.name }, rows);
+    await tx`update public.audit_logs set metadata = metadata || ${tx.json({ via: VIA_NOTE })} where tenant_id=${ctx.t} and actor_id=${actor.id}
+      and created_at = now() and action = any(${TERM_ACTIONS}) and not (metadata ? 'via')`;
+  }).catch(error => { error.isClassTermError = error instanceof T.ClassTermError; throw error; });
+}
+const VIA_NOTE = '3.0 연습 복사본';
+const termFailure = (X, error, scope, fallback) => X.explainDbError(error, { scope, op: 'write', fallback: error?.isClassTermError ? error.message : fallback }).message;
+
+/** enrollment-lifecycle.ts reopenClassEnrollments — DB 함수(reopen_class_enrollments)를 사용자 역할로. */
+async function reopenClassEnrollments(ctx, classId, reason) {
+  const { data, error } = await tryWrite(ctx.sql, s => s`select * from public.reopen_class_enrollments(${classId}::uuid, ${reason})`);
+  if (error) {
+    const message = error.message ?? '';
+    if (message.includes('conflicting_period')) return { error: '같은 학생의 다른 수강과 기간이 겹쳐 복원할 수 없습니다. 학생 상세에서 수강을 직접 정리해 주세요.', studentIds: [] };
+    if (message.includes('range lower bound')) return { error: '수강 종료일이 시작일보다 빠릅니다. 날짜를 확인해 주세요.', studentIds: [] };
+    if (/enrollments_no_overlap|exclusion constraint/i.test(message)) return { error: "같은 반에 기간이 겹치는 수강이 있어 처리할 수 없습니다. 학생 상세 '수업' 탭에서 수강 기간을 정리해 주세요.", studentIds: [] };
+    return { error: ctx.X.explainDbError(error, { scope: 'classes.enrollmentLifecycle.reopen', fallback: '수강 정보를 저장하지 못했습니다. 잠시 후 다시 시도해 주세요.' }).message, studentIds: [] };
+  }
+  return { studentIds: [...new Set((data ?? []).map(r => r.student_id))] };
+}
+
+// ── actions.ts archiveClass · endClassTerm · reopenClassTerm ───────────────────────────────────────────────────────────
+async function archiveClass(ctx, actorId, [, formData]) {
+  const { sql, t, R, X } = ctx;
+  const actor = await actAs(sql, t, R, X, actorId);
+  if (!actor) return { error: '반 폐지/복구는 관리자만 할 수 있습니다' };
+  const id = String(formData.get('id') ?? '').trim();
+  const next = String(formData.get('isActive') ?? 'false') === 'true';
+  if (!id) return { error: '반 ID가 누락되었습니다' };
+  if (!next) {
+    try { await endClassWithName(ctx, actor, { classId: id, date: R.kstToday(), archive: true }); }
+    catch (error) { return { error: termFailure(X, error, 'classes.archiveClass', '반 폐지를 저장하지 못했습니다. 반 이름과 수강 정보가 변경됐는지 확인하고 다시 시도해 주세요.') }; }
+    return undefined;
+  }
+  const [klass] = await sql`select class_name from public.classes where tenant_id=${t} and id=${id}`;
+  if (!klass) return { error: '반을 찾을 수 없습니다' };
+  const { error } = await tryWrite(sql, s => s`update public.classes set is_active=${next} where id=${id}`);
+  if (error) return { error: error.message };
+  const sync = await reopenClassEnrollments(ctx, id, '반 폐지');
+  if (sync.error) return { error: sync.error };
+  await audit(sql, t, actor, 'class_unarchive', 'class', { classId: id, affectedStudents: sync.studentIds.length }, klass?.class_name ?? null);
+  return undefined;
+}
+async function endClassTerm(ctx, actorId, [, formData]) {
+  const { sql, t, R, X } = ctx;
+  const actor = await actAs(sql, t, R, X, actorId);
+  if (!actor) return { error: '학원 전체 반 설정은 관리자만 할 수 있습니다' };
+  const id = String(formData.get('id') ?? '').trim();
+  const date = String(formData.get('date') ?? '').trim() || R.kstToday();
+  if (!id) return { error: '반 ID가 누락되었습니다' };
+  try { await endClassWithName(ctx, actor, { classId: id, date }); }
+  catch (error) { return { error: termFailure(X, error, 'classes.endClassTerm', '종강을 저장하지 못했습니다. 종강일·반 이름·수강 정보를 확인하고 다시 시도해 주세요.') }; }
+  return undefined;
+}
+async function reopenClassTerm(ctx, actorId, [, formData]) {
+  const { sql, t, R, X } = ctx;
+  const actor = await actAs(sql, t, R, X, actorId);
+  if (!actor) return { error: '학원 전체 반 설정은 관리자만 할 수 있습니다' };
+  const id = String(formData.get('id') ?? '').trim();
+  if (!id) return { error: '반 ID가 누락되었습니다' };
+  const [klass] = await sql`select class_name from public.classes where tenant_id=${t} and id=${id}`;
+  if (!klass) return { error: '반을 찾을 수 없습니다' };
+  const { error: updErr } = await tryWrite(sql, s => s`update public.classes set closed_at=null where id=${id}`);
+  if (updErr) return { error: updErr.message };
+  const sync = await reopenClassEnrollments(ctx, id, '종강');
+  if (sync.error) return { error: sync.error };
+  await audit(sql, t, actor, 'class_reopen_term', 'class', { classId: id, affectedStudents: sync.studentIds.length }, klass?.class_name ?? null);
+  return undefined;
+}
+
+// ── actions.ts 인수인계(scheduleHandover · cancelHandover · applyHandover) ───────────────────────────────────────────
+/** 2.0 notifyUsers — notifications 줄까지(내 행동은 나에게 알리지 않음 · 슬랙 깨우기는 바깥 요청이라 부르지 않는다). best-effort. */
+async function notifyUsers(sql, items) {
+  const rows = items.filter(i => i.recipientId && i.recipientId !== i.actorId);
+  if (!rows.length) return;
+  try {
+    await sql.savepoint(s => s`insert into public.notifications ${s(rows.map(i => ({ tenant_id: i.tenantId, recipient_id: i.recipientId, type: i.type, title: i.title,
+      body: i.body ?? null, link: i.link ?? null, actor_id: i.actorId ?? null })))}`);
+  } catch (e) { console.error(`notify.insert: ${e?.code || ''} ${e?.message || ''}`); }
+}
+/** isAssignableTeacher — 이 학원의 재직 중인 배정 가능 역할(강사·실장·원장 …)인가. */
+async function isAssignableTeacher(ctx, userId) {
+  if (!UUID.test(userId)) return false;
+  const [u] = await ctx.sql`select system_role::text system_role, status::text status from public.users where tenant_id=${ctx.t} and id=${userId}`;
+  return !!u && ctx.X.perms.isAssignableTeacherRole(u.system_role) && u.status === 'active';
+}
+async function scheduleHandover(ctx, actorId, [, formData]) {
+  const { sql, t, R, X } = ctx;
+  const classId = String(formData.get('classId') ?? '').trim(), newTeacherId = String(formData.get('newTeacherId') ?? '').trim();
+  const effectiveDate = String(formData.get('effectiveDate') ?? '').trim(), reason = String(formData.get('reason') ?? '').trim() || null;
+  if (!classId) return { error: '반 ID가 누락되었습니다' };
+  const actor = await actAs(sql, t, R, X, actorId);
+  if (!actor) return { error: '반 관리 권한이 없습니다' };
+  if (!newTeacherId) return { error: '인계받을 강사를 선택해주세요' };
+  if (!effectiveDate) return { error: '적용일을 입력해주세요' };
+  const [klass] = UUID.test(classId) ? await sql`select class_name, teacher_id::text teacher_id from public.classes where tenant_id=${t} and id=${classId}` : [];
+  if (!klass) return { error: '반을 찾을 수 없습니다' };
+  if (klass.teacher_id === newTeacherId) return { error: '현재 담임과 동일한 강사입니다' };
+  if (!(await isAssignableTeacher(ctx, newTeacherId))) return { error: '유효한 강사가 아닙니다' };
+  const { error: updErr } = await tryWrite(sql, s => s`update public.classes set pending_teacher_id=${newTeacherId}, pending_teacher_date=${effectiveDate}, pending_teacher_reason=${reason} where id=${classId}`);
+  if (updErr) return { error: updErr.message };
+  await audit(sql, t, actor, 'class_handover_schedule', 'class', { newTeacherId, effectiveDate }, klass.class_name);
+  await notifyUsers(sql, [{ tenantId: t, recipientId: newTeacherId, type: 'teacher_handover', title: '강사 인수인계 예약',
+    body: `${klass.class_name} 반의 새 담임으로 예약되었습니다 (적용일 ${effectiveDate}).`, link: `/classes/${classId}`, actorId: actor.id }]);
+  return { ok: true };
+}
+async function cancelHandover(ctx, actorId, [, formData]) {
+  const { sql, t, R, X } = ctx;
+  const classId = String(formData.get('classId') ?? '').trim();
+  if (!classId) return { error: '반 ID가 누락되었습니다' };
+  const actor = await actAs(sql, t, R, X, actorId);
+  if (!actor) return { error: '반 관리 권한이 없습니다' };
+  if (!UUID.test(classId) || !(await sql`select 1 from public.classes where tenant_id=${t} and id=${classId}`).length) return { error: '반을 찾을 수 없습니다' };
+  const { error: updErr } = await tryWrite(sql, s => s`update public.classes set pending_teacher_id=null, pending_teacher_date=null, pending_teacher_reason=null where id=${classId}`);
+  if (updErr) return { error: updErr.message };
+  await audit(sql, t, actor, 'class_handover_cancel', 'class', { classId });
+  return { ok: true };
+}
+/** handover.ts moveLiveSlotTeacher — 옛 담임이 맡던 지금·앞 교시를 새 담임에게(지난 구간은 어제로 마감 행을 남긴다). */
+async function moveLiveSlotTeacher(ctx, { classIds, fromTeacherId, toTeacherId }) {
+  const { sql, t, R, S } = ctx;
+  const today = R.kstToday(), yesterday = S.preserve.dayBefore(today);
+  let moved = 0;
+  const targets = await sql`select id::text id, class_id::text class_id, day_of_week::text day_of_week, start_time::text start_time, end_time::text end_time,
+      valid_from::text valid_from, valid_to::text valid_to, teacher_id::text teacher_id, classroom_id::text classroom_id, slot_teacher_label, slot_room_label, period_label, merge_group
+    from public.class_schedules where tenant_id=${t} and class_id = any(${classIds}::uuid[]) and teacher_id=${fromTeacherId} and (valid_to is null or valid_to >= ${today}::date)`;
+  if (!targets.length) return { moved };
+  const splittable = targets.filter(x => !x.valid_from || x.valid_from.slice(0, 10) < today);
+  const r = await tryWrite(sql, async s => {
+    if (splittable.length) await insertSlots(s, splittable.map(x => ({ tenant_id: t, class_id: x.class_id, day_of_week: x.day_of_week, start_time: x.start_time, end_time: x.end_time,
+      valid_from: x.valid_from, valid_to: yesterday, teacher_id: x.teacher_id, classroom_id: x.classroom_id, slot_teacher_label: x.slot_teacher_label, slot_room_label: x.slot_room_label,
+      period_label: x.period_label, merge_group: x.merge_group })));
+    const splitIds = splittable.map(x => x.id), rest = targets.filter(x => !splitIds.includes(x.id)).map(x => x.id);
+    let n = 0;
+    if (splitIds.length) n += (await s`update public.class_schedules set teacher_id=${toTeacherId}, valid_from=${today}::date where id = any(${splitIds}::uuid[]) returning id`).length;
+    if (rest.length) n += (await s`update public.class_schedules set teacher_id=${toTeacherId} where id = any(${rest}::uuid[]) returning id`).length;
+    return n;
+  });
+  return r.error ? { moved, error: r.error.message } : { moved: r.data };
+}
+async function applyHandover(ctx, actorId, [, formData]) {
+  const { sql, t, R, X } = ctx;
+  const classId = String(formData.get('classId') ?? '').trim();
+  if (!classId) return { error: '반 ID가 누락되었습니다' };
+  const actor = await actAs(sql, t, R, X, actorId);
+  if (!actor) return { error: '반 관리 권한이 없습니다' };
+  const [klass] = UUID.test(classId) ? await sql`select class_name, teacher_id::text teacher_id, pending_teacher_id::text pending_teacher_id from public.classes where tenant_id=${t} and id=${classId}` : [];
+  if (!klass) return { error: '반을 찾을 수 없습니다' };
+  if (!klass.pending_teacher_id) return { error: '예약된 인수인계가 없습니다' };
+  if (!(await isAssignableTeacher(ctx, klass.pending_teacher_id))) return { error: '예정된 강사가 더 이상 유효하지 않습니다(퇴사·역할 변경). 인수인계를 다시 예약해주세요.' };
+  const { error: updErr } = await tryWrite(sql, s => s`update public.classes set teacher_id=${klass.pending_teacher_id}, pending_teacher_id=null, pending_teacher_date=null, pending_teacher_reason=null where id=${classId}`);
+  if (updErr) return { error: updErr.message };
+  const slots = klass.teacher_id ? await moveLiveSlotTeacher(ctx, { classIds: [classId], fromTeacherId: klass.teacher_id, toTeacherId: klass.pending_teacher_id }) : { moved: 0 };
+  await audit(sql, t, actor, 'class_handover_apply', 'class', { classId, previousTeacherId: klass.teacher_id, newTeacherId: klass.pending_teacher_id,
+    effectiveDate: R.kstToday(), slotsMoved: slots.moved }, klass.class_name);
+  return { ok: true };
+}
+
+// ── actions.ts 임시 위임(createClassDelegation · revokeClassDelegation) ─────────────────────────────────────────────
+async function requireDelegationWrite(ctx, actorId, classId) {
+  const { sql, t, R, X } = ctx;
+  const actor = await actAs(sql, t, R, X, actorId);
+  if (!actor) return { ok: false, error: '반 관리 권한이 없습니다' };
+  if (!classId) return { ok: false, error: '반 정보가 없습니다' };
+  const [klass] = UUID.test(classId) ? await sql`select class_name, teacher_id::text teacher_id from public.classes where tenant_id=${t} and id=${classId}` : [];
+  if (!klass) return { ok: false, error: '반을 찾을 수 없습니다' };
+  return { ok: true, actor, klass };
+}
+async function createClassDelegation(ctx, actorId, [, formData]) {
+  const { sql, t, S } = ctx;
+  const classId = String(formData.get('classId') ?? '').trim(), delegateUserId = String(formData.get('delegateUserId') ?? '').trim();
+  const fromDate = String(formData.get('fromDate') ?? '').trim(), toDate = String(formData.get('toDate') ?? '').trim() || fromDate;
+  const reason = String(formData.get('reason') ?? '').trim().slice(0, 200) || null;
+  const gate = await requireDelegationWrite(ctx, actorId, classId);
+  if (!gate.ok) return { error: gate.error };
+  const { actor, klass } = gate;
+  if (!delegateUserId) return { error: '대신 맡을 선생님을 선택해주세요' };
+  if (delegateUserId === klass.teacher_id) return { error: '이미 이 반 담임입니다' };
+  const rangeError = S.delegation.validateDelegationRange(fromDate, toDate);
+  if (rangeError) return { error: rangeError };
+  if (!(await isAssignableTeacher(ctx, delegateUserId))) return { error: '유효한 강사가 아닙니다' };
+  // 2.0은 관리 클라이언트(RLS 우회)로 넣는다 — 같은 접속(복사본 관리 계정)으로, 지점은 직접 건다.
+  try {
+    await sql.savepoint(s => s`insert into public.class_delegations (tenant_id, class_id, delegate_user_id, from_date, to_date, reason, created_by)
+      values (${t}, ${classId}, ${delegateUserId}, ${fromDate}, ${toDate}, ${reason}, ${actor.id})`);
+  } catch (e) { return { error: e?.message ?? '저장에 실패했습니다' }; }
+  await audit(sql, t, actor, 'class_delegate', 'class', { delegateUserId, fromDate, toDate }, klass.class_name);
+  await notifyUsers(sql, [{ tenantId: t, recipientId: delegateUserId, type: 'class_delegation', title: '대신 맡을 수업이 생겼습니다',
+    body: `${klass.class_name} 반을 ${S.delegation.delegationRangeLabel(fromDate, toDate)}에 대신 맡습니다. 원스크린 반 목록의 '위임'에서 보입니다.`, link: '/onescreen', actorId: actor.id }]);
+  return { ok: true };
+}
+async function revokeClassDelegation(ctx, actorId, [, formData]) {
+  const { sql, t } = ctx;
+  const delegationId = String(formData.get('delegationId') ?? '').trim();
+  if (!delegationId) return { error: '위임 정보가 없습니다' };
+  const [row] = UUID.test(delegationId) ? await sql`select id::text id, class_id::text class_id, delegate_user_id::text delegate_user_id, revoked_at from public.class_delegations
+    where tenant_id=${t} and id=${delegationId}` : [];
+  if (!row) return { error: '위임을 찾을 수 없습니다' };
+  if (row.revoked_at) return { ok: true };
+  const gate = await requireDelegationWrite(ctx, actorId, row.class_id);
+  if (!gate.ok) return { error: gate.error };
+  const { actor, klass } = gate;
+  try {
+    await sql.savepoint(s => s`update public.class_delegations set revoked_at=now(), revoked_by=${actor.id} where id=${delegationId} and tenant_id=${t} and revoked_at is null`);
+  } catch (e) { return { error: e?.message ?? '저장에 실패했습니다' }; }
+  await audit(sql, t, actor, 'class_delegate_revoke', 'class', { delegationId, delegateUserId: row.delegate_user_id }, klass.class_name);
+  return { ok: true };
+}
+
+// ── 2.0 features/timetable/server/actions.ts changeClassLevel(반 상세 '레벨') ───────────────────────────────────────
+async function changeClassLevel(ctx, actorId, [classId, change]) {
+  const { sql, t, R, X, S } = ctx;
+  const actor = await actAs(sql, t, R, X, actorId);
+  if (!actor) return { error: '반 관리 권한이 없습니다' };
+  if (!classId) return { error: '반 ID가 누락되었습니다' };
+  const [klass] = UUID.test(classId) ? await sql`select id::text id, class_name, subject, teacher_id::text teacher_id from public.classes where tenant_id=${t} and id=${classId}` : [];
+  if (!klass) return { error: '반을 찾을 수 없습니다' };
+  const levelRows = await sql`select abbreviation, full_name from public.english_levels where tenant_id=${t} order by sort_order`;
+  const order = levelRows.length > 0 ? levelRows.map(l => ({ abbreviation: l.abbreviation, fullName: l.full_name ?? '' })) : S.level.DEFAULT_ENGLISH_LEVELS;
+  const leveled = S.level.applyLevelChange(klass.class_name, change, order);
+  const newName = leveled ? S.name.normalizeClassName(leveled) : leveled;
+  if (!newName) return { error: '이 반은 레벨 규칙(예: DP3)이 아니거나 더 올릴/내릴 수 없습니다' };
+  const reserved = S.name.reservedClassNameReason(newName);
+  if (reserved) return { error: reserved };
+  const guarded = await writeWithClassNameGuard(sql, t, S, actor, {
+    target: { tenantId: t, subject: klass.subject, name: newName, excludeId: classId }, today: R.kstToday(), request: null, canFree: async () => true,
+    write: () => tryWrite(sql, s => s`update public.classes set class_name=${newName} where id=${classId}`.then(() => true)),
+    savedClassId: () => classId, failMessage: '반 이름을 바꾸지 못했습니다. 잠시 후 다시 시도해주세요.',
+  });
+  if (!guarded.ok) {
+    if (!('conflict' in guarded)) return { error: guarded.error };
+    const c = guarded.conflict;
+    const hint = c.freeTo ? `반 수정 화면에서 '${newName}'(으)로 저장하면 그 반 이름을 비울지 묻습니다.` : S.conflict.classNameConflictHint(c);
+    return { error: hint ? `${c.message} ${hint}` : c.message };
+  }
+  await audit(sql, t, actor, 'class_update', 'class', { classId, changed: ['반 이름'], changes: [{ field: '반 이름', from: klass.class_name, to: newName }], note: '레벨 변경' }, newName);
+  return { newName };
+}
+const levelArgs = args => { if (args.length !== 2 || typeof args[0] !== 'string' || !UUID.test(args[0]) || !['number-up', 'number-down', 'class-up', 'class-down'].includes(args[1])) throw bad(); return args; };
+
 // ── 공통 틀 동작 ─────────────────────────────────────────────────────────────────────────────────────────────────────
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const CLASSES = 'features/classes/server/actions.ts';
@@ -555,6 +817,15 @@ const ACTIONS = {
   setEnrollmentLabSeparate: { module: 'features/enrollments/server/lab-separate-actions.ts', args: labArgs, run: setEnrollmentLabSeparate },
   rescheduleEnrollment: { module: 'features/enrollments/server/scheduled-actions.ts', args: scheduleArgs(true), run: rescheduleEnrollment },
   cancelScheduledEnrollment: { module: 'features/enrollments/server/scheduled-actions.ts', args: scheduleArgs(false), run: cancelScheduledEnrollment },
+  archiveClass: { module: CLASSES, args: formAction, run: archiveClass },
+  endClassTerm: { module: CLASSES, args: formAction, run: endClassTerm },
+  reopenClassTerm: { module: CLASSES, args: formAction, run: reopenClassTerm },
+  scheduleHandover: { module: CLASSES, args: formAction, run: scheduleHandover },
+  cancelHandover: { module: CLASSES, args: formAction, run: cancelHandover },
+  applyHandover: { module: CLASSES, args: formAction, run: applyHandover },
+  createClassDelegation: { module: CLASSES, args: formAction, run: createClassDelegation },
+  revokeClassDelegation: { module: CLASSES, args: formAction, run: revokeClassDelegation },
+  changeClassLevel: { module: 'features/timetable/server/actions.ts', args: levelArgs, run: changeClassLevel },
 };
 
 /** rules = 수업목록 화면 규칙(loadRules) · extra = 시간표 저장의 loadExtra(권한 표·역할 이름 …) · readers = { readSettings(sql, t) }. */
@@ -568,7 +839,7 @@ export function classesActions(rules, extra, readers) {
       const [R, X, S] = await Promise.all([rules(importV2), extra(importV2), loadSaveRules(importV2)]);
       // 원생 상태(대기·퇴원) 담당 = 시간표와 같은 판정(readPeople statusIds) — 배정 종료일 같은 상태 변경 게이트에 쓴다.
       const { statusIds } = await readPeople(sql, tenantId, R, X);
-      return a.run({ sql, t: tenantId, R, X, S, statusIds, readers: { readSettings: (s, t) => readers.readSettings(s, t, R) } }, body.actor, body.args);
+      return a.run({ sql, t: tenantId, R, X, S, statusIds, importV2, readers: { readSettings: (s, t) => readers.readSettings(s, t, R) } }, body.actor, body.args);
     },
   }]));
 }

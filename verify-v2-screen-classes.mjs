@@ -273,6 +273,59 @@ try {
     const [after] = await q1`select count(*)::int n from public.enrollments where student_id=${STU} and class_id=${TO}`;
     assert.equal(after.n, 0, '시험 뒤 복사본은 그대로');
   });
+
+  await check('저장(2단계) — 반 단위: 종강·재개강·폐지·복구(class-term-store 본문 그대로) · 인수인계 예약·적용(알림 줄) · 임시 위임·해제 · 레벨 (되돌림)', async () => {
+    const A = C.screen.actions, ROLL = new Error('rollback'), M = 'features/classes/server/actions.ts';
+    for (const n of ['archiveClass', 'endClassTerm', 'reopenClassTerm', 'scheduleHandover', 'cancelHandover', 'applyHandover', 'createClassDelegation', 'revokeClassDelegation'])
+      assert.ok((await src(M)).includes(`export async function ${n}(`), n);
+    assert.ok((await src('features/timetable/server/actions.ts')).includes('export async function changeClassLevel('));
+    const store = await src('features/classes/server/class-term-store.ts');
+    for (const n of ['export class ClassTermError', 'export async function prepareClassTerms(', 'export async function applyClassTerms(', 'export async function endClassWithName('])
+      assert.ok(store.includes(n), `class-term-store.ts의 ${n} — 종강 본문을 이 글자로 잘라 돌린다`);
+    const tx = async fn => { let out; try { await db.begin(async sql => { out = await fn(sql); throw ROLL; }); } catch (e) { if (e !== ROLL) throw e; } return out; };
+    const run = (sql, name, actor, args, module = M) => A[name].run({ sql, body: A[name].validate({ module, actor, args }), tenantId, importV2 });
+    const form = o => ({ $formData: Object.entries(o) }), actor = base.editors[0].id, CLS = 'e4a2c026-8992-4211-a5fe-b9e93be8a0f3';
+    const [t2] = await q1`select id::text id from public.users where tenant_id=${tenantId} and status::text='active' and system_role::text='teacher' limit 1`;
+    const [k] = await q1`select class_name, teacher_id::text t from public.classes where id=${CLS}`;
+    const term = await tx(async sql => {
+      const r1 = await run(sql, 'endClassTerm', actor, [null, form({ id: CLS, date: today })]);
+      const c1 = (await sql`select class_name, closed_at::text closed_at from public.classes where id=${CLS}`)[0];
+      const ended = await sql`select withdrawal_reason r from public.enrollments where class_id=${CLS} and end_date=${today}::date`;
+      const r2 = await run(sql, 'reopenClassTerm', actor, [null, form({ id: CLS })]);
+      const c2 = (await sql`select closed_at from public.classes where id=${CLS}`)[0];
+      const logs = await sql`select action, metadata->>'via' via from public.audit_logs where tenant_id=${tenantId} and created_at >= now() and action in ('class_end_term','class_reopen_term') order by action`;
+      return { r1, c1, ended: ended.map(x => x.r), r2, c2, logs: logs.map(l => [l.action, l.via]) };
+    });
+    assert.deepEqual([term.r1, term.c1.closed_at, term.r2, term.c2.closed_at], [undefined, today, undefined, null]);
+    assert.notEqual(term.c1.class_name, k.class_name, '종강하면 반 이름에 종강일을 붙인다(nextClosedClassName)');
+    assert.ok(term.ended.length > 0 && term.ended.every(r => r === '종강'), '지금 수강은 종강일로 끝난다');
+    assert.deepEqual(term.logs, [['class_end_term', '3.0 연습 복사본'], ['class_reopen_term', '3.0 연습 복사본']]);
+    const arch = await tx(async sql => ({ r1: await run(sql, 'archiveClass', actor, [null, form({ id: CLS, isActive: 'false' })]),
+      c1: (await sql`select is_active from public.classes where id=${CLS}`)[0].is_active, r2: await run(sql, 'archiveClass', actor, [null, form({ id: CLS, isActive: 'true' })]),
+      c2: (await sql`select is_active from public.classes where id=${CLS}`)[0].is_active,
+      logs: (await sql`select action from public.audit_logs where tenant_id=${tenantId} and created_at >= now() and action in ('class_archive','class_unarchive') order by action`).map(l => l.action) }));
+    assert.deepEqual([arch.r1, arch.c1, arch.r2, arch.c2, arch.logs], [undefined, false, undefined, true, ['class_archive', 'class_unarchive']]);
+    const ho = await tx(async sql => {
+      const r1 = await run(sql, 'scheduleHandover', actor, [null, form({ classId: CLS, newTeacherId: t2.id, effectiveDate: today })]);
+      const r2 = await run(sql, 'applyHandover', actor, [null, form({ classId: CLS })]);
+      return { r1, r2, t: (await sql`select teacher_id::text t, pending_teacher_id p from public.classes where id=${CLS}`)[0],
+        note: (await sql`select type from public.notifications where tenant_id=${tenantId} and created_at >= now() and recipient_id=${t2.id}`).map(n => n.type) };
+    });
+    assert.deepEqual([ho.r1, ho.r2, ho.t.t, ho.t.p, ho.note.includes('teacher_handover')], [{ ok: true }, { ok: true }, t2.id, null, t2.id !== actor]);
+    assert.deepEqual(await tx(sql => run(sql, 'scheduleHandover', actor, [null, form({ classId: CLS, newTeacherId: k.t ?? t2.id, effectiveDate: today })])),
+      k.t ? { error: '현재 담임과 동일한 강사입니다' } : { ok: true });
+    const dg = await tx(async sql => {
+      const r1 = await run(sql, 'createClassDelegation', actor, [null, form({ classId: CLS, delegateUserId: t2.id, fromDate: today })]);
+      const [d] = await sql`select id::text id from public.class_delegations where class_id=${CLS} and created_at >= now()`;
+      return { r1, r2: await run(sql, 'revokeClassDelegation', actor, [null, form({ delegationId: d.id })]),
+        revoked: (await sql`select revoked_at is not null r from public.class_delegations where id=${d.id}`)[0].r };
+    });
+    assert.deepEqual(dg, { r1: { ok: true }, r2: { ok: true }, revoked: true });
+    assert.deepEqual(await tx(sql => run(sql, 'changeClassLevel', actor, [CLS, 'class-up'], 'features/timetable/server/actions.ts')),
+      { error: '이 반은 레벨 규칙(예: DP3)이 아니거나 더 올릴/내릴 수 없습니다' });
+    const [after] = await q1`select class_name, teacher_id::text t, closed_at, is_active from public.classes where id=${CLS}`;
+    assert.deepEqual([after.class_name, after.t, after.closed_at, after.is_active], [k.class_name, k.t, null, true], '시험 뒤 복사본은 그대로');
+  });
 } finally { await db.end(); }
 
 await check('호스트: 2.0 부품을 고치지 않고 묶인다 — 서버 전용 유입 0 · 운영 주소·외부 호출 0', async () => {
