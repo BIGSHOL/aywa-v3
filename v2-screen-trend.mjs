@@ -89,6 +89,8 @@ async function nameOf(sql, tenantId, dim, key) {
 // 선생님 = 그 범위 반의 과목 · 반 수 · 학생 수(겹치는 학생은 한 번) / 반 = 과목 · 담임 · 학생 수 / 과목 = 반 수 · 학생 수. 과목 열쇠는 영어 중 EiE를 가른다.
 // 학생 기준 등 여기 없는 기준은 지표가 줄에 실어 보낸 meta를 그대로 쓴다.
 const META_DIMS = new Set(['teacher', 'class', 'subject']);
+// 필터가 있어야 하는 기준(needsFilter — 학생별)을 내는 필터 기준 — 반·선생님(과목 필터 + 학생별은 수백 줄).
+const NEEDS_FILTER_ON = new Set(['class', 'teacher']);
 async function homeroomAt(sql, tenantId, importV2, classes, day) {
   try {
     const [A, K] = await Promise.all([importV2('features/classes/teacher-as-of.ts'), importV2('lib/date-kst.ts')]);
@@ -107,11 +109,21 @@ async function rowMeta(sql, tenantId, importV2, from, to, by, subjectName) {
   if (!META_DIMS.has(by) || !from || !to) return null;
   const all = await sql`select c.id::text id, c.class_name, c.subject, c.english_track, c.teacher_id::text teacher_id, c.is_active, c.closed_at::text closed_at,
       (c.created_at at time zone 'Asia/Seoul')::date::text created from public.classes c where c.tenant_id = ${tenantId}`;
-  const seats = await sql`select e.class_id::text class_id, e.student_id::text student_id from public.enrollments e
-    join public.students s on s.id = e.student_id and s.tenant_id = e.tenant_id and s.is_test = false
-    where e.tenant_id = ${tenantId} and e.start_date <= ${to} and (e.end_date is null or e.end_date > ${from} or (e.end_date = ${from} and not e.is_transferred))`;
+  // 수강은 반 종강일에서 끊는다(종강 뒤로 열린 수강이 있다 — trend-student closedCut과 같은 규칙: 끊으면 반이동 표시도 내린다).
+  const seats = await sql`select class_id, student_id from (
+      select e.class_id::text class_id, e.student_id::text student_id, e.start_date,
+        case when c.closed_at is not null and (e.end_date is null or e.end_date > c.closed_at) then c.closed_at else e.end_date end end_date,
+        case when c.closed_at is not null and (e.end_date is null or e.end_date > c.closed_at) then false else e.is_transferred end moved
+      from public.enrollments e
+      join public.students s on s.id = e.student_id and s.tenant_id = e.tenant_id and s.is_test = false
+      join public.classes c on c.id = e.class_id and c.tenant_id = e.tenant_id
+      where e.tenant_id = ${tenantId}) x
+    where start_date <= ${to} and (end_date is null or end_date > ${from} or (end_date = ${from} and not moved))`;
   const studentsOf = new Map(); for (const x of seats) { if (!studentsOf.has(x.class_id)) studentsOf.set(x.class_id, new Set()); studentsOf.get(x.class_id).add(x.student_id); }
-  const classes = all.filter((c) => studentsOf.has(c.id) || (c.is_active && c.created <= to && (!c.closed_at || c.closed_at > from)));
+  // 범위에 있었던 반 = trend-student(27daa89dc)와 같은 규칙 — 운영 중이거나 종강일이 있는 반(종강일 없는 비활성 반은 언제까지 있었는지 몰라 뺀다) 중
+  // 종강일(수업한 마지막 날) ≥ 범위 첫날. 선생님·과목의 반 수에서는 범위가 끝난 뒤에 만든 반도 뺀다(범위 안 수강이 있으면 넣는다 — 옮겨 온 반은 만든 날이 늦다).
+  // 반 기준은 그 조건을 걸지 않는다 — 줄은 지표가 범위 안 기록으로 낸 것이라, 늦게 만든 반이어도 줄이 있으면 정보 칸을 붙인다(26.04 '중등M 중1 EL2T 화금'이 빈칸이었다).
+  const classes = all.filter((c) => (c.is_active || c.closed_at) && (!c.closed_at || c.closed_at >= from) && (by === 'class' || studentsOf.has(c.id) || c.created <= to));
   const teacherOf = by === 'subject' ? (c) => c.teacher_id : await homeroomAt(sql, tenantId, importV2, all, to);
   const ids = by === 'class' ? [...new Set(classes.map(teacherOf).filter(Boolean))] : []; // 담임 이름은 반 기준에서만 보인다
   const nameOfUser = new Map(ids.length ? (await sql`select id::text id, display_name from public.users where tenant_id=${tenantId} and id = any(${ids}::uuid[])`).map((u) => [u.id, u.display_name]) : []);
@@ -151,16 +163,28 @@ export const screen = {
     if (filter?.dim === 'mix' && filter.key === 'both' && !(await whole('mix')).rows.some((r) => r.key === 'both')) { legacyBy = 'mix'; filter = null; }
     const fkey = filter ? `${filter.dim}:${filter.key}` : '';
     // 기준 = 옛 열쇠의 기준 → 주소의 기준 → 지표의 필터별 기본 기준(defaultBy — 반을 고르면 학생별) → 필터와 다른 첫 기준.
-    // 필터와 같은 기준은 안 된다(다시 나눠 봐야 줄이 하나뿐) · 필터가 있어야 하는 기준(needsFilter — 학생별)은 필터가 있을 때만(주소로 와도 무시).
-    const usable = (id) => !!id && id !== filter?.dim && dims.some((d) => d.id === id && (!d.needsFilter || filter));
-    const by = [legacyBy, params.by, metric.defaultBy?.[filter?.dim]].find(usable) ?? (dims.find((d) => usable(d.id)) ?? dims[0]).id;
-    const raw = await remember(`${tenantId}|${asOf}|${metric.id}|${span}|${by}|${fkey}`, () => metric.series({ sql, asOf, tenantId, importV2, windows, by, filter }));
+    // 필터와 같은 기준은 안 된다(다시 나눠 봐야 줄이 하나뿐) · 필터가 있어야 하는 기준(needsFilter — 학생별)은 반·선생님 필터일 때만
+    // (과목 필터 + 학생별은 수백 줄이라 내지 않는다 · 주소로 와도 무시).
+    const usable = (id) => !!id && id !== filter?.dim && dims.some((d) => d.id === id && (!d.needsFilter || NEEDS_FILTER_ON.has(filter?.dim)));
+    const defaultBy = metric.defaultBy?.[filter?.dim], explicit = usable(legacyBy) || usable(params.by);
+    let by = [legacyBy, params.by, defaultBy].find(usable) ?? (dims.find((d) => usable(d.id)) ?? dims[0]).id;
+    const series = (b) => remember(`${tenantId}|${asOf}|${metric.id}|${span}|${b}|${fkey}`, () => metric.series({ sql, asOf, tenantId, importV2, windows, by: b, filter }));
     const pt = (p) => (p ? { num: p[0], den: p[1], value: metric.unit === '%' ? rate(p[0], p[1]) : p[0] } : null);
     const has = (p) => !!p && (metric.unit === '%' ? p.den > 0 : p.num != null);
+    // 보여 줄 줄(원장 10-28 "구간 전체에 대해서 0이면 그냥 보여주지말것" · 팀장 정정) — 건수 = 보이는 창 모두가 0이거나 기록 없으면 뺀다 ·
+    // 비율 = 분모가 있는 창이 하나도 없을 때만 뺀다(모든 창 0%라도 대상이 있으면 남긴다 — 보고서를 하나도 안 쓴 학생·선생님이 가장 봐야 할 줄).
+    const keep = (points) => (metric.unit === '%' ? points.some(has) : points.some((p) => has(p) && p.value !== 0));
     // 앞쪽의 '분자 0' 창 = 이 기록을 쓰기 시작하기 전(대상만 있고 기록이 없다) — 0%로 그리지 않고 잘라 낸다.
     // raw.since = 그 지표를 믿을 수 있는 첫날(지표가 알려 줄 때) — 그보다 앞서 끝난 창도 잘라 낸다.
     // 쪼개 본 범위는 since로만 자른다 — 기록이 있는 기간 안의 0건인 날은 진짜 0이다(9/9~9/15의 첫날이 0건이라고 9/10부터 그리면 칩과 어긋난다).
-    const total = raw.total.map(pt), start = Math.max(0, raw.since ? windows.findIndex((w) => w.to >= raw.since) : range ? 0 : total.findIndex((p) => has(p) && p.num > 0));
+    const startOf = (r) => Math.max(0, r.since ? windows.findIndex((w) => w.to >= r.since) : range ? 0 : r.total.map(pt).findIndex((p) => has(p) && p.num > 0));
+    let raw = await series(by);
+    // 기본 기준(defaultBy)으로 골랐는데 줄이 없으면 다음 기준으로 한 번 더(영어 알림장 반 — 작성 의무가 반 단위라 학생 줄이 없다) · 주소에 그 기준을 준 경우만 빈 표.
+    if (!explicit && by === defaultBy && !raw.rows.some((r) => keep(r.points.map(pt).slice(startOf(raw))))) { // 표와 같은 창(잘라 낸 뒤)으로 본다
+      const next = dims.find((d) => usable(d.id) && d.id !== by);
+      if (next) { by = next.id; raw = await series(by); }
+    }
+    const total = raw.total.map(pt), start = startOf(raw);
     const conf = by === 'subject' || filter?.dim === 'subject' || META_DIMS.has(by) ? (await sql`select data->'operations'->'subjects' s, data->'modules'->'disabled' m from public.tenant_settings where tenant_id=${tenantId}`)[0] : null;
     const subjects = new Map((conf?.s ?? []).map((s) => [s.key, s.label]));
     // 줄 이름 = 지표가 준 이름이 먼저(서버가 '인재원 영어'로 보낸 english 줄이 학원 설정 이름 '영어'로 덮이던 것 — 원스크린 세션 49b63ec90),
@@ -182,7 +206,8 @@ export const screen = {
       const P = await importV2('features/students/enrollment/program.ts'), own = [...subjects].map(([key, label]) => ({ key, label })), eieOn = !(conf?.m ?? []).includes('eie');
       return (k) => (k === 'eie' ? P.programLabel('eie', own, eieOn) : k === 'english' ? P.programLabel('injaewon', own, eieOn) : subjects.get(k) ?? k);
     };
-    const meta = await remember(`meta|${tenantId}|${asOf}|${by}|${from}~${to}`, async () => rowMeta(sql, tenantId, importV2, from, to, by, await subjectName()))
+    // 정보 칸은 선생님·반·과목 기준만 여기서 센다 — 학생별은 지표가 줄에 실은 meta(학교·학년 · 반)를 그대로 쓴다(헛조회하지 않는다).
+    const meta = !META_DIMS.has(by) ? null : await remember(`meta|${tenantId}|${asOf}|${by}|${from}~${to}`, async () => rowMeta(sql, tenantId, importV2, from, to, by, await subjectName()))
       .catch((e) => { console.error(`확장 추세 정보 칸: ${e.message}`); return null; });
     return {
       asOf, grain, by,
@@ -191,12 +216,12 @@ export const screen = {
       metric: { id: metric.id, label: metric.label, unit: metric.unit, better: metric.better, dims: dims.map((d) => ({ id: d.id, label: d.label, ...(d.needsFilter ? { needsFilter: true } : {}) })) },
       metrics: TREND_METRICS.map((m) => ({ id: m.id, label: m.label, group: m.group, dims: m.dims.map((d) => ({ id: d.id, ...(d.needsFilter ? { needsFilter: true } : {}) })) })),
       grains,
+      byOptions: dims.filter((d) => usable(d.id)).map((d) => d.id), // 기준 단추 = 지금 고를 수 있는 기준(화면은 이 목록만 그린다)
       filter: filter ? { ...filter, label: await filterName() } : null,
       windows: shown,
       total: total.slice(start),
-      // 지금 보이는 창 모두에서 0이거나 기록 없는 줄은 뺀다(원장 10-28 "구간 전체에 대해서 0이면 그냥 보여주지말것. 구간 내에 최소 1이라도 있어야 그래프든 리스트든") —
-      // 비율은 분자가 아니라 값(0%)으로 보고, 분모 0은 기록 없음. 쪼개 보면 그 창들로 다시 본다. 전체(total)는 늘 남는다.
-      rows: raw.rows.map((r) => ({ key: r.key, label: label(by, r.key, r.label), points: r.points.map(pt).slice(start), ...(meta?.has(r.key) ? { meta: meta.get(r.key) } : r.meta ? { meta: r.meta } : {}) })).filter((r) => r.points.some((p) => has(p) && p.value !== 0)),
+      // 보여 줄 줄만(keep — 건수는 보이는 창 모두 0·기록 없음이면 빼고, 비율은 분모가 있는 창이 하나도 없을 때만 뺀다) · 쪼개 보면 그 창들로 다시 본다 · 전체(total)는 늘 남는다.
+      rows: raw.rows.map((r) => ({ key: r.key, label: label(by, r.key, r.label), points: r.points.map(pt).slice(start), ...(meta?.has(r.key) ? { meta: meta.get(r.key) } : r.meta ? { meta: r.meta } : {}) })).filter((r) => keep(r.points)),
       ...(filter && Array.isArray(raw.records) && raw.records.length === windows.length ? { records: raw.records.slice(start) } : {}),
     };
   },
