@@ -21,6 +21,7 @@ import { NavigationSection } from "@/app/(shell)/owner/_components/navigation-se
 import { ModulesSection } from "@/app/(shell)/owner/_components/modules-section";
 import { MakeupsSection } from "@/app/(shell)/owner/_components/makeups-section";
 import { OwnerServerFace } from "./owner-server-face";
+import { OwnerIntegrationsFace, type OwnerIntegrationsData } from "./owner-integrations";
 
 type Sp = Record<string, string | undefined>;
 
@@ -56,6 +57,8 @@ export type OwnerPageData = {
   hiddenPermissionIds: string[];
   hiddenSettingKeys: SettingsRoleKey[];
   navigationGates: { teacherOpen: never[]; teacherPersonal?: never; closed?: never } | null;
+  /** 연동 면(tab=sheets)일 때만 — 켜진 연동 탭 · 과목별 구글 시트 상태. */
+  integrations: OwnerIntegrationsData | null;
 };
 
 function facesFor(canReadAudit: boolean, showModules: boolean, showMakeups: boolean, showEvaluation: boolean, showContribution: boolean): OwnerFaceDef[] {
@@ -84,10 +87,11 @@ function fmt(iso: string | null): string {
 export function OwnerHostPage({ d, sp }: { d: OwnerPageData; sp: Sp }) {
   const { settings, meta, tab, canEditSettings, canReadAudit, isMaster, showMakeups, showEvaluation, showContribution, showsOperations, canEditOperations, settingsUnreadable,
     operationsTokens, operationsForClient, seatPin, classrooms, canImportClassrooms, teacherLabelsBySubject, periodDefs, sessionYear, holidayDates, permissionsSource,
-    permissionsTok, userOverrideNames, permissionStaff, hiddenPermissionIds, hiddenSettingKeys, navigationGates } = d;
+    permissionsTok, userOverrideNames, permissionStaff, hiddenPermissionIds, hiddenSettingKeys, navigationGates, integrations } = d;
+  // 2.0 page.tsx와 같은 식 — 연동 면 makeedu 실행 이력 쪽(지금은 '아직')이 쓴다.
+  const page = Math.max(1, Number(sp.page) || 1);
   const allowedTabs = new Map<OwnerFaceKey, boolean>(d.allowedTabEntries);
   const editable = d.editableVersions ? { versions: d.editableVersions } : undefined;
-  void sp;
   return (
     <div data-maximize-toolbar-page="" className="w-full min-w-0 space-y-6">
       {/* 수제 헤더 → PageHeader 수렴(2026-07-19) — 창(embed)에선 컴팩트 1행으로 접힌다(제목은 창 타이틀바).
@@ -232,7 +236,7 @@ export function OwnerHostPage({ d, sp }: { d: OwnerPageData; sp: Sp }) {
       {tab === "popups" ? <OwnerServerFace face="popups" /> : null}
       {/* 연동 = 켜진 연동만 내부 탭(슬랙 · makeedu · 구글 시트) — 원장 2026-09-28 "세로 스크롤이 너무 길어짐". */}
       {tab === "sheets" ? (
-        <OwnerServerFace face="sheets" />
+        <OwnerIntegrationsFace d={integrations!} settings={settings} sub={sp.sub} page={page} />
       ) : null}
       </fieldset>
       {/* 🔴 자체 판정을 하는 면은 위 fieldset **밖**에 둔다(SELF_GATED_TABS) — 그 fieldset은 학원 설정 쓰기 권한으로 잠기는데,

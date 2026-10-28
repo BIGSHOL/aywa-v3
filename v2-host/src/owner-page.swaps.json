@@ -21,7 +21,7 @@
  ],
  [
   "        <IntegrationsFace\n          sub={sp.sub}\n          settings={settings}\n          modulesOn={{\n            makeedu: isModuleEnabled(settings.modules.disabled, \"makeedu\"),\n            // 구글 시트 = 기능(모듈) ∧ 지점 라이선스 — 라이선스가 꺼진 지점엔 탭이 없다(2026-09-30).\n            sheets: isModuleEnabled(settings.modules.disabled, \"sheet_sync\") && (await isFeatureLicensed(viewer.tenantId, \"google_sheets\")),\n          }}\n          page={page}\n          isEmbed={isEmbed}\n        />",
-  "        <OwnerServerFace face=\"sheets\" />"
+  "        <OwnerIntegrationsFace d={integrations!} settings={settings} sub={sp.sub} page={page} />"
  ],
  [
   "<EvaluationFace />",

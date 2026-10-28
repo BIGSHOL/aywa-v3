@@ -1,0 +1,38 @@
+{
+ "integrations-face.tsx": [
+  [
+   "{active === \"slack\" ? <SlackCard /> : null}",
+   "{active === \"slack\" ? <OwnerServerFace face=\"slack\" /> : null}"
+  ],
+  [
+   "        <SheetsFace\n          subjects={settings.operations.subjects}\n          page={page}\n          isEmbed={isEmbed}\n          makeeduOn={active === \"makeedu\"}\n          sheetsOn={active === \"sheets\"}\n        />",
+   "        <OwnerSheetsFace\n          subjects={settings.operations.subjects}\n          makeeduOn={active === \"makeedu\"}\n          sheetsOn={active === \"sheets\"}\n          sheetStatuses={sheetStatuses}\n          saEmail={saEmail}\n        />"
+  ],
+  [
+   "{active === \"video\" ? <VideoDriveCard /> : null}",
+   "{active === \"video\" ? <OwnerServerFace face=\"video\" /> : null}"
+  ],
+  [
+   "{active === \"todaysMath\" ? <TodaysMathCard report={settings.report} /> : null}",
+   "{active === \"todaysMath\" ? <OwnerServerFace face=\"todaysMath\" /> : null}"
+  ],
+  [
+   "{active === \"todaysMath\" && isMaster ? <TodaysMathMenusCard /> : null}",
+   ""
+  ],
+  [
+   "{active === \"agent\" ? <AgentCard classnoteOn={classnoteModuleOn(settings)} makeeduOn={modulesOn.makeedu}\n        legacyPC={modulesOn.makeedu?<LegacyMakeeduPC />:null} /> : null}",
+   "{active === \"agent\" ? <OwnerServerFace face=\"agent\" /> : null}"
+  ]
+ ],
+ "sheets-face.tsx": [
+  [
+   "      {invoiceSync && (invoiceSync.issue || invoiceSync.status !== \"ok\") ? <section className=\"space-y-2 rounded-lg border border-amber/40 bg-amber-soft p-4\" aria-label=\"수납 동기화 확인 사항\">\n        <h2 className=\"text-base font-bold\">수납 동기화 확인 사항</h2>\n        <p className=\"text-text-dim text-xs\">{new Date(invoiceSync.syncedAt).toLocaleString(\"ko-KR\", { timeZone: \"Asia/Seoul\" })} 기준</p>\n        <p className=\"break-words text-sm\" title={invoiceSync.issue ?? undefined}>{invoiceSync.status === \"ok\" ? invoiceSync.issue : humanizeMakeeduSyncError(invoiceSync.issue) || \"수납 동기화 실패\"}</p>\n        {invoiceSync.issue?.includes(\"미매칭\") ? <>\n          <p className=\"text-sm\">학생 미매칭은 원생의 이름·학년·중복 등록을 확인해야 합니다. 가져오지 못한 수납은 수납 화면의 ‘마지막 동기화에 없던 청구’ 목록에 표시되지 않습니다.</p>\n          <EmbedLink href=\"/owner?tab=data\" className=\"inline-flex text-sm font-semibold text-primary underline underline-offset-2\">데이터 정리에서 중복 원생 확인</EmbedLink>\n          <p className=\"text-text-dim text-xs\">미매칭 대상의 상세 내역은 동기화 담당 PC의 .makeedu-tmp/import-invoices-report.json에서 확인할 수 있습니다.</p>\n        </> : <p className=\"text-sm\">연동 PC 탭의 담당 PC 상태와 아래 최근 실행 이력을 확인하세요.</p>}\n      </section> : null}\n",
+   ""
+  ],
+  [
+   "      {makeeduOn && makeeduStatus ? (\n        <>\n          <MakeeduSyncCard status={makeeduStatus} initialLock={syncLock} />\n          <EmbedLink href=\"/owner?tab=sheets&sub=agent\" className=\"text-primary text-sm font-semibold underline underline-offset-2\">연동 PC 관리</EmbedLink>\n          <MakeeduSyncRunsList\n            runs={runsPage.runs}\n            page={page}\n            totalPages={runsTotalPages}\n            total={runsPage.total}\n            hrefForPage={runsHref}\n          />\n          {/* 역동기화 — QR 접수 상담을 makeedu로 보내기(항상 표시, 후보 0건이면 빈 상태로 발견성 유지) */}\n          <MakeeduPushCard candidates={pushCandidates} />\n        </>\n      ) : null}\n\n",
+   "      {makeeduOn ? <OwnerServerFace face=\"makeedu\" /> : null}\n\n"
+  ]
+ ]
+}

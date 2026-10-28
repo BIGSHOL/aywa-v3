@@ -10,6 +10,7 @@
 // 지점 화면에는 운영자(슈퍼관리자) 설정 면을 세우지 않는다(CLAUDE.md '지점과 슈퍼관리자 설정 분리') — 2.0 page.tsx도 세우지 않는다.
 import { UUID, loadRules } from './v2-mcs-core.mjs';
 import { ownerActions } from './v2-owner-save.mjs';
+import { integrationsView, integrationActions } from './v2-owner-integrations.mjs';
 
 const ID = 'owner';
 const plain = v => !!v && typeof v === 'object' && !Array.isArray(v);
@@ -179,7 +180,9 @@ async function ownerPage({ sql, t, R, O, sp, viewers, viewer, settings, row }) {
   const settingsView = { preset: settings.preset, profile: tab === 'profile' ? settings.profile : { name: settings.profile.name }, modules: settings.modules,
     ...(tab === 'makeups' && canReadAudit ? { makeups: settings.makeups } : {}), ...(tab === 'billing' ? { billing: settings.billing } : {}),
     ...(tab === 'notifications' ? { notifications: settings.notifications } : {}), ...(tab === 'consultations' ? { consultations: settings.consultations } : {}),
-    ...(tab === 'navigation' ? { navigation: settings.navigation } : {}), ...(showsPermissions ? { navigation: settings.navigation } : {}) };
+    ...(tab === 'navigation' ? { navigation: settings.navigation } : {}), ...(showsPermissions ? { navigation: settings.navigation } : {}),
+    // 연동 면 = 과목 라벨(시트 카드 제목)만.
+    ...(tab === 'sheets' ? { operations: { subjects: settings.operations.subjects } } : {}) };
   return {
     settings: settingsView, meta: row.updatedAt ? { updatedAt: row.updatedAt } : null, tab, canEditSettings, allowedTabEntries, canReadAudit, isMaster, showMakeups,
     showEvaluation: false, showContribution: false, showsOperations, canEditOperations, settingsUnreadable: false,
@@ -195,6 +198,7 @@ async function ownerPage({ sql, t, R, O, sp, viewers, viewer, settings, row }) {
     hiddenSettingKeys,
     // '탭 및 메뉴 구성' 편집기의 강사 메뉴 판정(navigationEditorGates)은 다음 단계 — 그때까지 강사뷰 편집기는 비어 보인다.
     navigationGates: null,
+    integrations: tab === 'sheets' ? await integrationsView(sql, t, R, settings, viewer) : null,
   };
 }
 
@@ -202,14 +206,14 @@ async function ownerPage({ sql, t, R, O, sp, viewers, viewer, settings, row }) {
 async function ownerIo(sql, t, importV2) {
   const [R, O] = await Promise.all([loadRules(importV2), loadOwnerRules(importV2)]);
   const row = await readSettingsRow(sql, t), settings = O.resolve.resolveSettings(row.data, { name: row.name });
-  return { sql, t, R, O, importV2, permissionAccountIds, viewers: await readOwnerViewers(sql, t, R, O, settings) };
+  return { sql, t, R, O, importV2, settings, permissionAccountIds, viewers: await readOwnerViewers(sql, t, R, O, settings) };
 }
 
 export const screen = {
   id: ID, label: '학원 설정', order: 20,
   // 저장 = 2.0 saveOwnerSection(v2-owner-save.mjs) — 저장하는 사람 = 보는 사람.
-  actions: ownerActions(ownerIo),
-  params: { viewer: UUID, tab: /^[a-z_]{1,24}$/, year: /^\d{4}$/, sub: /^[a-z_]{1,24}$/ },
+  actions: { ...ownerActions(ownerIo), ...integrationActions(ownerIo) },
+  params: { viewer: UUID, tab: /^[a-z_]{1,24}$/, year: /^\d{4}$/, sub: /^[a-zA-Z_]{1,24}$/, page: /^\d{1,4}$/ },
   load: async ({ sql, params: sp, tenantId: t, importV2 }) => {
     const [R, O] = await Promise.all([loadRules(importV2), loadOwnerRules(importV2)]);
     const row = await readSettingsRow(sql, t);

@@ -22,7 +22,7 @@ const fd = obj => ({ $formData: Object.entries(obj).map(([k, v]) => [k, typeof v
 await check('주소 열쇠 = 2.0 page.tsx가 서버에서 읽는 칸(tab · year · sub) + 보는 사람(viewer)', async () => {
   const page = lf(await src('app/(shell)/owner/page.tsx'));
   for (const k of ['tab', 'year', 'sub']) assert.match(page, new RegExp(`sp\\.${k}\\b`));
-  assert.deepEqual(Object.keys(M.screen.params).sort(), ['sub', 'tab', 'viewer', 'year']);
+  assert.deepEqual(Object.keys(M.screen.params).sort(), ['page', 'sub', 'tab', 'viewer', 'year']);
 });
 
 await check('그리기 = 2.0 owner/page.tsx 글자 그대로 — 바꾼 곳은 서버에서만 나오는 값 셋과 서버 컴포넌트 면(owner-page.swaps.json)', async () => {
@@ -35,7 +35,17 @@ await check('그리기 = 2.0 owner/page.tsx 글자 그대로 — 바꾼 곳은 �
     const i = page.indexOf(a); assert.ok(mine.includes(page.slice(i, page.indexOf(b, i) + b.length)), a);
   }
   // 바꾼 자리 = 서버 값 셋(자리 PIN 상태 · 휴일 · 권한 token) + 서버 컴포넌트 면 — 2.0 클라 부품(섹션 폼)은 손대지 않았다
-  assert.equal(swaps.filter(([, to]) => to.includes('OwnerServerFace')).length, swaps.length - 3);
+  assert.equal(swaps.filter(([, to]) => /OwnerServerFace|OwnerIntegrationsFace/.test(to)).length, swaps.length - 3);
+  // 연동 면 = integrations-face.tsx · sheets-face.tsx 본문 그대로(서버 카드만 '아직' — owner-integrations.swaps.json)
+  const integ = lf(await here('./v2-host/src/owner-integrations.tsx')), iswaps = JSON.parse(await here('./v2-host/src/owner-integrations.swaps.json'));
+  const face = lf(await src('app/(shell)/owner/_components/integrations-face.tsx')), sheets = lf(await src('app/(shell)/owner/_components/sheets-face.tsx'));
+  let fbody = face.slice(face.indexOf('  if (available.length === 0) {'), face.indexOf('\n}\n', face.indexOf('  return (\n    <div className="space-y-4">')) + 1);
+  for (const [from, to] of iswaps['integrations-face.tsx']) fbody = fbody.replace(from, to);
+  assert.ok(integ.includes(fbody), 'integrations-face 본문');
+  let sret = sheets.slice(sheets.indexOf('  return (\n    <div className="w-full space-y-8">'), sheets.lastIndexOf('\n}'));
+  for (const [from, to] of iswaps['sheets-face.tsx']) { assert.equal(sret.split(from).length, 2); sret = sret.replace(from, to); }
+  assert.ok(integ.includes(sret), 'sheets-face 본문(구글 시트 절은 그대로)');
+  assert.ok(sret.includes('<SubjectSheetCard key={s} subject={s} label={subjectMaps.labelOf(s)} status={sheetStatuses[i]} />'));
   for (const [from] of swaps) assert.doesNotMatch(from, /<(Profile|Operations|Subjects|Billing|Notifications|Consultations|Permissions|Navigation|Modules|Makeups)Section/);
 });
 
@@ -118,6 +128,52 @@ try {
         assert.deepEqual([...await sql`select coalesce(current_setting('request.jwt.claims', true), '') c, coalesce(current_setting('v2.actor_claims', true), '') h`], [{ c: '', h: '' }]);
         const logs = await sql`select target_label, metadata->>'via' via, metadata->>'section' section from public.audit_logs where tenant_id=${tenantId} and created_at = now() and action='owner_settings_update'`;
         assert.deepEqual([...new Set(logs.map(l => l.section))].sort(), ['operations', 'permissions', 'profile']); assert.ok(logs.every(l => l.via === '3.0 연습 복사본'));
+        throw ROLL;
+      });
+    } catch (e) { if (e !== ROLL) throw e; }
+  });
+
+  await check('연동 면 = 켜진 연동만 탭(지점 스위치 · 모듈 · 라이선스) · 과목별 구글 시트 상태(수학은 옛 설정 시트도) — 독립 SQL', async () => {
+    const d = (await load({ tab: 'sheets' })).page.integrations;
+    const SUBJECTS = (await src('features/integrations/sheets-provider.ts')).match(/SHEET_EXPORT_SUBJECTS = \[([^\]]+)\]/)[1].replace(/"/g, '').split(',').map(s => s.trim());
+    assert.deepEqual(SUBJECTS, ['math', 'english']);
+    assert.ok(d.available.includes('sheets'), '시트 연동 모듈 · 라이선스가 켜진 지점');
+    const rows = await db`select provider, sync_enabled, last_error from public.user_integrations where tenant_id=${tenantId} and provider in ('google_sheets', 'google_sheets:english')`;
+    for (const [i, subject] of SUBJECTS.entries()) {
+      const row = rows.find(r => r.provider === (subject === 'math' ? 'google_sheets' : `google_sheets:${subject}`));
+      assert.equal(d.sheetStatuses[i].enabled, row?.sync_enabled === true, subject); assert.equal(d.sheetStatuses[i].lastError, row?.last_error ?? null, subject);
+    }
+    assert.equal(d.saEmail, null, '서비스계정 키는 복사본에 없다');
+    assert.equal((await load({ tab: 'profile' })).page.integrations, null, '다른 면에선 읽지 않는다');
+  });
+
+  await check('연동 저장(되돌림) = 2.0 setSheetsExportEnabled · setSubjectSheetTarget — 연동 설정 쓰기만 · 과목 검사 · 감사로그(시트 ID 값은 남기지 않음) · 끄면 업무 흐름 신호 sheet-sync-error의 근거가 없어진다', async () => {
+    const actions = lf(await src('features/integrations/server/actions.ts'));
+    for (const fn of ['setSheetsExportEnabled', 'setSubjectSheetTarget']) {
+      const body = actions.slice(actions.indexOf(`export async function ${fn}(`), actions.indexOf('\nexport async function', actions.indexOf(`export async function ${fn}(`) + 10));
+      for (const m of body.matchAll(/error: "([^"]+)"/g)) assert.ok(lf(await here('./v2-owner-integrations.mjs')).includes(m[1]), `${fn}: ${m[1]}`);
+      for (const m of body.matchAll(/action: "([a-z_]+)"/g)) assert.ok(lf(await here('./v2-owner-integrations.mjs')).includes(`'${m[1]}'`), m[1]);
+    }
+    assert.match(lf(await src('lib/permissions.ts')), /integration_settings: "연동 설정"/);
+    const ROLL = new Error('rollback');
+    try {
+      await db.begin(async sql => {
+        const act = (name, args, actor = base.viewer.id) => { const a = M.screen.actions[name]; return a.run({ sql, body: a.validate({ module: 'features/integrations/server/actions.ts', actor, args }), tenantId, importV2 }); };
+        const failing = async () => (await sql`select count(*)::int n from public.user_integrations where tenant_id=${tenantId} and coalesce(sync_enabled, false) and last_error is not null`)[0].n;
+        const before = await failing();
+        const failingRows = await sql`select provider from public.user_integrations where tenant_id=${tenantId} and coalesce(sync_enabled, false) and last_error is not null and provider like 'google_sheets%'`;
+        for (const r of failingRows) {
+          const subject = r.provider === 'google_sheets' ? 'math' : r.provider.split(':')[1];
+          assert.deepEqual(await act('setSheetsExportEnabled', [subject, false]), { enabled: false });
+        }
+        assert.equal(await failing(), before - failingRows.length, '꺼진 연결은 신호 근거에서 빠진다');
+        assert.deepEqual(await act('setSubjectSheetTarget', ['english', ' sheet-id ']), { ok: true });
+        assert.equal((await sql`select spreadsheet_id from public.user_integrations where tenant_id=${tenantId} and provider='google_sheets:english'`)[0].spreadsheet_id, 'sheet-id');
+        assert.deepEqual(await act('setSheetsExportEnabled', ['korean', true]), { error: '지원하지 않는 과목입니다' });
+        if (admin) assert.deepEqual(await act('setSheetsExportEnabled', ['math', false], admin.id), { error: '연동 설정 변경 권한이 없습니다' });
+        const logs = await sql`select action, target_label, metadata from public.audit_logs where tenant_id=${tenantId} and created_at = now()`;
+        assert.ok(logs.some(l => l.action === 'integration_sheet_target' && l.metadata.cleared === false && !JSON.stringify(l.metadata).includes('sheet-id')), '시트 ID 값은 남기지 않는다');
+        assert.ok(logs.every(l => l.metadata.via === '3.0 연습 복사본'));
         throw ROLL;
       });
     } catch (e) { if (e !== ROLL) throw e; }
