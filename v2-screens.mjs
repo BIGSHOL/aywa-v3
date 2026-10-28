@@ -9,7 +9,7 @@
 // onWrite({ screen, action }) runs after each committed write (serve-live.mjs: 첫 화면·기록·비서·업무 흐름 자료 갱신 예약, data-refresh.mjs).
 import { readdir, appendFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
-import { openFullDatabase, tenantId } from './full-db.mjs';
+import { openFullDatabase, sandbox, tenantId } from './full-db.mjs';
 import { fullDbRoot } from './full-db-paths.mjs';
 import { importV2 } from './v2-bridge.mjs';
 
@@ -17,7 +17,7 @@ export const V2_API = '/api/v2';
 const SCREEN_FILE = /^v2-screen-([a-z][a-z0-9-]{0,30})\.mjs$/, ACTION = /^[a-z][a-zA-Z0-9]{0,40}$/, here = new URL('./', import.meta.url);
 const BODY_LIMIT = 256 * 1024, JSON_TYPE = /^application\/json\s*(?:;\s*charset\s*=\s*"?utf-8"?\s*)?$/i;
 /** Every write, kept beside the copy it changed (local only, never committed): what to undo when practice goes wrong. */
-export const JOURNAL = new URL('v2-writes.jsonl', fullDbRoot);
+export const JOURNAL = new URL(sandbox ? 'v2-writes-sandbox.jsonl' : 'v2-writes.jsonl', fullDbRoot); // 시험장 저장은 따로 적는다(full-db.mjs)
 
 /** A refusal written for people (Korean). A screen throws it from validate/run; any other error answers a fixed message. */
 export class V2Error extends Error { constructor(status, code, message) { super(message); this.status = status; this.code = code; } }
@@ -121,6 +121,8 @@ export function createV2ScreenRoute({ screens, headers = {}, open = openFullData
       if (!screen) return send(req, res, 404, { error: 'screen_not_found', message: '없는 화면입니다.' });
       const q = new URL(req.url, 'http://127.0.0.1').searchParams, rules = screen.params || {}, params = {};
       for (const key of new Set(q.keys())) {
+        // 2.0 부품이 같은 화면 안을 옮길 때 붙이는 embed=1(창 안 표시)은 3.0 호스트에선 뜻이 없다 — 화면이 받겠다고 적지 않았으면 버린다(400 대신).
+        if (key === 'embed' && !rules.embed) continue;
         const v = q.getAll(key);
         // 값 길이 = 기본 200자 · 화면이 열쇠별로 늘릴 수 있다(screen.paramMax: { key: n }, 4000자까지 — 2.0 원생목록 담임 다중 선택은 uuid 여럿).
         const max = Math.min(Number(screen.paramMax?.[key]) || 200, 4000);

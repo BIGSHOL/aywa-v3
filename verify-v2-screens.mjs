@@ -61,6 +61,9 @@ try {
     assert.equal((await call('/api/v2/demo?month=2026-08')).body.readOnly, true);
     assert.equal((await call('/api/v2/demo?month=nope')).status, 400);
     assert.equal((await call('/api/v2/demo?other=1')).status, 400);
+    // 2.0 부품이 붙이는 embed=1은 화면이 받겠다고 적지 않았으면 버린다(400 아님) — 다른 값과 함께여도
+    assert.equal((await call('/api/v2/demo?embed=1&month=2026-08')).body.readOnly, true);
+    assert.equal((await call('/api/v2/demo?embed=1&month=nope')).status, 400);
   });
   await check('write saves, answers the result and journals it', async () => {
     const r = await call('/api/v2/demo/save', { method: 'POST', body: { name: '홍길동' } });
