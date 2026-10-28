@@ -166,7 +166,37 @@
 .ws-action-group.focus h3{color:var(--ax-primary)}
 .ws-records-title{margin-top:8px;font-size:var(--ax-sm)}
 /* 기록 첨부(원장 10-28) */
-.ws-attach{display:flex;flex-direction:column;gap:8px;padding:10px 12px;border:1px dashed var(--ax-line);border-radius:8px}.ws-attach>small{font-size:var(--ax-xs)}
+/* 기록 첨부 — 검색칸 하나 → 영역별로 묶인 결과(누르면 붙임 · 다시 누르면 뺌) → 붙인 기록 목록(이름 · 종류 · 정보 · 빼기). */
+.ws-attach{display:flex;flex-direction:column;gap:6px;min-width:0}
+.ws-att-label{font-size:var(--ax-sm);font-weight:600}
+.ws-att-count{margin-left:4px;font-weight:500;color:var(--ax-primary)}
+.ws-att-q{width:100%;height:var(--ax-control-h-sm);padding:0 10px;border:1px solid var(--ax-line);border-radius:8px;background:#fff;font:inherit;font-size:var(--ax-sm)}
+.ws-att-q:focus-visible{outline:2px solid var(--ax-primary);outline-offset:1px}
+.ws-att-results{display:flex;flex-direction:column;gap:8px;max-height:18rem;padding:6px;border:1px solid var(--ax-line);border-radius:8px;background:#fff}
+.ws-att-results[hidden]{display:none}
+.ws-att-group{display:flex;flex-direction:column}
+.ws-att-group h5{display:flex;align-items:baseline;gap:6px;margin:0;padding:4px 6px;font-size:var(--ax-xs);font-weight:700;color:var(--ax-primary)}
+.ws-att-group h5 b{font-weight:500;color:var(--ax-ink)}
+.ws-att-group h5 .ax-text-link{margin-left:auto;font-size:var(--ax-xs)}
+/* 한 묶음 = 같은 열(--att-cols: 고름칸 · 이름 · 열들 · 빼기). 칸 글은 한 줄 · 넘치면 말줄임(.ws-att-tip이 전부를 보인다). */
+.ws-att-row{display:grid;grid-template-columns:var(--att-cols);align-items:center;gap:10px;width:100%;padding:5px 6px;font:inherit;font-size:var(--ax-xs);text-align:left;color:var(--ax-ink)}
+.ws-att-head{padding-top:3px;padding-bottom:3px;border-bottom:1px solid var(--ax-line);font-weight:650}
+.ws-att-cell{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ws-att-row>strong{font-size:var(--ax-sm);font-weight:600}
+.ws-att-opt{border-radius:6px}
+.ws-att-opt:hover,.ws-att-opt:focus-visible{background:var(--ax-soft);outline:0}
+.ws-att-check{display:inline-grid;place-items:center;width:18px;height:18px;border:1px solid var(--ax-line);border-radius:4px;color:transparent}
+.ws-att-check .icon{width:14px;height:14px}
+.ws-att-opt[aria-selected=true] .ws-att-check{border-color:var(--ax-primary);background:var(--ax-primary);color:#fff}
+.ws-att-note{padding:8px 6px;font-size:var(--ax-xs)}
+.ws-att-picked{display:flex;flex-direction:column;gap:8px;padding:6px;border:1px solid var(--ax-line);border-radius:8px}
+.ws-att-picked[hidden]{display:none}
+.ws-att-picked .ws-att-row+.ws-att-row{border-top:1px solid var(--ax-line)}
+.ws-att-remove{display:inline-grid;place-items:center;width:28px;height:28px;border-radius:6px;color:var(--ax-ink)}
+.ws-att-remove:hover{background:var(--ax-soft)}
+.ws-att-remove .icon{width:16px;height:16px}
+.ws-att-tip{position:fixed;z-index:80;max-width:min(28rem,calc(100vw - 16px));padding:8px 10px;border:1px solid var(--ax-line);border-radius:8px;background:#fff;box-shadow:0 8px 24px rgba(23,33,62,.14);font-size:var(--ax-xs);line-height:1.5;overflow-wrap:anywhere;pointer-events:none}
+.ws-att-tip[hidden]{display:none}
 /* KPI 줄 = 한 줄에 전부 · 반씩 두 줄 · 두 장씩 — 한 장만 다음 줄로 떨어지지 않게(원장 10-28 "카드 구조를 전부 통일할것"). 장 수는 그리는 쪽이 --kpi-n · --kpi-half로 준다. */
 .ax-kpi,.ws-critical{container-type:inline-size}
 .ax-kpi .ax-kpi-row,.ws-critical .ws-metrics:has(>.ws-kpi){grid-template-columns:repeat(var(--kpi-half,3),minmax(0,1fr))}
@@ -177,3 +207,5 @@
 .ws-kpi[data-trend]{cursor:pointer;transition:border-color .15s}.ws-kpi[data-trend]:hover{border-color:var(--ax-primary)}
 .ws-kpi-title>a{color:inherit;text-decoration:none;word-break:keep-all;overflow-wrap:anywhere;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden}
 .ws-kpi[data-trend]:hover .ws-kpi-title>a,.ws-kpi-title>a:focus-visible{text-decoration:underline}
+/* 기록 첨부가 든 대화 창은 PC에서 넓게 — 영역마다 열이 여럿이라 좁으면 칸이 다 잘린다(원장 10-28 "pc뷰이상으로 신경써"). */
+.modal:has(.ws-attach){width:min(1000px,calc(100vw - 28px))}

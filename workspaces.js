@@ -430,17 +430,130 @@ window.createWorkspaces = function createWorkspaces(api) {
   document.addEventListener('click',event=>{const summary=event.target.closest?.('[data-ws-group]>summary');if(!summary)return;const d=summary.parentElement,g=d.dataset.wsGroup;if(d.open){state.open.delete(g);state.closed.add(g);}else{state.open.add(g);state.closed.delete(g);}},true);
   window.addEventListener('ax-catalog',()=>api.render());
 
-  // 기록 첨부(원장 10-28 "후속 보고 쓰기에 실제 db를 활용해 결과 첨부" · "업무요청에도 실제 db를 활용해 요청가능하게"): 영역을 고르고
-  // 그 영역 기록을 복사본 DB에서 읽은 기록 저장소에서 찾아 여러 건 붙인다. 값 = "영역|기록"(name="attach") — 서버가 저장소에서 다시 찾아 확인된 값만 남긴다.
-  function attachRecordPicker(scope,fam){const CP=window.ContextPicker;if(!CP||!has(fam))return '';
-    const tag=r=>({...r,id:`${fam}|${r.id}`}),items=previews(fam).map(tag),list=CP.lists.records({items,familyLabel:area(fam)?.label||'기록',total:Number(data(fam)?.totalRecords)||items.length});
-    return CP.html({id:`${scope}-attach-records`,name:'attach',label:'첨부할 기록',multiple:true,unit:'건',addLabel:'기록 고르기',multiHint:'여러 건 고를 수 있음',...list,
-      remote:{load:async(q,{signal})=>{const r=await fetch(`/api/workspaces/${encodeURIComponent(fam)}/records?q=${encodeURIComponent(q)}&pageSize=50`,{signal,headers:{Accept:'application/json'}});const b=await r.json().catch(()=>null);if(!r.ok)throw new Error(b?.message||'기록을 찾지 못했습니다.');return {options:(b.items||[]).map(tag).map(list.option),filtered:b.filteredTotal};}}});}
-  function attachField(scope,fam=''){const CP=window.ContextPicker;if(!CP)return '';const start=has(fam)?fam:'';
-    const areaPick=CP.html({id:`${scope}-attach-area`,name:'attachArea',label:'기록 첨부 · 영역',clearable:false,selected:start?[start]:[],attrs:{'data-attach-area':scope},
-      ...CP.lists.choices({noun:'영역',columns:[{key:'name',label:'영역'},{key:'group',label:'묶음'},{key:'count',label:'기록',w:'6em'}],items:areas().filter(a=>Number(data(a.id)?.totalRecords)).map(a=>({value:a.id,title:a.label,cells:{group:a.group||'',count:`${fmt(Number(data(a.id)?.totalRecords)||0)}건`}}))})});
-    return `<div class="ws-attach" data-attach-scope="${h(scope)}">${areaPick}<div class="ws-attach-records">${start?attachRecordPicker(scope,start):''}</div><small>고른 기록의 이름·날짜·상태가 함께 남습니다. 영역을 바꾸면 고른 기록이 비워집니다.</small></div>`;}
-  document.addEventListener('change',event=>{const root=event.target.closest?.('[data-attach-area]');if(!root)return;const scope=root.dataset.attachArea,fam=root.querySelector('input[type=hidden]')?.value||'',box=document.querySelector(`.ws-attach[data-attach-scope="${CSS.escape(scope)}"] .ws-attach-records`);if(box)box.innerHTML=attachRecordPicker(scope,fam);});
+  // 기록 첨부(원장 10-28 "후속 보고 쓰기에 실제 db를 활용해 결과 첨부" · "업무요청에도 실제 db를 활용해 요청가능하게" ·
+  // "업무요청시에 기록 첨부도 알아볼 수 있게 첨부해야지 이렇게 어떻게 첨부하나"): 영역을 먼저 고르지 않고 이름·내용으로 바로 찾는다 —
+  // 모든 영역의 기록을 영역별로 묶어 보이고(GET /api/workspaces/records/search, 읽기만), 그 영역 화면에서 연 요청이면 그 영역이 먼저다.
+  // 영역마다 열을 나눈다(원장 10-28 "항상 열정렬하는거 잊지마"): 이름 | 내용 | 상태 | 날짜 | 칸들 — 그 묶음 기록이 쓰는 칸만, 같은 열엔
+  // 같은 정보(값이 없으면 빈 칸 · 다음 값을 당기지 않는다). 원생은 이름 | 학교학년 | 재원 상태 | 듣는 반(원생 상세와 같은 값).
+  // 넘친 칸은 말줄임 · 마우스를 올리면 전부(.ws-att-tip). 고른 기록도 영역별로 같은 열.
+  // 여러 영역을 함께 20건까지. 값 = "영역|기록"(name="attach") — 서버가 저장소에서 다시 찾아 확인된 값만 남긴다(flow-commands attachments).
+  const ATTACH_MAX=20,attachState=new Map();
+  const ATTACH_STUDENT={enrolled:'재원',withdrawn:'퇴원',paused:'휴원',on_hold:'휴원',leave:'휴원',pending:'등록 예정',waiting:'대기'};
+  const ATTACH_HEAD={enrollment:{detail:'학년·학교',date:'접수일'}};
+  const ymd=d=>{const s=String(d||'');return /^\d{4}-\d{2}-\d{2}/.test(s)?`${s.slice(2,4)}.${s.slice(5,7)}.${s.slice(8,10)}`:s;};
+  const schoolGrade=(school,grade)=>{const s=String(school||''),g=String(grade||''),m=/^([초중고])(\d)$/.exec(g);return m&&s.endsWith(m[1])?`${s}${m[2]}`:[s,g].filter(Boolean).join(' ');};
+  let attachStudents=null,attachClasses=null;
+  const studentOf=id=>{attachStudents??=new Map((db.students||[]).map(s=>[String(s.id),s]));return attachStudents.get(String(id));};
+  function attachCell(fam,r,key){
+    if(fam==='students'){
+      const s=studentOf(r.id);
+      if(key==='sg')return s?schoolGrade(s.school,s.grade):String(r.detail||'');
+      if(key==='st')return s?ATTACH_STUDENT[s.status]||String(r.status||''):String(r.status||'');
+      if(key==='cls'){if(!s)return '';attachClasses??=new Map((db.classes||[]).map(k=>[String(k.id),k]));return (s.classes||[]).map(k=>attachClasses.get(String(k))?.name).filter(Boolean).join(', ');}
+    }
+    if(key==='detail')return r.detail&&r.detail!==r.label?String(r.detail):'';
+    if(key==='status')return String(r.status||'');
+    if(key==='date')return ymd(r.date);
+    if(key.startsWith('f:')){const f=(r.fields||[]).find(x=>x&&x.label===key.slice(2));return f&&f.value&&f.value!=='—'?String(f.value):'';}
+    return '';
+  }
+  // 열 = 그 묶음 기록에 값이 하나라도 있는 칸(칸은 넷까지). 짧은 값만 담기는 열은 좁게 고정, 나머지는 남는 폭을 나눈다.
+  function attachColumns(fam,records){
+    const cols=fam==='students'?[{key:'sg',label:'학교학년'},{key:'st',label:'상태'},{key:'cls',label:'반'}]:(()=>{
+      const head=ATTACH_HEAD[fam]||{},out=[{key:'detail',label:head.detail||'내용'},{key:'status',label:'상태'},{key:'date',label:head.date||'날짜'}],labels=[];
+      records.forEach(r=>(r.fields||[]).forEach(f=>{if(f?.label&&!labels.includes(f.label))labels.push(f.label);}));
+      return [...out,...labels.map(l=>({key:`f:${l}`,label:l}))];})();
+    const used=cols.filter(c=>records.some(r=>attachCell(fam,r,c.key))).slice(0,fam==='students'?3:6);
+    const sized=used.map(c=>{const n=Math.max(c.label.length,...records.map(r=>attachCell(fam,r,c.key).length));return {...c,w:n<=9?`${Math.max(4,n+1)}em`:'minmax(0,1fr)'};});
+    if(sized.length&&!sized.some(c=>c.w.startsWith('minmax')))sized[sized.length-1].w=`minmax(${sized[sized.length-1].w},1fr)`;
+    return sized;
+  }
+  const attachKind=fam=>area(fam)?.label||'기록';
+  const attachRoot=scope=>document.querySelector(`.ws-attach[data-attach-scope="${CSS.escape(scope)}"]`);
+  const attachValues=root=>new Set([...(root?.closest('form')||root||document).querySelectorAll('input[name="attach"]')].map(i=>i.value));
+  // 한 영역 묶음 = 머리(영역 · 건수 · 더 보기) + 열 이름 줄 + 기록 줄. pick = 찾은 결과(눌러 붙이기), picked = 붙인 기록(빼기).
+  function attachGroup(fam,records,{mode,picked=new Set(),total=null,more=false}){
+    const cols=attachColumns(fam,records),pick=mode==='pick',tpl=[pick?'18px':'','7.5em',...cols.map(c=>c.w),pick?'':'28px'].filter(Boolean).join(' ');
+    const cell=t=>`<span class="ws-att-cell">${h(t)}</span>`;
+    const head=`<div class="ws-att-row ws-att-head" aria-hidden="true">${pick?'<span></span>':''}<span class="ws-att-cell">이름</span>${cols.map(c=>cell(c.label)).join('')}${pick?'':'<span></span>'}</div>`;
+    const rows=records.map(r=>{const v=`${fam}|${r.id}`,cells=cols.map(c=>cell(attachCell(fam,r,c.key))).join('');
+      return pick?`<button type="button" class="ws-att-row ws-att-opt" role="option" data-attach-pick="${h(v)}" aria-selected="${picked.has(v)}"><span class="ws-att-check" aria-hidden="true">${icon('check')}</span><strong class="ws-att-cell">${h(r.label)}</strong>${cells}</button>`
+        :`<div class="ws-att-row" role="listitem"><input type="hidden" name="attach" value="${h(v)}"><strong class="ws-att-cell">${h(r.label)}</strong>${cells}<button type="button" class="ws-att-remove" data-attach-remove="${h(v)}" aria-label="${h(r.label)} 빼기">${icon('close')}</button></div>`;}).join('');
+    return `<section class="ws-att-group" style="--att-cols:${tpl}" aria-label="${h(attachKind(fam))}"><h5><span>${h(attachKind(fam))}</span>${total!==null?`<b>${fmt(total)}건</b>`:''}${more?`<button type="button" class="ax-text-link" data-attach-more="${h(fam)}">더 보기</button>`:''}</h5>${head}${rows}</section>`;
+  }
+  function paintAttachResults(scope){
+    const root=attachRoot(scope),st=attachState.get(scope),box=root?.querySelector('.ws-att-results');if(!box||!st)return;
+    if(!st.open){box.hidden=true;root.querySelector('[data-attach-q]')?.setAttribute('aria-expanded','false');return;}
+    const picked=attachValues(root);
+    box.innerHTML=st.loading&&!st.groups?'<p class="ws-att-note" role="status">찾는 중…</p>':st.error?`<p class="ws-att-note" role="alert">${h(st.error)}</p>`:!st.groups?.length?'<p class="ws-att-note">찾은 기록이 없습니다.</p>':st.groups.map(g=>attachGroup(g.familyId,g.items,{mode:'pick',picked,total:g.total,more:g.total>g.items.length&&Boolean(st.q)})).join('');
+    box.hidden=false;root.querySelector('[data-attach-q]')?.setAttribute('aria-expanded','true');api.attachScroll?.();
+  }
+  // 빈 칸 = 그 영역 화면에서 연 요청이면 그 영역의 최근 기록, 아니면 안내만. 낱말이 있으면 모든 영역에서 찾는다(잠깐 멈춘 뒤 · 앞 요청은 취소).
+  function runAttachSearch(scope){
+    const root=attachRoot(scope),st=attachState.get(scope);if(!root||!st)return;
+    clearTimeout(st.timer);st.ctrl?.abort();st.error='';
+    if(!st.q){const fam=root.dataset.attachFirst;st.loading=false;if(!fam||!previews(fam).length)st.open=false;st.groups=fam&&previews(fam).length?[{familyId:fam,total:Number(data(fam)?.totalRecords)||previews(fam).length,items:previews(fam).slice(0,8)}]:[];paintAttachResults(scope);return;}
+    st.loading=true;paintAttachResults(scope);
+    st.timer=setTimeout(async()=>{const ctrl=new AbortController();st.ctrl=ctrl;const q=st.q,first=root.dataset.attachFirst||'';
+      try{const r=await fetch(`/api/workspaces/records/search?q=${encodeURIComponent(q)}${first?`&first=${encodeURIComponent(first)}`:''}`,{signal:ctrl.signal,headers:{Accept:'application/json'}});const b=await r.json().catch(()=>null);if(ctrl.signal.aborted||st.q!==q)return;if(!r.ok)throw new Error(b?.message||'기록을 찾지 못했습니다.');st.groups=(b.groups||[]).filter(g=>has(g.familyId));st.error='';}
+      catch(e){if(ctrl.signal.aborted)return;st.groups=null;st.error=e?.message||'기록을 찾지 못했습니다.';}
+      st.loading=false;paintAttachResults(scope);},200);
+  }
+  async function attachMore(scope,fam){
+    const st=attachState.get(scope);if(!st?.q)return;
+    try{const r=await fetch(`/api/workspaces/${encodeURIComponent(fam)}/records?q=${encodeURIComponent(st.q)}&pageSize=50`,{headers:{Accept:'application/json'}});const b=await r.json().catch(()=>null);if(!r.ok)throw new Error(b?.message||'기록을 찾지 못했습니다.');const g=st.groups?.find(x=>x.familyId===fam);if(g)g.items=b.items||[];paintAttachResults(scope);}
+    catch(e){toast(e?.message||'기록을 찾지 못했습니다.');}
+  }
+  // 붙인 기록 = 영역별 묶음(고른 순서) · 같은 열 규칙. 숨은 값(name="attach")은 줄 안에 있다.
+  function paintAttachPicked(root){
+    const st=attachState.get(root.dataset.attachScope),box=root.querySelector('.ws-att-picked');if(!st||!box)return;
+    const byFam=new Map();for(const [,x] of st.picked){if(!byFam.has(x.fam))byFam.set(x.fam,[]);byFam.get(x.fam).push(x.r);}
+    box.innerHTML=[...byFam].map(([fam,records])=>attachGroup(fam,records,{mode:'picked'})).join('');box.hidden=!st.picked.size;
+    root.querySelector('.ws-att-count').textContent=st.picked.size?`${fmt(st.picked.size)}건`:'';
+  }
+  function toggleAttach(root,btn){
+    const st=attachState.get(root.dataset.attachScope),v=btn.dataset.attachPick;if(!st)return;
+    if(st.picked.has(v)){st.picked.delete(v);btn.setAttribute('aria-selected','false');paintAttachPicked(root);return;}
+    const all=attachValues(root);if(all.has(v)){btn.setAttribute('aria-selected','true');return;}
+    if(all.size>=ATTACH_MAX){toast(`기록은 ${ATTACH_MAX}건까지 붙일 수 있습니다.`);return;}
+    const sep=v.indexOf('|'),fam=v.slice(0,sep),id=v.slice(sep+1),r=st.groups?.find(g=>g.familyId===fam)?.items.find(x=>String(x.id)===id);if(!r)return;
+    st.picked.set(v,{fam,r});btn.setAttribute('aria-selected','true');paintAttachPicked(root);
+  }
+  function attachField(scope,fam=''){
+    const start=has(fam)?fam:'';attachState.set(scope,{q:'',groups:null,picked:new Map(),open:false,hold:false,loading:false,error:'',timer:0,ctrl:null});
+    return `<div class="ws-attach" data-attach-scope="${h(scope)}" data-attach-first="${h(start)}"><label class="ws-att-label" for="${h(scope)}-attach-q">기록 첨부 <span class="ws-att-count"></span></label><input type="search" id="${h(scope)}-attach-q" class="ws-att-q" data-attach-q="${h(scope)}" placeholder="이름·내용으로 찾기" autocomplete="off" maxlength="100" role="combobox" aria-expanded="false" aria-controls="${h(scope)}-attach-results"><div class="ws-att-results live-scroll" id="${h(scope)}-attach-results" role="listbox" aria-multiselectable="true" aria-label="찾은 기록" hidden></div><div class="ws-att-picked" role="list" aria-label="붙인 기록" hidden></div></div>`;
+  }
+  const attachScopeOf=el=>el.closest?.('.ws-attach')?.dataset.attachScope||'';
+  document.addEventListener('input',event=>{const scope=event.target.dataset?.attachQ;if(!scope)return;const st=attachState.get(scope);if(!st)return;st.q=event.target.value.trim();st.open=true;runAttachSearch(scope);});
+  document.addEventListener('focusin',event=>{const scope=event.target.dataset?.attachQ;if(!scope)return;const st=attachState.get(scope);if(!st||st.open)return;if(st.hold){st.hold=false;return;}st.open=true;if(st.groups&&st.q)paintAttachResults(scope);else runAttachSearch(scope);});
+  document.addEventListener('click',event=>{
+    const t=event.target;if(!t.closest)return;
+    const pick=t.closest('[data-attach-pick]');if(pick){event.preventDefault();toggleAttach(pick.closest('.ws-attach'),pick);return;}
+    const rm=t.closest('[data-attach-remove]');if(rm){event.preventDefault();const root=rm.closest('.ws-attach'),v=rm.dataset.attachRemove,st=attachState.get(root.dataset.attachScope);st?.picked.delete(v);root.querySelector(`[data-attach-pick="${CSS.escape(v)}"]`)?.setAttribute('aria-selected','false');paintAttachPicked(root);const q=root.querySelector('[data-attach-q]');if(q&&document.activeElement!==q){if(st&&!st.open)st.hold=true;q.focus({preventScroll:true});}return;}
+    const more=t.closest('[data-attach-more]');if(more){event.preventDefault();attachMore(attachScopeOf(more),more.dataset.attachMore);}
+  });
+  // 말줄임된 칸에 마우스를 올리면 전부를 띄운다(브라우저 기본 툴팁 대신 · 클릭·스크롤을 막지 않음). 대화 창 위에 보이게 그 창 안에 둔다.
+  let attachTip=null,attachTipFor=null;
+  const hideAttachTip=()=>{attachTipFor=null;if(attachTip)attachTip.hidden=true;};
+  document.addEventListener('pointerover',event=>{
+    const el=event.target.closest?.('.ws-attach .ws-att-cell');if(el===attachTipFor)return;
+    if(!el||el.scrollWidth<=el.clientWidth+1){hideAttachTip();return;}
+    const host=el.closest('dialog')||document.body;if(!attachTip||attachTip.parentElement!==host){attachTip?.remove();attachTip=document.createElement('div');attachTip.className='ws-att-tip';attachTip.setAttribute('role','tooltip');host.append(attachTip);}
+    attachTip.textContent=el.textContent;attachTip.hidden=false;attachTipFor=el;
+    const r=el.getBoundingClientRect(),w=attachTip.offsetWidth,hh=attachTip.offsetHeight;let top=r.bottom+6;if(top+hh>innerHeight-8)top=Math.max(8,r.top-hh-6);
+    attachTip.style.left=`${Math.min(Math.max(8,r.left),innerWidth-w-8)}px`;attachTip.style.top=`${top}px`;
+  });
+  addEventListener('scroll',hideAttachTip,{passive:true,capture:true});
+  // 칸 밖을 누르면 결과만 접는다(고른 목록은 그대로). Esc = 결과 접기(요청 창은 닫지 않는다).
+  document.addEventListener('pointerdown',event=>{for(const [scope,st] of attachState){if(!st.open)continue;const root=attachRoot(scope);if(!root){attachState.delete(scope);continue;}if(!root.contains(event.target)){st.open=false;paintAttachResults(scope);}}},true);
+  document.addEventListener('keydown',event=>{
+    const root=event.target.closest?.('.ws-attach');if(!root)return;const scope=root.dataset.attachScope,st=attachState.get(scope);if(!st)return;
+    const opts=[...root.querySelectorAll('.ws-att-results:not([hidden]) [data-attach-pick]')],i=opts.indexOf(event.target);
+    if(event.key==='Escape'&&st.open){event.preventDefault();event.stopPropagation();st.open=false;paintAttachResults(scope);const q=root.querySelector('[data-attach-q]');if(q&&document.activeElement!==q){st.hold=true;q.focus({preventScroll:true});}return;}
+    if(event.key==='ArrowDown'&&opts.length){event.preventDefault();opts[Math.min(opts.length-1,i+1)]?.focus();return;}
+    if(event.key==='ArrowUp'&&opts.length&&i>=0){event.preventDefault();(i===0?root.querySelector('[data-attach-q]'):opts[i-1]).focus();return;}
+    if(event.key==='Enter'&&event.target.matches('[data-attach-q]')){event.preventDefault();opts[0]?.focus();}
+  },true);
   /** Opens a family's workspace, optionally on one record facet (일 카드의 '○○ 열기'). */
   function openFamily(id,facet=''){if(!has(id))return false;state.facet[id]=facet||'';state.page[id]=1;api.navigate(`workspace-${id}`);return true;}
   return {has,familyOf,view,sidebar,homeSignals,searchItems,coverage,area,areas,showRecord,kpiCard,data,openFamily,attachField};

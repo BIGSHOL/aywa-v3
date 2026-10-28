@@ -2,15 +2,44 @@
 // from the server-side store built with the verified startup snapshot (domain-snapshot.mjs).
 // GET …/records?id=<recordId> — one record of that family by its exact id (alone, never with search or paging; no
 // matching by name or date), so a link to a record outside the loaded page can open it.
+// GET /api/workspaces/records/search?q=&limit=&first= — 업무 요청·보고의 기록 첨부(원장 10-28 "업무요청시에 기록 첨부도 알아볼 수 있게"):
+// 영역을 고르지 않고 낱말로 모든 영역의 기록을 찾는다. 영역별로 묶어 영역마다 맞은 수와 앞쪽 limit건(기본 5 · 최대 20)만 준다.
+// first = 먼저 보일 영역(그 영역 화면에서 연 요청). 같은 낱말 규칙(모두 들어 있어야 맞음)·같은 기록 저장소 · 조회만.
 // Same-origin page only (serve-live.mjs host/origin/sec-fetch guards apply before this).
 import { FAMILY_IDS, workspaceRecords } from './domain-snapshot.mjs';
 
 export const RECORDS_PATH = /^\/api\/workspaces\/([a-z][a-z-]{0,40})\/records$/;
+export const SEARCH_PATH = /^\/api\/workspaces\/records\/search$/;
 const KEYS = new Set(['q', 'facet', 'page', 'pageSize', 'id']);
+const SEARCH_KEYS = new Set(['q', 'limit', 'first']);
 const RECORD_ID = /^[A-Za-z0-9][A-Za-z0-9:._-]{0,99}$/;
-const LIMITS = Object.freeze({ q: 100, facet: 100, page: 100000, pageSize: 100 });
+const LIMITS = Object.freeze({ q: 100, facet: 100, page: 100000, pageSize: 100, limit: 20 });
+// 첨부에서 자주 찾는 영역을 앞에 — 나머지는 맞은 수가 많은 순.
+const SEARCH_ORDER = ['students', 'enrollment', 'consultations', 'attendance', 'approvals', 'billing', 'withdrawal-reports', 'lesson-reports', 'video-homework', 'textbook-requests', 'classes', 'staff'];
 
 const text = r => [r.label, r.detail, r.status, r.date, ...r.fields.map(f => f.value)].join(' ').toLowerCase();
+const textCache = new WeakMap();
+// 통합 검색은 칸 이름도 낱말로 찾는다("김성현 수납" — 수납 칸이 있는 기록). 영역별 목록 검색(queryRecords)은 그대로 값만.
+const searchText = r => [r.label, r.detail, r.status, r.date, ...r.fields.flatMap(f => [f.label, f.value])].join(' ').toLowerCase();
+const cachedText = r => { let s = textCache.get(r); if (s === undefined) { s = searchText(r); textCache.set(r, s); } return s; };
+
+export function searchRecords(store, params) {
+  for (const key of params.keys()) if (!SEARCH_KEYS.has(key) || params.getAll(key).length > 1) return { status: 400, body: { error: 'invalid_request', message: '허용하지 않는 조회 조건입니다.' } };
+  const q = (params.get('q') || '').trim(), asked = params.get('first') || '', raw = params.get('limit');
+  const first = FAMILY_IDS.includes(asked) ? asked : ''; // 저장소에 없는 영역에서 연 요청이면 순서만 기본으로
+  const limit = raw === null || raw === '' ? 5 : /^\d{1,2}$/.test(raw) ? Number(raw) : NaN;
+  if (!q || q.length > LIMITS.q || !(limit >= 1 && limit <= LIMITS.limit) || (asked && !/^[a-z][a-z-]{0,40}$/.test(asked))) return { status: 400, body: { error: 'invalid_request', message: '조회 조건이 범위를 벗어났습니다.' } };
+  if (!store) return { status: 503, body: { error: 'records_unavailable', message: '근거 목록을 아직 준비하지 못했습니다.' } };
+  const terms = q.toLowerCase().split(/\s+/).filter(Boolean), groups = [];
+  for (const familyId of FAMILY_IDS) {
+    const all = store.families.get(familyId)?.records || [];let total = 0;const items = [];
+    for (const r of all) { const s = cachedText(r); if (!terms.every(t => s.includes(t))) continue; total += 1; if (items.length < limit) items.push(r); }
+    if (total) groups.push({ familyId, total, items });
+  }
+  const rank = id => id === first ? -1 : SEARCH_ORDER.includes(id) ? SEARCH_ORDER.indexOf(id) : SEARCH_ORDER.length;
+  groups.sort((a, b) => rank(a.familyId) - rank(b.familyId) || b.total - a.total);
+  return { status: 200, body: { q, groups } };
+}
 
 export function queryRecords(store, familyId, params) {
   if (!FAMILY_IDS.includes(familyId)) return { status: 404, body: { error: 'unknown_family', message: '알 수 없는 업무 영역입니다.' } };
@@ -46,15 +75,15 @@ export function queryRecords(store, familyId, params) {
 
 export function handleWorkspaceRecords(req, res, headers) {
   let url; try { url = new URL(req.url, 'http://127.0.0.1'); } catch { return false; }
-  const match = url.pathname.match(RECORDS_PATH);
-  if (!match) return false;
+  const search = SEARCH_PATH.test(url.pathname), match = search ? null : url.pathname.match(RECORDS_PATH);
+  if (!search && !match) return false;
   const send = (status, body) => {
     const data = Buffer.from(JSON.stringify(body));
     res.writeHead(status, { ...headers, 'Content-Type': 'application/json; charset=utf-8', 'Content-Length': data.length, ...(status === 405 ? { Allow: 'GET, HEAD' } : {}) });
     res.end(req.method === 'HEAD' ? undefined : data);
   };
   if (!['GET', 'HEAD'].includes(req.method)) { send(405, { error: 'method_not_allowed', message: '조회만 할 수 있습니다.' }); return true; }
-  const { status, body } = queryRecords(workspaceRecords(), match[1], url.searchParams);
+  const { status, body } = search ? searchRecords(workspaceRecords(), url.searchParams) : queryRecords(workspaceRecords(), match[1], url.searchParams);
   send(status, body);
   return true;
 }
