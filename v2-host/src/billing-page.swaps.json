@@ -1,0 +1,132 @@
+{
+ "page": [
+  [
+   "import { canReadSalary } from \"@/features/payroll/server/salary-access\";\nimport { requireAccess } from \"@/lib/auth/require-access\";\n",
+   ""
+  ],
+  [
+   "import { getTenantSettings } from \"@/features/owner/server/queries\";\nimport { BillingContent } from \"./_components/billing-content\";\nimport { TextbooksFace } from \"./_components/textbooks-face\";\nimport { ExpensesPanel } from \"./_components/expenses-panel\";\nimport { CalculatorPanel } from \"./_components/calculator-panel\";\nimport { RefundsFace } from \"./_components/refunds-face\";\nimport { SessionTermsFace } from \"./_components/session-terms-face\";\nimport { TeacherSettlementFace } from \"./_components/teacher-settlement-face\";\n",
+   "import { BillingContent, type BillingFaceData } from \"./billing-content\";\nimport { HostFaceNotReady, HostNoAccess, HostRedirect } from \"./billing-host-parts\";\nimport type { MakeeduSyncState } from \"@/features/integrations/server/makeedu-sync\";\n"
+  ],
+  [
+   "import { MakeeduSyncBadge } from \"@/components/makeedu-sync-badge\";\nimport { canManageTenant, canAccessTenant } from \"@/lib/auth/perm-matrix\";\nimport { redirect } from \"next/navigation\";\n",
+   "import { MakeeduSyncBadge } from \"./billing-sync-badge\";\n"
+  ],
+  [
+   "// 면마다 문서 제목을 달리해 창 타이틀바가 \"수납관리 · 교재\"로 라이브 갱신(route-window 관찰).\nexport async function generateMetadata({ searchParams }: { searchParams: Promise<Sp> }) {\n  const sp = await searchParams;\n  let tab = resolveTab(sp);\n  // 강사 정산 탭은 원장 전용 — 비-master가 URL로 와도 제목에 \"강사 정산\"을 노출하지 않는다(본문도 수납으로 폴백).\n  if (tab === \"payroll\" && !(await canReadSalary())) tab = \"billing\";\n  const suffix =\n    tab === \"textbooks\"\n      ? \" · 교재\"\n      : tab === \"expenses\"\n        ? \" · 지출\"\n        : tab === \"calculator\"\n          ? \" · 수강료 계산기\"\n          : tab === \"refunds\"\n            ? \" · 환불 요청서\"\n            : tab === \"sessions\"\n              ? sp.panel === \"verify\" ? \" · 회차 확정 · 청구 시수 대조\" : \" · 회차 확정\"\n              : tab === \"verify\"\n                ? \" · 회차 확정 · 청구 시수 대조\"\n                : tab === \"payroll\"\n                  ? \" · 강사 정산\"\n                  : \"\";\n  return { title: `수납관리${suffix} — 에이와` };\n}\n\n",
+   ""
+  ],
+  [
+   "export default async function BillingPage({ searchParams }: { searchParams: Promise<Sp> }) {\n  const sp = await searchParams;\n",
+   "/** /api/v2/billing — page.tsx가 서버에서 읽던 권한·설정·면 자료. */\nexport type BillingPageData = {\n  access: { billing: boolean; payrollMenu: boolean; readSalary: boolean; manageBilling: boolean; writeBilling: boolean; owner: boolean };\n  host: { disabledModules: readonly import(\"@/lib/modules\").ModuleId[] };\n  sync: Partial<Record<\"invoices\" | \"textbook_checks\", MakeeduSyncState | null>>;\n  billing: BillingFaceData | null;\n};\n\nexport function BillingPage({ d, sp }: { d: BillingPageData; sp: Sp }) {\n"
+  ],
+  [
+   "  const user = await requireAccess(tab === \"payroll\" ? \"payroll_settings\" : \"billing\");\n",
+   "  if (!(tab === \"payroll\" ? d.access.payrollMenu : d.access.billing)) return <HostNoAccess />;\n"
+  ],
+  [
+   "  if (tab === \"verify\") redirect(legacyVerificationHref(sp));\n",
+   "  if (tab === \"verify\") return <HostRedirect to={legacyVerificationHref(sp)} />;\n"
+  ],
+  [
+   "  const isMaster = await canReadSalary();\n",
+   "  const isMaster = d.access.readSalary;\n"
+  ],
+  [
+   "  const canBilling = await canAccessTenant(user.systemRole, \"billing\");\n",
+   "  const canBilling = d.access.billing;\n"
+  ],
+  [
+   "  const sessionOn = isModuleEnabled((await getTenantSettings()).modules.disabled, \"session_billing\");\n",
+   "  const sessionOn = isModuleEnabled(d.host.disabledModules, \"session_billing\");\n"
+  ],
+  [
+   "  if (effectiveTab !== \"payroll\" && !canBilling) await requireAccess(\"billing\");\n",
+   "  if (effectiveTab !== \"payroll\" && !canBilling) return <HostNoAccess />;\n"
+  ],
+  [
+   "  const canImport = importKind !== null && (await canManageTenant(user.systemRole, \"billing\"));\n",
+   "  const canImport = importKind !== null && d.access.manageBilling;\n"
+  ],
+  [
+   "<MakeeduSyncBadge domain={effectiveTab === \"billing\" ? \"invoices\" : \"textbook_checks\"} overlay />",
+   "<MakeeduSyncBadge domain={effectiveTab === \"billing\" ? \"invoices\" : \"textbook_checks\"} overlay state={d.sync[effectiveTab === \"billing\" ? \"invoices\" : \"textbook_checks\"] ?? null} canManage={d.access.owner} />"
+  ],
+  [
+   "<TextbooksFace sp={sp} />",
+   "<HostFaceNotReady />"
+  ],
+  [
+   "<ExpensesPanel sp={sp} canImport={canImport} />",
+   "<HostFaceNotReady />"
+  ],
+  [
+   "<CalculatorPanel sp={sp} />",
+   "<HostFaceNotReady />"
+  ],
+  [
+   "<RefundsFace sp={sp} />",
+   "<HostFaceNotReady />"
+  ],
+  [
+   "<SessionTermsFace period={sp.period} subject={sp.subject} q={sp.q} page={sp.page} only={sp.only} allocation={sp.allocation} confirmation={sp.confirmation} panel={sp.panel} status={sp.status} params={sp} />",
+   "<HostFaceNotReady />"
+  ],
+  [
+   "<TeacherSettlementFace period={sp.period} />",
+   "<HostFaceNotReady />"
+  ],
+  [
+   "<BillingContent sp={sp} canImport={canImport} />",
+   "<BillingContent sp={sp} canImport={canImport} data={d.billing!} />"
+  ]
+ ],
+ "content": [
+  [
+   "import { getCurrentUser } from \"@/lib/auth/current-user\";\nimport { canWriteTenant } from \"@/lib/auth/perm-matrix\";\nimport {\n  getAvailablePeriods,\n  getInvoicesForPeriod,\n  summarizeInvoices,\n  type SortKey,\n} from \"@/features/billing/server/queries\";\nimport { invoiceOutstanding, paymentRateDisplay } from \"@/features/billing/calc\";\n",
+   "import type { InvoiceRow, SortKey } from \"@/features/billing/server/queries\";\nimport { invoiceOutstanding, paymentRateDisplay, summarizeInvoices } from \"@/features/billing/calc\";\n"
+  ],
+  [
+   "import { getStudentOptions } from \"@/features/billing/server/textbook-queries\";\nimport { getMakeeduSyncState } from \"@/features/integrations/server/makeedu-sync\";\n",
+   "import type { StudentOption } from \"@/features/billing/server/textbook-queries\";\nimport type { MakeeduSyncState } from \"@/features/integrations/server/makeedu-sync\";\n"
+  ],
+  [
+   "import { BillingTable } from \"./billing-table\";\nimport { BillingMonthNav } from \"./billing-month-nav\";\nimport { CreateInvoiceTrigger } from \"./create-invoice-dialog\";\n",
+   "import { BillingTable } from \"@/app/(shell)/billing/_components/billing-table\";\nimport { BillingMonthNav } from \"@/app/(shell)/billing/_components/billing-month-nav\";\nimport { CreateInvoiceTrigger } from \"@/app/(shell)/billing/_components/create-invoice-dialog\";\n"
+  ],
+  [
+   "import { Pagination } from \"@/components/pagination\";\n",
+   "import { Pagination } from \"@/components/pagination\";\n\n/** /api/v2/billing의 수납 면 자료 — billing-content가 서버에서 받던 다섯 값(이름 그대로). */\nexport type BillingFaceData = {\n  monthRows: InvoiceRow[];\n  periods: string[];\n  students: StudentOption[];\n  syncState: MakeeduSyncState | null;\n  canWriteBilling: boolean;\n};\n"
+  ],
+  [
+   "export async function BillingContent({ sp, canImport = false }: { sp: Sp; canImport?: boolean }) {",
+   "export function BillingContent({ sp, canImport = false, data }: { sp: Sp; canImport?: boolean; data: BillingFaceData }) {"
+  ],
+  [
+   "  const [monthRows, periods, students, syncState, canWriteBilling] = await Promise.all([\n    getInvoicesForPeriod({ period, sort, desc }),\n    getAvailablePeriods(),\n    getStudentOptions(),\n    getMakeeduSyncState(\"invoices\"),\n    // 수동 청구서 '완납'·'취소'(감사 N15)를 세울지 — 서버 액션이 같은 게이트를 다시 본다.\n    getCurrentUser().then((u) => (u ? canWriteTenant(u.systemRole, \"billing\") : false)),\n  ]);\n",
+   "  // 수동 청구서 '완납'·'취소'(감사 N15)를 세울지 — 서버 액션이 같은 게이트를 다시 본다.\n  const { monthRows, periods, students, syncState, canWriteBilling } = data;\n"
+  ]
+ ],
+ "badge": [
+  [
+   "import { getMakeeduSyncState, type MakeeduSyncDomain } from \"@/features/integrations/server/makeedu-sync\";\n",
+   "import type { MakeeduSyncDomain, MakeeduSyncState } from \"@/features/integrations/server/makeedu-sync\";\n"
+  ],
+  [
+   "import { getTeacherViewLang } from \"@/features/teacher-view/server/lang\";\n",
+   ""
+  ],
+  [
+   "import { getCurrentUser } from \"@/lib/auth/current-user\";\nimport { getUserPermMatrix } from \"@/lib/auth/perm-matrix\";\nimport { canAccess } from \"@/lib/permissions\";\n",
+   ""
+  ],
+  [
+   "export async function MakeeduSyncBadge({ domain, overlay = false }: { domain: MakeeduSyncDomain; overlay?: boolean }) {\n  const [state, lang] = await Promise.all([getMakeeduSyncState(domain), getTeacherViewLang()]);\n",
+   "export function MakeeduSyncBadge({ domain, overlay = false, state, canManage: canManageOwner }: { domain: MakeeduSyncDomain; overlay?: boolean; state: MakeeduSyncState | null; canManage: boolean }) {\n  const lang: SheetLang = \"ko\";\n"
+  ],
+  [
+   "  const [user, matrix] = await Promise.all([getCurrentUser(), getUserPermMatrix()]);\n  const canManage = user != null && canAccess(user.systemRole, \"owner\", matrix);\n",
+   "  const canManage = canManageOwner;\n"
+  ]
+ ]
+}
