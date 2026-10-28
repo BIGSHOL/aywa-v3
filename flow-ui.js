@@ -328,16 +328,32 @@ window.createFlowUI = function createFlowUI(api) {
     const real=cases().filter(c=>!local(c)),recent=events().filter(e=>e.origin!=='snapshot').slice(-1)[0];
     return `<div class="ax-change-cell"><button type="button" class="ax-change-link" data-fl="filter" data-id="moving"><span>업무 흐름</span><strong>남은 일 ${fmt(real.filter(c=>c.state!=='done').length)}건</strong><span class="ax-stages">${stageCounts(real).map(([k,n])=>`<span><b>${fmt(n)}</b>${STATE[k]}</span>`).join('')}</span><span class="ax-recent"><small>${recent?`최근 변화: ${h(recent.label||'')} · ${h(when(recent.at))}`:'아직 변화가 없습니다.'}</small></span></button></div>`;
   }
-  function ownerBelow(){
-    if(!ready())return stateNote();
+  // 업무 흐름 검색(원장 10-28 "당연히 각종 내용에 대해 검색가능해야함") — 제목 · 요약(학생·날짜·내용) · 상태 · 관련 기록 · 할 차례 · 기한 · 생긴 때 · 영역 · 종류.
+  // 띄어쓰기로 나눈 낱말이 모두 들어 있어야 맞음 · 공백·대소문자는 무시.
+  const fold=x=>String(x||'').toLowerCase().replace(/\s+/g,'');
+  const plain=x=>String(x||'').replace(/<[^>]*>/g,' ').replace(/&amp;/g,'&').replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&quot;/g,'"').replace(/&#39;/g,"'");
+  function haystack(c){
+    const s=stepOf(c),t=c.trigger||{};
+    return fold([c.title,c.summary,kindLabel(c),plain(chips(c)),...(c.entityRefs||[]).map(r=>r?.label),...activeSteps(c).flatMap(st=>[st.label,whoOf(st)]),s?whoOf(s):'',c.dueAt?`${md(kstDate(c.dueAt))}까지`:'',when(t.at||c.createdAt),api.familyLabel?.(c.familyId)].filter(Boolean).join(' '));
+  }
+  const matchCase=(c,q)=>{const hay=haystack(c);return q.split(/\s+/).filter(Boolean).every(w=>hay.includes(fold(w)));};
+  // 보드 계산 한 벌 — 화면 전체를 그릴 때와 검색어를 칠 때(목록만 다시 그림)가 같은 값을 쓴다.
+  function boardParts(){
     const open=cases().filter(c=>c.state!=='done');
     const kinds=kindGroups(open.filter(c=>!local(c)));
     const lists={decide:open.filter(ownerDecides),...Object.fromEntries(kinds.map(k=>[k.key,k.items])),blocked:open.filter(c=>unassigned(c)||late(c)||returned(c)),moving:open.filter(c=>!local(c)),local:cases().filter(local),done:cases().filter(c=>c.state==='done')};
-    const f=lists[store.filter]?store.filter:'decide';
-    // 보기는 왼쪽 세로 목록(상태 · 종류 많은 순), 일은 오른쪽 카드 — 칩 20여 개를 가로로 늘어놓지 않는다(원장 10-28 "너무 가로로 나열되어있고 공간 낭비 최악").
+    const f=lists[store.filter]?store.filter:'decide',q=(store.q||'').trim(),items=q?lists[f].filter(c=>matchCase(c,q)):lists[f];
+    // 보기는 왼쪽 세로 목록(상태 · 종류 많은 순), 일은 오른쪽 목록 — 칩 20여 개를 가로로 늘어놓지 않는다(원장 10-28 "너무 가로로 나열되어있고 공간 낭비 최악").
     const states=[['decide','원장 결정 대기',lists.decide.length],['moving','남은 일 전체',lists.moving.length],['blocked','늦은 일·담당 없는 일',lists.blocked.length],['local','직접 만든 일',lists.local.length],['done','끝난 일',lists.done.length]];
     const byKind=[...kinds].sort((a,b)=>b.items.length-a.items.length).map(k=>[k.key,k.label,k.items.length]),label=[...states,...byKind].find(([id])=>id===f)?.[1]||'';
-    return `<section class="fl-section" id="fl-detail" aria-labelledby="fl-detail-title"><div class="ax-section-head"><h2 id="fl-detail-title" tabindex="-1">업무 흐름</h2></div><div class="fl-board"><nav class="fl-nav" aria-label="보기">${navList(f,'상태',states)}${navList(f,'종류',byKind)}</nav><div class="fl-board-main"><h3 class="fl-board-title">${h(label)} <span>${fmt(lists[f].length)}건</span></h3>${list(lists[f],'이 조건의 일이 없습니다.',f,{rows:true})}</div></div>${scenarioPanel()}${stageOverview()}</section>`;
+    return {f,q,states,byKind,label,count:q?`${fmt(items.length)}건 / ${fmt(lists[f].length)}건`:`${fmt(lists[f].length)}건`,listHtml:list(items,q?'검색어와 맞는 일이 없습니다.':'이 조건의 일이 없습니다.',f,{rows:true})};
+  }
+  function ownerBelow(){
+    if(!ready())return stateNote();
+    const p=boardParts();
+    // 화면 전체를 다시 그려도 검색칸의 글자와 커서를 지킨다(8초 갱신·담당 변경 뒤).
+    if(document.activeElement?.matches?.('[data-fl-search]'))queueMicrotask(()=>{const i=document.querySelector('[data-fl-search]');if(i){i.focus({preventScroll:true});i.setSelectionRange(i.value.length,i.value.length);}});
+    return `<section class="fl-section" id="fl-detail" aria-labelledby="fl-detail-title"><div class="ax-section-head"><h2 id="fl-detail-title" tabindex="-1">업무 흐름</h2></div><div class="fl-board"><nav class="fl-nav" aria-label="보기">${navList(p.f,'상태',p.states)}${navList(p.f,'종류',p.byKind)}</nav><div class="fl-board-main"><div class="fl-board-head"><h3 class="fl-board-title">${h(p.label)} <span id="fl-board-count">${p.count}</span></h3><input type="search" class="fl-search" data-fl-search value="${h(p.q)}" placeholder="이름·내용·담당·기록으로 찾기" aria-label="업무 흐름에서 찾기" autocomplete="off"></div><div id="fl-board-list">${p.listHtml}</div></div></div>${scenarioPanel()}${stageOverview()}</section>`;
   }
   function fullView(){return role()==='owner'?`<div class="page-heading"><div><h1>업무 흐름</h1><p>${md(asOf())} 기준 · 누가 어떤 일을 왜 맡았는지와 근거를 봅니다.</p></div></div>${ownerBelow()}`:role()==='manager'?managerView():staffView();}
 
@@ -704,6 +720,10 @@ window.createFlowUI = function createFlowUI(api) {
   },true);
   // After a command the open drawer of the same case refreshes in place (scroll, branches and focus kept).
   function reopenCase(id){if(!$('#detail[open]')||!caseById(id))return;if(treeShown(id))refreshDetail();else showCase(id);}
+  // 업무 흐름 검색 — 목록과 건수만 다시 그린다(화면 전체를 다시 그리지 않아 글자 입력이 끊기지 않는다) · Esc = 지우기.
+  const paintBoardList=()=>{const box=document.getElementById('fl-board-list'),cnt=document.getElementById('fl-board-count');if(!box||!ready())return;const p=boardParts();box.innerHTML=p.listHtml;if(cnt)cnt.textContent=p.count;};
+  document.addEventListener('input',event=>{if(!event.target.matches?.('[data-fl-search]'))return;store.q=event.target.value;store.all='';paintBoardList();});
+  document.addEventListener('keydown',event=>{if(event.key!=='Escape'||!event.target.matches?.('[data-fl-search]')||!event.target.value)return;event.preventDefault();event.target.value='';store.q='';store.all='';paintBoardList();});
   document.addEventListener('input',event=>{const id=event.target.dataset?.flTreeQ;if(id===undefined)return;const e=trees.get(id);if(!e)return;e.query=event.target.value;e.unforce.clear();paintTree(id,{body:true});});
   document.addEventListener('change',event=>{if(event.target.dataset?.flActor!==undefined){store.actorId=event.target.matches?.('[data-cpick]')?(event.target.querySelector('input[type=hidden]')?.value||store.actorId):event.target.value;store.filter='';store.all='';try{localStorage.setItem(ACTOR_KEY,store.actorId);}catch{/* keep in memory only */}api.closeMenu?.(false);if(api.getPage()==='home')api.render();else navigate('home');}});
   document.addEventListener('submit',event=>{
