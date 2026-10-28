@@ -58,8 +58,32 @@ export function hostNavigate(href: string, mode: 'push' | 'replace' = 'push') {
   const t = hostTarget(href);
   if (t.kind === 'parent') { tellParent({ type: 'v2-host-open', href: t.href }); return; }
   const next = hostHref(t);
-  if (t.screen !== currentScreen()) { window.location.assign(next); return; }
+  if (t.screen !== currentScreen()) { location.assign(next); return; } // `window.location.assign`이라 적으면 빌드가 hostAssign으로 바꾼다(아래)
   if (mode === 'replace') history.replaceState(null, '', next); else history.pushState(null, '', next);
   dispatchEvent(new Event(LOCATION));
   tellParent({ type: 'v2-host-nav', screen: t.screen, query: t.query, mode });
+}
+
+/**
+ * 2.0 부품의 `window.location.assign(href)` 자리 — 빌드(build.mjs define)가 그 호출을 이 함수로 바꿔 넣는다(Location은 덮어쓸 수 없다).
+ * 2.0은 문서를 통째로 다시 읽어 그 주소의 화면을 그리지만, iframe에서 2.0 주소를 그대로 읽으면 3.0 서버에 없는 주소다.
+ *  · `/api/…`·바깥 주소(`https:`·`//…`) → 막고 false(부르는 쪽이 '지원하지 않음'을 알린다) · `embed` 칸은 창 표식이라 뺀다
+ *  · 같은 화면 → 주소가 다르면 바꾸고, **늘 다시 읽는다** — 2.0의 문서 이동은 새 데이터로 다시 그리는 일이라(저장 뒤 이동 포함),
+ *    주소 중 서버가 안 보는 칸(시간표 gedit 등)만 바뀌어도 새 값을 받아야 한다
+ *  · 그 밖 → hostNavigate(다른 화면은 그 호스트 화면 문서, 호스트 화면이 아닌 2.0 주소는 3.0 기록 창)
+ */
+export function hostAssign(href: string): boolean {
+  const raw = String(href ?? '');
+  if (/^\/api\//.test(raw) || /^[\\/]{2}/.test(raw) || /^[a-z][a-z0-9+.-]*:/i.test(raw)) return false;
+  const u = new URL(raw, 'http://2.0.local/');
+  u.searchParams.delete('embed');
+  const clean = `${u.pathname}${u.search}`;
+  const t = hostTarget(clean);
+  if (t.kind === 'host' && t.screen === currentScreen()) {
+    if (t.query !== location.search.slice(1)) hostNavigate(clean, 'push');
+    hostRefresh();
+    return true;
+  }
+  hostNavigate(clean, 'push');
+  return true;
 }

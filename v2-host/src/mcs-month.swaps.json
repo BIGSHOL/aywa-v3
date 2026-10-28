@@ -1,0 +1,10 @@
+[
+ [
+  "  const user = await getCurrentUser();\n  const studentIds = data.students.map((s) => s.studentId);\n  const [learning, canResetGoals, textbooks, targets, allReports, schoolExams] = await Promise.all([\n    getMathLearningData(classId, data, { allRecords: true }),\n    // 전체 목표 '초기화'(배정 취소)는 **원장 이상급**(원장 2026-09-18) — 화면과 서버가 같은 함수를 본다([[#77]]).\n    canResetMathLearningGoals(user),\n    user ? getMathClassTextbooks(user.tenantId, classId, studentIds) : null,\n    // 교재 전체 목표 — 사람이 고른 목표 권 · 다른 반(수요일 개별심화) 교재 기록. 둘 다 실패해도 화면은 산다.\n    user ? getMathBookTargets(user.tenantId, studentIds) : null,\n    user ? getRecentReportsAllClasses(user.tenantId, studentIds) : null,\n    // 학교별 내신기간(없으면 기본표) — 실패해도 기본표로 계산한다.\n    user ? getSchoolExamPeriods(user.tenantId, data.students.map((s) => s.school)) : null,\n  ]);\n",
+  "  const { learning, canResetGoals, textbooks, targets, schoolExams } = d;\n"
+ ],
+ [
+  "  const windows: Record<string, BookWindow> = {};\n  const plans: Record<string, StudentBookPlans> = {};\n  if (textbooks) {\n    const { catalog, orders, reports } = textbooks.sources;\n    for (const s of data.students) {\n      const p = buildStudentBookPlans({\n        orders: orders.get(s.studentId) ?? [],\n        catalog,\n        // 레일과 같은 기준일까지의 기록만(과거 달을 보면 그 달 끝까지).\n        reports: (reports.get(s.studentId) ?? []).filter((r) => r.date <= learning.referenceDate),\n        allReports: allReports?.get(s.studentId) ?? [],\n        grade: s.grade,\n        targets: targets?.byStudent.get(s.studentId),\n        examOverrides: schoolExams?.byKey.get(normalizeSchoolName(s.school)) ?? [],\n        referenceDate: learning.referenceDate,\n        classDates: (from, to) => learningClassDates(s.studentId, learning.context, from, to),\n      });\n      plans[s.studentId] = p;\n      if (p.roadmaps[0]) windows[s.studentId] = p.roadmaps[0].window;\n    }\n  }\n",
+  "  const { windows, plans } = d;\n"
+ ]
+]

@@ -51,13 +51,13 @@ export async function readViewers(sql, t, R, env) {
 export const editorsOf = viewers => viewers.map(v => ({ id: v.id, name: v.name, role: v.roleLabel }));
 
 /** 2.0 getDelegatedClassIdsInRange — 되돌리지 않은 임시 위임 중 [from, to]와 겹치는 반. */
-async function delegatedClassIdsInRange(sql, t, teacherId, from, to) {
+export async function delegatedClassIdsInRange(sql, t, teacherId, from, to) {
   const rows = await sql`select distinct class_id::text id from public.class_delegations where tenant_id=${t} and delegate_user_id=${teacherId} and revoked_at is null
     and from_date <= ${to}::date and to_date >= ${from}::date`;
   return rows.map(r => r.id);
 }
 /** 2.0 getTeacherReadScope — 담임 반 ∪ 이번 주에 실제로 도는 교시 담당 반 ∪ 이번 주에 걸친 위임 반(classes에 있는 것만). */
-async function teacherReadScope(sql, t, R, teacherId, today) {
+export async function teacherReadScope(sql, t, R, teacherId, today) {
   const monday = R.week.mondayOf(today);
   const [own, slots, delegated] = await Promise.all([
     sql`select id::text id from public.classes where tenant_id=${t} and teacher_id=${teacherId}`,
@@ -78,4 +78,27 @@ export async function visibleClassFilter(sql, t, R, viewer, today) {
     delegatedClassIdsInRange(sql, t, viewer.id, R.dk.addDays(today, -7), R.dk.addDays(today, 7))]);
   const allow = new Set([...scope, ...delegated]);
   return classId => allow.has(classId);
+}
+
+/** 2.0 requireMcsClassAccess — 같은 순서·같은 거절 문구. 강사는 담임 반(getTeacherScope)이 아니면 위임(±7일) → 읽기 범위면 읽기만 · 아니면 '담당 반이 아닙니다'. */
+export async function mcsClassAccess(sql, t, R, viewer, classId, opts = {}) {
+  if (viewer.level === 'none') return { ok: false, error: '접근 권한이 없습니다' };
+  let canWrite = viewer.level === 'full' || viewer.level === 'scoped';
+  if (opts.write && !canWrite) return { ok: false, error: '편집 권한이 없습니다' };
+  if (viewer.systemRole === 'teacher') {
+    const today = R.dk.kstToday();
+    const own = (await sql`select id::text id from public.classes where tenant_id=${t} and teacher_id=${viewer.id}`).map(r => r.id);
+    if (!own.includes(classId)) {
+      const delegated = await delegatedClassIdsInRange(sql, t, viewer.id, R.dk.addDays(today, -7), R.dk.addDays(today, 7));
+      if (!delegated.includes(classId)) {
+        const readScope = await teacherReadScope(sql, t, R, viewer.id, today);
+        if (opts.write || !readScope.includes(classId)) return { ok: false, error: '담당 반이 아닙니다' };
+        canWrite = false;
+      }
+    }
+  }
+  const [cls] = UUID.test(classId) ? await sql`select id::text id, class_name, subject, teacher_id::text teacher_id from public.classes where tenant_id=${t} and id=${classId}` : [];
+  if (!cls) return { ok: false, error: '반을 찾을 수 없습니다' };
+  if (cls.subject !== 'math') return { ok: false, error: '이 반은 수학 강사 시트 대상이 아닙니다' };
+  return { ok: true, access: { user: viewer, tenantId: t, classId: cls.id, className: cls.class_name, subject: cls.subject, teacherId: cls.teacher_id ?? null, canWrite } };
 }

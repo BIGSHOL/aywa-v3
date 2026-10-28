@@ -2,8 +2,10 @@
 // 이 모듈은 2.0 page.tsx가 서버에서 하던 조회를 Docker 복사본에서 같은 결과로 만든다:
 //  · /mcs(반별) = features/math-sheets/server/landing.ts getMathSheetLanding + 진도맵(시안) 버튼 자격(canPreviewProgressMap)
 //  · /mcs/teachers(선생님별) = server/teacher-roster.ts getMathTeacherRoster
+//  · /mcs/<반>/month(반 월간) = v2-mcs-month.mjs(getMathSheetMonth · getMathLearningData · 교재 · page.tsx의 교재 창·계획 가공)
 // 사람마다 화면이 다르다(강사 = 담당 반만) — '보는 사람'(viewer)을 고르고 그 사람의 역할·권한 표로 범위를 낸다(v2-mcs-core).
 import { UUID, loadRules, readSettings, readViewers, editorsOf, visibleClassFilter } from './v2-mcs-core.mjs';
+import { mcsMonthPage } from './v2-mcs-month.mjs';
 import { mathCatalogBooks, studentBookOrders, recentReportsByStudentClass, mathBookTargets, schoolExamPeriods } from './v2-math-textbooks.mjs';
 
 const ID = 'mcs';
@@ -125,8 +127,9 @@ async function teacherRosterData(sql, t, R, env, viewer) {
   }
 }
 
-/** 2.0 하위 주소 — /mcs(반별) · /mcs/teachers(선생님별). 반 월간·진도맵은 다음 단계. */
-const ROUTE = /^\/mcs(?:\/teachers)?$/;
+/** 2.0 하위 주소 — /mcs(반별) · /mcs/teachers(선생님별) · /mcs/<반>/month(반 월간). 진도맵(시안)은 다음 단계. */
+const UUID_BODY = UUID.source.slice(1, -1);
+const ROUTE = new RegExp(`^/mcs(?:/teachers|/${UUID_BODY}/month)?$`), MONTH = new RegExp(`^/mcs/(${UUID_BODY})/month$`);
 export const screen = {
   id: ID, label: '강사 시트 · 수학', order: 7,
   params: { v2path: ROUTE, viewer: UUID, month: /^\d{4}-\d{2}$/ },
@@ -138,6 +141,8 @@ export const screen = {
       host: { operations: env.operations, disabledModules: env.disabled } };
     if (!viewer) return { ...common, route: 'none' };
     if (q.v2path === '/mcs/teachers') return { ...common, route: 'teachers', teachers: await teacherRosterData(sql, t, R, env, viewer) };
+    const month = MONTH.exec(q.v2path ?? '');
+    if (month) return { ...common, route: 'month', month: await mcsMonthPage({ sql, t, R, env, importV2, viewer, classId: month[1], month: q.month ?? null }) };
     return { ...common, route: 'landing', landing: await landingData(sql, t, R, env, viewer, q.month ?? null),
       // 2.0 canPreviewProgressMap — 관리자 이상(운영자 계정은 보는 사람에서 빠져 있다).
       previewProgressMap: R.preview.canSeeProgressMapPreview(viewer.systemRole) };

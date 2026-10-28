@@ -110,7 +110,8 @@ export async function build({ quiet = false, outdir = DIST, meta = false } = {})
     loader: { '.module.css': 'local-css', '.css': 'css', '.woff2': 'file', '.png': 'file', '.webp': 'file', '.svg': 'file' },
     // 브라우저엔 process가 없다 — 2.0 부품이 읽는 process.env.*는 빈 값(설정 안 됨)으로. NODE_ENV만 운영 빌드 값.
     // __V2_HOST_ROUTES__ = 2.0 주소 → 호스트 화면(shims/host-nav.ts가 iframe 안 이동에 쓴다).
-    define: { 'process.env.NODE_ENV': '"production"', 'process.env': '{}', __V2_HOST_ROUTES__: JSON.stringify(Object.fromEntries(Object.entries(entries).map(([id, e]) => [e.route, id]))) },
+    // window.location.assign → __v2HostAssign(host-frame.tsx) — 2.0이 문서를 다시 읽던 이동을 호스트 이동으로(Location은 덮어쓸 수 없어 묶을 때 바꾼다).
+    define: { 'process.env.NODE_ENV': '"production"', 'process.env': '{}', 'window.location.assign': '__v2HostAssign', __V2_HOST_ROUTES__: JSON.stringify(Object.fromEntries(Object.entries(entries).map(([id, e]) => [e.route, id]))) },
     plugins: [nextBoundary(report)],
   });
   if (meta) await writeFile(path.join(DIST, 'meta.json'), JSON.stringify(result.metafile));

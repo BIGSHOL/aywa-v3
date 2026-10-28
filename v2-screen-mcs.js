@@ -34,8 +34,8 @@
     Object.assign(frame.style, { top: `${r.top + scrollY}px`, left: `${r.left + scrollX}px`, width: `${r.width}px`, height: `${r.height}px` });
     frame.hidden = false;
   }
-  // 이 화면이 그리는 2.0 하위 주소(반별 · 선생님별) — 창 열기 알림이 와도 같은 화면에서 연다.
-  const OWN = /^\/mcs(?:\/teachers)?$/i;
+  // 이 화면이 그리는 2.0 하위 주소(반별 · 선생님별 · 반 월간) — 창 열기 알림이 와도 같은 화면에서 연다.
+  const OWN = /^\/mcs(?:\/teachers|\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\/month)?$/i;
   /** 2.0 주소 → 이 화면(하위 주소) · 3.0 기록 창(있으면). 없으면 3.0에 아직 없는 화면이라고만 알린다(주소를 보이지 않는다). */
   function openFromHost(href) {
     const path = String(href || '').split(/[?#]/)[0];

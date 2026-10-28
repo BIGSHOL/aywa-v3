@@ -1,7 +1,7 @@
 // 2.0 부품 호스트 — 강사 시트 · 수학(MCS) 진입점. 3.0 `#v2-mcs`가 같은 출처 iframe(/v2-host/mcs.html?…)으로 연다.
 // 2.0이 창(embed)으로 열 때의 틀(AppProviders · OperationsProvider · <main class="embed-main">) 그대로 감싸고,
 // 데이터 = /api/v2/mcs?v2path=…&viewer=…&month=…(Docker 복사본, v2-screen-mcs.mjs) — 2.0 page.tsx가 서버에서 만들던 값 그대로.
-// 2.0 주소: /mcs(반별) · /mcs/teachers(선생님별) — 반 월간(/mcs/<반>/month)·진도맵은 다음 단계(그때까지는 안내 한 줄).
+// 2.0 주소: /mcs(반별) · /mcs/teachers(선생님별) · /mcs/<반>/month(반 월간, mcs-month.tsx) — 진도맵(시안)은 다음 단계(그때까지는 안내 한 줄).
 // 보는 사람 = 3.0 띠가 고른 사람(강사는 담당 반만 — 2.0과 같은 범위). 고르면 v2-host-actor로 알려 오고, 이 화면이 다시 읽는다(ECS와 같은 방식).
 import { createRoot } from 'react-dom/client';
 import { useEffect, useRef, useState } from 'react';
@@ -10,6 +10,7 @@ import { OperationsProvider } from '@/features/owner/operations-context';
 import type { MathLandingResult } from '@/features/math-sheets/server/landing';
 import type { TeacherGroup } from '@/features/math-sheets/server/teacher-roster';
 import { McsLandingPage, McsTeachersPage } from './mcs-pages';
+import { McsMonthPage, type McsMonthData } from './mcs-month';
 import { onHostRefresh } from '../shims/host-nav';
 import { setHostEditors, type HostEditor } from '../shims/server-action';
 import { useHostSearch } from '../shims/next-navigation';
@@ -23,7 +24,8 @@ type Data = {
   editors: HostEditor[];
   viewer: { id: string; name: string; role: string } | null;
   host: { operations: Parameters<typeof OperationsProvider>[0]; disabledModules: Parameters<typeof OperationsProvider>[0]['disabledModules'] };
-  route: 'none' | 'landing' | 'teachers';
+  route: 'none' | 'landing' | 'teachers' | 'month';
+  month?: McsMonthData;
   landing?: MathLandingResult;
   previewProgressMap?: boolean;
   teachers?: { ok: true; groups: TeacherGroup[]; today: string } | { ok: false; error: string };
@@ -33,7 +35,8 @@ type Data = {
 const KEYS = ['v2path', 'month'] as const;
 const ACTOR_KEY = 'v2-host-actor:mcs';
 const storedActor = () => { try { return localStorage.getItem(ACTOR_KEY); } catch { return null; } };
-const OWN = /^\/mcs(?:\/teachers)?$/;
+const OWN = /^\/mcs(?:\/teachers|\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\/month)?$/;
+const MONTH = /^\/mcs\/([0-9a-f-]{36})\/month$/;
 
 function App() {
   const qs = useHostSearch(), search = new URLSearchParams(qs);
@@ -79,7 +82,12 @@ function App() {
   }
   const d = state.data, ops = d.host.operations;
   if (d.route === 'none') return <HostMessage text="수학 강사 시트를 볼 수 있는 직원이 없습니다." />;
-  const body = d.route === 'teachers' && d.teachers ? <McsTeachersPage res={d.teachers} />
+  // 반 월간 — 2.0 page.tsx가 주소에서 읽던 값(classId · student · 그대로 넘기는 쿼리). 주소 열쇠 v2path는 2.0 주소에 없는 칸이라 뺀다.
+  const monthClass = MONTH.exec(path)?.[1];
+  const pageQuery = new URLSearchParams(search); pageQuery.delete('v2path');
+  const body = d.route === 'month' && d.month && monthClass
+    ? <McsMonthPage d={d.month} classId={monthClass} student={search.get('student') ?? undefined} initialQuery={pageQuery.toString()} />
+    : d.route === 'teachers' && d.teachers ? <McsTeachersPage res={d.teachers} />
     : d.route === 'landing' && d.landing ? <McsLandingPage res={d.landing} previewProgressMap={!!d.previewProgressMap} />
       : <HostMessage text="강사 시트를 불러오지 못했습니다." error />;
   return (
