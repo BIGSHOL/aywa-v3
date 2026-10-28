@@ -77,6 +77,7 @@ const QUEUE_ACTIONS: [string, string[]][] = [
   ["features/report-admin/server/notice-actions.ts", ["sendClassNotice"]],
   ["features/report-admin/server/class-notice-actions.ts", ["sendClassWideNotice"]],
   ["features/report-admin/server/compose-actions.ts", ["saveAndQueueAdminReport", "sendBulkAdminReports"]],
+  ["features/onescreen/server/notice-actions.ts", ["sendOnescreenNotice"]],
 ];
 for (const [module, names] of QUEUE_ACTIONS) for (const name of names) registerHostHandler(module, name, async (...args) => {
   try {
@@ -95,8 +96,7 @@ for (const [module, names] of QUEUE_ACTIONS) for (const name of names) registerH
 // 저장(회수 · 멈춤 복구 · 원아 연결 · 프롬프트 · 보고서 설정 · 통계 보기 기억)은 이 화면 actions(v2-lesson-reports-save.mjs)가 받는다 —
 // 여기 적지 않은 함수는 shim이 쓰기 경로로 보낸다. 아래는 그 경로가 받지 않는 저장 — 보내지 않고 그 자리에서 2.0 거절 모양으로.
 const REFUSE: Record<string, string[]> = {
-  // 원스크린 공지 작성·대기 공지 관리 · 답글 · 공감 — 아직 받지 않는 일.
-  "features/onescreen/server/notice-actions.ts": ["sendOnescreenNotice", "editQueuedNotice", "deleteQueuedNotice"],
+  // 학부모 답글 · 공감 — 아직 받지 않는 일.
   "features/classnote-reply/server/reply-actions.ts": ["requestParentReply", "requestParentReplyEdit", "requestParentReplyDelete"],
   "features/classnote-reply/server/reaction-actions.ts": ["requestParentReaction", "requestParentReactionRemove"],
 };

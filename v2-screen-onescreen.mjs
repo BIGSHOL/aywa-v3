@@ -10,6 +10,7 @@ import { scrub } from './domain-snapshot-core.mjs';
 import { V2Error } from './v2-screens.mjs';
 import { loadOnescreenProps } from './v2-onescreen-roster.mjs';
 import { onescreenExtraActions } from './v2-onescreen-save-extra.mjs';
+import { lessonReportsActions } from './v2-lesson-reports-save.mjs';
 import { getTeachingClassIds } from './v2-screen-video-homework.mjs';
 import { loadRules as attendanceRules, readSettings as attendanceSettings } from './v2-screen-attendance.mjs';
 import { loadMakeupRules, completeMakeupReservations, completionKey } from './v2-attendance-makeup.mjs';
@@ -173,6 +174,9 @@ export const screen = {
     // 보강 넷(linkMakeupToAbsence · setReservationReportMode · moveReservationToRegular · checkMakeupReservation) · 영상 검사 칸 둘
     // (setVideoHomeworkMark · setVideoHomeworkMarksBulk) — v2-onescreen-save-extra.mjs. 도우미는 이 모듈이 다 읽힌 뒤에 넘긴다(선언 순서).
     ...onescreenExtraActions(() => ({ rules, copyDay, settingsOf, actAs, menuMatrix, teachingClassIds, taughtClassSet, runAttendance, VIA })),
+    sendOnescreenNotice: lessonReportsActions.sendOnescreenNotice,
+    editQueuedNotice: lessonReportsActions.editQueuedNotice,
+    deleteQueuedNotice: lessonReportsActions.deleteQueuedNotice,
   },
 };
 

@@ -63,9 +63,13 @@ test('대응표 = 2.0 서버 함수 이름 그대로(그 파일이 내보내는 
   for (const n of Object.values(LR_READS).flat()) assert.ok(n in lessonReportsActions, `${n}을 원본 읽기로 연결`);
   assert.ok(!entry.includes('"getParentReactionState", async () => null'), '공감 상태를 고정 null로 덮지 않는다');
   assert.match(entry, /연습 복사본이라 실제로 보내지지 않습니다 — 발송 대기로만 남습니다/);
-  // 직접 발송·공지·답글 등은 아직 받지 않는다(진입점이 그 자리에서 거절).
+  // 공지 작성·대기 관리도 원본 함수로 받고, 답글·공감은 아직 거절한다.
   assert.ok('saveAdminReport' in lessonReportsActions);
-  for (const n of ['editQueuedNotice', 'deleteQueuedNotice', 'requestParentReply', 'requestParentReaction'])
+  for (const n of ['sendOnescreenNotice', 'editQueuedNotice', 'deleteQueuedNotice']) {
+    assert.ok(n in lessonReportsActions, n);
+    assert.ok(!refuse.includes(`"${n}"`), n);
+  }
+  for (const n of ['requestParentReply', 'requestParentReaction'])
     { assert.ok(refuse.includes(`"${n}"`), n); assert.ok(!(n in lessonReportsActions), n); }
   assert.match(entry, /"requestClassnoteBoardSync", async \(\) => \(\{ ok: false, error: VIEW_ONLY \}\)/);
   assert.match(entry, /"testPrompt", async \(\) =>/);

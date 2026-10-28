@@ -5,7 +5,8 @@
 // 로그인이 없으니 '그 선생님'은 주소의 teacher(3.0 쪽이 고른다). 실시간 편집 표시(EditPresenceProvider)·알림은 감싸지 않는다 —
 // 공급자가 없으면 2.0 훅이 아무것도 하지 않아 바깥 접속이 생기지 않는다.
 import { createRoot } from 'react-dom/client';
-import { useEffect, useRef, useState, type ComponentProps } from 'react';
+import { useEffect, useState, type ComponentProps } from 'react';
+import { toast } from 'sonner';
 import { AppProviders } from '@/lib/providers/app-providers';
 import { OperationsProvider } from '@/features/owner/operations-context';
 import { EmbedProvider } from '@/components/workspace/embed-context';
@@ -23,6 +24,20 @@ import { HostFrame, HostMessage } from './host-frame';
 export const HOST_TITLE = '선생님 수업보고서';
 export const HOST_ROUTE = '/onescreen';
 
+// 2.0 공지 부품의 연동 PC 문구는 연습 복사본의 실제 동작(대기열에만 저장)으로 안내한다.
+const noticeSuccess = toast.success;
+toast.success = ((message, data) => noticeSuccess(
+  typeof message === 'string' && message.includes('발송 대기(연동 PC가 순차 게시)')
+    ? `${message.replace('(연동 PC가 순차 게시)', '')} · 연습 복사본이라 실제로 보내지지 않습니다`
+    : message, data,
+)) as typeof toast.success;
+const noticeMessage = toast.message;
+toast.message = ((message, data) => noticeMessage(
+  typeof message === 'string' && message.startsWith('실제 발송이 꺼져 있어 전송하지 않았습니다')
+    ? '발송 설정이 꺼져 대기열에도 올리지 않았습니다. 연습 복사본에서는 실제로 보내지지 않습니다.'
+    : message, data,
+)) as typeof toast.message;
+
 type Ops = ComponentProps<typeof OperationsProvider>;
 type Data = {
   asOf: string;
@@ -39,9 +54,10 @@ const KEYS = ['teacher', 'date', 'all'] as const;
 function App() {
   const qs = useHostSearch(), search = new URLSearchParams(qs);
   // 2.0 부품은 선생님을 모른다(로그인한 사람의 화면) — 날짜를 옮기면 주소를 `?date=`만으로 새로 쓴다. 고른 선생님은 그대로 둔다.
-  const sticky = useRef<string | null>(null);
-  if (search.get('teacher')) sticky.current = search.get('teacher');
-  if (!search.get('teacher') && sticky.current) search.set('teacher', sticky.current);
+  const explicitTeacher = search.get('teacher');
+  const [stickyTeacher, setStickyTeacher] = useState<string | null>(() => explicitTeacher);
+  if (explicitTeacher && explicitTeacher !== stickyTeacher) setStickyTeacher(explicitTeacher);
+  if (!explicitTeacher && stickyTeacher) search.set('teacher', stickyTeacher);
   const key = KEYS.map((k) => `${k}=${search.get(k) ?? ''}`).join('&');
   const [state, setState] = useState<{ key?: string; data?: Data; error?: string }>({});
   const [tick, setTick] = useState(0);
