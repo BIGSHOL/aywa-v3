@@ -113,6 +113,33 @@ try {
       });
     } catch (e) { if (e !== ROLL) throw e; }
   });
+
+  await check('반 배정 면 저장(되돌림) — 미리보기(저장 없음) · 지우기 → 되돌리기로 같은 배정이 돌아온다 · 게이트는 강사 시트 화면이 옮긴 것을 그대로', async () => {
+    const screenSrc = lf(await here('./v2-screen-textbooks.mjs'));
+    assert.match(screenSrc, /deleteClassTextbookPlan: PLAN_UNDO_ACTIONS\.deleteClassTextbookPlan/); assert.match(screenSrc, /undoPlanDelete: PLAN_UNDO_ACTIONS\.undoPlanDelete/);
+    const ROLL = new Error('rollback');
+    try {
+      await db.begin(async sql => {
+        const act = (name, args, module) => { const a = M.screen.actions[name]; return a.run({ sql, body: a.validate({ module, actor: base.viewer.id, args }), tenantId, importV2 }); };
+        const plansNow = (await M.screen.load({ sql, params: { tab: 'plans' }, tenantId, importV2 })).plans.rows, plan = plansNow[0];
+        const before = await sql`select count(*)::int n from public.class_sheet_plan_lines where tenant_id=${tenantId} and class_id=${plan.classId}`;
+        const pv = await act('previewTextbookApply', [plan.id], 'features/textbooks/server/plan-actions.ts');
+        assert.equal(pv.ok, true, pv.error); assert.equal(pv.preview?.planId ?? pv.planId ?? plan.id, plan.id);
+        assert.deepEqual(await sql`select count(*)::int n from public.class_sheet_plan_lines where tenant_id=${tenantId} and class_id=${plan.classId}`, before, '미리보기는 쓰지 않는다');
+        const del = await act('deleteClassTextbookPlan', [plan.id, { withLines: false }], 'features/textbooks/server/plan-actions.ts');
+        assert.equal(del.ok, true, del.error); assert.ok(del.undo?.plan);
+        assert.equal((await sql`select count(*)::int n from public.class_textbook_plans where id=${plan.id}`)[0].n, 0);
+        const undo = await act('undoPlanDelete', [{ classId: plan.classId, plan: del.undo.plan, ...(del.undo.lines ? { lines: del.undo.lines } : {}), ...(del.historyId ? { historyId: del.historyId } : {}) }],
+          'features/textbooks/server/plan-delete-actions.ts');
+        assert.equal(undo.ok, true, undo.error);
+        const [back] = await sql`select textbook_id::text textbook_id, start_date::text start_date from public.class_textbook_plans where id=${plan.id}`;
+        assert.deepEqual(back, { textbook_id: plan.textbookId, start_date: plan.startDate });
+        const logs = await sql`select action, metadata->>'via' via from public.audit_logs where tenant_id=${tenantId} and created_at = now()`;
+        assert.deepEqual(logs.map(l => l.action).sort(), ['textbook_plan_delete', 'textbook_plan_delete_undo']); assert.ok(logs.every(l => l.via === '3.0 연습 복사본'));
+        throw ROLL;
+      });
+    } catch (e) { if (e !== ROLL) throw e; }
+  });
 } finally { await db.end(); }
 
 await check('호스트: 2.0 부품을 고치지 않고 묶인다 — 서버 전용 유입 0 · 운영 주소·외부 호출 0 · 표지 올리기는 보내지 않는다', async () => {

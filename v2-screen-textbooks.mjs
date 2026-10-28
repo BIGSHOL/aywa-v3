@@ -9,6 +9,10 @@ import { UUID, loadRules, readSettings, readViewers, editorsOf } from './v2-mcs-
 import { loadRules as loadEcsRules } from './v2-ecs-core.mjs';
 import { visibleClassFilter as ecsVisibleClassFilter } from './v2-ecs-props.mjs';
 import { textbooksActions, textbooksIo, loadTextbookDetail } from './v2-textbooks-save.mjs';
+import { classAccess } from './v2-ecs-core.mjs';
+import { serverFn } from './v2-ecs-save.mjs';
+import { previewLoaded } from './v2-ecs-textbooks.mjs';
+import { PLAN_UNDO_ACTIONS } from './v2-ecs-plan-undo.mjs';
 
 const ID = 'textbooks';
 const PAGE_SIZE = 50;
@@ -95,11 +99,41 @@ export async function readMathAssignmentList(sql, t) {
   } catch (e) { return { status: classify(e), rows: [] }; }
 }
 
+// ── 반 배정 면의 저장 — 2.0 plan-actions.ts deleteClassTextbookPlan · plan-delete-actions.ts undoPlanDelete · previewTextbookApply ──────────
+// 이 셋은 교재 마스터가 아니라 그 반의 강사 시트 계획 줄을 바꾸는 일이라 2.0 게이트가 강사 시트(그 반 쓰기)다 — 강사 시트 화면이 이미 옮긴 것
+// (v2-ecs-plan-undo.mjs · v2-ecs-textbooks.mjs previewLoaded, 저장하는 사람 = 강사 시트를 쓸 수 있는 직원)을 그대로 쓴다.
+const PLAN_MODULE = 'features/textbooks/server/plan-actions.ts';
+const PLAN_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+/** 2.0 loadPlan(planId, { write: false }) — 배정 한 건 + 그 반 강사 시트 게이트(반 id는 DB 행에서) · 교재목록 기능(v2-ecs-plan-undo loadPlan과 같은 모양). */
+async function loadPlanForPreview(ctx, planId) {
+  const { sql, t, R, env, user } = ctx;
+  const [row] = typeof planId === 'string' && PLAN_UUID.test(planId) ? await sql`select id::text id, tenant_id::text tenant_id, class_id::text class_id, textbook_id::text textbook_id, slot_axis, pace, term_mode,
+      start_date::text start_date, start_lesson_no, slot_picks from public.class_textbook_plans where id=${planId}` : [];
+  if (!row) return { error: '배정을 찾을 수 없습니다' };
+  const gate = await classAccess(sql, t, R, env, user, row.class_id, { write: false });
+  if (!gate.ok) return { error: gate.error };
+  if (row.tenant_id !== t) return { error: '배정을 찾을 수 없습니다' };
+  if (!env.textbooksOn) return { error: '이 학원은 교재목록 기능이 꺼져 있습니다' };
+  return { gate, plan: { id: row.id, classId: row.class_id, textbookId: row.textbook_id, axis: row.slot_axis === 'jj' ? 'jj' : 'class', pace: R.normalizeLessonPace(row.pace),
+    termMode: row.term_mode === 'exam' ? 'exam' : 'regular', startDate: row.start_date, startLessonNo: Number(row.start_lesson_no ?? 1),
+    slotPicks: Array.isArray(row.slot_picks) && row.slot_picks.length > 0 ? R.normalizeSlotPicks(row.slot_picks.map(String)) : null } };
+}
+const PLAN_ACTIONS = {
+  deleteClassTextbookPlan: PLAN_UNDO_ACTIONS.deleteClassTextbookPlan,
+  undoPlanDelete: PLAN_UNDO_ACTIONS.undoPlanDelete,
+  /** previewTextbookApply(planId) — 저장 없음(미리보기). */
+  previewTextbookApply: serverFn(PLAN_MODULE, 1, async (ctx, planId) => {
+    const loaded = await loadPlanForPreview(ctx, planId);
+    if ('error' in loaded) return { ok: false, error: loaded.error };
+    return previewLoaded(ctx, loaded, planId);
+  }),
+};
+
 export const screen = {
   id: ID, label: '교재목록', order: 8,
   params: { viewer: UUID, detail: UUID, tab: /^[a-z]{1,10}$/, subject: /^[a-z]{1,10}$/, area: /^[a-z0-9_]{1,40}$/, q: /^[^\u0000-\u001f]{0,100}$/, page: /^\d{1,4}$/ },
-  // 저장 1단계 = 교재 마스터(v2-textbooks-save.mjs) — 저장하는 사람 = 보는 사람. 반 배정 면의 삭제·되돌리기·미리보기는 다음 단계.
-  actions: textbooksActions,
+  // 저장 = 교재 마스터(v2-textbooks-save.mjs) + 반 배정 면(지우기 · 되돌리기 · 미리보기 — 강사 시트 게이트) — 저장하는 사람 = 보는 사람.
+  actions: { ...textbooksActions, ...PLAN_ACTIONS },
   load: async ({ sql, params: sp, tenantId: t, importV2 }) => {
     // 교재 다이얼로그가 열 때 읽는 2.0 loadTextbookDetail(읽기라 GET) — 답은 2.0 반환 모양 그대로.
     if (sp.detail) { const io = await textbooksIo(sql, t, importV2); return loadTextbookDetail(io, io.viewers.find(v => v.id === sp.viewer) ?? null, sp.detail); }
