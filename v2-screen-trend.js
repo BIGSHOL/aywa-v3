@@ -169,16 +169,18 @@
     const groups = d.windows.map((w, i) => ({ w, list: Array.isArray(d.records[i]) ? d.records[i].filter(r => r && r.name) : [] })).filter(g => g.list.length).reverse();
     const total = groups.reduce((n, g) => n + g.list.length, 0); if (!total) return '';
     const all = groups.flatMap(g => g.list), hasSub = all.some(r => r.sub), hasDate = all.some(r => r.date), hasNote = all.some(r => r.note);
-    const dateHead = all.find(r => r.dateLabel)?.dateLabel || '날짜';
+    // 날짜 열 제목 = 기록의 날짜 이름(퇴원일 · 등록일 …) — 한 지표 안에서 섞이면(퇴원·수업종료) 제목은 '날짜', 칸마다 그 줄의 이름을 앞에('퇴원 10/16' · '수업종료 10/20').
+    const dateNames = [...new Set(all.filter(r => r.date && r.dateLabel).map(r => r.dateLabel))], mixedDates = dateNames.length > 1;
+    const dateHead = mixedDates ? '날짜' : dateNames[0] || '날짜', dateCell = r => [mixedDates && r.dateLabel ? String(r.dateLabel).replace(/일$/, '') : '', dateText(r.date, d.asOf)].filter(Boolean).join(' ');
     const who = r => (r.id != null && api.canOpenRecord?.(r.id) ? `<button type="button" class="ax-text-link" data-tr-open="${esc(r.id)}">${esc(r.name)}</button>` : esc(r.name));
     let left = ROSTER_MAX; const body = [];
     for (const g of groups) {
       if (left <= 0) break;
       const list = [...g.list].sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')) || String(a.name).localeCompare(String(b.name), 'ko')).slice(0, left); left -= list.length;
       list.forEach((r, k) => body.push(`<tr>${k ? '' : `<th scope="rowgroup" rowspan="${list.length}">${esc(dayName(g.w))}</th>`}<td>${who(r)}</td>`
-        + `${hasSub ? `<td>${esc(r.sub || '')}</td>` : ''}${hasDate ? `<td>${esc(dateText(r.date, d.asOf))}</td>` : ''}${hasNote ? `<td class="l">${esc(r.note || '')}</td>` : ''}</tr>`));
+        + `${hasSub ? `<td>${esc(r.sub || '')}</td>` : ''}${hasDate ? `<td>${esc(dateCell(r))}</td>` : ''}${hasNote ? `<td class="l">${esc(r.note || '')}</td>` : ''}</tr>`));
     }
-    const shownN = ROSTER_MAX - Math.max(left, 0), cols = [['8.5em', '기간'], ['7em', '이름'], ...(hasSub ? [['8em', '학교·학년']] : []), ...(hasDate ? [['6.5em', dateHead]] : []), ...(hasNote ? [['', '내용', 'l']] : [])];
+    const shownN = ROSTER_MAX - Math.max(left, 0), cols = [['8.5em', '기간'], ['7em', '이름'], ...(hasSub ? [['8em', '학교·학년']] : []), ...(hasDate ? [[mixedDates ? '9.5em' : '6.5em', dateHead]] : []), ...(hasNote ? [['', '내용', 'l']] : [])];
     return `<section class="tr-break tr-roster"><h3>명단 <span>${esc(d.filter.label)} · ${fmt(total)}건</span></h3>`
       + `<div class="tr-table-wrap"><table class="tr-roster-table"><colgroup>${cols.map(([wd]) => `<col${wd ? ` style="width:${wd}"` : ''}>`).join('')}</colgroup>`
       + `<thead><tr>${cols.map(([, l, c]) => `<th scope="col"${c ? ` class="${c}"` : ''}>${esc(l)}</th>`).join('')}</tr></thead><tbody>${body.join('')}</tbody></table></div>`
