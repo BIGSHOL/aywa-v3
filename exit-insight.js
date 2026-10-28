@@ -12,7 +12,7 @@ window.createExitInsight = function createExitInsight(api) {
   const btn = (label, attrs, cls = '') => `<button type="button" class="xi-btn ${cls}" ${attrs}>${label}</button>`;
   const TABLE = { students: '원생', enrollments: '수강', attendance_records: '출결', student_consultations: '원생상담', withdrawal_reports: '퇴원보고서', withdrawal_report_archives: '퇴원보고서 시트', student_grades: '성적', invoices: '청구', classes: '반', class_schedules: '시간표 배치', audit_logs: '변경 기록', users: '직원' };
   const STATUS = { disabled: ['자동 분석 꺼짐', ''], not_scheduled: ['기록 집계만', ''], queued: ['AI 분석 대기', 'blue'], running: ['AI 분석 중', 'blue'], partial: ['AI 분석 일부 완료', 'amber'], complete: ['AI 분석 완료', 'green'], error: ['AI 분석 오류', 'amber'] };
-  const st = { index: null, data: null, ask: 0, timer: 0, from: null, to: null, stop: null };
+  const st = { index: null, data: null, ask: 0, timer: 0, from: null, to: null, stop: null, sort: { key: 'amount', dir: 0 } }; // 빠진 학생 기본 = 감소 금액 큰 순
 
   const loadIndex = () => (st.index ? Promise.resolve(st.index) : fetch(ENDPOINT, { headers: { Accept: 'application/json' } }).then(r => (r.ok ? r.json() : null)).catch(() => null).then(j => (st.index = j)));
   /** Entry button for a card. Pure HTML: nothing is fetched until it is pressed. */
@@ -20,7 +20,15 @@ window.createExitInsight = function createExitInsight(api) {
 
   function open(from, to) {
     st.from = from; st.to = to; const ask = ++st.ask; clearTimeout(st.timer);
-    dialog('modal', `${mlabel(from)} → ${mlabel(to)} 청구 변화와 원인`, `${ym(from)}과 ${ym(to)}의 청구를 학생 단위로 대조했습니다.`, '<div class="xi" aria-busy="true"><p class="xi-note">불러오는 중입니다…</p></div>');
+    const title = `${mlabel(from)} → ${mlabel(to)} 청구 변화와 원인`, desc = `${ym(from)}과 ${ym(to)}의 청구를 학생 단위로 대조했습니다.`;
+    // 이미 열린 창에서 기간만 바꾸면 창을 비우지 않는다 — 제목만 바꾸고 지금 내용을 흐리게 둔 채 새 내용으로 갈아 끼운다
+    // (원장 10-28 "선택시마다 작아졌다가 다시 커지는데, 작아지지말고 창 유지한 상태에서 변화했으면").
+    const shown = $('#modal')?.open && $('#modal .live-detail-body > .xi[data-filter]');
+    if (shown) {
+      const t = $('#modal-title'), p = $('#modal .live-dialog-header p'); if (t) t.textContent = title; if (p) p.textContent = desc;
+      shown.classList.add('is-busy'); shown.setAttribute('aria-busy', 'true');
+      shown.querySelectorAll('.xi-pair').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.from === from && b.dataset.to === to)));
+    } else dialog('modal', title, desc, '<div class="xi" aria-busy="true"><p class="xi-note">불러오는 중입니다…</p></div>');
     Promise.all([loadIndex(), fetch(`${ENDPOINT}?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`, { headers: { Accept: 'application/json' } }).then(async r => ({ ok: r.ok, status: r.status, body: await r.json().catch(() => null) }))])
       .then(([, res]) => { if (ask !== st.ask || !$('#modal')?.open) return; if (!res.ok) { paintError(res.body?.message || '불러오지 못했습니다.', res.status === 503); return; } st.data = res.body; paint(true); })
       .catch(() => { if (ask === st.ask && $('#modal')?.open) paintError('불러오지 못했습니다. 잠시 뒤 다시 시도해 주세요.', true); });
@@ -91,19 +99,41 @@ window.createExitInsight = function createExitInsight(api) {
     const max = Math.max(1, ...f.weeks.map(w => w.attended + w.absent));
     return `<div class="xi-weeks" data-chart tabindex="0" role="group" aria-label="그만두기 전 8주 출결. 화살표 키로 주를 옮깁니다">${f.weeks.map(w => `<span data-point data-tip="${tip(`${w.from} 주`, [{ label: '출석', value: `${fmt(w.attended)}회`, tone: 'primary' }, { label: '결석', value: `${fmt(w.absent)}회`, tone: 'secondary' }])}"><i data-anchor style="height:${(w.attended + w.absent) / max * 100}%"><b style="height:${w.attended + w.absent ? w.absent / (w.attended + w.absent) * 100 : 0}%"></b></i></span>`).join('')}</div>`;
   }
+  // 빠진 학생 표 — 열을 고정해 줄마다 같은 자리에 같은 것(원장 10-28 "중구난방이 아닌 열정렬을 통해 깔끔하게"):
+  // 이름 · 학교 · 구분 · 시점 · 기록된 사유 · AI 추정 · 금액. 칸은 한 줄(넘치면 말줄임 — 전체는 펼친 상세에).
+  const ymd = d => (/^\d{4}-\d{2}-\d{2}/.test(String(d ?? '')) ? `${d.slice(2, 4)}.${d.slice(5, 7)}.${d.slice(8, 10)}` : '');
+  const dates = t => String(t ?? '').replace(/\b20(\d{2})-(\d{2})-(\d{2})\b/g, '$1.$2.$3').replace(/\b20(\d{2})-(\d{2})\b/g, '$1.$2'); // 상세 글의 날짜 yy.mm.dd · 연월 yy.mm
+  const body = f => { const t = String(f.text ?? ''); return f.label && t.startsWith(`${f.label} `) ? t.slice(f.label.length + 1) : t; }; // 항목 이름을 내용 앞에 되풀이하지 않는다
+  const whenOf = s => (s.exit.kind === 'withdrawn' ? (ymd(s.exit.date) || '날짜 미기재') : s.exit.kind === 'cleanup' ? (s.exit.month ? `${mlabel(s.exit.month)} 추정` : '시점 미상') : '—');
+  const SORT = {
+    amount: (a, b) => a.amount - b.amount,
+    name: (a, b) => a.name.localeCompare(b.name, 'ko'),
+    kind: (a, b) => a.kindLabel.localeCompare(b.kindLabel, 'ko') || a.amount - b.amount,
+    when: (a, b) => whenOf(b).localeCompare(whenOf(a)) || a.amount - b.amount,
+  };
+  const COLS = [['name', '이름'], ['', '학교'], ['kind', '구분'], ['when', '시점'], ['', '기록된 사유'], ['', 'AI 추정'], ['amount', '금액']];
+  const studentHead = () => `<div class="xi-student-cols" role="row">${COLS.map(([k, l]) => (k ? `<button type="button" data-xi="sort" data-key="${k}" aria-pressed="${st.sort.key === k}">${l}${st.sort.key === k ? (st.sort.dir ? ' ↑' : ' ↓') : ''}</button>` : `<span>${l}</span>`)).join('')}<span></span></div>`;
+  // 펼친 상세 = 묶음별(상태 · 사유 · 반·담당 · 출결·성적 · 상담·주변), 묶음 안은 날짜순 · '항목 | 내용 | 원본' 세 칸(원장 10-28 "db가 나열되어있는게 아니라 정렬되어서").
+  const GROUPS = [['상태', ['timing', 'billing', 'hold', 'continuing']], ['사유', ['reason', 'report']], ['반·담당', ['class', 'handover', 'churn']], ['출결·성적', ['attendance', 'grades']], ['상담·주변', ['consultation', 'sibling', 'classmates']]];
+  const dateKey = f => String(f.text ?? '').match(/\b20\d{2}-\d{2}-\d{2}\b/)?.[0] ?? '';
+  function factRows(s) {
+    const known = new Set(GROUPS.flatMap(([, k]) => k)), groups = [...GROUPS, ['그 밖', null]];
+    return groups.map(([title, kinds]) => {
+      const list = s.facts.filter(f => (kinds ? kinds.includes(f.kind) : !known.has(f.kind))).map((f, i) => [f, i]).sort((a, b) => (dateKey(a[0]) && dateKey(b[0]) ? dateKey(a[0]).localeCompare(dateKey(b[0])) : 0) || a[1] - b[1]).map(([f]) => f);
+      return list.length ? `<section class="xi-fgroup"><h5>${title}</h5><ul class="xi-facts">${list.map(f => `<li id="xi-f-${h(s.studentId)}-${h(f.key)}"><span class="xi-fact-label">${h(f.label)}${f.estimate ? ' ' + pill('추정', 'amber') : ''}</span><span class="xi-fact-text">${h(dates(body(f)))}${f.weeks ? weeks(f) : ''}</span><span class="xi-fact-src">${factSource(f)}${factOpen(f)}</span></li>`).join('')}</ul></section>` : '';
+    }).join('');
+  }
   function student(s) {
-    const exit = s.exit.kind === 'withdrawn' ? `퇴원 ${s.exit.date}` : s.exit.kind === 'cleanup' ? (s.exit.month ? `${mlabel(s.exit.month)} 이탈 추정` : '이탈 시점 미상') : s.kindLabel;
-    const cause = s.ai?.label ? `${pill(`AI 추정 · ${s.ai.label}`, s.ai.review ? 'amber' : 'blue')}${s.ai.review ? pill(s.ai.conflict ? '기록 사유와 다름 · 사람 확인' : '사람 확인', 'amber') : ''}` : s.ai?.status === 'pending' ? pill('AI 추정 대기', '') : s.ai?.status === 'error' ? pill('AI 추정 못 함', 'amber') : '';
-    const recorded = s.cause.origin === 'record' ? pill(`기록 · ${s.cause.label}`) : '';
-    const facts = s.facts.map(f => `<li id="xi-f-${h(s.studentId)}-${h(f.key)}"><span class="xi-fact-label">${h(f.label)}${f.estimate ? ' ' + pill('추정', 'amber') : ''}</span><span>${h(f.text)}</span>${f.weeks ? weeks(f) : ''}${factSource(f)}${factOpen(f)}</li>`).join('');
-    return `<li class="xi-student" data-groups="${h(['departed', `departed.${s.kind === 'withdrawn' || s.kind === 'cleanup' || s.kind === 'on_hold' || s.kind === 'enrolled' ? s.kind : 'other'}`, ...s.clusterIds.map(c => `cluster:${c}`)].join('|'))}"><button type="button" class="xi-student-head" data-xi="row" data-xi-row="${h(s.studentId)}" aria-expanded="false" aria-controls="xi-s-${h(s.studentId)}"><strong>${h(s.name)}</strong><span>${h(s.label)}</span><span>${pill(s.kindLabel, s.kind === 'cleanup' ? 'amber' : '')}${h(exit)}</span><span class="xi-cause">${recorded}${cause}</span><b>${signed(s.amount)}</b>${icon('down')}</button><div class="xi-student-body" id="xi-s-${h(s.studentId)}" hidden><ul class="xi-facts">${facts}</ul>${btn('원생 상세 열기', `data-xi="record" data-family="students" data-id="${h(s.studentId)}"`, 'link')}</div></li>`;
+    const ai = s.ai?.label ? `<span class="xi-ai-cause ${s.ai.review ? 'check' : ''}">${h(s.ai.label)}${s.ai.review ? `<em>${s.ai.conflict ? '기록과 다름' : '확인 필요'}</em>` : ''}</span>` : s.ai?.status === 'pending' ? '<span class="xi-dim">추정 중</span>' : s.ai?.status === 'error' ? '<span class="xi-dim">추정 못 함</span>' : '<span class="xi-dim">—</span>';
+    const recorded = s.cause.origin === 'record' ? h(s.cause.label) : '<span class="xi-dim">—</span>';
+    return `<li class="xi-student" data-groups="${h(['departed', `departed.${s.kind === 'withdrawn' || s.kind === 'cleanup' || s.kind === 'on_hold' || s.kind === 'enrolled' ? s.kind : 'other'}`, ...s.clusterIds.map(c => `cluster:${c}`)].join('|'))}"><button type="button" class="xi-student-head" data-xi="row" data-xi-row="${h(s.studentId)}" aria-expanded="false" aria-controls="xi-s-${h(s.studentId)}"><strong class="c-name">${h(s.name)}</strong><span class="c-school">${h(s.label)}</span><span class="c-kind">${pill(s.kindLabel, s.kind === 'cleanup' ? 'amber' : '')}</span><span class="c-when">${h(whenOf(s))}</span><span class="c-rec">${recorded}</span><span class="c-ai">${ai}</span><b class="c-amt">${signed(s.amount)}</b>${icon('down')}</button><div class="xi-student-body" id="xi-s-${h(s.studentId)}" hidden>${factRows(s)}${btn('원생 상세 열기', `data-xi="record" data-family="students" data-id="${h(s.studentId)}"`, 'link')}</div></li>`;
   }
   function view(d) {
     const a = d.analysis, more = d.clusters.length - 8;
     return `<div class="xi" data-filter="">${pairs(d)}<div class="xi-totals"><div><span>${ym(d.from)} 청구</span><strong>${won(d.totals.from)}</strong></div><div><span>${ym(d.to)} 청구</span><strong>${won(d.totals.to)}</strong></div><div><span>차이</span><strong class="${d.totals.delta < 0 ? 'neg' : d.totals.delta > 0 ? 'pos' : ''}">${signed(d.totals.delta)}</strong></div></div>
       <section><h3>① 청구 변화 내역</h3><p class="xi-note">${h(d.basis.billing)}.${d.check.exact ? '' : ` <strong>나눈 금액의 합이 차이와 다릅니다(합 ${signed(d.check.sum)}).</strong>`} ${h(d.basis.special)}.</p>${bars(d)}</section>
       <section><h3>② 원인 묶음</h3>${aiLine(a)}${overall(d)}<p class="xi-note">묶음은 빠진 학생의 기록을 이어 만든 후보입니다(한 학생이 여러 묶음에 들 수 있음). ${h(d.basis.teacher)}.</p><div class="xi-clusters">${d.clusters.map((c, i) => cluster(c, i, d)).join('')}</div>${more > 0 ? btn(`나머지 묶음 ${fmt(more)}개 보기`, 'data-xi="more"', 'link') : ''}</section>
-      <section id="xi-students"><h3>③ 빠진 학생별 기록 <span class="xi-count">${fmt(d.students.length)}명</span></h3><div class="xi-filter-line" hidden><span></span>${btn('전체 보기', 'data-xi="filter" data-filter=""', 'link')}</div><p class="xi-note">${h(d.basis.cleanup)}. ‘기록’은 퇴원 기록에 적힌 사유, ‘AI 추정’은 사유가 비어 있어 다른 기록으로 짐작한 것입니다.</p><ul class="xi-students">${d.students.map(student).join('')}</ul></section></div>`;
+      <section id="xi-students"><h3>③ 빠진 학생별 기록 <span class="xi-count">${fmt(d.students.length)}명</span></h3><div class="xi-filter-line" hidden><span></span>${btn('전체 보기', 'data-xi="filter" data-filter=""', 'link')}</div><p class="xi-note">${h(d.basis.cleanup)}. ‘기록’은 퇴원 기록에 적힌 사유, ‘AI 추정’은 사유가 비어 있어 다른 기록으로 짐작한 것입니다.</p>${studentHead()}<ul class="xi-students">${[...d.students].sort((a, b) => SORT[st.sort.key](a, b) * (st.sort.dir ? -1 : 1)).map(student).join('')}</ul></section></div>`;
   }
   // In-dialog jumps glide inside the dialog body and brake into place (AGENTS.md scroll rule); any input stops them.
   function glide(node) {
@@ -134,6 +164,7 @@ window.createExitInsight = function createExitInsight(api) {
     if (kind === 'open') { event.preventDefault(); open(t.dataset.from, t.dataset.to); }
     else if (kind === 'custom') { const f = pickedMonth('xi-from'), to = pickedMonth('xi-to'); if (!f || !to || f >= to) { toast('앞 달이 뒤 달보다 이른 두 달을 골라 주세요.'); return; } open(f, to); }
     else if (kind === 'row') toggleRow(t.dataset.xiRow);
+    else if (kind === 'sort') { st.sort = { key: t.dataset.key, dir: st.sort.key === t.dataset.key ? 1 - st.sort.dir : 0 }; paint(); }
     else if (kind === 'filter') applyFilter(t.dataset.filter || '');
     else if (kind === 'more') { document.querySelectorAll('#modal .xi-cluster[data-more]').forEach(n => { n.hidden = false; }); t.remove(); }
     else if (kind === 'fact') { event.preventDefault(); const n = document.getElementById(t.getAttribute('href').slice(1)); if (n) { n.closest('[data-more]')?.removeAttribute('hidden'); if (n.closest('.xi-student')?.hidden) applyFilter('', false); const b = n.closest('.xi-student-body'); if (b) toggleRow(b.id.slice(5), true); glide(n); n.classList.add('xi-flash'); setTimeout(() => n.classList.remove('xi-flash'), 1600); } }
