@@ -37,12 +37,16 @@ export function withParticle(name, particle) {
   return name + (pair[0] === '으로' ? (final && !rieul ? '으로' : '로') : final ? pair[0] : pair[1]);
 }
 const TAGGED = new RegExp(`${AI.ID.source}(${Object.keys(PARTICLE).sort((a, b) => b.length - a.length).join('|')})?`, 'g');
-/** Validated AI text → local labels with matching particles. Unknown pseudonyms stay as they are. */
-export const renderKorean = (text, labelOf) => (typeof text === 'string' ? text.replace(TAGGED, (match, particle = '') => {
+/** Validated AI text → local labels with matching particles. Unknown pseudonyms stay as they are.
+ *  `mark` wraps only the name the code put in (the particle stays outside) — the screen shows those names in bold. */
+export const renderKorean = (text, labelOf, mark = x => x) => (typeof text === 'string' ? text.replace(TAGGED, (match, particle = '') => {
   const label = labelOf(match.slice(0, 10));
   if (label == null) return match;
-  return label === '' ? '' : particle ? withParticle(label, particle) : label;
+  if (label === '') return '';
+  return mark(label) + (particle ? withParticle(label, particle).slice(label.length) : '');
 }) : text);
+/** Names the code put into AI text are wrapped in ⟦ ⟧ for the screen (원장 10-28 "볼드나 밑줄 등의 서식도 적극적으로 활용"). */
+export const NAME_MARK = x => `⟦${x}⟧`;
 
 /** Pairs analysed by AI: consecutive months of the screen range whose billing fell, and the first → last month of that range. */
 export function scheduledPairs(ix, months) {
@@ -155,7 +159,7 @@ ${AI.repairNote(plan.hint)}` : AI.COHORT_PROMPT, model, effort, timeoutMs: AI.ST
   }
   function view(from, to) {
     const p = pair(from, to), a = analysis(p), labelOf = ref => { const id = p.alias.reverse(ref); if (!id) return null; if (ref[0] === 'S') return ix.studentById.get(id)?.name; if (ref[0] === 'T') return userName(id); if (ref[0] === 'C') return ix.classById.get(id)?.class_name; if (ref[0] === 'G') return p.clusters.find(c => c.id === id)?.label; return ''; };
-    const render = t => renderKorean(t, labelOf).replace(/\s{2,}/g, ' ').trim(), factKey = ref => { const v = p.alias.reverse(ref); return v ? v.split('|').slice(1).join('|') || v : null; };
+    const render = t => renderKorean(t, labelOf, NAME_MARK).replace(/\s{2,}/g, ' ').trim(), factKey = ref => { const v = p.alias.reverse(ref); return v ? v.split('|').slice(1).join('|') || v : null; };
     const aiFor = cid => { const c = a.output?.clusters.find(x => p.alias.reverse(x.id) === cid); return c ? { summary: render(c.summary), confidence: c.confidence, chain: c.chain.map(s => ({ text: render(s.text), facts: s.factIds.map(f => ({ ref: p.alias.reverse(f)?.split('|')[0], key: factKey(f) })) })) } : null; };
     const clusterOf = new Map(); for (const c of p.clusters) for (const m of c.members) (clusterOf.get(m) ?? clusterOf.set(m, []).get(m)).push(c.id);
     const groups = part => Object.values(part.groups).filter(g => g.students || g.amount).map(g => ({ id: g.id, label: g.label, students: g.students, amount: g.amount, studentIds: g.studentIds, ...(g.estimateAmount != null ? { estimateAmount: g.estimateAmount } : {}), ...(g.sessionsChecked != null ? { sessionsChecked: g.sessionsChecked, fewerSessions: g.fewerSessions } : {}) }));

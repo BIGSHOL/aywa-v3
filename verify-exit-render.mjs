@@ -2,7 +2,7 @@
 // node --test experiments/owner-concept/verify-exit-render.mjs
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { renderKorean, withParticle } from './exit-runtime.mjs';
+import { renderKorean, withParticle, NAME_MARK } from './exit-runtime.mjs';
 
 const names = { 'T-1a2b3c4d': '김화영', 'T-00000001': '박선생', 'T-00000002': '김민수', 'C-0000000a': '고등M 중3 TP4G (~26.07.09)', 'C-0000000b': 'LT5', 'C-0000000c': '중등E_중1 TOP', 'S-0000000d': '김준우A', 'C-0000000e': '수학반', 'F-0000000f': '' };
 const label = ref => (ref in names ? names[ref] : null);
@@ -17,6 +17,9 @@ test('particles follow the name, not the pseudonym', () => {
 });
 test('no particle, fact ids and unknown pseudonyms', () => {
   assert.equal(renderKorean('T-1a2b3c4d 선생님', label), '김화영 선생님');
+  // the screen's bold mark wraps only the name; the particle still follows the name's last sound
+  assert.equal(renderKorean('T-1a2b3c4d가 맡은 반', label, NAME_MARK), '⟦김화영⟧이 맡은 반');
+  assert.equal(renderKorean('T-00000002이며 C-0000000e로', label, NAME_MARK), '⟦김민수⟧며 ⟦수학반⟧으로');
   assert.equal(renderKorean('근거 F-0000000f에 따라', label), '근거 에 따라');
   assert.equal(renderKorean('S-ffffffff는', label), 'S-ffffffff는');
   assert.equal(withParticle('수학반', '로'), '수학반으로'); assert.equal(withParticle('교실', '으로'), '교실로');

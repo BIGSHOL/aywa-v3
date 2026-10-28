@@ -66,16 +66,26 @@ window.createExitInsight = function createExitInsight(api) {
     const parts = [j && j.total ? `Jev 1.14.0 학생별 분류 ${fmt(j.done)}/${fmt(j.total)}명${j.failed ? ` · 실패 ${fmt(j.failed)}` : ''}${j.review ? ` · 사람 확인 ${fmt(j.review)}` : ''}` : '', c?.modelLabel ? `${c.modelLabel} 묶음 설명` : '', c?.status === 'error' ? `묶음 설명 실패(${c.code === 'invalid_output' ? '출력 검사를 통과하지 못함' : '호출 실패'})` : '', a.claude?.blocked === 'budget' ? '이 PC의 시간당 호출 한도로 대기' : ''].filter(Boolean);
     return `<div class="xi-ai-line">${pill(label, tone)}<span>${h(a.note || a.disabledReason || parts.join(' · ') || '')}</span></div>`;
   }
+  // AI 글 서식(원장 10-28 "볼드나 밑줄 등의 서식도 적극적으로 활용"): 코드가 넣은 이름(⟦ ⟧)은 굵게, '다만 …' 단서 문장은 밑줄. 글자는 이스케이프한 뒤에만 서식을 입힌다.
+  const rich = t => h(t).replace(/⟦([^⟧]*)⟧/g, '<strong>$1</strong>').replace(/(^|[.!?]\s+)(다만 [^.!?]*[.!?])/g, '$1<u class="xi-caveat">$2</u>');
   function overall(d) {
     if (!d.overall) return '';
-    return `<section class="xi-overall"><h3>AI 정리 ${pill('AI 초안', 'blue')}</h3><p>${h(d.overall.summary)}</p>${d.overall.reasons.length ? `<ul>${d.overall.reasons.map(r => `<li>${h(r)}</li>`).join('')}</ul>` : ''}${d.overall.checks.length ? `<h4>사람이 확인할 일</h4><ul>${d.overall.checks.map(r => `<li>${h(r)}</li>`).join('')}</ul>` : ''}<p class="xi-note">${h(d.analysis.claude?.modelLabel || 'Claude')} · 숫자·날짜·인원은 코드가 센 값이며 AI 글에는 넣지 않습니다. 아래 묶음의 AI 설명은 단계마다 근거 사실을 붙입니다.</p></section>`;
+    return `<section class="xi-overall"><h3>AI 정리 ${pill('AI 초안', 'blue')}</h3><p>${rich(d.overall.summary)}</p>${d.overall.reasons.length ? `<ul>${d.overall.reasons.map(r => `<li>${rich(r)}</li>`).join('')}</ul>` : ''}${d.overall.checks.length ? `<h4>사람이 확인할 일</h4><ul class="xi-checks">${d.overall.checks.map(r => `<li>${rich(r)}</li>`).join('')}</ul>` : ''}<p class="xi-note">${h(d.analysis.claude?.modelLabel || 'Claude')} · 숫자·날짜·인원은 코드가 센 값이며 AI 글에는 넣지 않습니다. 아래 묶음의 AI 설명은 단계마다 근거 사실을 붙입니다.</p></section>`;
   }
   const factOpen = f => (f.open ? btn('원본 기록 열기', `data-xi="record" data-family="${h(f.open.family)}" data-id="${h(f.open.id)}"`, 'link') : '');
   const factSource = f => (f.source ? `<small class="xi-src">${h(TABLE[f.source.table] || '기록')}</small>` : '');
   function cluster(c, i, d) {
-    const facts = c.facts.map(f => `<li id="xi-f-${h(c.id)}-${h(f.key)}"><span>${h(f.text)}</span>${factSource(f)}${factOpen(f)}</li>`).join('');
-    const ai = c.ai ? `<div class="xi-ai">${pill(`AI · ${c.ai.confidence}`, c.ai.confidence === '분명' ? 'green' : c.ai.confidence === '사람 확인' ? 'amber' : 'blue')}<p>${h(c.ai.summary)}</p><ol class="xi-chain">${c.ai.chain.map(s => `<li><span>${h(s.text)}</span>${s.facts.length ? `<small>근거 ${s.facts.map(f => `<a href="#xi-f-${h(f.ref)}-${h(f.key)}" data-xi="fact">${h((d.clusters.find(x => x.id === f.ref)?.facts.find(x => x.key === f.key) || d.students.find(x => x.studentId === f.ref)?.facts.find(x => x.key === f.key))?.label || '사실')}</a>`).join(' · ')}</small>` : ''}</li>`).join('')}</ol></div>` : '';
-    return `<article class="xi-cluster" ${i >= 8 ? 'data-more hidden' : ''}><header><div>${pill(c.kindLabel)}<h4>${h(c.label)}</h4></div><strong>${fmt(c.members.length)}명 · ${signed(c.amount)}</strong></header>${ai}<ul class="xi-facts">${facts}</ul>${btn(`이 묶음 학생 ${fmt(c.members.length)}명 보기`, `data-xi="filter" data-filter="cluster:${h(c.id)}"`, 'link')}</article>`;
+    // 근거는 미주로(원장 10-28 "근거 사실은 저렇게 적지말고 하단 미주처리 … 나무위키들처럼" · "미주에 마우스 올리면 보이고, 누르면 미주 하단으로 이동").
+    // 문장 끝에 [n], 묶음 아래에 인용된 순서대로 미주 → 인용되지 않은 이 묶음의 사실이 이어진다.
+    const notes = [], noteOf = new Map();
+    const factFor = f => d.clusters.find(x => x.id === f.ref)?.facts.find(x => x.key === f.key) || d.students.find(x => x.studentId === f.ref)?.facts.find(x => x.key === f.key) || null;
+    const number = (ref, key, fact) => { const k = `${ref}|${key}`; if (!noteOf.has(k)) { notes.push(fact); noteOf.set(k, notes.length); } return noteOf.get(k); };
+    const mark = n => `<sup class="xi-fn"><a href="#xi-n-${h(c.id)}-${n}" data-xi="fact" data-fn aria-label="근거 ${n}">[${n}]</a></sup>`;
+    const chain = c.ai ? c.ai.chain.map(s => `<li><span>${rich(s.text)}</span>${[...new Set(s.facts.map(f => { const fact = factFor(f); return fact ? number(f.ref, f.key, fact) : 0; }).filter(Boolean))].map(mark).join('')}</li>`).join('') : '';
+    for (const f of c.facts) number(c.id, f.key, f);
+    const ai = c.ai ? `<div class="xi-ai">${pill(`AI · ${c.ai.confidence}`, c.ai.confidence === '분명' ? 'green' : c.ai.confidence === '사람 확인' ? 'amber' : 'blue')}<p>${rich(c.ai.summary)}</p><ol class="xi-chain">${chain}</ol></div>` : '';
+    const facts = `<ol class="xi-notes" aria-label="근거">${notes.map((f, n) => `<li id="xi-n-${h(c.id)}-${n + 1}"><span class="xi-n-no">[${n + 1}]</span><span class="xi-n-text">${f.label && f.label !== f.text ? `<b>${h(f.label)}</b> ` : ''}${h(f.text || '')}</span>${factSource(f)}${factOpen(f)}</li>`).join('')}</ol>`;
+    return `<article class="xi-cluster" ${i >= 8 ? 'data-more hidden' : ''}><header><div>${pill(c.kindLabel)}<h4>${h(c.label)}</h4></div><strong>${fmt(c.members.length)}명 · ${signed(c.amount)}</strong></header>${ai}${facts}${btn(`이 묶음 학생 ${fmt(c.members.length)}명 보기`, `data-xi="filter" data-filter="cluster:${h(c.id)}"`, 'link')}</article>`;
   }
   function weeks(f) {
     const max = Math.max(1, ...f.weeks.map(w => w.attended + w.absent));
@@ -130,5 +140,23 @@ window.createExitInsight = function createExitInsight(api) {
     else if (kind === 'record') { if (api.showWorkspaceRecord) api.showWorkspaceRecord(t.dataset.family, t.dataset.id); else toast('이 기록은 여기서 바로 열 수 없습니다.'); }
   });
   document.addEventListener('close', event => { if (event.target?.id === 'modal') { st.ask += 1; clearTimeout(st.timer); } }, true);
+  // 미주 미리보기: [n]에 마우스나 초점을 두면 그 미주를 카드로 보인다(누르면 위 'fact'가 미주로 이동). 열린 대화 창 안에 띄워 창 뒤로 숨지 않게.
+  let fnPop = null;
+  const hideFn = () => { if (fnPop) fnPop.hidden = true; };
+  function showFn(a) {
+    const n = document.getElementById(a.getAttribute('href').slice(1)); if (!n) return;
+    fnPop ??= Object.assign(document.createElement('div'), { className: 'xi-fn-pop', role: 'tooltip' });
+    const host = a.closest('dialog') || document.body; if (fnPop.parentNode !== host) host.append(fnPop);
+    fnPop.innerHTML = ['.xi-n-no', '.xi-n-text', '.xi-src'].map(q => n.querySelector(q)?.outerHTML || '').join('');
+    fnPop.hidden = false;
+    const r = a.getBoundingClientRect(), w = Math.min(360, innerWidth - 24); fnPop.style.width = `${w}px`;
+    fnPop.style.left = `${Math.max(12, Math.min(r.left - 12, innerWidth - w - 12))}px`;
+    const ph = fnPop.offsetHeight; fnPop.style.top = `${r.bottom + 8 + ph > innerHeight - 8 ? Math.max(8, r.top - ph - 8) : r.bottom + 8}px`;
+  }
+  document.addEventListener('pointerover', event => { const a = event.target.closest?.('a[data-fn]'); if (a) showFn(a); });
+  document.addEventListener('pointerout', event => { if (event.target.closest?.('a[data-fn]')) hideFn(); });
+  document.addEventListener('focusin', event => { const a = event.target.closest?.('a[data-fn]'); if (a) showFn(a); else hideFn(); });
+  document.addEventListener('click', event => { if (event.target.closest?.('a[data-fn]')) hideFn(); }, true);
+  addEventListener('scroll', hideFn, true);
   return { entry, open };
 };

@@ -93,3 +93,16 @@
  .xi-student-head>strong{grid-area:name}.xi-student-head>b{grid-area:amount}.xi-student-head>.icon{grid-area:icon}
  .xi-student-head>span:nth-of-type(1){grid-area:label}.xi-student-head>span:nth-of-type(2){grid-area:kind}.xi-student-head>span:nth-of-type(3){grid-area:cause}
 }
+/* AI 글 서식 · 근거 미주(원장 10-28) */
+.xi-overall strong,.xi-ai strong{font-weight:700;color:var(--ax-ink)}
+.xi-caveat{text-decoration:underline;text-decoration-color:var(--ax-warning);text-decoration-thickness:2px;text-underline-offset:3px}
+.xi-checks li::marker{content:'☐  '}
+.xi-fn{font-size:.72em;line-height:0;margin-left:1px}
+.xi-fn a{color:var(--ax-primary);text-decoration:none;font-weight:600;padding:0 1px}
+.xi-fn a:hover,.xi-fn a:focus-visible{text-decoration:underline}
+.xi-notes{list-style:none;margin:10px 0 0;padding:10px 0 0;border-top:1px solid var(--ax-line);display:grid;gap:6px;font-size:var(--ax-xs)}
+.xi-notes li{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 8px;scroll-margin-top:80px}
+.xi-n-no{color:var(--ax-primary);font-weight:600;flex:0 0 auto}
+.xi-n-text{flex:1 1 220px;min-width:0}
+.xi-fn-pop{position:fixed;z-index:1000;padding:10px 12px;background:#fff;border:1px solid var(--ax-line);border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,.14);font-size:var(--ax-xs);line-height:1.5;display:flex;flex-wrap:wrap;gap:4px 8px;pointer-events:none}
+.xi-fn-pop[hidden]{display:none}
