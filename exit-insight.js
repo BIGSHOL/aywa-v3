@@ -5,7 +5,7 @@ window.createExitInsight = function createExitInsight(api) {
   'use strict';
   const { h, fmt, won, icon, dialog, toast } = api;
   const ENDPOINT = '/api/insight/exits', $ = s => document.querySelector(s);
-  const mlabel = m => `${Number(String(m).slice(5, 7))}월`, ym = m => `${String(m).slice(0, 4)}년 ${mlabel(m)}`;
+  const mlabel = m => (/^\d{4}-\d{2}/.test(String(m ?? '')) ? `${String(m).slice(2, 4)}.${String(m).slice(5, 7)}` : String(m ?? '')), ym = mlabel; // yy.mm everywhere (원장 10-28)
   const signed = n => `${n > 0 ? '+' : n < 0 ? '−' : '±'}${won(Math.abs(n))}`;
   const tip = (title, rows, meta = []) => h(JSON.stringify({ title, rows, meta: meta.filter(Boolean) }));
   const pill = (t, tone = '') => `<span class="ax-chip ${tone}">${h(t)}</span>`;

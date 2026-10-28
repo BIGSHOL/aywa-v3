@@ -10,7 +10,9 @@
   const pct=(n,d)=>d?Math.round(n/d*1000)/10:null;
   const rate=(n,d)=>d?`${fmt(pct(n,d))}%`:'기록 없음';
   const sum=(items,key)=>items.reduce((n,x)=>n+Number(x[key]||0),0);
-  const mlabel=m=>`${Number(String(m).slice(5,7))}월`;
+  // 연월은 어디서든 yy.mm(원장 10-28 "항상 yy.mm 으로 연도 월 표시하고") — 한 함수로만 만든다.
+  const yymm=m=>{const s=String(m??'');return /^\d{4}-\d{2}/.test(s)?`${s.slice(2,4)}.${s.slice(5,7)}`:s;};
+  const mlabel=yymm;
   const shortDate=d=>d?String(d).slice(5).replace('-','.'):'미입력';
   const subject=s=>({math:'수학',english:'영어',general:'공통'}[s]||s||'공통');
   const status=s=>({enrolled:'재원',on_hold:'휴원',withdrawn:'퇴원',prospect:'예비',present:'출석',late:'지각',absent:'결석',early_leave:'조퇴',makeup:'보강',paid:'납부완료',partial:'부분납부',unpaid:'미납',scheduled:'상담 예약',consulted:'상담 완료',ai_done:'상담 검토',declined:'미등록',no_show:'미방문',pending:'결재 대기',approved:'승인 완료',rejected:'반려',open:'진행 중',done:'완료',cancelled:'취소',expired:'종료',issued:'발급 완료',draft:'작성 중',requested:'요청',ordered:'주문',delivered:'전달',active:'사용 중',in_use:'사용중',on_loan:'대여중',available:'보관',repair:'수리중',lost:'분실',disposed:'폐기',retired:'폐기',boarded:'탑승',reserved:'예약'}[s]||s||'미입력');
@@ -41,18 +43,20 @@
   // Points carry data-tip = {title, rows:[{label,value,tone}], meta:[...]}; the popover below renders it. No native title tooltips.
   const exact=(v,unit)=>v==null?'기록 없음':unit==='만원'||unit==='원'?won(v):`${fmt(v)}${unit}`;
   const isMonth=d=>/^\d{4}-\d{2}$/.test(String(d||''));
-  const periodTitle=x=>{const d=String(x.month||x.date||'');if(isMonth(d))return `${d.slice(0,4)}년 ${mlabel(d)}`;if(/^\d{4}-\d{2}-\d{2}$/.test(d))return `${d.slice(0,4)}년 ${Number(d.slice(5,7))}월 ${Number(d.slice(8,10))}일`;return String(x.label||d);};
+  const periodTitle=x=>{const d=String(x.month||x.date||'');if(isMonth(d))return yymm(d);if(/^\d{4}-\d{2}-\d{2}$/.test(d))return `${d.slice(0,4)}년 ${Number(d.slice(5,7))}월 ${Number(d.slice(8,10))}일`;return String(x.label||d);};
   const tipData=(title,rows,meta=[])=>h(JSON.stringify({title,rows,meta:meta.filter(Boolean)}));
   const deltaText=(v,prev,unit,monthly)=>v==null||prev==null?'':`${monthly?'전월':'이전'} 대비 ${v>prev?'+':v<prev?'−':'±'}${exact(Math.abs(v-prev),unit)}`;
   function chart(items,key,unit='',options={}){
     if(!items.some(x=>x[key]!==null&&x[key]!==undefined))return empty('이 기간의 기록이 없습니다.','없는 기간을 추정값으로 채우지 않았습니다.');
     const W=620,H=216,L=42,R=20,T=25,B=32,inner=W-L-R,secondary=options.secondary;
     const values=items.flatMap(x=>[x[key],...(secondary?[x[secondary]]:[])]).filter(x=>x!==null&&x!==undefined).map(Number);
-    const max=Math.max(...values,1)*1.15,step=inner/Math.max(items.length,1),y=v=>T+(H-T-B)*(1-v/max);
+    // 세로축 눈금은 딱 떨어지는 간격(1·2·2.5·5×10ⁿ, 표시 단위 기준 — 원장 10-28 "803, 1605, 2408 … 기준을 알 수 없으니 딱 떨어지는 숫자로").
+    const scale=unit==='만원'?10000:1,top=Math.max(...values,1)/scale,raw=top/4,mag=10**Math.floor(Math.log10(raw)),n=raw/mag,tick=Math.max((n<=1?1:n<=2?2:n<=2.5?2.5:n<=5?5:10)*mag,1)*scale,ticks=Math.ceil(Math.max(...values,1)/tick);
+    const max=tick*ticks*(Math.max(...values,1)>tick*ticks*.9?1.08:1),step=inner/Math.max(items.length,1),y=v=>T+(H-T-B)*(1-v/max);
     const label=v=>unit==='만원'?fmt(v/10000):fmt(Math.round(v));
     const name=x=>x.label||(x.month?mlabel(x.month):shortDate(x.date));
     const monthly=items.every(x=>isMonth(x.month));
-    const grid=Array.from({length:4},(_,i)=>{const val=max*i/3;return `<line class="grid-line" x1="${L}" x2="${W-R}" y1="${y(val)}" y2="${y(val)}"/><text x="${L-9}" y="${y(val)+4}" text-anchor="end">${label(val)}</text>`;}).join('');
+    const grid=Array.from({length:ticks+1},(_,i)=>{const val=tick*i;return `<line class="grid-line" x1="${L}" x2="${W-R}" y1="${y(val)}" y2="${y(val)}"/><text x="${L-9}" y="${y(val)+4}" text-anchor="end">${label(val)}</text>`;}).join('');
     const cols=items.map((x,i)=>{
       const cx=L+step*(i+.5),v=x[key],sv=secondary?x[secondary]:null,width=Math.min(36,step*.48),prev=i?items[i-1][key]:null;
       const rows=[{label:options.label||'',value:exact(v,unit),tone:'primary'},...(secondary?[{label:options.secondaryLabel||'',value:exact(sv,unit),tone:'secondary'}]:[])];
@@ -151,7 +155,7 @@
   let toastTimer;
   const toast=text=>{const node=$('#toast');node.textContent=text;node.classList.add('show');clearTimeout(toastTimer);toastTimer=setTimeout(()=>node.classList.remove('show'),3000);};
   // Factories: ax (briefing/requests/assistant) first, then workspaces (catalog-driven family screens) which uses ax.
-  const api={db,h,fmt,won,icon,chart,lineChart,exact,dialog,navigate,render,attachScroll,scrollToSection,toast,subjectLabel:subject,showStudent,showBill,showApproval,showTask,openRecord,canOpenRecord,getPage:()=>state.page,hasView:id=>Boolean(viewFor(id)),closeMenu};
+  const api={db,h,fmt,yymm,won,icon,chart,lineChart,exact,dialog,navigate,render,attachScroll,scrollToSection,toast,subjectLabel:subject,showStudent,showBill,showApproval,showTask,openRecord,canOpenRecord,getPage:()=>state.page,hasView:id=>Boolean(viewFor(id)),closeMenu};
   const ax=window.createOwnerWorkspace(api);
   const ws=typeof window.createWorkspaces==='function'?window.createWorkspaces({...api,ax}):null;
   ax.useWorkspaces?.(ws);
@@ -264,7 +268,7 @@
   // 할 일 담당도 공용 직원 선택창(값은 지금처럼 이름 — 할 일이 이름으로 담당을 적는다). 맨 위는 원장.
   const ownerField=()=>{const fb=`<label>담당<select name="owner"><option>원장</option>${db.staff.map(s=>`<option>${h(s.name)}</option>`).join('')}</select></label>`,CP=window.ContextPicker;if(!CP)return fb;try{const l=CP.lists.staff({db,subjectLabel:subject});return CP.html({id:'live-task-owner',name:'owner',label:'담당',clearable:false,selected:['원장'],...l,options:[{value:'원장',title:'원장',search:'원장'},...l.options.map(o=>({...o,value:o.title}))]});}catch{return fb;}};
   const periodSelect=(key,value,periods=db.months)=>{const CP=window.ContextPicker;if(CP)try{return `<span class="live-period">${CP.html({id:`live-period-${key}`,name:`period-${key}`,ariaLabel:'조회 월',selected:[value],attrs:{'data-period':key},...CP.lists.months({db,months:periods})})}</span>`;}catch{}
-    return `<select class="live-period" data-period="${key}" aria-label="조회 월">${[...new Set(periods)].sort().reverse().map(m=>`<option value="${m}" ${m===value?'selected':''}>${m.replace('-','년 ')}월</option>`).join('')}</select>`;};
+    return `<select class="live-period" data-period="${key}" aria-label="조회 월">${[...new Set(periods)].sort().reverse().map(m=>`<option value="${m}" ${m===value?'selected':''}>${yymm(m)}</option>`).join('')}</select>`;};
   const admissions=()=>{
     const monthRows=db.admissions.filter(a=>a.date.startsWith(state.month));
     const stages=[['all','전체 문의',monthRows.length],['review','상담·검토 중',monthRows.filter(a=>['scheduled','consulted','ai_done'].includes(a.outcome)).length],['enrolled','등록',monthRows.filter(a=>a.outcome==='enrolled').length],['declined','미등록·미방문',monthRows.filter(a=>['declined','no_show'].includes(a.outcome)).length]];
@@ -347,7 +351,7 @@
     const selected=eventsOn(state.selectedDate),monthEvents=db.calendar.filter(e=>e.date.startsWith(state.calendarMonth));
     const cells=Array.from({length:first},()=>'<div></div>').join('')+Array.from({length:days},(_,i)=>{const d=`${state.calendarMonth}-${String(i+1).padStart(2,'0')}`,events=eventsOn(d);return `<button class="live-day ${d===state.selectedDate?'selected':''} ${d===db.meta.asOf?'today':''}" data-day="${d}" aria-label="${month}월 ${i+1}일, 일정 ${events.length}개" aria-pressed="${d===state.selectedDate}"><strong>${i+1}</strong>${events.length?`<p>${h(events[0].title)}</p><small>${events.length}개 일정</small>`:''}</button>`;}).join('');
     return heading('캘린더','학원 일정과 보강 예약을 봅니다.',button(`${icon('plus')} 일정 메모`,'calendar-note'))+
-      `<div class="live-grid">${panel(`${year}년 ${month}월`,`이 달에 시작하는 일정 ${monthEvents.length}개`,`<div class="live-calendar">${'일월화수목금토'.split('').map(d=>`<small>${d}</small>`).join('')}${cells}</div>`,`<div class="flex"><button class="icon-button" data-calendar-move="-1" aria-label="이전 달">‹</button><button class="button small" data-action="today">오늘</button><button class="icon-button" data-calendar-move="1" aria-label="다음 달">›</button></div>`)}${panel(`${shortDate(state.selectedDate)} 일정`,`${selected.length}개 일정`,selected.length?`<div class="live-agenda">${selected.map(e=>`<button class="live-agenda-item" data-event="${h(e.id)}"><span>${h(e.start||'종일')}</span><div><strong>${h(e.title)}</strong><p>${e.finish?`${h(e.finish)} 종료`:'등록된 학원 일정'}</p></div></button>`).join('')}</div>`:empty('등록된 일정이 없습니다.','선택한 날짜에 시작되거나 이어지는 일정 기준입니다.'))}</div>`+
+      `<div class="live-grid">${panel(yymm(`${year}-${String(month).padStart(2,'0')}`),`이 달에 시작하는 일정 ${monthEvents.length}개`,`<div class="live-calendar">${'일월화수목금토'.split('').map(d=>`<small>${d}</small>`).join('')}${cells}</div>`,`<div class="flex"><button class="icon-button" data-calendar-move="-1" aria-label="이전 달">‹</button><button class="button small" data-action="today">오늘</button><button class="icon-button" data-calendar-move="1" aria-label="다음 달">›</button></div>`)}${panel(`${shortDate(state.selectedDate)} 일정`,`${selected.length}개 일정`,selected.length?`<div class="live-agenda">${selected.map(e=>`<button class="live-agenda-item" data-event="${h(e.id)}"><span>${h(e.start||'종일')}</span><div><strong>${h(e.title)}</strong><p>${e.finish?`${h(e.finish)} 종료`:'등록된 학원 일정'}</p></div></button>`).join('')}</div>`:empty('등록된 일정이 없습니다.','선택한 날짜에 시작되거나 이어지는 일정 기준입니다.'))}</div>`+
       subtitle(`${month}월 보강 예약`,'보강일 기준 · 출결 처리와는 별개입니다.')+`<div class="live-cards">${db.makeup.filter(m=>m.date.startsWith(state.calendarMonth)).map(m=>`<section class="live-card"><header><div><h3>${h(m.name)}</h3><p>${h(m.className)}</p></div>${badge(status(m.status),'blue')}</header><p>${shortDate(m.absence)} 결석 → ${shortDate(m.date)} 보강</p><footer><span>${h(m.start||'시간 미입력')}</span></footer></section>`).join('')}</div>`;
   };
   const settings=()=>heading('학원 설정','지금 보고 있는 데이터와 시안의 동작 범위를 확인합니다.')+

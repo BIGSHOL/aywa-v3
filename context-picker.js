@@ -377,7 +377,7 @@ window.ContextPicker = (function () {
     months({ db, months }) {
       const trend = new Map((db?.trend || []).map(t => [t.month, t]));
       const options = [...new Set(months || [])].sort().reverse().map(m => { const t = trend.get(m) || {};
-        return { value: m, title: `${m.slice(0, 4)}년 ${Number(m.slice(5, 7))}월`, cells: { students: Number.isFinite(t.payingStudents) ? `${t.payingStudents.toLocaleString('ko-KR')}명` : '', billed: Number.isFinite(t.billed) ? won(t.billed) : '' }, search: m }; });
+        return { value: m, title: `${m.slice(2, 4)}.${m.slice(5, 7)}`, cells: { students: Number.isFinite(t.payingStudents) ? `${t.payingStudents.toLocaleString('ko-KR')}명` : '', billed: Number.isFinite(t.billed) ? won(t.billed) : '' }, search: m }; });
       return { noun: '달', unit: '개월', options, note: `${options.length}개월`, clearable: false,
         columns: [{ key: 'name', label: '월', w: 'minmax(0,1fr)' }, { key: 'students', label: '청구 원생', w: 'minmax(5em,.8fr)', align: 'end' }, { key: 'billed', label: '청구액', w: 'minmax(7em,1fr)', align: 'end' }] };
     },
