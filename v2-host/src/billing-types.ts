@@ -6,6 +6,10 @@ import type { TuitionCatalogOption, TuitionCatalogRow } from "@/features/billing
 import type { QuoteDetail, QuoteListItem } from "@/features/billing/server/tuition-quote-queries";
 import type { ExpenseRow, ExpenseSummary } from "@/features/billing/server/expense-queries";
 import type { RefundListRow } from "@/features/billing/server/refund-queries";
+import type { SessionTermsView } from "@/features/billing/session-terms/server/queries";
+import type { getSessionVerificationView } from "@/features/billing/session-terms/server/verification-queries";
+import type { SplitsSnapshotStatus } from "@/features/billing/session-terms/server/splits-queries";
+import type { SeatShareSummary } from "@/features/attendance/server/seat-share-summary";
 
 /** textbooks-panel.tsx가 서버에서 받던 값 — getTextbookOrdersPage · getTextbookStats · getStudentOptions · getCatalogOptions · 학원 설정(이름 · 로고 · 계좌). */
 export type TextbooksPanelData = {
@@ -37,6 +41,15 @@ export type CalculatorFaceData = {
   prices: TuitionPricesData | null;
   catalog: CatalogPanelData | null;
   quotes: SavedQuotesData | null;
+};
+
+/** session-terms-face.tsx · session-verification-face.tsx — 2.0 서버 함수(getSessionTermsView · loadSeatShareSummary | getSessionVerificationView · getTeacherSplitsStatus) 결과 그대로. */
+export type SessionsFaceData = {
+  panel: "confirm" | "verify";
+  period: string;
+  settings: Pick<TenantSettings, "operations">;
+  confirm: { view: SessionTermsView; seatShare: SeatShareSummary | null } | null;
+  verification: { view: Awaited<ReturnType<typeof getSessionVerificationView>>; savedSplits: SplitsSnapshotStatus | null } | null;
 };
 
 /** textbooks-face.tsx — 내부탭(목록 | 교재 단가표)이 고르는 쪽만 실린다. */

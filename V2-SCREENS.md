@@ -60,6 +60,14 @@
 2. 그 파일은 `createRoot`로 `AppProviders` › `HostFrame`(`./host-frame`) › 2.0 레이아웃 컨텍스트(`OperationsProvider` 등) › 2.0 `page.tsx` 조립을 옮긴 부품(2.0 부품·함수는 `@/…`로 그대로 import)을 그리고, 데이터는 `GET /api/v2/<id>`(load = 2.0 page가 서버에서 받던 모양)로 받는다. 서버 액션(`"use server"`)은 빌드가 자리표시로 바꾼다(`shims/server-action.ts`). 시간표가 본보기(`src/timetable.tsx`·`timetable-page.tsx`).
 3. `node experiments/owner-concept/v2-host/build.mjs` → `dist/<id>.html`(4310은 새로고침으로 반영, 시작 때 `isBuilt()`가 거짓이면 스스로 짓는다). 3.0 화면 `v2-screen-<id>.js`는 같은 출처 iframe `/v2-host/<id>.html?…`을 자리 위에 한 번만 겹쳐 둔다(`v2-screen-timetable.js`). `shims/`·`host-frame.tsx`·`host.css`는 공용 — 더 필요하면 시간표 세션에 `[요청]`.
 
+## 공용 도구: v2-server-runner (메인 결정 10-28 안 A · 주인 = 팀장 세션)
+
+- **언제**: 조립·산식이 커서 SQL로 손 이식하면 2.0과 어긋날 위험이 큰 화면(수납 회차 확정 · 강사 정산 …). 순수 함수만 필요하면 `importV2`로 충분하다. 첫 사용처 = `v2-billing-sessions.mjs`.
+- **쓰는 법**: `runV2Server({ steps: [{ module: 'features/…/server/x.ts', fn, args }], actorId, tenantId, mode: 'read' | 'write', rollback?, probes? })` → `{ results: [{ value } | { redirect } | { notFound }] }`. 동작 하나 = 복사본 트랜잭션 하나(읽기 = read only · 쓰기 = `net.http_request_queue`가 늘면 되돌림 · `rollback` = 시험용).
+- **격리**: 모듈 훅은 전용 작업 스레드(`v2-server/worker.mjs`)에서만 register한다 — 4310 메인 스레드에는 걸지 않는다. 작업 스레드는 바깥 `fetch`를 막는다.
+- **훅 지정자**: `server-only` · `next/cache`(캐시 없음 · 무효화 없음) · `next/headers`(쿠키·머리글 없음) · `next/navigation`(redirect · notFound는 던짐) · `next/server`(`after` = 같은 트랜잭션 끝에서) · `@/lib/supabase/server`(보는 사람 신분 + authenticated · RLS가 2.0처럼) · `@/lib/supabase/admin`(복사본 접속 = RLS 우회) · `@/lib/supabase/client`(던짐) · `@/lib/auth/current-user`(보는 사람) · `@/features/audit/server/log`(같은 표 + `metadata.via` '3.0 연습 복사본' · 슬랙 깨우기 없음). 학원 설정(`getTenantSettings`) · 권한 표(`perm-matrix`) · 지점 보기는 흉내 내지 않고 2.0 코드 그대로 돈다. 판정은 해석한 파일 경로로(`./server`든 `@/…`든 같다).
+- **지원하는 PostgREST 모양**(`v2-server/postgrest.mjs`): `select`(칸 · `별칭:칸` · `칸::형식` · `*` · 임베드 `별칭:fk칸(…)` · `표!FK이름(…)` · `!inner`) · `count: 'exact'` · `head` · `eq` `neq` `gt` `gte` `lt` `lte` `like` `ilike` `is` `in` `contains` `containedBy` `overlaps` `not` `filter` `match` `or`(`and(…)` 포함) · 임베드 칸 거르기(`invoice.period`) · `order`(nullsFirst) · `range` · `limit` · `single` · `maybeSingle` · `insert` · `update` · `upsert`(onConflict · ignoreDuplicates) · `delete` · 뒤의 `.select()` · `rpc`(집합 · 하나짜리). PostgREST와 같게 **한 번에 1000행**(db-max-rows) · 값은 JSON(to_jsonb) · FK가 둘이면 PGRST201 · 없는 표 PGRST205 · 오류는 `{ data: null, error: { code, message, details, hint } }`. **모르는 모양(JSON 경로 · 임베드 정렬 · storage · auth.admin …)은 조용히 넘기지 않고 던진다**(`V2_UNSUPPORTED`) — 필요해지면 흉내를 늘리고 시험을 더한다.
+
 ## 지킬 것
 
 - **같은 데이터는 같은 원본**: 2.0이 화면을 만드는 순수 함수(격자 만들기·명단·라벨·판정)는 `importV2('features/…/x.ts')`로 **그대로** 불러 쓴다(원인 추적의 `v2-bridge.mjs`와 같은 방식). 새로 계산해 2.0과 다른 값을 내지 않는다. 운영 enum(과목·학년·교시 라벨)은 학원 설정에서 읽는다.

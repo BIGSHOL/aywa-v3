@@ -12,6 +12,9 @@ import { importV2 } from './v2-bridge.mjs';
 import * as M from './v2-screen-billing.mjs';
 import { build } from './v2-host/build.mjs';
 
+/** 화면으로 JSON에 실어 보낼 수 있는 값인가 — 객체·배열·원시값만(Map · Set · Date · 함수 없음). */
+const plainDeep = v => (v === null || typeof v !== 'object' ? typeof v !== 'function'
+  : Array.isArray(v) ? v.every(plainDeep) : Object.getPrototypeOf(v) === Object.prototype && Object.values(v).every(plainDeep));
 const done = [];
 const check = async (name, fn) => { await fn(); done.push(name); };
 const src = p => readFile(new URL(`../../src/${p}`, import.meta.url), 'utf8');
@@ -46,19 +49,21 @@ await check('그리기 = 2.0 billing/page.tsx · billing-content.tsx · makeedu-
   }
   // 아직 옮기지 않은 면은 자리표시 — 면 탭은 2.0 그대로.
   const page = lf(await here('./v2-host/src/billing-page.tsx'));
-  assert.equal(page.split('<HostFaceNotReady />').length - 1, 2, '회차 확정 · 강사 정산');
+  assert.equal(page.split('<HostFaceNotReady />').length - 1, 1, '강사 정산');
   // 교재 면 = textbooks-face · textbooks-panel · catalog-panel 글자 그대로(billing-textbooks.swaps.json)
   const tb = JSON.parse(await here('./v2-host/src/billing-textbooks.swaps.json'));
   for (const [key, file, mineFile] of [['face', 'textbooks-face.tsx', 'billing-textbooks-face.tsx'], ['panel', 'textbooks-panel.tsx', 'billing-textbooks-panel.tsx'],
     ['catalog', 'catalog-panel.tsx', 'billing-catalog-panel.tsx'], ['expenses', 'expenses-panel.tsx', 'billing-expenses-panel.tsx'], ['rf.face', 'refunds-face.tsx', 'billing-refunds-face.tsx'],
     ['rf.newPage', '../refunds/new/page.tsx', 'billing-refund-new.tsx'], ['rf.viewPage', '../refunds/[id]/page.tsx', 'billing-refund-view.tsx'],
-    ['cs.panel', 'calculator-panel.tsx', 'billing-calculator-panel.tsx'], ['cs.prices', 'tuition-prices-panel.tsx', 'billing-tuition-prices-panel.tsx'], ['cs.quotes', 'saved-quotes-panel.tsx', 'billing-saved-quotes-panel.tsx']]) {
+    ['cs.panel', 'calculator-panel.tsx', 'billing-calculator-panel.tsx'], ['cs.prices', 'tuition-prices-panel.tsx', 'billing-tuition-prices-panel.tsx'], ['cs.quotes', 'saved-quotes-panel.tsx', 'billing-saved-quotes-panel.tsx'],
+    ['ss.terms', 'session-terms-face.tsx', 'billing-session-terms-face.tsx'], ['ss.verify', 'session-verification-face.tsx', 'billing-session-verification-face.tsx']]) {
     const rf = JSON.parse(await here('./v2-host/src/billing-refunds.swaps.json'));
-    const swaps = key === 'expenses' ? JSON.parse(await here('./v2-host/src/billing-expenses.swaps.json')).panel : key.startsWith('rf.') ? rf[key.slice(3)] : key.startsWith('cs.') ? JSON.parse(await here('./v2-host/src/billing-calculator.swaps.json'))[key.slice(3)] : tb[key];
+    const swaps = key === 'expenses' ? JSON.parse(await here('./v2-host/src/billing-expenses.swaps.json')).panel : key.startsWith('rf.') ? rf[key.slice(3)] : key.startsWith('cs.') ? JSON.parse(await here('./v2-host/src/billing-calculator.swaps.json'))[key.slice(3)]
+      : key.startsWith('ss.') ? JSON.parse(await here('./v2-host/src/billing-sessions.swaps.json'))[key.slice(3)] : tb[key];
     const want = applySwaps(lf(await src(`app/(shell)/billing/_components/${file}`)), swaps, key), mine = lf(await here(`./v2-host/src/${mineFile}`));
     assert.ok(mine.endsWith(want), `${mineFile} = 2.0 ${file} + 짝`);
     assert.ok(mine.slice(0, mine.length - want.length).split('\n').filter(Boolean).every(l => l.startsWith('//')), `${mineFile} 앞에는 주석만`);
-    assert.doesNotMatch(want.split('\n').filter(l => !/^\s*(\/\/|\*|\/\*)/.test(l)).join('\n'), /\bawait\b|getCurrentUser|getTenantSettings|resolveBrandingSrc|summarizeExpenses\(|requireAccess|getRefundRequests\(|getTuitionCatalog|getQuote/, `${mineFile}: 서버 호출이 남지 않는다`);
+    assert.doesNotMatch(want.split('\n').filter(l => !/^\s*(\/\/|\*|\/\*)/.test(l)).join('\n'), /\bawait\b|getCurrentUser|getTenantSettings|resolveBrandingSrc|summarizeExpenses\(|requireAccess|getRefundRequests\(|getTuitionCatalog|getQuote|getSessionTermsView\(|loadSeatShareSummary\(|getSessionVerificationView\(|getTeacherSplitsStatus\(/, `${mineFile}: 서버 호출이 남지 않는다`);
   }
 });
 
@@ -522,7 +527,125 @@ try {
     } catch (e) { if (e !== ROLL) throw e; }
     assert.equal((await db`select count(*)::int n from public.invoices where tenant_id=${tenantId}`)[0].n, before, '되돌린 뒤 남은 연습 청구서 0');
   });
-} finally { await db.end(); }
+
+  await check('공용 러너의 Supabase 흉내 = PostgREST처럼 — 1000행 절단 · range 페이징 · FK 이름 힌트 · 관계가 둘이면 PGRST201 · 없는 표 PGRST205 · 모르는 모양은 던짐 · 세션 = 보는 사람 RLS', async () => {
+    const { runInCall } = await import('./v2-server/context.mjs');
+    const P = await import('./v2-server/postgrest.mjs');
+    await db.begin('isolation level repeatable read read only', async sql => {
+      const owner = { id: base.viewer.id, tenantId, email: '', displayName: base.viewer.name, jobTitle: null, systemRole: 'master' };
+      await runInCall({ sql, metaSql: db, actor: owner, tenantId }, async () => {
+        const admin = P.adminClient(), user = P.sessionClient();
+        const [{ n }] = await sql`select count(*)::int n from public.invoices where tenant_id=${tenantId}`;
+        assert.ok(n > 1000, '절단 시험에는 1000행이 넘는 표가 필요');
+        const all = await admin.from('invoices').select('id').eq('tenant_id', tenantId);
+        assert.equal(all.data.length, 1000, 'range 없이 읽어도 1000행에서 잘린다(db-max-rows)');
+        const big = await admin.from('invoices').select('id').eq('tenant_id', tenantId).order('id').range(0, 4999);
+        assert.equal(big.data.length, 1000, 'range를 크게 줘도 1000행');
+        const p2 = await admin.from('invoices').select('id').eq('tenant_id', tenantId).order('id').range(1000, 1999);
+        const want = await sql`select id::text id from public.invoices where tenant_id=${tenantId} order by id offset 1000 limit 1000`;
+        assert.deepEqual(p2.data.map(r => r.id), want.map(r => r.id), 'range = offset/limit');
+        const head = await admin.from('invoices').select('*', { count: 'exact', head: true }).eq('tenant_id', tenantId);
+        assert.deepEqual([head.data, head.count], [null, n]);
+        // 임베드 = FK · many-to-one 객체 · 이름 힌트
+        const one = await admin.from('invoices').select('id, student:student_id ( id, name ), amount_total').eq('tenant_id', tenantId).order('id').limit(1).single();
+        const [raw] = await sql`select i.id::text id, s.id::text sid, s.name, i.amount_total from public.invoices i join public.students s on s.id=i.student_id where i.tenant_id=${tenantId} order by i.id limit 1`;
+        assert.deepEqual(one.data, { id: raw.id, student: { id: raw.sid, name: raw.name }, amount_total: Number(raw.amount_total) }, '숫자는 숫자(JSON)');
+        const amb = await admin.from('lesson_reports').select('id, classes ( class_name )').limit(1);
+        assert.equal(amb.error?.code, 'PGRST201', 'FK가 둘이면 이름 힌트 없이 못 고른다(2.0 #94)');
+        const hinted = await admin.from('classes').select('id, teacher:teacher_id ( display_name )').eq('tenant_id', tenantId).limit(1);
+        assert.equal(hinted.error, null);
+        const missing = await admin.from('no_such_table_v2').select('id');
+        assert.equal(missing.error?.code, 'PGRST205');
+        const many = await admin.from('invoices').select('id').eq('tenant_id', tenantId).limit(2).single();
+        assert.equal(many.error?.code, 'PGRST116');
+        const none = await admin.from('invoices').select('id').eq('id', '00000000-0000-0000-0000-000000000000').maybeSingle();
+        assert.deepEqual([none.data, none.error], [null, null]);
+        await assert.rejects(async () => { await admin.from('invoices').select('line_items->kind').limit(1); }, e => e.code === 'V2_UNSUPPORTED', 'JSON 경로는 아직 흉내 밖 — 던진다');
+        await assert.rejects(async () => { await admin.from('invoices').select('id').order('student.name').limit(1); }, e => e.code === 'V2_UNSUPPORTED');
+        // 세션 클라이언트 = 보는 사람 RLS — 원장은 자기 지점 청구서만, 강사는 수납 정책에 막혀 0행(2.0과 같은 정책)
+        const mine = await user.from('invoices').select('*', { count: 'exact', head: true });
+        assert.equal(mine.count, n, '원장 = 그 지점 청구서 전부(tenant_id를 안 걸어도 RLS가 거른다)');
+        const [teacher] = await sql`select id::text id from public.users where tenant_id=${tenantId} and system_role='teacher' and status='active' limit 1`;
+        await runInCall({ sql, metaSql: db, actor: { ...owner, id: teacher.id, systemRole: 'teacher' }, tenantId }, async () => {
+          const t = await P.sessionClient().from('invoices').select('*', { count: 'exact', head: true });
+          assert.equal(t.count, 0, '강사 = 수납 정책에 막힘');
+        });
+        const [{ role }] = await sql`select current_user role`;
+        assert.notEqual(role, 'authenticated', '쿼리 뒤 역할이 원래대로');
+      });
+    });
+  });
+
+  await check('공용 러너로 돌린 2.0 서버 함수 = 따로 쓴 SQL 결과 — getInvoicesForPeriod(fetchAllPaged · 임베드 · 정렬) · getTextbookOrdersPage(or ilike) · getAvailablePeriods(캐시 경로 = admin)', async () => {
+    const { runV2Server } = await import('./v2-server-runner.mjs');
+    const { results: [inv, tb, periods] } = await runV2Server({ actorId: base.viewer.id, tenantId, mode: 'read', steps: [
+      { module: 'features/billing/server/queries.ts', fn: 'getInvoicesForPeriod', args: [{ period: '2026-09', sort: 'name', desc: true }] },
+      { module: 'features/billing/server/textbook-queries.ts', fn: 'getTextbookOrdersPage', args: [{ filter: 'pay', q: '수학' }, 1, 50] },
+      { module: 'features/billing/server/queries.ts', fn: 'getAvailablePeriods', args: [] },
+    ] });
+    const mine = (await load({ period: '2026-09', sort: 'name', desc: '1' })).billing;
+    assert.deepEqual(inv.value, mine.monthRows, '2.0 getInvoicesForPeriod = 수납 면 조회(손 이식) — 행·순서·값 모두');
+    assert.deepEqual(periods.value, mine.periods);
+    const t2 = (await load({ tab: 'textbooks', status: 'pay', q: '수학' })).textbooks.list.page;
+    assert.deepEqual(tb.value, t2);
+  });
+
+  await check('회차 확정 = 2.0 getSessionTermsView 그대로 — 26.09 · 26.10 회차 행 · 확정액 · 저장 배분 · 보낸/받은 이월 · 실납 · 반 청구액 = 독립 SQL과 2.0 순수 함수 · 골든 표본(2026-07 강수정·이시우)', async () => {
+    const mc = await importV2('features/billing/session-terms/money-carryover.ts');
+    const ca = await importV2('features/billing/session-terms/class-amount.ts');
+    const as = await importV2('features/billing/session-terms/allocation-state.ts');
+    for (const period of ['2026-09', '2026-10', '2026-07']) {
+      const d = (await load({ tab: 'sessions', period })).sessions;
+      assert.equal(d.panel, 'confirm'); assert.equal(d.period, period);
+      assert.ok(plainDeep(d), 'JSON으로 옮겨도 같은 값(Map · Set · Date 없음 — undefined 칸은 JSON에서 빠질 뿐)');
+      const rows = d.confirm.view.rows.filter(r => r.termState === 'term');
+      const terms = await db`select s.id::text id, s.invoice_id::text invoice_id, s.amount::float8 amount, s.confirmed_sessions::float8 cs, s.unit_price::float8 up, s.allocation_amount::float8 alloc,
+          s.allocation_line_index li, s.allocation_carry_out::float8 cout, i.line_items from public.invoice_session_terms s join public.invoices i on i.id=s.invoice_id
+        where s.tenant_id=${tenantId} and i.period=${period} and i.status <> 'void'`;
+      assert.deepEqual(rows.map(r => r.id).sort(), terms.map(x => x.id).sort(), `${period} 회차 행 = 살아 있는 청구서의 회차 행 전부`);
+      const byId = new Map(terms.map(x => [x.id, x]));
+      const freeInvoices = new Set(terms.filter(x => x.li == null && (x.alloc ?? 0) > 0).map(x => x.invoice_id));
+      for (const r of rows) {
+        const x = byId.get(r.id);
+        assert.deepEqual([r.amount, r.confirmedSessions, r.unitPrice, r.savedAllocationAmount ?? null], [x.amount, x.cs, x.up, x.alloc], `${period} ${r.id} 확정·배분`);
+        // 반 청구액 = 2.0 classInvoiceAmount(반 이름, 청구 항목) · 전액 환불 = 0 · 자유 배분 청구서 = null(2.0 규칙)
+        const want = r.refundState === 'full' ? 0 : freeInvoices.has(x.invoice_id) && (r.allocatedAmount ?? 0) > 0 ? null : ca.classInvoiceAmount(r.className ?? '', as.invoiceLineItems({ line_items: x.line_items }));
+        if (r.refundState !== 'full' && freeInvoices.has(x.invoice_id)) assert.ok(r.classAmount === null || r.classAmount === want, `${r.id} 자유 배분`);
+        else assert.equal(r.classAmount, want, `${period} ${r.id} 반 청구액`);
+        // 실납 = 2.0 netAllocatedAmount — 이월이 없고 재확인 아님이면 배분액 그대로
+        if (!r.carryOut && !(r.carryIns ?? []).length && !r.allocationStale && !r.refundedAllocation) assert.equal(mc.netAllocatedAmount(r), r.allocatedAmount ?? null);
+      }
+      const sumAmount = rows.reduce((s, r) => s + (r.amount ?? 0), 0);
+      assert.equal(sumAmount, terms.reduce((s, x) => s + (x.amount ?? 0), 0), `${period} 확정액 합계`);
+      const out = rows.reduce((s, r) => s + (r.carryOut?.amount ?? 0), 0), sqlOut = terms.reduce((s, x) => s + ((x.cout ?? 0) > 0 ? x.cout : 0), 0);
+      assert.equal(out, sqlOut, `${period} 보낸 이월 합계`);
+      const prev = (await importV2('lib/date-kst.ts')).shiftMonth(period, -1);
+      const [{ sin }] = await db`select coalesce(sum(s.allocation_carry_out), 0)::float8 sin from public.invoice_session_terms s join public.invoices i on i.id=s.invoice_id
+        where s.tenant_id=${tenantId} and i.period=${prev} and s.allocation_carry_out > 0`;
+      assert.equal(d.confirm.view.rows.reduce((s, r) => s + (r.carryIns ?? []).reduce((a, c) => a + c.amount, 0), 0), sin, `${period} 받은 이월 합계 = 지난 달 보낸 이월`);
+      assert.equal(d.confirm.view.carryFailed ?? false, false);
+      if (period === '2026-09') assert.ok(sin > 0 && sumAmount > 0, '9월엔 확정액과 받은 이월이 있다(대조가 빈 값끼리가 아니다)');
+    }
+    // 골든마스터 [A] 표본 — 같은 청구서의 같은 반 줄이 2.0 시험의 고정값과 같다(복사본에 그 청구서가 남아 있는 줄만).
+    const golden = JSON.parse(await src('features/billing/golden/fixtures/class-amount-cases.json'));
+    const jul = (await load({ tab: 'sessions', period: '2026-07' })).sessions.confirm.view.rows;
+    const pins = { 강수정: { 'BS2C': 192150, 'JJ1H': 85000 }, 이시우: { 'MS2B': 324000, '브릿지 B': 288000 } };
+    let matched = 0;
+    for (const g of golden) for (const r of jul.filter(x => x.invoiceId === g.invoiceId && x.className)) {
+      const key = Object.keys(pins[g.student] ?? {}).find(k => r.className.includes(k));
+      if (key && r.refundState !== 'full' && r.classAmount !== null) { assert.equal(r.classAmount, pins[g.student][key], `골든 ${g.student} ${key}`); matched++; }
+    }
+    assert.ok(matched >= 1, '골든 표본 줄을 하나 이상 대조했다');
+  });
+
+  await check('회차 확정 · 청구 시수 대조 패널 = 2.0 getSessionVerificationView · getTeacherSplitsStatus 그대로 — 줄 수 = 그 달 회차 줄 집합', async () => {
+    const v = (await load({ tab: 'sessions', period: '2026-09', panel: 'verify' })).sessions;
+    assert.equal(v.panel, 'verify'); assert.equal(v.confirm, null);
+    assert.ok(Array.isArray(v.verification.view.rows) && v.verification.view.rows.length > 0);
+    assert.deepEqual(Object.keys(v.verification.view).sort(), ['carryBlockedStudents', 'carryFailed', 'counts', 'rows']);
+    assert.ok(plainDeep(v));
+  });
+} finally { await db.end(); await (await import('./v2-server-runner.mjs')).stopV2Server(); }
 
 await check('호스트: 2.0 부품을 고치지 않고 묶인다 — 서버 전용 유입 0 · 운영 주소·외부 호출 0', async () => {
   const outdir = path.join(os.tmpdir(), `v2-host-verify-billing-${process.pid}`);
@@ -546,6 +669,13 @@ await check('3.0 쪽: 같은 출처 iframe 자리 · 보는 사람 고르기 · 
     .filter(l => !/^\s*\/\//.test(l)).map(l => l.replace(/\s\/\/ .*$/, '')).join('\n');
   const hostShown = [...parts.matchAll(/(?:text=\{?["'`]|>)([^<>{}"'`]*[가-힣][^<>{}"'`]*)/g)].map(m => m[1]).join('\n');
   for (const bad of [/2\.0/, /Docker|복사본|v2path|iframe|호스트|슈퍼|총괄/i]) { assert.doesNotMatch(shown, bad, String(bad)); assert.doesNotMatch(hostShown, bad, `호스트 ${bad}`); }
+});
+
+await check('공용 러너 격리 — 모듈 훅은 작업 스레드에서만 register · 메인 스레드 파일엔 register가 없다 · 작업 스레드는 바깥 fetch를 막는다', async () => {
+  const runner = await here('./v2-server-runner.mjs'), worker = await here('./v2-server/worker.mjs'), screen = await here('./v2-billing-sessions.mjs');
+  assert.doesNotMatch(runner + screen, /\bregister\(/); assert.match(worker, /register\('\.\/hooks\.mjs'/);
+  assert.match(worker, /globalThis\.fetch = async/);
+  assert.match(runner, /new Worker\(new URL\('\.\/v2-server\/worker\.mjs'/);
 });
 
 console.log(`v2 billing: ${done.length} checks passed`);

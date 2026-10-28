@@ -1,0 +1,66 @@
+{
+ "terms": [
+  [
+   "import { getSessionTermsView } from \"@/features/billing/session-terms/server/queries\";\nimport { loadSeatShareSummary } from \"@/features/attendance/server/seat-share-summary\";\nimport { getTenantSettings } from \"@/features/owner/server/queries\";\n",
+   "import type { SessionsFaceData } from \"./billing-types\";\n"
+  ],
+  [
+   "import { SessionTermGroups, RefreshPlanButton, type ClassGroup } from \"./session-term-table\";\nimport { BillingMonthNav } from \"./billing-month-nav\";\nimport { FaceNote } from \"./face-note\";\n",
+   "import { SessionTermGroups, RefreshPlanButton, type ClassGroup } from \"@/app/(shell)/billing/_components/session-term-table\";\nimport { BillingMonthNav } from \"@/app/(shell)/billing/_components/billing-month-nav\";\nimport { FaceNote } from \"@/app/(shell)/billing/_components/face-note\";\n"
+  ],
+  [
+   "import { SessionTermsState, SessionTermsConfirmedCount } from \"./session-terms-state\";\n",
+   "import { SessionTermsState, SessionTermsConfirmedCount } from \"@/app/(shell)/billing/_components/session-terms-state\";\n"
+  ],
+  [
+   "import { SessionVerificationFace } from \"./session-verification-face\";\nimport { SessionPanels } from \"./session-panels\";\n",
+   "import { SessionVerificationFace } from \"./billing-session-verification-face\";\nimport { SessionPanels } from \"@/app/(shell)/billing/_components/session-panels\";\n"
+  ],
+  [
+   "export async function SessionTermsFace({\n",
+   "export function SessionTermsFace({\n  data,\n"
+  ],
+  [
+   "  params?: Record<string, string | undefined>;\n}) {\n  const p = period",
+   "  params?: Record<string, string | undefined>;\n  /** 서버(복사본)가 2.0 서버 함수를 그대로 돌려 낸 값 — 확정·배분 패널 또는 청구 시수 대조 패널. */\n  data: SessionsFaceData;\n}) {\n  const p = period"
+  ],
+  [
+   "    <SessionVerificationFace period={p} subject={subject} page={page} query={q} status={status} params={params} />",
+   "    <SessionVerificationFace period={p} subject={subject} page={page} query={q} status={status} params={params} data={data} />"
+  ],
+  [
+   "  const [view, settings, seatShare] = await Promise.all([getSessionTermsView(p, undefined, { lastMonth: true }), getTenantSettings(), loadSeatShareSummary(p)]);\n",
+   "  const [view, settings, seatShare] = [data.confirm!.view, data.settings, data.confirm!.seatShare];\n"
+  ]
+ ],
+ "verify": [
+  [
+   "import { getSessionVerificationView, type VerificationStatus } from \"@/features/billing/session-terms/server/verification-queries\";\nimport { getTeacherSplitsStatus } from \"@/features/billing/session-terms/server/splits-queries\";\n",
+   "import type { VerificationStatus } from \"@/features/billing/session-terms/server/verification-queries\";\nimport type { SessionsFaceData } from \"./billing-types\";\n"
+  ],
+  [
+   "import { AllocationMoney } from \"./allocation-money\";\n",
+   "import { AllocationMoney } from \"@/app/(shell)/billing/_components/allocation-money\";\n"
+  ],
+  [
+   "import { SplitsSnapshotPanel } from \"./splits-snapshot-panel\";\nimport { getTenantSettings } from \"@/features/owner/server/queries\";\n",
+   "import { SplitsSnapshotPanel } from \"@/app/(shell)/billing/_components/splits-snapshot-panel\";\n"
+  ],
+  [
+   "import { BillingMonthNav } from \"./billing-month-nav\";\nimport { FaceNote } from \"./face-note\";\n",
+   "import { BillingMonthNav } from \"@/app/(shell)/billing/_components/billing-month-nav\";\nimport { FaceNote } from \"@/app/(shell)/billing/_components/face-note\";\n"
+  ],
+  [
+   "export async function SessionVerificationFace({\n",
+   "export function SessionVerificationFace({\n  data,\n"
+  ],
+  [
+   "  params?: Record<string, string | undefined>;\n}) {\n  const p = period",
+   "  params?: Record<string, string | undefined>;\n  data: SessionsFaceData;\n}) {\n  const p = period"
+  ],
+  [
+   "  const [view, settings, savedSplits] = await Promise.all([\n    getSessionVerificationView(p),\n    getTenantSettings(),\n    getTeacherSplitsStatus(p),\n  ]);\n",
+   "  const [view, settings, savedSplits] = [data.verification!.view, data.settings, data.verification!.savedSplits];\n"
+  ]
+ ]
+}
