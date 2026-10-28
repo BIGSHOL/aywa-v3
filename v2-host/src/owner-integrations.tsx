@@ -1,6 +1,6 @@
 // 2.0 학원 설정 '연동' 면(app/(shell)/owner/_components/integrations-face.tsx · sheets-face.tsx)의 그리기 — 둘 다 서버 컴포넌트라 그대로 못 불러와서,
 // 서버가 하던 판정(켜진 연동 탭 · 고른 탭)·조회(과목별 구글 시트 상태)는 /api/v2/owner?tab=sheets(v2-screen-owner.mjs)가 하고 여기서는 두 파일의 본문을 **글자 그대로** 옮겼다.
-// 바꾼 곳 = 아직 옮기지 않은 서버 카드(오늘 수학 · 연동 PC · makeedu 동기화)를 '아직' 자리로 — owner-integrations.swaps.json, verify가 대조한다.
+// 바꾼 곳 = 아직 옮기지 않은 서버 카드(연동 PC · makeedu 동기화)를 '아직' 자리로 — owner-integrations.swaps.json, verify가 대조한다.
 // 구글 시트 절(과목별 카드 · 켜기 · 대상 시트)은 그대로 — 저장은 v2-owner-integrations.mjs(2.0 setSheetsExportEnabled · setSubjectSheetTarget).
 import { FaceTabs, type Face } from "@/components/face-tabs";
 import { EyIcon } from "@/components/icons/aywa-icons";
@@ -12,6 +12,8 @@ import { SubjectSheetCard } from "@/app/(shell)/owner/_components/subject-sheet-
 import { OwnerServerFace } from "./owner-server-face";
 import { OwnerSlackCard } from "./owner-slack";
 import { OwnerVideoCard, type OwnerVideoData } from "./owner-video";
+import { TodaysMathCard } from "@/app/(shell)/owner/_components/todays-math-card";
+import { TodaysMathMenusCard } from "@/app/(shell)/owner/_components/todays-math-menus-card";
 
 export type IntegrationSub = "slack" | "makeedu" | "sheets" | "video" | "agent" | "todaysMath";
 
@@ -103,7 +105,7 @@ function OwnerSheetsFace({ subjects, makeeduOn, sheetsOn, sheetStatuses, saEmail
 }
 
 /** integrations-face.tsx `IntegrationsFace`의 그리기 — 켜진 탭(available)·시트 상태는 서버 결과에서, 고른 탭은 2.0과 같은 식으로 주소(sub · page)에서. */
-export function OwnerIntegrationsFace({ d, settings, sub, page }: { d: OwnerIntegrationsData; settings: Pick<TenantSettings, "operations">; sub: string | undefined; page: number }) {
+export function OwnerIntegrationsFace({ d, settings, sub, page, isMaster }: { d: OwnerIntegrationsData; settings: Pick<TenantSettings, "operations" | "report">; sub: string | undefined; page: number; isMaster: boolean }) {
   const { available, sheetStatuses, saEmail } = d;
   if (available.length === 0) {
     return (
@@ -132,8 +134,8 @@ export function OwnerIntegrationsFace({ d, settings, sub, page }: { d: OwnerInte
         />
       ) : null}
       {active === "video" ? <OwnerVideoCard view={d.video} /> : null}
-      {active === "todaysMath" ? <OwnerServerFace face="todaysMath" /> : null}
-      
+      {active === "todaysMath" ? <TodaysMathCard report={settings.report} /> : null}
+      {active === "todaysMath" && isMaster ? <TodaysMathMenusCard /> : null}
       {active === "agent" ? <OwnerServerFace face="agent" /> : null}
     </div>
   );

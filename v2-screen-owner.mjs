@@ -194,12 +194,16 @@ async function ownerPage({ sql, t, R, O, sp, viewers, viewer, settings, row, imp
     ? await loadOwnerDashboard({ sql, tenantId: t, importV2, viewerId: viewer.id, settings }) : null;
   const operators = new Set(supers.map(s => s.id));
   // 🔴 설정 전체(자리 PIN · 권한 원본 …)를 브라우저에 보내지 않는다 — 2.0 page.tsx도 면마다 그 섹션만 부품에 넘긴다. 머리(학원 이름)·탭(preset · modules)은 늘, 나머지는 그 면일 때만.
+  const integrations = tab === 'sheets' ? await integrationsView(sql, t, R, settings, viewer, sp, importV2) : null;
+  const wantedIntegration = sp.sub ?? (Number(sp.page) > 1 ? 'makeedu' : '');
+  const activeIntegration = integrations?.available.includes(wantedIntegration) ? wantedIntegration : integrations?.available[0];
   const settingsView = { preset: settings.preset, profile: tab === 'profile' ? settings.profile : { name: settings.profile.name }, modules: settings.modules,
     ...(tab === 'makeups' && canReadAudit ? { makeups: settings.makeups } : {}), ...(tab === 'billing' ? { billing: settings.billing } : {}),
     ...(tab === 'notifications' ? { notifications: settings.notifications } : {}), ...(tab === 'consultations' ? { consultations: settings.consultations } : {}),
     ...(tab === 'navigation' ? { navigation: settings.navigation } : {}), ...(showsPermissions ? { navigation: settings.navigation } : {}),
-    // 연동 면 = 과목 라벨(시트 카드 제목)만.
-    ...(tab === 'sheets' ? { operations: { subjects: settings.operations.subjects } } : {}) };
+    // 연동 면 = 과목 라벨(시트 카드 제목). 보고서 설정은 오늘 수학 하위 탭에만 보낸다.
+    ...(tab === 'sheets' ? { operations: { subjects: settings.operations.subjects } } : {}),
+    ...(activeIntegration === 'todaysMath' ? { report: settings.report } : {}) };
   return {
     settings: settingsView, meta: row.updatedAt ? { updatedAt: row.updatedAt } : null, tab, canEditSettings, allowedTabEntries, canReadAudit, isMaster, showMakeups,
     showEvaluation: portfolioGate(viewer), showContribution: !!contribution?.canConfigure, showsOperations, canEditOperations, settingsUnreadable: false,
@@ -214,7 +218,7 @@ async function ownerPage({ sql, t, R, O, sp, viewers, viewer, settings, row, imp
     hiddenPermissionIds: permissionPeople.filter(id => operators.has(id)).filter((id, i, a) => a.indexOf(id) === i),
     hiddenSettingKeys,
     navigationGates: tab === 'navigation' ? await loadNavigationGates(sql, t, R, O, settings, importV2) : null,
-    integrations: tab === 'sheets' ? await integrationsView(sql, t, R, settings, viewer, sp, importV2) : null,
+    integrations,
     popups: tab === 'popups' ? await listPopups(sql, t, importV2) : null,
     audit, data, dashboard,
     importRows: tab === 'import' ? await loadOwnerImport(importV2, O.modules, settings.modules.disabled, viewer) : null,

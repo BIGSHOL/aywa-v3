@@ -14,11 +14,11 @@
   ],
   [
    "{active === \"todaysMath\" ? <TodaysMathCard report={settings.report} /> : null}",
-   "{active === \"todaysMath\" ? <OwnerServerFace face=\"todaysMath\" /> : null}"
+   "{active === \"todaysMath\" ? <TodaysMathCard report={settings.report} /> : null}"
   ],
   [
    "{active === \"todaysMath\" && isMaster ? <TodaysMathMenusCard /> : null}",
-   ""
+   "{active === \"todaysMath\" && isMaster ? <TodaysMathMenusCard /> : null}"
   ],
   [
    "{active === \"agent\" ? <AgentCard classnoteOn={classnoteModuleOn(settings)} makeeduOn={modulesOn.makeedu}\n        legacyPC={modulesOn.makeedu?<LegacyMakeeduPC />:null} /> : null}",

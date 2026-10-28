@@ -253,7 +253,7 @@ export function OwnerHostPage({ d, sp }: { d: OwnerPageData; sp: Sp }) {
       {tab === "popups" ? <PopupsManager items={popups ?? []} /> : null}
       {/* 연동 = 켜진 연동만 내부 탭(슬랙 · makeedu · 구글 시트) — 원장 2026-09-28 "세로 스크롤이 너무 길어짐". */}
       {tab === "sheets" ? (
-        <OwnerIntegrationsFace d={integrations!} settings={settings} sub={sp.sub} page={page} />
+        <OwnerIntegrationsFace d={integrations!} settings={settings} sub={sp.sub} page={page} isMaster={isMaster} />
       ) : null}
       </fieldset>
       {/* 🔴 자체 판정을 하는 면은 위 fieldset **밖**에 둔다(SELF_GATED_TABS) — 그 fieldset은 학원 설정 쓰기 권한으로 잠기는데,
