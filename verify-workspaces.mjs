@@ -36,6 +36,15 @@ const esc=s=>s.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
 async function fill(form,fields,{number}={}){
   for(const f of fields){
     const t=f.type||'text',el=form.locator(`[name="${f.id}"]`);
+    // 고르기 칸은 공용 선택창(context-picker.js — 숨은 값 + 고르기 단추)이다: 열어서 첫 선택지를 고른다.
+    const pick=form.locator(`[data-cpick-name="${f.id}"]`).first();
+    if(await pick.count()){
+      await pick.locator('.cpick-trigger').click();
+      const opt=pick.locator('.cpick-opt:not([aria-disabled="true"])').first();
+      await opt.waitFor({timeout:5000}).catch(()=>{});if(await opt.count())await opt.click();
+      if(await pick.evaluate(n=>n.classList.contains('is-open')))await page.keyboard.press('Escape');
+      continue;
+    }
     if(!await el.count())continue;
     if(t==='textarea'||t==='text')await el.first().fill(`AX 확인 ${f.label}`);
     else if(['number','money','amount'].includes(t)){const lo=Number.isFinite(Number(f.min))?Number(f.min):0,hi=Number.isFinite(Number(f.max))?Number(f.max):null;await el.first().fill(String(number?.(f)??(hi===null?lo+1:Math.min(lo+1,hi))));}
@@ -82,7 +91,8 @@ try{
     assert.equal(await page.locator('main h1').innerText(),areaOf(id).label,`${id} heading`);
     assert.equal(await page.locator('.ws-side .ws-action').count(),cov.families[id].operations.length,`${id} lists every operation`);
     assert.equal(await page.locator('.ws-side .ws-action:disabled').count(),0);
-    assert(await page.locator('.ws-state .ax-chip').count()===1,`${id} shows its data state`);
+    // 데이터 상태 칩은 없앴다(fd6a45f15 — 원장 10-28 개발자용 문구 정리). 기록 구역 = 목록 · 시트 · 칸반 · 설정 면 · 기록이 없을 때의 안내 중 하나.
+    assert(await page.locator('#ws-main :is(.ws-table,.ws-sheet,.ws-flow,.ws-settings,.live-empty)').count()>0,`${id} shows its records or why there are none`);
     assert(!await overflow(),`${id} overflows at 1440`);
     assert.equal(await page.locator('main [title]').count(),0,`${id} has no native tooltips`);
   }
@@ -196,7 +206,8 @@ try{
   const paged=[];for(const id of areaIds){await go(`workspace-${id}`);if(await page.locator('#ws-main [data-ws="page"]').count()){paged.push(id);break;}}
   if(paged.length){
     const id=paged[0],n=recordCalls.length;
-    await page.locator('#ws-main [data-ws="page"]').last().click();await page.waitForFunction(()=>/^2 \//.test(document.querySelector('#ws-main .live-pager span')?.textContent||''));
+    // 쪽 번호(공통 리스트 · 업무 흐름 표와 같은 모양) — 마지막 단추 '다음 ›'을 누르면 지금 쪽 표시가 2로.
+    await page.locator('#ws-main [data-ws="page"]').last().click();await page.waitForFunction(()=>document.querySelector('#ws-main .ws-pager [aria-current="page"]')?.textContent.trim()==='2');
     const facet=page.locator('#ws-main [data-ws="facet"][data-facet]:not([data-facet=""])').first();
     if(await facet.count()){const fid=await facet.getAttribute('data-facet');await facet.click();for(let i=0;i<40&&!recordCalls.slice(n).some(u=>u.includes(`facet=${encodeURIComponent(fid)}`));i++)await page.waitForTimeout(100);
       assert(recordCalls.slice(n).some(u=>u.includes(`facet=${encodeURIComponent(fid)}`)&&/page=1\b/.test(u)),'A record filter is a data facet and resets to page 1');}
