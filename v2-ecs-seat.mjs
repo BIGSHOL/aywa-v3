@@ -6,8 +6,8 @@
 import { canWriteLevel, isoAt, jjManagedClassIds, readClassNameAsOf, shown } from './v2-ecs-core.mjs';
 import { visibleClassFilter } from './v2-ecs-props.mjs';
 
-/** 2.0 getTeachingClassIds(user, date).all — 담임 반 ∪ 그날 위임 반 ∪ 그날 JJ 보고서 담당 반. */
-async function teachingClassIds(sql, t, R, env, userId, date) {
+/** 2.0 getTeachingClassIds(user, date).all — 담임 반 ∪ 그날 위임 반 ∪ 그날 JJ 보고서 담당 반(오늘 면 userTaughtClassSet도 이것 위에). */
+export async function teachingClassIds(sql, t, R, env, userId, date) {
   const [own, delegated, jj] = await Promise.all([
     sql`select id::text id from public.classes where tenant_id=${t} and teacher_id=${userId}`,
     sql`select distinct class_id::text id from public.class_delegations where tenant_id=${t} and delegate_user_id=${userId} and revoked_at is null and from_date <= ${date} and to_date >= ${date}`,

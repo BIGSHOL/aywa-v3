@@ -1,7 +1,7 @@
 // 2.0 `src/app/(shell)/ecs/**/page.tsx`(서버 부품)의 화면 조립을 브라우저에서 — 같은 2.0 부품·같은 2.0 함수·같은 문구 키.
 // 서버가 하던 조회만 /api/v2/ecs(복사본)의 props로 바꾸고, 머리글·툴바·본문 배치는 page.tsx 순서 그대로 옮겼다.
 //  · EcsLandingPage = ecs/page.tsx 주간 면 · EcsSheetPage = [classId]/page.tsx · EcsMonthPage = [classId]/month/page.tsx
-//  · 아직 옮기지 않은 면(오늘 · JJ실 · 반 계획 보기 · 계획 대비 현황)은 같은 머리글·면 탭 아래에 '아직'이라고 정직하게 말한다.
+//  · EcsTodayPage = ecs/page.tsx 오늘 면(EcsTodayFace) · EcsGoalsPage · EcsPlanGapPage · EcsRoomPage(JJ실)
 // 2.0 page.tsx에 있는데 여기 없는 것: 오늘 출석 미입력 스트립·내 할 일 줄(오늘 면 전용 서버 부품), ModuleBoundary(영어 강사 시트 모듈이 켜진 학원만 이 화면이 있다).
 import Link from 'next/link';
 import type { ComponentProps } from 'react';
@@ -26,7 +26,9 @@ import { TextbookOptionsProvider, type TextbookOptionItem } from '@/features/tex
 import { EcsLandingList } from '@/app/(shell)/ecs/_components/landing-list';
 import { EcsTeacherFilter } from '@/app/(shell)/ecs/_components/teacher-filter';
 import { EcsTrackFilter } from '@/app/(shell)/ecs/_components/track-filter';
-import { EcsFaceTabs } from '@/app/(shell)/ecs/_components/today-nav';
+import { EcsDayNav, EcsFaceTabs, EcsQuickAttendanceLink, EcsTodayModeTabs } from '@/app/(shell)/ecs/_components/today-nav';
+import { TodayBoard } from '@/features/class-sheets/components/today-board';
+import { TodayOrderList } from '@/features/class-sheets/components/today-order-list';
 import { GoalsPeriodBar } from '@/app/(shell)/ecs/goals/_components/goals-period-bar';
 import { GoalsRoleSwitch } from '@/app/(shell)/ecs/goals/_components/goals-role-switch';
 import { GoalsTable } from '@/app/(shell)/ecs/goals/_components/goals-table';
@@ -387,20 +389,115 @@ export function EcsRoomPage({ room, scoped }: { room: RoomData; scoped: boolean 
   return <EcsSeatDayFace res={room.res} showToday={scoped} />;
 }
 
-/** 아직 옮기지 않은 면 — 2.0과 같은 머리글·면 탭 아래 한 줄(빈 화면으로 두지 않는다). */
-export function EcsNotYetPage({ route, scoped, lang }: { route: 'today' | 'room' | 'goals' | 'gap'; scoped: boolean; lang: SheetLang }) {
-  const face = route === 'today' ? 'today' : route === 'room' ? 'room' : null;
-  const title = route === 'goals' ? sheetT(lang, 'goals.title') : route === 'gap' ? sheetT(lang, 'gap.title') : sheetT(lang, 'landing.title');
-  const what = route === 'today' ? "'오늘' 면" : route === 'room' ? "'JJ실' 면" : `'${title}'`;
+type TodayBoardProps = ComponentProps<typeof TodayBoard>;
+/** 2.0 `getEcsToday`의 반환(server/today.ts EcsTodayResult — 서버 모듈이라 부품 props에서 거꾸로 읽는다). */
+export type TodayRes = Fail | {
+  ok: true; date: string; today: string; weekMonday: string; cards: TodayBoardProps['cards']; hasAnyClass: boolean; canWrite: boolean;
+  skillAreas: TodayBoardProps['skillAreas']; userId: string; tenantId: string; fontSize: TodayBoardProps['fontSize']; todayOrder: string[]; holidayName: string | null;
+};
+/** 2.0 ecs/page.tsx TodaySheet — 반 1개분 시트 결과를 통째로(한 반이 실패해도 나머지는 그린다). */
+type TodaySheet = { classId: string; className: string; res: Fail | { ok: true; data: SheetProps['data'] } };
+export type TodayData = { res: TodayRes; mode: ComponentProps<typeof EcsTodayModeTabs>['mode']; sheets: TodaySheet[] | null; myTeacherId: string | null; canReorder: boolean; textbookOptions: TextbookOptionItem[] };
+
+/** 2.0 ecs/page.tsx `EcsTodayFace` — 오늘 면(시트 기본 · 요약 카드). 원문 JSX 순서 그대로.
+ *  2.0에 있는데 여기 없는 것: 오늘 출석 미입력 줄(TodayAttendanceStrip) · 내 할 일 줄(MyTasksStrip) — 둘 다 서버 부품(다른 화면의 조회)이라 그 화면을 옮길 때 함께. */
+export function EcsTodayPage({ today, scoped, lang }: { today: TodayData; scoped: boolean; lang: SheetLang }) {
+  const { res, mode, sheets, myTeacherId, canReorder, textbookOptions } = today;
+  if (!res.ok) {
+    return (
+      <div className="space-y-4">
+        <PageHeader eyebrow={sheetT(lang, 'landing.eyebrow')} title={sheetT(lang, 'landing.title')} description={sheetT(lang, 'landing.desc')} />
+        <p className="bg-card shadow-card text-text-dim rounded-2xl px-4 py-6 text-sm">{res.error}</p>
+      </div>
+    );
+  }
+  const isToday = res.date === res.today;
+  const okSheets = (sheets ?? []).filter((s) => s.res.ok);
+  const classOptions = okSheets.map((s) => ({ id: s.classId, name: s.className }));
   return (
     <div className="space-y-4">
-      <PageHeader eyebrow={sheetT(lang, 'landing.eyebrow')} title={title} description={sheetT(lang, 'landing.desc')} />
-      {face ? (
-        <div className="flex flex-wrap items-center gap-3 px-1 py-1"><EcsFaceTabs face={face} showToday={scoped} lang={lang} /></div>
+      <PageHeader
+        eyebrow={sheetT(lang, 'landing.eyebrow')}
+        title={sheetT(lang, 'landing.title')}
+        description={sheetTf(lang, isToday ? 'today.desc.today' : 'today.desc.day', { n: res.cards.length })}
+        embedLabel={`${sheetT(lang, 'landing.title')} · ${isToday ? sheetT(lang, 'today.embed.today') : res.date.slice(5)}`}
+      />
+      <div className="toolbar-rail flex flex-wrap items-center gap-3 px-1 py-1">
+        <EcsFaceTabs face="today" showToday lang={lang} />
+        <EcsTodayModeTabs mode={mode} date={res.date} lang={lang} />
+        <EcsDayNav date={res.date} today={res.today} mode={mode} lang={lang} />
+        <EcsQuickAttendanceLink lang={lang} />
+        <ToolbarButton href={`/ecs/goals?date=${res.date}`} className="ml-auto">{sheetT(lang, 'goals.title')}</ToolbarButton>
+      </div>
+      {res.holidayName ? (
+        <p className="border-danger/30 bg-danger-soft/40 text-foreground rounded-2xl border px-4 py-2.5 text-sm">
+          <b className="text-danger">
+            {isToday
+              ? sheetT(lang, 'today.holiday.today')
+              : lang === 'en'
+                ? `${sheetDateLabelEn(res.date)} is`
+                : `${Number(res.date.slice(5, 7))}월 ${Number(res.date.slice(8, 10))}일은`}{' '}
+            {res.holidayName}
+          </b>{' '}
+          {sheetT(lang, 'today.holiday.tail')} <b>{sheetT(lang, 'today.holiday.asUsual')}</b>
+          {sheetT(lang, 'today.holiday.tail2')}
+        </p>
       ) : null}
-      <p className="bg-card shadow-card text-text-dim rounded-2xl px-4 py-6 text-sm">
-        {what}은(는) 연습 화면에서 아직 지원하지 않습니다. <Link href="/ecs?view=week" className="text-primary font-bold underline underline-offset-2">주간 반 목록</Link>에서 반을 열어 주간 시트·월간을 볼 수 있습니다.
-      </p>
+      {mode === 'sheet' && res.cards.length > 0 ? (
+        <p className="text-text-dim px-1 text-base leading-relaxed font-medium">
+          {sheetT(lang, 'today.weekHint.before')}{' '}
+          <span className="text-foreground font-bold">{sheetT(lang, 'today.weekHint.link')}</span>
+          {sheetT(lang, 'today.weekHint.after')}
+        </p>
+      ) : null}
+      <TextbookOptionsProvider options={textbookOptions}>
+        {res.cards.length === 0 ? (
+          <p className="bg-card shadow-card text-text-dim rounded-2xl px-4 py-6 text-sm">
+            {!res.hasAnyClass
+              ? scoped
+                ? sheetT(lang, 'today.empty.noClassScoped')
+                : sheetT(lang, 'today.empty.noClass')
+              : `${sheetT(lang, isToday ? 'today.empty.noLesson.today' : 'today.empty.noLesson.day')}${sheetT(lang, 'today.empty.noLesson.tail')}`}
+          </p>
+        ) : mode === 'sheet' ? (
+          <TodayOrderList
+            key={res.date}
+            canReorder={canReorder}
+            items={(sheets ?? []).map((s) => ({
+              id: s.classId,
+              label: s.className,
+              node: s.res.ok ? (
+                <SheetClient
+                  key={`${s.classId}:${s.res.data.weekMonday}:${s.res.data.showSelfStudy ? 'jj' : 'nojj'}:${res.date}`}
+                  data={s.res.data}
+                  classOptions={classOptions}
+                  userId={res.userId}
+                  tenantId={res.tenantId}
+                  initialDay={res.date}
+                  variant="today"
+                  myTeacherId={myTeacherId}
+                />
+              ) : (
+                <p className="bg-card shadow-card text-text-dim rounded-2xl px-4 py-4 text-sm">{s.className}: {s.res.error}</p>
+              ),
+            }))}
+          />
+        ) : (
+          <TodayBoard
+            key={res.date}
+            cards={res.cards}
+            date={res.date}
+            weekMonday={res.weekMonday}
+            skillAreas={res.skillAreas}
+            canWrite={res.canWrite}
+            userId={res.userId}
+            tenantId={res.tenantId}
+            fontSize={res.fontSize}
+            isToday={isToday}
+            holidayName={res.holidayName}
+          />
+        )}
+      </TextbookOptionsProvider>
     </div>
   );
 }

@@ -90,7 +90,7 @@
       if (hostOk === null) fetch(HOST, { method: 'HEAD' }).then(r => r.ok, () => false).then(ok => { if (hostOk === null) { hostOk = ok; api?.render?.(); } });
       else if (hostOk) requestAnimationFrame(() => { ensureFrame(query); place(); });
       const wait = hostOk === false ? '강사 시트를 열지 못했습니다. 잠시 후 새로고침해 주세요.' : hostOk === null ? '강사 시트를 여는 중…' : '';
-      return `<div class="v2h-note" role="note"><p><b>연습 화면</b> 고른 사람의 화면(권한·담당 반·보기 설정)으로 열립니다. 여기서 저장한 내용은 이 PC의 연습 자료에만 남고, 실제 발송은 없습니다. 계획 칸·학생 기록·출결·목표·메모·Shouting·월간 계획서·학생 영어 이름·보강 추가·교재 배정(삭제·되돌리기 포함)을 저장할 수 있고, 미룸/당김·단어 수 가져오기·오늘 면은 아직 지원하지 않습니다.</p><span data-v2h-actor-slot>${actorPicker()}</span></div>
+      return `<div class="v2h-note" role="note"><p><b>연습 화면</b> 고른 사람의 화면(권한·담당 반·보기 설정)으로 열립니다. 여기서 저장한 내용은 이 PC의 연습 자료에만 남고, 실제 발송은 없습니다. 계획 칸·학생 기록·출결·목표·메모·Shouting·월간 계획서·학생 영어 이름·보강 추가·교재 배정(삭제·되돌리기 포함)·오늘 화면의 반 순서를 저장할 수 있고, 미룸/당김·단어 수 가져오기·요약 카드의 출결(출석·지각·결석·전원 출석)은 아직 지원하지 않습니다.</p><span data-v2h-actor-slot>${actorPicker()}</span></div>
         <div class="v2h-slot" data-v2-host-slot style="position:relative;min-height:420px">${wait ? `<p class="v2h-wait">${esc(wait)}</p>` : ''}</div>`;
     },
   });

@@ -34,6 +34,10 @@ export const MODULES = [
   'features/owner/month-plan-texts.ts', 'features/owner/lesson-profile.ts', 'features/periods/resolve.ts', 'features/enrollments/eligibility.ts',
   'features/textbooks/plan-expand.ts', 'features/textbooks/plan-compare.ts', 'features/textbooks/lesson-schedule.ts', 'features/textbooks/plan-siblings.ts', 'features/textbooks/cell-lessons.ts', 'features/textbooks/lesson-relay.ts', 'features/textbooks/plan-delete.ts', 'features/textbooks/shift-undo.ts', 'features/textbooks/shift-key.ts', 'features/textbooks/import-undo.ts', 'features/class-sheets/lib/carry-marks.ts',
   'features/teacher-view/i18n.ts', 'features/teacher-view/view-prefs.ts', 'features/teacher-view/teacher-name.ts', 'lib/modules.ts', 'lib/date-kst.ts',
+  // 오늘 면(v2-ecs-today.mjs — 2.0 getEcsToday · page.tsx 오늘 갈래)
+  'features/class-sheets/lib/today-own-slots.ts', 'features/class-sheets/lib/makeup-roster.ts', 'features/class-sheets/lib/split-card.ts', 'features/report-admin/english-writing.ts',
+  // (class-splits/period.ts는 addDays·dowOf를 다른 뜻으로 내보내 여기 펼치지 않는다 — v2-ecs-today.mjs가 따로 부른다)
+  'features/makeups/config.ts', 'features/makeups/types.ts', 'features/makeups/command-parse.ts',
 ];
 
 // ── PORTED: 2.0 원문 그대로(불러올 수 없는 자리 — 설정 타입 파일이 아이콘 tsx를 끌어온다). verify가 원문과 비교한다. ──
@@ -124,7 +128,9 @@ export async function readSettings(sql, t, R) {
   const disabled = R.normalizeDisabledModules(mods.disabled);
   const english = operations.subjects.find(s => s.key === 'english');
   const permissions = { ...base.permissions, ...(isPlainObject(stored?.permissions) ? stored.permissions : {}) };
-  return { operations, disabled, english, skillAreas: resolveSkillAreas(english), holidays: R.buildHolidayMap(operations.holidays), permissions,
+  // 보강 운영(2.0 resolveSettings: normalizeMakeupSettings(merged.makeups)) — 오늘 면이 보강 참여를 읽을지 정한다.
+  const makeups = R.normalizeMakeupSettings(deepMerge(base.makeups, isPlainObject(stored) ? stored.makeups : undefined));
+  return { operations, disabled, english, skillAreas: resolveSkillAreas(english), holidays: R.buildHolidayMap(operations.holidays), permissions, makeups,
     preset: R.presetOfStored(stored), eieOn: R.isModuleEnabled(disabled, 'eie'), textbooksOn: R.isModuleEnabled(disabled, 'textbooks') };
 }
 

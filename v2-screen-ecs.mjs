@@ -8,7 +8,8 @@
 //   /ecs/goals              → 2.0 `goals/page.tsx`       getGoalsBoard(date) + 강사 영어 이름 → GoalsPeriodBar · GoalsRoleSwitch · GoalsTable(v2-ecs-goals.mjs)
 //   /ecs/plan-gap           → 2.0 plan-gap/page.tsx       getPlanGapBoard(month) + 강사 영어 이름 → PeriodNav · 표(page.tsx JSX, v2-ecs-gap.mjs)
 //   /ecs?view=room          → 2.0 ecs/page.tsx room 갈래  getEcsSeatDay("JJ", date)          → EcsSeatDayFace(v2-ecs-seat.mjs)
-//   /ecs (강사 · 오늘 면) → 아직 옮기지 않음(route만 알려 준다)
+//   /ecs (강사 스코프 · 오늘 면) → 2.0 ecs/page.tsx today 갈래  getEcsToday(date) + 반마다 getClassSheetWeek → EcsTodayFace props(v2-ecs-today.mjs)
+//                           사무실(스코프 없음)은 2.0처럼 ?view=today를 쳐도 주간으로 떨어진다.
 //   공통: editors(저장·보는 사람 = ECS 권한이 있는 재직 직원, 운영자 계정 제외) · viewer · host(OperationsProvider 값 · 화면 언어 · 영어 이름 편집 권한)
 //   읽기 서버 액션(?read=dayPlan&class&date · compare&class&date&slot · slotChoices&class · textbookPlans&class · assignable) → 2.0 getEcsDayPlan ·
 //   getSlotPlanCompare · loadClassSlotChoices · loadClassTextbookPlans · loadAssignableTextbooks의 반환 그대로(v2-ecs-textbooks.mjs).
@@ -46,12 +47,15 @@
 //   textbooks/server/compare-actions.ts        getSlotPlanCompare (읽기 — 호스트는 GET ?read=compare)
 //   출석부(로그인 JJ실 = 2.0 ECS_PLAN_API)가 같은 이름으로 쓰는 것: flushSheetPatches · createPlanLine · movePlanLine · deletePlanLine ·
 //   copySlotFromPrevious · commitSheetEdits · getSlotPlanCompare(screen.actions.<이름> — 모듈 경로까지 2.0과 같아야 받는다).
-//   반환 모양이 { ok, error }가 아닌 셋(searchMakeupStudents · fetchMakeupAbsences · fetchMakeupHostClasses)은 저장이 안 될 때 ecs.tsx가 2.0 실패 모양을 정한다.
+//   반환 모양이 { ok, error }가 아닌 넷(searchMakeupStudents · fetchMakeupAbsences · fetchMakeupHostClasses · setAttendanceBulk)은 저장이 안 될 때 ecs.tsx가 2.0 실패 모양을 정한다.
+//   오늘 면(v2-ecs-today.mjs)의 저장 = 위 이름 그대로 — 시트 모드는 주간 시트와 같은 액션, 요약 카드는 setAttendanceCell(그날 전체 칸 — slotStart 없음: 409로 거절, 카드가 되돌린다) ·
+//     clearPresentAttendance · upsertStudentMark · commitSheetEdits · flushSheetPatches · setSlotShouting · removeMakeupAttendee · copySlotFromPrevious · setMyEcsFontSize ·
+//     반 순서 setMyEcsTodayOrder(users.ui_prefs.ecs.todayOrder, 감사로그 없음 — 2.0과 같다).
 //   아직 잇지 않은 2.0 서버 액션(호스트가 '복사본 보기 전용'으로 거절):
 //   (교재 지우기·되돌리기 넷 deleteClassTextbookPlan · undoPlanDelete · undoPlanImport · undoLessonShift는 v2-ecs-plan-undo.mjs 머리 주석의 표)
 //   class-sheets/server/memorized-actions.ts pullEcsMemorizedWords — 바깥 연동(인재원 SRS)이라 2.0 게이트를 지난 뒤 늘 거절(쓰기 없음).
 //   textbooks/server/plan-actions.ts setLessonShift(미룸/당김) ·
-//   attendance/server/actions.ts setAttendanceBulk(오늘 면) ·
+//   attendance/server/actions.ts setAttendanceBulk(오늘 면 요약 카드의 '전원 출석' — 반환 { error } 그대로 거절, 카드가 되돌린다) ·
 //   attendance/server/makeup-actions.ts fetchMakeupHostClasses(원스크린 보강 반 고르기 — ECS 흐름은 안 부른다).
 //
 // ■ 호스트에 붙일 때(v2-host 빌드 메타 기준 — 2.0 ECS 묶음이 끌어오는 것)
@@ -70,6 +74,7 @@ import { MAKEUP_ACTIONS } from './v2-ecs-makeup.mjs';
 import { GOALS_ACTIONS, goalsData } from './v2-ecs-goals.mjs';
 import { planGapData } from './v2-ecs-gap.mjs';
 import { seatDayData } from './v2-ecs-seat.mjs';
+import { todayFaceData } from './v2-ecs-today.mjs';
 import { TEXTBOOK_ACTIONS, readAssignableTextbooks, readClassTextbookPlans, readSlotChoices } from './v2-ecs-textbooks.mjs';
 import { PLAN_UNDO_ACTIONS } from './v2-ecs-plan-undo.mjs';
 
@@ -133,7 +138,8 @@ export const screen = {
     const scoped = (await teacherScopeOf(sql, t, viewer)) !== null;
     // 2.0 ecs/page.tsx room 갈래 — getEcsSeatDay('JJ', date) → EcsSeatDayFace(showToday = 강사 스코프).
     if (q.view === 'room') return { ...common, route: 'room', scoped, room: { res: await seatDayData(sql, t, R, env, viewer, 'JJ', q.date ?? null, today) } };
-    if (scoped && q.view !== 'week') return { ...common, route: 'today', scoped };
+    // 2.0 ecs/page.tsx today 갈래 — EcsTodayFace(res · mode · sheets · myTeacherId · canReorder · textbookOptions).
+    if (scoped && q.view !== 'week') return { ...common, route: 'today', scoped, today: await todayFaceData(sql, t, R, env, viewer, q, today, importV2) };
     // 2.0: 강사 본인이면 담임/부담임으로 묶고 이름은 화면 언어대로(teacherNameFor), 사무실이면 담임별.
     const names = scoped ? await teacherEnglishNames(sql, t, viewer.lang) : {};
     return { ...common, route: 'landing', scoped, landing: { res: await landingData(sql, t, R, env, viewer, q.week ?? null, today),

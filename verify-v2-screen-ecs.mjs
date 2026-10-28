@@ -182,7 +182,7 @@ test('3.0 쪽 화면 파일 = iframe 껍데기 · 손그림 CSS 없음 · 호스
   assert.ok(!/\/ecs\//.test(shell.replace(/\/\*[\s\S]*?\*\/|\/\/[^\n]*/g, '')), '3.0 껍데기는 2.0 하위 주소를 직접 다루지 않는다');
 });
 
-test('호스트 진입점: 읽기 둘은 GET(쓰기 기록 밖) · 반환 모양이 다른 2.0 함수 셋은 2.0 실패 모양 — 모두 2.0에 있는 "use server" 함수', async () => {
+test('호스트 진입점: 읽기 둘은 GET(쓰기 기록 밖) · 반환 모양이 다른 2.0 함수 넷은 2.0 실패 모양 — 모두 2.0에 있는 "use server" 함수', async () => {
   const entry = await here('v2-host/src/ecs.tsx');
   const handlers = [...entry.matchAll(/registerHostHandler\('([^']+)', '(\w+)'/g)].map(m => [m[1], m[2]]);
   const fallbacks = [...entry.matchAll(/registerHostFallback\('([^']+)', '(\w+)', ([^\n]+)\);/g)].map(m => [m[1], m[2], m[3]]);
@@ -197,13 +197,17 @@ test('호스트 진입점: 읽기 둘은 GET(쓰기 기록 밖) · 반환 모양
   for (const k of ['read', 'class', 'slot']) assert.ok(screen.params[k], `GET 칸 ${k}`);
   assert.ok(/fetch\(`\/api\/v2\/ecs\?\$\{q\}`/.test(entry) && !/method: 'POST'/.test(entry));
   // 2.0 실패 모양 — 반환 타입 그대로(배열 · { options, hiddenBySubject } · { options, failed }).
-  const types = { searchMakeupStudents: /\): Promise<\{ id: string; name: string; label: string;[^\n]*\}\[\]>/, fetchMakeupAbsences: /\): Promise<MakeupAbsenceList>/, fetchMakeupHostClasses: /\): Promise<\{ options: MakeupHostClass\[\]; failed\?: boolean/ };
+  const types = { searchMakeupStudents: /\): Promise<\{ id: string; name: string; label: string;[^\n]*\}\[\]>/, fetchMakeupAbsences: /\): Promise<MakeupAbsenceList>/, fetchMakeupHostClasses: /\): Promise<\{ options: MakeupHostClass\[\]; failed\?: boolean/,
+    setAttendanceBulk: /\): Promise<BulkCellResult>/ };
   assert.deepEqual(fallbacks.map(f => f[1]).sort(), Object.keys(types).sort());
   for (const [module, name, value] of fallbacks) {
     const text = (await src(module)).replace(/\r\n/g, '\n'), i = text.indexOf(`export async function ${name}(`);
-    assert.match(text.slice(i, i + 600), types[name], `${name}: 2.0 반환 타입`);
-    assert.ok(/^\(\) => /.test(value), `${name}: 부를 때마다 새 값`);
+    assert.match(text.slice(i, text.indexOf(' {\n', text.indexOf('): Promise<', i))), types[name], `${name}: 2.0 반환 타입`);
+    if (name === 'setAttendanceBulk') assert.equal(value, '(error: string) => ({ error })', `${name}: 2.0 실패 갈래 { error } — 거절 문구를 싣는다`);
+    else assert.ok(/^\(\) => /.test(value), `${name}: 부를 때마다 새 값`);
   }
+  assert.match((await src('features/attendance/server/actions.ts')).replace(/\r\n/g, '\n'), /export type BulkCellResult =[\s\S]*?\n {2}\| \{ error: string \};/, 'BulkCellResult의 실패 갈래 = { error }');
+  assert.ok(!('setAttendanceBulk' in screen.actions), "일괄 출석은 이 화면이 받지 않는다(호스트가 2.0 실패 모양으로 거절 — 오늘 면 요약 카드의 '전원 출석')");
   assert.match(await src('features/attendance/components/makeup-add-flow.tsx'), /EMPTY_ABSENCES: MakeupAbsenceList = \{ options: \[\], hiddenBySubject: 0 \}/, '빈 결석 목록 = 2.0 EMPTY_ABSENCES');
 });
 
@@ -727,6 +731,197 @@ test('복사본: 단어 수 가져오기(pullEcsMemorizedWords) = 바깥 연동�
     assert.equal(r.ok, false); assert.match(r.error, /연습 화면에서 부르지 않습니다/);
     assert.equal(await n(), n0);
   });
+});
+
+// ── ⑦ 오늘 면 — 2.0 ecs/page.tsx face === "today"(getEcsToday + 시트 모드면 반마다 getClassSheetWeek → EcsTodayFace props) ──
+const TODAY_DAY = '2026-10-27'; // 복사본 기준일(화)
+const todayOkKeys = text => { const i = text.indexOf('export type EcsTodayResult'), j = text.indexOf('| {', i) + 3, k = text.indexOf('}\n  | { ok: false', j); return keysAtTop(text.slice(j, k)); };
+const topEnglishTeacher = async () => (await db`select u.id::text id from public.users u join public.classes c on c.teacher_id=u.id where u.tenant_id=${TENANT} and u.status='active' and u.system_role='teacher' and c.subject='english' and c.is_active group by u.id order by count(*) desc limit 1`)[0].id;
+/** 독립 SQL — 그 강사가 볼 수 있는 영어 반(담임 ∪ 교시 담당(전 기간) ∪ 기준일 ±7일 위임)의 그 날 살아 있는 배치(#88). */
+const liveTodaySlots = (t, day) => db`select c.id::text class_id, c.teacher_id::text homeroom, to_char(s.start_time, 'HH24:MI') st, s.slot_teacher_label lbl, s.teacher_id::text slot_teacher
+  from public.classes c join public.class_schedules s on s.class_id=c.id
+  where c.tenant_id=${TENANT} and c.subject='english' and c.is_active and (c.closed_at is null or c.closed_at >= ${day}::date)
+    and (c.teacher_id=${t} or exists (select 1 from public.class_schedules a where a.class_id=c.id and a.teacher_id=${t})
+      or exists (select 1 from public.class_delegations g where g.class_id=c.id and g.delegate_user_id=${t} and g.revoked_at is null and g.from_date <= ${TODAY_DAY}::date + 7 and g.to_date >= ${TODAY_DAY}::date - 7))
+    and s.day_of_week::text = lower(to_char(${day}::date, 'dy')) and s.valid_from <= ${day}::date and (s.valid_to is null or s.valid_to >= ${day}::date)`;
+
+test('복사본: 오늘 면(강사 · 시트 기본) = 2.0 EcsTodayFace props · EcsTodayResult · TodayClassCard · TodaySlot · TodayStudent · TodayPlanLine 칸 그대로 · 카드·교시·명단·출결·작성률 = 독립 SQL', { skip: !db && 'local database not running' }, async () => {
+  const text = (await src('features/class-sheets/server/today.ts')).replace(/\r\n/g, '\n'), R = await C.loadRules(importV2), t = await topEnglishTeacher();
+  const d = await load({ viewer: t, date: TODAY_DAY });
+  assert.equal(d.route, 'today'); assert.equal(d.scoped, true, '선생님 = 강사 스코프 → 오늘 면이 기본');
+  assert.deepEqual(Object.keys(d.today).sort(), ['canReorder', 'mode', 'myTeacherId', 'res', 'sheets', 'textbookOptions'], '2.0 EcsTodayFace props(scoped·lang은 화면 공통)');
+  const { res } = d.today;
+  assert.equal(res.ok, true); sameShape(res, todayOkKeys(text), 'EcsTodayResult');
+  assert.deepEqual([res.date, res.today, res.weekMonday, d.today.mode, d.today.myTeacherId, d.today.canReorder], [TODAY_DAY, TODAY_DAY, '2026-10-26', 'sheet', t, true]);
+  assert.ok(res.canWrite && res.hasAnyClass && res.userId === t && res.tenantId === TENANT && res.holidayName === null && Array.isArray(res.todayOrder));
+  assert.ok(Array.isArray(d.today.textbookOptions) && d.today.textbookOptions.length > 0, '계획 칸 교재 제안(loadEcsTextbookOptions)');
+  for (const c of res.cards) {
+    sameShape(c, typeKeys(text, 'TodayClassCard'), 'TodayClassCard');
+    for (const s of c.slots) { sameShape(s, typeKeys(text, 'TodaySlot'), 'TodaySlot'); for (const l of s.lines) sameShape(l, typeKeys(text, 'TodayPlanLine'), 'TodayPlanLine'); }
+    for (const s of c.students) sameShape(s, typeKeys(text, 'TodayStudent'), 'TodayStudent');
+  }
+  // 카드 = 그 날 보이는 교시가 있는 반(자리 LAB·숨긴 JJ 제외 — 2.0 hiddenSeatOf) · 교시 = 그 날 살아 있는 배치(시각순).
+  const [{ ui_prefs: prefs }] = await db`select ui_prefs from public.users where id=${t}`;
+  const live = (await liveTodaySlots(t, TODAY_DAY)).filter(r => !R.hiddenSeatOf(r.lbl, R.readEcsShowSelfStudy(prefs)));
+  const byClass = new Map(); for (const r of live) (byClass.get(r.class_id) ?? byClass.set(r.class_id, []).get(r.class_id)).push(r.st);
+  assert.ok(res.cards.length > 1);
+  assert.deepEqual(res.cards.map(c => c.classId).sort(), [...byClass.keys()].sort(), '카드 = 그 날 교시가 있는 볼 수 있는 반');
+  for (const c of res.cards) {
+    assert.deepEqual(c.slots.map(s => s.slotStart), byClass.get(c.classId).sort(), `${c.className}: 교시`);
+    assert.deepEqual([c.startsAt, c.fill.total], [c.slots[0].slotStart, c.slots.length]);
+  }
+  const ids = res.cards.map(c => c.classId), keys = res.cards.flatMap(c => c.slots.map(s => `${c.classId}|${s.slotStart}`));
+  const [{ filled }] = await db`select count(distinct (class_id, to_char(slot_start,'HH24:MI')))::int filled from public.class_sheet_plan_lines
+    where tenant_id=${TENANT} and plan_date=${TODAY_DAY} and ecs_is_meaningful_line(textbook, page_range, progress, homework) and (class_id::text || '|' || to_char(slot_start,'HH24:MI')) = any(${keys})`;
+  assert.equal(res.cards.reduce((n, c) => n + c.fill.filled, 0), filled, '작성률 분자 = 같은 DB 판정(ecs_is_meaningful_line)');
+  // 명단 = 그 날 수강 대상(기간·보류·전출·퇴원 + 분리등원 요일 — 2.0 isEnrollmentActiveOn · enrollmentAttendsOnDay) · 보강 = 기록은 있는데 명단에 없는 학생.
+  const enr = await db`select e.class_id::text class_id, e.student_id::text student_id, e.start_date::text start_date, e.end_date::text end_date, e.on_hold, e.is_transferred, e.attendance_days, s.withdrawn_at::text withdrawn_at
+    from public.enrollments e join public.students s on s.id=e.student_id where e.tenant_id=${TENANT} and e.class_id = any(${ids}::uuid[]) and e.start_date <= ${TODAY_DAY} and (e.end_date is null or e.end_date >= ${TODAY_DAY})`;
+  const att = await db`select class_id::text class_id, student_id::text student_id from public.attendance_records where tenant_id=${TENANT} and class_id = any(${ids}::uuid[]) and session_date=${TODAY_DAY}`;
+  const anchored = await db`select makeup_class_id::text class_id, student_id::text student_id from public.lesson_reports where tenant_id=${TENANT} and makeup_class_id = any(${ids}::uuid[]) and makeup and report_date=${TODAY_DAY}`;
+  const [{ resv }] = await db`select to_regclass('public.makeup_reservations') is not null resv`;
+  const reserved = resv ? await db`select class_id::text class_id, student_id::text student_id from public.makeup_reservations where tenant_id=${TENANT} and class_id = any(${ids}::uuid[]) and makeup_date=${TODAY_DAY} and status='reserved'` : [];
+  const hasAtt = new Set(att.map(r => `${r.class_id}|${r.student_id}`));
+  for (const c of res.cards) {
+    const roster = [...new Set(enr.filter(e => e.class_id === c.classId && !(e.withdrawn_at && e.withdrawn_at < TODAY_DAY)
+      && R.isEnrollmentActiveOn({ startDate: e.start_date, endDate: e.end_date, onHold: e.on_hold, isTransferred: e.is_transferred ?? undefined }, TODAY_DAY)
+      && R.enrollmentAttendsOnDay(e.attendance_days, 'tue')).map(e => e.student_id))];
+    assert.deepEqual(c.students.filter(s => !s.isMakeup).map(s => s.studentId).sort(), roster.sort(), `${c.className}: 명단`);
+    const recorded = [...att, ...anchored, ...reserved].filter(r => r.class_id === c.classId).map(r => r.student_id);
+    assert.deepEqual(c.students.filter(s => s.isMakeup).map(s => s.studentId).sort(), [...new Set(recorded.filter(id => !roster.includes(id)))].sort(), `${c.className}: 보강 행`);
+    for (const s of c.students) assert.equal(s.attendance !== null, hasAtt.has(`${c.classId}|${s.studentId}`), `${c.className} ${s.name}: 출결 표시 = 그 날 기록 유무`);
+  }
+  // 출결 잠금 = 2.0 게이트(출석 권한 · 선생님 7일 창 · 출석이 담당 범위면 담임 ∪ 그날 위임 ∪ JJ 담당 ∪ 그날 교시 담당) · 위임 표시 = 담임이 아닌 위임 반.
+  await db.begin('isolation level repeatable read read only', async sql => {
+    const env = await C.readSettings(sql, TENANT, R), viewer = (await C.readViewers(sql, TENANT, R, env)).find(v => v.id === t);
+    const taught = new Set([
+      ...(await sql`select id::text id from public.classes where tenant_id=${TENANT} and teacher_id=${t}
+        union select class_id::text from public.class_delegations where tenant_id=${TENANT} and delegate_user_id=${t} and revoked_at is null and from_date <= ${TODAY_DAY} and to_date >= ${TODAY_DAY}
+        union select class_id::text from public.class_schedules where tenant_id=${TENANT} and teacher_id=${t} and valid_from <= ${TODAY_DAY} and (valid_to is null or valid_to >= ${TODAY_DAY})`).map(r => r.id),
+      ...await C.jjManagedClassIds(sql, TENANT, R, env, t, TODAY_DAY)]);
+    const writable = C.canWriteLevel(viewer.levels.attendance) && R.isWithinAttendanceEditWindow(TODAY_DAY, TODAY_DAY);
+    const deleg = new Set((await sql`select class_id::text id from public.class_delegations where tenant_id=${TENANT} and delegate_user_id=${t} and revoked_at is null
+      and from_date <= ${TODAY_DAY}::date + 7 and to_date >= ${TODAY_DAY}::date - 7`).map(r => r.id));
+    for (const c of res.cards) {
+      assert.equal(c.canMarkAttendance, writable && (viewer.levels.attendance !== 'scoped' || taught.has(c.classId)), `${c.className}: 출결 잠금`);
+      assert.equal(c.delegated, deleg.has(c.classId) && live.find(r => r.class_id === c.classId).homeroom !== t, `${c.className}: 위임 표시`);
+    }
+    assert.ok(res.cards.some(c => !c.canMarkAttendance) && res.cards.some(c => c.canMarkAttendance), '담당이 아닌 반은 출결이 잠기고 담당 반은 열린다(복사본 10/27)');
+  });
+  // 요약 카드 모드 = 같은 결과 · 반마다 시트는 만들지 않는다(2.0 mode === "sheet"일 때만 getClassSheetWeek).
+  const cards = (await load({ viewer: t, date: TODAY_DAY, mode: 'cards' })).today;
+  assert.equal(cards.mode, 'cards'); assert.equal(cards.sheets, null);
+  assert.deepEqual(cards.res, res, '요약 카드도 같은 카드·같은 순서');
+});
+
+test('복사본: 오늘 면 시트 모드 = 반마다 2.0 ClassSheetWeekData(그 주) · 본인 교시만(2.0 selectSheetDaysFor — 교시 담당은 배치 FK 그대로) · 순서는 개인 순서가 이긴다', { skip: !db && 'local database not running' }, async () => {
+  const queries = await src('features/class-sheets/server/queries.ts'), R = await C.loadRules(importV2), t = await topEnglishTeacher();
+  const { res, sheets } = (await load({ viewer: t, date: TODAY_DAY })).today;
+  assert.deepEqual(sheets.map(s => s.classId).sort(), res.cards.map(c => c.classId).sort(), '카드마다 시트 하나');
+  for (const s of sheets) {
+    assert.equal(s.res.ok, true, s.className); sameShape(s.res.data, typeKeys(queries, 'ClassSheetWeekData'), 'ClassSheetWeekData');
+    assert.deepEqual([s.res.data.weekMonday, s.className], ['2026-10-26', res.cards.find(c => c.classId === s.classId).className]);
+  }
+  // 본인 교시 판정의 재료 = 그 날 배치 행의 교시 담당 FK(표시 라벨이 아니다 — today-own-slots 규칙 ③).
+  const fk = new Map((await liveTodaySlots(t, TODAY_DAY)).map(r => [`${r.class_id}|${r.st}`, r.slot_teacher]));
+  let hidden = 0;
+  for (const s of sheets) {
+    const day = s.res.data.grid.days.find(x => x.date === TODAY_DAY);
+    for (const sl of day.slots) assert.equal(sl.teacherId ?? null, fk.get(`${s.classId}|${sl.slotStart}`) ?? null, `${s.className} ${sl.slotStart}: 교시 담당 FK`);
+    const sel = R.selectSheetDaysFor(s.res.data, { variant: 'today', dayFilter: TODAY_DAY, myTeacherId: t });
+    for (const h of sel.hiddenOwn) {
+      const sl = day.slots.find(x => x.slotStart === h.slotStart);
+      assert.ok(h.teacherId && h.teacherId !== t && !R.isSpecialSlotLabel(sl.teacherLabel) && sl.lines.length === 0, `${s.className} ${h.slotStart}: 숨긴 교시 = 남의 교시(자리·기록 없음)`);
+      hidden++;
+    }
+    assert.equal(sel.todayDay.slots.length + sel.hiddenOwn.length, day.slots.length);
+  }
+  assert.ok(hidden > 0, '복사본 10/27 — 남이 맡은 교시를 실제로 숨긴다');
+  // 개인 순서(ui_prefs.ecs.todayOrder)에 있는 반이 먼저, 그 순서대로 — 시트·요약 카드 둘 다(2.0 applyTodayOrder).
+  const pos = new Map(res.todayOrder.map((id, i) => [id, i]));
+  for (const list of [sheets.map(s => s.classId), res.cards.map(c => c.classId)]) {
+    const ordered = list.filter(id => pos.has(id));
+    assert.deepEqual(list.slice(0, ordered.length), ordered, '순서에 있는 반이 앞');
+    assert.deepEqual(ordered, [...ordered].sort((a, b) => pos.get(a) - pos.get(b)), '저장한 순서대로');
+  }
+});
+
+test('복사본: 오늘 면은 강사 스코프 전용 — 사무실은 ?view=today를 쳐도 주간 · 강사도 ?view=week면 주간 · ?view=today는 오늘 면', { skip: !db && 'local database not running' }, async () => {
+  const t = await topEnglishTeacher();
+  for (const p of [{}, { view: 'today' }, { view: 'today', date: TODAY_DAY, mode: 'cards' }]) {
+    const office = await load(p);
+    assert.deepEqual([office.route, office.scoped, office.today], ['landing', false, undefined], `사무실 ${JSON.stringify(p)}`);
+  }
+  const [admin] = await db`select u.id::text id from public.users u where u.tenant_id=${TENANT} and u.status='active' and u.system_role='admin' and u.display_name is not null limit 1`;
+  if (admin) { const a = await load({ viewer: admin.id, view: 'today' }); if (a.viewer?.id === admin.id) assert.equal(a.route, 'landing', '관리자도 스코프가 없으면 주간'); }
+  assert.equal((await load({ viewer: t, view: 'week' })).route, 'landing');
+  assert.equal((await load({ viewer: t, view: 'today' })).route, 'today');
+  assert.equal((await load({ viewer: t, view: 'room' })).route, 'room', 'JJ실 면은 스코프와 무관');
+});
+
+test('복사본: 오늘 면 날짜 지정(테스트 반) = 그 날의 카드 · 휴일이면 이름만 알리고 카드는 그대로 · 수업 없는 날은 "반은 있는데 수업 없음" · 선생님 7일 창 밖이면 출결 잠금', { skip: !db && 'local database not running' }, async () => {
+  const a = (await load({ viewer: T_ACTOR, date: '2026-09-17' })).today;
+  assert.deepEqual([a.res.date, a.res.today, a.res.weekMonday, a.res.holidayName, a.myTeacherId], ['2026-09-17', TODAY_DAY, '2026-09-14', null, T_ACTOR]);
+  assert.deepEqual(a.res.cards.map(c => c.classId), [T_CLASS]);
+  const [card] = a.res.cards;
+  assert.deepEqual(card.slots.map(s => [s.slotStart, s.slotEnd]), [['17:15', '18:10']]);
+  assert.deepEqual(card.students.map(s => [s.studentId, s.name, s.isMakeup]), [[T_STU, '학원이', false]]);
+  assert.equal(card.canMarkAttendance, false, '선생님은 7일 창 밖 날짜의 출결이 잠긴다(2.0 isWithinAttendanceEditWindow)');
+  assert.deepEqual(a.sheets.map(s => [s.classId, s.res.ok, s.res.data.weekMonday]), [[T_CLASS, true, '2026-09-14']]);
+  const [{ name }] = await db`select h->>'name' name from public.tenant_settings ts, jsonb_array_elements(ts.data->'operations'->'holidays') h where ts.tenant_id=${TENANT} and h->>'date'='2026-09-24'`;
+  const hol = (await load({ viewer: T_ACTOR, date: '2026-09-24' })).today.res;
+  assert.equal(hol.holidayName, name, '휴일 이름 = 학원 설정');
+  assert.deepEqual(hol.cards.map(c => c.classId), [T_CLASS], '휴일이어도 카드·입력은 그대로');
+  const none = (await load({ viewer: T_ACTOR })).today;
+  assert.deepEqual([none.res.date, none.res.cards.length, none.res.hasAnyClass, none.sheets], [TODAY_DAY, 0, true, null], '반은 있는데 그 날 수업이 없다(빈 화면 문구가 원인별)');
+});
+
+test('복사본(되돌림): 오늘 면의 저장 = 주간 시트와 같은 액션(교시 칸 출결 · 학생 기록 · 지우기 · 반 순서)이 오늘 카드·시트에 그대로 · 요약 카드의 그날 전체 칸은 거절(쓰기 없음)', { skip: !db && 'local database not running' }, async () => {
+  const R = await C.loadRules(importV2), t = await topEnglishTeacher();
+  const before = await db`select (select count(*)::int from public.audit_logs) audits, (select count(*)::int from net.http_request_queue) net`;
+  await inRollback(async ({ sql, run }) => {
+    const reload = params => sql.savepoint(s => screen.load({ sql: s, params, tenantId: TENANT, importV2 }));
+    // 시험용으로만(되돌림): 테스트 반 수업·수강을 기준일까지 늘린다.
+    await sql`update public.class_schedules set valid_to=null where class_id=${T_CLASS}`;
+    await sql`update public.enrollments set end_date=null where class_id=${T_CLASS} and student_id=${T_STU}`;
+    await sql`delete from public.attendance_records where class_id=${T_CLASS} and student_id=${T_STU} and session_date=${TODAY_DAY}`;
+    await sql`delete from public.class_sheet_student_marks where class_id=${T_CLASS} and student_id=${T_STU} and mark_date=${TODAY_DAY}`;
+    const stuOf = d => d.res.cards.find(c => c.classId === T_CLASS)?.students.find(s => s.studentId === T_STU);
+    const d0 = (await reload({ viewer: T_ACTOR })).today;
+    assert.equal(d0.res.cards.find(c => c.classId === T_CLASS).canMarkAttendance, true, '담임 · 7일 창 안');
+    assert.equal(stuOf(d0).attendance, null);
+    // 시트 모드(기본)의 출결 = 교시 칸(slotStart) · 학생 기록 = 교시별 — 주간 시트와 같은 액션.
+    assert.equal((await run(sql, 'setAttendanceCell', T_ACTOR, { classId: T_CLASS, studentId: T_STU, sessionDate: TODAY_DAY, slotStart: '17:15', status: 'present' })).ok, true);
+    assert.deepEqual(await run(sql, 'upsertStudentMark', T_ACTOR, { classId: T_CLASS, studentId: T_STU, markDate: TODAY_DAY, slotStart: '17:15', status: '좋음', progressNote: null }), { ok: true });
+    const d1 = (await reload({ viewer: T_ACTOR })).today, s1 = stuOf(d1);
+    assert.deepEqual([s1.attendance, s1.attendanceSlots, s1.marks['17:15']?.status], ['present', ['17:15:00'], '좋음'], '오늘 카드 = 방금 저장한 같은 행');
+    const sheet = d1.sheets.find(s => s.classId === T_CLASS).res.data;
+    assert.ok(Object.keys(sheet.attendanceByStudentDate).some(k => k.startsWith(`${T_STU}|${TODAY_DAY}`)) && Object.keys(sheet.marks).some(k => k.startsWith(`${T_STU}|${TODAY_DAY}`)), '오늘 시트도 같은 기록');
+    // 요약 카드의 출결 드롭다운(그날 전체 칸 — slotStart 없음)은 연습 화면에서 받지 않는다 — 2.0 부품은 실패 모양으로 받고 칸을 되돌린다.
+    const n = async () => (await sql`select count(*)::int n from public.attendance_records where class_id=${T_CLASS} and session_date=${TODAY_DAY}`)[0].n, n0 = await n();
+    await assert.rejects(sql.savepoint(s => run(s, 'setAttendanceCell', T_ACTOR, { classId: T_CLASS, studentId: T_STU, sessionDate: TODAY_DAY, status: 'absent' })),
+      e => e.status === 409 && /연습 화면에서 아직 지원하지 않습니다/.test(e.message));
+    assert.equal(await n(), n0, '쓰기 없음');
+    // '선택 안 함' = 화면이 보던 행의 교시 그대로(attendanceSlots — 2.0 TodayBoard clear).
+    assert.deepEqual(await run(sql, 'clearPresentAttendance', T_ACTOR, { classId: T_CLASS, studentId: T_STU, date: TODAY_DAY, slot: s1.attendanceSlots[0] }), { ok: true, cleared: 1 });
+    assert.equal(stuOf((await reload({ viewer: T_ACTOR })).today).attendance, null);
+    // 반 순서(TodayOrderList → setMyEcsTodayOrder) — 그 사람 ui_prefs.ecs.todayOrder · 시트·요약 카드가 같은 순서로.
+    await sql`update public.users set ui_prefs = ui_prefs #- '{ecs,todayOrder}' where id=${t}`;
+    const a = (await reload({ viewer: t, date: TODAY_DAY })).today;
+    assert.deepEqual(a.res.todayOrder, []);
+    // 순서가 없으면 시트 = 보이는 첫 교시(2.0 firstVisibleTodaySlot) · 요약 카드 = 그 날 첫 교시(startsAt), 같으면 반 이름.
+    const sorted = (list, key) => list.every((x, i) => i === 0 || key(list[i - 1]) < key(x) || (key(list[i - 1]) === key(x) && list[i - 1].className.localeCompare(x.className, 'ko') <= 0));
+    assert.ok(sorted(a.sheets, s => R.firstVisibleTodaySlot(s.res.data, { date: TODAY_DAY, myTeacherId: t }) ?? '99:99'), '시트 = 보이는 첫 교시 순');
+    assert.ok(sorted(a.res.cards, c => c.startsAt), '요약 카드 = 첫 교시 순');
+    const want = a.sheets.map(s => s.classId).reverse();
+    assert.deepEqual(await run(sql, 'setMyEcsTodayOrder', t, want), { ok: true });
+    assert.deepEqual((await sql`select ui_prefs from public.users where id=${t}`)[0].ui_prefs.ecs.todayOrder, want);
+    const b = (await reload({ viewer: t, date: TODAY_DAY })).today;
+    assert.deepEqual([b.sheets.map(s => s.classId), b.res.cards.map(c => c.classId)], [want, want], '시트·요약 카드 = 저장한 순서');
+    assert.deepEqual((await reload({ viewer: t, date: TODAY_DAY, mode: 'cards' })).today.res.cards.map(c => c.classId), want, '보기를 바꿔도 같은 순서');
+    assert.equal((await sql`select count(*)::int n from net.http_request_queue`)[0].n, before[0].net, '바깥 요청 없음');
+  });
+  assert.equal((await db`select count(*)::int n from public.audit_logs`)[0].n, before[0].audits, '되돌렸다');
 });
 
 test.after(async () => { await db?.end(); });

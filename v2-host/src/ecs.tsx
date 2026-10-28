@@ -16,7 +16,7 @@ import { onHostRefresh } from '../shims/host-nav';
 import { useHostSearch } from '../shims/next-navigation';
 import { hostActor, registerHostFallback, registerHostHandler, setHostEditors, type HostEditor } from '../shims/server-action';
 import { HostFrame, HostMessage } from './host-frame';
-import { EcsGoalsPage, EcsLandingPage, EcsMonthPage, EcsNotYetPage, EcsPlanGapPage, EcsRoomPage, EcsSheetPage, type GapData, type GoalsData, type RoomData, type LandingData, type MonthData, type SheetData } from './ecs-page';
+import { EcsGoalsPage, EcsLandingPage, EcsMonthPage, EcsPlanGapPage, EcsRoomPage, EcsSheetPage, EcsTodayPage, type GapData, type GoalsData, type RoomData, type LandingData, type MonthData, type SheetData, type TodayData } from './ecs-page';
 
 /** 진입점 표식(build.mjs가 찾는다) — 창 제목과 이 화면의 2.0 주소. */
 export const HOST_TITLE = '강사 시트';
@@ -52,6 +52,8 @@ registerHostHandler('features/textbooks/server/plan-actions.ts', 'loadAssignable
 registerHostFallback('features/attendance/server/actions.ts', 'searchMakeupStudents', () => []);
 registerHostFallback('features/attendance/server/makeup-actions.ts', 'fetchMakeupAbsences', () => ({ options: [], hiddenBySubject: 0 }));
 registerHostFallback('features/attendance/server/makeup-actions.ts', 'fetchMakeupHostClasses', () => ({ options: [], failed: true }));
+// 오늘 면 요약 카드의 '전원 출석'(TodayBoard bulkPresent) — 2.0 BulkCellResult의 실패 갈래 { error }(카드가 칠한 칸을 되돌리고 문구를 띄운다).
+registerHostFallback('features/attendance/server/actions.ts', 'setAttendanceBulk', (error: string) => ({ error }));
 
 type Ops = ComponentProps<typeof OperationsProvider>;
 type Data = {
@@ -67,6 +69,7 @@ type Data = {
   goals?: GoalsData;
   gap?: GapData;
   room?: RoomData;
+  today?: TodayData;
 };
 
 /** 서버를 다시 부르는 주소 열쇠 — 2.0에서 서버가 다시 그리던 것(주소·주·면·달·기간·날짜·읽기 전용). `day`는 2.0 시트가 주소만 바꾸는 값이라 뺀다. */
@@ -124,7 +127,8 @@ function App() {
         : d.route === 'goals' && d.goals ? <EcsGoalsPage goals={d.goals} lang={lang} />
         : d.route === 'gap' && d.gap ? <EcsPlanGapPage gap={d.gap} lang={lang} />
         : d.route === 'room' && d.room ? <EcsRoomPage room={d.room} scoped={!!d.scoped} />
-        : <EcsNotYetPage route={d.route === 'room' || d.route === 'goals' || d.route === 'gap' ? d.route : 'today'} scoped={!!d.scoped} lang={lang} />;
+        : d.route === 'today' && d.today ? <EcsTodayPage today={d.today} scoped={!!d.scoped} lang={lang} />
+        : <HostMessage text="강사 시트를 불러오지 못했습니다." error />;
   return (
     <SheetLangProvider lang={lang}>
       <OperationsProvider subjects={ops.subjects} gradeLevels={ops.gradeLevels} jobTitles={ops.jobTitles} jobTitlesByDepartment={ops.jobTitlesByDepartment} disabledModules={d.host.disabledModules}>
