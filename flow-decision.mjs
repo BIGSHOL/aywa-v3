@@ -4,7 +4,7 @@
 // When the modules are absent or fail, work stays visible with a review reason (no fake AI).
 import { join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { scrub } from './domain-snapshot-core.mjs';
+import { maskSensitive } from './sensitive-text.mjs';
 import { actorMap, relatedKeys } from './flow-engine.mjs';
 
 const HERE = fileURLToPath(new URL('.', import.meta.url));
@@ -60,7 +60,7 @@ export function buildContext(source, c, { today = kstToday() } = {}) {
   const requested = c.scenario === 'absence' ? e?.date : c.scenario === 'billing' ? e?.dueDate : c.kind === 'request' ? c.dueAt : c.kind === 'source' ? kstDate(c.dueAt) : null;
   const dated = /^\d{4}-\d{2}-\d{2}$/.test(requested || '') && Math.abs(Date.parse(requested) - Date.parse(today)) <= 366 * 86400000 ? { requestedActionDate: requested } : {};
   return {
-    recordId: c.id, source: sourceKind, today, recordDate, ...dated, text: scrub(text), thread: [], facts, knownOpenWork: knownOpenWork.slice(0, 5),
+    recordId: c.id, source: sourceKind, today, recordDate, ...dated, text: maskSensitive(text), thread: [], facts, knownOpenWork: knownOpenWork.slice(0, 5),
     links: { student: !!studentKey, class: classKeys.length > 0, invoice: c.entityRefs.some(r => r.type === 'invoice'), staff: candidates.length > 0 },
     candidates: candidates.slice(0, 20).map(x => ({ staffId: x.staffId, roles: [...new Set(x.roles)] })),
   };
@@ -68,7 +68,8 @@ export function buildContext(source, c, { today = kstToday() } = {}) {
 
 /** Replaces every known person label (students, staff, leads) in free text with neutral placeholders. */
 export function pseudonymize(source, text) {
-  let out = scrub(text || '');
+  // 연락처·주민번호·계좌/카드번호는 가린다(sensitive-text.mjs — 비서와 같은 판정).
+  let out = maskSensitive(text || '');
   const names = [...source.entities.values()].filter(e => ['student', 'staff', 'lead'].includes(e.type) && e.label && e.label.length >= 2).map(e => [e.label, e.type === 'staff' ? '직원' : '학생']).sort((a, b) => b[0].length - a[0].length);
   for (const [name, mask] of names) if (out.includes(name)) out = out.split(name).join(mask);
   return out;

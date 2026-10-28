@@ -2,10 +2,14 @@
 import { randomBytes } from 'node:crypto';
 import { ASSISTANT_ISSUE_IDS, contextFacts, destinationText } from './claude-bridge-context.mjs';
 import { BridgeError } from './claude-bridge.mjs';
+import { hasSensitive } from './sensitive-text.mjs';
 
 export const LIMITS = Object.freeze({ prompt: 1000, historyItems: 12, historyItem: 2000, historyTotal: 8000, body: 32 * 1024 });
 const KEYS = new Set(['prompt', 'contextIssueId', 'history']);
 const invalid = message => new BridgeError('invalid_request', 400, message);
+// 외부 AI 전송 금지 값(주민번호·계좌/카드번호·연락처)이 질문·이전 대화에 있으면 Claude로 보내지 않는다(검수 10-28 AX-H3 — 판정은 sensitive-text.mjs 한 곳).
+const SENSITIVE_MESSAGE = '주민번호·계좌번호·카드번호나 연락처처럼 보이는 값이 있어 AI에게 보내지 않았습니다. 그 부분을 지우고 다시 보내 주세요.';
+const SENSITIVE_HISTORY_MESSAGE = '이전 대화에 주민번호·계좌번호·카드번호나 연락처처럼 보이는 값이 있어 AI에게 보내지 않았습니다. 새 대화로 시작해 주세요.';
 // Keep tabs/newlines; drop other control characters and lone surrogates.
 const clean = text => text.replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g, '').replace(/[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]/g, '').trim();
 
@@ -16,6 +20,7 @@ export function validateRequest(body) {
   const prompt = clean(body.prompt);
   if (!prompt) throw invalid('질문을 입력해 주세요.');
   if (prompt.length > LIMITS.prompt) throw invalid(`질문은 ${LIMITS.prompt}자 이내로 입력해 주세요.`);
+  if (hasSensitive(prompt)) throw new BridgeError('sensitive_input', 400, SENSITIVE_MESSAGE);
   const issue = body.contextIssueId ?? null;
   if (issue !== null && !ASSISTANT_ISSUE_IDS.includes(issue)) throw invalid('알 수 없는 이슈입니다.');
   const rawHistory = body.history ?? [];
@@ -27,6 +32,7 @@ export function validateRequest(body) {
     if (typeof item.content !== 'string') throw invalid('대화 기록 형식이 올바르지 않습니다.');
     const content = clean(item.content);
     if (!content || content.length > LIMITS.historyItem) throw invalid('대화 기록이 비어 있거나 너무 깁니다.');
+    if (hasSensitive(content)) throw new BridgeError('sensitive_input', 400, SENSITIVE_HISTORY_MESSAGE);
     total += content.length;
     return { role: item.role, content };
   });
