@@ -664,4 +664,58 @@ test('복사본(되돌림): 교재 배정 기입(applyTextbookFill) = 배정 저
   assert.deepEqual([after[0].audits, after[0].plans], [before[0].audits, before[0].plans], '되돌렸다');
 });
 
+test('교재 지우기·되돌리기: 옮긴 검사 본문(validLine · validToken · validPlan)이 2.0 원문과 같다', async () => {
+  const ts = (await import('typescript')).default;
+  const body = (text, name) => { const t = text.replace(/\r\n/g, '\n'), i = t.search(new RegExp(`(?:export )?function ${name}\\(`)), end = t.indexOf('\n}\n', i); return t.slice(t.indexOf('function', i), end + 2); };
+  const norm = code => ts.transpileModule(code, { compilerOptions: { target: ts.ScriptTarget.ES2022, removeComments: true } }).outputText.replace(/[\s;]+/g, '').replace(/'/g, '"').replace(/\(\(?(l\.line_no|r\.start_lesson_no)\)?\)/g, '$1');
+  const mine = await here('./v2-ecs-plan-undo.mjs'), core = await src('features/textbooks/server/shift-undo-core.ts'), del = await src('features/textbooks/server/plan-delete-actions.ts');
+  for (const n of ['validLine', 'validToken']) assert.equal(norm(body(mine, n)), norm(body(core, n)), n);
+  assert.equal(norm(body(mine, 'validPlan')), norm(body(del, 'validPlan')), 'validPlan');
+});
+
+test('복사본(되돌림): 기입 → [실행 취소](undoPlanImport) = 넣은 칸·배정이 사라짐 · 기입 → 배정 삭제(withLines) → 되돌리기(undoPlanDelete) = 배정·줄이 돌아옴 · 2.0 감사로그', { skip: !db && 'local database not running' }, async () => {
+  const [owner] = await db`select u.id::text id from public.users u where u.tenant_id=${TENANT} and u.status='active' and u.system_role='master' and not exists (select 1 from public.super_admins s where s.id=u.id) order by u.display_name limit 1`;
+  const before = await db`select (select count(*)::int from public.audit_logs) audits, (select count(*)::int from net.http_request_queue) net, (select count(*)::int from public.class_textbook_plans) plans`;
+  await inRollback(async ({ sql, run }) => {
+    await sql`update public.class_schedules set valid_to=null where class_id=${T_CLASS}`;
+    const R = await C.loadRules(importV2), env = await C.readSettings(sql, TENANT, R), viewer = (await C.readViewers(sql, TENANT, R, env)).find(v => v.id === owner.id), today = await C.copyDay();
+    const { readSlotChoices } = await import('./v2-ecs-textbooks.mjs');
+    const chip = (await readSlotChoices({ sql, t: TENANT, R, env, user: viewer, today }, T_CLASS)).rows.find(c => !c.seat);
+    const [book] = await sql`select id::text id, title from public.textbooks where tenant_id=${TENANT} and subject='english' and session_count between 3 and 40 and skill_area is not null
+      and not exists (select 1 from public.class_textbook_plans p where p.class_id=${T_CLASS} and p.textbook_id=textbooks.id) order by title limit 1`;
+    const input = { classId: T_CLASS, textbookId: book.id, slotPicks: chip.picks, pace: 'period', termMode: 'regular', startDate: today, startLessonNo: 1 };
+    const lines = async () => (await sql`select count(*)::int n from public.class_sheet_plan_lines where class_id=${T_CLASS} and textbook=${book.title}`)[0].n;
+    const plans = async () => (await sql`select count(*)::int n from public.class_textbook_plans where class_id=${T_CLASS} and textbook_id=${book.id}`)[0].n;
+    const l0 = await lines();
+    // ① 기입 → 실행 취소
+    const a1 = await run(sql, 'applyTextbookFill', owner.id, input);
+    assert.ok(a1.ok && a1.undoBatchId && (await lines()) > l0);
+    const u1 = await run(sql, 'undoPlanImport', owner.id, { classId: T_CLASS, batchId: a1.undoBatchId, latestOnly: true });
+    assert.deepEqual(Object.keys(u1).sort(), ['batches', 'kept', 'ok', 'others', 'plansRemoved', 'restored']);
+    assert.equal(u1.ok, true); assert.equal(u1.plansRemoved, 1); assert.equal(u1.batches, 1);
+    assert.equal(await lines(), l0, '넣은 칸이 사라졌다'); assert.equal(await plans(), 0, '배정도 지웠다');
+    assert.ok((await sql`select undone_at from public.class_plan_import_batches where id=${a1.undoBatchId}`)[0].undone_at, '되돌린 반영');
+    assert.deepEqual(await run(sql, 'undoPlanImport', owner.id, { classId: T_CLASS, batchId: a1.undoBatchId }), { ok: false, error: '되돌릴 수 있는 반영이 아닙니다 — 이미 되돌렸거나 최근 5건 밖입니다' });
+    // ② 기입 → 배정 삭제(진도 줄까지) → 되돌리기
+    const a2 = await run(sql, 'applyTextbookFill', owner.id, input);
+    const [plan] = await sql`select id::text id from public.class_textbook_plans where class_id=${T_CLASS} and textbook_id=${book.id} and is_active`;
+    const n2 = await lines();
+    const d = await run(sql, 'deleteClassTextbookPlan', owner.id, plan.id, { withLines: true });
+    assert.equal(d.ok, true, JSON.stringify(d).slice(0, 200));
+    assert.ok(d.cleared && d.cleared.lines > 0 && d.undo?.plan?.id === plan.id && d.undo.lines && d.historyId, JSON.stringify({ cleared: d.cleared, history: d.historyId }));
+    assert.equal(await plans(), 0); assert.equal(await lines(), n2 - d.cleared.lines);
+    const ud = await run(sql, 'undoPlanDelete', owner.id, { classId: T_CLASS, plan: d.undo.plan, lines: d.undo.lines, historyId: d.historyId });
+    assert.deepEqual(ud, { ok: true, warning: undefined });
+    assert.equal(await plans(), 1, '배정이 같은 id로 돌아옴'); assert.equal(await lines(), n2, '지운 줄이 돌아옴');
+    assert.deepEqual(await run(sql, 'undoPlanDelete', owner.id, { classId: T_CLASS, plan: d.undo.plan, lines: d.undo.lines, historyId: d.historyId }), { ok: false, error: '이미 되돌렸습니다' });
+    assert.deepEqual(await run(sql, 'undoPlanDelete', owner.id, { classId: T_CLASS, plan: { ...d.undo.plan, pace: 'x' } }), { ok: false, error: '되돌릴 기록이 올바르지 않습니다' });
+    const acts = (await sql`select action from public.audit_logs where tenant_id=${TENANT} and metadata->>'via'='3.0 연습 복사본' and action like 'textbook_%'`).map(r => r.action).sort();
+    for (const a of ['textbook_plan_apply', 'textbook_plan_create', 'textbook_plan_delete', 'textbook_plan_delete_undo', 'textbook_plan_import_undo']) assert.ok(acts.includes(a), a);
+    assert.equal(a2.ok, true);
+    assert.equal((await sql`select count(*)::int n from net.http_request_queue`)[0].n, before[0].net, '바깥 요청 없음');
+  });
+  const after = await db`select (select count(*)::int from public.audit_logs) audits, (select count(*)::int from public.class_textbook_plans) plans`;
+  assert.deepEqual([after[0].audits, after[0].plans], [before[0].audits, before[0].plans], '되돌렸다');
+});
+
 test.after(async () => { await db?.end(); });

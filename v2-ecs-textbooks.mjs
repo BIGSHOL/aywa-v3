@@ -172,7 +172,7 @@ export async function previewLoaded(ctx, loaded, planId) {
 const TEXTBOOKS_NOT_READY = '교재목록 표가 아직 만들어지지 않았습니다 — 마이그레이션 0266a를 적용해 주세요';
 const SAME_BOOK_NOT_READY = '같은 교재를 한 반에 여러 개 거는 기능은 DB 업데이트(0436a) 뒤에 열립니다 — 지금은 한 반에 한 개만 걸 수 있습니다';
 /** 2.0 friendlyTextbookError(access.ts) — 표 없음 · 유니크 · 참조 · CHECK. 그 밖은 같은 자리의 기본 문구(2.0 explainDbError의 제약별 문장은 옮기지 않았다). */
-function friendlyTextbookError(error, fallback, duplicate) {
+export function friendlyTextbookError(error, fallback, duplicate) {
   const msg = String(error?.message ?? ''), code = error?.code;
   if (code === '42P01' || (/textbooks|textbook_lessons|class_textbook_plans|ecs_apply_textbook_lessons/.test(msg) && /not find|does not exist|schema cache/i.test(msg))) return TEXTBOOKS_NOT_READY;
   if (code === '23505') return duplicate ?? '이미 같은 이름의 교재가 있습니다';
@@ -181,7 +181,7 @@ function friendlyTextbookError(error, fallback, duplicate) {
   return fallback;
 }
 /** DB가 거절하면 트랜잭션을 깨지 않고 2.0처럼 오류를 돌려받는다 — 저장점 안에서. */
-async function tryWrite(sql, fn) { try { return { value: await sql.savepoint(fn) }; } catch (error) { return { error }; } }
+export async function tryWrite(sql, fn) { try { return { value: await sql.savepoint(fn) }; } catch (error) { return { error }; } }
 const isPaceRejected = e => e?.code === '23514' && /pace_chk/.test(String(e?.message ?? ''));
 
 /** 2.0 saveClassTextbookPlan(input) — 같은 (반, 교재) 배정은 3개까지(placeSameBookPlan), 지난 시작일은 이번에 바뀐 때만 거절. */
