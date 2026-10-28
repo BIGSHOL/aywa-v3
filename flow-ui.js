@@ -959,12 +959,26 @@ window.createFlowUI = function createFlowUI(api) {
   }
   const recType=r=>r.type==='student'?'원생':r.type==='lead'?'신규 상담':api.familyLabel?.(r.familyId)||'기록';
   const refKey=r=>`${r.familyId||''}:${String(r.recordId||r.id||'')}`;
+  // 집계 신호의 각 근거가 가리키는 2.0 기록 주소. probe는 영역 화면이 ID 열쇠를 받기 전까지 작업 공간 기록으로 돌아간다.
+  const RECORD_ROUTE={
+    withdrawal_report:{screen:'withdrawal-reports',key:'actor',query:id=>({v2path:`/withdrawal-reports/${id}`})},
+    approval:{screen:'approvals',key:'actor',query:id=>({v2path:`/approvals/${id}`})},
+    lead:{screen:'enrollment',key:'actor',query:id=>({v2path:`/enrollment/${id}`})},
+    consultation:{screen:'consultations',key:'actor',query:id=>({v2path:`/consultations/${id}`})},
+    invoice:{screen:'billing',key:'viewer',query:id=>({invoiceId:id}),probe:true},
+    satisfaction:{screen:'class-review',key:'actor',query:id=>({judgmentId:id}),probe:true},
+    textbook_order:{screen:'textbook-requests',key:'viewer',query:id=>({orderId:id}),probe:true},
+    report:{screen:'lesson-reports',key:'viewer',query:id=>({reportId:id}),probe:true},
+    notice:{screen:'onescreen',key:'teacher',query:id=>({noticeId:id}),probe:true},
+    video:{screen:'video-homework',key:'actor',query:id=>({videoId:id}),probe:true},
+    attendance:{screen:'attendance',key:'viewer',query:id=>({v2path:'/attendance/live',tab:'desk',attendanceId:id}),probe:true},
+  };
   // 종류별 묶음 자리 — 정보가 다 모이면 그 묶음을 표로 바꿔 그린다(fillFacts).
   function recRows(refs){
     const groups=new Map();for(const r of refs){const t=recType(r);if(!groups.has(t))groups.set(t,[]);groups.get(t).push(r);}
     return [...groups].map(([t,list],i)=>`<section class="fl-recgroup" data-rec-group="${i}"><p class="fl-recgroup-head">${h(t)} ${fmt(list.length)}건</p><div class="fl-recgroup-body"><p class="fl-dim">불러오는 중</p></div></section>`).join('');
   }
-  function recTable(list,facts){
+  function recTable(list,facts,c){
     // 열 = 그 묶음에서 값이 하나라도 있는 칸. 순서는 기록이 칸을 내는 순서 — 새 칸은 그 줄에서 바로 앞 칸 뒤에 끼운다(첫 줄에 없는 칸이 맨 뒤로 밀리지 않게).
     const cols=[];facts.forEach(f=>{const ks=(f||[]).filter(([,v])=>v).map(([k])=>k);ks.forEach((k,j)=>{if(cols.includes(k))return;let at=0;for(let p=j-1;p>=0;p--){const i=cols.indexOf(ks[p]);if(i>=0){at=i+1;break;}}cols.splice(at,0,k);});});
     // 열 정렬은 값으로 정한다(원장 10-28 "내용에 따라 제목행은 가운데 정렬 왼쪽 정렬 등 적극적으로 활용해서 깔끔하게"):
@@ -972,13 +986,13 @@ window.createFlowUI = function createFlowUI(api) {
     const align=cols.map(k=>{const vs=facts.map(f=>new Map(f||[]).get(k)).filter(Boolean).map(String);if(!vs.length)return '';if(vs.every(v=>/^-?[\d,]+원$/.test(v)))return 'al-r';return Math.max(...vs.map(v=>v.length))<=8?'al-c':'';});
     const cls=i=>align[i]?` class="${align[i]}"`:'';
     const cell=(v,i)=>`<td${cls(i)}><span class="fl-cut">${h(v||'')}</span></td>`;
-    return `<table class="fl-rectable"><thead><tr><th scope="col">이름</th>${cols.map((k,i)=>`<th scope="col"${cls(i)}>${h(k)}</th>`).join('')}<th aria-hidden="true"></th></tr></thead><tbody>${list.map((r,i)=>{const fam=r.familyId||'',id=String(r.recordId||r.id||''),can=fam&&api.hasView(`workspace-${fam}`)||api.canOpenRecord?.(id),f=new Map(facts[i]||[]),at=`data-family="${h(fam)}" data-record="${h(id)}"`,name=recName.get(`${fam}:${id}`)||refLabel(r);
-      return `<tr ${can?`class="can" data-fl="rec-open" ${at}`:''}><th scope="row">${can?`<button type="button" class="fl-cut" data-fl="rec-open" ${at}>${h(name)}</button>`:`<span class="fl-cut">${h(name)}</span>`}</th>${facts[i]===null?`<td colspan="${cols.length||1}" class="fl-dim">정보를 읽지 못했습니다.</td>`:cols.map((k,i)=>cell(f.get(k),i)).join('')}<td class="fl-rec-go">${can?icon('chevron'):''}</td></tr>`;}).join('')}</tbody></table>`;
+    return `<table class="fl-rectable"><thead><tr><th scope="col">이름</th>${cols.map((k,i)=>`<th scope="col"${cls(i)}>${h(k)}</th>`).join('')}<th scope="col">처리</th></tr></thead><tbody>${list.map((r,i)=>{const fam=r.familyId||'',id=String(r.recordId||r.id||''),can=fam&&api.hasView(`workspace-${fam}`)||api.canOpenRecord?.(id),process=!!c?.signalId&&fam===c.familyId&&r.type!=='task'&&r.type!=='student',f=new Map(facts[i]||[]),at=`data-family="${h(fam)}" data-record="${h(id)}"`,name=recName.get(`${fam}:${id}`)||refLabel(r);
+      return `<tr ${can?`class="can" data-fl="rec-open" ${at}`:''}><th scope="row">${can?`<button type="button" class="fl-cut" data-fl="rec-open" ${at}>${h(name)}</button>`:`<span class="fl-cut">${h(name)}</span>`}</th>${facts[i]===null?`<td colspan="${cols.length||1}" class="fl-dim">정보를 읽지 못했습니다.</td>`:cols.map((k,i)=>cell(f.get(k),i)).join('')}<td class="fl-rec-go">${process?`<button type="button" class="fl-rec-process" data-fl="rec-process" data-case="${h(c.id)}" data-type="${h(r.type)}" aria-label="${h(name)} 처리" ${at}>처리</button>`:can?icon('chevron'):''}</td></tr>`;}).join('')}</tbody></table>`;
   }
-  function fillFacts(root,refs){
+  function fillFacts(root,refs,c){
     const groups=new Map();for(const r of refs){const t=recType(r);if(!groups.has(t))groups.set(t,[]);groups.get(t).push(r);}
     const ready=prefetch(refs);
-    [...groups].forEach(([,list],i)=>ready.then(()=>Promise.all(list.map(recordFacts))).then(facts=>{const box=root.querySelector(`[data-rec-group="${i}"] .fl-recgroup-body`);if(box?.isConnected){box.innerHTML=recTable(list,facts);if(recPop.el===root)placeRecPop();}}));
+    [...groups].forEach(([,list],i)=>ready.then(()=>Promise.all(list.map(recordFacts))).then(facts=>{const box=root.querySelector(`[data-rec-group="${i}"] .fl-recgroup-body`);if(box?.isConnected){box.innerHTML=recTable(list,facts,c);if(recPop.el===root)placeRecPop();}}));
   }
   // 마우스를 올리면(잠깐 머문 뒤) 단추 아래 목록 · 목록 위로 옮겨 가도 그대로 · 둘 다 벗어나면 닫는다. 누르면 같은 목록을 가운데 창으로.
   const recPop={el:null,btn:null,show:0,hide:0,hiding:false};
@@ -988,7 +1002,7 @@ window.createFlowUI = function createFlowUI(api) {
     const c=caseById(btn.dataset.id);if(!c)return;const refs=refsOf(c);if(!refs.length)return;
     closeRecPop();hideTip();const el=document.createElement('div');el.className='fl-recpop';el.setAttribute('role','dialog');el.setAttribute('aria-label',`${c.title} — 관련 기록`);
     el.innerHTML=`<div class="fl-recpop-body live-scroll">${recRows(refs)}</div>`;
-    document.body.append(el);recPop.el=el;recPop.btn=btn;placeRecPop();fillFacts(el,refs);api.attachScroll?.();
+    document.body.append(el);recPop.el=el;recPop.btn=btn;placeRecPop();fillFacts(el,refs,c);api.attachScroll?.();
   }
   // 단추 아래(넘치면 위) · 화면 안. 표가 채워져 크기가 바뀌면 다시 잡는다.
   function placeRecPop(){
@@ -996,7 +1010,7 @@ window.createFlowUI = function createFlowUI(api) {
     const r=btn.getBoundingClientRect(),w=el.offsetWidth,hh=el.offsetHeight;let top=r.bottom+4;if(top+hh>innerHeight-8)top=Math.max(8,r.top-hh-4);
     el.style.left=`${Math.min(Math.max(8,r.right-w),innerWidth-w-8)}px`;el.style.top=`${top}px`;
   }
-  function showRecords(id){const c=caseById(id);if(!c)return;const refs=refsOf(c);closeRecPop();dialog('modal',c.title,'',`<div class="fl-recs-modal">${recRows(refs)}</div>`);const m=$('#modal');if(m)fillFacts(m,refs);}
+  function showRecords(id){const c=caseById(id);if(!c)return;const refs=refsOf(c);closeRecPop();dialog('modal',c.title,'',`<div class="fl-recs-modal">${recRows(refs)}</div>`);const m=$('#modal');if(m)fillFacts(m,refs,c);}
   document.addEventListener('pointerover',event=>{
     const b=event.target.closest?.('.fl-recbtn');
     if(b){if(recPop.btn===b){keepRecPop();return;}clearTimeout(recPop.show);recPop.show=setTimeout(()=>{if(b.isConnected&&b.matches(':hover'))openRecPop(b);},220);return;}
@@ -1054,6 +1068,17 @@ window.createFlowUI = function createFlowUI(api) {
   // 2.0 화면의 '보는 사람'(= 저장하는 사람, 주소 actor가 화면에서 고른 사람보다 이긴다) — 지금 보는 사람이 그 단계 담당이면 그대로, 아니면 그 단계 담당(승인·결재 차례인 사람).
   // 화면이 고를 수 없는 사람이면 화면이 무시하고 제 규칙(원장 먼저)으로 돈다.
   const v2Actor=c=>{const me=actor()?.id,ids=activeSteps(c).flatMap(s=>s.assigneeIds||[]);return ids.includes(me)?me:ids[0]||me||'';};
+  async function processRecord(c,family,type,id,opener){
+    const fallback=()=>{if(api.hasView(`workspace-${family}`))openPeek({page:`workspace-${family}`,family,record:id},opener);else toast('이 기록을 처리할 화면을 찾지 못했습니다.');};
+    const route=RECORD_ROUTE[type],target=route&&window.V2Screens?.target(route.screen);
+    if(!route||!target){fallback();return;}
+    const who=v2Actor(c),query=new URLSearchParams({...route.query(id),...(who?{[route.key]:who}:{})});
+    if(route.probe){
+      const accepted=await fetch(`/api/v2/${route.screen}?${query}`,{headers:{Accept:'application/json'}}).then(async r=>{await r.body?.cancel();return r.ok;}).catch(()=>false);
+      if(!accepted){fallback();return;}
+    }
+    openPeek({page:`${target.slice(1)}?${query}`},opener);
+  }
   function openPeek(spec,opener){
     if(!api.hasView(spec.page)){toast('처리할 화면을 찾지 못했습니다.');return;}
     if(PEEK){document.querySelectorAll('dialog[open]').forEach(d=>d.close());moveTo(spec);return;}
@@ -1110,6 +1135,7 @@ window.createFlowUI = function createFlowUI(api) {
     if(action==='bulk-reassign'){openBulkReassign();return;}
     // 관련 기록 한 줄 — 작업 공간이 있으면 엿보기 창에 그 기록, 없으면 이 화면의 기록 상세.
     if(action==='rec-open'){const {family,record}=el.dataset;closeRecPop();if(family&&api.hasView(`workspace-${family}`)){openPeek({page:`workspace-${family}`,family,record},el);return;}if(record&&api.canOpenRecord?.(record)){document.querySelectorAll('dialog[open]').forEach(d=>d.close());api.openRecord(record);}return;}
+    if(action==='rec-process'){const {family,type,record}=el.dataset,c=caseById(el.dataset.case);if(!c||!family||!record)return;closeRecPop();processRecord(c,family,type,record,el);return;}
     // 쪽 이동 — 표만 다시 그리고, 표 머리가 화면 위로 지나갔으면 표 처음으로 눈에 보이게 옮긴다.
     if(action==='page'){const key=el.dataset.pageList||'';store.pages[key]=Number(id)||1;if(key==='board')paintBoardList();else api.render();const top=document.querySelector(key==='board'?'#fl-board-list':`:is(.fl-list,.fl-tbody)[data-list="${CSS.escape(key)}"]`);if(top&&top.getBoundingClientRect().top<0)api.scrollToSection(top);document.querySelector(`.fl-pager [data-page-list="${CSS.escape(key)}"][aria-current="page"]`)?.focus({preventScroll:true});return;}
     if(action==='col'){const key=el.dataset.col;if(colMenu.key===key)closeColMenu();else openColMenu(key);return;}

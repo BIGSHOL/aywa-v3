@@ -285,7 +285,9 @@
 .fl-rectable tr.can:hover{background:var(--ax-soft)}
 .fl-rectable tr.can:hover th button{color:var(--ax-primary);text-decoration:underline;text-underline-offset:3px}
 .fl-rectable :is(th,td).al-c{text-align:center}.fl-rectable :is(th,td).al-r{text-align:right;font-variant-numeric:tabular-nums}
-.fl-rectable .fl-rec-go{width:16px;padding-right:2px}.fl-rectable .fl-rec-go .icon{width:16px;height:16px}
+.fl-rectable .fl-rec-go{width:4.5em;padding-right:2px;text-align:center}.fl-rectable .fl-rec-go .icon{width:16px;height:16px}
+.fl-rectable .fl-rec-process{min-height:var(--ax-control-h);padding:0 10px;border:1px solid var(--ax-line);border-radius:6px;background:#fff;color:var(--ax-primary);font:inherit;cursor:pointer}
+.fl-rectable .fl-rec-process:hover,.fl-rectable .fl-rec-process:focus-visible{border-color:var(--ax-primary);text-decoration:underline}
 /* 기록 창은 표 폭만큼 넓어진다(기본 창 510px에 가두면 칸이 많은 기록이 옆으로 넘친다). 칸은 14em에서 말줄임 · 스크롤바는 숨긴다. */
 #modal:has(.fl-recs-modal){width:fit-content;min-width:min(32rem,calc(100vw - 28px));max-width:min(84rem,calc(100vw - 80px))}
 .fl-recs-modal{overflow-x:auto;scrollbar-width:none}.fl-recs-modal::-webkit-scrollbar{display:none}
