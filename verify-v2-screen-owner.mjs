@@ -11,6 +11,7 @@ import { openFullDatabase, tenantId } from './full-db.mjs';
 import { importV2 } from './v2-bridge.mjs';
 import * as M from './v2-screen-owner.mjs';
 import { build } from './v2-host/build.mjs';
+import { readV2, stopV2Server } from './v2-server-runner.mjs';
 
 const done = [];
 const check = async (name, fn) => { await fn(); done.push(name); };
@@ -22,7 +23,7 @@ const fd = obj => ({ $formData: Object.entries(obj).map(([k, v]) => [k, typeof v
 await check('주소 열쇠 = 2.0 page.tsx가 서버에서 읽는 칸(tab · year · sub) + 보는 사람(viewer)', async () => {
   const page = lf(await src('app/(shell)/owner/page.tsx'));
   for (const k of ['tab', 'year', 'sub']) assert.match(page, new RegExp(`sp\\.${k}\\b`));
-  assert.deepEqual(Object.keys(M.screen.params).sort(), ['page', 'sub', 'tab', 'viewer', 'year']);
+  assert.deepEqual(Object.keys(M.screen.params).sort(), ['action', 'from', 'page', 'q', 'sub', 'tab', 'to', 'viewer', 'year']);
 });
 
 await check('그리기 = 2.0 owner/page.tsx 글자 그대로 — 바꾼 곳은 서버에서만 나오는 값 셋과 서버 컴포넌트 면(owner-page.swaps.json)', async () => {
@@ -35,7 +36,7 @@ await check('그리기 = 2.0 owner/page.tsx 글자 그대로 — 바꾼 곳은 �
     const i = page.indexOf(a); assert.ok(mine.includes(page.slice(i, page.indexOf(b, i) + b.length)), a);
   }
   // 바꾼 자리 = 서버 값 셋(자리 PIN 상태 · 휴일 · 권한 token) + 서버 컴포넌트 면 — 2.0 클라 부품(섹션 폼)은 손대지 않았다
-  assert.equal(swaps.filter(([, to]) => /OwnerServerFace|OwnerIntegrationsFace|PopupsManager/.test(to)).length, swaps.length - 3);
+  assert.equal(swaps.filter(([, to]) => /OwnerServerFace|OwnerIntegrationsFace|OwnerAuditFace|PopupsManager/.test(to)).length, swaps.length - 3);
   assert.ok(swaps.some(([from, to]) => from === '<PopupsFace />' && to === '<PopupsManager items={popups ?? []} />'), '팝업 공지 = popups-face.tsx 본문(<PopupsManager items={items} />) 그대로');
   assert.match(lf(await src('app/(shell)/owner/_components/popups-face.tsx')), /const items = await listPopups\(\);\n  return <PopupsManager items=\{items\} \/>;/);
   // 연동 면 = integrations-face.tsx · sheets-face.tsx 본문 그대로(서버 카드만 '아직' — owner-integrations.swaps.json)
@@ -49,6 +50,19 @@ await check('그리기 = 2.0 owner/page.tsx 글자 그대로 — 바꾼 곳은 �
   assert.ok(integ.includes(sret), 'sheets-face 본문(구글 시트 절은 그대로)');
   assert.ok(sret.includes('<SubjectSheetCard key={s} subject={s} label={subjectMaps.labelOf(s)} status={sheetStatuses[i]} />'));
   for (const [from] of swaps) assert.doesNotMatch(from, /<(Profile|Operations|Subjects|Billing|Notifications|Consultations|Permissions|Navigation|Modules|Makeups)Section/);
+});
+
+await check('감사로그 그리기 = 2.0 표·필터 부품 · 액션 한글 라벨 515개 동등 · GET 폼은 호스트 안에서 이동', async () => {
+  const source = lf(await src('features/audit/server/log.ts'));
+  const labelsSource = source.split('export const AUDIT_ACTIONS = {')[1].split('} as const;')[0];
+  const labels = Object.fromEntries([...labelsSource.matchAll(/^\s*([A-Za-z_][\w]*):\s*"([^"\\]*)",?/gm)].map(m => [m[1], m[2]]));
+  const generated = JSON.parse(await here('./v2-host/src/owner-audit-actions.json'));
+  assert.equal(Object.keys(labels).length, 515);
+  assert.deepEqual(generated, labels);
+  const face = lf(await here('./v2-host/src/owner-audit.tsx'));
+  for (const text of ['작업 이력', '감사로그 텍스트 검색', '검색 시작일', '검색 종료일', '감사로그 조회 중 오류가 발생했어요', 'Pagination']) assert.ok(face.includes(text), text);
+  assert.match(face, /onSubmit=\{\(event\) => \{[\s\S]*event\.preventDefault\(\);[\s\S]*hostNavigate\(`/);
+  assert.doesNotMatch(face, /from ["']@\/features\/audit\/server\/log/);
 });
 
 const db = await openFullDatabase();
@@ -210,7 +224,30 @@ try {
       });
     } catch (e) { if (e !== ROLL) throw e; }
   });
-} finally { await db.end(); }
+  await check('감사로그 = 원장 전용 · 2.0 조회 함수의 50행/총수/정렬/기간/검색 결과 · 이름 해석 · 다른 면의 불필요한 조회 없음', async () => {
+    const page = (await load({ tab: 'audit' })).page;
+    assert.equal(page.canReadAudit, true);
+    assert.ok(page.audit && page.audit.rows.length <= 50 && page.audit.total >= page.audit.rows.length);
+    assert.deepEqual(page.audit.rows.map(r => r.createdAt), [...page.audit.rows.map(r => r.createdAt)].sort().reverse());
+    const original = (await readV2('features/audit/server/log.ts', 'getAuditLogsPage', [{ action: undefined, q: '', dateFrom: undefined, dateTo: undefined }, 1, 50],
+      { actorId: base.viewer.id, tenantId })).value;
+    assert.deepEqual(page.audit.rows, original.rows);
+    assert.equal(page.audit.total, original.total);
+    const names = (await readV2('features/audit/server/log.ts', 'getAuditNameMap', [original.rows], { actorId: base.viewer.id, tenantId })).value;
+    assert.deepEqual(page.audit.names, Object.fromEntries(names));
+    assert.equal((await load({ tab: 'profile' })).page.audit, null);
+    const filter = { tab: 'audit', action: 'owner_settings_update', q: '김', from: '2026-10-01', to: '2026-10-28', page: '1' };
+    const filtered = (await load(filter)).page.audit;
+    const expected = (await readV2('features/audit/server/log.ts', 'getAuditLogsPage', [
+      { action: filter.action, q: filter.q, dateFrom: filter.from, dateTo: filter.to }, 1, 50], { actorId: base.viewer.id, tenantId })).value;
+    assert.deepEqual(filtered.rows, expected.rows);
+    assert.equal(filtered.total, expected.total);
+    if (admin) {
+      const denied = await load({ tab: 'audit', viewer: admin.id });
+      assert.ok(denied.route !== 'page' || denied.page.audit === null, '위임 계정은 감사로그 데이터를 받지 않는다');
+    }
+  });
+} finally { await stopV2Server(); await db.end(); }
 
 await check('호스트: 2.0 부품을 고치지 않고 묶인다 — 서버 전용 유입 0 · 운영 주소·외부 호출 0', async () => {
   const outdir = path.join(os.tmpdir(), `v2-host-verify-owner-${process.pid}`);

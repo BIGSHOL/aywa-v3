@@ -12,6 +12,7 @@ import { UUID, loadRules } from './v2-mcs-core.mjs';
 import { ownerActions } from './v2-owner-save.mjs';
 import { integrationsView, integrationActions } from './v2-owner-integrations.mjs';
 import { listPopups, popupActions } from './v2-owner-popups.mjs';
+import { loadOwnerAudit } from './v2-owner-audit.mjs';
 
 const ID = 'owner';
 const plain = v => !!v && typeof v === 'object' && !Array.isArray(v);
@@ -168,13 +169,14 @@ async function ownerPage({ sql, t, R, O, sp, viewers, viewer, settings, row, imp
   const hiddenSettingKeys = [];
   if (showsPermissions && !(await featureLicensed(sql, t, 'ai_analysis'))) hiddenSettingKeys.push('ai_ment');
   if (settings.modules.disabled.includes('payroll')) hiddenSettingKeys.push('attendance_salary_settings', 'payroll_settings');
-  const [classrooms, teacherLabels, periodDefs, names, staff, supers] = await Promise.all([
+  const [classrooms, teacherLabels, periodDefs, names, staff, supers, audit] = await Promise.all([
     tab === 'operations' ? classroomsWithUsage(sql, t, today) : [],
     tab === 'subjects' ? teacherLabelsBySubject(sql, t, O) : {},
     tab === 'subjects' ? periodDefsForEditor(sql, t, sessionYear) : [],
     permissionPeople.length ? sql`select id::text id, display_name from public.users where tenant_id=${t} and id = any(${[...new Set(permissionPeople)]}::uuid[])` : [],
     permissionsSource ? sql`select id::text id, display_name, system_role::text role from public.users where tenant_id=${t} and status::text <> 'inactive' and system_role::text <> 'student' order by display_name limit 1000` : [],
     permissionsSource ? sql`select id::text id from public.super_admins` : [],
+    tab === 'audit' && canReadAudit ? loadOwnerAudit(viewer.id, t, sp, settings.operations.subjects) : null,
   ]);
   const operators = new Set(supers.map(s => s.id));
   // 🔴 설정 전체(자리 PIN · 권한 원본 …)를 브라우저에 보내지 않는다 — 2.0 page.tsx도 면마다 그 섹션만 부품에 넘긴다. 머리(학원 이름)·탭(preset · modules)은 늘, 나머지는 그 면일 때만.
@@ -201,6 +203,7 @@ async function ownerPage({ sql, t, R, O, sp, viewers, viewer, settings, row, imp
     navigationGates: null,
     integrations: tab === 'sheets' ? await integrationsView(sql, t, R, settings, viewer) : null,
     popups: tab === 'popups' ? await listPopups(sql, t, importV2) : null,
+    audit,
   };
 }
 
@@ -215,7 +218,8 @@ export const screen = {
   id: ID, label: '학원 설정', order: 20,
   // 저장 = 2.0 saveOwnerSection(v2-owner-save.mjs) — 저장하는 사람 = 보는 사람.
   actions: { ...ownerActions(ownerIo), ...integrationActions(ownerIo), ...popupActions(ownerIo) },
-  params: { viewer: UUID, tab: /^[a-z_]{1,24}$/, year: /^\d{4}$/, sub: /^[a-zA-Z_]{1,24}$/, page: /^\d{1,4}$/ },
+  params: { viewer: UUID, tab: /^[a-z_]{1,24}$/, year: /^\d{4}$/, sub: /^[a-zA-Z_]{1,24}$/, page: /^\d{1,4}$/,
+    action: /^[a-z0-9_]{1,80}$/, q: /^[\s\S]{0,200}$/, from: /^\d{4}-\d{2}-\d{2}$/, to: /^\d{4}-\d{2}-\d{2}$/ },
   load: async ({ sql, params: sp, tenantId: t, importV2 }) => {
     const [R, O] = await Promise.all([loadRules(importV2), loadOwnerRules(importV2)]);
     const row = await readSettingsRow(sql, t);

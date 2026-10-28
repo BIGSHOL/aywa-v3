@@ -24,6 +24,7 @@ import { OwnerServerFace } from "./owner-server-face";
 import { OwnerIntegrationsFace, type OwnerIntegrationsData } from "./owner-integrations";
 import { PopupsManager } from "@/app/(shell)/owner/_components/popups-manager";
 import type { AdminPopup } from "@/features/notices/server/queries";
+import { OwnerAuditFace, type OwnerAuditData } from "./owner-audit";
 
 type Sp = Record<string, string | undefined>;
 
@@ -63,6 +64,8 @@ export type OwnerPageData = {
   integrations: OwnerIntegrationsData | null;
   /** 팝업 공지 면(tab=popups)일 때만 — popups-face.tsx가 listPopups로 받던 목록. */
   popups: AdminPopup[] | null;
+  /** 감사로그 면(tab=audit)에서만 읽은 원본 조회 결과. */
+  audit: OwnerAuditData | null;
 };
 
 function facesFor(canReadAudit: boolean, showModules: boolean, showMakeups: boolean, showEvaluation: boolean, showContribution: boolean): OwnerFaceDef[] {
@@ -91,7 +94,7 @@ function fmt(iso: string | null): string {
 export function OwnerHostPage({ d, sp }: { d: OwnerPageData; sp: Sp }) {
   const { settings, meta, tab, canEditSettings, canReadAudit, isMaster, showMakeups, showEvaluation, showContribution, showsOperations, canEditOperations, settingsUnreadable,
     operationsTokens, operationsForClient, seatPin, classrooms, canImportClassrooms, teacherLabelsBySubject, periodDefs, sessionYear, holidayDates, permissionsSource,
-    permissionsTok, userOverrideNames, permissionStaff, hiddenPermissionIds, hiddenSettingKeys, navigationGates, integrations, popups } = d;
+    permissionsTok, userOverrideNames, permissionStaff, hiddenPermissionIds, hiddenSettingKeys, navigationGates, integrations, popups, audit } = d;
   // 2.0 page.tsx와 같은 식 — 연동 면 makeedu 실행 이력 쪽(지금은 '아직')이 쓴다.
   const page = Math.max(1, Number(sp.page) || 1);
   const allowedTabs = new Map<OwnerFaceKey, boolean>(d.allowedTabEntries);
@@ -261,7 +264,7 @@ export function OwnerHostPage({ d, sp }: { d: OwnerPageData; sp: Sp }) {
           권한이 없으면 조회 자체를 안 한다(빈 표를 보여 주고 "기록 없음"이라 적으면 거짓말이 된다). */}
       {tab === "audit" ? (
         canReadAudit ? (
-          <OwnerServerFace face="audit" />
+          <OwnerAuditFace d={audit!} sp={sp} />
         ) : (
           <div className="bg-card border-line rounded-2xl border p-6">
             <p className="text-foreground text-sm font-bold">감사로그는 원장만 볼 수 있습니다</p>

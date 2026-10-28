@@ -26,7 +26,7 @@ type Data = {
 };
 
 /** 2.0 page.tsx searchParams 중 서버가 다시 그리던 열쇠(면 · 세션 연도 · 연동 하위 탭). */
-const KEYS = ['tab', 'year', 'sub', 'page'] as const;
+const KEYS = ['tab', 'year', 'sub', 'page', 'action', 'q', 'from', 'to'] as const;
 const ACTOR_KEY = 'v2-host-actor:owner';
 const storedActor = () => { try { return localStorage.getItem(ACTOR_KEY); } catch { return null; } };
 

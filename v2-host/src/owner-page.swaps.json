@@ -41,6 +41,6 @@
  ],
  [
   "<AuditFace action={sp.action} q={sp.q} from={sp.from} to={sp.to} page={page} isEmbed={isEmbed} />",
-  "<OwnerServerFace face=\"audit\" />"
+  "<OwnerAuditFace d={audit!} sp={sp} />"
  ]
 ]
