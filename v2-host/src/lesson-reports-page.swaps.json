@@ -1,0 +1,28 @@
+{
+ "page": [
+  [
+   "export default async function LessonReportsPage({ searchParams }: { searchParams: Promise<Sp> }) {\n  const sp = await searchParams;",
+   "export function LessonReportsPage({ data, searchParams }: { data: LessonReportsData; searchParams: Sp }) {\n  const sp = searchParams;"
+  ],
+  [
+   "  const viewer = await requireAccess(sp.tab === \"report\" ? \"report_settings\" : sp.tab === \"ai_ment\" ? \"ai_ment\" : \"lesson_reports\");",
+   "  const viewer = data.viewer;"
+  ],
+  [
+   "  const [canReportSettings, canAiMent, canEditReportSettings, canEditAiMent, canSendReports, canReports] = await Promise.all([\n    canAccessTenant(viewer.systemRole, \"report_settings\"),\n    canAccessTenant(viewer.systemRole, \"ai_ment\"),\n    canWriteTenant(viewer.systemRole, \"report_settings\"),\n    canWriteTenant(viewer.systemRole, \"ai_ment\"),\n    canWriteTenant(viewer.systemRole, \"lesson_reports\"), // 목록 탭 관리자 발송 열 노출(viewer는 열람만)\n    canAccessTenant(viewer.systemRole, \"lesson_reports\"),\n  ]);",
+   "  const [canReportSettings, canAiMent, canEditReportSettings, canEditAiMent, canSendReports, canReports] = [\n    data.gates.canReportSettings,\n    data.gates.canAiMent,\n    data.gates.canEditReportSettings,\n    data.gates.canEditAiMent,\n    data.gates.canSendReports, // 목록 탭 관리자 발송 열 노출(viewer는 열람만)\n    data.gates.canReports,\n  ];"
+  ],
+  [
+   "  const [tenantSettings, aiOn] = await Promise.all([getTenantSettings(), isFeatureLicensed(viewer.tenantId, \"ai_analysis\")]);",
+   "  const [tenantSettings, aiOn] = [data.settings, data.aiOn];"
+  ],
+  [
+   "  if (tab !== \"report\" && tab !== \"ai_ment\" && !canReports) await requireAccess(\"lesson_reports\");",
+   "  if (tab !== \"report\" && tab !== \"ai_ment\" && !canReports) notFound();"
+  ],
+  [
+   "  const queueP = tab === \"queue\" && classnoteOn ? getClassnoteQueue(3) : Promise.resolve(null);\n  const tabP =\n    tab === \"queue\"\n      ? Promise.resolve({ rates: null })\n      : tab === \"writing\"\n      ? // 범위 = 기본 이번 주, `?rmonth=YYYY-MM`이면 그 달(월간 매트릭스). 파라미터 하나로 같은 쿼리를 재사용.\n        getWeeklyWritingRates(/^\\d{4}-\\d{2}$/.test(sp.rmonth ?? \"\") ? sp.rmonth : undefined).then((rates) => ({\n          rates,\n        }))\n      : tab === \"boards\"\n          ? getBoardRosterCheck().then((boardRoster) => ({ boardRoster }))\n        : tab === \"report\"\n          ? Promise.all([getTenantSettings(), getReportTeacherCandidates(), getVideoHomeworkClassOptions(viewer.tenantId)]).then(([settings, cand, videoClasses]) => ({\n              reportSettings: settings.report,\n              teachers: cand.bySubject,\n              staffNames: cand.staffNames,\n              videoClasses,\n            }))\n          : tab === \"notice\"\n            ? Promise.all([getNoticeClassOptions(), listClassNotices(), listClassWideNotices()]).then(([cls, notices, wide]) => ({\n                noticeClasses: cls.classes ?? [],\n                noticeRows: notices.rows ?? [],\n                // 반 단체 공지(0304a) — 표가 없거나 실패하면 빈 값(원생 개별 공지 화면은 그대로 산다).\n                classWide: { rows: wide.rows ?? [], boardClassIds: wide.boardClassIds ?? [] },\n              }))\n          : tab === \"compose\"\n            ? Promise.all([getStudentsList({ status: \"enrolled\" }), getTenantSettings(), getNoticeClassOptions()]).then(\n                ([rows, settings, cls]) => ({\n                  composeStudents: rows.map((s) => ({ id: s.id, name: s.name, school: s.school, grade: s.grade })),\n                  composeClasses: cls.classes ?? [],\n                  composeSendEnabled: classnoteSendOn(settings),\n                  composeShowDailyTest: settings.report.showDailyTest,\n                  composeShowCheckTest: settings.report.showCheckTest,\n                  composeShowAttachments: settings.report.showAttachments,\n                }),\n              )\n          : tab === \"parent_replies\"\n            ? // 학부모 글·답글(0317a) — 최근 14일 원문 + 답글 상태. 조회 실패는 빈 목록 대신 안내(아래).\n              listParentThreads({ mode: replyMode, user: viewer, page: sp.page }).then((parentThreads) => ({ parentThreads }), () => ({ parentThreads: null }))\n          : tab === \"recall\"\n            ? // 회수는 **검색해서 찾는** 화면이라 첫 페인트에 목록을 싣지 않는다(전건을 띄우면 오클릭 거리만 는다).\n              getReportFilterOptions().then((filterOptions) => ({ recallOptions: filterOptions }))\n          : tab === \"ai_ment\"\n            ? // 프롬프트와 강사 말투 목록은 서로 독립 — 직렬 금지(B4).\n              Promise.all([getActivePrompts(), getMentStyleRows()]).then(([r, styles]) => ({\n                aiPrompts: r.prompts ?? [],\n                mentStyles: styles,\n              }))\n            : // 첫 페인트도 클라 초기 state와 **같은 기본 범위**(이번 달)로 — 안 맞추면 열자마자 목록이 한 번 바뀐다.\n              // `?status=` — 알림·발송 큐 카드가 \"미발송 N건\"에서 이 목록으로 곧장 보낸다(그 N건만 걸러서).\n              Promise.all([\n                getReportFilterOptions(),\n                listReports(defaultReportFilters(kstToday(), sp.status)),\n              ]).then(([filterOptions, firstPage]) => ({\n                filterOptions,\n                initialList: {\n                  rows: firstPage.rows ?? [],\n                  total: firstPage.total ?? 0,\n                  page: firstPage.page ?? 0,\n                  pageSize: firstPage.pageSize ?? 30,\n                },\n              }));\n\n  const [queue, tabData] = await Promise.all([queueP, tabP]);",
+   "  // 활성 탭의 자료 = 서버(v2-screen-lesson-reports.mjs)가 page.tsx와 같은 면만 읽어 보낸다.\n  const [queue, tabData] = [data.queue, data.tabData];"
+  ]
+ ]
+}

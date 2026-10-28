@@ -1,0 +1,28 @@
+{
+ "page": [
+  [
+   "import { requireAccess } from \"@/lib/auth/require-access\";\n",
+   ""
+  ],
+  [
+   "import { getTenantSettings } from \"@/features/owner/server/queries\";\n",
+   ""
+  ],
+  [
+   "import { loadReportStats } from \"@/features/lesson-reports/stats/load\";\nimport { PERIOD_KEYS, readPeriodParams } from \"@/features/stats/period\";\n",
+   "import type { loadReportStats } from \"@/features/lesson-reports/stats/load\";\nimport type { TenantSettings } from \"@/features/owner/settings-types\";\nimport { PERIOD_KEYS } from \"@/features/stats/period\";\n"
+  ],
+  [
+   "import { BackToListButton } from \"../../consultations/_components/back-to-list-button\";\nimport { StatCard } from \"../../students/stats/_components/stat-card\";\nimport { ReportTrendCard } from \"./report-trend-card\";\nimport { CardNow } from \"./card-now\";\n",
+   "import { BackToListButton } from \"@/app/(shell)/consultations/_components/back-to-list-button\";\nimport { StatCard } from \"@/app/(shell)/students/stats/_components/stat-card\";\nimport { ReportTrendCard } from \"@/app/(shell)/lesson-reports/stats/report-trend-card\";\nimport { CardNow } from \"@/app/(shell)/lesson-reports/stats/card-now\";\n"
+  ],
+  [
+   "export const metadata = { title: \"보고서 통계 — 에이와\" };\n\n",
+   ""
+  ],
+  [
+   "export default async function ReportStatsPage({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {\n  await requireAccess(\"lesson_reports\");\n  const sp = await searchParams;\n  const [stats, settings] = await Promise.all([loadReportStats(readPeriodParams(sp), one(sp.subject)), getTenantSettings()]);\n",
+   "export function ReportStatsPage({ sp, stats, settings }: { sp: Record<string, string | string[] | undefined>; stats: Awaited<ReturnType<typeof loadReportStats>>; settings: Pick<TenantSettings, \"operations\"> }) {\n  // 게이트 · 자료 = 서버가 2.0 requireAccess(\"lesson_reports\") · loadReportStats(readPeriodParams(sp), sp.subject) · getTenantSettings를 복사본에서 낸 값.\n"
+  ]
+ ]
+}
