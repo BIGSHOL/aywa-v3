@@ -12,7 +12,8 @@
   'use strict';
   const ID = 'attendance', HOST = `/v2-host/${ID}.html`, S = window.V2Screens; if (!S) return;
   // 2.0 page.tsx가 읽는 주소 열쇠 그대로(class·month·teacher·subject·mode·q).
-  const KEEP = ['month', 'subject', 'teacher', 'class', 'mode', 'q'];
+  // 하위 주소는 v2path(2.0 `/attendance/seat/<자리>` — 날짜 date · 교시 start)로 iframe에 간다(shims/host-nav.ts 규칙).
+  const KEEP = ['v2path', 'month', 'subject', 'teacher', 'class', 'mode', 'q', 'date', 'start'];
   const ACTOR_KEY = `v2-host-actor:${ID}`, SEL = `[data-v2-screen="${ID}"]`;
   let api = null, frame = null, requested = null, hostOk = null, wired = false, editors = [], actor = null;
   const esc = s => S.esc(s);

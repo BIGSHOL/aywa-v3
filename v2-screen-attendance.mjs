@@ -21,16 +21,26 @@
 //        actions.ts setAttendanceRange(범위 지우기·채우기) · setAttendanceBulk · saveAttendance · linkMakeupToAbsence · searchMakeupStudents
 //        makeup-reservation-actions.ts getMakeupPeriodOptions · reserveMakeup · cancelMakeupReservation · setReservationReportMode
 //        prefs-actions.ts loadAttendanceViewPrefs(서버 전용 — load가 같은 값)
-// "오늘"은 복사본 기준일(백업 시각의 KST 날짜) — 3.0 다른 화면과 같은 날이다.
+//  · 하위 주소(v2path) — 2.0 `/attendance/seat/<자리>`(자리 하루: SeatAllDay·SeatJjAllDay·SeatBoard) · `…/month`(자리 월간: MonthlyTable) ·
+//    `/attendance/seat`(첫 자리로 redirect). 조회·props는 v2-attendance-seat.mjs(2.0 seat/page.tsx·month/page.tsx와 같은 값).
+//    자리 쪽 2.0 서버 함수(아직 받지 않음 — 부품이 모두 `"error" in res`로 읽어 shim 공통 거절이 안전): seat/server/actions.ts setSeatCell ·
+//    fillSeatSlot · fillSeatPrevAbsent / mark-actions.ts setSeatJjField · commitSeatJjEdits / period-actions.ts moveSeatStudentPeriod ·
+//    clearSeatPeriodChoices / placement-actions.ts resetSeatPlacements / memorized-actions.ts pullSeatMemorizedWords(바깥 인재원 연동) /
+//    monthly-prefs.ts saveSeatMonthlyCollapsed / jj-plan-actions.ts 6개 · class-sheets/server/actions.ts · textbooks/server/plan-actions.ts(JJ 계획 편집 — 영어 시트와 같은 기계).
+// "오늘"은 복사본 기준일(백업 시각의 KST 날짜) — 3.0 다른 화면과 같은 날이다. 자리 화면의 기본 교시는 복사본 기준 시각으로 고른다.
 //
 // ── 호스트에 붙일 때(v2-host 빌드가 출석부 진입점에서 닿는 것 — 2.0 Next에만 있는 경계) ──
-//  · "use server" 모듈 5개(빌드가 serverAction 자리표시로 바꾼다): features/attendance/server/actions.ts ·
-//    features/attendance/server/prefs-actions.ts · features/attendance/server/makeup-reservation-actions.ts ·
-//    features/attendance/server/hub-search-actions.ts · features/attendance/intake/server/actions.ts
+//  · "use server" 모듈(빌드가 serverAction 자리표시로 바꾼다) — 월별: features/attendance/server/actions.ts · server/prefs-actions.ts ·
+//    server/makeup-reservation-actions.ts · server/hub-search-actions.ts · intake/server/actions.ts / 자리: features/attendance/seat/server/
+//    actions.ts · mark-actions.ts · period-actions.ts · placement-actions.ts · memorized-actions.ts · monthly-prefs.ts · jj-plan-actions.ts /
+//    JJ 계획 부품이 함께 부르는 것: features/class-sheets/server/actions.ts · class-sheets/server/edit-audit-actions.ts ·
+//    textbooks/server/plan-actions.ts · textbooks/server/compare-actions.ts · textbooks/server/shift-undo-actions.ts
 //  · next/navigation(shims/next-navigation): attendance/_components의 grid-context · cell-popover · sort-select · period-mode-toggle ·
 //    hide-retired-toggle · makeup-reserve-dialog · absence-intake-dialog, components의 filter-select · href-select · period-nav ·
-//    excel-import/excel-import-dialog · workspace/print-window · forms/recording-runtime · forms/use-frame-recordings · workspace/use-recording-lock
-//  · next/link: components/embed-link · components/workspace/window-link  · next/image: components/empty-state
+//    excel-import/excel-import-dialog · workspace/print-window · forms/recording-runtime · forms/use-frame-recordings · workspace/use-recording-lock ·
+//    seat/[seat]/_components의 memorized-pull-button · seat-all-day · seat-board-moves · seat-board-saves · owner/menu-page-title · owner/navigation-context
+//  · next/link: components/embed-link · workspace/window-link · seat/[seat]/_components의 seat-drop-zones · seat-jj-table · seat-period-chips ·
+//    seat/[seat]/month/_components/monthly-row  · next/image: components/empty-state
 //  · server-only·next/cache: 닿는 곳 없음(서버 액션 모듈 안에만 있고, 그 모듈은 자리표시로 바뀐다).
 //  · 서버 부품이라 브라우저에 못 싣는 것 = page.tsx 자체(쿠키·세션·DB) → 이 파일의 load. 금액 열(청구액·등록 차수·단가·실급여)은
 //    회차 확정·금액 이월·강사 몫 조회를 아직 옮기지 않아 세우지 않는다(값 없는 열 = 거짓).
@@ -38,6 +48,7 @@ import { readFile } from 'node:fs/promises';
 import { activeBackup } from './full-db-paths.mjs';
 import { scrub } from './domain-snapshot-core.mjs';
 import { V2Error } from './v2-screens.mjs';
+import { loadSeatRules, seatDayProps, seatMonthProps } from './v2-attendance-seat.mjs';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const MODULES = {
@@ -571,15 +582,18 @@ function pickViewer(editors, wanted) {
 export const screen = {
   id: 'attendance', label: '출석부', order: 4,
   // 2.0 `/attendance` searchParams(class·month·teacher·subject·mode·q) + 보는 사람(viewer).
+  // 하위 주소(v2path) = 2.0 `/attendance/seat/<자리>`(searchParams date·start).
   params: {
     month: /^\d{4}-(0[1-9]|1[0-2])$/, subject: /^[a-z][a-z0-9_]{0,30}$/, teacher: /^(?:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|seat:[a-z]{2,8})$/,
     class: UUID, mode: /^[a-z]{1,12}$/, q: /^[^\u0000-\u001f]{1,80}$/u, viewer: UUID,
+    v2path: /^\/attendance(?:\/seat(?:\/[a-z]{1,8}(?:\/month)?)?)?$/, date: /^\d{4}-\d{2}-\d{2}$/, start: /^(?:\d{2}:\d{2}|all)$/,
   },
   /**
    * 2.0 page.tsx(서버 부품)가 JSX에 넘기는 값을 같은 이름·같은 모양으로 — 그리기는 호스트의 2.0 부품(attendance-page.tsx)이 한다.
    * 그룹마다 `matrix`는 2.0 `AttendanceMatrix` 그대로다(단, 표가 안 읽는 `classes` 목록은 그룹마다 싣지 않고 맨 위 `base.classes` 한 벌만).
    */
   async load({ sql, params, tenantId: t, importV2 }) {
+    if (params.v2path && params.v2path !== '/attendance') return seatLoad({ sql, params, t, importV2 });
     const R = await loadRules(importV2), today = await copyDay();
     const [settings, transitions] = await Promise.all([readSettings(sql, t, R), readTransitions(sql, t, R)]);
     const editors = await actorsOf(sql, t, R, settings), viewer = pickViewer(editors, params.viewer);
@@ -690,6 +704,31 @@ export const screen = {
     };
   },
 };
+
+/**
+ * 하위 주소 — 2.0 `/attendance/seat`(첫 자리로 redirect) · `/attendance/seat/<자리>`(자리 하루, v2-attendance-seat.mjs).
+ * 2.0과 같이 자리 기능(seat_attendance)이 꺼진 학원·없는 자리는 없는 주소(notFound)다.
+ */
+async function seatLoad({ sql, params, t, importV2 }) {
+  const [R, S] = await Promise.all([loadRules(importV2), loadSeatRules(importV2)]);
+  const settings = await readSettings(sql, t, R);
+  const host = { operations: { subjects: settings.operations.subjects, gradeLevels: settings.operations.gradeLevels, jobTitles: settings.operations.jobTitles, jobTitlesByDepartment: settings.operations.jobTitlesByDepartment, holidays: settings.operations.holidays },
+    disabledModules: settings.modules.disabled, preset: settings.preset };
+  if (!R.modules.isModuleEnabled(settings.modules.disabled, 'seat_attendance')) return { page: 'notFound', lang: 'ko', host };
+  const [, , , key, sub] = params.v2path.split('/');
+  if (!key) return { page: 'redirect', lang: 'ko', host, to: `/attendance/seat/${S.seat.USABLE_SEAT_KEYS[0]}` };
+  if (sub === 'month') {
+    // 2.0 month/page.tsx — 아는 자리지만 아직 열지 않은 자리는 안내 화면, 모르는 자리는 notFound.
+    const any = S.seat.parseAnySeatKey(key);
+    if (!any) return { page: 'notFound', lang: 'ko', host };
+    if (!S.seat.parseUsableSeatKey(key)) return { page: 'seatMonthClosed', lang: 'ko', host, seatName: S.seat.SEAT_NAME[any] };
+    const defs = new Map(), defsOf = async year => defs.get(year) ?? defs.set(year, await readPeriodDefs(sql, t, year)).get(year);
+    return { page: 'seatMonth', lang: 'ko', host, ...(await seatMonthProps({ sql, t, R, S, settings, seat: any, params, viewerId: params.viewer, defsOf })) };
+  }
+  const seat = S.seat.parseUsableSeatKey(key);
+  if (!seat || sub) return { page: 'notFound', lang: 'ko', host };
+  return { page: 'seatDay', lang: 'ko', host, ...(await seatDayProps({ sql, t, R, S, settings, seat, params, viewerId: params.viewer })) };
+}
 
 /** 허브 '오늘' 표기 — 2.0은 `Intl.DateTimeFormat('ko-KR', { timeZone: 'Asia/Seoul', month:'long', day:'numeric', weekday:'short' })`(3.0은 복사본 기준일로). */
 const hubTodayLabel = ymd => new Intl.DateTimeFormat('ko-KR', { timeZone: 'Asia/Seoul', month: 'long', day: 'numeric', weekday: 'short' }).format(new Date(`${ymd}T12:00:00+09:00`));

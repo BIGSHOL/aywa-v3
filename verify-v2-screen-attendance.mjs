@@ -369,4 +369,109 @@ test('저장(복사본, 되돌림): 보기 설정 4종 = 2.0 prefs-actions — �
   });
 });
 
+// ── 자리(랩실·JJ실) 출석부 메뉴 — /attendance/seat/<자리>(하루) · …/month(월간) ──
+const SEAT = await import('./v2-attendance-seat.mjs');
+const S = await SEAT.loadSeatRules(importV2);
+const seatLoad = params => loadAs(params);
+
+test('자리: 옮긴 본문이 2.0 원문과 같다(영역 설정 기본값 · 날짜 이동 · 날짜 표기)', async () => {
+  const skill = await src('features/owner/skill-areas.ts'), page = await src('app/(shell)/attendance/seat/[seat]/page.tsx'), mine = await here('v2-attendance-seat.mjs');
+  for (const name of ['DEFAULT_ENGLISH_SKILL_AREAS', 'resolveSkillAreas']) assert.equal(strip(extract(mine, name)), strip(extract(skill, name)), `${name} body`);
+  for (const name of ['shiftDate', 'dateLabel']) assert.equal(strip(extract(mine, name)), strip(extract(page, name)), `${name} body`);
+  const O = original([extract(page, 'shiftDate'), extract(page, 'dateLabel')], ['shiftDate', 'dateLabel']);
+  for (const [d, n] of [['2026-10-31', 1], ['2026-03-01', -1], ['2026-12-31', 1]]) assert.equal(SEAT.shiftDate(d, n), O.shiftDate(d, n));
+  for (const d of ['2026-10-27', '2026-01-01']) assert.equal(SEAT.dateLabel(d), O.dateLabel(d));
+  assert.deepEqual(SEAT.resolveSkillAreas({ key: 'english' }).map(a => a.key), ['vocab', 'listening', 'reading', 'grammar', 'writing', 'speaking']);
+  assert.deepEqual(SEAT.resolveSkillAreas({ key: 'math' }), []); assert.deepEqual(SEAT.resolveSkillAreas({ key: 'english', skillAreas: [{ key: 'x', label: 'X' }] }), [{ key: 'x', label: 'X' }]);
+});
+
+test('자리: 하위 주소·날짜·교시 매개변수는 정해진 값만 받는다', () => {
+  const ok = (k, v) => screen.params[k].test(v);
+  for (const v of ['/attendance', '/attendance/seat', '/attendance/seat/lab', '/attendance/seat/jj/month']) assert.ok(ok('v2path', v), v);
+  for (const v of ['/attendance/seat/lab/print', '/attendance/live', '/attendance/seat/lab/month/x', '/timetable', '/attendance/seat/LAB']) assert.ok(!ok('v2path', v), v);
+  assert.ok(ok('date', '2026-10-27') && !ok('date', '2026-10-27x') && ok('start', '14:20') && ok('start', 'all') && !ok('start', '1420'));
+});
+
+test('자리 호스트 조립이 2.0 page.tsx(하루·월간)와 같은 부품을 그린다', async () => {
+  const day = await src('app/(shell)/attendance/seat/[seat]/page.tsx'), month = await src('app/(shell)/attendance/seat/[seat]/month/page.tsx');
+  const hostDay = await here('v2-host/src/attendance-seat-page.tsx'), hostMonth = await here('v2-host/src/attendance-seat-month.tsx');
+  for (const c of ['TextbookOptionsProvider', 'PageHeader', 'Link', 'MemorizedPullButton', 'PeriodNav', 'EmptyState', 'SeatAllDay', 'SeatJjAllDay', 'SeatBoard']) {
+    assert.match(day, new RegExp(`<${c}\\b`), `seat page draws ${c}`); assert.match(hostDay, new RegExp(`<${c}\\b`), `host draws ${c}`);
+  }
+  for (const c of ['SeatMonthlyCollapse', 'PageHeader', 'MonthlyPrintButton', 'PeriodNav', 'CollapseAllChip', 'MonthlySummary', 'MonthlyLegend', 'MonthlyTable', 'EmptyState']) {
+    assert.match(month, new RegExp(`<${c}\\b`), `month page draws ${c}`); assert.match(hostMonth, new RegExp(`<${c}\\b`), `host draws ${c}`);
+  }
+  for (const text of ['출석부로', '월간', '이전 날', '다음 날', '눌러서 오늘로', '수업이 없습니다']) assert.ok(day.includes(text) && hostDay.includes(text), text);
+  for (const text of ['하루', '이전 달', '다음 달', '눌러서 이번 달로', '아직 열지 않은 자리입니다']) assert.ok(month.includes(text) && hostMonth.includes(text), text);
+});
+
+test('복사본: 자리 하루(랩실) — 교시별 명단·출결이 독립 SQL과 같다(그날 유효한 배치 · 수강 규약 · 등원 요일 · 교시 키)', { skip: !db && 'local database not running' }, async () => {
+  const { tenantId: t } = await import('./full-db.mjs');
+  const DAY = '2026-10-26';
+  const d = await seatLoad({ v2path: '/attendance/seat/lab', date: DAY, start: 'all' });
+  assert.equal(d.page, 'seatDay'); assert.equal(d.view, 'lab'); assert.equal(d.date, DAY); assert.equal(d.today, await A.copyDay());
+  const dow = R.cal.DOW_KEYS[new Date(`${DAY}T00:00:00Z`).getUTCDay()];
+  // 그날 유효한 자리(랩실) 배치 — 라벨 판정은 2.0 specialSlotLabel.
+  const slots = (await db`select class_id::text class_id, start_time::text st, slot_teacher_label l from public.class_schedules where tenant_id=${t} and day_of_week::text=${dow} and slot_teacher_label is not null and valid_from<=${DAY} and (valid_to is null or valid_to>=${DAY})`)
+    .filter(r => R.tlabel.specialSlotLabel(r.l) === S.seat.SEAT_DB_LABEL.lab);
+  assert.deepEqual(d.props.periods.map(p => p.start), [...new Set(slots.map(s => s.st.slice(0, 5)))].sort(), 'periods = distinct seat slot starts');
+  for (const p of d.props.periods) {
+    assert.deepEqual(new Set(p.classIds), new Set(slots.filter(s => s.st.slice(0, 5) === p.start).map(s => s.class_id)), `classes at ${p.start}`);
+    for (const roster of p.rosters) {
+      // 명단 = 그날 유효한 수강(휴원 제외 · 반이동으로 그날 닫힌 수강 제외) ∩ 그 요일 등원.
+      const want = await db`select distinct s.id::text id from public.enrollments e join public.students s on s.id=e.student_id
+        where e.tenant_id=${t} and e.class_id=${roster.classId} and e.on_hold is not true and e.start_date<=${DAY}
+          and (e.end_date is null or e.end_date>${DAY} or (e.end_date=${DAY} and not coalesce(e.is_transferred,false)))
+          and (e.attendance_days is null or cardinality(e.attendance_days)=0 or ${dow}=any(e.attendance_days::text[]))`;
+      assert.deepEqual(new Set(roster.students.map(s => s.id)), new Set(want.map(x => x.id)), `roster ${roster.className} ${p.start}`);
+      // 출결 = 그 교시 키(반·학생·날짜·교시)의 최신 1건(랩실은 급여 자리라 그날 전체 행으로 메우지 않는다).
+      const recs = await db`select distinct on (student_id) student_id::text sid, status::text status from public.attendance_records
+        where tenant_id=${t} and class_id=${roster.classId} and session_date=${DAY} and slot_start::text like ${`${p.start}%`} order by student_id, recorded_at desc, id desc`;
+      const bySid = new Map(recs.map(r => [r.sid, r.status]));
+      for (const s of roster.students) assert.equal(s.status, ['present', 'absent', 'late'].includes(bySid.get(s.id)) ? bySid.get(s.id) : bySid.has(s.id) ? bySid.get(s.id) : null, `${s.name} ${p.start}`);
+    }
+  }
+  assert.ok(d.props.periods.flatMap(p => p.rosters).some(r => r.students.length > 0), 'the day has students');
+  // 지난 날짜 — 출결 쓰기 권한이 있는 사람이 보면 쓰기 가능(2.0 canEditPast).
+  assert.equal(d.readOnly, false);
+});
+
+test('복사본: 자리 하루(JJ실) — 교시 하나 보기 = SeatBoard · JJ 칸은 영어 시트 JJ 폼과 같은 행 · 계획은 영어 시트 권한으로', { skip: !db && 'local database not running' }, async () => {
+  const { tenantId: t } = await import('./full-db.mjs');
+  const d = await seatLoad({ v2path: '/attendance/seat/jj' });
+  assert.equal(d.view, 'board'); assert.equal(d.props.showAllChip, true); assert.ok(d.props.hrefFor.startsWith('/attendance/seat/jj?date='));
+  const p = d.props;
+  const marks = await db`select class_id::text c, student_id::text s, slot_start::text sl, listening_level, memorized_words from public.class_sheet_student_marks where tenant_id=${t} and mark_date=${d.date} and slot_start::text like ${`${p.activeStart}%`}`;
+  const byKey = new Map(marks.map(m => [`${m.c}|${m.s}`, m]));
+  for (const r of p.rosters) for (const s of r.students) {
+    const m = byKey.get(`${r.classId}|${s.id}`);
+    assert.equal(s.listeningLevel, m?.listening_level ?? null); assert.equal(s.memorizedWords, m?.memorized_words ?? null);
+  }
+  // 계획 = 그날 그 교시 계획 줄(영어 반) — 보는 사람이 영어 시트 '전체'라 편집 가능.
+  if (p.plans) for (const [classId, plan] of Object.entries(p.plans.plans)) {
+    const [{ n }] = await db`select count(*)::int n from public.class_sheet_plan_lines where tenant_id=${t} and class_id=${classId} and plan_date=${d.date} and slot_start::text like ${`${p.activeStart}%`}`;
+    assert.equal(plan.lines.length, n, `plan lines ${classId}`); assert.equal(plan.canEdit, true);
+  }
+  // 저장 가능자 = 자리 메뉴 쓰기 권한 ∪ 당번 · 보호 계정 제외 · 원장 먼저.
+  const supers = (await db`select id::text id from public.super_admins`).map(r => r.id);
+  assert.ok(d.editors.length > 0 && d.editors.every(e => !supers.includes(e.id) && e.role));
+});
+
+test('복사본: 자리 월간 — 반 묶음은 그 기간에 자리 배치가 산 반 · 31칸 이상 · 접은 반은 보는 사람 설정', { skip: !db && 'local database not running' }, async () => {
+  const { tenantId: t } = await import('./full-db.mjs');
+  const d = await seatLoad({ v2path: '/attendance/seat/lab/month', month: '2026-10' });
+  assert.equal(d.page, 'seatMonth'); assert.equal(d.month, '2026-10');
+  const w = d.view.window;
+  const live = (await db`select distinct class_id::text c, slot_teacher_label l from public.class_schedules where tenant_id=${t} and slot_teacher_label is not null and valid_from<=${w.end} and (valid_to is null or valid_to>=${w.start})`)
+    .filter(r => R.tlabel.specialSlotLabel(r.l) === S.seat.SEAT_DB_LABEL.lab).map(r => r.c);
+  for (const g of d.view.groups) assert.ok(live.includes(g.classId), `group ${g.className} has a lab slot in the window`);
+  assert.ok(d.view.days.length >= 31); assert.ok(d.view.days.filter(x => !x.placeholder).every(x => x.date >= w.start && x.date <= w.end));
+  // 요약의 학생 수 = 반이 여럿인 학생도 한 번(2.0 buildSeatMonthly).
+  assert.equal(d.view.summary.studentCount, new Set(d.view.groups.flatMap(g => g.students.map(x => x.id))).size);
+  const [row] = await db`select ui_prefs from public.users where id=${d.viewer}`;
+  same(d.collapsed, S.monthlyPrefs.parseSeatMonthlyPrefs(row?.ui_prefs?.seatMonthly).collapsed);
+  assert.equal((await seatLoad({ v2path: '/attendance/seat/zz/month' })).page, 'notFound');
+  assert.equal((await seatLoad({ v2path: '/attendance/seat' })).to, '/attendance/seat/lab', '2.0 redirects to the first usable seat');
+});
+
 test.after(async () => { await db?.end(); });
