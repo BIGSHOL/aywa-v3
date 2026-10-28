@@ -10,7 +10,7 @@ import { OperationsProvider } from "@/features/owner/operations-context";
 import { LessonReportsPage, type LessonReportsData } from "./lesson-reports-page";
 import { setCopyDay } from "./students-shared";
 import { onHostRefresh } from "../shims/host-nav";
-import { registerHostHandler, setHostEditors, VIEW_ONLY } from "../shims/server-action";
+import { hostActor, registerHostHandler, setHostEditors, VIEW_ONLY } from "../shims/server-action";
 import { usePathname, useSearchParams } from "../shims/next-navigation";
 import { HostFrame, HostMessage } from "./host-frame";
 import { LessonReportsStats } from "./lesson-reports-stats";
@@ -47,11 +47,42 @@ registerHostHandler("features/onescreen/server/prompt-actions.ts", "getRecentRep
 registerHostHandler("features/report-admin/server/classnote-sync-actions.ts", "getClassnoteSyncStatus", async () =>
   ((await ask({ cnread: "sync" }))?.cnread ?? { available: false, workerReady: false, active: null, latest: null, report: null, nowMs: Date.now() }));
 registerHostHandler("features/report-admin/server/classnote-sync-actions.ts", "requestClassnoteBoardSync", async () => ({ ok: false, error: VIEW_ONLY }));
+// 발송 요청은 2.0 함수를 Docker에서 실행한다. 대기열에 오른 뒤 2.0의 발송 PC 안내는 연습 복사본 안내로 바꾼다.
+const COPY_QUEUE_NOTICE = "연습 복사본이라 실제로 보내지지 않습니다 — 발송 대기로만 남습니다";
+let queuedToastCount = 0;
+const originalSuccess = toast.success;
+toast.success = ((message, data) => {
+  if (queuedToastCount > 0 && typeof message === "string" && /(?:재)?발송 대기/.test(message)) {
+    queuedToastCount--;
+    return originalSuccess(`${message.replace(" — 발송 PC가 순서대로 보냅니다", "")} · ${COPY_QUEUE_NOTICE}`, data);
+  }
+  return originalSuccess(message, data);
+}) as typeof toast.success;
+const originalMessage = toast.message;
+toast.message = ((message, data) => originalMessage(
+  typeof message === "string" && message.startsWith("dry-run — 승인 전이라 실제")
+    ? "발송 설정이 꺼져 대기열에도 올리지 않았습니다. 연습 복사본에서는 실제로 보내지지 않습니다."
+    : message, data,
+)) as typeof toast.message;
+
+const QUEUE_MODULE = "features/report-admin/server/actions.ts";
+for (const name of ["sendClassnoteForUnsent", "retryClassnote"]) registerHostHandler(QUEUE_MODULE, name, async (...args) => {
+  try {
+    const response = await fetch(`/api/v2/lesson-reports/${name}`, {
+      method: "POST", headers: { "Content-Type": "application/json", Accept: "application/json" },
+      body: JSON.stringify({ module: QUEUE_MODULE, actor: hostActor(), args }),
+    });
+    const body = await response.json().catch(() => null) as { ok?: boolean; result?: unknown; message?: string } | null;
+    if (!response.ok || !body?.ok) return { ok: false, error: body?.message ?? "발송 요청을 저장하지 못했습니다." };
+    const result = body.result as { ok?: boolean; queued?: number; requeued?: number; dryRun?: boolean } | null;
+    if (result?.ok && !result.dryRun && ((result.queued ?? 0) > 0 || (result.requeued ?? 0) > 0)) queuedToastCount++;
+    return result;
+  } catch { return { ok: false, error: "발송 요청을 저장하지 못했습니다." }; }
+});
+
 // 저장(회수 · 멈춤 복구 · 원아 연결 · 프롬프트 · 보고서 설정 · 통계 보기 기억)은 이 화면 actions(v2-lesson-reports-save.mjs)가 받는다 —
 // 여기 적지 않은 함수는 shim이 쓰기 경로로 보낸다. 아래는 그 경로가 받지 않는 저장 — 보내지 않고 그 자리에서 2.0 거절 모양으로.
 const REFUSE: Record<string, string[]> = {
-  // 발송 요청(대기열에 올리기) — 메인 결정 대기.
-  "features/report-admin/server/actions.ts": ["sendClassnoteForUnsent", "retryClassnote"],
   // 직접 발송(면의 읽기 자리가 아직이라 서지 않는다) · 공지 보내기·고치기·취소·회수 · 반 단체 공지 · 답글 · 공감 — 바깥(ClassNote)으로 나가는 일.
   "features/report-admin/server/compose-actions.ts": ["saveAdminReport", "saveAndQueueAdminReport", "sendBulkAdminReports"],
   "features/report-admin/server/notice-actions.ts": ["sendClassNotice"],
@@ -112,6 +143,7 @@ function Page() {
   const ops = data.settings.operations as Parameters<typeof OperationsProvider>[0];
   return (
     <OperationsProvider subjects={ops.subjects} gradeLevels={ops.gradeLevels} jobTitles={ops.jobTitles} jobTitlesByDepartment={ops.jobTitlesByDepartment} disabledModules={data.settings.modules.disabled as never}>
+      <p className="mx-4 mt-3 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900" role="note">{COPY_QUEUE_NOTICE}</p>
       <LessonReportsPage data={data} searchParams={sp} />
       {data.faceMissing ? <p className="text-text-dim py-6 text-center text-sm" role="status">이 면은 연습 화면에서 아직 열 수 없습니다.</p> : null}
     </OperationsProvider>

@@ -9,7 +9,8 @@
 //   · features/onescreen/server/prompt-actions.ts savePrompt · resetPrompt — ai_prompt_overrides(AI 호출 없음 · testPrompt는 계속 거절).
 //   · features/lesson-reports/stats/prefs-actions.ts saveReportStatsMode — 고른 사람의 ui_prefs.reportStats.
 //   · 보고서 설정 saveOwnerSection — 학원 설정 화면의 저장(v2-screen-owner.mjs actions · 같은 판정 · #142 섹션 머지)을 그대로, 'report' 섹션만.
-//  계속 거절(진입점이 그 자리에서 2.0 거절 모양): 발송 요청(sendClassnoteForUnsent · retryClassnote — 메인 결정 A = 러너로 Docker queued + 안내 문구 · 아직 안 함, 인계서 handoff-O-1028) · 직접 발송(saveAdminReport · saveAndQueueAdminReport · sendBulkAdminReports — 읽기 자리가 아직이라 면이 서지 않는다) ·
+//   · 발송 요청 sendClassnoteForUnsent · retryClassnote — Docker의 queued까지만(발송 PC 없음). 바깥 요청은 러너가 차단.
+//  계속 거절(진입점이 그 자리에서 2.0 거절 모양): 직접 발송(saveAdminReport · saveAndQueueAdminReport · sendBulkAdminReports — 읽기 자리가 아직이라 면이 서지 않는다) ·
 //     공지 보내기·고치기·취소·회수 · 반 단체 공지 · 동기화 요청 · 답글 · 공감 · AI 미리보기.
 // · 저장하는 사람 = readLessonEditors(보고서 관리 · 보고서 설정 · AI 멘트 중 하나라도 쓰기인 재직 직원 · 운영자 계정 제외 · 원장 먼저). 그 밖이면
 //   2.0 '로그인 없음' 자리(actor = null). 각 2.0 함수가 그 사람의 권한을 다시 본다.
@@ -25,7 +26,7 @@ const ARG_LIMIT = 200 * 1024;
 
 export const LR_WRITES = {
   'features/report-admin/server/recall-actions.ts': ['requestReportRecall', 'requestReportRecallByShareToken'],
-  'features/report-admin/server/actions.ts': ['resetStuckClassnote'],
+  'features/report-admin/server/actions.ts': ['resetStuckClassnote', 'sendClassnoteForUnsent', 'retryClassnote'],
   'features/report-admin/server/board-roster-actions.ts': ['linkClassnoteChild', 'unlinkClassnoteChild'],
   'features/onescreen/server/prompt-actions.ts': ['savePrompt', 'resetPrompt'],
   'features/lesson-reports/stats/prefs-actions.ts': ['saveReportStatsMode'],

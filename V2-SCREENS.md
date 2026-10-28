@@ -35,7 +35,7 @@
 | `meetings` | 회의록 | 중 | `src/app/(shell)/meetings/**`, `src/features/meetings/**` | L |
 | `consultations` | 원생상담 | 중 | `src/app/(shell)/consultations/**`, `src/features/consultations/**` | O |
 | `exams` | 성적관리 | 중 | `src/app/(shell)/exams/**`, `src/features/grades/**` 등 | O |
-| `lesson-reports` | 수업보고서 관리(목록·발송 큐·공지·학부모 글) | 중 | `src/app/(shell)/lesson-reports/**`, `src/features/report-admin/**` | O |
+| `lesson-reports` | 수업보고서 관리(목록·발송 큐·공지·학부모 글) — Docker엔 발송 PC가 없어 queued가 영영 queued로 남는다 | 중 | `src/app/(shell)/lesson-reports/**`, `src/features/report-admin/**` | O |
 | `textbooks` · `textbook-requests` | 교재목록 · 교재 요청 | 중 | `src/app/(shell)/textbooks/**`, `src/app/(shell)/textbook-requests/**` | T |
 | `class-review` | 직원 평가(채점·포트폴리오) | 중 | `src/app/(shell)/class-review/**` | L |
 | `staff` | 직원관리 | 중 | `src/app/(shell)/staff/**`, `src/features/staff/**` | R |

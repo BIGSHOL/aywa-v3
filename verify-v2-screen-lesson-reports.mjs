@@ -161,7 +161,11 @@ test('화면 글자에 "2.0"·개발자용 말이 없다(주석 뺀 코드)', as
   for (const f of ['./v2-screen-lesson-reports.js', './v2-host/src/lesson-reports.tsx']) {
     const code = lf(await here(f)).split('\n').filter((l) => !/^\s*(\/\/|\/\*|\*)/.test(l)).join('\n').replace(/\/\*[\s\S]*?\*\//g, '');
     const strings = [...code.matchAll(/(["'`])((?:(?!\1)[^\\\n]|\\.)*)\1/g)].map((m) => m[2]).filter((x) => /[가-힣]/.test(x));
-    for (const s of strings) assert.ok(!/2\.0|(^|[^\w-])v2([^\w-]|$)|복사본|Docker|API|tenant|함수/.test(s.replace(/<[^>]*>/g, ' ')), `${f}: ${s}`);
+    for (const s of strings) {
+      const allowedCopy = s.replaceAll('연습 복사본이라 실제로 보내지지 않습니다 — 발송 대기로만 남습니다', '')
+        .replaceAll('연습 복사본에서는 실제로 보내지지 않습니다.', '');
+      assert.ok(!/2\.0|(^|[^\w-])v2([^\w-]|$)|복사본|Docker|API|tenant|함수/.test(allowedCopy.replace(/<[^>]*>/g, ' ')), `${f}: ${s}`);
+    }
   }
 });
 

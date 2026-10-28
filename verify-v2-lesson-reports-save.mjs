@@ -1,7 +1,7 @@
 // 2.0 화면 — 수업보고서 관리 저장 시험(v2-lesson-reports-save.mjs · Docker 복사본 · 전부 트랜잭션째 되돌림 · 네트워크·AI 없음).
 //   node --test experiments/owner-concept/verify-v2-lesson-reports-save.mjs
 // ① 대응표 = 2.0 서버 함수 이름 그대로 · 거절 목록과 겹치지 않음 ② 1차 저장(회수 · 멈춤 복구 · 원아 연결 · 프롬프트 · 통계 보기 기억 · 보고서 설정)
-// ③ 저장하는 사람 · 입력 모양 · 진입점(발송 요청 · 바깥으로 나가는 일은 그 자리에서 거절).
+// ③ 저장하는 사람 · 입력 모양 · 발송 요청은 Docker queued까지만 · 나머지 바깥 작업은 그 자리에서 거절.
 // 시험 학생 = is_test(학원삼 · 학원이).
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -54,11 +54,68 @@ test('대응표 = 2.0 서버 함수 이름 그대로(그 파일이 내보내는 
     assert.ok(n in lessonReportsActions, n);
     assert.ok(!entry.includes(`"${n}", async () => ({ ok: false`), `${n}을 진입점이 거절한다`);
   }
-  // 바깥으로 나가는 일은 받지 않는다(진입점이 그 자리에서 거절).
-  for (const n of ['sendClassnoteForUnsent', 'retryClassnote', 'saveAndQueueAdminReport', 'sendBulkAdminReports', 'sendClassNotice', 'sendClassWideNotice', 'editPostedNotice', 'cancelOnescreenNotice', 'requestParentReply', 'requestParentReaction'])
+  for (const n of ['sendClassnoteForUnsent', 'retryClassnote']) {
+    assert.ok(n in lessonReportsActions, `${n}을 Docker 대기열에 연결`);
+    assert.ok(!refuse.includes(`"${n}"`), `${n} 거절 금지`);
+    assert.match(entry, new RegExp(`registerHostHandler\\(QUEUE_MODULE, name`));
+  }
+  assert.match(entry, /연습 복사본이라 실제로 보내지지 않습니다 — 발송 대기로만 남습니다/);
+  // 직접 발송·공지·답글 등은 아직 받지 않는다(진입점이 그 자리에서 거절).
+  for (const n of ['saveAndQueueAdminReport', 'sendBulkAdminReports', 'sendClassNotice', 'sendClassWideNotice', 'editPostedNotice', 'cancelOnescreenNotice', 'requestParentReply', 'requestParentReaction'])
     { assert.ok(refuse.includes(`"${n}"`), n); assert.ok(!(n in lessonReportsActions), n); }
   assert.match(entry, /"requestClassnoteBoardSync", async \(\) => \(\{ ok: false, error: VIEW_ONLY \}\)/);
   assert.match(entry, /"testPrompt", async \(\) =>/);
+});
+
+test('발송 요청 = 일반 학생 미발송 보고서가 Docker queued · 미발송 할 일 처리됨(send_requested) · 바깥 요청 0 · 시험 뒤 전부 되돌림', { skip: SKIP }, async () => {
+  const { t, run, net } = await setup();
+  const [target] = await db`select r.id::text id, r.report_date::text report_date, task.id::text task_id, member.status member_status
+    from public.lesson_reports r
+    join public.students s on s.id=r.student_id
+    join public.classes cls on cls.id=r.class_id and cls.is_active and not cls.report_optout and cls.subject in ('math','subject_1')
+    join public.classnote_class_boards board on board.tenant_id=r.tenant_id and board.class_id=r.class_id
+    join public.classnote_class_board_members member on member.tenant_id=r.tenant_id and member.class_id=r.class_id
+      and member.student_id=r.student_id and member.status in ('ok','hold')
+    join public.staff_tasks task on task.subject_id=r.id and task.tenant_id=r.tenant_id
+      and task.kind='unsent_report' and task.status='open'
+    where r.tenant_id=${t} and not coalesce(s.is_test,false) and r.classnote_status is null
+      and r.revoked_at is null and (r.source is null or r.source <> 'edutrix_import')
+      and nullif(trim(r.notes),'') is not null
+      and not exists (select 1 from public.lesson_reports other where other.student_id=r.student_id
+        and other.class_id=r.class_id and other.report_date=(now() at time zone 'Asia/Seoul')::date and other.id<>r.id)
+    order by r.report_date desc limit 1`;
+  assert.ok(target, '일반 학생의 최근 미발송 보고서와 열린 할 일이 필요합니다');
+  // 오래된 복사본에서도 돌도록 날짜와 원아 상태를 시험 트랜잭션 안에서만 준비한다. 발송 함수는 2.0 원본 그대로 실행한다.
+  const fixture = { $sql: `with fixed as (
+    update public.classnote_class_board_members m set status='ok'
+    where m.tenant_id=$1 and m.student_id=(select student_id from public.lesson_reports where id=$2)
+      and m.class_id=(select class_id from public.lesson_reports where id=$2) and m.status='hold'
+    returning m.id
+  ), refreshed as (
+    update public.lesson_reports r set report_date=(now() at time zone 'Asia/Seoul')::date
+    where r.id=$2 and r.report_date < ((now() at time zone 'Asia/Seoul')::date - interval '6 days')::date
+    returning r.id
+  ) select $2::text id from (select count(*) from fixed) f cross join (select count(*) from refreshed) d`, params: [t, target.id] };
+  const result = await run([{ module: `${RA}actions.ts`, fn: 'sendClassnoteForUnsent', args: [[fixture]] }], [
+    { text: 'select classnote_status, classnote_queued_at is not null queued_at from public.lesson_reports where id=$1', params: [target.id] },
+    { text: 'select status, close_reason from public.staff_tasks where id=$1', params: [target.task_id] },
+    { text: NET },
+  ], true);
+  assert.equal(result.results[0].value.ok, true, JSON.stringify(result.results[0].value));
+  assert.equal(result.results[0].value.queued, 1, '2.0 발송 게이트를 지나야 한다');
+  assert.deepEqual([...result.probes[0]], [{ classnote_status: 'queued', queued_at: true }]);
+  assert.deepEqual([...result.probes[1]], [{ status: 'done', close_reason: 'send_requested' }]);
+  assert.equal(result.probes[2][0].n, net, 'pg_net 바깥 요청 큐 증가 0');
+  assert.match(await here('./v2-server/worker.mjs'), /globalThis\.fetch = async url => \{ throw new UnsupportedShape/, '러너의 바깥 fetch 차단');
+  const [after] = await db`select classnote_status, report_date::text report_date from public.lesson_reports where id=${target.id}`;
+  const [afterTask] = await db`select status from public.staff_tasks where id=${target.task_id}`;
+  const [afterMember] = await db`select status from public.classnote_class_board_members where tenant_id=${t}
+    and student_id=(select student_id from public.lesson_reports where id=${target.id})
+    and class_id=(select class_id from public.lesson_reports where id=${target.id}) limit 1`;
+  assert.equal(after.classnote_status, null, '보고서 되돌림');
+  assert.equal(after.report_date, target.report_date, '보고서 날짜 시험 준비도 되돌림');
+  assert.equal(afterTask.status, 'open', '할 일 되돌림');
+  assert.equal(afterMember.status, target.member_status, '원아 매칭 시험 준비도 되돌림');
 });
 
 test('저장하는 사람 = 보고서 관리 · 보고서 설정 · AI 멘트 중 하나라도 쓰기인 재직 직원(운영자 계정 제외 · 원장 먼저) · 목록 밖 = 로그인 없음', { skip: SKIP }, async () => {
