@@ -1,0 +1,44 @@
+{
+ "face": [
+  [
+   "import { getCurrentUser } from \"@/lib/auth/current-user\";\nimport { canWriteTenant } from \"@/lib/auth/perm-matrix\";\nimport { getRefundRequests, type RefundListRow } from \"@/features/billing/server/refund-queries\";\n",
+   "import type { RefundListRow } from \"@/features/billing/server/refund-queries\";\nimport type { RefundsFaceData } from \"./billing-types\";\n"
+  ],
+  [
+   "import { BillingMonthNav } from \"./billing-month-nav\";\n",
+   "import { BillingMonthNav } from \"@/app/(shell)/billing/_components/billing-month-nav\";\n"
+  ],
+  [
+   "export async function RefundsFace({ sp }: { sp: { page?: string; period?: string } }) {\n  const user = await getCurrentUser();\n  const canWrite = !!user && (await canWriteTenant(user.systemRole, \"billing\"));\n  const all = await getRefundRequests();\n",
+   "export function RefundsFace({ sp, data }: { sp: { page?: string; period?: string }; data: RefundsFaceData }) {\n  const { canWrite, all } = data;\n"
+  ]
+ ],
+ "newPage": [
+  [
+   "import { redirect } from \"next/navigation\";\nimport { requireAccess } from \"@/lib/auth/require-access\";\nimport { canWriteTenant } from \"@/lib/auth/perm-matrix\";\n",
+   ""
+  ],
+  [
+   "import { RefundSheet } from \"../_components/refund-sheet\";\n",
+   "import { RefundSheet } from \"@/app/(shell)/billing/refunds/_components/refund-sheet\";\n"
+  ],
+  [
+   "export default async function NewRefundPage() {\n  const user = await requireAccess(\"billing\");\n  if (!(await canWriteTenant(user.systemRole, \"billing\"))) redirect(\"/billing?tab=refunds\");\n",
+   "/** 게이트(requireAccess · 수납 쓰기가 아니면 목록으로)는 서버가 먼저 본다 — 여기 오면 쓸 수 있는 사람이다. */\nexport function NewRefundPage({ user }: { user: { id: string } }) {\n"
+  ]
+ ],
+ "viewPage": [
+  [
+   "import { notFound } from \"next/navigation\";\nimport { requireAccess } from \"@/lib/auth/require-access\";\nimport { canWriteTenant } from \"@/lib/auth/perm-matrix\";\n",
+   ""
+  ],
+  [
+   "import { getRefundRequestById } from \"@/features/billing/server/refund-queries\";\nimport { RefundSheet } from \"../_components/refund-sheet\";\n",
+   "import type { RefundDetail } from \"@/features/billing/server/refund-queries\";\nimport { RefundSheet } from \"@/app/(shell)/billing/refunds/_components/refund-sheet\";\n"
+  ],
+  [
+   "export default async function RefundViewPage({ params }: { params: Promise<{ id: string }> }) {\n  const user = await requireAccess(\"billing\");\n  const { id } = await params;\n  const [refund, canWrite] = await Promise.all([\n    getRefundRequestById(id),\n    canWriteTenant(user.systemRole, \"billing\"),\n  ]);\n  if (!refund) notFound();\n",
+   "/** 게이트(requireAccess) · 없는 문서(notFound)는 서버가 먼저 본다. */\nexport function RefundViewPage({ user, refund, canWrite }: { user: { id: string }; refund: RefundDetail; canWrite: boolean }) {\n  const id = refund.id;\n"
+  ]
+ ]
+}

@@ -6,7 +6,7 @@
   ],
   [
    "import { getTenantSettings } from \"@/features/owner/server/queries\";\nimport { BillingContent } from \"./_components/billing-content\";\nimport { TextbooksFace } from \"./_components/textbooks-face\";\nimport { ExpensesPanel } from \"./_components/expenses-panel\";\nimport { CalculatorPanel } from \"./_components/calculator-panel\";\nimport { RefundsFace } from \"./_components/refunds-face\";\nimport { SessionTermsFace } from \"./_components/session-terms-face\";\nimport { TeacherSettlementFace } from \"./_components/teacher-settlement-face\";\n",
-   "import { BillingContent, type BillingFaceData } from \"./billing-content\";\nimport { TextbooksFace } from \"./billing-textbooks-face\";\nimport { ExpensesPanel } from \"./billing-expenses-panel\";\nimport type { ExpensesPanelData, TextbooksFaceData } from \"./billing-types\";\nimport { HostFaceNotReady, HostNoAccess, HostRedirect } from \"./billing-host-parts\";\nimport type { MakeeduSyncState } from \"@/features/integrations/server/makeedu-sync\";\n"
+   "import { BillingContent, type BillingFaceData } from \"./billing-content\";\nimport { TextbooksFace } from \"./billing-textbooks-face\";\nimport { ExpensesPanel } from \"./billing-expenses-panel\";\nimport { RefundsFace } from \"./billing-refunds-face\";\nimport type { ExpensesPanelData, RefundsFaceData, TextbooksFaceData } from \"./billing-types\";\nimport { HostFaceNotReady, HostNoAccess, HostRedirect } from \"./billing-host-parts\";\nimport type { MakeeduSyncState } from \"@/features/integrations/server/makeedu-sync\";\n"
   ],
   [
    "import { MakeeduSyncBadge } from \"@/components/makeedu-sync-badge\";\nimport { canManageTenant, canAccessTenant } from \"@/lib/auth/perm-matrix\";\nimport { redirect } from \"next/navigation\";\n",
@@ -18,7 +18,7 @@
   ],
   [
    "export default async function BillingPage({ searchParams }: { searchParams: Promise<Sp> }) {\n  const sp = await searchParams;\n",
-   "/** /api/v2/billing — page.tsx가 서버에서 읽던 권한·설정·면 자료. */\nexport type BillingPageData = {\n  access: { billing: boolean; payrollMenu: boolean; readSalary: boolean; manageBilling: boolean; writeBilling: boolean; owner: boolean };\n  host: { disabledModules: readonly import(\"@/lib/modules\").ModuleId[] };\n  sync: Partial<Record<\"invoices\" | \"textbook_checks\", MakeeduSyncState | null>>;\n  billing: BillingFaceData | null;\n  textbooks: TextbooksFaceData | null;\n  expenses: ExpensesPanelData | null;\n};\n\nexport function BillingPage({ d, sp }: { d: BillingPageData; sp: Sp }) {\n"
+   "/** /api/v2/billing — page.tsx가 서버에서 읽던 권한·설정·면 자료. */\nexport type BillingPageData = {\n  access: { billing: boolean; payrollMenu: boolean; readSalary: boolean; manageBilling: boolean; writeBilling: boolean; owner: boolean };\n  host: { disabledModules: readonly import(\"@/lib/modules\").ModuleId[] };\n  sync: Partial<Record<\"invoices\" | \"textbook_checks\", MakeeduSyncState | null>>;\n  billing: BillingFaceData | null;\n  textbooks: TextbooksFaceData | null;\n  expenses: ExpensesPanelData | null;\n  refunds: RefundsFaceData | null;\n};\n\nexport function BillingPage({ d, sp }: { d: BillingPageData; sp: Sp }) {\n"
   ],
   [
    "  const user = await requireAccess(tab === \"payroll\" ? \"payroll_settings\" : \"billing\");\n",
@@ -66,7 +66,7 @@
   ],
   [
    "<RefundsFace sp={sp} />",
-   "<HostFaceNotReady />"
+   "<RefundsFace sp={sp} data={d.refunds!} />"
   ],
   [
    "<SessionTermsFace period={sp.period} subject={sp.subject} q={sp.q} page={sp.page} only={sp.only} allocation={sp.allocation} confirmation={sp.confirmation} panel={sp.panel} status={sp.status} params={sp} />",

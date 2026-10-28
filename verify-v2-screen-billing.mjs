@@ -26,7 +26,7 @@ await check('주소 열쇠 = 2.0 page.tsx · 수납관리 부품이 읽는 칸(s
   const dir = new URL('../../src/app/(shell)/billing/_components/', import.meta.url), keys = new Set();
   for (const f of [...(await readdir(dir)).filter(n => n.endsWith('.tsx')).map(n => new URL(n, dir)), new URL('../../src/app/(shell)/billing/page.tsx', import.meta.url)])
     for (const m of (await readFile(f, 'utf8')).matchAll(/\bsp\.([a-zA-Z]+)/g)) keys.add(m[1]);
-  assert.deepEqual(Object.keys(M.screen.params).filter(k => !['viewer', 'v2path', 'ment'].includes(k)).sort(), [...keys].sort());
+  assert.deepEqual(Object.keys(M.screen.params).filter(k => !['viewer', 'v2path', 'ment', 'refundOptions', 'prefill', 'months'].includes(k)).sort(), [...keys].sort());
   const host = await here('./v2-host/src/billing.tsx'), shell = await here('./v2-screen-billing.js');
   const listOf = text => JSON.parse(`[${/KEYS = \[([^\]]+)\]|KEEP = \[([^\]]+)\]/.exec(text).slice(1).find(Boolean).replace(/'/g, '"')}]`);
   assert.deepEqual(listOf(host).sort(), ['v2path', ...keys].sort());
@@ -46,16 +46,18 @@ await check('그리기 = 2.0 billing/page.tsx · billing-content.tsx · makeedu-
   }
   // 아직 옮기지 않은 면은 자리표시 — 면 탭은 2.0 그대로.
   const page = lf(await here('./v2-host/src/billing-page.tsx'));
-  assert.equal(page.split('<HostFaceNotReady />').length - 1, 4, '계산기 · 환불 · 회차 확정 · 강사 정산');
+  assert.equal(page.split('<HostFaceNotReady />').length - 1, 3, '계산기 · 회차 확정 · 강사 정산');
   // 교재 면 = textbooks-face · textbooks-panel · catalog-panel 글자 그대로(billing-textbooks.swaps.json)
   const tb = JSON.parse(await here('./v2-host/src/billing-textbooks.swaps.json'));
   for (const [key, file, mineFile] of [['face', 'textbooks-face.tsx', 'billing-textbooks-face.tsx'], ['panel', 'textbooks-panel.tsx', 'billing-textbooks-panel.tsx'],
-    ['catalog', 'catalog-panel.tsx', 'billing-catalog-panel.tsx'], ['expenses', 'expenses-panel.tsx', 'billing-expenses-panel.tsx']]) {
-    const swaps = key === 'expenses' ? JSON.parse(await here('./v2-host/src/billing-expenses.swaps.json')).panel : tb[key];
+    ['catalog', 'catalog-panel.tsx', 'billing-catalog-panel.tsx'], ['expenses', 'expenses-panel.tsx', 'billing-expenses-panel.tsx'], ['rf.face', 'refunds-face.tsx', 'billing-refunds-face.tsx'],
+    ['rf.newPage', '../refunds/new/page.tsx', 'billing-refund-new.tsx'], ['rf.viewPage', '../refunds/[id]/page.tsx', 'billing-refund-view.tsx']]) {
+    const rf = JSON.parse(await here('./v2-host/src/billing-refunds.swaps.json'));
+    const swaps = key === 'expenses' ? JSON.parse(await here('./v2-host/src/billing-expenses.swaps.json')).panel : key.startsWith('rf.') ? rf[key.slice(3)] : tb[key];
     const want = applySwaps(lf(await src(`app/(shell)/billing/_components/${file}`)), swaps, key), mine = lf(await here(`./v2-host/src/${mineFile}`));
     assert.ok(mine.endsWith(want), `${mineFile} = 2.0 ${file} + 짝`);
     assert.ok(mine.slice(0, mine.length - want.length).split('\n').filter(Boolean).every(l => l.startsWith('//')), `${mineFile} 앞에는 주석만`);
-    assert.doesNotMatch(want.split('\n').filter(l => !/^\s*(\/\/|\*|\/\*)/.test(l)).join('\n'), /\bawait\b|getCurrentUser|getTenantSettings|resolveBrandingSrc|summarizeExpenses\(/, `${mineFile}: 서버 호출이 남지 않는다`);
+    assert.doesNotMatch(want.split('\n').filter(l => !/^\s*(\/\/|\*|\/\*)/.test(l)).join('\n'), /\bawait\b|getCurrentUser|getTenantSettings|resolveBrandingSrc|summarizeExpenses\(|requireAccess|getRefundRequests\(/, `${mineFile}: 서버 호출이 남지 않는다`);
   }
 });
 
@@ -324,6 +326,64 @@ try {
       });
     } catch (e) { if (e !== ROLL) throw e; }
     assert.equal((await db`select count(*)::int n from public.expenses where tenant_id=${tenantId}`)[0].n, before, '되돌린 뒤 남은 연습 행 0');
+  });
+
+  await check('환불 요청서 = 사용자 역할(RLS)로 읽은 전건(작성 최신순) = 독립 SQL · 상세 · 작성 화면 게이트(수납 쓰기) · 자동입력 읽기 둘(학생 · 고른 한 명) — 시험 출력에 서식 값 없음', async () => {
+    const r = await load({ tab: 'refunds' });
+    const ids = (await db`select id::text id from public.academy_documents where tenant_id=${tenantId} and form_type='refund_request' order by created_at desc`).map(x => x.id);
+    assert.deepEqual(r.refunds.all.map(x => x.id), ids, '원장(사무실 역할)은 전건');
+    assert.equal(r.refunds.canWrite, true);
+    const type = lf(await src('features/billing/server/refund-queries.ts')), at = type.indexOf('export type RefundListRow = {'), block = type.slice(at, type.indexOf('};', at));
+    if (ids.length) {
+      assert.deepEqual(Object.keys(r.refunds.all[0]).sort(), [...block.matchAll(/^\s{2}([a-zA-Z]+):/gm)].map(m => m[1]).sort());
+      const v = await load({ v2path: `/billing/refunds/${ids[0]}` });
+      assert.equal(v.page, 'refund'); assert.equal(v.refund.id, ids[0]); assert.equal(typeof v.refund.data.student, 'object');
+    }
+    assert.equal((await load({ v2path: '/billing/refunds/00000000-0000-0000-0000-000000000000' })).page, 'notFound');
+    assert.equal((await load({ v2path: '/billing/refunds/new' })).page, 'refundNew');
+    const opts = await load({ refundOptions: '1' });
+    const [{ n }] = await db`select count(*)::int n from public.students where tenant_id=${tenantId}`;
+    assert.equal(opts.options.length, n, '퇴원생 포함 전원');
+    assert.ok(opts.options.every(o => !/^(active|withdrawn|on_hold|inactive)$/.test(o.statusLabel ?? '')), '상태는 한글 라벨');
+    const [hak] = await db`select id::text id from public.students where tenant_id=${tenantId} and is_test and name like '학원이%' order by name limit 1`;
+    const pre = await load({ prefill: hak.id, months: '3' });
+    assert.equal(typeof pre.values, 'object'); assert.ok(Object.keys(pre.values).length > 0);
+    assert.deepEqual(await load({ prefill: '00000000-0000-0000-0000-000000000000' }), { error: '학생 정보를 찾지 못했습니다' });
+  });
+
+  await check('환불 요청서 저장(되돌림) — 작성(restricted · 작성자) · 수정(완료일자 = 처리자 자동 기록 · 완료 전이 감사) · 지우기 — 문구·감사로그 2.0 그대로 · 감사로그에 계좌·주소 없음 · 바깥 요청 0', async () => {
+    const actions = lf(await src('features/billing/server/refund-actions.ts')), mine = lf(await here('./v2-billing-refunds.mjs'));
+    for (const m of actions.matchAll(/error: "([^"]+)"|action: "([a-z_]+)"/g)) assert.ok(mine.includes(m[1] ?? `'${m[2]}'`), m[1] ?? m[2]);
+    const ROLL = new Error('rollback');
+    const before = (await db`select count(*)::int n from public.academy_documents where tenant_id=${tenantId}`)[0].n;
+    try {
+      await db.begin(async sql => {
+        const [{ q0 }] = await sql`select count(*)::int q0 from net.http_request_queue`;
+        const fd = pairs => ({ $formData: Object.entries(pairs).map(([k, v]) => [k, String(v)]) });
+        const act = (name, args) => { const a = M.screen.actions[name]; return a.run({ sql, body: a.validate({ module: 'features/billing/server/refund-actions.ts', actor: base.viewer.id, args }), tenantId, importV2 }); };
+        assert.deepEqual(await act('saveRefundRequest', [null, fd({ s_name: ' ' })]), { error: '학생 이름을 입력하세요' });
+        const SECRET = '999-연습-계좌', ADDR = '연습시 연습구';
+        const made = await act('saveRefundRequest', [null, fd({ s_name: '학원이', s_className: '연습반', r_totalAmount: '10,000', m_account: SECRET, s_address: ADDR })]);
+        assert.equal(made.ok, true); assert.equal(made.redirectTo, `/billing/refunds/${made.id}`);
+        const [doc] = await sql`select restricted, kind, category, uploaded_by::text uploaded_by, form_data from public.academy_documents where id=${made.id}`;
+        assert.deepEqual([doc.restricted, doc.kind, doc.category, doc.uploaded_by], [true, 'form', 'billing', base.viewer.id]);
+        const upd = await act('saveRefundRequest', [null, fd({ id: made.id, s_name: '학원이', s_className: '연습반', r_totalAmount: '10,000', res_completedDate: '2026-10-28', m_account: SECRET })]);
+        assert.equal(upd.ok, true);
+        const [after] = await sql`select form_data from public.academy_documents where id=${made.id}`;
+        assert.deepEqual([after.form_data.result.completedBy, after.form_data.result.completedByName], [base.viewer.id, base.viewer.name], '처리자 = 저장한 사람(서버가 못박음)');
+        assert.deepEqual(await act('deleteRefundRequest', [made.id]), { ok: true });
+        assert.equal((await sql`select count(*)::int n from public.academy_documents where id=${made.id}`)[0].n, 0);
+        const logs = await sql`select action, metadata from public.audit_logs where tenant_id=${tenantId} and created_at = now()`;
+        assert.deepEqual(logs.map(l => l.action).sort(), ['refund_request_create', 'refund_request_delete', 'refund_request_update']);
+        assert.equal(logs.find(l => l.action === 'refund_request_update').metadata.completionChange, '완료');
+        assert.ok(logs.every(l => l.metadata.via === '3.0 연습 복사본'));
+        assert.ok(!JSON.stringify(logs).includes(SECRET) && !JSON.stringify(logs).includes(ADDR), '감사로그에 계좌·주소 없음');
+        const [{ q1 }] = await sql`select count(*)::int q1 from net.http_request_queue`;
+        assert.equal(q1, q0, '바깥 요청 0');
+        throw ROLL;
+      });
+    } catch (e) { if (e !== ROLL) throw e; }
+    assert.equal((await db`select count(*)::int n from public.academy_documents where tenant_id=${tenantId}`)[0].n, before, '되돌린 뒤 남은 연습 행 0');
   });
 } finally { await db.end(); }
 

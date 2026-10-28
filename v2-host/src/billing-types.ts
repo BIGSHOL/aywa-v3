@@ -3,6 +3,7 @@ import type { StudentOption, TextbookOrderRow, TextbookStats } from "@/features/
 import type { CatalogOption, CatalogRow } from "@/features/billing/server/catalog-queries";
 import type { BillingSettings } from "@/features/owner/settings-types";
 import type { ExpenseRow, ExpenseSummary } from "@/features/billing/server/expense-queries";
+import type { RefundListRow } from "@/features/billing/server/refund-queries";
 
 /** textbooks-panel.tsx가 서버에서 받던 값 — getTextbookOrdersPage · getTextbookStats · getStudentOptions · getCatalogOptions · 학원 설정(이름 · 로고 · 계좌). */
 export type TextbooksPanelData = {
@@ -18,6 +19,9 @@ export type CatalogPanelData = { page: { rows: CatalogRow[]; total: number }; st
 
 /** expenses-panel.tsx — getExpensesForMonth(이 달 전체) · getExpenseMonths + summarizeExpenses(이 달 전체 기준 — 2.0 함수 그대로). */
 export type ExpensesPanelData = { rows: ExpenseRow[]; months: string[]; summary: ExpenseSummary };
+
+/** refunds-face.tsx — getRefundRequests(전건 · 작성 최신순) · 수납 쓰기(새 환불 요청서 단추). */
+export type RefundsFaceData = { all: RefundListRow[]; canWrite: boolean };
 
 /** textbooks-face.tsx — 내부탭(목록 | 교재 단가표)이 고르는 쪽만 실린다. */
 export type TextbooksFaceData = { list: TextbooksPanelData | null; catalog: CatalogPanelData | null };

@@ -5,6 +5,7 @@
 //  · 수납 면(billing-content.tsx): getInvoicesForPeriod · getAvailablePeriods · getStudentOptions · getMakeeduSyncState("invoices") · canWriteTenant
 //  · 교재 면(textbooks-face.tsx): 목록(textbooks-panel.tsx) · 교재 단가표(catalog-panel.tsx) — v2-billing-textbooks.mjs
 //  · 지출 면(expenses-panel.tsx) · 지출결의서 상세(expenses/[id]/page.tsx) — v2-billing-expenses.mjs
+//  · 환불 요청서(refunds-face.tsx · refunds/new · refunds/[id]) — v2-billing-refunds.mjs(restricted 문서라 보는 사람 신분 + RLS로만)
 //  · 다른 면(수강료 계산기 · 회차 확정 · 환불 요청서 · 강사 정산)은 다음 단계 — 지금은 '아직 지원하지 않는 기능'.
 // 사람마다 보이는 것이 다르다 — '보는 사람'을 고르고(운영자 계정 제외 · 원장 먼저) 그 사람의 권한 표로 2.0과 같게 낸다(v2-billing-common.mjs).
 // 🔴 급여(강사 정산)는 급여 열람 게이트(payroll_settings · 급여 기능 켜짐)를 지난 사람에게만 싣는다.
@@ -14,6 +15,8 @@
 //                                                      updateTextbookOrder(_prev, fd{id,…}) · deleteTextbookOrder(_prev, fd{id}) → TextbookState
 //  features/billing/server/expense-actions.ts         createExpense · updateExpense · deleteExpense · toggleExpenseApproval · duplicateExpense ·
 //                                                      setExpenseReceiptType(_prev, fd) → ExpenseState (증빙 파일 올리기·열기·지우기 = 받지 않음)
+//  features/billing/server/refund-actions.ts          saveRefundRequest(_prev, fd) → RefundActionState · deleteRefundRequest(id) → { ok?, error? } ·
+//                                                      loadRefundStudentOptions() · loadRefundPrefill(studentId, months) = 읽기(GET ?refundOptions=1 · ?prefill=&months=)
 //  features/billing/server/textbook-notice-actions.ts  saveMyTextbookMent(text) → { ok } · loadMyTextbookMent() = 읽기(GET ?ment=1 → { ment })
 //
 // 호스트에 붙일 때(v2-host/src/billing.tsx · billing-page.tsx · billing-sync-badge.tsx):
@@ -28,6 +31,7 @@ import { loadBillingRules, readSettings, readBillingViewers, billingEditorsOf, r
 import { readInvoicesForPeriod, readAvailablePeriods, readStudentOptions } from './v2-billing-invoices.mjs';
 import { readTextbooksFace, loadMyTextbookMent, textbookFaceActions } from './v2-billing-textbooks.mjs';
 import { readExpensesFace, readExpenseById, loadExpenseRules, expenseActions } from './v2-billing-expenses.mjs';
+import { readRefundRequests, readRefundById, loadRefundRules, loadRefundStudentOptions, loadRefundPrefill, refundActions } from './v2-billing-refunds.mjs';
 
 const ID = 'billing';
 const PERIOD = /^\d{4}-(0[1-9]|1[0-2])$/;
@@ -41,17 +45,21 @@ const PARAMS = {
   hm: /^[0-9-]{1,10}$/, hy: /^\d{4}$/, qid: UUID, qpage: /^\d{1,4}$/, tsub: WORD,
   // 교재 다이얼로그가 열 때 읽는 2.0 loadMyTextbookMent(읽기라 GET) — 답은 { ment }.
   ment: /^1$/,
+  // 환불 요청서 자동입력이 부르는 2.0 읽기 둘(loadRefundStudentOptions · loadRefundPrefill) — 읽기라 GET.
+  refundOptions: /^1$/, prefill: UUID, months: /^(1|2|3|6|12|all)$/,
 };
 
 export const screen = {
   id: ID, label: '수납관리', order: 9,
   params: PARAMS,
-  actions: { ...textbookFaceActions, ...expenseActions },
+  actions: { ...textbookFaceActions, ...expenseActions, ...refundActions },
   load: async ({ sql, params: sp, tenantId: t, importV2 }) => {
     const R = await loadBillingRules(importV2);
     const env = await readSettings(sql, t, R), viewers = await readBillingViewers(sql, t, R, env);
     const viewer = viewers.find(v => v.id === sp.viewer) ?? viewers[0] ?? null;
     if (sp.ment) return { ment: await loadMyTextbookMent(sql, t, importV2, viewer) };
+    if (sp.refundOptions) return loadRefundStudentOptions(sql, viewer, await loadRefundRules(importV2));
+    if (sp.prefill) return loadRefundPrefill(sql, viewer, await loadRefundRules(importV2), sp.prefill, sp.months === 'all' ? null : Number(sp.months ?? 3));
     const common = { editors: billingEditorsOf(viewers), viewer: viewer && { id: viewer.id, name: viewer.name, role: viewer.roleLabel },
       host: { operations: env.operations, disabledModules: env.disabled } };
     if (!viewer) return { ...common, route: 'none' };
@@ -71,14 +79,22 @@ export const screen = {
       const X = await loadExpenseRules(importV2), expense = await readExpenseById(sql, t, X, expenseId);
       return { ...common, route: 'page', access, page: expense ? 'expense' : 'notFound', expense };
     }
+    // 하위 주소 — 환불 요청서 작성(refunds/new: 수납 쓰기가 아니면 목록으로) · 보기(refunds/[id]: 없으면 notFound).
+    const refundPath = /^\/billing\/refunds\/(new|[0-9a-f-]{36})$/.exec(sp.v2path ?? '')?.[1];
+    if (refundPath) {
+      if (!access.billing) return { ...common, route: 'page', access, page: 'noAccess' };
+      if (refundPath === 'new') return access.writeBilling ? { ...common, route: 'page', access, page: 'refundNew' } : { ...common, route: 'page', access, page: 'redirect', to: '/billing?tab=refunds' };
+      const refund = await readRefundById(sql, viewer, await loadRefundRules(importV2), refundPath);
+      return { ...common, route: 'page', access, page: refund ? 'refund' : 'notFound', refund, canWrite: access.writeBilling };
+    }
     const tab = resolveBillingTab(sp.tab), sessionOn = R.modules.isModuleEnabled(env.disabled, 'session_billing');
     const effectiveTab = (tab === 'payroll' && !access.readSalary) || (!sessionOn && ['sessions', 'verify', 'payroll'].includes(tab)) ? 'billing' : tab;
     const denied = !(tab === 'payroll' ? access.payrollMenu : access.billing) || (effectiveTab !== 'payroll' && !access.billing);
-    if (denied) return { ...common, route: 'page', access, sync: {}, billing: null, textbooks: null, expenses: null };
+    if (denied) return { ...common, route: 'page', access, sync: {}, billing: null, textbooks: null, expenses: null, refunds: null };
     // 동기화 배지(수납 · 교재 면만) — 면이 고르는 도메인.
     const domain = effectiveTab === 'billing' ? 'invoices' : effectiveTab === 'textbooks' ? 'textbook_checks' : null;
     const sync = domain ? { [domain]: await readSyncState(sql, t, R, env, domain) } : {};
-    let billing = null, textbooks = null, expenses = null;
+    let billing = null, textbooks = null, expenses = null, refunds = null;
     if (effectiveTab === 'billing') {
       // billing-content.tsx — period = sp.period ?? 이번 달(2.0 currentPeriod) · sort = sp.sort ?? 'status' · desc = sp.desc === '1'.
       const period = sp.period ?? R.calc.currentPeriod();
@@ -89,6 +105,8 @@ export const screen = {
       billing = { monthRows, periods, students, syncState: sync.invoices ?? null, canWriteBilling: access.writeBilling };
     } else if (effectiveTab === 'textbooks') textbooks = await readTextbooksFace(sql, t, R, importV2, sp);
     else if (effectiveTab === 'expenses') expenses = await readExpensesFace(sql, t, importV2, sp);
-    return { ...common, route: 'page', access, sync, billing, textbooks, expenses };
+    // refunds-face.tsx — 전건(작성 최신순) · 월·쪽은 화면이 2.0 본문으로 고른다 · canWrite = 수납 쓰기.
+    else if (effectiveTab === 'refunds') refunds = { all: await readRefundRequests(sql, viewer, await loadRefundRules(importV2)), canWrite: access.writeBilling };
+    return { ...common, route: 'page', access, sync, billing, textbooks, expenses, refunds };
   },
 };

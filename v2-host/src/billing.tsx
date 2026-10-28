@@ -11,6 +11,10 @@ import { hostRefresh, onHostRefresh } from '../shims/host-nav';
 import { useHostSearch } from '../shims/next-navigation';
 import { VIEW_ONLY, hostActor, registerHostHandler, setHostEditors, type HostEditor } from '../shims/server-action';
 import { ExpenseDocument } from '@/app/(shell)/billing/_components/expense-document';
+import type { RefundDetail } from '@/features/billing/server/refund-queries';
+import { NewRefundPage } from './billing-refund-new';
+import { RefundViewPage } from './billing-refund-view';
+import { HostRedirect } from './billing-host-parts';
 import type { ExpenseRow } from '@/features/billing/server/expense-queries';
 import { HostFrame, HostMessage } from './host-frame';
 import { BillingPage, type BillingPageData } from './billing-page';
@@ -43,6 +47,18 @@ saving(NOTICE, 'saveMyTextbookMent', false);
 // 지출 — 증빙 파일(올리기·열기·지우기)은 파일 저장소라 받지 않는다(보내지 않고 '아직 지원하지 않는 저장').
 const EXPENSE = 'features/billing/server/expense-actions.ts';
 for (const name of ['createExpense', 'updateExpense', 'deleteExpense', 'toggleExpenseApproval', 'duplicateExpense', 'setExpenseReceiptType']) saving(EXPENSE, name, true);
+// 환불 요청서 — 저장 · 지우기는 쓰기 경로, 자동입력 읽기 둘은 같은 화면의 GET(보는 사람으로).
+const REFUND = 'features/billing/server/refund-actions.ts';
+saving(REFUND, 'saveRefundRequest', true);
+saving(REFUND, 'deleteRefundRequest', true);
+const readBilling = async (params: Record<string, string>, fallback: unknown) => {
+  const q = new URLSearchParams(params); const actor = hostActor(); if (actor) q.set('viewer', actor);
+  const r = await fetch(`/api/v2/billing?${q}`, { headers: { Accept: 'application/json' } }).catch(() => null);
+  return (r?.ok ? await r.json().catch(() => null) : null) ?? fallback;
+};
+registerHostHandler(REFUND, 'loadRefundStudentOptions', () => readBilling({ refundOptions: '1' }, { error: NOT_SAVED }));
+registerHostHandler(REFUND, 'loadRefundPrefill', (studentId, months) =>
+  readBilling({ prefill: String(studentId ?? ''), months: months === null ? 'all' : String(months ?? 3) }, { error: NOT_SAVED }));
 for (const name of ['issueReceiptUploadTicket', 'addExpenseReceipt', 'removeExpenseReceipt', 'signExpenseReceipts', 'signExpenseReceipt'])
   registerHostHandler(EXPENSE, name, async () => ({ ok: false, error: VIEW_ONLY }));
 registerHostHandler(NOTICE, 'loadMyTextbookMent', async () => {
@@ -60,7 +76,7 @@ type Ops = Parameters<typeof OperationsProvider>[0];
 type Data = { editors: HostEditor[]; viewer: { id: string; name: string; role: string } | null; route: 'none' | 'page' }
   & Partial<Omit<BillingPageData, 'host'>> & { host: { operations: Ops; disabledModules: Ops['disabledModules'] } }
   // 하위 주소 — 지출결의서 상세(expenses/[id]/page.tsx) · 2.0 requireAccess · notFound 자리.
-  & { page?: 'expense' | 'notFound' | 'noAccess'; expense?: ExpenseRow | null };
+  & { page?: 'expense' | 'notFound' | 'noAccess' | 'refundNew' | 'refund' | 'redirect'; expense?: ExpenseRow | null; refund?: RefundDetail | null; canWrite?: boolean; to?: string };
 
 /** 2.0 page.tsx · 각 면의 searchParams — 서버가 다시 그리던 열쇠(v2path = 하위 주소). */
 const KEYS = ['v2path', 'tab', 'period', 'q', 'sort', 'desc', 'page', 'overdue', 'missing', 'subject', 'only', 'allocation', 'confirmation', 'panel', 'status',
@@ -114,6 +130,18 @@ function App() {
   if (d.page === 'notFound') return <HostMessage text="이 주소의 화면이 없습니다." />;
   // 2.0 expenses/[id]/page.tsx — 본문은 부품 하나(ExpenseDocument)라 그대로 그린다.
   if (d.page === 'expense' && d.expense) return <ExpenseDocument expense={d.expense} />;
+  // 2.0 refunds/new · refunds/[id] — 수납 쓰기가 아니면 목록으로(redirect) · userId = 보는 사람.
+  if (d.page === 'redirect' && d.to) return <HostRedirect to={d.to} />;
+  if ((d.page === 'refundNew' || d.page === 'refund') && d.viewer) {
+    const user = { id: d.viewer.id };
+    return (
+      <EmbedProvider embed>
+        <OperationsProvider subjects={ops.subjects} gradeLevels={ops.gradeLevels} jobTitles={ops.jobTitles} jobTitlesByDepartment={ops.jobTitlesByDepartment} disabledModules={d.host.disabledModules}>
+          {d.page === 'refundNew' ? <NewRefundPage user={user} /> : d.refund ? <RefundViewPage user={user} refund={d.refund} canWrite={!!d.canWrite} /> : null}
+        </OperationsProvider>
+      </EmbedProvider>
+    );
+  }
   return (
     <EmbedProvider embed>
       <OperationsProvider subjects={ops.subjects} gradeLevels={ops.gradeLevels} jobTitles={ops.jobTitles} jobTitlesByDepartment={ops.jobTitlesByDepartment} disabledModules={d.host.disabledModules}>
