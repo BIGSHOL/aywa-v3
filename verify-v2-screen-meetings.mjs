@@ -1,6 +1,6 @@
 // 2.0 화면 — 회의록 시험 (Docker 복사본 · 네트워크·AI·전사 없음).
 //   node --test experiments/owner-concept/verify-v2-screen-meetings.mjs
-// ① 그리기 = 2.0 page.tsx 셋(목록·상세·새 회의록) 본문 그대로(서버 호출 자리만 swaps 짝 — 글자 대조)
+// ① 그리기 = 2.0 page.tsx(목록·상세·새 회의록·인쇄)와 같은 부품·본문
 // ② 목록·상세 = 독립 SQL(전체·완료·처리 중 · 최신순 · 쪽 · 상태 · 기간 · 검색(제목·참석자·요약·전사) · 상세 칸 · 직원 선택지 · 없는 회의록)
 // ③ 저장 = 2.0 함수 그대로(제목 · 메모장 · AI 분석 섹션 · 화자 · 메모만으로 새 회의록 · 삭제) — 시험이 만든 회의록만, 러너 되돌림 트랜잭션 안에서
 //    표·칸·감사로그 확인 → 끝나면 남은 행 0 · 쓰기 뒤 역할·claims 원래대로 · 바깥 요청 큐 증가 0
@@ -57,6 +57,16 @@ test('그리기 = 2.0 page.tsx 셋 본문 그대로 — 서버 호출 자리만 
   // 2.0 page.tsx의 PAGE_SIZE와 서버가 쓰는 쪽 크기가 같다.
   assert.match(lf(await src('app/(shell)/meetings/page.tsx')), new RegExp(`const PAGE_SIZE = ${PAGE_SIZE};`));
 });
+test('인쇄 문서는 2.0 섹션·부품·전사 토글과 같은 구성이다', async () => {
+  const original = await src('app/(print)/meetings/[id]/print/page.tsx');
+  const mine = await here('./v2-host/src/meetings-print.tsx');
+  for (const text of ['회의 요약', '안건별 논의', '결정 사항', '액션 아이템', '발언자별 요약', '우려사항', '다음 단계', 'AI 분석 (8 섹션)', '회의 내용', '전사 내용', 'meeting-transcript', 'meeting-doc']) {
+    assert.ok(original.includes(text) && mine.includes(text), text);
+  }
+  assert.match(mine, /<RichText text=\{body\} bulletize=\{list\}/);
+  assert.match(mine, /<MeetingPrintActions embedded hasTranscript=\{!!meeting\.transcription\}/);
+  assert.match(await src('app/(print)/meetings/[id]/print/meeting-print-actions.tsx'), /window\.print\(\)/);
+});
 
 // ── ② 목록 · 상세 ────────────────────────────────────────────────────────────────────────────────────────────────────────
 test('목록 = 독립 SQL — 머리 숫자(전체·완료·처리 중) · 최신순 · 1쪽·2쪽(50건) · 상태 · 기간 · 작성자 · 녹음', { skip: SKIP }, async () => {
@@ -105,11 +115,15 @@ test('상세 = 독립 SQL — 칸 · AI 분석 문서 · 화자 · 모델 · 직
   assert.deepEqual(x.speakerLabels, m.speaker_labels); assert.deepEqual(x.aiReport, m.ai_report); assert.deepEqual(x.aiSpeakerRoles, m.ai_speaker_roles);
   assert.deepEqual(x.speakerStaff, m.speaker_staff); assert.equal(x.aiModelVersion, m.ai_model_version); assert.equal(x.audioDurationSec, m.audio_duration_sec);
   assert.equal(x.processingStatus, m.status);
+  const print = await load({ v2path: `/meetings/${m.id}/print` });
+  assert.equal(print.page, 'print');
+  assert.deepEqual(print.meeting, x, '인쇄와 상세가 같은 2.0 조회 함수를 쓴다');
   const staff = await db`select id::text id from public.users where tenant_id = ${t} and status::text <> 'inactive' order by display_name`;
   assert.deepEqual(d.staffOptions.map((s) => s.id).sort(), ids(staff).sort());
   const [noText] = await db`select id::text id from public.meeting_minutes where tenant_id = ${t} and transcription is null limit 1`;
   if (noText) assert.deepEqual((await load({ v2path: `/meetings/${noText.id}` })).staffOptions, []);
   assert.equal((await load({ v2path: '/meetings/00000000-0000-4000-8000-000000000000' })).page, 'missing');
+  assert.equal((await load({ v2path: '/meetings/00000000-0000-4000-8000-000000000000/print' })).page, 'missing');
   const n = await load({ v2path: '/meetings/new' });
   assert.equal(n.page, 'new'); assert.equal(n.viewer.tenantId, t); assert.ok(n.editors.some((e) => e.id === n.viewer.id));
 });
@@ -126,8 +140,8 @@ test('보는 사람 = 회의록 메뉴가 열린 재직 직원 · 주소 actor�
 
 test('매개변수 거절', () => {
   const ok = (k, v) => screen.params[k].test(v);
-  assert.ok(ok('v2path', '/meetings/new') && ok('v2path', '/meetings/0b6d5c1e-0000-4000-8000-000000000000') && ok('v2path', '/meetings'));
-  assert.ok(!ok('v2path', '/meetings/0b6d5c1e-0000-4000-8000-000000000000/print') && !ok('v2path', '/students'));
+  assert.ok(ok('v2path', '/meetings/new') && ok('v2path', '/meetings/0b6d5c1e-0000-4000-8000-000000000000') && ok('v2path', '/meetings/0b6d5c1e-0000-4000-8000-000000000000/print') && ok('v2path', '/meetings'));
+  assert.ok(!ok('v2path', '/meetings/0b6d5c1e-0000-4000-8000-000000000000/print/extra') && !ok('v2path', '/students'));
   assert.ok(ok('range', '7d') && !ok('range', '1y') && ok('status', 'processing') && !ok('status', 'uploaded'));
   assert.ok(!ok('page', '-1') && !ok('actor', 'x') && !ok('q', 'x'.repeat(101)));
 });

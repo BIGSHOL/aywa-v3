@@ -18,7 +18,7 @@
 //  | regenerateMeetingAnalysis(기둥 A) · retryMeetingProcessing(기둥 B) · startMeetingFromAudio · issueAudioUploadTicket(media) | 호스트가 보내지 않고 { error: 지원하지 않는 기능 }(AI·전사·업로드 0) |
 //
 // 2.0과 다른 것
-//  · 녹음 파일 저장소가 없다 — 오디오 재생·인쇄 미리보기(/meetings/<id>/print)는 연습 화면에서 열지 않는다(호스트가 '열 수 없음').
+//  · 녹음 파일 저장소가 없다 — 오디오는 읽지 못한다. 인쇄 미리보기는 저장된 글로 그린다.
 //  · deleteMeeting의 녹음 파일 지우기(removeObject)는 2.0도 실패를 삼킨다 — 러너는 바깥 요청을 막으므로 파일 쪽은 아무 일도 없고,
 //    감사로그 audioRemoved는 2.0 판정(그 지점 경로인가) 그대로 적힌다.
 //  · 주소 range·status는 2.0이 아는 값만 받는다(2.0은 모르는 값을 '전체'처럼 넘긴다 — 여기선 400).
@@ -36,6 +36,7 @@ import { runV2Server, V2ServerError } from './v2-server-runner.mjs';
 const ID = 'meetings', MENU = 'meetings', ACTIONS = 'features/meetings/server/actions.ts', QUERIES = 'features/meetings/server/queries.ts';
 const UUID_BODY = UUID.source.slice(1, -1);
 const DETAIL = new RegExp(`^/meetings/(${UUID_BODY})$`, 'i');
+const PRINT = new RegExp(`^/meetings/(${UUID_BODY})/print$`, 'i');
 /** 2.0 page.tsx PAGE_SIZE. */
 export const PAGE_SIZE = 50;
 /** 2.0 (shell)/layout.tsx가 OperationsProvider에 넘기는 라이선스 중 이 화면 부품이 읽는 것(useLicenseOn). */
@@ -70,6 +71,12 @@ async function load({ sql, params, tenantId: t, importV2 }) {
   // 새 회의록(2.0 new/page.tsx) — 녹음 소유자(recordingOwner) = 보는 사람.
   if (path === '/meetings/new') return { ...base, page: 'new', viewer: { id: v.id, tenantId: t } };
   const detail = DETAIL.exec(path);
+  const print = PRINT.exec(path);
+  if (print) {
+    const id = print[1].toLowerCase();
+    const { results: [m] } = await readCall(t, v.id, [{ module: QUERIES, fn: 'getMeetingById', args: [id] }]);
+    return m.value ? { ...base, page: 'print', meeting: m.value } : { ...base, page: 'missing' };
+  }
   if (detail) {
     const id = detail[1].toLowerCase();
     const { results: [m, staff] } = await readCall(t, v.id, [{ module: QUERIES, fn: 'getMeetingById', args: [id] }, { module: QUERIES, fn: 'getStaffOptions', args: [] }]);
@@ -124,7 +131,7 @@ const write = (name) => ({
 export const screen = {
   id: ID, label: '회의록', order: 45,
   params: {
-    actor: UUID, v2path: new RegExp(`^/meetings(?:/new|/${UUID_BODY})?$`, 'i'),
+    actor: UUID, v2path: new RegExp(`^/meetings(?:/new|/${UUID_BODY}(?:/print)?)?$`, 'i'),
     range: /^(?:all|7d|30d|month)$/, status: /^(?:all|completed|processing|failed|idle)$/, q: /^[\s\S]{0,100}$/, page: /^\d{1,5}$/, form: /^[A-Za-z0-9_-]{1,64}$/,
   },
   actions: Object.fromEntries(WRITES.map((name) => [name, write(name)])),

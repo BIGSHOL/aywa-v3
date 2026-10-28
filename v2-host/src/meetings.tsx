@@ -9,10 +9,12 @@ import { OperationsProvider } from '@/features/owner/operations-context';
 import { hostNavigate, onHostRefresh } from '../shims/host-nav';
 import { NOT_SUPPORTED, hostActor, registerHostHandler, setHostEditors, type HostEditor } from '../shims/server-action';
 import { usePathname, useSearchParams } from '../shims/next-navigation';
+import { useWindowStore } from '@/components/workspace/window-store';
 import { HostFrame, HostMessage } from './host-frame';
 import { MeetingsPage, type MeetingsListData } from './meetings-page';
 import { MeetingDetailPage, type MeetingDetailData } from './meetings-detail';
 import { NewMeetingPage, type MeetingNewData } from './meetings-new';
+import { MeetingPrintPage, type MeetingPrintData } from './meetings-print';
 
 export const HOST_TITLE = '회의록';
 export const HOST_ROUTE = '/meetings';
@@ -20,7 +22,7 @@ const SCREEN = 'meetings';
 const ACTIONS = 'features/meetings/server/actions.ts';
 
 type Base = { editors: HostEditor[]; operations: Record<string, unknown>; modules: { disabled: string[] }; licenses: Record<string, boolean>;
-  page: 'list' | 'detail' | 'new' | 'missing' | 'noMenu' | 'notFound' };
+  page: 'list' | 'detail' | 'new' | 'print' | 'missing' | 'noMenu' | 'notFound' };
 
 /**
  * AI·녹음 — 연습 화면에서는 부르지 않는다(AI로 정리·분석 다시 생성(기둥 A) · 전사부터 다시(기둥 B) · 녹음으로 회의록 만들기 · 녹음 올리기 표).
@@ -66,9 +68,24 @@ function useActor() {
 }
 
 const DETAIL = /^\/meetings\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const PRINT = /^\/meetings\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\/print$/i;
 function App() {
+  // 2.0의 인쇄 창 훅은 데스크톱에서 로컬 창 스토어를 연다. 호스트 iframe에는 창 캔버스가 없으므로
+  // 회의록 인쇄 항목만 같은 화면의 인쇄 주소로 옮기고 다른 창 동작은 원본 스토어에 맡긴다.
+  useEffect(() => {
+    const original = useWindowStore.getState().open;
+    const bridged: typeof original = (kind, params, anchor) => {
+      if (kind === 'route' && params.id.startsWith('print/meetings/') && params.href && PRINT.test(params.href.split('?')[0])) {
+        hostNavigate(params.href, 'push');
+        return true;
+      }
+      return original(kind, params, anchor);
+    };
+    useWindowStore.setState({ open: bridged });
+    return () => { if (useWindowStore.getState().open === bridged) useWindowStore.setState({ open: original }); };
+  }, []);
   const path = usePathname(), search = useSearchParams(), actor = useActor();
-  const known = path === HOST_ROUTE || path === '/meetings/new' || DETAIL.test(path);
+  const known = path === HOST_ROUTE || path === '/meetings/new' || DETAIL.test(path) || PRINT.test(path);
   const q = new URLSearchParams(search.toString());
   q.delete('actor');
   // 창 표식(embed=1) — 2.0 부품의 창 안 이동(WindowLink · withEmbed)이 싣는다. 서버가 보는 열쇠가 아니라 뺀다(실으면 조회가 400).
@@ -103,7 +120,8 @@ function App() {
   return (
     <OperationsProvider subjects={ops.subjects} gradeLevels={ops.gradeLevels} jobTitles={ops.jobTitles} jobTitlesByDepartment={ops.jobTitlesByDepartment}
       disabledModules={data.modules.disabled as never} licenses={data.licenses}>
-      {data.page === 'detail' ? <MeetingDetailPage key={path} data={data as unknown as MeetingDetailData} id={path.split('/')[2]!} />
+      {data.page === 'print' ? <MeetingPrintPage key={path} data={data as unknown as MeetingPrintData} />
+        : data.page === 'detail' ? <MeetingDetailPage key={path} data={data as unknown as MeetingDetailData} id={path.split('/')[2]!} />
         : data.page === 'new' ? <NewMeetingPage key={path} data={data as unknown as MeetingNewData} sp={sp} />
         : <MeetingsPage key={state.query} data={data as unknown as MeetingsListData} sp={sp as Parameters<typeof MeetingsPage>[0]["sp"]} />}
     </OperationsProvider>
