@@ -17,7 +17,7 @@ if (db) {
   var { tenantId: t } = await import('./full-db.mjs');
   var { importV2 } = await import('./v2-bridge.mjs');
   var { copyClock, queryGate } = await import('./v2-onescreen-roster.mjs');
-  var { weekWindows } = await import('./domain-snapshot-core.mjs');
+  var { weekWindows, addDays } = await import('./domain-snapshot-core.mjs');
   var { windowsFor } = await import('./v2-screen-trend.mjs');
   var { loadOverviewSnapshot } = await import('./v2-dashboard-overview.mjs');
   var V = await importV2('features/withdrawals/system-bulk.ts');
@@ -53,8 +53,9 @@ test('카드와의 관계: 재원생·강좌수 지난 달 점 = 같은 값 · �
 
 test('나뉘는 기준은 줄의 합 = 전체(일·주·월) · 겹치는 기준은 합 ≥ 전체 · 3개월 내 퇴원은 누적', { skip: SKIP }, async () => {
   await run(async (sql) => {
-    const partition = [['enrolled-students', 'mix'], ['courses', 'subject'], ['exits', 'program'], ['intake', 'combo'], ['new-enrollments', 'combo']];
-    const overlap = [['enrolled-students', 'subject'], ['joins', 'subject'], ['withdrawn', 'subject'], ['intake', 'subject'], ['new-enrollments', 'subject']];
+    const partition = [['enrolled-students', 'mix'], ['exits', 'program'], ['intake', 'combo'], ['new-enrollments', 'combo']];
+    // 강좌 과목별: EiE와 인재원 영어를 함께 듣는 학생은 2.0이 영어 강좌 하나로 세는데 두 줄에 하나씩 든다(겹침).
+    const overlap = [['courses', 'subject'], ['enrolled-students', 'subject'], ['joins', 'subject'], ['withdrawn', 'subject'], ['intake', 'subject'], ['new-enrollments', 'subject']];
     for (const grain of ['day', 'week', 'month']) {
       const windows = windowsFor(grain, asOf);
       for (const [id, by] of [...partition, ...overlap]) {
@@ -193,6 +194,136 @@ test('카드 묶음은 DB 오류가 나도 트랜잭션을 살려 둔다(그 묶
     try { assert.deepEqual(await dashboardKpiCards({ sql, asOf, tenantId: 'not-a-tenant', importV2 }), []); } finally { console.error = err; }
     assert.equal((await sql`select 1 as x`)[0].x, 1, '트랜잭션이 살아 있다');
     assert.deepEqual((await dashboardKpiCards({ sql, asOf, tenantId: t, importV2 })).map((c) => c.id), [...DASHBOARD_KPI_ORDER]);
+  });
+});
+
+test('영어 = EiE · 인재원 영어(원장 10-28) — 다시 합치면 2.0 값 그대로 · 과목별 겹침 = 둘 다 듣는 수 · EiE 수강생 = 독립 SQL · 이름', { skip: SKIP }, async () => {
+  await run(async (sql) => {
+    for (const grain of ['day', 'month']) {
+      const windows = windowsFor(grain, asOf);
+      const mix = await series(sql, 'enrolled-students', windows, 'mix'), sub = await series(sql, 'enrolled-students', windows, 'subject');
+      const m = Object.fromEntries(mix.rows.map((r) => [r.key, vals(r.points)])), s = Object.fromEntries(sub.rows.map((r) => [r.key, vals(r.points)]));
+      assert.ok(m.eieOnly && s.eie, 'EiE 줄'); assert.equal(mix.rows.find((r) => r.key === 'eieOnly').label, 'EiE만');
+      windows.forEach((w, i) => {
+        if (m.englishOnly[i] === null) return;
+        const sum = (ks) => ks.reduce((a, k) => a + m[k][i], 0);
+        assert.equal(sum(Object.keys(m)), vals(mix.total)[i], `${grain} ${i} 수강 구성 합 = 재원생`);
+        // 과목별: 인재원 영어 + EiE − (둘 다 듣는 학생) = 영어를 듣는 학생(= 수강 구성의 영어 계열 합)
+        const englishAny = sum(['englishOnly', 'eieOnly', 'eieEnglish', 'englishMath', 'eieMath', 'eieEnglishMath']);
+        assert.equal(s.english[i] + s.eie[i] - (m.eieEnglish[i] + m.eieEnglishMath[i]), englishAny, `${grain} ${i} 영어 합집합`);
+        for (const k of Object.keys(m)) assert.ok(m[k][i] >= 0, `${grain} ${i} ${k} 음수`);
+      });
+    }
+    const windows = windowsFor('month', asOf);
+    const subjects = (await sql`select data->'operations'->'subjects' s from public.tenant_settings where tenant_id=${t}`)[0].s.map((x) => ({ key: x.key, label: x.label }));
+    const P = await importV2('features/students/enrollment/program.ts');
+    // 오늘 점(마지막 창)의 EiE 수강생 — 독립 SQL: 재원 · 종료일 없는 수강 · 휴원 아님 · 시작함 · EiE 반.
+    const [{ n }] = await sql`select count(distinct e.student_id)::int n from public.enrollments e join public.classes c on c.id = e.class_id join public.students s on s.id = e.student_id
+      where e.tenant_id=${t} and s.status='enrolled' and e.end_date is null and not coalesce(e.on_hold,false) and e.start_date <= ${asOf}::date and c.english_track = 'eie'
+        and coalesce(s.notes, '') !~ '^\\s*중복 병합:'`;
+    const sub = Object.fromEntries((await series(sql, 'enrolled-students', windows, 'subject')).rows.map((r) => [r.key, vals(r.points)]));
+    assert.equal(sub.eie.at(-1), n, '오늘 EiE 수강생 = 독립 SQL');
+    assert.ok(P.programLabel('eie', subjects, true) === 'EiE');
+  });
+  // 등록 '동시 등록(두 과목 이상)'(원장 10-28) = Σ과목 줄(모름 포함) − 전체 − (세 묶음 이상 학생의 남는 몫) · 필터 'both' = 그 줄.
+  await run(async (sql) => {
+    // 세 묶음 이상(예: EiE + 인재원 영어 + 수학) 반을 다닌 적 있는 학생 — 없으면 Σ − 전체 = 동시 등록이 정확히, 있으면 그만큼 남는다(≥).
+    const [{ n: three }] = await sql`select count(*)::int n from (select e.student_id from public.enrollments e join public.classes c on c.id = e.class_id
+      where e.tenant_id=${t} and c.subject is not null group by e.student_id
+      having count(distinct case when c.subject = 'english' and c.english_track = 'eie' then 'eie' when c.subject = 'english' then 'english' else c.subject end) >= 3) x`;
+    for (const grain of ['week', 'month', 'year']) {
+      const windows = windowsFor(grain, asOf), out = await series(sql, 'joins', windows, 'subject');
+      const both = out.rows.find((r) => r.key === 'both');
+      assert.equal(both?.label, '동시 등록(두 과목 이상)');
+      const f = await series(sql, 'joins', windows, 'subject', { dim: 'subject', key: 'both' });
+      assert.deepEqual(vals(f.total), vals(both.points), `${grain} 필터 = 그 줄`);
+      out.total.forEach((p, i) => {
+        if (!p) return;
+        const sum = out.rows.filter((r) => r.key !== 'both').reduce((a, r) => a + (r.points[i]?.[0] ?? 0), 0);
+        const extra = sum - p[0] - both.points[i][0];
+        if (three === 0) assert.equal(extra, 0, `${grain} ${i} 동시 등록 = Σ − 전체`);
+        else assert.ok(extra >= 0, `${grain} ${i} 동시 등록 ≤ Σ − 전체(세 묶음 학생 ${three}명)`);
+      });
+    }
+  });
+  // 그 밖의 기준도 EiE 줄 · 키 낱말 'eie' · 이름 'EiE'.
+  await run(async (sql) => {
+    for (const [id, by] of [['courses', 'subject'], ['joins', 'subject'], ['withdrawn', 'subject'], ['intake', 'subject']]) {
+      const out = await series(sql, id, windowsFor('month', asOf), by), r = out.rows.find((x) => x.key === 'eie');
+      assert.ok(r && r.label === 'EiE', `${id}: EiE 줄`);
+      assert.equal(out.rows.find((x) => x.key === 'english')?.label, '인재원 영어', `${id}: 인재원 영어 줄`);
+    }
+  });
+});
+
+test("'자세히 보기' 목록(records) — 필터를 건 창마다 목록 길이 = 전체 값 · 줄 모양 · 필터 없으면 목록 없음", { skip: SKIP }, async () => {
+  const { DASHBOARD_TREND_METRICS: ALL } = await import('./v2-dashboard-flow.mjs');
+  const WITH = ['joins', 'withdrawn', 'intake', 'new-enrollments', 'exits', 'early-exits', 'recent-absent', 'level-tests', 'makeups'];
+  const DAY = /^\d{4}-\d{2}-\d{2}$/;
+  await run(async (sql) => {
+    for (const id of WITH) {
+      const m = ALL.find((x) => x.id === id), dim = m.dims[0].id, windows = windowsFor('month', m.endsYesterday ? addDays(asOf, -1) : asOf);
+      const plain = await m.series({ sql, asOf, tenantId: t, importV2, windows, by: dim, filter: null });
+      assert.equal(plain.records, undefined, `${id}: 필터 없으면 목록 없음`);
+      const row = plain.rows.find((r) => r.points.some((p) => p && p[0] > 0));
+      assert.ok(row, `${id}: 값이 있는 줄`);
+      const f = await m.series({ sql, asOf, tenantId: t, importV2, windows, by: dim, filter: { dim, key: row.key } });
+      assert.equal(f.records.length, windows.length, `${id}: 창 수`);
+      f.total.forEach((p, i) => {
+        if (p === null) { assert.equal(f.records[i], null, `${id} ${i}: 기록 없음 창`); return; }
+        assert.equal(f.records[i].length, p[0], `${id} ${i}: 목록 길이 = 전체`);
+        const keys = f.records[i].map((r) => r.key);
+        assert.ok(keys.every((k) => typeof k === 'string' && k), `${id} ${i}: 줄마다 key`);
+        assert.equal(new Set(keys).size, keys.length, `${id} ${i}: 칸 안 key 중복 없음`);
+        for (const r of f.records[i]) {
+          assert.ok(!/\d{2,4}-?\d{3,4}-?\d{4}/.test(`${r.name} ${r.note ?? ''}`), `${id}: 연락처 노출 ${r.name}`);
+          assert.ok(!/(^|[·\s])(math|english|eie|unknown|korean|science)([·\s]|$)/.test(r.note ?? ''), `${id}: 비고에 과목 키 원문 ${r.note}`);
+          assert.ok(typeof r.id === 'string' && r.id && typeof r.name === 'string' && r.name, `${id}: id·이름`);
+          if (r.date) assert.match(r.date, DAY, `${id}: 날짜`);
+          if (r.sub !== undefined) assert.ok(r.sub && !/null|undefined/.test(r.sub), `${id}: 학교학년 ${r.sub}`);
+          assert.ok(!('school' in r) && !('student' in r) && !('grade' in r), `${id}: 내부 칸이 새지 않는다`);
+        }
+      });
+    }
+  });
+});
+
+test('목록에 연락처가 새지 않는다(레벨테스트 = 모든 창 × 모든 줄 필터 · 나머지 = 월) · 같은 상담은 신규문의와 레벨테스트에서 같은 영어 키', { skip: SKIP }, async () => {
+  const { DASHBOARD_TREND_METRICS: ALL } = await import('./v2-dashboard-flow.mjs');
+  // 코드와 다른 넓은 꼴 — 점·빈칸 구분 · 앞자리 생략.
+  const PHONES = [/\d{2,4}[-.\s]?\d{3,4}[-.\s]?\d{4}/, /\d{3,4}[-.\s]\d{4}/];
+  // 화면에 보이는 글자 칸만(id·key = UUID · date = 날짜는 숫자 꼴이라 뺀다).
+  const leak = (r) => ['name', 'sub', 'note', 'dateLabel'].map((k) => r[k]).filter((v) => typeof v === 'string').some((v) => PHONES.some((re) => re.test(v)));
+  const lt = ALL.find((x) => x.id === 'level-tests'), it = ALL.find((x) => x.id === 'intake');
+  await run(async (sql) => {
+    for (const grain of ['day', 'week', 'month', 'year']) {
+      const windows = windowsFor(grain, addDays(asOf, -1)), plain = await lt.series({ sql, asOf, tenantId: t, importV2, windows, by: 'subject', filter: null });
+      for (const row of plain.rows) {
+        const f = await lt.series({ sql, asOf, tenantId: t, importV2, windows, by: 'subject', filter: { dim: 'subject', key: row.key } });
+        for (const cell of f.records) for (const r of cell ?? []) assert.ok(!leak(r), `레벨테스트 ${grain} ${row.key}: ${JSON.stringify(r)}`);
+      }
+    }
+    for (const id of ['joins', 'withdrawn', 'intake', 'new-enrollments', 'exits', 'early-exits', 'recent-absent', 'makeups']) {
+      const m = ALL.find((x) => x.id === id), dim = m.dims[0].id, windows = windowsFor('month', m.endsYesterday ? addDays(asOf, -1) : asOf);
+      for (const row of (await m.series({ sql, asOf, tenantId: t, importV2, windows, by: dim, filter: null })).rows) {
+        const f = await m.series({ sql, asOf, tenantId: t, importV2, windows, by: dim, filter: { dim, key: row.key } });
+        for (const cell of f.records) for (const r of cell ?? []) assert.ok(!leak(r), `${id} ${row.key}: ${JSON.stringify(r)}`);
+      }
+    }
+    // 같은 상담 id → 같은 영어 키(EiE · 인재원 영어 · 구분 모름) — 연 창 줄 필터의 목록으로 상담마다 든 키를 모아 견준다.
+    const ENG = ['eie', 'english', 'englishUnsplit'];
+    const keysById = async (m, end) => {
+      const windows = windowsFor('year', end), out = new Map();
+      for (const key of ENG) {
+        const f = await m.series({ sql, asOf, tenantId: t, importV2, windows, by: 'subject', filter: { dim: 'subject', key } });
+        for (const cell of f.records) for (const r of cell ?? []) out.set(r.id, [...(out.get(r.id) ?? []), key]);
+      }
+      return out;
+    };
+    const [a, b] = [await keysById(it, asOf), await keysById(lt, addDays(asOf, -1))];
+    let both = 0;
+    for (const [id, keys] of b) if (a.has(id)) { both += 1; assert.deepEqual([...new Set(keys)].sort(), [...new Set(a.get(id))].sort(), `상담 ${id}`); }
+    assert.ok(both > 0, '두 지표에 함께 든 상담이 있어야 시험이 된다');
   });
 });
 

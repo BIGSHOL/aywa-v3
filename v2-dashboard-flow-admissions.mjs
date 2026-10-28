@@ -16,11 +16,15 @@
 import { queryGate, rules as rosterRules, resolveSettings } from './v2-onescreen-roster.mjs';
 import { kpi, weekWindows, addDays } from './domain-snapshot-core.mjs';
 import { tenantId as COPY_TENANT } from './full-db.mjs';
+import { englishRules, ENGLISH_RULE_MODULES, consultTracks, namedRecords } from './v2-dashboard-flow-students.mjs';
 import { rules as admissionsRules, dateRangeEvents, consultationCandidates, consultationBases, homonymFamilies, firstClassCandidates,
   firstClassScheduleCandidates, admissionsRows } from './v2-dashboard-admissions.mjs';
 
 const SLICE_MODULES = { slices: 'features/dashboard/layout/slices.ts', program: 'features/students/enrollment/program.ts' };
 let sliceP = null;
+let englishP = null;
+const loadEnglishModules = (load) => (englishP ??= Promise.all(Object.entries(ENGLISH_RULE_MODULES).map(async ([k, m]) => [k, await load(m)])).then(Object.fromEntries)
+  .catch((e) => { englishP = null; throw e; }));
 async function sliceRules(importV2) {
   sliceP ??= Promise.all(Object.entries(SLICE_MODULES).map(async ([k, m]) => [k, await importV2(m)])).then(Object.fromEntries).catch((e) => { sliceP = null; throw e; });
   return sliceP;
@@ -49,12 +53,17 @@ async function firstLevelTestDay(R, gate, t) {
  * 레벨테스트 일정마다 과목 묶음 — 2.0 calendar 영역과 같은 연결(admissionsRows: 반 · 상담 · 동명이인)과 같은 과목 판정(subjectsOf → sliceGroupsOf).
  * 실패를 삼키는 자리도 일정 카드와 같다: 상담 후보(→ 없음) · 첫 수업 후보(→ 둘 다 없음) · 동명이인(→ 상담 연결 끔).
  */
-async function subjectGroups(R, S, gate, t, settings, tests) {
+async function subjectGroups(R, S, gate, t, settings, tests, { eieOn = false, load, today }) {
   const sliceSubjects = settings.operations.subjects.map((s) => ({ key: s.key, label: s.label }));
   const subjectLabels = R.subjects.subjectLabelRecord(settings.operations.subjects), notNames = Object.values(subjectLabels);
   const programSubjects = S.program.programSubjectsOf(subjectLabels), groupOf = (key) => S.program.subjectGroupOf(key, programSubjects);
-  const labelOf = (key) => (key === UNKNOWN ? '과목 모름' : sliceSubjects.find((s) => s.key === key)?.label ?? sliceSubjects.find((s) => groupOf(s.key) === key)?.label ?? key);
-  if (!tests.length) return { groups: new Map(), labelOf };
+  // 영어 = EiE · 인재원 영어로 가른다(원장 10-28 "영어와 EiE 분리") — 이름 = 2.0 programLabel · EiE 모듈이 꺼진 학원은 종전 그대로.
+  const labelOf = (key) => (key === UNKNOWN ? '과목 모름'
+    : eieOn && key === 'eie' ? S.program.programLabel('eie', sliceSubjects, eieOn)
+      : eieOn && key === 'english' ? S.program.programLabel('injaewon', sliceSubjects, eieOn)
+        : key === 'englishUnsplit' ? '영어(구분 모름)'
+        : sliceSubjects.find((s) => s.key === key)?.label ?? sliceSubjects.find((s) => groupOf(s.key) === key)?.label ?? key);
+  if (!tests.length) return { groups: new Map(), labelOf, who: new Map() };
   const firstDay = tests.reduce((m, e) => (e.startDate < m ? e.startDate : m), tests[0].startDate), lastDay = tests.reduce((m, e) => (e.endDate > m ? e.endDate : m), tests[0].endDate);
   // 매처는 일정마다 '상담일 ≥ 일정일 − 60일'만 본다 — 가장 이른 일정의 그날부터 한 번 읽으면 모든 일정의 창을 덮는다.
   const since = R.onboard.shiftDate(firstDay, -R.consultLink.CONSULTATION_LINK_WINDOW_DAYS);
@@ -68,11 +77,43 @@ async function subjectGroups(R, S, gate, t, settings, tests) {
   const rows = admissionsRows(R, tests, { candidates, classSlots, consultations, families, subjectLabels, notNames, since });
   const consultSubject = new Map(consultations.map((c) => [c.id, c.subject])), classSubject = new Map([...candidates, ...classSlots].map((c) => [c.classId, c.subject]));
   const groupsOf = S.slices.sliceGroupsOf(sliceSubjects, groupOf);
-  return { labelOf, groups: new Map(rows.map((row, i) => {
+  // EiE 판정 — 영어로 읽힌 일정을 차례대로: ① 이은 반이 영어 반이면 그 반(2.0 programOf: 과목 + english_track — EiE면 EiE, 아니면 인재원 영어)
+  // ② 이은 상담 = 신규문의와 같은 판정(원생 흐름 englishRules.consultGroupsOf + consultTracks — 글자의 'EiE'·'인재원' → 이어진 학생의 영어 반 · 같은 상담은 두 지표에서 같은 키)
+  // ③ 직원 표식([…])을 뗀 일정 제목·태그에 'EiE'(2.0 admissions-consultation-link.ts stripStaffTags와 같은 정리) · 그래도 모르면 '영어(구분 모름)'(englishUnsplit).
+  const classIds = [...new Set(rows.flatMap((row) => (row.matchedClass ? [row.matchedClass.id] : [])))];
+  const tracks = eieOn && classIds.length ? new Map((await gate.soft((s) => s`select id::text id, subject, english_track from public.classes where tenant_id=${t} and id = any(${classIds}::uuid[])`, []))
+    .map((c) => [c.id, S.program.programOf({ subject: c.subject, englishTrack: c.english_track }, sliceSubjects)])) : new Map();
+  const EIE = /eie/i, stripStaffTags = (title) => title.replace(/\[[^\]]*\]/g, ' ');
+  const ER = eieOn ? englishRules(await loadEnglishModules(load), settings) : null;
+  const consultById = new Map(consultations.map((c) => [c.id, c]));
+  const linked = rows.flatMap((row) => (row.matchedConsultation && consultById.get(row.matchedConsultation.id) ? [consultById.get(row.matchedConsultation.id)] : []));
+  const consultTrack = ER ? await consultTracks({ gate, t, today, ...ER }, linked.map((c) => ({ id: c.id, studentId: c.studentId, day: c.consultedOn }))) : new Map();
+  const englishOf = (row, e) => {
+    const cls = row.matchedClass ? tracks.get(row.matchedClass.id) : undefined;
+    if (cls === 'eie' || cls === 'injaewon') return cls === 'eie' ? 'eie' : 'english';
+    const c = row.matchedConsultation ? consultById.get(row.matchedConsultation.id) : null;
+    // 상담이 이어졌으면 그 상담의 판정 그대로(신규문의와 같은 키 — 상담이 '구분 모름'이면 여기서도) · 상담이 없을 때만 제목.
+    if (c) {
+      const g = ER.consultGroupsOf(c.subject, consultTrack.get(c.id) ?? null);
+      return g.includes('eie') ? 'eie' : g.includes('english') ? 'english' : 'englishUnsplit';
+    }
+    return EIE.test(`${stripStaffTags(e.title ?? '')} ${e.tag?.name ?? ''}`) ? 'eie' : 'englishUnsplit';
+  };
+  // '자세히 보기' 목록의 사람 — 일정 제목은 쓰지 않는다(연락처·메모가 적힌 일정이 있다): 이은 원생(첫 수업 반 → 상담의 원생) → 이은 상담(문의 이름·학교·학년) → 없음.
+  const who = new Map(rows.map((row, i) => {
+    const c = row.matchedConsultation ? consultById.get(row.matchedConsultation.id) : null;
+    const studentId = row.matchedClass?.studentId ?? c?.studentId ?? null;
+    return [tests[i].id, studentId ? { studentId } : c ? { consult: { id: c.id, name: c.name, school: c.school ?? null, grade: c.grade ?? null } } : null];
+  }));
+  return { labelOf, who, groups: new Map(rows.map((row, i) => {
     const e = tests[i];
     const subjects = [...(row.matchedConsultation ? [consultSubject.get(row.matchedConsultation.id) ?? null] : []), ...(row.matchedClass ? [classSubject.get(row.matchedClass.id) ?? null] : []),
       ...S.slices.subjectsNamedIn(`${e.title} ${e.tag?.name ?? ''}`, sliceSubjects, groupOf)].filter((k) => !!k);
-    const found = [...new Set(subjects.flatMap((k) => groupsOf(k)))];
+    let found = [...new Set(subjects.flatMap((k) => groupsOf(k)))];
+    if (eieOn && found.includes('english')) {
+      const k = englishOf(row, e);
+      found = [...new Set(found.map((g) => (g === 'english' ? k : g)))];
+    }
     return [e.id, found.length ? found : [UNKNOWN]];
   })) };
 }
@@ -94,7 +135,10 @@ async function levelTests({ sql, asOf, tenantId: t = COPY_TENANT, importV2, wind
   const inWindow = (e, w) => e.startDate <= w.to && e.endDate >= w.from, recorded = (w) => !!since && w.to >= since;
   const count = (list, w) => (recorded(w) ? [list.filter((e) => inWindow(e, w)).length, 1] : null);
   const wantSubjects = bySubject || filter?.dim === 'subject';
-  const { groups, labelOf } = wantSubjects ? await subjectGroups(R, S, gate, t, await tenantSettings(gate, RR, t), tests) : { groups: new Map(), labelOf: (k) => k };
+  const settings = wantSubjects ? await tenantSettings(gate, RR, t) : null;
+  const { groups, labelOf, who = new Map() } = wantSubjects
+    ? await subjectGroups(R, S, gate, t, settings, tests, { eieOn: RR.isModuleEnabled(settings.modules.disabled, 'eie'), load, today: asOf })
+    : { groups: new Map(), labelOf: (k) => k };
   const chosen = filter?.dim === 'subject' ? tests.filter((e) => groups.get(e.id).includes(filter.key)) : tests;
   const rows = [];
   if (bySubject) {
@@ -105,7 +149,16 @@ async function levelTests({ sql, asOf, tenantId: t = COPY_TENANT, importV2, wind
       rows.push({ key: k, label: labelOf(k), points: windows.map((w) => count(mine, w)) });
     }
   }
-  return { since, total: windows.map((w) => count(chosen, w)), rows };
+  // '자세히 보기' 아래 목록(원장 10-28) — 필터를 걸었을 때만 · 창마다 그 창에 든 레벨테스트 일정(줄 id = 일정 id · 이름 = 일정 제목).
+  // 줄 = 이은 원생(id = 학생 id · 이름·학교학년은 원생 표) · 이은 상담(id = 상담 id · 문의 이름·학교·학년) · 없으면 '레벨테스트'(id = 일정 id) · key = 일정 id.
+  const recordOf = (e) => {
+    const w = who.get(e.id), base = { key: e.id, date: e.startDate, dateLabel: '일정일', ...(groups.get(e.id) ? { note: groups.get(e.id).map(labelOf).join('·') } : {}) };
+    if (w?.studentId) return { id: w.studentId, ...base };
+    if (w?.consult) return { id: w.consult.id, student: false, name: w.consult.name, school: w.consult.school, grade: w.consult.grade, ...base };
+    return { id: e.id, student: false, name: '레벨테스트', school: null, grade: null, ...base };
+  };
+  const records = filter ? windows.map((w) => (recorded(w) ? chosen.filter((e) => inWindow(e, w)).map(recordOf) : null)) : null;
+  return { since, ...await namedRecords(gate, t, load, { total: windows.map((w) => count(chosen, w)), rows, ...(records ? { records } : {}) }) };
 }
 
 /** 확장 추세 지표(trend-metrics.mjs 형식) — 운영실 묶음. */

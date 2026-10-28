@@ -24,9 +24,10 @@ import { rules as attendanceRules, byChunks, OVERDUE_LOOKBACK_DAYS, recentAbsenc
 import { kpi, weekWindows, addDays } from './domain-snapshot-core.mjs';
 import { tenantId as COPY_TENANT } from './full-db.mjs';
 import { isolated } from './v2-dashboard-isolate.mjs';
+import { namedRecords } from './v2-dashboard-flow-students.mjs';
 
 const EXTRA = { fct: 'features/students/stats/first-class-trend.ts', slices: 'features/dashboard/layout/slices.ts', program: 'features/students/enrollment/program.ts',
-  subjects: 'features/owner/subjects.ts', groups: 'features/enrollment/intake-groups.ts' };
+  subjects: 'features/owner/subjects.ts', groups: 'features/enrollment/intake-groups.ts', modules: 'lib/modules.ts' };
 const min = (a, b) => (a < b ? a : b), max = (a, b) => (a > b ? a : b);
 const one = (v) => (v == null ? null : [v, 1]);
 /** 재고·비율 지표: 창 끝 날이 기록 시작 전이면 기록 없음. */
@@ -50,10 +51,23 @@ function prep(sql, t, importV2) {
     const sliceGroup = X.slices.sliceGroupOf(subjects.map((s) => ({ key: s.key, label: s.label })), (k) => X.program.subjectGroupOf(k, programSubjects));
     const meta = X.groups.intakeGroupMeta(subjects);
     const groupKey = (subject) => sliceGroup(subject) ?? UNKNOWN;
-    const groupLabel = (k) => meta[k]?.label ?? (k === UNKNOWN ? '과목 모름' : k);
+    // 영어 = EiE · 인재원 영어로 가른다(원장 10-28 "영어와 EiE 분리") — 반의 프로그램 판정은 2.0 programOf(과목 + english_track) 그대로.
+    // EiE 모듈이 꺼진 학원은 종전 그대로(영어 한 묶음). 이름 = 2.0 programLabel.
+    const eieOn = X.modules.isModuleEnabled(settings.modules.disabled, 'eie');
+    const own = subjects.map((s) => ({ key: s.key, label: s.label }));
+    const tracks = eieOn ? new Map((await gate`select id::text id, english_track from public.classes where tenant_id=${t}`).map((r) => [r.id, r.english_track])) : new Map();
+    const classGroupKey = (subject, classId) => {
+      const g = groupKey(subject);
+      return eieOn && g === 'english' && X.program.programOf({ subject, englishTrack: tracks.get(classId) ?? null }, own) === 'eie' ? 'eie' : g;
+    };
+    // 첫 수업은 영어를 가르지 못한다(2.0 firstClassTrend가 과목 이름만 받는다) — 그 지표의 영어 줄은 종전 이름('영어').
+    const plainGroupLabel = (k) => meta[k]?.label ?? (k === UNKNOWN ? '과목 모름' : k);
+    const groupLabel = (k) => (eieOn && k === 'eie' ? X.program.programLabel('eie', own, eieOn)
+      : eieOn && k === 'english' ? X.program.programLabel('injaewon', own, eieOn)
+        : meta[k]?.label ?? (k === UNKNOWN ? '과목 모름' : k));
     // 창 끝 = 그날 복사본을 뜬 시각(같은 시각끼리 견준다 · 복사본 날짜는 복사본을 뜬 순간).
     const at = (d) => new Date(clock.at.getTime() - (Date.parse(`${clock.day}T00:00:00Z`) - Date.parse(`${d}T00:00:00Z`)));
-    return { t, gate, R, K, C0, X, clock, settings, subjects, groupKey, groupLabel, at, load, memo: new Map() };
+    return { t, gate, R, K, C0, X, clock, settings, subjects, groupKey, classGroupKey, groupLabel, plainGroupLabel, eieOn, at, load, memo: new Map() };
   })().catch((e) => { m.delete(t); throw e; }));
   return m.get(t);
 }
@@ -123,7 +137,7 @@ async function firstClassSeries({ sql, asOf, tenantId: t = COPY_TENANT, importV2
   if (base && by === 'kind') rows_ = KINDS.filter(([k]) => !fKind || k === fKind).map(([k, label]) => ({ key: k, label, points: series(base, k) }));
   if (base && by === 'subject') {
     const groups = [...new Set(rows.filter((r) => r.startDate >= lo && r.startDate <= hi && r.subject?.trim()).map((r) => b.groupKey(r.subject.trim())))];
-    rows_ = groups.map((g) => ({ key: g, label: b.groupLabel(g), points: series(trendOf(g), fKind) }));
+    rows_ = groups.map((g) => ({ key: g, label: b.plainGroupLabel(g), points: series(trendOf(g), fKind) }));
   }
   return { since, total, rows: rows_.filter((r) => r.points.some((p) => p && p[0] > 0)) };
 }
@@ -140,20 +154,25 @@ async function absentSeries({ sql, asOf, tenantId: t = COPY_TENANT, importV2, wi
   // 담당 = 운영실 칸과 같은 칸별 판정(대신 보강 → 자리 → 교시 담당·그날 담임) — 결석마다 그 키를 2.0 접기(foldRecentAbsences)의 teachers에 싣는다.
   const axes = needAxes && data.rows.length ? await once(b, `absentAxes|${lo}|${hi}`, () => cellAxes(R, b.gate, b.t, R.asubj.effectiveAbsentCells(data.rows), data.history)) : new Map();
   const labels = new Map([['unassigned', '담당 모름']]);
-  for (const a of axes.values()) if (a.label) labels.set(axisKey(a), a.label);
+  // 자리(JJ·랩실) 담당 = 'JJ실'·'LAB실'처럼 방 이름으로(원장 10-28 — 줄 이름이 'JJ'·'LAB'만이면 무엇인지 모른다).
+  const seatName = (s) => (s.endsWith('실') ? s : `${s}실`);
+  for (const a of axes.values()) if (a.label) labels.set(axisKey(a), a.source === 'seat' && !a.teacherId && a.seatLabel?.trim() ? seatName(a.seatLabel.trim()) : a.label);
   const teacherOf = needAxes ? (cell) => ({ label: axisKey(axes.get(cell.id)) }) : () => null;
   const folds = windows.map((w) => (flowBefore(w, since) || w.from > hi ? null
     : R.recent.foldRecentAbsences(data.rows.filter((r) => r.session_date >= w.from && r.session_date <= w.to), { from: w.from, to: min(w.to, hi) }, teacherOf)));
   const classNames = new Map();
   for (const f of folds) for (const s of f?.students ?? []) for (const a of s.absences) classNames.set(a.classId, a.className ?? '반 이름 없음');
-  const keysOf = { subject: (a) => [b.groupKey(a.subject)], class: (a) => [a.classId], teacher: (a) => (a.teachers.length ? a.teachers : ['unassigned']) };
+  const keysOf = { subject: (a) => [b.classGroupKey(a.subject, a.classId)], class: (a) => [a.classId], teacher: (a) => (a.teachers.length ? a.teachers : ['unassigned']) };
   const labelOf = { subject: b.groupLabel, class: (k) => classNames.get(k) ?? '반 이름 없음', teacher: (k) => labels.get(k) ?? '이름 확인 필요' };
   // 필터 = 과목 관리자 화면처럼 그 기준의 결석만 남기고 다시 센다(narrow.ts — 학생은 그 결석이 하나라도 있으면).
   const keep = filter && keysOf[filter.dim] ? (a) => keysOf[filter.dim](a).includes(filter.key) : () => true;
-  const lists = folds.map((f) => (f ? f.students.map((s) => s.absences.filter(keep)).filter((list) => list.length) : null));
+  const lists = folds.map((f) => (f ? f.students.map((s) => ({ s, abs: s.absences.filter(keep) })).filter((x) => x.abs.length) : null));
   const total = lists.map((l) => one(l?.length));
-  const rows = keysOf[by] ? tally(lists, (list) => [...new Set(list.flatMap(keysOf[by]))], labelOf[by]) : [];
-  return { since, total, rows };
+  const rows = keysOf[by] ? tally(lists, (x) => [...new Set(x.abs.flatMap(keysOf[by]))], labelOf[by]) : [];
+  // '자세히 보기' 아래 목록(원장 10-28) — 필터를 걸었을 때만 · 창마다 결석한 학생(그 기준에 든 결석만).
+  const records = filter ? lists.map((l) => l && l.map((x) => ({ id: x.s.studentId, key: x.s.studentId, name: x.s.name, date: x.abs.at(-1).date, dateLabel: '마지막 결석일',
+    note: [`결석 ${x.abs.length}회`, ...new Set(x.abs.map((a) => a.className).filter(Boolean))].join(' · ') }))) : null;
+  return { since, ...await namedRecords(b.gate, t, b.load, { total, rows, ...(records ? { records } : {}) }) };
 }
 
 // ── 보강예정 ──────────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -209,7 +228,7 @@ async function makeupSeries({ sql, asOf, tenantId: t = COPY_TENANT, importV2, wi
   if (R.mtypes.featureLive(b.settings.makeups?.mode)) throw new Error('새 보강 체계의 보강 참여는 아직 옮기지 않았습니다');
   const { since, items } = await once(b, 'makeupLives', () => makeupLives(b));
   const nowMs = b.clock.at.getTime();
-  const keysOf = { subject: (x) => [b.groupKey(x.subject)], class: (x) => [x.classId] };
+  const keysOf = { subject: (x) => [b.classGroupKey(x.subject, x.classId)], class: (x) => [x.classId] };
   const labelOf = { subject: b.groupLabel, class: (k) => items.find((x) => x.classId === k)?.className ?? '반 이름 없음' };
   const keep = filter && keysOf[filter.dim] ? (x) => keysOf[filter.dim](x).includes(filter.key) : () => true;
   // 창 끝 날의 운영실 칸 — 그날부터 한 달(monthAheadWindow) + 지난 60일, 그 순간 예약 상태인 것.
@@ -219,7 +238,9 @@ async function makeupSeries({ sql, asOf, tenantId: t = COPY_TENANT, importV2, wi
     const range = R.upcoming.monthAheadWindow(day), from = R.week.shiftDays(day, -OVERDUE_LOOKBACK_DAYS), ms = b.at(day).getTime();
     return items.filter((x) => keep(x) && x.makeupDate >= from && x.makeupDate <= range.end && stateAt(x, ms, nowMs) === 'reserved');
   });
-  return { since, total: lists.map((l) => one(l?.length)), rows: keysOf[by] ? tally(lists, keysOf[by], labelOf[by]) : [] };
+  const records = filter ? lists.map((l) => l && l.map((x) => ({ id: x.info.studentId, key: x.id, date: x.makeupDate, dateLabel: '보강일', ...(x.className ? { note: x.className } : {}) }))) : null;
+  return { since, ...await namedRecords(b.gate, t, b.load, { total: lists.map((l) => one(l?.length)), rows: keysOf[by] ? tally(lists, keysOf[by], labelOf[by]) : [],
+    ...(records ? { records } : {}) }) };
 }
 
 // ── 등원율 ────────────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -229,12 +250,12 @@ const rateBuckets = (b, from, to) => once(b, `rate|${from}|${to}`, () => b.gate`
     from public.attendance_records where tenant_id = ${b.t} and session_date between ${from} and ${to}
     order by student_id, class_id, session_date, coalesce(slot_start::text, ''), date_trunc('milliseconds', recorded_at) desc, id desc
   )
-  select to_char(e.session_date, 'YYYY-MM-DD') bucket, c.subject, count(*)::int total, (count(*) filter (where e.status in ('present', 'late')))::int attended
-  from eff e left join public.classes c on c.id = e.class_id and c.tenant_id = ${b.t} group by 1, 2`);
+  select to_char(e.session_date, 'YYYY-MM-DD') bucket, c.subject, c.id::text class_id, count(*)::int total, (count(*) filter (where e.status in ('present', 'late')))::int attended
+  from eff e left join public.classes c on c.id = e.class_id and c.tenant_id = ${b.t} group by 1, 2, 3`);
 async function attendanceRateSeries({ sql, asOf, tenantId: t = COPY_TENANT, importV2, windows, by, filter }) {
   const b = await prep(sql, t, importV2), today = asOf ?? b.clock.day, since = await attendanceSince(b);
   const lo = windows[0].from, hi = min(windows.at(-1).to, today);
-  const buckets = (await rateBuckets(b, lo, hi)).map((r) => ({ ...r, group: b.groupKey(r.subject) }));
+  const buckets = (await rateBuckets(b, lo, hi)).map((r) => ({ ...r, group: b.classGroupKey(r.subject, r.class_id) }));
   const keep = filter?.dim === 'subject' ? (r) => r.group === filter.key : () => true;
   const point = (w, pred) => {
     if (before(w, since) || w.from > hi) return null;

@@ -43,6 +43,8 @@ if (db) {
   // 과목 묶음(따로 적음) — 영어·수학 키이거나 설정 이름에 '수학'·'영어'가 들면 그 묶음, 설정의 그 밖 과목은 그 키, 빈 과목·설정에 없는 과목은 '과목 모름'.
   var labelOf = (k) => settings.operations.subjects.find((s) => s.key === k)?.label ?? null;
   var group = (k) => { k = k?.trim(); if (!k || labelOf(k) === null) return 'unknown'; return k === 'english' || labelOf(k).includes('영어') ? 'english' : k === 'math' || labelOf(k).includes('수학') ? 'math' : k; };
+  // 영어는 반의 영어 갈래로 EiE · 인재원 영어를 가른다(원장 10-28 "영어와 EiE 분리") — 따로 적은 판정.
+  var cgroup = (k, track) => { const g = group(k); return g === 'english' && track === 'eie' ? 'eie' : g; };
   var byKey = (rows, keyOf) => { const m = new Map(); for (const r of rows) m.set(keyOf(r), [...(m.get(keyOf(r)) ?? []), r]); return m; };
   var daysIn = (w, lo, hi) => { const out = []; for (let d = w.from > lo ? w.from : lo; d <= w.to && d <= hi; d = addDays(d, 1)) out.push(d); return out; };
   var sumPts = (rows, i, k = 0) => rows.reduce((n, r) => n + (r.points[i]?.[k] ?? 0), 0);
@@ -127,7 +129,7 @@ test('결석한 학생: 일·주·월 창(어제까지) = 칸마다 최신 정�
   for (const grain of ['day', 'week', 'month']) {
     const windows = winOf('recent-absent', grain), lo = windows[0].from, hi = windows.at(-1).to;
     const raw = await db`select a.id::text id, a.student_id::text sid, a.class_id::text cid, a.session_date::text d, coalesce(a.slot_start::text, '') slot, a.status::text status,
-        to_json(a.recorded_at)#>>'{}' rec, c.subject from public.attendance_records a left join public.classes c on c.id = a.class_id
+        to_json(a.recorded_at)#>>'{}' rec, c.subject, c.english_track track from public.attendance_records a left join public.classes c on c.id = a.class_id
       where a.tenant_id=${t} and a.session_date between ${lo} and ${hi}`;
     // 칸(학생·반·날·교시)마다 기록 시각이 가장 늦은 줄(같으면 id가 큰 줄) — 그 줄이 결석인 칸.
     const latest = new Map();
@@ -140,7 +142,7 @@ test('결석한 학생: 일·주·월 창(어제까지) = 칸마다 최신 정�
       if (w.from < first) { assert.equal(out.total[i], null, `${grain} ${w.label}: 기록 시작 전에 시작한 창`); return; }
       const cells = absentCells.filter((c) => c.d >= w.from && c.d <= w.to), students = (pred) => new Set(cells.filter(pred).map((c) => c.sid)).size;
       assert.deepEqual(out.total[i], [students(() => true), 1], `${grain} ${w.label}`);
-      for (const r of out.rows) assert.deepEqual(r.points[i], [students((c) => group(c.subject) === r.key), 1], `${grain} ${w.label} ${r.label}`);
+      for (const r of out.rows) assert.deepEqual(r.points[i], [students((c) => cgroup(c.subject, c.track) === r.key), 1], `${grain} ${w.label} ${r.label}`);
       for (const r of byClass.rows) assert.deepEqual(r.points[i], [students((c) => c.cid === r.key), 1], `${grain} ${w.label} ${r.label}`);
     });
     for (const o of [out, byClass, byTeacher]) relation(o, 'overlap');
@@ -209,7 +211,7 @@ test('등원율: 일·주·월 창 = 칸마다 최신 정정의 (출석 + 지각
   for (const grain of ['day', 'week', 'month']) {
     const windows = winOf('attendance-rate', grain), lo = windows[0].from, hi = windows.at(-1).to;
     const raw = await db`select a.id::text id, a.student_id::text sid, a.class_id::text cid, a.session_date::text d, coalesce(a.slot_start::text, '') slot, a.status::text status,
-        to_json(a.recorded_at)#>>'{}' rec, c.subject from public.attendance_records a left join public.classes c on c.id = a.class_id
+        to_json(a.recorded_at)#>>'{}' rec, c.subject, c.english_track track from public.attendance_records a left join public.classes c on c.id = a.class_id
       where a.tenant_id=${t} and a.session_date between ${lo} and ${hi}`;
     // 칸마다 마지막 기록 — 시각은 밀리초까지(같은 밀리초면 id가 큰 줄).
     const latest = new Map();
@@ -222,7 +224,7 @@ test('등원율: 일·주·월 창 = 칸마다 최신 정정의 (출석 + 지각
     windows.forEach((w, i) => {
       const inW = cells.filter((c) => c.d >= w.from && c.d <= w.to), pt = (pred) => { const xs = inW.filter(pred); return xs.length ? [xs.filter((c) => c.status === 'present' || c.status === 'late').length, xs.length] : null; };
       assert.deepEqual(out.total[i], w.to < out.since ? null : pt(() => true), `${grain} ${w.label}`);
-      for (const r of out.rows) assert.deepEqual(r.points[i], w.to < out.since ? null : pt((c) => group(c.subject) === r.key), `${grain} ${w.label} ${r.label}`);
+      for (const r of out.rows) assert.deepEqual(r.points[i], w.to < out.since ? null : pt((c) => cgroup(c.subject, c.track) === r.key), `${grain} ${w.label} ${r.label}`);
     });
     relation(out, 'same', 0); relation(out, 'same', 1);
     if (grain === 'week') notes.push(`주 13창 ${out.ms}ms`);
@@ -234,4 +236,25 @@ test('등원율: 일·주·월 창 = 칸마다 최신 정정의 (출석 + 지각
     assert.equal(s ? (s[0] / s[1]) * 100 : null, p.rate, p.date);
   });
   tc.diagnostic(notes.join(' · '));
+});
+
+test('영어 = EiE · 인재원 영어로 가른다(원장 10-28) · 다시 합치면 종전 영어 줄 · 자리 담당 이름 = ○○실 · 줄 이름에 영문 키 없음', { skip: SKIP }, async () => {
+  const windows = winOf('attendance-rate', 'month');
+  const rate = await run('attendance-rate', windows, 'subject'), by = Object.fromEntries(rate.rows.map((r) => [r.key, r]));
+  assert.ok(by.eie && by.english, 'EiE 줄과 인재원 영어 줄');
+  assert.equal(by.eie.label, 'EiE'); assert.equal(by.english.label, '인재원 영어');
+  // 칸 수(분모)·출석 수(분자)는 합 — 다시 합친 영어 = EiE 반 + 나머지 영어 반(따로 센 값과 같다는 것은 위 등원율 시험이 칸마다 본다).
+  const [{ n }] = await db`select count(*)::int n from public.classes where tenant_id=${t} and subject='english' and english_track='eie'`;
+  assert.ok(n > 0, 'EiE 반이 있다');
+  const absent = await run('recent-absent', winOf('recent-absent', 'month'), 'teacher');
+  for (const r of absent.rows) {
+    // 자리 이름이 있으면 '○○실' · 비었으면 2.0 담당 이름 그대로('자리 수업실' 같은 말을 만들지 않는다).
+    if (/^seat:.+/.test(r.key)) assert.match(r.label, /실$/, r.key);
+    else if (r.key === 'seat:') assert.ok(!/수업실$/.test(r.label), r.label);
+    assert.ok(!/^[a-z_:]+$/i.test(r.label) || /[가-힣]/.test(r.label), `${r.key} → ${r.label}`);
+  }
+  for (const id of ['recent-absent', 'makeups', 'first-classes']) {
+    const out = await run(id, winOf(id, 'month'), 'subject');
+    for (const r of out.rows) assert.ok(/[가-힣]|EiE/.test(r.label), `${id} ${r.key} → ${r.label}`);
+  }
 });
