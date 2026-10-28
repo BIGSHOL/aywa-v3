@@ -6,6 +6,7 @@
 //       마이크로초가 잘려 늘 0행(= 늘 '다른 저장이 먼저')이 된다.
 //    녹음 첨부(audioPath)는 연습 화면에서 받지 않는다(업로드 자체를 거절 — 전사·AI 분석 없음).
 import { audit } from './v2-proc-people.mjs';
+import { notifyClassAssignment } from './v2-timetable-save.mjs'; // 2.0 notifyClassAssignment(반 담임 알림 줄 — 바깥 전송 없음)
 import { countAssignedClasses, detailRules } from './v2-enrollment-detail.mjs'; // 2.0 countAssignedClasses(assigned-classes.ts)
 
 const MODULES = { row: 'features/enrollment/consultation-form-row.ts', changed: 'features/enrollment/consultation-changed.ts', follow: 'features/enrollment/follow-up.ts',
@@ -482,4 +483,121 @@ export async function mergeConsultations(ctx, winnerId, loserIds, choices = {}) 
   await audit(sql, t, user.row, 'consultation_merge', 'enrollment_consultations', String(winner.prospect_name ?? ''),
     { winnerId, loserIds: plan.loserIds, discarded, result: r.data[0]?.result ?? null });
   return { ok: true, winnerId };
+}
+
+// ── 수업 배정(convertConsultationToStudent) ────────────────────────────────────────────────────────────────────────────
+let convertRulesP = null;
+function convertRules(importV2) {
+  convertRulesP ??= Promise.all(['features/enrollment/assign-start-date.ts', 'features/students/name-suffix.ts', 'lib/license/rule.ts'].map((m) => importV2(m)))
+    .then(([start, suffix, license]) => ({ start, suffix, license })).catch((e) => { convertRulesP = null; throw e; });
+  return convertRulesP;
+}
+/** lib/license/server.ts seatBlockReason — 재원생 좌석 한도(조회 실패는 허용 — 2.0과 같다). */
+async function seatBlockReason(sql, C, t, adding) {
+  try {
+    return await sql.savepoint(async (s) => {
+      const [row] = await s`select is_active, max_seats from public.tenant_licenses where tenant_id = ${t} and feature = 'student_seats'`;
+      const limit = C.license.seatLimitOf(row ?? null);
+      if (limit === null) return null;
+      const [{ n }] = await s`select count(*)::int n from public.students where tenant_id = ${t} and status = 'enrolled'`;
+      return C.license.seatsExceeded(limit, n, adding) ? C.license.seatBlockedMessage(limit, n) : null;
+    });
+  } catch { return null; }
+}
+/** findWithdrawnNaturalKeyMatch — 같은 정규화 이름·학교·학년의 퇴원생(조회 실패면 null). */
+async function findWithdrawnNaturalKeyMatch(sql, S, key) {
+  const norm = key.name.toLowerCase().replace(/\s+/g, '');
+  if (!norm) return null;
+  const rows = await sql`select id::text id, school, grade from public.students where tenant_id = ${key.tenantId} and name_normalized = ${norm} and status = 'withdrawn'
+    order by withdrawn_at desc nulls last limit 20`;
+  const hit = rows.find((s) => (S.school.canonicalSchoolName(s.school, key.aliases) ?? '') === (key.school ?? '') && (s.grade ?? '') === (key.grade ?? ''));
+  return hit ? hit.id : null;
+}
+
+/** convertConsultationToStudent(_prev, formData) — 상담 → 학생 + 고른 반 수강(배정일) · 상담 연결·등록 완료. 반환 모양 2.0 그대로. */
+export async function convertConsultationToStudent(ctx, formData) {
+  const { sql, t, user, operations, importV2 } = ctx;
+  const [S, C] = await Promise.all([saveRules(importV2), convertRules(importV2)]);
+  if (!user) return { error: '로그인이 필요합니다' };
+  if (!ctx.canWrite) return { error: '신규 콜&상담 권한이 없습니다' };
+  const consultationId = String(formData.get('consultationId') ?? '').trim();
+  if (!consultationId) return { error: '상담 ID가 누락되었습니다' };
+  const classIds = formData.getAll('classIds').map((v) => String(v).trim()).filter(Boolean);
+  const overrideName = String(formData.get('name') ?? '').trim();
+  const overrideGrade = String(formData.get('grade') ?? '').trim() || null;
+  const overrideSchool = String(formData.get('school') ?? '').trim() || null;
+  const overrideParentName = String(formData.get('parentName') ?? '').trim() || null;
+  const overrideParentPhone = String(formData.get('parentPhone') ?? '').trim() || null;
+  const [c] = /^[0-9a-f-]{36}$/i.test(consultationId)
+    ? await sql`select id::text id, tenant_id::text tenant_id, prospect_name, prospect_grade, prospect_school, parent_name, parent_phone, student_id::text student_id, outcome::text outcome
+      from public.enrollment_consultations where tenant_id = ${t} and id = ${consultationId}` : [];
+  if (!c) return { error: '상담 정보를 불러오지 못했습니다' };
+  if (c.student_id) return { studentId: c.student_id };
+  if (classIds.length === 0) return { error: '배정할 반을 1개 이상 선택하세요' };
+  const valid = classIds.every((id) => /^[0-9a-f-]{36}$/i.test(id))
+    ? new Set((await sql`select id::text id from public.classes where tenant_id = ${t} and id = any(${classIds}::uuid[])`).map((r) => r.id)) : new Set();
+  if (classIds.some((id) => !valid.has(id))) return { error: '배정할 반을 찾을 수 없습니다' };
+  const today = S.kst.kstToday();
+  const startAt = C.start.normalizeAssignStartDate(String(formData.get('startDate') ?? ''), today);
+  if ('error' in startAt) return { error: startAt.error };
+  const startDate = startAt.date;
+  const studentName = overrideName || c.prospect_name;
+  const taken = new Set((await sql`select name from public.students where tenant_id = ${t}`).map((r) => (r.name ?? '').trim()).filter(Boolean));
+  const uniqueName = C.suffix.resolveUniqueStudentName(studentName ?? '', taken);
+  const studentSchool = overrideSchool ?? c.prospect_school, studentGrade = overrideGrade ?? c.prospect_grade;
+  const aliases = operations.schoolSaveAliases ?? [];
+  const savedSchool = await completeSchoolKind(sql, S, t, S.school.canonicalSchoolName(studentSchool, aliases), studentGrade, aliases);
+  if (String(formData.get('ignoreWithdrawn') ?? '') !== '1') {
+    const withdrawn = await findWithdrawnNaturalKeyMatch(sql, S, { tenantId: t, name: studentName ?? '', school: savedSchool, grade: studentGrade, aliases });
+    if (withdrawn) {
+      const who = [studentName, studentSchool, studentGrade].filter(Boolean).join(' · ');
+      return { error: `같은 이름·학교·학년의 퇴원 학생이 있습니다 (${who}). 돌아온 학생이면 그 학생을 열어 '재원 복구'한 뒤 반을 배정해 주세요.`, existingStudentId: withdrawn, withdrawnMatch: true };
+    }
+  }
+  const seat = await seatBlockReason(sql, C, t, 1);
+  if (seat) return { error: seat };
+
+  // 학생·수강·상담 연결은 2.0처럼 사용자 신분으로(세션 클라이언트 — RLS·트리거가 같은 사람을 본다).
+  const stu = await asViewer(sql, user.id, (s) => s`insert into public.students (tenant_id, name, grade, school, parent_name, parent_phone, status, enrolled_at)
+    values (${t}, ${uniqueName.name}, ${studentGrade}, ${savedSchool}, ${overrideParentName ?? c.parent_name}, ${overrideParentPhone ?? c.parent_phone}, 'enrolled', ${today}) returning id::text id`);
+  let studentId, reusedExisting = false;
+  if (!stu.error && stu.data[0]) {
+    studentId = stu.data[0].id;
+    await audit(sql, t, user.row, 'student_create', 'student', uniqueName.name, { studentId, source: 'enrollment_consultation', consultationId });
+  } else {
+    const isDuplicate = stu.error?.code === '23505' || /duplicate key|natural_key/i.test(stu.error?.message ?? '');
+    if (!isDuplicate) return { error: '학생을 생성하지 못했습니다. 잠시 후 다시 시도하거나 관리자에게 문의하세요.' };
+    const norm = studentName.toLowerCase().replace(/\s+/g, '');
+    const candidates = await sql`select id::text id, school, grade from public.students where tenant_id = ${t} and name_normalized = ${norm} and status <> 'withdrawn'`;
+    const existing = candidates.find((s) => (s.school ?? '') === (studentSchool ?? '') && (s.grade ?? '') === (studentGrade ?? ''));
+    if (!existing) {
+      const who = [studentName, studentSchool, studentGrade].filter(Boolean).join(' · ');
+      return { error: `이미 같은 이름·학교·학년의 재원 학생이 있습니다 (${who}). 학생 목록에서 그 학생에 반을 배정해 주세요.`, existingStudentId: candidates[0]?.id };
+    }
+    studentId = existing.id; reusedExisting = true;
+  }
+  let assignClassIds = classIds;
+  if (reusedExisting) {
+    const inSet = new Set((await sql`select class_id::text class_id from public.enrollments where student_id = ${studentId} and class_id = any(${classIds}::uuid[])`).map((e) => e.class_id));
+    assignClassIds = classIds.filter((id) => !inSet.has(id));
+  }
+  if (assignClassIds.length > 0) {
+    const enr = await asViewer(sql, user.id, (s) => s`insert into public.enrollments ${s(assignClassIds.map((classId) => ({ tenant_id: t, student_id: studentId, class_id: classId, start_date: startDate })))}`);
+    if (enr.error) return { error: '학생은 준비됐으나 반 배정에 실패했습니다. 학생 상세에서 반을 배정해 주세요.', studentId };
+    await notifyClassAssignment(sql, t, { id: user.id }, assignClassIds.map((classId) => ({ classId, studentId })), 'enrollment_assigned');
+    for (const classId of assignClassIds) await audit(sql, t, user.row, 'enrollment_assign', 'student', null, { studentId, classId, startDate, source: 'enrollment_consultation' });
+  }
+  const renameConsult = !reusedExisting && uniqueName.name !== (c.prospect_name ?? '') ? uniqueName.name : null;
+  await asViewer(sql, user.id, (s) => s`update public.enrollment_consultations set student_id = ${studentId}, outcome = 'enrolled' ${renameConsult ? s`, prospect_name = ${renameConsult}` : s``}
+    where tenant_id = ${t} and id = ${consultationId}`);
+  // 2.0 metadata.via = 'convert' — 공통 규약 via와 자리가 겹쳐 surface에 둔다.
+  if (renameConsult) await audit(sql, t, user.row, 'enrollment_consultation_update', 'enrollment_consultations', renameConsult,
+    { consultationId, changes: [{ field: '이름', from: c.prospect_name ?? null, to: renameConsult }], surface: 'convert' });
+  if (c.outcome !== 'enrolled') await audit(sql, t, user.row, 'enrollment_consultation_outcome', 'enrollment_consultations', c.prospect_name ?? null,
+    { consultationId, from: c.outcome, to: 'enrolled', surface: 'convert' });
+  if (reusedExisting) await audit(sql, t, user.row, 'consultation_link_existing', 'enrollment_consultations', c.prospect_name ?? null, { consultationId, studentId });
+  return {
+    studentId, assignedClassIds: assignClassIds, startDate,
+    notice: uniqueName.suffixed ? `이미 '${studentName}' 학생이 있어 '${uniqueName.name}'(으)로 등록했습니다. 다른 학생이면 그대로 두고, 같은 학생이면 학생 목록에서 정리하세요.` : undefined,
+  };
 }

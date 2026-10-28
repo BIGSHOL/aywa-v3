@@ -21,7 +21,7 @@
 //  | appendAiSummaryToConsultationContent(server/actions.ts) — 저장된 요약 붙이기(AI 호출 없음) | actions.appendAiSummaryToConsultationContent |
 //  | previewConsultationMerge(server/merge-actions.ts) — 병합 미리보기 | 읽기 — GET ?mergeIds=a,b[&mergeWinner=] |
 //  | mergeConsultations(server/merge-actions.ts) — 병합 | actions.mergeConsultations(DB 함수 merge_enrollment_consultations를 고른 사람 신분으로 · asViewer) |
-//  | 그 밖의 저장(수업 배정) | 아직 없음 — 2.0 실패 모양으로 거절 |
+//  | convertConsultationToStudent(server/actions.ts) — 수업 배정 | actions.convertConsultationToStudent(학생·수강·상담 연결은 고른 사람 신분 · 반 담임 알림 줄까지) |
 //
 // 호스트에 붙일 때(의존)
 //  · Next 전용: next/link · next/navigation(useRouter — enrollment-kanban · column-cards · sheet-editable-cells · new-consultation-watcher · month-picker) ·
@@ -36,7 +36,7 @@ import { buildList, getConsultationTotalCount, listRules } from './v2-enrollment
 import { activeClasses, canViewClasses, detailRules, findMergeSuccessor, getAssignedClasses, getEnrollmentConsultationById, getSiblingConsultations,
   listReferrerOptions, loadConsultationReferrer, referrerCandidatesFor } from './v2-enrollment-detail.mjs';
 import { buildStats } from './v2-enrollment-stats.mjs';
-import { appendAiSummaryToConsultationContent, createEnrollmentConsultation, deleteEnrollmentConsultation, formDataOf, patchConsultationCells, setEnrollmentOutcome,
+import { appendAiSummaryToConsultationContent, convertConsultationToStudent, createEnrollmentConsultation, deleteEnrollmentConsultation, formDataOf, patchConsultationCells, setEnrollmentOutcome,
   mergeConsultations, previewConsultationMerge, updateConsultationReportSection, updateEnrollmentConsultation } from './v2-enrollment-save.mjs';
 
 const ID = 'enrollment', MENU = 'enrollment', ACTIONS = 'features/enrollment/server/actions.ts';
@@ -162,6 +162,7 @@ export const screen = {
     deleteEnrollmentConsultation: ACT(2, (c, args) => deleteEnrollmentConsultation(c, formDataOf(args[1]))),
     updateConsultationReportSection: ACT(2, (c, args) => updateConsultationReportSection(c, formDataOf(args[1]))),
     appendAiSummaryToConsultationContent: ACT(1, (c, args) => appendAiSummaryToConsultationContent(c, args[0])),
+    convertConsultationToStudent: ACT(2, (c, args) => convertConsultationToStudent(c, formDataOf(args[1]))),
     mergeConsultations: ACTM(3, (c, args) => mergeConsultations(c, args[0], args[1], args[2] ?? {})),
   },
   load,

@@ -525,3 +525,38 @@ test('병합 = 2.0 previewConsultationMerge(읽기) · mergeConsultations — �
     assert.deepEqual((({ page, to }) => ({ page, to }))(await load(sql, { v2path: `/enrollment/${b}` })), { page: 'redirect', to: `/enrollment/${a.id}` });
   });
 });
+
+test('수업 배정 = 2.0 convertConsultationToStudent — 반 필수 · 남의 반 거절 · 학생(오늘 등록)·수강(배정일)·상담 연결·등록 완료 · 동명이인 접미사 + 상담 이름도 · 퇴원생 같은 자연키면 멈춤 · 감사로그 · 신분 원래대로', { skip: SKIP }, async () => {
+  await rollback(async (sql) => {
+    const [klass] = await sql`select k.id::text id, k.teacher_id::text teacher from public.classes k where k.tenant_id=${t} and k.is_active and k.teacher_id is not null limit 1`;
+    const f = await editFixture(sql, { prospect_name: '시험배정생', prospect_school: '침산중', prospect_grade: '중1', parent_phone: '01012120000' });
+    const conv = (values) => call(sql, 'convertConsultationToStudent', f.owner.id, [null, { $formData: Object.entries(values).flatMap(([k, v]) => (Array.isArray(v) ? v.map((x) => [k, x]) : [[k, String(v)]])) }]);
+    assert.deepEqual(await conv({ consultationId: f.id }), { error: '배정할 반을 1개 이상 선택하세요' });
+    assert.deepEqual(await conv({ consultationId: f.id, classIds: ['00000000-0000-4000-8000-000000000000'] }), { error: '배정할 반을 찾을 수 없습니다' });
+    // 같은 이름의 학생이 이미 있다(다른 학교) → 접미사
+    await sql`insert into public.students (tenant_id, name, school, grade, status, is_test) values (${t}, '시험배정생', '다른중', '중2', 'enrolled', true)`;
+    const [{ q0 }] = await sql`select count(*)::int q0 from public.notifications where link = ${`/classes/${klass.id}`}`;
+    const [{ before }] = await sql`select coalesce(current_setting('request.jwt.claims', true), '') before`;
+    const res = await conv({ consultationId: f.id, classIds: [klass.id] });
+    assert.match(res.studentId, /^[0-9a-f-]{36}$/); assert.deepEqual(res.assignedClassIds, [klass.id]); assert.match(res.notice, /시험배정생A/);
+    const [{ after, role }] = await sql`select coalesce(current_setting('request.jwt.claims', true), '') after, current_user role`;
+    assert.equal(after, before, '신분 쓰기 뒤 claims가 원래 값'); assert.notEqual(role, 'authenticated');
+    const [st] = await sql`select name, school, status::text status, enrolled_at::text enrolled_at from public.students where id=${res.studentId}`;
+    assert.equal(st.name, '시험배정생A'); assert.equal(st.school, '침산중'); assert.equal(st.status, 'enrolled');
+    assert.equal(st.enrolled_at, (await importV2('lib/date-kst.ts')).kstToday());
+    const [e] = await sql`select start_date::text s from public.enrollments where student_id=${res.studentId} and class_id=${klass.id}`;
+    assert.equal(e.s, res.startDate);
+    const [cc] = await sql`select student_id::text sid, outcome::text o, prospect_name from public.enrollment_consultations where id=${f.id}`;
+    assert.deepEqual(cc, { sid: res.studentId, o: 'enrolled', prospect_name: '시험배정생A' });
+    const acts = (await sql`select action from public.audit_logs where tenant_id=${t} and (metadata->>'consultationId'=${f.id} or metadata->>'studentId'=${res.studentId}) order by action`).map((r) => r.action);
+    assert.deepEqual(acts, ['enrollment_assign', 'enrollment_consultation_outcome', 'enrollment_consultation_update', 'student_create']);
+    if (klass.teacher !== f.owner.id) assert.equal((await sql`select count(*)::int n from public.notifications where link = ${`/classes/${klass.id}`}`)[0].n, q0 + 1, '반 담임 알림 줄');
+    // 이미 연결된 상담은 그 학생으로
+    assert.deepEqual(await conv({ consultationId: f.id, classIds: [klass.id] }), { studentId: res.studentId });
+    // 같은 이름·학교·학년의 퇴원생이 있으면 멈춘다
+    const w = await editFixture(sql, { prospect_name: '시험퇴원생', prospect_school: '침산중', prospect_grade: '중1' });
+    const [{ id: gone }] = await sql`insert into public.students (tenant_id, name, school, grade, status, withdrawn_at, is_test) values (${t}, '시험퇴원생', '침산중', '중1', 'withdrawn', now(), true) returning id::text id`;
+    const stop = await call(sql, 'convertConsultationToStudent', w.owner.id, [null, { $formData: [['consultationId', w.id], ['classIds', klass.id]] }]);
+    assert.equal(stop.withdrawnMatch, true); assert.equal(stop.existingStudentId, gone);
+  });
+});
