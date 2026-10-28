@@ -15,7 +15,7 @@
   // 하위 주소는 v2path(2.0 `/attendance/seat/<자리>` — 날짜 date · 교시 start · `/attendance/live` — 탭 tab · 요약 기간 from)로 iframe에 간다(shims/host-nav.ts 규칙).
   const KEEP = ['v2path', 'month', 'subject', 'teacher', 'class', 'mode', 'q', 'date', 'start', 'tab', 'from'];
   const ACTOR_KEY = `v2-host-actor:${ID}`, SEL = `[data-v2-screen="${ID}"]`;
-  let api = null, frame = null, requested = null, hostOk = null, wired = false, editors = [], actor = null;
+  let api = null, frame = null, requested = null, hostOk = null, wired = false, editors = [], actor = null, urlActor = null;
   const esc = s => S.esc(s);
   const queryOf = q => { const o = new URLSearchParams(); for (const k of KEEP) { const v = q.get(k); if (v) o.set(k, v); } return o.toString(); };
 
@@ -88,11 +88,21 @@
     id: ID, label: '출석부',
     render(ctx) {
       api = ctx.api; wire();
+      // 주소의 actor=<직원 id>가 가장 먼저 이긴다(업무 흐름 '처리 화면' 단추가 그 단계 담당을 싣는다 — 메인 10-28, 전자결재 화면과 같은 규칙).
+      // 고를 수 있는 사람이 아니면 currentActor가 무시한다. 같은 주소로 다시 오면(그 사이 사람을 바꿨어도) 다시 이긴다.
+      const asked = ctx.query.get('actor');
+      if (asked && /^[0-9a-f-]{36}$/i.test(asked) && location.hash !== urlActor) {
+        urlActor = location.hash; actor = asked;
+        // 기억은 명단에 있는 사람일 때만 — 명단 밖 id가 앞서 고른 사람을 지우지 않게(명단이 아직 안 왔으면 이 창 안에서만 이긴다).
+        if (editors.some(e => e.id === asked)) try { localStorage.setItem(ACTOR_KEY, asked); } catch { /* 이 창에서만 */ }
+        if (editors.length) { const at = document.querySelector(`${SEL} [data-v2h-actor-slot]`); if (at) at.innerHTML = actorPicker(); }
+        tellHost();
+      }
       const query = queryOf(ctx.query);
       if (hostOk === null) fetch(HOST, { method: 'HEAD' }).then(r => r.ok, () => false).then(ok => { if (hostOk === null) { hostOk = ok; api?.render?.(); } });
       else if (hostOk) requestAnimationFrame(() => { ensureFrame(query); place(); });
       const wait = hostOk === false ? '출석부를 열지 못했습니다. 잠시 후 새로고침해 주세요.' : hostOk === null ? '출석부를 여는 중…' : '';
-      return `<div class="v2h-note" role="note"><p><b>연습 화면</b> 여기서 저장한 내용은 이 PC의 연습 자료에만 남고, 실제 발송은 없습니다. 칸 출결·메모·일괄 출결·자리 출결과 보기 설정을 저장할 수 있고, 범위 채우기·보강 예약·결석 통보 접수 등은 아직 지원하지 않습니다. 금액 열(청구액·실급여)은 아직 없습니다.</p><span data-v2h-actor-slot>${actorPicker()}</span></div>
+      return `<div class="v2h-note" role="note"><p><b>연습 화면</b> 여기서 저장한 내용은 이 PC의 연습 자료에만 남고, 실제 발송은 없습니다. 칸 출결·메모·일괄 출결·범위 채우기·자리 출결·보강 예약·결석 통보 접수와 보기 설정을 저장할 수 있습니다. 금액 열(청구액·실급여)은 아직 없습니다.</p><span data-v2h-actor-slot>${actorPicker()}</span></div>
         <div class="v2h-slot" data-v2-host-slot style="position:relative;min-height:420px">${wait ? `<p class="v2h-wait">${esc(wait)}</p>` : ''}</div>`;
     },
   });

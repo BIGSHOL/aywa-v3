@@ -166,6 +166,16 @@ test('3.0 껍데기: 호스트 iframe 하나를 자리 위에 겹치고, 이동�
   onMessage({ origin: ctx.location.origin, source: cw, data: { type: 'v2-host-nav', screen: 'timetable', query: 'week=1' } }); assert.equal(replaced, null);
   onMessage({ origin: ctx.location.origin, source: cw, data: { type: 'v2-host-nav', screen: 'attendance', query: 'month=2026-11&mode=teacher&x=1' } });
   assert.equal(replaced, '#v2-attendance?month=2026-11&mode=teacher');
+  // 주소의 actor=<직원 id>(업무 흐름 '처리 화면')가 고른 사람보다 먼저 이긴다 — 호스트로는 가지 않고 알림으로만 간다. 명단 밖 id는 무시.
+  const A1 = '11111111-1111-4111-8111-111111111111', A2 = '22222222-2222-4222-8222-222222222222';
+  onMessage({ origin: ctx.location.origin, source: cw, data: { type: 'v2-host-editors', screen: 'attendance', editors: [{ id: A1, name: '원장', role: '원장' }, { id: A2, name: '김그린', role: '관리자' }] } });
+  ctx.location.hash = `#v2-attendance?v2path=/attendance/live&tab=desk&actor=${A2}`;
+  def.render({ api, query: new URLSearchParams(`v2path=/attendance/live&tab=desk&actor=${A2}`) });
+  same(posted.at(-1)[0], { type: 'v2-host-actor', id: A2 }); assert.equal(stored.get('v2-host-actor:attendance'), A2);
+  assert.ok(!frame.src.includes('actor='), 'actor는 호스트 주소로 가지 않는다');
+  ctx.location.hash = '#v2-attendance?actor=33333333-3333-4333-8333-333333333333';
+  def.render({ api, query: new URLSearchParams('actor=33333333-3333-4333-8333-333333333333') });
+  same(posted.at(-1)[0], { type: 'v2-host-actor', id: A2 }, '명단 밖 id는 무시하고 앞 사람 그대로');
 });
 
 const T_KIM = 'bf52c6d2-5b44-41fc-8268-3248b7eda61b';
