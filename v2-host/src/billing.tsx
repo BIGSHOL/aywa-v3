@@ -19,6 +19,7 @@ import { BillingStatsPage } from './billing-stats-page';
 import type { ExpenseRow } from '@/features/billing/server/expense-queries';
 import { HostFrame, HostMessage } from './host-frame';
 import { BillingPage, type BillingPageData } from './billing-page';
+import { BillingScrollFade } from './billing-scroll-fade';
 import { DEFAULT_TEXTBOOK_MENT } from '@/features/billing/textbook-notice';
 
 // ── 저장: 2.0 서버 함수 이름 그대로 보내고(POST /api/v2/billing/<함수>), 성공하면 2.0 revalidatePath('/billing')처럼 이 화면을 다시 읽는다 ──
@@ -193,7 +194,7 @@ function App() {
   return (
     <EmbedProvider embed>
       <OperationsProvider subjects={ops.subjects} gradeLevels={ops.gradeLevels} jobTitles={ops.jobTitles} jobTitlesByDepartment={ops.jobTitlesByDepartment} disabledModules={d.host.disabledModules}>
-        <BillingPage d={d as BillingPageData} sp={d.invoicePeriod ? { ...sp, tab: 'billing', period: d.invoicePeriod } : sp} />
+        <BillingScrollFade><BillingPage d={d as BillingPageData} sp={d.invoicePeriod ? { ...sp, tab: 'billing', period: d.invoicePeriod } : sp} /></BillingScrollFade>
       </OperationsProvider>
     </EmbedProvider>
   );
