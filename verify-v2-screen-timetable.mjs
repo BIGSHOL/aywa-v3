@@ -14,7 +14,7 @@ import { openFullDatabase, tenantId } from './full-db.mjs';
 import { importV2 } from './v2-bridge.mjs';
 import * as T from './v2-screen-timetable.mjs';
 import { build } from './v2-host/build.mjs';
-import { readEditors, loadExtra, moveClassSlots } from './v2-timetable-save.mjs';
+import { readEditors, loadExtra } from './v2-timetable-save.mjs';
 import { V2Error } from './v2-screens.mjs';
 
 const done = [];
@@ -165,28 +165,50 @@ try {
     const [after] = await db`select class_id::text c, attendance_days, end_date from public.enrollments where id=${ENR}`;
     assert.deepEqual([after.c, after.attendance_days, after.end_date], ['e4a2c026-8992-4211-a5fe-b9e93be8a0f3', [], null], '시험 뒤 복사본은 그대로');
 
-    // 반 블록 옮기기 — 2.0은 출결 확인에서 없는 칸(attendance_records.date)을 읽어 늘 멈춘다: 같은 자리·같은 문구로.
+    // 반 블록 옮기기 — 2.0(b580f484f) 판정 순서·문구 그대로: 시각·요일·자정 → 자리 판정 → 오늘 수업 교시 → 교시에 매달린 기록(SLOT_ANCHORS) → 분리등원.
     const SM = 'features/timetable/server/move-actions.ts', CLS = 'e4a2c026-8992-4211-a5fe-b9e93be8a0f3';
+    const slide = (slotId, toDay, toStart, actorId = actor) => ({ module: SM, actor: actorId, args: [{ moves: [{ slotId, toDay, toStart }] }] });
     const [slot] = await db`select id::text id from public.class_schedules where class_id=${CLS} and day_of_week='sat' and start_time='11:00' and valid_to is null`;
-    const input = { moves: [{ slotId: slot.id, toDay: 'sat', toStart: '09:00' }] };
-    assert.deepEqual(await tx(sql => call(sql, 'moveClassSlots', { module: SM, actor: teacher.id, args: [input] })), { ok: false, error: '시간표를 편집할 권한이 없습니다' });
-    assert.deepEqual(await tx(sql => call(sql, 'moveClassSlots', { module: SM, actor, args: [{ moves: [{ slotId: slot.id, toDay: 'sat', toStart: '11:00' }] }] })), { ok: false, error: '같은 자리입니다' });
-    assert.deepEqual(await tx(sql => call(sql, 'moveClassSlots', { module: SM, actor, args: [input] })), { ok: false, error: '출결 기록을 확인하지 못해 중단했습니다' });
-    const cols = (await db`select column_name c from information_schema.columns where table_schema='public' and table_name='attendance_records'`).map(r => r.c);
-    assert.ok(!cols.includes('date') && cols.includes('session_date'), '2.0이 읽는 date 칸이 아직 없다(있으면 위 단언과 이 주석을 고칠 것)');
-    // 저장 갈래(2.0이 고쳐졌을 때) — session_date로 판정하면 새 배치는 적용일부터, 옛 배치는 그 전날로 마감, 감사로그 class_schedule_move.
+    assert.deepEqual(await tx(sql => call(sql, 'moveClassSlots', slide(slot.id, 'sat', '09:00', teacher.id))), { ok: false, error: '시간표를 편집할 권한이 없습니다' });
+    assert.deepEqual(await tx(sql => call(sql, 'moveClassSlots', slide(slot.id, 'sat', '11:00'))), { ok: false, error: '같은 자리입니다' });
+    assert.deepEqual(await tx(sql => call(sql, 'moveClassSlots', slide(slot.id, 'sat', '24:00'))), { ok: false, error: '옮길 시각이 올바르지 않습니다' });
+    assert.deepEqual(await tx(sql => call(sql, 'moveClassSlots', slide(slot.id, 'xyz', '09:00'))), { ok: false, error: '옮길 요일이 올바르지 않습니다' });
+    assert.deepEqual(await tx(sql => call(sql, 'moveClassSlots', slide(slot.id, 'sat', '23:30'))), { ok: false, error: '수업이 자정을 넘깁니다 — 더 이른 시각으로 옮겨 주세요' });
+    const today = R.kstToday(), dow = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'][new Date(`${today}T00:00:00Z`).getUTCDay()];
+    const [todaySlot] = await db`select id::text id from public.class_schedules where class_id=${CLS} and day_of_week=${dow} and valid_to is null order by start_time limit 1`;
+    assert.deepEqual(await tx(sql => call(sql, 'moveClassSlots', slide(todaySlot.id, dow, '20:00'))),
+      { ok: false, error: `오늘 수업이 있는 교시는 오늘부터 옮길 수 없습니다 — 열려 있는 출석 화면이 옛 교시로 기록합니다. 적용일을 ${R.shiftDays(today, 1)} 이후로 정해 주세요` });
+    // 적용일 뒤 그 교시(같은 요일)에 매달린 기록 — 표마다 제 날짜 칸으로 읽는다(Shouting 체크 한 줄을 넣어 본다 · 다른 요일 기록은 세지 않는다).
+    const satAhead = [...Array(7).keys()].map(i => R.shiftDays(today, i + 1)).find(d => new Date(`${d}T00:00:00Z`).getUTCDay() === 6);
+    const anchored = await tx(async sql => {
+      await sql`insert into public.class_sheet_slot_flags (tenant_id, class_id, flag_date, slot_start) values (${tenantId}, ${CLS}, ${satAhead}::date, '11:00'), (${tenantId}, ${CLS}, ${R.shiftDays(satAhead, 1)}::date, '11:00')`;
+      return call(sql, 'moveClassSlots', slide(slot.id, 'sat', '09:00'));
+    });
+    assert.deepEqual(anchored, { ok: false, error: X.anchors.slotAnchorBlockText([{ label: 'Shouting 체크', count: 1, lastDate: satAhead }]) });
+    assert.match(anchored.error, new RegExp(`적용일을 ${R.shiftDays(satAhead, 1)} 이후로`), '마지막 기록 다음 날을 권한다(지우라고 하지 않는다)');
+    // 분리등원 — 학원이가 토요일만 다니면 토→일 이동은 막힌다(같은 요일 안 시각 이동은 막지 않는다).
+    const split = await tx(async sql => {
+      await sql`update public.enrollments set attendance_days='{sat}' where id=${ENR}`;
+      return { dayMove: await call(sql, 'moveClassSlots', slide(slot.id, 'sun', '15:00')), sameDay: await call(sql, 'moveClassSlots', slide(slot.id, 'sat', '09:00')) };
+    });
+    assert.match(split.dayMove.error ?? '', /^요일을 정해 다니는 학생\(분리등원 · .*학원이.*\)이 있는 반은 요일을 옮길 수 없습니다/);
+    assert.deepEqual(split.sameDay, { ok: true, moved: 1 });
+    // 저장 — 새 배치는 적용일부터, 옛 배치는 그 전날로 마감, 감사로그 class_schedule_move.
     const fixed = await tx(async sql => ({
-      res: await moveClassSlots(sql, tenantId, R, X, actor, [input], { weekSlots: T.weekSlots }, { dateColumn: 'session_date' }),
+      res: await call(sql, 'moveClassSlots', slide(slot.id, 'sat', '09:00')),
       rows: await sql`select start_time::text s, valid_from::text vf, valid_to::text vt from public.class_schedules where class_id=${CLS} and day_of_week='sat' and start_time in ('09:00','11:00') and (valid_to is null or valid_to >= current_date - 1)`,
       log: (await sql`select target_label, metadata from public.audit_logs where tenant_id=${tenantId} and created_at >= now() and action='class_schedule_move'`)[0],
     }));
     assert.deepEqual(fixed.res, { ok: true, moved: 1 });
-    const today = R.kstToday();
     assert.ok(fixed.rows.some(r => r.s === '09:00:00' && r.vf === today && r.vt === null), '새 배치 = 적용일부터');
     assert.ok(fixed.rows.some(r => r.s === '11:00:00' && r.vt === R.shiftDays(today, -1)), '옛 배치 = 전날 마감');
     assert.equal(fixed.log.metadata.via, '3.0 연습 복사본'); assert.equal(fixed.log.metadata.moves[0].to.start, '09:00:00');
     const [kept] = await db`select valid_to from public.class_schedules where id=${slot.id}`;
     assert.equal(kept.valid_to, null, '시험 뒤 배치는 그대로');
+    // 2.0 원문과 같은 순서로 판정한다(글자 대조 — 순서가 바뀌면 다른 막힘 문구가 먼저 나온다).
+    const inOrder = (text, marks) => { const at = marks.map(m => { const i = text.indexOf(m); assert.ok(i >= 0, m); return i; }); assert.ok(at.every((v, i) => i === 0 || v > at[i - 1]), marks.join(' → ')); };
+    inOrder(await src(SM), ['const blockers = moveBlockers(', 'if (effective === today &&', 'for (const a of SLOT_ANCHORS)', 'const names = daySplitStudents(']);
+    inOrder(await here('./v2-timetable-save.mjs'), ['const blockers = X.cm.moveBlockers(', 'if (effective === today &&', 'for (const a of X.anchors.SLOT_ANCHORS)', 'const names = X.anchors.daySplitStudents(']);
 
     // 명단에서 대기·퇴원으로 보내기 — 2.0 form action(FormData)을 { $formData } 줄로 받는다. 권한 = 원생 상태 변경.
     const SA = 'features/students/server/actions.ts', form = o => ({ $formData: Object.entries(o) });

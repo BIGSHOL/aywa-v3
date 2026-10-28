@@ -22,13 +22,14 @@ let extraPromise = null;
 /** 저장에만 쓰는 2.0 순수 모듈 — 한 번만 불러온다. */
 function loadExtra(importV2) {
   extraPromise ??= (async () => {
-    const [perms, roles, bulk, helpers, dbErrors, cm, dbError, reasonDetail, via, statusPerm, statusAccess, special] = await Promise.all([
+    const [perms, roles, bulk, helpers, dbErrors, cm, dbError, reasonDetail, via, statusPerm, statusAccess, special, anchors] = await Promise.all([
       'lib/permissions.ts', 'lib/auth/role-hierarchy.ts', 'features/enrollments/bulk-transfer.ts',
       'features/enrollments/server/assign-helpers.ts', 'features/enrollments/db-errors.ts', 'features/timetable/lib/class-move.ts',
       'lib/supabase/db-error.ts', 'features/withdrawals/reason-detail.ts', 'features/withdrawals/via-report.ts',
       'features/owner/student-status-permissions.ts', 'features/students/status-access.ts', 'features/classes/special-lecture.ts',
+      'features/timetable/lib/slot-anchors.ts',
     ].map(p => importV2(p)));
-    return { perms, ROLE_LABEL: roles.ROLE_LABEL, transferDateError: bulk.transferDateError, DAY_ORDER: helpers.DAY_ORDER, toKoreanDbError: dbErrors.toKoreanDbError, cm,
+    return { perms, ROLE_LABEL: roles.ROLE_LABEL, transferDateError: bulk.transferDateError, DAY_ORDER: helpers.DAY_ORDER, toKoreanDbError: dbErrors.toKoreanDbError, cm, anchors,
       explainDbError: dbError.explainDbError, readReasonForm: reasonDetail.readReasonForm, via, studentStatusManagerIds: statusPerm.studentStatusManagerIds,
       canManageStudentStatus: statusAccess.canManageStudentStatus, STUDENT_STATUS_DENIED: statusAccess.STUDENT_STATUS_DENIED, special };
   })().catch(error => { extraPromise = null; throw error; });
@@ -401,12 +402,9 @@ async function saveMemoSheet(sql, t, R, X, actorId, [input]) {
 }
 
 // ── 2.0 features/timetable/server/move-actions.ts ──────────────────────────────────────────────────────────────────────
-// 반 블록(화면의 한 칸 = 배치 여러 줄)을 다른 요일·교시로 — 판정 순서·문구 2.0 그대로.
-// ⚠️ 2.0은 '적용일 이후 그 교시로 찍힌 출결' 확인에서 attendance_records의 `date` 칸을 읽는데, 그 표의 날짜 칸은 `session_date`다
-//    (복사본 실측 · class_schedule_move 감사로그 0건). 그래서 2.0에서는 앞 판정을 다 지나면 늘 여기서 '출결 기록을 확인하지
-//    못해 중단했습니다'로 멈춘다 — 연습본도 같은 칸을 읽어 같은 자리·같은 문구로 멈춘다. 저장 본문은 옮겨 두었다
-//    (2.0이 고쳐지면 dateColumn만 바꾼다 · verify가 session_date로 되돌림 시험을 한다).
-const V2_ATTENDANCE_DATE_COLUMN = 'date';
+// 반 블록(화면의 한 칸 = 배치 여러 줄)을 다른 요일·교시로 — 판정 순서·문구 2.0 그대로(b580f484f: 교시에 매달린 기록은
+// SLOT_ANCHORS 표마다 제 날짜 칸으로 · 오늘 수업 교시는 오늘부터 못 옮김 · 분리등원 학생이 있으면 요일을 못 옮김).
+const DAY_KEYS = new Set(['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun']);
 
 function slotMoveArgs(args) {
   const [input] = args;
@@ -436,7 +434,7 @@ const weekdayOf = ymd => { const [y, m, d] = ymd.slice(0, 10).split('-').map(Num
 const shiftDay = (ymd, delta) => { const [y, m, d] = ymd.split('-').map(Number), dt = new Date(Date.UTC(y, (m ?? 1) - 1, (d ?? 1) + delta)); return `${dt.getUTCFullYear()}-${String(dt.getUTCMonth() + 1).padStart(2, '0')}-${String(dt.getUTCDate()).padStart(2, '0')}`; };
 
 /** moveClassSlots({ moves, effectiveDate }) — readers.weekSlots = 2.0 getWeeklyScheduleWithStudents({ referenceDate }) 같은 모양. */
-export async function moveClassSlots(sql, t, R, X, actorId, [input], readers, { dateColumn = V2_ATTENDANCE_DATE_COLUMN } = {}) {
+export async function moveClassSlots(sql, t, R, X, actorId, [input], readers) {
   const actor = await actAs(sql, t, R, X, actorId);
   if (!actor) return { ok: false, error: '시간표를 편집할 권한이 없습니다' };
   const moves = input.moves ?? [];
@@ -463,9 +461,11 @@ export async function moveClassSlots(sql, t, R, X, actorId, [input], readers, { 
     const from = row.valid_from ? row.valid_from.slice(0, 10) : null;
     if (from && from > effective) return { ok: false, error: `${from}부터 시작하도록 예약된 배치입니다 — 그 날짜 이후로 적용일을 정하거나 예약을 먼저 취소해 주세요` };
     const toStart = m.toStart.length === 5 ? `${m.toStart}:00` : m.toStart;
-    if (!/^\d{2}:\d{2}:\d{2}$/.test(toStart)) return { ok: false, error: '옮길 시각이 올바르지 않습니다' };
+    if (!/^(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d$/.test(toStart)) return { ok: false, error: '옮길 시각이 올바르지 않습니다' };
+    if (!DAY_KEYS.has(m.toDay)) return { ok: false, error: '옮길 요일이 올바르지 않습니다' };
     const dur = X.cm.toMinutes(row.end_time) - X.cm.toMinutes(row.start_time);
     if (dur <= 0) return { ok: false, error: '수업 길이를 계산하지 못했습니다' };
+    if (X.cm.toMinutes(toStart) + dur > 24 * 60) return { ok: false, error: '수업이 자정을 넘깁니다 — 더 이른 시각으로 옮겨 주세요' };
     windows.push({ slotId: m.slotId, day: m.toDay, start: toStart, end: X.cm.toTimeString(X.cm.toMinutes(toStart) + dur) });
   }
   if (windows.every(w => { const row = byId.get(w.slotId); return row.day_of_week === w.day && row.start_time.slice(0, 5) === w.start.slice(0, 5); })) return { ok: false, error: '같은 자리입니다' };
@@ -485,16 +485,43 @@ export async function moveClassSlots(sql, t, R, X, actorId, [input], readers, { 
   const blockers = X.cm.moveBlockers({ slotId: mine.id, classId, parts }, windows, lookup);
   if (blockers.length > 0) return { ok: false, error: `그 자리로는 옮길 수 없습니다 — ${X.cm.blockersText(blockers)}` };
 
-  // 적용일 이후 그 칸(같은 요일·시각)으로 이미 찍힌 출결 — 2.0이 읽는 칸 그대로(위 ⚠️).
+  // 오늘 수업이 있는 교시는 오늘부터 옮기지 않는다(열린 출석 화면이 옛 교시로 기록 — 2.0 #126).
+  if (effective === today && windows.some(w => byId.get(w.slotId).day_of_week === weekdayOf(today))) {
+    return { ok: false, error: `오늘 수업이 있는 교시는 오늘부터 옮길 수 없습니다 — 열려 있는 출석 화면이 옛 교시로 기록합니다. 적용일을 ${X.anchors.nextDay(today)} 이후로 정해 주세요` };
+  }
+  // 적용일 이후(그 배치가 끝나는 날까지) 그 교시에 매달린 기록 — 표마다 제 날짜 칸(2.0 SLOT_ANCHORS), 같은 요일만.
+  const hits = new Map();
   for (const w of windows) {
-    const row = byId.get(w.slotId);
-    let dates;
-    try {
-      dates = await sql.savepoint(s => s`select ${s(dateColumn)}::text d from public.attendance_records where tenant_id=${t} and class_id=${row.class_id}
-        and ${s(dateColumn)} >= ${effective}::date and slot_start = ${row.start_time}::time order by ${s(dateColumn)}`);
-    } catch { return { ok: false, error: '출결 기록을 확인하지 못해 중단했습니다' }; }
-    const stuck = dates.filter(r => weekdayOf(r.d) === row.day_of_week).length;
-    if (stuck > 0) return { ok: false, error: `적용일 이후에 이 교시로 찍힌 출결이 ${stuck}건 있습니다 — 그 기록을 먼저 정리한 뒤 옮겨 주세요` };
+    const row = byId.get(w.slotId), until = row.valid_to ? row.valid_to.slice(0, 10) : null;
+    for (const a of X.anchors.SLOT_ANCHORS) {
+      let found;
+      try {
+        found = await sql.savepoint(s => s`select ${s(a.dateColumn)}::text d from ${s('public.' + a.table)} where tenant_id=${t} and class_id=${row.class_id}
+          and slot_start = ${row.start_time}::time and ${s(a.dateColumn)} >= ${effective}::date ${until ? s`and ${s(a.dateColumn)} <= ${until}::date` : s``}`);
+      } catch (e) {
+        console.error(`timetable.moveClassSlots.${a.table}: ${e?.code || ''} ${e?.message || ''}`);
+        return { ok: false, error: '옮기기 전에 확인할 기록을 읽지 못해 중단했습니다. 잠시 후 다시 시도해 주세요' };
+      }
+      const dates = found.map(r => r.d.slice(0, 10)).filter(d => weekdayOf(d) === row.day_of_week);
+      if (!dates.length) continue;
+      const h = hits.get(a.label) ?? { label: a.label, count: 0, lastDate: '' };
+      h.count += dates.length;
+      h.lastDate = dates.reduce((m, d) => (d > m ? d : m), h.lastDate);
+      hits.set(a.label, h);
+    }
+  }
+  if (hits.size > 0) return { ok: false, error: X.anchors.slotAnchorBlockText([...hits.values()]) };
+  // 분리등원(요일 지정) 학생이 있으면 요일을 옮기지 않는다(2.0 daySplitStudents).
+  const dayChanges = windows.map(w => ({ from: byId.get(w.slotId).day_of_week, to: w.day })).filter(c => c.from !== c.to);
+  if (dayChanges.length > 0) {
+    const enr = await sql`select e.attendance_days, e.end_date::text end_date, coalesce(e.is_transferred, false) is_transferred, s.name
+      from public.enrollments e left join public.students s on s.id = e.student_id
+      where e.tenant_id=${t} and e.class_id=${classId} and (e.end_date is null or e.end_date >= ${effective}::date)`;
+    const names = X.anchors.daySplitStudents(enr.map(e => ({ name: e.name ?? '이름 없음', attendanceDays: e.attendance_days ?? null, endDate: e.end_date ?? null, isTransferred: e.is_transferred === true })), dayChanges, effective);
+    if (names.length > 0) {
+      const shown = names.slice(0, 3).join(', ') + (names.length > 3 ? ` 외 ${names.length - 3}명` : '');
+      return { ok: false, error: `요일을 정해 다니는 학생(분리등원 · ${shown})이 있는 반은 요일을 옮길 수 없습니다 — 옮기면 그 학생이 명단에서 빠지거나 다른 교시에 더해집니다. 같은 요일 안에서 시각만 옮겨 주세요` };
+    }
   }
 
   const [klass] = await sql`select class_name from public.classes where id=${classId} and tenant_id=${t}`;
