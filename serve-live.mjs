@@ -14,6 +14,7 @@ import { createFlowService, defaultStoreDir, startFlow } from './flow-service.mj
 import { createFlowRoute } from './flow-http.mjs';
 import { createExitRoute, startExitInsight } from './exit-http.mjs';
 import { createV2ScreenRoute, loadScreens, screenAsset } from './v2-screens.mjs';
+import { createEnrollmentExcelRoute } from './v2-enrollment-excel.mjs';
 import { createV2HostRoute, ensureV2Host } from './v2-host-route.mjs';
 import { workspaceRecords } from './domain-snapshot.mjs';
 import { DATA_REVISION_PATH, createDataHolder, createDataRefresh, encodeData } from './data-refresh.mjs';
@@ -79,6 +80,8 @@ const debounceMs=Math.min(60_000,Math.max(200,Number(process.env.OWNER_CONCEPT_R
 const refresh=process.env.OWNER_CONCEPT_DATA_REFRESH==='off'?null:createDataRefresh({data:served,assistant,flow:flowEnabled?flow:null,initialRecords:initialData.records,expect:{importedAt:snapshot.meta.importedAt,asOf:snapshot.meta.asOf,tenant:snapshot.meta.tenant},scheduler:{debounceMs}});
 // 2.0 화면 (V2-SCREENS.md): 2.0 형태의 새 3.0 페이지, 복사본 DB. v2-screen-<id>.mjs 파일마다 한 화면(공용 파일 수정 없음).
 const v2ScreenRoute=createV2ScreenRoute({screens:loadScreens(),headers,onWrite:write=>refresh?.scheduleWrite(write)});
+// 신규 콜&상담 엑셀 가져오기(2.0 ExcelImportDialog) — 복사본 전용 작업 스레드의 2.0 importer · 같은 출처 POST만 · 바깥 요청 생기면 되돌림(v2-enrollment-excel.mjs).
+const enrollmentExcelRoute=createEnrollmentExcelRoute({headers,onWrite:write=>refresh?.scheduleWrite(write)});
 // GET = 지금 자료의 개정 번호(열린 첫 화면이 30초마다·포커스 때 묻는다). POST = 지금 다시 읽기(복사본을 화면 밖에서 바꿨을 때 — §2.11 되돌리기 뒤 등).
 function dataRevision(req,res){
  const send=(status,body)=>{const b=Buffer.from(JSON.stringify(body));res.writeHead(status,{...headers,'Content-Type':'application/json; charset=utf-8','Content-Length':b.length,...(status===405?{Allow:'GET, HEAD, POST'}:{})});res.end(req.method==='HEAD'?undefined:b);};
@@ -115,6 +118,7 @@ const server=createServer(async(req,res)=>{
  if(flowRoute.handles(path)){try{await flowRoute.handle(req,res,path);}catch{if(!res.headersSent)reject(500,'업무 흐름을 처리하지 못했습니다.');}return;}
  if(insightRoute.handles(path)){try{insightRoute.handle(req,res);}catch{if(!res.headersSent)reject(500,'이탈 분석을 처리하지 못했습니다.');}return;}
  if(v2HostRoute.handles(path)){try{await v2HostRoute.handle(req,res,path);}catch{if(!res.headersSent)reject(500,'화면 파일을 읽지 못했습니다.');}return;}
+ if(enrollmentExcelRoute.handles(path)){try{await enrollmentExcelRoute.handle(req,res);}catch{if(!res.headersSent)reject(500,'엑셀 파일을 처리하지 못했습니다.');}return;}
  if(v2ScreenRoute.handles(path)){try{await v2ScreenRoute.handle(req,res,path);}catch{if(!res.headersSent)reject(500,'화면을 불러오지 못했습니다.');}return;}
  if(path===DATA_REVISION_PATH){try{dataRevision(req,res);}catch{if(!res.headersSent)reject(500,'자료 상태를 읽지 못했습니다.');}return;}
  if(path==='/api/attendance-absences'){if(req.headers['sec-fetch-site']==='cross-site'){reject(403,'Local access only');return;}try{await handleAbsenceDetail(req,res,headers,snapshot.meta.asOf);}catch{if(!res.headersSent)reject(500,'결석 기록을 읽지 못했습니다.');}return;}
