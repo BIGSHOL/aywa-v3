@@ -84,7 +84,7 @@ async function buildDetail({ sql, t, importV2, v, operations, modules, id, edit 
     activeClasses(sql, t), getSiblingConsultations(sql, D, t, id),
     showAssigned ? getAssignedClasses(sql, D, t, consult.studentId, consult.fields.subject, operations) : null,
   ]);
-  const canOpenClass = showAssigned && assigned?.ok ? await canViewClasses(sql, v.classLevel, v.u.id, assigned.rows.map((r) => r.classId)) : false;
+  const canOpenClass = showAssigned && assigned?.ok ? await canViewClasses(sql, v.classLevel, v.u.id, assigned.rows.map((r) => r.classId), t) : false;
   return { page: 'detail', consult, allClasses, settings: { operations, modules }, siblings, canWrite: v.canWrite, canRequestTextbook: v.canTextbook, referrer, assigned, canOpenClass };
 }
 

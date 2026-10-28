@@ -1,9 +1,11 @@
 // 2.0 신규 콜&상담 · 상세(app/(shell)/enrollment/[id]/page.tsx)와 수정([id]/edit/page.tsx)이 서버에서 받던 값 — Docker 복사본에서 같은 결과로.
 // · getEnrollmentConsultationById(상담 행 + 최근 AI 분석 1건 + 녹음 행 + 추천 반 + 배정 반 수) · getSiblingConsultations(same-person-query.ts) ·
 //   loadConsultationReferrer · referrerCandidatesFor(referrer-queries.ts) · getAssignedClasses(assigned-classes.ts — 교시 이력은 2.0 slotPhase로 지금 것만) ·
-//   getClassesList({active}) 중 변환 창이 쓰는 칸 · findMergeSuccessor(병합 감사로그) · canViewClassDetail(담임·교시 담당).
+//   getClassesList({active}) 중 변환 창이 쓰는 칸 · findMergeSuccessor(병합 감사로그) · canViewClassDetail(담임·교시 담당·임시 위임).
 // · 행은 PostgREST와 같은 JSON(to_json — timestamptz = ISO+오프셋 · numeric = 수 · jsonb = 값). 판정은 2.0 순수 함수(importV2).
 // · 2.0은 사용자 클라이언트 RLS(지점 줄만)로 읽는다 — 여기선 tenant_id를 직접 건다. 읽기 전용 · 바깥 호출 없음.
+
+import { runV2Server } from './v2-server-runner.mjs';
 
 const MODULES = { kst: 'lib/date-kst.ts', subj: 'features/enrollment/consult-subject.ts', person: 'features/enrollment/same-person.ts',
   board: 'features/enrollment/board-stages.ts', ref: 'features/enrollment/referrer.ts', maps: 'features/owner/subjects.ts',
@@ -197,12 +199,12 @@ export async function findMergeSuccessor(sql, t, lostId) {
   return null;
 }
 
-/** canViewClassDetail — 반 열람이 scoped(선생님)면 담임이거나 그 반 교시 담당일 때만(2.0의 오늘 위임 갈래는 뺐다). */
-export async function canViewClasses(sql, level, actorId, classIds) {
-  if (level === 'none') return false;
-  if (level !== 'scoped') return true;
+/** 2.0 canViewClassDetail: 담임·교시 담당·오늘 전후 7일 임시 위임을 같은 게이트로 판정한다. */
+export async function canViewClasses(_sql, _level, actorId, classIds, tenantId) {
   if (!classIds.length) return true;
-  const own = await sql`select k.id::text id from public.classes k where k.id = any(${classIds}::uuid[]) and (k.teacher_id = ${actorId}
-    or exists(select 1 from public.class_schedules x where x.class_id = k.id and x.teacher_id = ${actorId}))`;
-  return own.length === classIds.length;
+  const { results } = await runV2Server({
+    steps: classIds.map((classId) => ({ module: 'features/classes/server/class-scope.ts', fn: 'canViewClassDetail', args: [classId] })),
+    actorId, tenantId, mode: 'read',
+  });
+  return results.every((r) => r.value === true);
 }

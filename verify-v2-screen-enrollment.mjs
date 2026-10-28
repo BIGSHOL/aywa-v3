@@ -8,6 +8,8 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { screen } from './v2-screen-enrollment.mjs';
 import { PAGE_SIZE } from './v2-enrollment-list.mjs';
+import { canViewClasses } from './v2-enrollment-detail.mjs';
+import { runV2Server } from './v2-server-runner.mjs';
 
 const src = (p) => readFile(new URL(`../../src/${p}`, import.meta.url), 'utf8');
 const here = (p) => readFile(new URL(p, import.meta.url), 'utf8');
@@ -167,6 +169,21 @@ test('인수인계서 = 2.0 문서 섹션·상담일 우선순위 · 원본 상�
     assert.equal(print.profile.name, '인재원');
     assert.equal(print.logoSrc, null, '복사본에 없는 비공개 로고 경로는 2.0 실패 폴백');
     assert.equal((await load(sql, { v2path: '/enrollment/00000000-0000-4000-8000-000000000000/print' })).page, 'missing');
+  });
+});
+
+test('배정 반 열람 = 2.0 canViewClassDetail(담임·교시·임시 위임) 게이트 그대로', { skip: SKIP }, async () => {
+  const source = await src('features/classes/server/class-scope.ts');
+  const adapter = await here('./v2-enrollment-detail.mjs');
+  assert.match(source, /getDelegatedClassIdsInRange\(/);
+  assert.match(adapter, /fn: 'canViewClassDetail'/);
+  await run(async (sql) => {
+    const [u] = await sql`select id::text id from public.users where tenant_id=${t} and status::text='active' and system_role::text='teacher' limit 1`;
+    const [klass] = await sql`select id::text id from public.classes where tenant_id=${t} limit 1`;
+    assert.ok(u && klass);
+    const original = await runV2Server({ steps: [{ module: 'features/classes/server/class-scope.ts', fn: 'canViewClassDetail', args: [klass.id] }], actorId: u.id, tenantId: t, mode: 'read' });
+    assert.equal(await canViewClasses(sql, 'scoped', u.id, [klass.id], t), original.results[0].value);
+    assert.equal(await canViewClasses(sql, 'scoped', u.id, [], t), true);
   });
 });
 
