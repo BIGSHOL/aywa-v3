@@ -10,7 +10,7 @@
   'use strict';
   const ID = 'mcs', HOST = `/v2-host/${ID}.html`, S = window.V2Screens; if (!S) return;
   // 2.0 page.tsx가 읽는 주소 열쇠 그대로 + v2path(2.0 하위 경로 /mcs/teachers · /mcs/<반>/month …).
-  const KEEP = ['v2path', 'month', 'student'];
+  const KEEP = ['v2path', 'month', 'student', 'classId'];
   let api = null, frame = null, requested = null, hostOk = null, wired = false, editors = [], actor = null;
   const ACTOR_KEY = `v2-host-actor:${ID}`, SEL = `[data-v2-screen="${ID}"]`;
   const esc = s => S.esc(s);
@@ -35,7 +35,7 @@
     frame.hidden = false;
   }
   // 이 화면이 그리는 2.0 하위 주소(반별 · 선생님별 · 반 월간) — 창 열기 알림이 와도 같은 화면에서 연다.
-  const OWN = /^\/mcs(?:\/teachers|\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\/month)?$/i;
+  const OWN = /^\/mcs(?:\/teachers|\/progress-map|\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\/month)?$/i;
   /** 2.0 주소 → 이 화면(하위 주소) · 3.0 기록 창(있으면). 없으면 3.0에 아직 없는 화면이라고만 알린다(주소를 보이지 않는다). */
   function openFromHost(href) {
     const path = String(href || '').split(/[?#]/)[0];

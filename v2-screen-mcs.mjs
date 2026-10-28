@@ -5,7 +5,7 @@
 //  · /mcs/<반>/month(반 월간) = v2-mcs-month.mjs(getMathSheetMonth · getMathLearningData · 교재 · page.tsx의 교재 창·계획 가공)
 // 사람마다 화면이 다르다(강사 = 담당 반만) — '보는 사람'(viewer)을 고르고 그 사람의 역할·권한 표로 범위를 낸다(v2-mcs-core).
 import { UUID, loadRules, readSettings, readViewers, editorsOf, visibleClassFilter } from './v2-mcs-core.mjs';
-import { mcsMonthPage } from './v2-mcs-month.mjs';
+import { mcsMonthPage, loadMonthRules, mathSheetMonth } from './v2-mcs-month.mjs';
 import { mcsActions, mcsIo, loadMathLearningGoalRevision } from './v2-mcs-save.mjs';
 import { mathCatalogBooks, studentBookOrders, recentReportsByStudentClass, mathBookTargets, schoolExamPeriods } from './v2-math-textbooks.mjs';
 
@@ -128,13 +128,25 @@ async function teacherRosterData(sql, t, R, env, viewer) {
   }
 }
 
-/** 2.0 하위 주소 — /mcs(반별) · /mcs/teachers(선생님별) · /mcs/<반>/month(반 월간). 진도맵(시안)은 다음 단계. */
+/** 2.0 하위 주소 — /mcs(반별) · /mcs/teachers(선생님별) · /mcs/<반>/month(반 월간) · /mcs/progress-map(진도맵 시안 · 옛 북마크는 집중 보기로). */
 const UUID_BODY = UUID.source.slice(1, -1);
+
+// ── app/(shell)/mcs/progress-map/page.tsx — 반·학생을 주면 그 학생의 반 월간 집중 보기로(getStudentLearningMap의 게이트·명단), 아니면 시안(관리자 이상) ──
+async function progressMapGate(sql, t, R, env, importV2, viewer, q) {
+  if (q.classId !== undefined || q.student !== undefined) {
+    if (!q.classId || !q.student) return { notFound: true };
+    const M = await loadMonthRules(importV2), res = await mathSheetMonth(sql, t, R, M, env, viewer, q.classId, q.month ?? null);
+    if (!res.ok || !res.data.students.some(row => row.studentId === q.student)) return { notFound: true };
+    const { learningSheetHref } = await importV2('features/math-progress-map/learning-map.ts');
+    return { redirect: learningSheetHref(q.classId, q.student, res.data.month) };
+  }
+  return R.preview.canSeeProgressMapPreview(viewer.systemRole) ? { preview: true } : { notFound: true };
+}
 const REVISION = new RegExp(`^${UUID_BODY}:${UUID_BODY}:[0-9]{4}-[0-9]{2}-[0-9]{2}:(?:regular|supplement)$`);
-const ROUTE = new RegExp(`^/mcs(?:/teachers|/${UUID_BODY}/month)?$`), MONTH = new RegExp(`^/mcs/(${UUID_BODY})/month$`);
+const ROUTE = new RegExp(`^/mcs(?:/teachers|/progress-map|/${UUID_BODY}/month)?$`), MONTH = new RegExp(`^/mcs/(${UUID_BODY})/month$`);
 export const screen = {
   id: ID, label: '강사 시트 · 수학', order: 7,
-  params: { v2path: ROUTE, viewer: UUID, month: /^\d{4}-\d{2}$/, revision: REVISION },
+  params: { v2path: ROUTE, viewer: UUID, month: /^\d{4}-\d{2}$/, revision: REVISION, classId: UUID, student: UUID },
   // 저장 = 반 월간이 부르는 2.0 서버 액션(v2-mcs-save.mjs) — 저장하는 사람 = 보는 사람.
   actions: mcsActions,
   load: async ({ sql, params: q, tenantId: t, importV2 }) => {
@@ -150,6 +162,7 @@ export const screen = {
       host: { operations: env.operations, disabledModules: env.disabled } };
     if (!viewer) return { ...common, route: 'none' };
     if (q.v2path === '/mcs/teachers') return { ...common, route: 'teachers', teachers: await teacherRosterData(sql, t, R, env, viewer) };
+    if (q.v2path === '/mcs/progress-map') return { ...common, route: 'progress-map', progressMap: await progressMapGate(sql, t, R, env, importV2, viewer, q) };
     const month = MONTH.exec(q.v2path ?? '');
     if (month) return { ...common, route: 'month', month: await mcsMonthPage({ sql, t, R, env, importV2, viewer, classId: month[1], month: q.month ?? null }) };
     return { ...common, route: 'landing', landing: await landingData(sql, t, R, env, viewer, q.month ?? null),

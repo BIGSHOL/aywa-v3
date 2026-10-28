@@ -24,11 +24,19 @@ await check('주소 열쇠 = 2.0 반별 page.tsx(month) + 하위 주소(v2path: 
   // 반 월간이 서버에서 읽는 주소 값은 month 하나(student·그 밖 칸은 화면이 주소에서 직접 읽는다 — 호스트도 iframe 주소에서 넘긴다)
   assert.deepEqual([...month.matchAll(/typeof query\.(\w+) === "string"/g)].map(m => m[1]), ['month', 'student']);
   assert.match(month, /getMathSheetMonth\(classId, month \?\? null\)/);
-  assert.deepEqual(Object.keys(M.screen.params).sort(), ['month', 'revision', 'v2path', 'viewer']); // revision = 남은 계획 수정 창 읽기(GET)
-  for (const ok of ['/mcs', '/mcs/teachers', '/mcs/a600c53d-1fde-47c8-b533-65b5e580ccc0/month']) assert.ok(M.screen.params.v2path.test(ok), ok);
+  assert.deepEqual(Object.keys(M.screen.params).sort(), ['classId', 'month', 'revision', 'student', 'v2path', 'viewer']); // revision = 남은 계획 수정 창 읽기(GET) · classId·student = 진도맵 옛 북마크
+  for (const ok of ['/mcs', '/mcs/teachers', '/mcs/progress-map', '/mcs/a600c53d-1fde-47c8-b533-65b5e580ccc0/month']) assert.ok(M.screen.params.v2path.test(ok), ok);
   for (const no of ['/mcs/x', '/classes', '/mcs/teachers/x', '/mcs/a600c53d-1fde-47c8-b533-65b5e580ccc0', '/mcs/x/month', '/mcs/a600c53d-1fde-47c8-b533-65b5e580ccc0/month/x'])
     assert.ok(!M.screen.params.v2path.test(no), no);
   assert.ok(M.screen.params.month.test('2026-10') && !M.screen.params.month.test('2026-1'));
+});
+
+await check('진도맵(시안) 그리기 = 2.0 mcs/progress-map/page.tsx 시안 갈래 글자 그대로(샘플 데이터 — 서버 조회 없음)', async () => {
+  const page = lf(await src('app/(shell)/mcs/progress-map/page.tsx')), mine = lf(await here('./v2-host/src/mcs-progress-map.tsx'));
+  const body = page.slice(page.indexOf('  const progress = buildSampleProgress();'), page.lastIndexOf('\n}'));
+  assert.ok(mine.includes(`export function McsProgressMapPreview() {\n${body}\n}`));
+  assert.match(page, /if \(!\(await canPreviewProgressMap\(\)\)\) notFound\(\);/, '시안 게이트 = 관리자 이상');
+  assert.match(page, /for \(const key of \["date", "view", "display", "topic", "lesson", "undated", "embed"\]\)/, '옛 북마크가 이어 붙이는 보기 칸');
 });
 
 await check('반 월간 그리기 = 2.0 mcs/[classId]/month/page.tsx 본문 그대로 — 바꾼 곳은 서버 호출 두 자리뿐(mcs-month.swaps.json)', async () => {
@@ -122,6 +130,17 @@ try {
   // 반 월간 — 원장이 고르는 반 = 이 달 카드 중 학생이 가장 많은 반
   const monthOf = (viewer, classId, month) => load({ viewer, v2path: `/mcs/${classId}/month`, ...(month ? { month } : {}) });
   const cardOf = [...base.landing.data.cards].sort((a, b) => b.shown - a.shown)[0];
+
+  await check('진도맵 = 원장·관리자만 시안 · 반·학생을 주면 그 학생의 반 월간 집중 보기 주소(2.0 learningSheetHref) · 하나만·명단 밖이면 없는 페이지', async () => {
+    const pm = async (extra, viewer = base.viewer.id) => (await load({ v2path: '/mcs/progress-map', viewer, ...extra })).progressMap;
+    assert.deepEqual(await pm({}), { preview: true });
+    assert.deepEqual(await pm({}, base.editors.find(e => e.role === '강사').id), { notFound: true });
+    const d = (await monthOf(base.viewer.id, cardOf.classId)).month.res.data, sid = d.students[0].studentId;
+    const { learningSheetHref } = await importV2('features/math-progress-map/learning-map.ts');
+    assert.deepEqual(await pm({ classId: cardOf.classId, student: sid }), { redirect: learningSheetHref(cardOf.classId, sid, d.month) });
+    assert.deepEqual(await pm({ classId: cardOf.classId }), { notFound: true });
+    assert.deepEqual(await pm({ classId: cardOf.classId, student: '00000000-0000-0000-0000-000000000000' }), { notFound: true });
+  });
 
   await check('반 월간 게이트 = 2.0 requireMcsClassAccess 문구 — 없는 반 · 수학 아닌 반 · 강사의 담당 밖 반', async () => {
     const msg = async (viewer, classId) => (await monthOf(viewer, classId)).month.res;
