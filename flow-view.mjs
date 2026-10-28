@@ -7,7 +7,7 @@ const PRIORITY_ORDER = { high: 0, normal: 1, low: 2 }, STATE_ORDER = { review: 0
 // Judgment display (UX contract): status ok|pending|unavailable|error|skipped + Korean reason.
 // The typed record stays in the store; reason codes travel as a separate technical field.
 const REASON = {
-  decision_module_unavailable: '판정 모듈 연결 전', no_key: '판정 키가 설정되지 않음', jev_not_configured: '판정 키가 설정되지 않음', jev_key_error: '판정 키를 읽지 못함',
+  decision_module_unavailable: '판정 모듈이 연결되지 않음', no_key: '판정 키가 설정되지 않음', jev_not_configured: '판정 키가 설정되지 않음', jev_key_error: '판정 키를 읽지 못함',
   local_rate_limit: '이 PC의 판정 횟수 한도에 걸림', adapter_busy: '판정 대기열이 가득 참', jev_auth_failed: '판정 키 인증 실패', jev_timeout: '판정 시간 초과',
   jev_rate_limited: '판정 요청 한도 초과', jev_overloaded: '판정 서버 혼잡', jev_unavailable: '판정 서버에 연결하지 못함', jev_circuit_open: '판정 서버 오류가 이어져 잠시 멈춤',
   jev_invalid_answer: '판정 답 형식 오류', jev_request_rejected: '판정 요청이 거절됨', jev_config: '판정 설정 오류', decision_call_failed: '판정 호출 실패',
@@ -17,7 +17,7 @@ const REASON = {
 };
 const UNAVAILABLE = new Set(['decision_module_unavailable', 'no_key', 'jev_not_configured', 'jev_key_error', 'local_rate_limit', 'adapter_busy']);
 const FAILURE = code => UNAVAILABLE.has(code) || code.startsWith('jev_') || code.startsWith('invalid_context') || code === 'decision_call_failed' || code === 'decision_interrupted';
-const ROUTE_LABEL = { auto_route: '확실해 정해진 담당에게 바로', no_action: '할 일 없음', manager_review: '관리자 검토', human_review: '사람 검토', insufficient_context: '정보 부족 — 되묻기' };
+const ROUTE_LABEL = { auto_route: '정해진 담당자에게 바로 배정', no_action: '할 일 없음으로 판단', manager_review: '관리자 검토로 보냄', human_review: '사람이 판단하도록 보냄', insufficient_context: '정보가 부족해 사람이 되묻도록 보냄' };
 const PROVIDER_LABEL = { typesafe: 'Jev 판정', 'claude-cli': 'Claude 초안' };
 /** Friendly model label; unknown raw ids are not shown. */
 export function modelLabel(model) {
@@ -48,7 +48,7 @@ function friendlyDecision(r) {
 export function decisionView(c, inFlight) {
   if (c.pendingDecision) {
     const live = !!inFlight?.has(c.pendingDecision.id);
-    return { status: live ? 'pending' : 'error', reason: live ? '판정 중' : '판정 결과를 저장하지 못함 — 다시 분석해 주세요', requestedAt: c.pendingDecision.at, previous: c.decision ? friendlyDecision(c.decision) : null, codes: live ? [] : ['decision_not_saved'] };
+    return { status: live ? 'pending' : 'error', reason: live ? '판정 중' : '판정 결과를 저장하지 못해 다시 받아야 함', requestedAt: c.pendingDecision.at, previous: c.decision ? friendlyDecision(c.decision) : null, codes: live ? [] : ['decision_not_saved'] };
   }
   return c.decision ? friendlyDecision(c.decision) : null;
 }

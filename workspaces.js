@@ -30,7 +30,7 @@ window.createWorkspaces = function createWorkspaces(api) {
   const resolvePage=page=>api.hasView(page)?page:has(familyOf(page)||page)?`workspace-${familyOf(page)||page}`:'';
   const resultLabel=x=>String(x.result?.label||`‘${x.label}’ 미리보기`);
   function dataState(id){
-    const d=data(id);if(!d)return {key:'missing',note:'이 작업 공간의 기록 집계가 아직 이 화면에 연결되지 않았습니다. 아래 작업은 그대로 쓸 수 있습니다.'};
+    const d=data(id);if(!d)return {key:'missing',note:'이 작업 공간의 기록 집계는 아직 이 화면에 연결되지 않았습니다.'};
     const key=STATE_LABEL[d.dataState]?d.dataState:'unavailable';
     return {key,note:d.coverageNote||(key==='empty'?'복사본에 이 영역의 기록이 없습니다.':key==='not-applicable'?'이 지점의 운영에 해당하지 않는 영역입니다.':key==='unavailable'?'이 영역의 기록을 읽지 못했습니다.':'')};
   }
@@ -80,7 +80,7 @@ window.createWorkspaces = function createWorkspaces(api) {
     state.recent=[id,...state.recent.filter(x=>x!==id)].slice(0,4);
     if(needsRemote(id))queueMicrotask(()=>loadRecords(id));
     const d=data(id),st=dataState(id),kind=viewKind(a);
-    return `<div class="ws" data-family="${h(id)}" data-view="${kind}"><div class="page-heading ws-heading"><div><p class="ws-group">${h(a.group||'')}</p><h1>${h(a.label)}</h1><p>${h(d?.summary||a.summary||'')}</p></div><div class="heading-actions">${btn('이 화면에 대해 묻기','ask',`data-id="${h(id)}"`)}${btn('업무 요청','request',`data-id="${h(id)}"`,true)}</div></div><p class="ws-state">${pill(STATE_LABEL[st.key],st.key==='available'?'blue':st.key==='missing'||st.key==='unavailable'?'amber':'')}<span>${h(d?.sourceLabel||'')}${d?.sourceLabel?' · ':''}${caption()}</span>${st.note?`<span>${h(st.note)}</span>`:''}</p>${critical(a)}${signalList(a)}<div class="ws-body"><section class="ws-main" id="ws-main" aria-label="${h(a.label)} 기록">${mainHtml(a)}</section><aside class="ws-side">${actionPanel(a)}<div id="ws-local">${localLog(a)}</div>${linkedRequests(a)}${relations(a)}</aside></div></div>`;
+    return `<div class="ws" data-family="${h(id)}" data-view="${kind}"><div class="page-heading ws-heading"><div><p class="ws-group">${h(a.group||'')}</p><h1>${h(a.label)}</h1><p>${h(d?.summary||a.summary||'')}</p></div><div class="heading-actions">${btn('이 화면으로 대화','ask',`data-id="${h(id)}"`)}${btn('업무 요청','request',`data-id="${h(id)}"`,true)}</div></div><p class="ws-state">${pill(STATE_LABEL[st.key],st.key==='available'?'blue':st.key==='missing'||st.key==='unavailable'?'amber':'')}<span>${h(d?.sourceLabel||'')}${d?.sourceLabel?' · ':''}${caption()}</span>${st.note?`<span>${h(st.note)}</span>`:''}</p>${critical(a)}${signalList(a)}<div class="ws-body"><section class="ws-main" id="ws-main" aria-label="${h(a.label)} 기록">${mainHtml(a)}</section><aside class="ws-side">${actionPanel(a)}<div id="ws-local">${localLog(a)}</div>${linkedRequests(a)}${relations(a)}</aside></div></div>`;
   }
   function critical(a){
     const d=data(a.id),metrics=(d?.metrics||[]).slice(0,4),trend=d?.trend;
@@ -93,7 +93,7 @@ window.createWorkspaces = function createWorkspaces(api) {
   const byPriority=(x,y)=>(PRIORITY_ORDER.indexOf(x.priority)+1||9)-(PRIORITY_ORDER.indexOf(y.priority)+1||9);
   function signalCard(id,s,withFamily=false){
     const a=area(id);
-    return `<article class="ws-signal"><div class="ax-issue-meta">${pill(s.priority||'확인 필요',s.priority==='결정 필요'?'amber':'blue')}${withFamily?pill(a?.label||id):''}${s.recordIds?.length?`<span>근거 ${s.recordIds.length}건</span>`:''}</div><h3>${h(s.title)}</h3><p>${h(s.summary||'')}</p>${s.source?`<p class="ax-source">${h(s.source)}</p>`:''}<div class="ax-actions">${btn('근거 보기','signal-evidence',`data-id="${h(id)}" data-signal="${h(s.id)}"`)}${btn('요청 만들기','signal-request',`data-id="${h(id)}" data-signal="${h(s.id)}"`,true)}</div></article>`;
+    return `<article class="ws-signal"><div class="ax-issue-meta">${pill(s.priority||'확인 필요',s.priority==='결정 필요'?'amber':'blue')}${withFamily?pill(a?.label||id):''}${s.recordIds?.length?`<span>근거 ${s.recordIds.length}건</span>`:''}</div><h3>${h(s.title)}</h3><p>${h(s.summary||'')}</p>${s.source?`<p class="ax-source">${h(s.source)}</p>`:''}<div class="ax-actions">${btn('근거 보기','signal-evidence',`data-id="${h(id)}" data-signal="${h(s.id)}"`)}${btn('업무 요청','signal-request',`data-id="${h(id)}" data-signal="${h(s.id)}"`,true)}</div></article>`;
   }
   function signalList(a){const list=[...(data(a.id)?.signals||[])].sort(byPriority);return list.length?`<section class="ws-signals" aria-label="이 작업 공간의 신호"><h2>지금 올라온 신호 ${list.length}건</h2><div class="ws-signal-grid">${list.map(s=>signalCard(a.id,s)).join('')}</div></section>`:'';}
 
@@ -106,8 +106,8 @@ window.createWorkspaces = function createWorkspaces(api) {
     const search=data(id)&&kind!=='settings'?`<div class="ws-search"><input type="search" id="ws-q-${h(id)}" data-ws-q="${h(id)}" value="${h(state.q[id]||'')}" maxlength="100" aria-label="${h(a.label)} 기록 검색" placeholder="이름·내용·상태 검색" autocomplete="off"><span>${rec.source==='full'?`${fmt(rec.filtered)}건 · 전체 ${fmt(rec.total)}건`:`${fmt(rec.items.length)}건 표시 · 전체 ${fmt(rec.total)}건`}</span></div>`:'';
     const note=rec.source==='preview'&&rec.total>previews(id).length?`<p class="ax-note">${slot?.status==='loading'?'전체 기록을 불러오는 중입니다.':slot?.status==='error'?h(slot.message):'전체 기록 조회가 아직 이 서버에 연결되지 않아 최근 기록만 표시합니다.'}${slot?.status==='error'?` ${btn('다시 시도','reload',`data-id="${h(id)}"`)}`:''}</p>`:'';
     let body;
-    if(!data(id))body=`<div class="live-empty"><strong>기록 집계 연결 전</strong><p>이 작업 공간의 기록은 아직 불러오지 않았습니다. 오른쪽 작업으로 미리보기를 만들거나 담당자에게 요청할 수 있습니다.</p></div>`;
-    else if(!rec.items.length)body=`<div class="live-empty"><strong>${st.key==='empty'?'복사본에 기록이 없습니다':'이 조건의 기록이 없습니다'}</strong><p>${st.key==='empty'?'없는 기록을 채워 보이지 않습니다. 오른쪽 작업으로 첫 기록을 미리 작성하거나 요청할 수 있습니다.':'구분이나 검색어를 바꿔 보세요.'}</p></div>`;
+    if(!data(id))body=`<div class="live-empty"><strong>기록 집계 연결 전</strong><p>‘할 수 있는 일’에서 미리보기를 만들거나 담당자에게 요청할 수 있습니다.</p></div>`;
+    else if(!rec.items.length)body=`<div class="live-empty"><strong>${st.key==='empty'?'복사본에 기록이 없습니다':'이 조건의 기록이 없습니다'}</strong><p>${st.key==='empty'?'없는 기록을 만들어 보여 주지 않습니다. ‘할 수 있는 일’에서 첫 기록을 미리 작성하거나 담당자에게 요청할 수 있습니다.':'구분이나 검색어를 바꿔 보세요.'}</p></div>`;
     else body={flow:flowView,sheet:sheetView,records:recordsView,report:reportView,settings:recordsView,timeline:timelineView}[kind](a,rec.items,facets);
     const pager=rec.source==='full'&&rec.pageCount>1?`<div class="live-pager">${btn('이전','page',`data-id="${h(id)}" data-page="${(state.page[id]||1)-1}" ${(state.page[id]||1)<=1?'disabled':''}`)}<span>${state.page[id]||1} / ${rec.pageCount}</span>${btn('다음','page',`data-id="${h(id)}" data-page="${(state.page[id]||1)+1}" ${(state.page[id]||1)>=rec.pageCount?'disabled':''}`)}</div>`:'';
     return `${id==='teacher-workspace'?recipientPreview():''}${kind==='settings'?settingsView(a):screenRow}${kind==='settings'&&data(id)?`<h3 class="ws-records-title">복사본에서 읽은 설정 기록</h3>`:''}${tabs}${search}${note}${body}${pager}`;
@@ -160,11 +160,16 @@ window.createWorkspaces = function createWorkspaces(api) {
     const faces=screensOf(a).length?screensOf(a):[{id:'',label:'설정'}],face=faces.find(f=>f.id===state.face[a.id])||faces[0];
     const forms=actionsOf(a).filter(x=>x.mode==='preview'&&(face.id?targetOf(x).facet===face.id:!targetOf(x).facet));
     const related=actionsOf(a).filter(x=>x.mode!=='preview'&&face.id&&targetOf(x).facet===face.id);
-    return `<div class="ws-settings"><nav class="ws-faces live-scroll" data-scroll-key="faces-${h(a.id)}" aria-label="설정 면">${faces.map(f=>`<button type="button" data-ws="face" data-id="${h(a.id)}" data-face="${h(f.id)}" aria-pressed="${f===face}">${h(f.label)}</button>`).join('')}</nav><div class="ws-face"><h3>${h(face.label)}</h3>${related.length?`<div class="ax-actions">${related.map(x=>`<button type="button" class="button" data-ws="action" data-id="${h(a.id)}" data-action="${h(x.id)}">${h(x.label)}</button>`).join('')}</div>`:''}${forms.length?forms.map(x=>`<section class="ws-inline-form"><h4>${h(x.label)}</h4>${previewForm(a,x,'',true)}</section>`).join(''):'<p class="ax-note">이 면을 바꾸는 작업은 오른쪽 목록에서 요청으로 보낼 수 있습니다.</p>'}</div></div>`;
+    return `<div class="ws-settings"><nav class="ws-faces live-scroll" data-scroll-key="faces-${h(a.id)}" aria-label="설정 면">${faces.map(f=>`<button type="button" data-ws="face" data-id="${h(a.id)}" data-face="${h(f.id)}" aria-pressed="${f===face}">${h(f.label)}</button>`).join('')}</nav><div class="ws-face"><h3>${h(face.label)}</h3>${related.length?`<div class="ax-actions">${related.map(x=>`<button type="button" class="button" data-ws="action" data-id="${h(a.id)}" data-action="${h(x.id)}">${h(x.label)}</button>`).join('')}</div>`:''}${forms.length?forms.map(x=>`<section class="ws-inline-form"><h4>${h(x.label)}</h4>${previewForm(a,x,'',true)}</section>`).join(''):'<p class="ax-note">이 면을 바꾸는 작업은 ‘할 수 있는 일’에서 요청할 수 있습니다.</p>'}</div></div>`;
   }
 
   /* ---------- actions: preview forms, owner request drafts, navigation ---------- */
-  const actionIntent=x=>x.mode==='preview'?`2.0의 ‘${x.label}’ 입력을 이 화면에서 미리 작성합니다. 세션에만 남고 반영되지 않습니다.`:x.mode==='navigate'?'관련 화면으로 이동합니다.':`담당자에게 ‘${x.label}’을 요청하는 초안을 엽니다. 등록 전까지 전달되지 않습니다.`;
+  // Preview and navigate actions carry their own one-line description in draft.body; a request's draft.body is the request text itself.
+  const actionIntent=x=>{
+    const note=x.mode!=='request'&&typeof x.draft?.body==='string'?x.draft.body.trim():'',fields=(Array.isArray(x.fields)?x.fields:[]).some(f=>f&&f.id&&f.label);
+    if(x.mode==='preview')return note||(fields?`2.0의 ‘${x.label}’ 입력 칸을 이 화면에서 채워 봅니다. 2.0에는 반영되지 않습니다.`:'메모를 남겨 이 화면에 미리보기로 기록합니다. 2.0에는 반영되지 않습니다.');
+    return x.mode==='navigate'?note||'관련 화면으로 이동합니다.':`담당자에게 보낼 ‘${x.label}’ 초안을 엽니다. 등록 전까지 전달되지 않습니다.`;
+  };
   function actionPanel(a){
     const list=actionsOf(a),screen=screensOf(a).find(sc=>sc.id===state.screen[a.id]),focus=screen?screenActions(a,screen.id):[];
     const groups=['preview','request','navigate'].map(m=>[m,list.filter(x=>!focus.includes(x)&&(MODE[x.mode]?x.mode:'request')===m)]).filter(([,xs])=>xs.length);
@@ -207,7 +212,7 @@ window.createWorkspaces = function createWorkspaces(api) {
       const params=new URLSearchParams({q:q.slice(0,100),page:'1',pageSize:'50'});
       const res=await fetch(`/api/workspaces/${encodeURIComponent(a.id)}/records?${params}`,{headers:{Accept:'application/json'},signal});
       let json=null;try{json=await res.json();}catch{/* not served here */}
-      if(!res.ok||!json||!Array.isArray(json.items))throw new Error(typeof json?.message==='string'?json.message:'전체 기록을 찾지 못했습니다. 불러온 목록에서만 보여 드립니다.');
+      if(!res.ok||!json||!Array.isArray(json.items))throw new Error(typeof json?.message==='string'?json.message:'전체 기록을 불러오지 못했습니다. 불러온 목록에서만 찾습니다.');
       return {options:toOptions(json.items),filtered:Number(json.filteredTotal)||json.items.length};
     }};
     return {...out,remote,note:total>items.length?`불러온 ${items.length}건 표시 · 전체 ${total.toLocaleString('ko-KR')}건은 검색어로 찾습니다`:`${items.length}건`};
@@ -224,7 +229,7 @@ window.createWorkspaces = function createWorkspaces(api) {
     if(x.mode==='preview'){dialog('modal',x.label,`${a.label} · 로컬 미리보기`,`${recordId?`<p class="ws-context">기록: ${h(recordById(familyId,recordId)?.label||'')}</p>`:''}<p class="ax-note">${h(actionIntent(x))}</p>${previewForm(a,x,recordId)}`);$(FIRST_CONTROL)?.focus();return;}
     const r=recordId?recordById(familyId,recordId):null;
     if((x.fields||[]).some(f=>f&&f.id&&f.label)){dialog('modal',x.label,`${a.label} · 요청에 담을 내용`,`${r?`<p class="ws-context">기록: ${h(r.label)}</p>`:''}<p class="ax-note">${h(actionIntent(x))}</p>${previewForm(a,x,recordId,false,'request')}`);$(FIRST_CONTROL)?.focus();return;}
-    requestFrom(a,{title:x.draft?.title||x.label,body:x.draft?.body||`${a.label}에서 ‘${x.label}’을 처리하고 결과를 보고해 주세요.`,action:x.id,records:r?[r]:[]});
+    requestFrom(a,{title:x.draft?.title||x.label,body:x.draft?.body||`${a.label}에서 ‘${x.label}’ 작업을 처리하고 결과를 보고해 주세요.`,action:x.id,records:r?[r]:[]});
   }
   function requestFrom(a,{title,body,action='',signal='',records=[]}){
     const recordLines=records.length?`\n\n확인 대상: ${records.map(r=>r.label).join(', ')}`:'';
@@ -236,11 +241,11 @@ window.createWorkspaces = function createWorkspaces(api) {
     const errors=[];
     fields.forEach(f=>{
       const values=new FormData(form).getAll(f.id).map(String).filter(v=>v.trim()),v=values[0]||'';
-      if(f.required&&!values.length)errors.push(`${f.label}을(를) 입력해 주세요.`);
+      if(f.required&&!values.length)errors.push(`${f.label} 칸을 입력해 주세요.`);
       const lo=Number.isFinite(Number(f.min))?Number(f.min):0,hi=Number.isFinite(Number(f.max))?Number(f.max):null;
-      if(v&&['number','money','amount'].includes(f.type)&&!(Number.isFinite(Number(v))&&Number(v)>=lo&&(hi===null||Number(v)<=hi)))errors.push(hi===null?`${f.label}은(는) ${lo} 이상의 숫자로 입력해 주세요.`:`${f.label}은(는) ${lo}~${hi} 사이의 숫자로 입력해 주세요.`);
+      if(v&&['number','money','amount'].includes(f.type)&&!(Number.isFinite(Number(v))&&Number(v)>=lo&&(hi===null||Number(v)<=hi)))errors.push(hi===null?`${f.label} 칸은 ${lo} 이상의 숫자로 입력해 주세요.`:`${f.label} 칸은 ${lo}~${hi} 사이의 숫자로 입력해 주세요.`);
       if(v&&f.type==='date'&&!/^\d{4}-\d{2}-\d{2}$/.test(v))errors.push(`${f.label} 날짜 형식을 확인해 주세요.`);
-      if(v&&f.type==='student'&&!studentFor(v))errors.push(`${f.label}은(는) 재원생 목록에서 골라 주세요.`);
+      if(v&&f.type==='student'&&!studentFor(v))errors.push(`${f.label} 칸은 재원생 목록에서 골라 주세요.`);
       if(v&&['select'].includes(f.type)&&Array.isArray(f.options)&&f.options.length&&!f.options.some(o=>String(typeof o==='object'?o.value??o.id??o.label:o)===v))errors.push(`${f.label} 선택지를 다시 골라 주세요.`);
     });
     return errors;
@@ -251,14 +256,14 @@ window.createWorkspaces = function createWorkspaces(api) {
     if(errors.length){out.textContent=errors[0];const first=fields.find(f=>f.required&&!new FormData(form).getAll(f.id).some(v=>String(v).trim()));if(!(first&&window.ContextPicker?.focus(form,first.id)))(first?form.querySelector(`[name="${CSS.escape(first.id)}"]:not([type=hidden])`):form.querySelector('input:not([type=hidden]),select,textarea'))?.focus();return;}
     const values=new FormData(form),display=(f,v)=>f.type==='student'?(studentFor(v)?studentText(studentFor(v)):v):f.type==='subject'?api.subjectLabel?.(v)||v:f.type==='record'?recordById(a.id,v)?.label||window.ContextPicker?.label(form.querySelector(`[data-cpick-name="${CSS.escape(f.id)}"]`),v)||v:f.type==='staff'?db.staff.find(s=>s.id===v)?.name||v:f.type==='class'?db.classes.find(c=>c.id===v)?.name||v:f.type==='multiselect'||f.type==='select'?(f.options||[]).map(o=>typeof o==='object'?o:{value:o,label:o}).find(o=>String(o.value??o.id??o.label)===v)?.label||v:v;
     const entry={id:crypto.randomUUID(),actionId:x.id,label:x.label,result:resultLabel(x),at:new Date().toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit'}),recordId:String(fields.filter(f=>f.type==='record').map(f=>values.get(f.id)).find(Boolean)||''),values:fields.length?fields.map(f=>({label:f.label,value:values.getAll(f.id).map(v=>display(f,String(v))).join(', ')||(f.type==='checkbox'?'아니요':'—')})):[{label:'메모',value:String(values.get('__note')||'—')}]};
-    if(kind==='request'){const r=entry.recordId?recordById(a.id,entry.recordId):null;form.closest('dialog')?.close();requestFrom(a,{title:x.draft?.title||x.label,body:`${x.draft?.body||`${a.label}에서 ‘${x.label}’을 처리하고 결과를 보고해 주세요.`}\n${entry.values.map(v=>`· ${v.label}: ${v.value}`).join('\n')}`,action:x.id,records:r?[r]:[]});return;}
+    if(kind==='request'){const r=entry.recordId?recordById(a.id,entry.recordId):null;form.closest('dialog')?.close();requestFrom(a,{title:x.draft?.title||x.label,body:`${x.draft?.body||`${a.label}에서 ‘${x.label}’ 작업을 처리하고 결과를 보고해 주세요.`}\n${entry.values.map(v=>`· ${v.label}: ${v.value}`).join('\n')}`,action:x.id,records:r?[r]:[]});return;}
     (state.local[a.id]||(state.local[a.id]=[])).unshift(entry);
     if(!form.dataset.inline)form.closest('dialog')?.close();else form.reset();
-    refreshSide(a.id);refreshMain(a.id);toast(`${resultLabel(x)}를 이 화면에 기록했습니다. 2.0에는 반영되지 않았습니다.`);
+    refreshSide(a.id);refreshMain(a.id);toast(`‘${x.label}’ 미리보기를 이 화면에 기록했습니다. 2.0에는 반영되지 않았습니다.`);
   }
   function localLog(a){
     const list=state.local[a.id]||[];if(!list.length)return '';
-    return `<section class="ws-local" aria-label="이 화면에서 만든 미리보기"><h2>이 화면에서 만든 미리보기 ${list.length}건</h2><p class="ax-note">세션에만 남는 기록입니다. 새로고침하면 사라지고 2.0에는 반영되지 않습니다.</p>${list.map(e=>`<article><header><strong>${h(e.label)}</strong><small>${h(e.at)}</small></header><dl>${e.values.map(v=>`<dt>${h(v.label)}</dt><dd>${h(v.value)}</dd>`).join('')}</dl><div class="ax-actions">${btn('요청으로 보내기','local-request',`data-id="${h(a.id)}" data-entry="${e.id}"`)}${btn('지우기','local-remove',`data-id="${h(a.id)}" data-entry="${e.id}"`)}</div></article>`).join('')}</section>`;
+    return `<section class="ws-local" aria-label="이 화면에서 만든 미리보기"><h2>이 화면에서 만든 미리보기 ${list.length}건</h2><p class="ax-note">세션에만 남는 기록입니다. 새로고침하면 사라지고 2.0에는 반영되지 않습니다.</p>${list.map(e=>`<article><header><strong>${h(e.label)}</strong><small>${h(e.at)}</small></header><dl>${e.values.map(v=>`<dt>${h(v.label)}</dt><dd>${h(v.value)}</dd>`).join('')}</dl><div class="ax-actions">${btn('이 내용으로 요청','local-request',`data-id="${h(a.id)}" data-entry="${e.id}"`)}${btn('지우기','local-remove',`data-id="${h(a.id)}" data-entry="${e.id}"`)}</div></article>`).join('')}</section>`;
   }
   function linkedRequests(a){
     const list=ax.requestsFor?.(a.id)||[];if(!list.length)return '';
@@ -285,7 +290,7 @@ window.createWorkspaces = function createWorkspaces(api) {
   }
   function renderRecord(a,familyId,r){
     const recordId=String(r.id),local=(state.local[familyId]||[]).filter(e=>e.recordId===recordId),open=api.openRecord&&api.canOpenRecord?.(recordId);
-    dialog('detail',r.label,`${a.label}${r.date?` · ${r.date}`:''}`,`<div class="ax-issue-meta">${r.status?pill(r.status):''}${(r.facetIds||[]).map(f=>pill(facetsOf(a).find(x=>x.id===f)?.label||f)).join('')}</div>${r.detail?`<p class="live-pre">${h(r.detail)}</p>`:''}${(r.fields||[]).length?`<dl>${r.fields.map(f=>`<dt>${h(f.label)}</dt><dd>${h(f.value)}</dd>`).join('')}</dl>`:''}<div class="ax-actions">${btn('이 기록으로 요청','record-request',`data-id="${h(familyId)}" data-record="${h(r.id)}"`,true)}${open?btn('기존 상세 화면','record-open',`data-record="${h(r.id)}"`):''}</div>${local.length?`<section class="ax-evidence"><h3>이 기록의 미리보기 ${local.length}건</h3>${local.map(e=>`<p><strong>${h(e.label)}</strong> · ${h(e.values.map(v=>`${v.label} ${v.value}`).join(' · '))}</p>`).join('')}</section>`:''}<section class="ws-record-actions"><h3>이 기록으로 할 수 있는 일</h3>${actionsOf(a).map(x=>`<button type="button" class="ws-action" data-ws="action" data-id="${h(familyId)}" data-action="${h(x.id)}" data-record="${h(r.id)}"><strong>${h(x.label)}</strong><small>${h(MODE[x.mode]?.label||'요청 초안')}</small></button>`).join('')}</section>`);
+    dialog('detail',r.label,`${a.label}${r.date?` · ${r.date}`:''}`,`<div class="ax-issue-meta">${r.status?pill(r.status):''}${(r.facetIds||[]).map(f=>pill(facetsOf(a).find(x=>x.id===f)?.label||f)).join('')}</div>${r.detail?`<p class="live-pre">${h(r.detail)}</p>`:''}${(r.fields||[]).length?`<dl>${r.fields.map(f=>`<dt>${h(f.label)}</dt><dd>${h(f.value)}</dd>`).join('')}</dl>`:''}<div class="ax-actions">${btn('이 기록으로 요청','record-request',`data-id="${h(familyId)}" data-record="${h(r.id)}"`,true)}${open?btn('상세 화면 열기','record-open',`data-record="${h(r.id)}"`):''}</div>${local.length?`<section class="ax-evidence"><h3>이 기록의 미리보기 ${local.length}건</h3>${local.map(e=>`<p><strong>${h(e.label)}</strong> · ${h(e.values.map(v=>`${v.label} ${v.value}`).join(' · '))}</p>`).join('')}</section>`:''}<section class="ws-record-actions"><h3>이 기록으로 할 수 있는 일</h3>${actionsOf(a).map(x=>`<button type="button" class="ws-action" data-ws="action" data-id="${h(familyId)}" data-action="${h(x.id)}" data-record="${h(r.id)}"><strong>${h(x.label)}</strong><small>${h(MODE[x.mode]?.label||'요청 초안')}</small></button>`).join('')}</section>`);
   }
   // Partial refresh of the records region; keeps focus and the horizontal/vertical position of inner scrollers.
   function refreshMain(id){
@@ -316,7 +321,7 @@ window.createWorkspaces = function createWorkspaces(api) {
   function finderResults(){
     const list=matches(state.query);
     if(!state.query)return '';
-    return list.length?list.map((m,i)=>`<li role="option" id="ws-find-${i}" aria-selected="${i===state.active}" class="${i===state.active?'active':''}" data-ws="open" data-id="${h(m.a.id)}"><strong>${h(m.a.label)}</strong><small>${h(m.a.group||'')}${m.op?` · ${h(m.op.label)}`:''}</small></li>`).join(''):`<li class="ws-find-empty" role="presentation">‘${h(state.query)}’와 맞는 업무가 없습니다.</li>`;
+    return list.length?list.map((m,i)=>`<li role="option" id="ws-find-${i}" aria-selected="${i===state.active}" class="${i===state.active?'active':''}" data-ws="open" data-id="${h(m.a.id)}"><strong>${h(m.a.label)}</strong><small>${h(m.a.group||'')}${m.op?` · ${h(m.op.label)}`:''}</small></li>`).join(''):`<li class="ws-find-empty" role="presentation">‘${h(state.query)}’에 맞는 업무가 없습니다.</li>`;
   }
   function sidebar(page){
     if(!areas().length)return '';
@@ -330,7 +335,7 @@ window.createWorkspaces = function createWorkspaces(api) {
   function homeSignals(){
     const list=areas().flatMap(a=>(data(a.id)?.signals||[]).map(s=>({a,s}))).sort((x,y)=>byPriority(x.s,y.s));
     if(!list.length)return '';
-    return `<section class="ws-home-signals" aria-labelledby="ws-home-signals-title"><div class="ax-section-head"><h2 id="ws-home-signals-title">작업 공간에서 올라온 신호 ${list.length}건</h2><span>2.0 기록에서 판정된 신호입니다. 근거를 열거나 담당자에게 요청할 수 있습니다.</span></div><div class="ws-signal-grid">${list.slice(0,6).map(({a,s})=>signalCard(a.id,s,true)).join('')}</div>${list.length>6?`<p class="ax-note">나머지 ${list.length-6}건은 각 작업 공간에서 확인할 수 있습니다.</p>`:''}</section>`;
+    return `<section class="ws-home-signals" aria-labelledby="ws-home-signals-title"><div class="ax-section-head"><h2 id="ws-home-signals-title">작업 공간에서 올라온 신호 ${list.length}건</h2><span>복사본의 2.0 기록에서 찾은 신호입니다. 근거를 열거나 담당자에게 요청할 수 있습니다.</span></div><div class="ws-signal-grid">${list.slice(0,6).map(({a,s})=>signalCard(a.id,s,true)).join('')}</div>${list.length>6?`<p class="ax-note">나머지 ${list.length-6}건은 각 작업 공간에서 확인할 수 있습니다.</p>`:''}</section>`;
   }
 
   /* ---------- runtime coverage map (where each catalog action lands — distinct from production wiring) ---------- */
@@ -382,7 +387,7 @@ window.createWorkspaces = function createWorkspaces(api) {
       delete state.edits[id];refreshMain(id);refreshSide(id);toast(`시트 변경 ${values.length}칸을 미리보기로 기록했습니다. 2.0 시트에는 반영되지 않았습니다.`);return;
     }
     if(action==='local-remove'){state.local[id]=(state.local[id]||[]).filter(e=>e.id!==el.dataset.entry);refreshSide(id);refreshMain(id);return;}
-    if(action==='local-request'){const a=area(id),e=(state.local[id]||[]).find(x=>x.id===el.dataset.entry);if(!e)return;const r=e.recordId?recordById(id,e.recordId):null;requestFrom(a,{title:`${e.label} 처리 요청`,body:`${a.label}에서 아래 내용대로 ‘${e.label}’을 처리하고 결과를 보고해 주세요.\n${e.values.map(v=>`· ${v.label}: ${v.value}`).join('\n')}`,action:e.actionId,records:r?[r]:[]});return;}
+    if(action==='local-request'){const a=area(id),e=(state.local[id]||[]).find(x=>x.id===el.dataset.entry);if(!e)return;const r=e.recordId?recordById(id,e.recordId):null;requestFrom(a,{title:`${e.label} 처리 요청`,body:`${a.label}에서 아래 내용대로 ‘${e.label}’ 작업을 처리하고 결과를 보고해 주세요.\n${e.values.map(v=>`· ${v.label}: ${v.value}`).join('\n')}`,action:e.actionId,records:r?[r]:[]});return;}
   },true);
   document.addEventListener('submit',event=>{
     const form=event.target;

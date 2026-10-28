@@ -3,7 +3,8 @@ import { PRIORITY, family, field, metric, monthlyTrend, record, signal } from '.
 import { opsFamilies2 } from './domain-snapshot-ops2.mjs';
 
 const DAY = { mon: '월', tue: '화', wed: '수', thu: '목', fri: '금', sat: '토', sun: '일' };
-const ASSET = { in_use: '사용 중', on_loan: '대여 중', repair: '수리', lost: '분실', disposed: '폐기' };
+// 2.0 ASSET_STATUS_LABEL 원문(src/features/inventory/status.ts). 확인필요·미등록은 복사본에 없어 뺐다.
+const ASSET = { in_use: '사용중', on_loan: '대여중', repair: '수리중', lost: '분실', disposed: '폐기' };
 const APPROVAL = { draft: '작성 중', pending: '결재 대기', approved: '승인 완료', rejected: '반려' };
 const FORM = { leave: '휴가 신청', basic: '일반 기안', expense: '지출', income: '수입' };
 const DOC_FORM = { staff_resume: '직원 이력서', refund_request: '환불 요청서', class_review: '수업 평가', class_review_template: '수업 평가 양식', staff_intake_token: '직원 정보 입력 링크' };
@@ -33,7 +34,7 @@ export async function opsFamilies(ctx) {
   const overdueLoans = loans.filter(l => l.status === 'out' && l.due && l.due < asOf);
   const overdueAssets = new Set(overdueLoans.map(l => l.asset_id));
   out.inventory = family('inventory', '재고관리(자산·대여·실사·소모품·업체)', {
-    summary: `자산 ${assets.length}대(사용 중 ${assets.filter(a => a.status === 'in_use').length}), 대여 중 ${loans.filter(l => l.status === 'out').length}건 · 반납 기한 지남 ${overdueLoans.length}건. 소모품 ${inv.supplies}종.`,
+    summary: `자산 ${assets.length}대(사용중 ${assets.filter(a => a.status === 'in_use').length}), 반납 전 대여 ${loans.filter(l => l.status === 'out').length}건 · 반납 기한 지남 ${overdueLoans.length}건. 소모품 ${inv.supplies}종.`,
     metrics: [metric('자산', assets.length, '대'), ...Object.entries(ASSET).map(([k, v]) => metric(`자산 ${v}`, assets.filter(a => a.status === k).length, '대')), metric('반납 전 대여', loans.filter(l => l.status === 'out').length, '건'), metric('반납 기한 지난 대여', overdueLoans.length, '건'), metric('실사 기록', inv.audits, '건', `마지막 ${inv.last_audit || '기록 없음'}`), metric('소모품', inv.supplies, '종', `수량 합계 ${inv.qty}개`)],
     evidence: assets.map(a => record({ id: a.id, label: [a.category, a.asset_code].filter(Boolean).join(' '), detail: [a.maker, a.model].filter(Boolean).join(' '), date: a.audited, status: ASSET[a.status] || '기타', fields: [field('위치', a.location), field('사용자', a.holder_name)], facets: [`status:${a.status}`, `category:${a.category}`, overdueAssets.has(a.id) && 'loan-overdue'] })),
     facetLabels: { ...pre('status', ASSET), 'loan-overdue': '반납 기한 지남', ...Object.fromEntries([...new Set(assets.map(a => a.category))].map(c => [`category:${c}`, c])) }, recordSource: 'inventory_assets',
@@ -48,7 +49,7 @@ export async function opsFamilies(ctx) {
     summary: `회의록 ${meetings.length}건(${month} ${meetings.filter(m => m.d >= monthStart).length}건), AI 분석 완료 ${meetings.filter(m => m.ps === 'completed').length}건·실행 항목 ${meetings.reduce((n, m) => n + m.actions, 0)}개.`,
     metrics: [metric('회의록', meetings.length, '건'), metric('이번 달 회의', meetings.filter(m => m.d >= monthStart).length, '건'), metric('녹음 있는 회의', meetings.filter(m => m.audio).length, '건'), metric('AI 분석 완료', meetings.filter(m => m.ps === 'completed').length, '건'), metric('분석 실패', meetings.filter(m => m.ps === 'failed').length, '건'), metric('AI 실행 항목', meetings.reduce((n, m) => n + m.actions, 0), '개')],
     trend: monthlyTrend('월별 회의록', '건', Object.entries(Object.groupBy(meetings, m => m.d.slice(0, 7))).map(([k, rows]) => ({ month: k, value: rows.length })), asOf),
-    evidence: meetings.map(m => record({ id: m.id, label: m.title || '제목 없음', date: m.d, status: PROCESS[m.ps] || '기타', fields: [field('참석', m.attendees === null ? null : `${m.attendees}명`), field('실행 항목', m.actions)], facets: [`process:${m.ps}`, m.audio && 'audio', m.d >= monthStart && 'this-month'] })),
+    evidence: meetings.map(m => record({ id: m.id, label: m.title || '제목 없음', date: m.d, status: PROCESS[m.ps] || '기타', fields: [field('참석', m.attendees ? `${m.attendees}명` : null), field('실행 항목', m.actions)], facets: [`process:${m.ps}`, m.audio && 'audio', m.d >= monthStart && 'this-month'] })),
     facetLabels: { ...pre('process', PROCESS), audio: '녹음 있음', 'this-month': '이번 달' }, recordSource: 'meeting_minutes',
     sourceLabel: '회의록 · 녹음 · AI 분석', coverageNote: '근거 목록은 회의록 전체입니다. 회의 내용·전사·AI 분석 본문은 보여 주지 않습니다.',
     sources: [{ table: 'meeting_minutes', rows: meetings.length }],
@@ -70,11 +71,11 @@ export async function opsFamilies(ctx) {
   // 데이터베이스(서식·문서) — 제목·분류·날짜만. 열람 제한 문서는 표시만 하고 내용은 싣지 않는다.
   const files = await sql`select d.id, d.title, coalesce(c.label, d.category) category, d.kind, d.form_type, coalesce(d.restricted,false) restricted, coalesce(d.pinned,false) pinned, to_char(d.updated_at at time zone 'Asia/Seoul','YYYY-MM-DD') d from public.academy_documents d left join public.document_categories c on c.key=d.category and c.tenant_id=${t} where d.tenant_id=${t} order by d.pinned desc, d.updated_at desc`;
   out.documents = family('documents', '데이터베이스(서식·문서 저장소)', {
-    summary: `문서 ${files.length}건(서식 ${files.filter(f => f.kind === 'form').length}·파일 ${files.filter(f => f.kind === 'file').length}), 열람 제한 ${files.filter(f => f.restricted).length}건.`,
+    summary: `문서 ${files.length}건(서식 ${files.filter(f => f.kind === 'form').length}건·파일 ${files.filter(f => f.kind === 'file').length}건), 열람 제한 ${files.filter(f => f.restricted).length}건.`,
     metrics: [metric('문서', files.length, '건'), metric('서식으로 작성', files.filter(f => f.kind === 'form').length, '건'), metric('파일', files.filter(f => f.kind === 'file').length, '건'), metric('열람 제한', files.filter(f => f.restricted).length, '건'), ...Object.entries(DOC_FORM).map(([k, v]) => metric(v, files.filter(f => f.form_type === k).length, '건'))],
     evidence: files.map(f => record({ id: f.id, label: f.title, date: f.d, status: f.restricted ? '열람 제한' : '공개', detail: f.category || '', fields: [field('종류', DOC_FORM[f.form_type] || (f.kind === 'file' ? '파일' : '서식'))], facets: [`kind:${f.kind}`, f.form_type && `form:${f.form_type}`, f.restricted && 'restricted', f.pinned && 'pinned'] })),
     facetLabels: { 'kind:form': '서식', 'kind:file': '파일', restricted: '열람 제한', pinned: '고정', ...pre('form', DOC_FORM) }, recordSource: 'academy_documents',
-    sourceLabel: '서식 · 문서 저장소', coverageNote: '근거 목록은 문서 전체의 제목·분류·날짜입니다. 이력서·환불 요청서 같은 열람 제한 문서의 내용과 첨부는 보여 주지 않습니다(첨부 내려받기는 기존 화면 경로).',
+    sourceLabel: '서식 · 문서 저장소', coverageNote: '근거 목록은 문서 전체의 제목·분류·날짜입니다. 이력서·환불 요청서 같은 열람 제한 문서의 내용과 첨부는 보여 주지 않습니다. 첨부는 기존 화면에서 내려받습니다.',
     sources: [{ table: 'academy_documents', rows: files.length }],
   });
 

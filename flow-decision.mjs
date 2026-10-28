@@ -76,9 +76,9 @@ export function pseudonymize(source, text) {
 
 // DecisionResult → flow decision record + routing effects (code, not AI).
 function toRecord(result, { area, draft, reason }) {
-  const routeLabel = { auto_route: '자동 배정 가능', no_action: '할 일 없음', manager_review: '관리자 검토', human_review: '사람 검토', insufficient_context: '정보 부족' };
+  const routeLabel = { auto_route: '정해진 담당자에게 바로 배정', no_action: '할 일 없음으로 판단', manager_review: '관리자 검토로 보냄', human_review: '사람이 판단하도록 보냄', insufficient_context: '정보가 부족해 사람이 되묻도록 보냄' };
   const id = `dec-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
-  if (!result) return { id, status: 'unavailable', route: 'human_review', label: '판정 모듈 연결 전 — 사람 검토', needsReview: true, record: { id, provider: 'none', model: null, status: 'unavailable', reason: reason || 'decision_module_unavailable', route: 'human_review', probabilities: null, elapsedMs: 0, usage: null, at: new Date().toISOString() } };
+  if (!result) return { id, status: 'unavailable', route: 'human_review', label: '판정 사용 불가 — 사람 검토', needsReview: true, record: { id, provider: 'none', model: null, status: 'unavailable', reason: reason || 'decision_module_unavailable', route: 'human_review', probabilities: null, elapsedMs: 0, usage: null, at: new Date().toISOString() } };
   const p = result.signals || null;
   const needsReview = result.status !== 'decided' || result.route !== 'auto_route' || ALWAYS_REVIEW.has(area) || ALWAYS_REVIEW.has(result.area?.value) || (area && result.area?.value && result.area.value !== area);
   // A known code deadline (from a trusted date) outranks the model's urgency guess.
@@ -86,7 +86,7 @@ function toRecord(result, { area, draft, reason }) {
   const priority = due ? { today: 'high', this_week: 'normal', future: 'low' }[due.urgency] || null
     : p?.urgency?.value === 'today' ? 'high' : p?.urgency?.value === 'no_deadline' ? 'low' : p ? 'normal' : null;
   return {
-    id, status: result.status, route: result.route, label: `판정: ${routeLabel[result.route] || result.route}`, needsReview, priority,
+    id, status: result.status, route: result.route, label: routeLabel[result.route] ? `판정: ${routeLabel[result.route]}` : '판정 기록', needsReview, priority,
     record: { id, provider: result.provider || 'typesafe', model: result.model, status: result.status, route: result.route, reason: (result.reasons || []).map(r => r.code).join(',') || null, area: result.area?.value || null,
       probabilities: p ? { actionNeeded: p.actionNeeded?.probability ?? null, managerReview: p.managerReview?.probability ?? null, safetyConcern: p.safetyConcern?.probability ?? null, urgency: p.urgency?.value ?? null } : null,
       suggestedAssigneeIds: (result.assignees || []).map(a => a.staffId), claudeRecommended: !!result.claudeRecommended, elapsedMs: result.elapsedMs ?? null, usage: result.usage || null, cost: result.cost || null, cache: result.cache || null, versions: result.versions || null, at: new Date().toISOString(),
@@ -126,8 +126,8 @@ export async function createFlowAI({ env = process.env, dir = env.OWNER_CONCEPT_
     route: (c, source) => evaluate(c, source, AREA[c.scenario]),
     analyze: (c, source, opts) => evaluate(c, source, AREA[c.scenario] || TASK_AREA[c.taskKind] || FAMILY_AREA[c.familyId] || null, opts),
     status: () => ({ providers: [
-      { id: 'jev', label: 'Jev 판정', status: engine ? (keySource || env.TYPESAFE_API_KEY ? 'ready' : 'unavailable') : 'unavailable', ...(engine ? (keySource || env.TYPESAFE_API_KEY ? {} : { reason: '판정 키가 설정되지 않음' }) : { reason: '판정 모듈 연결 전' }) },
-      { id: 'claude-cli', label: 'Claude 초안', status: draftFn ? 'ready' : 'unavailable', ...(draftFn ? {} : { reason: '초안 모듈 연결 전' }) },
+      { id: 'jev', label: 'Jev 판정', status: engine ? (keySource || env.TYPESAFE_API_KEY ? 'ready' : 'unavailable') : 'unavailable', ...(engine ? (keySource || env.TYPESAFE_API_KEY ? {} : { reason: '판정 키가 설정되지 않음' }) : { reason: '판정 모듈이 연결되지 않음' }) },
+      { id: 'claude-cli', label: 'Claude 초안', status: draftFn ? 'ready' : 'unavailable', ...(draftFn ? {} : { reason: '초안 모듈이 연결되지 않음' }) },
     ] }),
   };
 }

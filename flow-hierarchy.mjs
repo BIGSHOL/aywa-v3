@@ -99,7 +99,7 @@ export function buildHierarchy(source, state, caseId) {
   const { asOf, capturedAt } = source.identity;
   const basis = adapter.basis({ asOf, capturedAt });
   const rows = refs.map(ref => { const e = source.entities.get(ref); return { ref, id: e.id, ...adapter.record(e) }; }).filter(r => r.studentId && source.entities.has(`student:${r.studentId}`));
-  if (!rows.length) throw new HierarchyError(422, 'hierarchy_no_relationships', '근거 기록이 원생·반 관계로 이어지지 않아 계층을 만들 수 없습니다.');
+  if (!rows.length) throw new HierarchyError(422, 'hierarchy_no_relationships', '근거 기록이 학생·반과 이어지지 않아 선생님별로 묶지 못했습니다.');
   const steps = stepIndex(source, c, refs), flow = flowIndex(c), actors = new Set(source.actors.map(a => a.id));
 
   // Cohort check against the stated rule (window, threshold, enrolled) — reported, never "fixed".
@@ -193,9 +193,9 @@ export function buildHierarchy(source, state, caseId) {
   const unmapped = recordIds.length - rows.length;
   const notes = [];
   const truncated = { entityRefs: c.entityRefs.filter(r => r.type === adapter.recordType).length, stepRefs: c.steps.reduce((n, s) => n + (s.refs || []).length, 0) };
-  if (truncated.stepRefs < rows.length) notes.push(`원본 업무는 단계마다 근거를 50건까지만 저장했습니다(${truncated.stepRefs}건). 계층은 신호의 근거 ${rows.length}건 전부를 같은 외래키 규칙으로 다시 묶었습니다.`);
-  if (unmapped) notes.push(`신호 근거 ${unmapped}건은 원생 기록으로 이어지지 않아 계층에서 빠졌습니다.`);
-  if (unknown.teacherRecords || unknown.classRecords) notes.push(`반 또는 담임을 알 수 없는 기록 ${Math.max(unknown.teacherRecords, unknown.classRecords)}건은 '미지정' 묶음에 따로 둡니다.`);
+  if (truncated.stepRefs < rows.length) notes.push(`원본 업무는 단계마다 근거를 50건까지만 저장했습니다(${truncated.stepRefs}건). 이 화면은 신호의 근거 ${rows.length}건 전부를 같은 기준(반의 담임)으로 다시 묶었습니다.`);
+  if (unmapped) notes.push(`신호 근거 ${unmapped}건은 원생 기록으로 이어지지 않아 이 화면에서 빠졌습니다.`);
+  if (unknown.teacherRecords || unknown.classRecords) notes.push(`반 또는 담임을 알 수 없는 기록 ${Math.max(unknown.teacherRecords, unknown.classRecords)}건은 '관계 모름' 묶음에 따로 둡니다.`);
   if (root.facts.managerQueueRecords) notes.push(`재직 중이 아닌 담임의 기록 ${root.facts.managerQueueRecords}건은 원본 업무에서 관리자 대기열 단계에 있습니다.`);
   const warnings = [];
   if (cohortCheck.ok === false) warnings.push({ code: 'cohort_mismatch', message: `신호 기준과 맞지 않는 근거가 있습니다: 3회 미만 원생 ${cohortCheck.belowThreshold}명 · 기간 밖 기록 ${cohortCheck.outsideWindow}건 · 재원 아닌 원생 ${cohortCheck.notEnrolled ?? 0}명.` });

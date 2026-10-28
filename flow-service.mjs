@@ -10,9 +10,9 @@ import { createHierarchyProviders } from './flow-hierarchy-providers.mjs';
 
 /** Hierarchy AI providers: off unless OWNER_CONCEPT_HIERARCHY_AI=on (tests and other servers make no calls). */
 function hierarchyProviders(option, env) {
-  if (option && 'providers' in option) return { providers: option.providers, reason: option.providers ? null : '자동 분석이 꺼져 있음' };
-  if (env.OWNER_CONCEPT_HIERARCHY_AI !== 'on' || env.NODE_ENV === 'production' || env.VERCEL) return { providers: null, reason: '자동 분석이 꺼져 있음' };
-  try { return { providers: createHierarchyProviders({ env }), reason: null }; } catch (error) { console.error(`Hierarchy AI unavailable: ${error.code || 'error'}`); return { providers: null, reason: '자동 분석 전송 설정 오류' }; }
+  if (option && 'providers' in option) return { providers: option.providers, reason: option.providers ? null : 'AI 정리가 꺼져 있습니다.' };
+  if (env.OWNER_CONCEPT_HIERARCHY_AI !== 'on' || env.NODE_ENV === 'production' || env.VERCEL) return { providers: null, reason: 'AI 정리가 꺼져 있습니다.' };
+  try { return { providers: createHierarchyProviders({ env }), reason: null }; } catch (error) { console.error(`Hierarchy AI unavailable: ${error.code || 'error'}`); return { providers: null, reason: 'AI 정리 전송 설정에 오류가 있습니다.' }; }
 }
 
 const REPO = resolve(fileURLToPath(new URL('../../', import.meta.url)));

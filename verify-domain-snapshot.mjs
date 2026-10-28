@@ -52,7 +52,7 @@ check('same facts as the base model and the AX issues', () => {
   const leads = snapshot.admissions.filter(a => a.date.startsWith(month));
   assert.equal(metric('enrollment', '이번 달 접수'), leads.length);
   assert.equal(metric('enrollment', '상담·검토 단계'), leads.filter(a => ['scheduled', 'consulted', 'ai_done'].includes(a.outcome)).length);
-  assert.equal(metric('tasks-notifications', '기한 지난 할 일'), snapshot.tasks.filter(t => t.status === 'open' && t.due && t.due < asOf).length);
+  assert.equal(metric('tasks-notifications', '늦은 할 일'), snapshot.tasks.filter(t => t.status === 'open' && t.due && t.due < asOf).length);
   assert.equal(metric('textbook-requests', '요청·주문 단계'), snapshot.textbooks.filter(t => ['requested', 'ordered'].includes(t.status)).length);
   assert.equal(metric('approvals', '결재 대기'), snapshot.approvals.filter(a => a.status === 'pending').length);
   assert.equal(metric('classes', '운영 중인 반'), snapshot.classes.length);

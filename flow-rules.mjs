@@ -46,7 +46,7 @@ export const EVENT_TYPES = {
   'step.reassigned': { label: '담당 변경', implemented: true },
   'case.closed': { label: '완료', implemented: true },
   'case.reopened': { label: '다시 열림', implemented: true },
-  'followup.linked': { label: '원본 할 일의 후속 보고', implemented: true },
+  'followup.linked': { label: '후속 보고 연결', implemented: true },
   'enrollment.inquiry': { label: '신규 문의 접수', implemented: false },
   'parent.message': { label: '학부모 글', implemented: false },
   'withdrawal.requested': { label: '퇴원 요청', implemented: false },

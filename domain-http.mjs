@@ -17,7 +17,7 @@ export function queryRecords(store, familyId, params) {
   for (const key of params.keys()) if (!KEYS.has(key) || params.getAll(key).length > 1) return { status: 400, body: { error: 'invalid_request', message: '허용하지 않는 조회 조건입니다.' } };
   if (params.has('id')) {
     const id = params.get('id');
-    if ([...params.keys()].length !== 1 || !RECORD_ID.test(id)) return { status: 400, body: { error: 'invalid_request', message: '기록 id 조회 조건이 올바르지 않습니다.' } };
+    if ([...params.keys()].length !== 1 || !RECORD_ID.test(id)) return { status: 400, body: { error: 'invalid_request', message: '기록을 찾는 조건이 올바르지 않습니다.' } };
     if (!store) return { status: 503, body: { error: 'records_unavailable', message: '근거 목록을 아직 준비하지 못했습니다.' } };
     const item = store.families.get(familyId).records.find(r => String(r.id) === id);
     return item ? { status: 200, body: { familyId, item } } : { status: 404, body: { error: 'record_not_found', message: '이 업무 영역에서 그 기록을 찾지 못했습니다.' } };

@@ -38,26 +38,26 @@ export function recordDecision(state, c, job, decision, at) {
 export function validateCommand(body, actors) {
   if (!body || typeof body !== 'object' || Array.isArray(body)) throw bad('요청 형식이 올바르지 않습니다.');
   for (const k of Object.keys(body)) if (!TOP.has(k)) throw bad('허용하지 않는 항목이 있습니다.');
-  if (!/^[A-Za-z0-9_-]{8,80}$/.test(body.commandId || '')) throw bad('commandId 형식이 올바르지 않습니다.');
-  if (!Number.isInteger(body.expectedRevision) || body.expectedRevision < 0) throw bad('expectedRevision이 필요합니다.');
+  if (!/^[A-Za-z0-9_-]{8,80}$/.test(body.commandId || '')) throw bad('요청 번호 형식이 올바르지 않습니다.');
+  if (!Number.isInteger(body.expectedRevision) || body.expectedRevision < 0) throw bad('마지막으로 본 변경 번호가 필요합니다.');
   if (!COMMAND_KINDS.includes(body.kind)) throw bad('지원하지 않는 작업입니다.');
   const actor = actors.get(body.actorId);
   if (!actor) throw new CommandError(403, 'actor_not_allowed', '미리보기 직원 목록에 없는 사람입니다.');
   if (!COMMAND_ROLES[body.kind].includes(actor.role)) throw new CommandError(403, 'action_not_allowed', '이 역할로는 할 수 없는 작업입니다.');
-  if (body.caseId !== undefined && !/^[A-Za-z0-9_-]{1,120}$/.test(body.caseId)) throw bad('caseId 형식이 올바르지 않습니다.');
+  if (body.caseId !== undefined && !/^[A-Za-z0-9_-]{1,120}$/.test(body.caseId)) throw bad('업무 번호 형식이 올바르지 않습니다.');
   const payload = body.payload ?? {};
-  if (typeof payload !== 'object' || Array.isArray(payload)) throw bad('payload 형식이 올바르지 않습니다.');
+  if (typeof payload !== 'object' || Array.isArray(payload)) throw bad('요청 내용 형식이 올바르지 않습니다.');
   return { ...body, payload, actor };
 }
 
-const assignable = (actors, ids, field = 'assigneeIds') => {
-  if (!Array.isArray(ids) || !ids.length || ids.length > 10 || new Set(ids).size !== ids.length) throw bad(`${field}는 1~10명이어야 합니다.`);
+const assignable = (actors, ids) => {
+  if (!Array.isArray(ids) || !ids.length || ids.length > 10 || new Set(ids).size !== ids.length) throw bad('담당자는 중복 없이 1~10명이어야 합니다.');
   for (const id of ids) { const a = actors.get(id); if (!a || a.preview || !a.assignable) throw new CommandError(400, 'assignee_not_allowed', '배정할 수 없는 사람이 있습니다.'); }
   return ids;
 };
 function recordRefs(source, list, allowed, max = 20) {
   if (list === undefined) return [];
-  if (!Array.isArray(list) || list.length > max) throw bad(`recordRefs는 ${max}개까지입니다.`);
+  if (!Array.isArray(list) || list.length > max) throw bad(`연결 기록은 ${max}개까지 붙일 수 있습니다.`);
   return list.map(r => {
     const key = typeof r === 'string' ? r : r && typeof r === 'object' ? `${r.type}:${r.id}` : '';
     if (!/^[a-z_]{2,30}:[A-Za-z0-9:_-]{1,80}$/.test(key) || (allowed && !allowed.has(key))) throw new CommandError(400, 'record_ref_not_allowed', '이 업무와 관련된 기록만 근거로 붙일 수 있습니다.');
@@ -77,7 +77,7 @@ const reportRefKeys = (source, c, step) => {
 };
 
 function pickStep(c, payload, predicate, actor) {
-  if (payload.stepId !== undefined && !/^[A-Za-z0-9_-]{1,140}$/.test(payload.stepId)) throw bad('stepId 형식이 올바르지 않습니다.');
+  if (payload.stepId !== undefined && !/^[A-Za-z0-9_-]{1,140}$/.test(payload.stepId)) throw bad('단계 번호 형식이 올바르지 않습니다.');
   const steps = c.steps.filter(s => (!payload.stepId || s.id === payload.stepId) && predicate(s));
   const mine = steps.filter(s => s.assigneeIds.includes(actor.id) || (s.queue === 'manager' && !s.assigneeIds.length && ['manager', 'owner'].includes(actor.role)));
   if (!steps.length) throw new CommandError(409, 'step_not_ready', '지금 처리할 단계가 없습니다.');
@@ -99,12 +99,12 @@ export async function applyCommand(state, source, cmd, { now, inFlight = new Map
       keys(payload, ['title', 'body', 'assigneeIds', 'dueAt', 'priority', 'familyId', 'recordRefs', 'channels', 'source']);
       if (!str(payload.title, 1, 80) || !str(payload.body, 1, 2000)) throw bad('제목(80자)과 내용(2,000자)을 입력해 주세요.');
       const who = assignable(actors, payload.assigneeIds);
-      if (payload.dueAt !== undefined && (!/^\d{4}-\d{2}-\d{2}$/.test(payload.dueAt))) throw bad('dueAt은 YYYY-MM-DD입니다.');
-      if (payload.priority !== undefined && !PRIORITIES.includes(payload.priority)) throw bad('priority 값이 올바르지 않습니다.');
-      if (payload.familyId !== undefined && !FAMILY_IDS.includes(payload.familyId)) throw bad('familyId가 올바르지 않습니다.');
-      if (payload.channels !== undefined && (!Array.isArray(payload.channels) || payload.channels.some(ch => !['app', 'slack'].includes(ch)))) throw bad('channels 값이 올바르지 않습니다.');
+      if (payload.dueAt !== undefined && (!/^\d{4}-\d{2}-\d{2}$/.test(payload.dueAt))) throw bad('기한 날짜 형식이 올바르지 않습니다.');
+      if (payload.priority !== undefined && !PRIORITIES.includes(payload.priority)) throw bad('우선순위 값이 올바르지 않습니다.');
+      if (payload.familyId !== undefined && !FAMILY_IDS.includes(payload.familyId)) throw bad('연결할 작업 공간이 올바르지 않습니다.');
+      if (payload.channels !== undefined && (!Array.isArray(payload.channels) || payload.channels.some(ch => !['app', 'slack'].includes(ch)))) throw bad('알림 채널 값이 올바르지 않습니다.');
       const src = payload.source;
-      if (src !== undefined && (typeof src !== 'object' || !['issue', 'workspace', 'chat', 'task', 'direct'].includes(src.kind) || Object.keys(src).some(k => !['kind', 'issueIds', 'signalId', 'actionId', 'label'].includes(k)) || (src.issueIds && (!Array.isArray(src.issueIds) || src.issueIds.length > 10 || src.issueIds.some(i => !str(i, 1, 60)))) || (src.label !== undefined && !str(src.label, 0, 80)))) throw bad('source 형식이 올바르지 않습니다.');
+      if (src !== undefined && (typeof src !== 'object' || !['issue', 'workspace', 'chat', 'task', 'direct'].includes(src.kind) || Object.keys(src).some(k => !['kind', 'issueIds', 'signalId', 'actionId', 'label'].includes(k)) || (src.issueIds && (!Array.isArray(src.issueIds) || src.issueIds.length > 10 || src.issueIds.some(i => !str(i, 1, 60)))) || (src.label !== undefined && !str(src.label, 0, 80)))) throw bad('요청 출처 형식이 올바르지 않습니다.');
       const refs = recordRefs(source, payload.recordRefs);
       const steps = who.map((id, i) => step(`s${i + 1}`, { key: 'assignee_report', label: `${actors.get(id).name} 확인·보고`, role: 'assignee', evidenceRequired: true }, { assigneeIds: [id], queue: null, rule: '요청한 사람이 지정', ruleSource: 'request.create' }, 1));
       steps.push(step(`s${who.length + 1}`, { key: 'manager_review', label: '관리자 검토 후 마감', role: 'manager', review: true }, resolveRole(source, 'manager', []), 2));
@@ -150,7 +150,7 @@ export async function applyCommand(state, source, cmd, { now, inFlight = new Map
       keys(payload, ['stepId', 'note', 'recordRefs', 'outcome']);
       const c = getCase(), s = pickStep(c, payload, x => (x.status === 'ready' || x.status === 'working') && !x.review, actor);
       if (!str(payload.note, 2, 2000)) throw new CommandError(400, 'evidence_required', '처리 결과를 2자 이상 적어 주세요.');
-      if (payload.outcome !== undefined && !REPORT_OUTCOMES[payload.outcome]) throw bad('outcome 값이 올바르지 않습니다.');
+      if (payload.outcome !== undefined && !REPORT_OUTCOMES[payload.outcome]) throw bad('결과 값이 올바르지 않습니다.');
       // A hierarchy student cell sends all of its records (one class, real max 18): 60 there, 20 everywhere else.
       const refs = recordRefs(source, payload.recordRefs, reportRefKeys(source, c, s), signalStepRefs(source, c) ? 60 : 20);
       const evidence = { id: `ev-${state.seq + 1}`, note: scrub(payload.note.trim()), recordRefs: refs, actorId: actor.id, at, stepId: s.id, outcome: payload.outcome || 'done' };
@@ -171,8 +171,8 @@ export async function applyCommand(state, source, cmd, { now, inFlight = new Map
     }
     case 'case.review': {
       keys(payload, ['stepId', 'decision', 'note']);
-      if (!['accept', 'return'].includes(payload.decision)) throw bad('decision은 accept 또는 return입니다.');
-      if (payload.note !== undefined && !str(payload.note, 0, 2000)) throw bad('note는 2,000자까지입니다.');
+      if (!['accept', 'return'].includes(payload.decision)) throw bad('검토 결정은 승인 또는 되돌림만 고를 수 있습니다.');
+      if (payload.note !== undefined && !str(payload.note, 0, 2000)) throw bad('메모는 2,000자까지 쓸 수 있습니다.');
       const c = getCase(); if (c.closure === 'fact') throw new CommandError(409, 'fact_case', '원본 할 일은 원본 기록이 바뀔 때만 닫힙니다.');
       const s = pickStep(c, payload, x => x.status === 'ready' && x.review, actor);
       if (payload.decision === 'return') {
@@ -195,7 +195,7 @@ export async function applyCommand(state, source, cmd, { now, inFlight = new Map
       keys(payload, ['stepId', 'assigneeIds']);
       const c = getCase(), who = assignable(actors, payload.assigneeIds);
       const s = c.steps.find(x => (payload.stepId ? x.id === payload.stepId : true) && (x.status === 'ready' || x.status === 'working'));
-      if (!s) throw new CommandError(409, 'step_not_ready', '담당을 바꿀 진행 중 단계가 없습니다.');
+      if (!s) throw new CommandError(409, 'step_not_ready', '담당을 바꿀 열린 단계가 없습니다.');
       const from = s.assigneeIds; s.assigneeIds = who; s.queue = null; s.unassignedReason = null; s.status = 'ready'; s.rule = '관리자가 직접 다시 지정'; s.ruleSource = 'case.reassign';
       emit({ caseId: c.id, type: 'step.reassigned', stepId: s.id, targetActorIds: who, causeId: c.history.at(-1), data: { from, to: who } });
       refreshCase(c, at); return { caseId: c.id, eventIds: ids };
@@ -237,10 +237,10 @@ export async function runCommand(store, source, body, { ai, now = () => new Date
   const first = await store.transact(async draft => {
     const seen = draft.commands[cmd.commandId];
     if (seen) {
-      if (seen.fingerprint !== fingerprint(cmd)) throw new CommandError(409, 'command_conflict', '같은 commandId로 다른 작업을 보냈습니다.');
+      if (seen.fingerprint !== fingerprint(cmd)) throw new CommandError(409, 'command_conflict', '같은 요청이 다른 내용으로 이미 처리되었습니다.');
       return { next: null, result: { result: { ...seen.result, replayed: true }, job: null } };
     }
-    if (cmd.expectedRevision !== draft.revision) throw new CommandError(409, 'revision_conflict', '다른 사람이 먼저 바꿨습니다. 새로 고친 뒤 다시 시도해 주세요.', { revision: draft.revision });
+    if (cmd.expectedRevision !== draft.revision) throw new CommandError(409, 'revision_conflict', '다른 사람이 먼저 바꿨습니다. 화면을 새로 불러온 뒤 다시 시도해 주세요.', { revision: draft.revision });
     const out = await applyCommand(draft, source, cmd, { now, inFlight: jobs });
     if (!out.duplicate) draft.revision += 1; // a duplicate changes nothing but the command log
     const result = { revision: draft.revision, caseId: out.caseId, eventIds: out.eventIds, ...(out.duplicate ? { duplicate: true } : {}), ...(out.job || out.pending ? { decision: 'pending' } : {}) };

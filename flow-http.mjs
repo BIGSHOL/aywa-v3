@@ -43,7 +43,7 @@ export function createFlowRoute({ flow, origins, headers = {}, enabled = true })
       if (path === HIERARCHY_PATH) {
         if (!['GET', 'HEAD'].includes(req.method)) return send(res, 405, { error: 'method_not_allowed', message: '조회만 할 수 있습니다.' }, { Allow: 'GET, HEAD' });
         const q = new URL(req.url, 'http://127.0.0.1').searchParams;
-        if ([...q.keys()].some(k => k !== 'caseId') || q.getAll('caseId').length !== 1 || !/^[A-Za-z0-9_-]{1,120}$/.test(q.get('caseId'))) return send(res, 400, { error: 'invalid_request', message: '업무 번호(caseId) 하나만 보낼 수 있습니다.' });
+        if ([...q.keys()].some(k => k !== 'caseId') || q.getAll('caseId').length !== 1 || !/^[A-Za-z0-9_-]{1,120}$/.test(q.get('caseId'))) return send(res, 400, { error: 'invalid_request', message: '업무 번호를 하나만 보낼 수 있습니다.' });
         if (!flow.service) return unavailable(res);
         try {
           const tag = flow.service.hierarchyTag(q.get('caseId'));

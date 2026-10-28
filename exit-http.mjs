@@ -11,8 +11,8 @@ const MONTH = /^\d{4}-(0[1-9]|1[0-2])$/;
 
 /** AI on when OWNER_CONCEPT_EXIT_AI (default: OWNER_CONCEPT_HIERARCHY_AI) is 'on'; never in production. */
 export function exitProviders(env = process.env) {
-  if ((env.OWNER_CONCEPT_EXIT_AI ?? env.OWNER_CONCEPT_HIERARCHY_AI) !== 'on' || env.NODE_ENV === 'production' || env.VERCEL) return { providers: null, reason: '자동 분석이 꺼져 있음' };
-  try { return { providers: createHierarchyProviders({ env }), reason: null }; } catch (error) { console.error(`Exit insight AI unavailable: ${error.code || 'error'}`); return { providers: null, reason: '자동 분석 전송 설정 오류' }; }
+  if ((env.OWNER_CONCEPT_EXIT_AI ?? env.OWNER_CONCEPT_HIERARCHY_AI) !== 'on' || env.NODE_ENV === 'production' || env.VERCEL) return { providers: null, reason: '이 서버에서는 AI 분석을 켜지 않았습니다. 숫자와 기록은 코드 집계입니다.' };
+  try { return { providers: createHierarchyProviders({ env }), reason: null }; } catch (error) { console.error(`Exit insight AI unavailable: ${error.code || 'error'}`); return { providers: null, reason: 'AI 연결 설정을 읽지 못했습니다. 숫자와 기록은 코드 집계입니다.' }; }
 }
 
 /** Hourly call caps: the defaults in exit-runtime.mjs; OWNER_CONCEPT_EXIT_CLAUDE_PER_HOUR / _JEV_PER_HOUR raise them for one run (1–2000). */

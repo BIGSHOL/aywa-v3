@@ -7,7 +7,7 @@ import { modelLabel } from './flow-view.mjs';
 const ERROR = { no_key: '판정 키가 설정되지 않음', timeout: '응답 시간 초과', rate_limited: '사용 한도에 걸림', overloaded: '서버 혼잡', network: '연결 실패', http_error: '서버 오류', auth: '판정 키 인증 실패',
   auth_required: 'Claude 구독 로그인이 필요함', subscription_required: 'Claude 구독 로그인으로만 실행함', cli_missing: 'Claude CLI를 찾지 못함', runtime_unsafe: 'Claude 실행 폴더가 안전하지 않음', cli_failed: 'Claude 실행 실패',
   invalid_output: '출력이 검사에서 걸려 보여 주지 않음', invalid_response: '판정 답 형식 오류', request_rejected: '요청이 거절됨', busy: '대기열이 가득 참', cancelled: '중단됨', failed: '처리 실패' };
-const ISSUE = { number_in_text: '숫자를 직접 씀(숫자는 코드 집계)', unknown_id: '입력에 없는 대상 언급', banned_claim: '사유·위험 단정 표현', raw_code: '영어 코드 노출', evidence_outside_input: '보내지 않은 근거 인용', teacher_set: '강사 누락·중복', class_set: '반 누락·중복', schema: '형식 오류' };
+const ISSUE = { number_in_text: '글에 숫자를 직접 씀', unknown_id: '입력에 없는 대상 언급', banned_claim: '사유·위험 단정 표현', raw_code: '영어 코드 노출', evidence_outside_input: '보내지 않은 근거 인용', teacher_set: '선생님 누락·중복', class_set: '반 누락·중복', schema: '형식 오류' };
 const errorReason = r => [ERROR[r.code] || '처리 실패', ...(r.issues || []).map(i => ISSUE[i] || '검사 실패')].join(' · ');
 const PROVIDER = { jev: 'Jev 판정', 'claude-cli': 'Claude 요약' };
 
@@ -16,12 +16,12 @@ function state(p, entry, opts, waitingReason) {
   const cur = entry.result?.status === 'ready' ? entry.result : null;
   const prev = !cur && entry.last && p.results[entry.last]?.status === 'ready' ? p.results[entry.last] : null;
   const shown = cur || prev, base = { stale: !!prev };
-  if (entry.skip === 'reported') return { shown: null, ai: { status: 'skipped', stale: false, reason: '보고 완료 — AI 판단을 생략함' } };
-  if (entry.skip === 'review') return { shown: null, ai: { status: 'review_needed', stale: false, reason: '담당자가 관리자 검토를 요청함 — 사람이 판단' } };
+  if (entry.skip === 'reported') return { shown: null, ai: { status: 'skipped', stale: false, reason: '이미 보고가 끝났습니다.' } };
+  if (entry.skip === 'review') return { shown: null, ai: { status: 'review_needed', stale: false, reason: '담당자가 관리자 검토를 요청했습니다.' } };
   if (cur) return { shown, ai: { status: 'ready', ...base } };
-  if (entry.job) return { shown, ai: { status: entry.job.status === 'running' ? 'running' : 'queued', ...base, ...(entry.job.blocked === 'budget' ? { reason: '이 PC의 시간당 호출 한도로 대기' } : {}) } };
+  if (entry.job) return { shown, ai: { status: entry.job.status === 'running' ? 'running' : 'queued', ...base, ...(entry.job.blocked === 'budget' ? { reason: '이 PC의 시간당 호출 한도에 걸려 기다립니다.' } : {}) } };
   if (entry.result?.status === 'error') return { shown, ai: { status: 'error', ...base, reason: errorReason(entry.result) } };
-  if (!opts.enabled) return { shown, ai: { status: prev ? 'stale' : 'not_started', ...base, reason: opts.disabledReason || '자동 분석이 꺼져 있음' } };
+  if (!opts.enabled) return { shown, ai: { status: prev ? 'stale' : 'not_started', ...base, reason: opts.disabledReason || 'AI 정리가 꺼져 있습니다.' } };
   if (entry.waiting) return { shown, ai: { status: prev ? 'stale' : 'queued', ...base, reason: waitingReason } };
   return { shown, ai: { status: prev ? 'stale' : 'not_started', ...base } };
 }
@@ -46,7 +46,7 @@ export function decorate(p, opts) {
       const o = shown.output, a = attentionOf(o.managerAttention);
       Object.assign(ai, { priority: o.priority, priorityLabel: ORDER_LABEL[o.priority], deprioritized: o.priority === 'routine', uncertain: !!o.uncertain, contradiction: !!o.contradiction,
         managerAttention: a, managerAttentionLabel: ATTENTION_LABEL[a], probabilities: { checkOrder: o.probabilities, checkOrderConcentration: o.confidence, managerAttention: o.managerAttention, note: '모델 추정값이며 측정된 정확도가 아닙니다.' },
-        reasons: [`Jev 확인 순서: ${ORDER_LABEL[o.priority]}`, `Jev 관리자 확인: ${ATTENTION_LABEL[a]}`, ...(o.uncertain ? ['확인 순서 판정이 애매하거나 기록 사실과 어긋남 — 사람 확인'] : [])], evidenceIds: l.nodes.map(n => n.id), ...meta(shown) });
+        reasons: [`Jev 확인 순서: ${ORDER_LABEL[o.priority]}`, `Jev 관리자 확인: ${ATTENTION_LABEL[a]}`, ...(o.uncertain ? ['확인 순서 판정이 애매하거나 기록과 어긋남'] : [])], evidenceIds: l.nodes.map(n => n.id), ...meta(shown) });
       if (ai.status === 'ready' && o.uncertain) ai.status = 'review_needed';
     }
     count(ai);
@@ -54,18 +54,18 @@ export function decorate(p, opts) {
   }
   // Teachers and their classes: one Claude batch item per teacher (class lines come from the same item).
   for (const t of p.teachers.values()) {
-    const { shown, ai } = state(p, t, opts, '원생 판정을 기다리는 중');
+    const { shown, ai } = state(p, t, opts, '학생별 판정이 끝나면 시작합니다.');
     if (shown) {
       const o = shown.output, scope = t.tn.children.map(c => c.id).join(',');
       Object.assign(ai, block(o), { attention: o.attention, attentionLabel: o.attention === 'manager' ? '관리자도 확인' : '담임 확인', evidenceIds: evidence(o.evidenceIds, scope), ...meta(shown) });
       for (const cn of t.tn.children) { const c = o.classes.find(x => alias.reverse(x.id) === cn.id);
         // A current answer always covers every class (validated); only an older answer can lack a class.
-        cn.ai = c ? { status: ai.status, stale: ai.stale, summary: text(c.summary), evidenceIds: evidence(c.evidenceIds, cn.id), ...meta(shown) } : { status: ai.status, stale: true, reason: '이전 요약에 없던 반 — 새 요약을 기다리는 중' }; }
+        cn.ai = c ? { status: ai.status, stale: ai.stale, summary: text(c.summary), evidenceIds: evidence(c.evidenceIds, cn.id), ...meta(shown) } : { status: ai.status, stale: true, reason: '이전 요약에 없던 반이라 새 요약을 기다립니다.' }; }
     } else for (const cn of t.tn.children) cn.ai = { status: ai.status, stale: false, ...(ai.reason ? { reason: ai.reason } : {}) };
     count(ai);
     t.tn.ai = ai;
   }
-  const { shown, ai } = state(p, p.academy, opts, '강사 요약을 기다리는 중');
+  const { shown, ai } = state(p, p.academy, opts, '선생님별 요약이 끝나면 시작합니다.');
   count(ai);
   const summary = (key, facts) => (shown ? { ...ai, ...block(shown.output[key]), evidenceIds: evidence(shown.output[key].evidenceIds), ...meta(shown), facts } : { ...ai, facts });
   tree.root.ai = { ...ai };

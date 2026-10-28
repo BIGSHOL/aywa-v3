@@ -60,7 +60,7 @@ window.AxCatalog = {
    "group": "홈",
    "groupId": "home",
    "page": "workspace-dashboard",
-   "summary": "역할별로 배치한 지표와 카드로 학원의 지금을 봅니다.",
+   "summary": "역할별로 배치한 지표와 카드로 학원 현황을 봅니다.",
    "viewKind": "report",
    "facets": [
     {
@@ -470,7 +470,7 @@ window.AxCatalog = {
      "mode": "request",
      "draft": {
       "title": "할 일 처리 확인 요청",
-      "body": "자동으로 생긴 할 일의 처리 상황을 담당자에게 확인합니다. 할 일 자체는 원래 기록이 바뀌어야 닫힙니다."
+      "body": "아래 종류의 할 일이 어떻게 처리되고 있는지 확인해 알려 주세요. 할 일은 원래 기록이 바뀌어야 닫힙니다."
      },
      "fields": [
       {
@@ -562,7 +562,7 @@ window.AxCatalog = {
    "group": "수업",
    "groupId": "class",
    "page": "workspace-onescreen",
-   "summary": "선생님이 수업을 마감하는 화면 — 보고서·출결·공지·보강을 한곳에서 봅니다.",
+   "summary": "선생님이 보고서·출결·공지·보강을 한곳에서 마감하는 화면을 봅니다.",
    "viewKind": "sheet",
    "facets": [
     {
@@ -588,7 +588,7 @@ window.AxCatalog = {
      "mode": "request",
      "draft": {
       "title": "수업보고서 작성 요청",
-      "body": "아래 반·날짜의 수업보고서를 작성해 주세요. 작성 후 발송 대기열에 올라갑니다."
+      "body": "아래 반·날짜의 수업보고서를 작성해 주세요. 작성하면 발송 큐에 올라갑니다."
      },
      "fields": [
       {
@@ -886,11 +886,11 @@ window.AxCatalog = {
     },
     {
      "id": "video-homework.review",
-     "label": "AI 메모 다시 보기 요청",
+     "label": "AI 메모 다시 분석 요청",
      "mode": "request",
      "draft": {
-      "title": "영상 AI 참고 메모 재검토",
-      "body": "영상의 AI 참고 메모를 다시 확인해 주세요."
+      "title": "영상 AI 참고 메모 다시 분석",
+      "body": "아래 원생 영상의 AI 참고 메모를 다시 분석해 주세요."
      },
      "fields": [
       {
@@ -981,7 +981,7 @@ window.AxCatalog = {
    "actions": [
     {
      "id": "timetable.move",
-     "label": "반 이동 미리보기",
+     "label": "반 배치 이동 미리보기",
      "mode": "preview",
      "draft": {
       "title": "반 배치 이동 미리보기",
@@ -1059,7 +1059,7 @@ window.AxCatalog = {
      "mode": "request",
      "draft": {
       "title": "시간표 시트 가져오기",
-      "body": "시트의 변경을 미리보기로 확인한 뒤 적용일에 반영해 주세요."
+      "body": "시트에서 바뀐 내용을 미리보기로 확인한 뒤 적용일부터 반영해 주세요."
      },
      "fields": [
       {
@@ -1650,14 +1650,14 @@ window.AxCatalog = {
     },
     {
      "id": "attendance.kiosk",
-     "label": "키오스크·자리 비밀번호",
+     "label": "출석 키오스크 설정",
      "mode": "navigate",
      "target": {
       "page": "workspace-attendance",
       "facet": "kiosk"
      },
      "draft": {
-      "title": "키오스크·자리 비밀번호",
+      "title": "출석 키오스크 설정",
       "body": "출석 키오스크 기기와 알림 설정을 봅니다."
      },
      "fields": [],
@@ -2328,7 +2328,7 @@ window.AxCatalog = {
      "mode": "request",
      "draft": {
       "title": "보강 담당 지정",
-      "body": "아래 보강 사례의 담당과 기한을 정해 처리해 주세요."
+      "body": "아래 보강 사례를 맡아 기한까지 처리해 주세요."
      },
      "fields": [
       {
@@ -2879,7 +2879,7 @@ window.AxCatalog = {
      "mode": "request",
      "draft": {
       "title": "수업 참관 평가",
-      "body": "아래 선생님의 수업 참관 평가를 진행해 주세요."
+      "body": "아래 선생님의 수업을 참관해 평가해 주세요."
      },
      "fields": [
       {
@@ -4101,7 +4101,7 @@ window.AxCatalog = {
      "mode": "request",
      "draft": {
       "title": "원생 전환",
-      "body": "상담 원생을 원생으로 등록하고 반에 배정해 주세요."
+      "body": "아래 상담 학생을 원생으로 등록하고 반에 배정해 주세요."
      },
      "fields": [
       {
@@ -4319,7 +4319,7 @@ window.AxCatalog = {
      },
      "draft": {
       "title": "리텐션 보드",
-      "body": "흔들리는 재원생을 한눈에 봅니다."
+      "body": "이탈 위험이 있는 재원생을 봅니다."
      },
      "fields": [],
      "result": {
@@ -4457,7 +4457,7 @@ window.AxCatalog = {
      "mode": "request",
      "draft": {
       "title": "신입생 콜",
-      "body": "아래 신입생에게 체크리스트 항목의 연락을 진행해 주세요."
+      "body": "아래 신입생에게 체크리스트 항목에 맞춰 연락해 주세요."
      },
      "fields": [
       {
@@ -4653,7 +4653,7 @@ window.AxCatalog = {
      "mode": "request",
      "draft": {
       "title": "재원 복귀",
-      "body": "아래 원생을 재원으로 복귀해 주세요."
+      "body": "아래 원생을 재원으로 되돌려 주세요."
      },
      "fields": [
       {
@@ -5001,7 +5001,7 @@ window.AxCatalog = {
      "label": "계약 갱신 요청",
      "mode": "request",
      "draft": {
-      "title": "근로계약 갱신",
+      "title": "계약 갱신",
       "body": "아래 직원의 계약 갱신을 준비해 주세요."
      },
      "fields": [
@@ -5968,7 +5968,7 @@ window.AxCatalog = {
       },
       {
        "id": "direction",
-       "label": "승차/하차",
+       "label": "방향",
        "type": "select",
        "required": true,
        "options": [
@@ -6438,7 +6438,7 @@ window.AxCatalog = {
     },
     {
      "id": "meetings.followup",
-     "label": "회의 결정 사항 요청",
+     "label": "결정 사항 실행 요청",
      "mode": "request",
      "draft": {
       "title": "회의 결정 사항 실행",
@@ -6948,7 +6948,7 @@ window.AxCatalog = {
    "group": "지원",
    "groupId": "support",
    "page": "workspace-owner-settings",
-   "summary": "학원 설정 18면 — 프로필·운영·과목·청구·권한·메뉴·연동을 봅니다.",
+   "summary": "학원 설정 18개 면(프로필·운영·과목·청구·권한·메뉴·연동 등)을 봅니다.",
    "viewKind": "settings",
    "facets": [
     {
@@ -7207,7 +7207,7 @@ window.AxCatalog = {
       },
       {
        "id": "to",
-       "label": "흡수할 과목",
+       "label": "옮겨 갈 과목",
        "type": "text",
        "required": true
       }
@@ -7257,7 +7257,7 @@ window.AxCatalog = {
      "mode": "request",
      "draft": {
       "title": "데이터 정리",
-      "body": "중복 원생 병합 등 데이터 정리를 진행해 주세요."
+      "body": "아래 원생의 데이터를 정리해 주세요(중복 원생 병합 등)."
      },
      "fields": [
       {
@@ -7651,8 +7651,8 @@ window.AxCatalog = {
      "label": "인재원 연결 정리 요청",
      "mode": "request",
      "draft": {
-      "title": "인재원 학생 자동 연결",
-      "body": "인재원 학습 계정과 원생을 자동 매칭 결과로 정리해 주세요."
+      "title": "인재원 학생 한 번에 연결",
+      "body": "인재원 학생 가운데 이름이 양쪽 모두 하나뿐인 학생을 확인하고 원생과 연결해 주세요."
      },
      "fields": [
       {

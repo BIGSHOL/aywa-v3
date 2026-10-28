@@ -17,11 +17,11 @@ window.createExitInsight = function createExitInsight(api) {
 
   const loadIndex = () => (st.index ? Promise.resolve(st.index) : fetch(ENDPOINT, { headers: { Accept: 'application/json' } }).then(r => (r.ok ? r.json() : null)).catch(() => null).then(j => (st.index = j)));
   /** Entry button for a card. Pure HTML: nothing is fetched until it is pressed. */
-  const entry = (from, to, label = '왜 줄었나') => (from && to && from < to ? `<button type="button" class="xi-entry" data-xi="open" data-from="${h(from)}" data-to="${h(to)}">${icon('trend')}<span>${h(label)}</span>${icon('chevron')}</button>` : '');
+  const entry = (from, to, label = '감소 원인') => (from && to && from < to ? `<button type="button" class="xi-entry" data-xi="open" data-from="${h(from)}" data-to="${h(to)}">${icon('trend')}<span>${h(label)}</span>${icon('chevron')}</button>` : '');
 
   function open(from, to) {
     st.from = from; st.to = to; const ask = ++st.ask; clearTimeout(st.timer);
-    dialog('modal', `${mlabel(from)} → ${mlabel(to)} 왜 줄었나`, `${ym(from)}과 ${ym(to)}의 청구를 학생 단위로 대조했습니다.`, '<div class="xi" aria-busy="true"><p class="xi-note">불러오는 중입니다…</p></div>');
+    dialog('modal', `${mlabel(from)} → ${mlabel(to)} 청구 변화와 원인`, `${ym(from)}과 ${ym(to)}의 청구를 학생 단위로 대조했습니다.`, '<div class="xi" aria-busy="true"><p class="xi-note">불러오는 중입니다…</p></div>');
     Promise.all([loadIndex(), fetch(`${ENDPOINT}?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`, { headers: { Accept: 'application/json' } }).then(async r => ({ ok: r.ok, status: r.status, body: await r.json().catch(() => null) }))])
       .then(([, res]) => { if (ask !== st.ask || !$('#modal')?.open) return; if (!res.ok) { paintError(res.body?.message || '불러오지 못했습니다.', res.status === 503); return; } st.data = res.body; paint(true); })
       .catch(() => { if (ask === st.ask && $('#modal')?.open) paintError('불러오지 못했습니다. 잠시 뒤 다시 시도해 주세요.', true); });
@@ -52,19 +52,19 @@ window.createExitInsight = function createExitInsight(api) {
     for (const p of d.parts) { rows.push({ id: p.id, label: `${p.label} ${fmt(p.students)}명`, amount: p.amount, students: p.students, head: true }); for (const g of p.groups) if (g.amount || g.students) rows.push({ id: `${p.id}.${g.id}`, label: g.label, amount: g.amount, students: g.students, group: g, part: p.id }); }
     const max = Math.max(1, ...rows.map(r => Math.abs(r.amount))), share = n => (d.totals.from ? `${ym(d.from)} 청구 ${won(d.totals.from)}의 ${fmt(Math.abs(n / d.totals.from) * 100)}%` : '');
     const note = g => [g?.estimateAmount ? `설명 문구로 분류한 금액 ${signed(g.estimateAmount)}(추정)` : '', g?.sessionsChecked != null ? `회차 확정 기록 대조 ${fmt(g.sessionsChecked)}명 중 ${fmt(g.fewerSessions)}명은 예정 회차가 줄었음` : ''].filter(Boolean);
-    return `<div class="xi-bars" data-chart data-axis="y" tabindex="0" role="group" aria-label="청구 변화 분해 — 화살표 키로 항목을 옮기며 금액을 확인합니다">${rows.map(r => {
+    return `<div class="xi-bars" data-chart data-axis="y" tabindex="0" role="group" aria-label="청구 변화 내역. 화살표 키로 항목을 옮기며 금액을 확인합니다">${rows.map(r => {
       const w = Math.abs(r.amount) / max * 50, side = r.amount < 0 ? `right:50%;width:${w}%` : `left:50%;width:${w}%`;
       return `<div class="xi-bar ${r.head ? 'head' : ''} ${r.amount < 0 ? 'neg' : 'pos'}" data-point data-tip="${tip(`${ym(d.from)} → ${ym(d.to)}`, [{ label: r.label, value: signed(r.amount), tone: 'primary' }], [`학생 ${fmt(r.students)}명`, share(r.amount), ...note(r.group)])}"><span class="xi-bar-label">${h(r.label)}${r.group?.estimateAmount ? ' ' + pill('추정', 'amber') : ''}</span><span class="xi-bar-track"><i data-anchor style="${side}"></i></span><strong>${signed(r.amount)}</strong>${r.students && (r.part === 'departed' || r.id === 'departed') ? btn(`학생 ${fmt(r.students)}명`, `data-xi="filter" data-filter="${h(r.id)}"`) : '<span></span>'}</div>`;
     }).join('')}</div>${d.parts[2]?.groups.some(g => g.sessionsChecked != null) ? `<p class="xi-note">같은 과목 수인데 금액이 줄어든 학생 중 회차 확정 기록이 두 달 모두 있는 ${fmt(d.parts[2].groups.find(g => g.sessionsChecked != null).sessionsChecked)}명을 대조했고, ${fmt(d.parts[2].groups.find(g => g.sessionsChecked != null).fewerSessions)}명은 뒤 달 예정 회차가 적습니다. 나머지는 회차 차이를 확인하지 못했습니다.</p>` : ''}`;
   }
   function aiLine(a) {
     const [label, tone] = STATUS[a.status] || ['상태 미상', ''], j = a.jev, c = a.claude;
-    const parts = [j && j.total ? `Jev 1.14.0 학생별 분류 ${fmt(j.done)}/${fmt(j.total)}명${j.failed ? ` · 실패 ${fmt(j.failed)}` : ''}${j.review ? ` · 사람 확인 ${fmt(j.review)}` : ''}` : '', c?.modelLabel ? `${c.modelLabel} 묶음 설명` : '', c?.status === 'error' ? `묶음 설명 실패(${c.code === 'invalid_output' ? '출력 검사 불통과' : '호출 실패'})` : '', a.claude?.blocked === 'budget' ? '이 PC의 시간당 호출 한도로 대기' : ''].filter(Boolean);
+    const parts = [j && j.total ? `Jev 1.14.0 학생별 분류 ${fmt(j.done)}/${fmt(j.total)}명${j.failed ? ` · 실패 ${fmt(j.failed)}` : ''}${j.review ? ` · 사람 확인 ${fmt(j.review)}` : ''}` : '', c?.modelLabel ? `${c.modelLabel} 묶음 설명` : '', c?.status === 'error' ? `묶음 설명 실패(${c.code === 'invalid_output' ? '출력 검사를 통과하지 못함' : '호출 실패'})` : '', a.claude?.blocked === 'budget' ? '이 PC의 시간당 호출 한도로 대기' : ''].filter(Boolean);
     return `<div class="xi-ai-line">${pill(label, tone)}<span>${h(a.note || a.disabledReason || parts.join(' · ') || '')}</span></div>`;
   }
   function overall(d) {
     if (!d.overall) return '';
-    return `<section class="xi-overall"><h3>AI 정리 ${pill('AI 초안', 'blue')}</h3><p>${h(d.overall.summary)}</p>${d.overall.reasons.length ? `<ul>${d.overall.reasons.map(r => `<li>${h(r)}</li>`).join('')}</ul>` : ''}${d.overall.checks.length ? `<h4>사람이 확인할 일</h4><ul>${d.overall.checks.map(r => `<li>${h(r)}</li>`).join('')}</ul>` : ''}<p class="xi-note">${h(d.analysis.claude?.modelLabel || 'Claude')} · 숫자·날짜·인원은 코드 집계이며 AI 글에는 쓰지 않습니다. 사실 사슬은 아래 묶음의 근거 사실을 인용합니다.</p></section>`;
+    return `<section class="xi-overall"><h3>AI 정리 ${pill('AI 초안', 'blue')}</h3><p>${h(d.overall.summary)}</p>${d.overall.reasons.length ? `<ul>${d.overall.reasons.map(r => `<li>${h(r)}</li>`).join('')}</ul>` : ''}${d.overall.checks.length ? `<h4>사람이 확인할 일</h4><ul>${d.overall.checks.map(r => `<li>${h(r)}</li>`).join('')}</ul>` : ''}<p class="xi-note">${h(d.analysis.claude?.modelLabel || 'Claude')} · 숫자·날짜·인원은 코드가 센 값이며 AI 글에는 넣지 않습니다. 아래 묶음의 AI 설명은 단계마다 근거 사실을 붙입니다.</p></section>`;
   }
   const factOpen = f => (f.open ? btn('원본 기록 열기', `data-xi="record" data-family="${h(f.open.family)}" data-id="${h(f.open.id)}"`, 'link') : '');
   const factSource = f => (f.source ? `<small class="xi-src">${h(TABLE[f.source.table] || '기록')}</small>` : '');
@@ -75,7 +75,7 @@ window.createExitInsight = function createExitInsight(api) {
   }
   function weeks(f) {
     const max = Math.max(1, ...f.weeks.map(w => w.attended + w.absent));
-    return `<div class="xi-weeks" data-chart tabindex="0" role="group" aria-label="그만두기 전 8주 출결 — 화살표 키로 주를 옮깁니다">${f.weeks.map(w => `<span data-point data-tip="${tip(`${w.from} 주`, [{ label: '출석', value: `${fmt(w.attended)}회`, tone: 'primary' }, { label: '결석', value: `${fmt(w.absent)}회`, tone: 'secondary' }])}"><i data-anchor style="height:${(w.attended + w.absent) / max * 100}%"><b style="height:${w.attended + w.absent ? w.absent / (w.attended + w.absent) * 100 : 0}%"></b></i></span>`).join('')}</div>`;
+    return `<div class="xi-weeks" data-chart tabindex="0" role="group" aria-label="그만두기 전 8주 출결. 화살표 키로 주를 옮깁니다">${f.weeks.map(w => `<span data-point data-tip="${tip(`${w.from} 주`, [{ label: '출석', value: `${fmt(w.attended)}회`, tone: 'primary' }, { label: '결석', value: `${fmt(w.absent)}회`, tone: 'secondary' }])}"><i data-anchor style="height:${(w.attended + w.absent) / max * 100}%"><b style="height:${w.attended + w.absent ? w.absent / (w.attended + w.absent) * 100 : 0}%"></b></i></span>`).join('')}</div>`;
   }
   function student(s) {
     const exit = s.exit.kind === 'withdrawn' ? `퇴원 ${s.exit.date}` : s.exit.kind === 'cleanup' ? (s.exit.month ? `${mlabel(s.exit.month)} 이탈 추정` : '이탈 시점 미상') : s.kindLabel;
@@ -87,9 +87,9 @@ window.createExitInsight = function createExitInsight(api) {
   function view(d) {
     const a = d.analysis, more = d.clusters.length - 8;
     return `<div class="xi" data-filter="">${pairs(d)}<div class="xi-totals"><div><span>${ym(d.from)} 청구</span><strong>${won(d.totals.from)}</strong></div><div><span>${ym(d.to)} 청구</span><strong>${won(d.totals.to)}</strong></div><div><span>차이</span><strong class="${d.totals.delta < 0 ? 'neg' : ''}">${signed(d.totals.delta)}</strong></div></div>
-      <section><h3>① 무엇이 줄었나</h3><p class="xi-note">${h(d.basis.billing)}. 나눈 금액의 합이 차이와 ${d.check.exact ? '정확히 같습니다' : `다릅니다(합 ${signed(d.check.sum)})`}. ${h(d.basis.special)}.</p>${bars(d)}</section>
-      <section><h3>② 왜 줄었나 · 원인 묶음</h3>${aiLine(a)}${overall(d)}<p class="xi-note">묶음은 코드가 빠진 학생 기록을 이어 만든 후보입니다(${h(d.basis.teacher)}). 한 학생이 여러 묶음에 들 수 있습니다.</p><div class="xi-clusters">${d.clusters.map((c, i) => cluster(c, i, d)).join('')}</div>${more > 0 ? btn(`나머지 묶음 ${fmt(more)}개 보기`, 'data-xi="more"', 'link') : ''}</section>
-      <section id="xi-students"><h3>③ 빠진 학생별 사건 파일 <span class="xi-count">${fmt(d.students.length)}명</span></h3><div class="xi-filter-line" hidden><span></span>${btn('전체 보기', 'data-xi="filter" data-filter=""', 'link')}</div><p class="xi-note">${h(d.basis.cleanup)}. Jev 분류의 '분명·보통·애매'는 모델 분포의 집중도이며 정확도가 아닙니다.</p><ul class="xi-students">${d.students.map(student).join('')}</ul></section></div>`;
+      <section><h3>① 청구 변화 내역</h3><p class="xi-note">${h(d.basis.billing)}. 나눈 금액의 합이 차이와 ${d.check.exact ? '정확히 같습니다' : `다릅니다(합 ${signed(d.check.sum)})`}. ${h(d.basis.special)}.</p>${bars(d)}</section>
+      <section><h3>② 원인 묶음</h3>${aiLine(a)}${overall(d)}<p class="xi-note">묶음은 빠진 학생의 기록을 코드로 이어 만든 후보입니다. 한 학생이 여러 묶음에 들 수 있습니다. ${h(d.basis.teacher)}.</p><div class="xi-clusters">${d.clusters.map((c, i) => cluster(c, i, d)).join('')}</div>${more > 0 ? btn(`나머지 묶음 ${fmt(more)}개 보기`, 'data-xi="more"', 'link') : ''}</section>
+      <section id="xi-students"><h3>③ 빠진 학생별 기록 <span class="xi-count">${fmt(d.students.length)}명</span></h3><div class="xi-filter-line" hidden><span></span>${btn('전체 보기', 'data-xi="filter" data-filter=""', 'link')}</div><p class="xi-note">${h(d.basis.cleanup)}. Jev 분류의 ‘분명·보통·애매’는 모델의 답이 한쪽으로 얼마나 몰렸는지를 나타내며, 정확도가 아닙니다.</p><ul class="xi-students">${d.students.map(student).join('')}</ul></section></div>`;
   }
   // In-dialog jumps glide inside the dialog body and brake into place (AGENTS.md scroll rule); any input stops them.
   function glide(node) {

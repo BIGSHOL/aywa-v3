@@ -192,7 +192,7 @@ test('budget holds jobs visibly; disabled mode answers from cache only', async (
   await new Promise(r => setTimeout(r, 50));
   const tree = svc.hierarchy(CASE);
   assert.equal(providers.calls.jev.length, 3); assert.equal(providers.calls.claude.length, 0);
-  assert.equal(tree.analysis.status, 'running'); assert(nodes(tree).some(n => n.ai?.reason === '이 PC의 시간당 호출 한도로 대기'));
+  assert.equal(tree.analysis.status, 'running'); assert(nodes(tree).some(n => n.ai?.reason === '이 PC의 시간당 호출 한도에 걸려 기다립니다.'));
   await svc.close();
   const off = await hierarchyService({ dir, providers: null });
   const t2 = off.svc.hierarchy(CASE);

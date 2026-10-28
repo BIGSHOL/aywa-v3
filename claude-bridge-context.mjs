@@ -19,14 +19,14 @@ const days = (from, to) => Math.round((Date.parse(`${to}T00:00:00Z`) - Date.pars
 const kst = iso => { const d = new Date(Date.parse(iso) + 9 * 3600000); return Number.isNaN(d.getTime()) ? '' : `${d.toISOString().slice(0, 16).replace('T', ' ')} KST`; };
 
 const LABELS = {
-  invoiceStatus: { paid: '수납 완료', partial: '부분 수납', unpaid: '미납', pending: '청구 대기' },
+  invoiceStatus: { paid: '납부완료', partial: '부분납부', unpaid: '미납', pending: '청구 대기' },
   category: { tuition: '수강료', textbook: '교재비', shuttle: '차량비', material: '재료비' },
   outcome: { scheduled: '상담 예약', consulted: '상담 완료', ai_done: '상담 검토', enrolled: '등록', declined: '미등록', no_show: '미방문' },
   form: { leave: '휴가 신청', expense: '지출', general: '일반' },
   approval: { pending: '결재 대기', approved: '승인 완료', rejected: '반려', draft: '작성 중' },
-  taskKind: { attendance_absent_desk: '출결 확인', video_unassigned: '영상 배정', video_upload_check: '과제영상 확인', unsent_report: '리포트 전달', enrollment_followup: '입학 후속', withdrawal_step: '퇴원 절차', owner_review: '원장 검토' },
-  taskStatus: { open: '진행 중', done: '완료', cancelled: '취소', expired: '종료' },
-  book: { requested: '요청', ordered: '주문', delivered: '전달', paid: '수납 완료' },
+  taskKind: { report_send_failed: '보고서 발송 실패', followup_due: '상담 후속조치', enrollment_followup: '콜&상담 후속 조치', progress_anomaly: '진도 기록 이상', attendance_absent_desk: '결석 확인 전화', video_upload_check: '영상 업로드 확인', video_unassigned: '미배정 영상', unsent_report: '미발송 수업 보고서', approval_turn: '전자결재 차례', withdrawal_step: '퇴원보고서', help_question: '도움말 질문', owner_review: '원장 개인 업무' },
+  taskStatus: { open: '처리 전', done: '처리됨', cancelled: '취소됨', expired: '기한 지남' },
+  book: { requested: '요청', ordered: '주문', delivered: '전달', paid: '납부 완료' },
 };
 const REVIEW_OUTCOMES = ['scheduled', 'consulted', 'ai_done'];
 
