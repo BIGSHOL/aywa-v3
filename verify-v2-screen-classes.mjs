@@ -23,7 +23,7 @@ await check('조회 조건 = 2.0 page.tsx searchParams 열쇠 그대로 + 하위
   const page = await src(PAGE), block = /searchParams: Promise<\{([\s\S]*?)\}>/.exec(page)?.[1] ?? '';
   const keys = [...block.matchAll(/(\w+)\?: string;/g)].map(m => m[1]);
   assert.ok(keys.length >= 9, '2.0 열쇠를 찾지 못함');
-  assert.deepEqual(Object.keys(C.screen.params).sort(), ['v2path', ...keys].sort(), '2.0 열쇠 + 하위 주소(v2path)');
+  assert.deepEqual(Object.keys(C.screen.params).sort(), ['movable', 'v2path', ...keys].sort(), '2.0 열쇠 + 하위 주소(v2path) + 배정 창 후보 읽기(movable)');
   for (const ok of ['/classes', '/classes/new', '/classes/e4a2c026-8992-4211-a5fe-b9e93be8a0f3', '/classes/e4a2c026-8992-4211-a5fe-b9e93be8a0f3/edit']) assert.ok(C.screen.params.v2path.test(ok), ok);
   for (const no of ['/students/x', '/classes/new/edit', '/classes/x', '/classes/']) assert.ok(!C.screen.params.v2path.test(no), no);
   const entry = await here('./v2-host/src/classes.tsx'), wrap = await here('./v2-screen-classes.js');
@@ -176,7 +176,7 @@ try {
   await check('저장(2단계) — 반 만들기·고치기 = 2.0 createClass · updateClass 이름·문구·반환 모양 · 교시 줄 · 감사로그(class_create · class_update changes) · 바깥 요청 0 (되돌림)', async () => {
     const A = C.screen.actions, M = 'features/classes/server/actions.ts', ROLL = new Error('rollback');
     const text = await src('features/classes/server/actions.ts');
-    for (const n of Object.keys(A)) assert.ok(text.includes(`export async function ${n}(`), n);
+    for (const n of ['createClass', 'updateClass']) assert.ok(text.includes(`export async function ${n}(`), n);
     assert.throws(() => A.createClass.validate({ module: 'x.ts', args: [null, { $formData: [] }] }), e => e.status === 400, '다른 파일 이름으로는 못 부른다');
     const tx = async fn => { let out; try { await db.begin(async sql => { out = await fn(sql); throw ROLL; }); } catch (e) { if (e !== ROLL) throw e; } return out; };
     const call = (sql, name, actor, fields) => A[name].run({ sql, body: A[name].validate({ module: M, actor, args: [null, { $formData: fields }] }), tenantId, importV2 });
@@ -217,6 +217,61 @@ try {
     assert.deepEqual(await tx(sql => call(sql, 'updateClass', actor, form.map(([n, v]) => (n === 'id' ? [n, '00000000-0000-0000-0000-000000000000'] : [n, v])))), { error: '반을 찾을 수 없습니다' });
     const [after] = await q1`select class_name, teacher_id::text t, (select count(*)::int from public.class_schedules where class_id=${CLS}) n from public.classes where id=${CLS}`;
     assert.deepEqual([after.class_name, after.t, after.n], [k.className, k.teacherId, k.scheduleSlots.length], '시험 뒤 복사본은 그대로');
+  });
+
+  await check('저장(2단계) — 반 상세 학생 줄: 학생 배정(createEnrollment) · 겹친 배정 안내 · *LAB 토글 · 예약 취소 · 배정 창 후보(GET) · 시간표에서 옮긴 셋(같은 함수) (되돌림)', async () => {
+    const A = C.screen.actions, ROLL = new Error('rollback');
+    for (const [n, file] of [['createEnrollment', 'features/enrollments/server/actions.ts'], ['setEnrollmentLabSeparate', 'features/enrollments/server/lab-separate-actions.ts'],
+      ['rescheduleEnrollment', 'features/enrollments/server/scheduled-actions.ts'], ['cancelScheduledEnrollment', 'features/enrollments/server/scheduled-actions.ts'],
+      ['moveEnrollmentsBatch', 'features/enrollments/server/actions.ts'], ['updateEnrollmentsAttendanceBatch', 'features/enrollments/server/actions.ts'],
+      ['endSingleEnrollment', 'features/students/server/actions.ts']]) {
+      assert.ok((await src(file)).includes(`export async function ${n}(`), `${file} → ${n}`);
+      assert.throws(() => A[n].validate({ module: 'features/other.ts', args: [] }), e => e.status === 400, n);
+    }
+    const tx = async fn => { let out; try { await db.begin(async sql => { out = await fn(sql); throw ROLL; }); } catch (e) { if (e !== ROLL) throw e; } return out; };
+    const run = (sql, name, module, actor, args) => A[name].run({ sql, body: A[name].validate({ module, actor, args }), tenantId, importV2 });
+    const EM = 'features/enrollments/server/actions.ts', form = o => ({ $formData: Object.entries(o) });
+    const STU = '6219e442-aa57-455f-a5bc-834b222d9e1c', CLS = 'e4a2c026-8992-4211-a5fe-b9e93be8a0f3', TO = '50d2ece7-6514-4474-8cfc-dd8983d15c18';
+    const actor = base.editors[0].id;
+    const [teacher] = await q1`select id::text id from public.users where tenant_id=${tenantId} and status::text='active' and system_role::text='teacher' limit 1`;
+    assert.deepEqual(await tx(sql => run(sql, 'createEnrollment', EM, teacher.id, [null, form({ studentId: STU, classId: TO })])), { error: '반 배정 권한이 없습니다 — 강사 계정은 열람 전용입니다' });
+    assert.deepEqual(await tx(sql => run(sql, 'createEnrollment', EM, actor, [null, form({ classId: TO })])), { error: '학생을 선택해주세요' });
+    const dup = await tx(sql => run(sql, 'createEnrollment', EM, actor, [null, form({ studentId: STU, classId: CLS })]));
+    assert.match(dup.error, /^이미 이 반에 배정되어 있습니다 \(\d{4}-\d{2}-\d{2}부터\)\. 같은 반에 기간이 겹치는 배정은 만들 수 없습니다/, '겹친 수강을 문장으로');
+    const made = await tx(async sql => {
+      const res = await run(sql, 'createEnrollment', EM, actor, [null, form({ studentId: STU, classId: TO, startDate: today })]);
+      return { res, row: (await sql`select class_id::text c, start_date::text s, end_date, attendance_days from public.enrollments where id=${res.enrollmentId ?? null}`)[0],
+        log: (await sql`select metadata from public.audit_logs where tenant_id=${tenantId} and created_at >= now() and action='enrollment_assign'`)[0]?.metadata,
+        notes: await sql`select title from public.notifications where tenant_id=${tenantId} and created_at >= now() and link=${`/classes/${TO}`}` };
+    });
+    assert.match(made.res.enrollmentId ?? '', /^[0-9a-f-]{36}$/);
+    assert.deepEqual([made.row.c, made.row.s, made.row.end_date, made.row.attendance_days], [TO, today, null, []]);
+    assert.deepEqual([made.log.studentId, made.log.classId, made.log.startDate, made.log.via], [STU, TO, today, '3.0 연습 복사본']);
+    // *LAB 토글 — 수학 반은 켤 수 없다(2.0 문구) · 끄기는 된다(감사로그).
+    const [enr] = await q1`select id::text id from public.enrollments where student_id=${STU} and class_id=${CLS} and end_date is null limit 1`;
+    const LM = 'features/enrollments/server/lab-separate-actions.ts';
+    assert.deepEqual(await tx(sql => run(sql, 'setEnrollmentLabSeparate', LM, actor, [enr.id, true])), { error: '따로 수업(*LAB) 배정은 EiE 반에서만 할 수 있습니다' });
+    const off = await tx(async sql => ({ res: await run(sql, 'setEnrollmentLabSeparate', LM, actor, [enr.id, false]),
+      log: (await sql`select metadata from public.audit_logs where tenant_id=${tenantId} and created_at >= now() and action='enrollment_lab_separate'`)[0]?.metadata }));
+    assert.deepEqual([off.res, off.log.on, off.log.classId], [{ ok: true }, false, CLS]);
+    // 예약 취소 — 내일 시작하는 배정을 만들고 같은 트랜잭션에서 취소(DB 함수 change_scheduled_enrollment, 사용자 역할).
+    const SM = 'features/enrollments/server/scheduled-actions.ts', tomorrow = new Date(Date.parse(`${today}T00:00:00Z`) + 86400000).toISOString().slice(0, 10);
+    const canceled = await tx(async sql => {
+      const res = await run(sql, 'createEnrollment', EM, actor, [null, form({ studentId: STU, classId: TO, startDate: tomorrow })]);
+      const c = await run(sql, 'cancelScheduledEnrollment', SM, actor, [{ enrollmentId: res.enrollmentId }]);
+      return { c, left: (await sql`select count(*)::int n from public.enrollments where id=${res.enrollmentId}`)[0].n,
+        log: (await sql`select metadata from public.audit_logs where tenant_id=${tenantId} and created_at >= now() and action='enrollment_schedule_cancel'`)[0]?.metadata };
+    });
+    assert.deepEqual([canceled.c, canceled.left, canceled.log?.canceled?.date, canceled.log?.via], [{ ok: true }, 0, tomorrow, '3.0 연습 복사본']);
+    assert.deepEqual(await tx(sql => run(sql, 'rescheduleEnrollment', SM, actor, [{ enrollmentId: enr.id, date: '2020-01-01' }])), { error: '적용일은 내일 이후여야 합니다' });
+    // 배정 창 후보(GET) — 2.0 listMovableEnrollments 모양.
+    const movable = await load({ movable: STU });
+    assert.equal(movable.ok, true); assert.ok(movable.items.some(i => i.enrollmentId === enr.id && i.classId === CLS), '지금 다니는 반이 후보');
+    // 시간표에서 옮긴 셋 — 같은 함수(요일 편집 한 건으로 확인).
+    const days = await tx(sql => run(sql, 'updateEnrollmentsAttendanceBatch', EM, actor, [[{ enrollmentId: enr.id, days: ['mon'] }]]));
+    assert.deepEqual(days, { count: 1 });
+    const [after] = await q1`select count(*)::int n from public.enrollments where student_id=${STU} and class_id=${TO}`;
+    assert.equal(after.n, 0, '시험 뒤 복사본은 그대로');
   });
 } finally { await db.end(); }
 

@@ -6,10 +6,10 @@
 //  · 3.0엔 로그인이 없다 — 화면 주인 = 원장(수업 관리 '전체' · 강사 범위 없음 · 화면 언어 한국어 → 영어 이름 표는 빈 표).
 //    계정 보기 설정(users.ui_prefs.classes)은 없는 것으로 본다(기본값) — 고른 값은 주소에만 남는다(시간표 뷰 설정과 같은 판단).
 //  · 2.0은 사용자 클라이언트(RLS)로 이 지점 줄만 읽는다 — 복사본 접속은 RLS를 안 타서 모든 조회에 tenant_id를 직접 건다.
-import { deepMerge, normalizeSubjects } from './v2-screen-timetable.mjs';
+import { deepMerge, normalizeSubjects, loadRules as timetableRules, weekSlots } from './v2-screen-timetable.mjs';
 import { buildClassDetail, buildClassEdit, buildClassNew } from './v2-classes-detail.mjs';
 import { classesActions } from './v2-classes-save.mjs';
-import { loadExtra, readEditors } from './v2-timetable-save.mjs';
+import { loadExtra, readEditors, timetableActions } from './v2-timetable-save.mjs';
 
 const ID = 'classes';
 let rulesPromise = null;
@@ -162,6 +162,19 @@ async function readTeacherFilterOptions(sql, t, R) {
     .sort((a, b) => a.name.localeCompare(b.name, 'ko'));
 }
 
+// ── features/enrollments/server/movable-actions.ts listMovableEnrollments(배정 창의 '반 이동' 후보 — 읽기라 GET) ─────────────
+/** 학생의 옮길 수 있는 수강(반이동으로 닫힌 것 제외 · 아직 안 끝난 것) — 2.0 반환 모양 { ok, items }. 원장 보기라 게이트(수업 관리 '전체')는 통과. */
+async function readMovableEnrollments(sql, t, R, studentId) {
+  const today = R.kstToday();
+  const rows = await sql`select e.id::text id, e.class_id::text class_id, e.start_date::text start_date, e.end_date::text end_date, e.attendance_days,
+      c.class_name, c.subject
+    from public.enrollments e left join public.classes c on c.id=e.class_id and c.tenant_id=${t}
+    where e.tenant_id=${t} and e.student_id=${studentId} and e.is_transferred = false and (e.end_date is null or e.end_date > ${today}::date)
+    order by e.start_date`;
+  return { ok: true, items: rows.map(r => ({ enrollmentId: r.id, classId: r.class_id, className: r.class_name ?? '이름 없는 반', subject: r.subject ?? null,
+    startDate: r.start_date, endDate: r.end_date ?? null, attendanceDays: r.attendance_days ?? null })) };
+}
+
 // ── app/(shell)/classes/page.tsx — 필터 해석(계정 저장값 없음 = 기본값) ────────────────────────────────────────────────────
 
 const PAGE_SIZE = 50;
@@ -202,13 +215,20 @@ const SUB = new RegExp(`^/classes/(?:(new)|(${UUID_BODY})(/edit)?)$`);
 export const screen = {
   id: ID, label: '수업목록', order: 5,
   params: {
+    movable: UUID,
     v2path: new RegExp(`^/classes(?:/new|/${UUID_BODY}(?:/edit)?)?$`),
     kind: /^[a-z_]{1,20}$/, subject: /^[a-z0-9_]{1,40}$/, teacher: new RegExp(`^(all|${UUID_BODY})$`), days: /^[a-z,]{0,40}$/,
     q: /^[^\u0000-\u001f]{0,100}$/, view: /^[a-z]{1,10}$/, sort: /^[a-z_]{1,20}$/, status: /^[a-z]{1,10}$/, page: /^\d{1,4}$/,
   },
-  actions: classesActions(loadRules, loadExtra, { readSettings }),
+  actions: {
+    ...classesActions(loadRules, loadExtra, { readSettings }),
+    // 시간표에서 옮긴 2.0 수강 저장 셋(반 이동 · 등원 요일 · 수강 종료) — 반 상세의 배정 창·요일 칸·'수강 종료'가 같은 함수를 부른다.
+    ...Object.fromEntries(Object.entries(timetableActions(timetableRules, { weekSlots }))
+      .filter(([name]) => ['moveEnrollmentsBatch', 'updateEnrollmentsAttendanceBatch', 'endSingleEnrollment'].includes(name))),
+  },
   load: async ({ sql, params, tenantId, importV2 }) => {
     const [R, X] = await Promise.all([loadRules(importV2), loadExtra(importV2)]), sub = SUB.exec(params.v2path ?? '');
+    if (params.movable) return readMovableEnrollments(sql, tenantId, R, params.movable);
     // 저장하는 사람(수업 관리 '전체') — 3.0 띠가 이 목록에서 고른다(시간표와 같은 판정 readEditors).
     const editors = await readEditors(sql, tenantId, R, X);
     if (!sub) return { ...(await buildClassList({ sql, params, tenantId, R })), editors };

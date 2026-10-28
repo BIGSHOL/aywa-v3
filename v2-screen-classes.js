@@ -92,7 +92,7 @@
       if (hostOk === null) fetch(HOST, { method: 'HEAD' }).then(r => r.ok, () => false).then(ok => { if (hostOk === null) { hostOk = ok; api?.render?.(); } });
       else if (hostOk) requestAnimationFrame(() => { ensureFrame(query); place(); });
       const wait = hostOk === false ? '수업목록을 열지 못했습니다. 잠시 후 새로고침해 주세요.' : hostOk === null ? '수업목록을 여는 중…' : '';
-      return `<div class="v2h-note" role="note"><p><b>연습 화면</b> 여기서 저장한 내용은 이 PC의 연습 자료에만 남고, 실제 발송은 없습니다. 반 만들기와 반 수정을 저장할 수 있고, 그 밖의 저장(학생 배정·종강·인수인계·엑셀 등)은 아직 지원하지 않습니다.</p><span data-v2h-actor-slot>${actorPicker()}</span></div>
+      return `<div class="v2h-note" role="note"><p><b>연습 화면</b> 여기서 저장한 내용은 이 PC의 연습 자료에만 남고, 실제 발송은 없습니다. 반 만들기·수정, 학생 배정·반 이동·등원 요일·수강 종료, 따로 수업(*LAB), 예정된 변경 수정·취소를 저장할 수 있고, 그 밖의 저장(수강 날짜·배정 취소·종강·폐지·인수인계·위임·레벨·엑셀)은 아직 지원하지 않습니다.</p><span data-v2h-actor-slot>${actorPicker()}</span></div>
         <div class="v2h-slot" data-v2-host-slot>${wait ? `<p class="v2h-wait">${wait}</p>` : ''}</div>`;
     },
   });

@@ -10,9 +10,18 @@ import { ClassesListPage, type ClassListData } from './classes-list';
 import { ClassDetailPage, type ClassDetailData } from './classes-detail';
 import { EditClassPage, NewClassPage, type ClassEditData, type ClassNewData } from './classes-form';
 import { onHostRefresh } from '../shims/host-nav';
-import { setHostEditors } from '../shims/server-action';
+import { registerHostHandler, setHostEditors } from '../shims/server-action';
 import { usePathname, useSearchParams } from '../shims/next-navigation';
 import { HostFrame, HostMessage } from './host-frame';
+
+/** 배정 창의 '반 이동' 후보 — 2.0 listMovableEnrollments는 읽기라 같은 화면의 GET(movable)으로 묻는다. 답은 2.0 반환 모양({ ok, items } · { ok:false, error }). */
+const MOVABLE_FAILED = '수강 목록을 불러오지 못했습니다';
+registerHostHandler('features/enrollments/server/movable-actions.ts', 'listMovableEnrollments', async (studentId) => {
+  if (typeof studentId !== 'string' || !/^[0-9a-f-]{36}$/i.test(studentId)) return { ok: false, error: '학생을 확인할 수 없습니다' };
+  const r = await fetch(`/api/v2/classes?${new URLSearchParams({ movable: studentId })}`, { headers: { Accept: 'application/json' } }).catch(() => null);
+  const body = r ? ((await r.json().catch(() => null)) as { ok?: unknown } | null) : null;
+  return r?.ok && body && typeof body.ok === 'boolean' ? body : { ok: false, error: MOVABLE_FAILED };
+});
 
 /** 진입점 표식(build.mjs가 찾는다) — 창 제목과 이 화면의 2.0 주소. */
 export const HOST_TITLE = '수업목록';

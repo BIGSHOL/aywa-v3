@@ -5,7 +5,7 @@
 // 쓰기는 2.0처럼 사용자 역할(authenticated)로 — RLS·보호 트리거가 2.0과 같게 본다. 2.0은 트랜잭션 없이 지우고 다시 넣다 실패하면 옛 행을
 // 되살리는데, 여기선 지우기·넣기를 저장점 하나에 담아 실패하면 저장점째 되돌아간다(2.0 '되살리기 성공' 갈래와 같은 결과 · 같은 문구).
 import { V2Error } from './v2-screens.mjs';
-import { actAs, audit, asAuthenticated } from './v2-timetable-save.mjs';
+import { actAs, audit, asAuthenticated, notifyClassAssignment, readPeople } from './v2-timetable-save.mjs';
 
 const bad = () => new V2Error(400, 'invalid_request', '입력 값을 확인해 주세요.');
 const plain = v => !!v && typeof v === 'object' && !Array.isArray(v);
@@ -13,12 +13,13 @@ const plain = v => !!v && typeof v === 'object' && !Array.isArray(v);
 let rulesPromise = null;
 function loadSaveRules(importV2) {
   rulesPromise ??= (async () => {
-    const [name, conflict, english, color, label, notice, preserve, periods, overlap, subjects] = await Promise.all([
+    const [name, conflict, english, color, label, notice, preserve, periods, overlap, subjects, dbErrors, eligibility, assign, dk] = await Promise.all([
       'features/classes/class-name.ts', 'features/classes/class-name-conflict.ts', 'features/classes/english-track.ts', 'lib/color-utils.ts',
       'features/timetable/lib/teacher-label.ts', 'features/classes/period-notice.ts', 'features/classes/schedule-preserve.ts', 'features/timetable/lib/periods.ts',
-      'features/classes/overlap.ts', 'features/owner/subjects.ts',
+      'features/classes/overlap.ts', 'features/owner/subjects.ts', 'features/enrollments/db-errors.ts', 'features/enrollments/eligibility.ts',
+      'features/enrollments/server/assign-helpers.ts', 'lib/date-kst.ts',
     ].map(p => importV2(p)));
-    return { name, conflict, english, color, label, notice, preserve, periods, overlap, subjects };
+    return { name, conflict, english, color, label, notice, preserve, periods, overlap, subjects, dbErrors, eligibility, assign, dk };
   })().catch(error => { rulesPromise = null; throw error; });
   return rulesPromise;
 }
@@ -398,12 +399,162 @@ async function updateClass(ctx, actorId, [, formData]) {
   return { ok: true, redirectTo: `/classes/${id}`, nonce: Date.now(), overlaps };
 }
 
+// ── 2.0 features/enrollments/server/actions.ts createEnrollment(반 상세 '학생 배정') ──────────────────────────────────────
+/** postgres.js 오류 → 2.0 supabase 오류 모양(toKoreanDbError · isOverlapConflict가 읽는 칸). */
+const dbErr = e => (e ? { code: e.code ?? null, message: e.message ?? '', details: e.detail ?? null, hint: e.hint ?? null } : null);
+const DAY_LABEL = { mon: '월', tue: '화', wed: '수', thu: '목', fri: '금', sat: '토', sun: '일' };
+
+/** assign-helpers.ts describeOverlapConflict — 같은 학생·같은 반에서 겹친 수강을 문장으로. */
+async function describeOverlapConflict(sql, t, studentId, classId, startDate, endDate, excludeId) {
+  const [hit] = await sql`select start_date::text start_date, end_date::text end_date, attendance_days from public.enrollments
+    where tenant_id=${t} and student_id=${studentId} and class_id=${classId} and (end_date is null or end_date > ${startDate}::date)
+      ${endDate ? sql`and start_date < ${endDate}::date` : sql``} ${excludeId ? sql`and id <> ${excludeId}` : sql``} order by start_date limit 3`;
+  if (!hit) return '이미 이 반에 기간이 겹치는 수강이 있어 중복 배정할 수 없습니다.';
+  const period = hit.end_date ? `${hit.start_date} ~ ${hit.end_date}` : `${hit.start_date}부터`;
+  const days = hit.attendance_days ?? [];
+  const daysLabel = days.length > 0 ? ` · ${days.map(d => DAY_LABEL[d] ?? d).join('·')}만 등원` : '';
+  return `이미 이 반에 배정되어 있습니다 (${period}${daysLabel}). 같은 반에 기간이 겹치는 배정은 만들 수 없습니다 — `
+    + `기존 수강을 학생 상세 '수업' 탭에서 수정하거나, 겹치지 않는 시작일을 선택해 주세요.`;
+}
+/** assign-helpers.ts normalizeAttendanceDays — 반이 도는 요일 안으로 좁히고, 전 요일이면 [](분리등원 아님). */
+async function normalizeAttendanceDays(sql, t, S, classId, picked) {
+  if (picked.length === 0) return [];
+  const classDays = new Set((await sql`select day_of_week::text d from public.class_schedules where tenant_id=${t} and class_id=${classId}`).map(r => r.d));
+  if (classDays.size === 0) return [];
+  const within = picked.filter(d => classDays.has(d));
+  if (within.length === 0 || within.length >= classDays.size) return [];
+  return S.assign.DAY_ORDER.filter(d => within.includes(d));
+}
+
+async function createEnrollment(ctx, actorId, [, formData]) {
+  const { sql, t, R, X, S } = ctx;
+  // 게이트 = 수업 관리 '전체' 또는 원생 관리 '전체' — 저장하는 사람(수업 관리 '전체')은 모두 통과한다.
+  const actor = await actAs(sql, t, R, X, actorId);
+  if (!actor) return { error: '반 배정 권한이 없습니다 — 강사 계정은 열람 전용입니다' };
+  const studentId = String(formData.get('studentId') ?? '').trim(), classId = String(formData.get('classId') ?? '').trim();
+  const startDate = String(formData.get('startDate') ?? '').trim() || R.kstToday();
+  const endDate = String(formData.get('endDate') ?? '').trim() || null;
+  if (endDate && !ctx.statusIds.has(actor.id)) return { error: X.STUDENT_STATUS_DENIED };
+  const pickedDays = String(formData.get('attendanceDays') ?? '').split(',').map(d => d.trim()).filter(d => S.assign.VALID_DAYS.has(d));
+  if (!studentId) return { error: '학생을 선택해주세요' };
+  if (!classId) return { error: '반을 선택해주세요' };
+  // 2.0은 사용자 클라이언트라 남의 지점 반·학생은 null — 복사본 접속은 tenant_id로 같은 범위를 건다(잘못된 id도 같은 null).
+  const [[klass], [stu]] = await Promise.all([
+    UUID.test(classId) ? sql`select id from public.classes where tenant_id=${t} and id=${classId}` : [[]],
+    UUID.test(studentId) ? sql`select status::text status from public.students where tenant_id=${t} and id=${studentId}` : [[]],
+  ]);
+  if (!klass) return { error: '반을 찾을 수 없습니다' };
+  if (!stu) return { error: '학생을 찾을 수 없습니다' };
+  const blocked = S.eligibility.enrollmentAssignBlockReason(stu.status ?? null);
+  if (blocked) return { error: blocked };
+  const attendanceDays = await normalizeAttendanceDays(sql, t, S, classId, pickedDays);
+  const { data, error } = await tryWrite(sql, async s => (await s`insert into public.enrollments (tenant_id, student_id, class_id, start_date, end_date, attendance_days)
+    values (${t}, ${studentId}, ${classId}, ${startDate}, ${endDate}, ${attendanceDays}::text[]) returning id::text id`)[0]);
+  if (error || !data) {
+    const e = dbErr(error);
+    if (S.dbErrors.isOverlapConflict(e)) return { error: await describeOverlapConflict(sql, t, studentId, classId, startDate, endDate) };
+    return { error: X.toKoreanDbError(e, '수강 배정에 실패했습니다. 잠시 후 다시 시도해 주세요.', 'enrollments.assign') };
+  }
+  await notifyClassAssignment(sql, t, actor, [{ classId, studentId }], 'enrollment_assigned');
+  await audit(sql, t, actor, 'enrollment_assign', 'student', { studentId, classId, startDate, days: attendanceDays });
+  return { enrollmentId: data.id };
+}
+
+// ── 2.0 features/enrollments/server/lab-separate-actions.ts setEnrollmentLabSeparate(반 상세 EiE 토글) ───────────────────
+async function setEnrollmentLabSeparate(ctx, actorId, [enrollmentId, on]) {
+  const { sql, t, R, X, S } = ctx;
+  const actor = await actAs(sql, t, R, X, actorId);
+  if (!actor) return { error: '따로 수업(*LAB) 배정은 관리자만 할 수 있습니다' };
+  const id = String(enrollmentId ?? '').trim();
+  if (!id) return { error: '수강 정보를 찾지 못했습니다' };
+  const [enrollment] = await sql`select id::text id, class_id::text class_id, student_id::text student_id from public.enrollments where tenant_id=${t} and id=${id}`;
+  if (!enrollment) return { error: '수강 정보를 찾지 못했습니다' };
+  const classId = enrollment.class_id;
+  if (on) {
+    const [klass] = await sql`select subject, english_track from public.classes where tenant_id=${t} and id=${classId}`;
+    const track = klass ? S.english.readEnglishTrack(klass) : null;
+    if (!klass || klass.subject !== 'english' || track !== 'eie') return { error: '따로 수업(*LAB) 배정은 EiE 반에서만 할 수 있습니다' };
+  }
+  const { data: updated, error } = await tryWrite(sql, async s => (await s`update public.enrollments set lab_separate=${on} where id=${id} returning id`)[0] ?? null);
+  if (error) return { error: X.toKoreanDbError(dbErr(error), '따로 수업(*LAB) 배정을 저장하지 못했습니다', 'enrollments.labSeparate') };
+  if (!updated) return { error: '수강 정보를 찾지 못했습니다' };
+  await audit(sql, t, actor, 'enrollment_lab_separate', 'student', { enrollmentId: id, studentId: enrollment.student_id, classId, on });
+  return { ok: true };
+}
+
+// ── 2.0 features/enrollments/server/scheduled-actions.ts(예정된 변경 '수정'·'취소') ───────────────────────────────────
+const SCHEDULE_ERRORS = {
+  scheduled_invalid_request: '예약 요청이 올바르지 않습니다.',
+  scheduled_missing: '수강 정보를 찾을 수 없습니다. 새로고침 후 확인해 주세요.',
+  scheduled_started: '이미 시작된 수강은 예약으로 수정할 수 없습니다.',
+  scheduled_has_next_move: '이후에 예약된 반 이동을 먼저 취소해 주세요.',
+  scheduled_pair_changed: '반 이동의 이전 수강을 확인할 수 없습니다. 새로고침 후 다시 확인해 주세요.',
+  scheduled_changed: '예약이 변경되었습니다. 새로고침 후 다시 시도해 주세요.',
+  scheduled_invalid_date: '적용일은 내일 이후여야 합니다.',
+  scheduled_invalid_period: '이동할 반과 날짜가 기존 수강 기간과 맞지 않습니다.',
+  scheduled_target_missing: '이동할 반을 찾을 수 없거나 운영이 종료되었습니다.',
+};
+async function changeSchedule(ctx, input, action, date, classId) {
+  const { sql, R, X, S } = ctx;
+  if (date && !S.dk.isValidYmd(date)) return { error: '날짜 형식이 올바르지 않습니다' };
+  if (date && date <= R.kstToday()) return { error: '적용일은 내일 이후여야 합니다' };
+  // DB 함수(change_scheduled_enrollment)는 2.0처럼 사용자 역할로 — 안에서 그 사람의 지점·권한을 다시 본다.
+  const { data, error } = await tryWrite(sql, async s => (await s`select public.change_scheduled_enrollment(${input.enrollmentId}::uuid, ${input.pairedEnrollmentId ?? null}::uuid,
+    ${action}, ${date ?? null}::date, ${classId ?? null}::uuid) r`)[0].r);
+  if (error) return { error: X.toKoreanDbError(dbErr(error), '예약을 변경하지 못했습니다', 'enrollments.scheduled.change') };
+  if (!data?.ok) {
+    const detail = data?.error ?? '';
+    return { error: SCHEDULE_ERRORS[detail] ?? X.toKoreanDbError({ message: detail }, '예약을 변경하지 못했습니다', 'enrollments.scheduled.change') };
+  }
+  return { result: data };
+}
+async function rescheduleEnrollment(ctx, actorId, [input]) {
+  const { sql, t, R, X } = ctx;
+  const actor = await actAs(sql, t, R, X, actorId);
+  if (!actor) return { error: '예약 변경은 관리자만 할 수 있습니다' };
+  const changed = await changeSchedule(ctx, input, 'reschedule', input.date?.trim() || undefined, input.newClassId?.trim() || undefined);
+  if ('error' in changed) return changed;
+  const { result } = changed;
+  await audit(sql, t, actor, 'enrollment_reschedule', 'student', { studentIds: [result.studentId], enrollmentId: input.enrollmentId,
+    pairedEnrollmentId: input.pairedEnrollmentId ?? null, from: { date: result.startDate, classId: result.classId }, to: { date: result.nextDate, classId: result.nextClassId } });
+  return { ok: true };
+}
+async function cancelScheduledEnrollment(ctx, actorId, [input]) {
+  const { sql, t, R, X } = ctx;
+  const actor = await actAs(sql, t, R, X, actorId);
+  if (!actor) return { error: '예약 변경은 관리자만 할 수 있습니다' };
+  const changed = await changeSchedule(ctx, input, 'cancel');
+  if ('error' in changed) return changed;
+  const { result } = changed;
+  await audit(sql, t, actor, 'enrollment_schedule_cancel', 'student', { studentIds: [result.studentId], enrollmentId: input.enrollmentId,
+    pairedEnrollmentId: input.pairedEnrollmentId ?? null, canceled: { date: result.startDate, classId: result.classId } });
+  return { ok: true };
+}
+
+const scheduleArgs = withDate => args => {
+  const [input] = args;
+  if (args.length !== 1 || !plain(input) || typeof input.enrollmentId !== 'string' || !UUID.test(input.enrollmentId)) throw bad();
+  const out = { enrollmentId: input.enrollmentId };
+  if (input.pairedEnrollmentId != null) { if (typeof input.pairedEnrollmentId !== 'string' || !UUID.test(input.pairedEnrollmentId)) throw bad(); out.pairedEnrollmentId = input.pairedEnrollmentId; }
+  if (withDate) {
+    if (input.date != null) { if (typeof input.date !== 'string' || input.date.length > 20) throw bad(); out.date = input.date; }
+    if (input.newClassId != null && input.newClassId !== '') { if (typeof input.newClassId !== 'string' || !UUID.test(input.newClassId)) throw bad(); out.newClassId = input.newClassId; }
+  }
+  return [out];
+};
+const labArgs = args => { if (args.length !== 2 || typeof args[0] !== 'string' || !UUID.test(args[0]) || typeof args[1] !== 'boolean') throw bad(); return args; };
+
 // ── 공통 틀 동작 ─────────────────────────────────────────────────────────────────────────────────────────────────────
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const CLASSES = 'features/classes/server/actions.ts';
+const ENROLLMENTS = 'features/enrollments/server/actions.ts';
 const ACTIONS = {
   createClass: { module: CLASSES, args: formAction, run: createClass },
   updateClass: { module: CLASSES, args: formAction, run: updateClass },
+  createEnrollment: { module: ENROLLMENTS, args: formAction, run: createEnrollment },
+  setEnrollmentLabSeparate: { module: 'features/enrollments/server/lab-separate-actions.ts', args: labArgs, run: setEnrollmentLabSeparate },
+  rescheduleEnrollment: { module: 'features/enrollments/server/scheduled-actions.ts', args: scheduleArgs(true), run: rescheduleEnrollment },
+  cancelScheduledEnrollment: { module: 'features/enrollments/server/scheduled-actions.ts', args: scheduleArgs(false), run: cancelScheduledEnrollment },
 };
 
 /** rules = 수업목록 화면 규칙(loadRules) · extra = 시간표 저장의 loadExtra(권한 표·역할 이름 …) · readers = { readSettings(sql, t) }. */
@@ -415,8 +566,10 @@ export function classesActions(rules, extra, readers) {
     },
     run: async ({ sql, body, tenantId, importV2 }) => {
       const [R, X, S] = await Promise.all([rules(importV2), extra(importV2), loadSaveRules(importV2)]);
-      return a.run({ sql, t: tenantId, R, X, S, readers: { readSettings: (s, t) => readers.readSettings(s, t, R) } }, body.actor, body.args);
+      // 원생 상태(대기·퇴원) 담당 = 시간표와 같은 판정(readPeople statusIds) — 배정 종료일 같은 상태 변경 게이트에 쓴다.
+      const { statusIds } = await readPeople(sql, tenantId, R, X);
+      return a.run({ sql, t: tenantId, R, X, S, statusIds, readers: { readSettings: (s, t) => readers.readSettings(s, t, R) } }, body.actor, body.args);
     },
   }]));
 }
-export { loadSaveRules, createClass, updateClass };
+export { loadSaveRules, createClass, updateClass, createEnrollment };
