@@ -17,6 +17,7 @@ import { loadOwnerData, ownerDataActions } from './v2-owner-data.mjs';
 import { loadOwnerDashboard, loadOwnerDashboardPreview } from './v2-owner-dashboard.mjs';
 import { loadOwnerImport } from './v2-owner-import.mjs';
 import { portfolioGate, loadOwnerEvaluation, evaluationActions } from './v2-owner-evaluation.mjs';
+import { contributionGate, loadOwnerContribution, contributionActions } from './v2-owner-contribution.mjs';
 
 const ID = 'owner';
 const plain = v => !!v && typeof v === 'object' && !Array.isArray(v);
@@ -144,9 +145,10 @@ async function ownerPage({ sql, t, R, O, sp, viewers, viewer, settings, row, imp
   const generic = O.preset.isGenericTenant(settings);
   const resolveTab = () => O.tabs.resolveOwnerTab(sp.tab === 'dup' ? 'data' : sp.tab);
   const requestedFace = sp.tab === 'modules' && generic ? 'modules' : resolveTab();
+  const contribution = await contributionGate(t, viewer, () => laboratoryAvailable(sql, t, 'student_contribution'));
   if (requestedFace === 'makeups' && !(await laboratoryAvailable(sql, t, 'makeups'))) return { redirect: '/owner' };
   if (requestedFace === 'evaluation' && !portfolioGate(viewer)) return { redirect: '/owner' };
-  if (requestedFace === 'contribution') return { redirect: '/owner' };
+  if (requestedFace === 'contribution' && !contribution?.canConfigure) return { redirect: '/owner' };
   const menu = O.faceAccess.ownerFaceMenu(requestedFace);
   if (viewer.level(menu) === 'none') {
     const fallback = O.faceAccess.fallbackOwnerFace(requestedFace, { systemRole: viewer.systemRole, matrix: viewer.matrix, isMasterLevel: viewer.systemRole === 'master', isGeneric: generic });
@@ -198,7 +200,7 @@ async function ownerPage({ sql, t, R, O, sp, viewers, viewer, settings, row, imp
     ...(tab === 'sheets' ? { operations: { subjects: settings.operations.subjects } } : {}) };
   return {
     settings: settingsView, meta: row.updatedAt ? { updatedAt: row.updatedAt } : null, tab, canEditSettings, allowedTabEntries, canReadAudit, isMaster, showMakeups,
-    showEvaluation: portfolioGate(viewer), showContribution: false, showsOperations, canEditOperations, settingsUnreadable: false,
+    showEvaluation: portfolioGate(viewer), showContribution: !!contribution?.canConfigure, showsOperations, canEditOperations, settingsUnreadable: false,
     editableVersions: editable?.versions ?? null, operationsTokens,
     // 운영 섹션은 그 두 면(운영 체계 · 과목 운영)에만 — 저장할 수 없는 사람에겐 자리 PIN을 지운 값(2.0 operationsForViewer).
     operationsForClient: showsOperations ? O.seatPin.operationsForViewer(operationsSource, canEditOperations) : null, seatPin: O.seatPin.seatPinStatus(operationsSource),
@@ -216,6 +218,7 @@ async function ownerPage({ sql, t, R, O, sp, viewers, viewer, settings, row, imp
     audit, data, dashboard,
     importRows: tab === 'import' ? await loadOwnerImport(importV2, O.modules, settings.modules.disabled, viewer) : null,
     evaluation: tab === 'evaluation' ? await loadOwnerEvaluation(sql, t, viewer, importV2, today) : null,
+    contributionData: tab === 'contribution' ? await loadOwnerContribution(sql, t, contribution, importV2, today) : null,
   };
 }
 
@@ -225,13 +228,14 @@ async function ownerIo(sql, t, importV2) {
   const row = await readSettingsRow(sql, t), settings = O.resolve.resolveSettings(row.data, { name: row.name });
   return { sql, t, R, O, importV2, settings, permissionAccountIds,
     makeupsAvailable: () => laboratoryAvailable(sql, t, 'makeups'),
+    laboratoryAvailable: menu => laboratoryAvailable(sql, t, menu),
     viewers: await readOwnerViewers(sql, t, R, O, settings) };
 }
 
 export const screen = {
   id: ID, label: '학원 설정', order: 20,
   // 저장 = 2.0 saveOwnerSection(v2-owner-save.mjs) — 저장하는 사람 = 보는 사람.
-  actions: { ...ownerActions(ownerIo), ...integrationActions(ownerIo), ...popupActions(ownerIo), ...ownerDataActions(ownerIo), ...evaluationActions(ownerIo) },
+  actions: { ...ownerActions(ownerIo), ...integrationActions(ownerIo), ...popupActions(ownerIo), ...ownerDataActions(ownerIo), ...evaluationActions(ownerIo), ...contributionActions(ownerIo) },
   params: { viewer: UUID, tab: /^[a-z_]{1,24}$/, year: /^\d{4}$/, sub: /^[a-zA-Z_]{1,24}$/, page: /^\d{1,4}$/,
     action: /^[a-z0-9_]{1,80}$/, q: /^[\s\S]{0,200}$/, from: /^\d{4}-\d{2}-\d{2}$/, to: /^\d{4}-\d{2}-\d{2}$/,
     read: /^dashboard_preview$/ },

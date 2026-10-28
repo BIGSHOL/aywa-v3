@@ -13,6 +13,7 @@ import * as M from './v2-screen-owner.mjs';
 import { validateDashboardAssignments } from './v2-owner-dashboard.mjs';
 import { IMPORT_MENU, loadOwnerImport } from './v2-owner-import.mjs';
 import { portfolioGate } from './v2-owner-evaluation.mjs';
+import { contributionGate } from './v2-owner-contribution.mjs';
 import { build } from './v2-host/build.mjs';
 import { readV2, runV2Server, stopV2Server } from './v2-server-runner.mjs';
 
@@ -39,7 +40,7 @@ await check('그리기 = 2.0 owner/page.tsx 글자 그대로 — 바꾼 곳은 �
     const i = page.indexOf(a); assert.ok(mine.includes(page.slice(i, page.indexOf(b, i) + b.length)), a);
   }
   // 바꾼 자리 = 서버 값 셋(자리 PIN 상태 · 휴일 · 권한 token) + 서버 컴포넌트 면 — 2.0 클라 부품(섹션 폼)은 손대지 않았다
-  assert.equal(swaps.filter(([, to]) => /OwnerServerFace|OwnerIntegrationsFace|OwnerAuditFace|OwnerDataFace|OwnerDashboardFace|OwnerImportFace|OwnerEvaluationFace|PopupsManager/.test(to)).length, swaps.length - 3);
+  assert.equal(swaps.filter(([, to]) => /OwnerServerFace|OwnerIntegrationsFace|OwnerAuditFace|OwnerDataFace|OwnerDashboardFace|OwnerImportFace|OwnerEvaluationFace|OwnerContributionFace|PopupsManager/.test(to)).length, swaps.length - 3);
   assert.ok(swaps.some(([from, to]) => from === '<PopupsFace />' && to === '<PopupsManager items={popups ?? []} />'), '팝업 공지 = popups-face.tsx 본문(<PopupsManager items={items} />) 그대로');
   assert.match(lf(await src('app/(shell)/owner/_components/popups-face.tsx')), /const items = await listPopups\(\);\n  return <PopupsManager items=\{items\} \/>;/);
   // 연동 면 = integrations-face.tsx · sheets-face.tsx 본문 그대로(서버 카드만 '아직' — owner-integrations.swaps.json)
@@ -90,6 +91,44 @@ const load = params => db.begin('isolation level repeatable read read only', sql
 try {
   const base = await load({});
   const admin = base.editors.find(e => e.role === '관리자');
+
+  await check('기여도 = 침산 시범 지점·메뉴 두 개·실험실·원장 게이트, 전체 원생 원자료 미리보기', async () => {
+    const master = { id: base.viewer.id, systemRole: 'master', level: () => 'full' };
+    assert.equal(await contributionGate('00000000-0000-4000-8000-000000000001', master, async () => true), null);
+    assert.equal(await contributionGate(tenantId, master, async () => false), null);
+    assert.equal(await contributionGate(tenantId, { ...master, level: m => m === 'billing' ? 'none' : 'full' }, async () => true), null);
+    assert.equal((await contributionGate(tenantId, { ...master, systemRole: 'admin' }, async () => true)).canConfigure, false);
+    const d = await load({ tab: 'contribution' });
+    assert.equal(d.route, 'page'); assert.equal(d.page.showContribution, true);
+    assert.equal(d.page.contributionData.gate.canWrite, true);
+    assert.equal(d.page.contributionData.ready, true);
+    assert.ok(d.page.contributionData.studentCount > 0 && Number.isSafeInteger(d.page.contributionData.raws.tuitionWon));
+    assert.equal((await load({ tab: 'profile' })).page.contributionData, null);
+    if (admin) assert.equal((await load({ tab: 'contribution', viewer: admin.id })).route, 'redirect');
+  });
+
+  await check('기여도 배점 저장(되돌림) = 원장만 · 기준 순번 · 실적 재점수 · 다른 섹션 보존 · 감사로그', async () => {
+    const original = (await load({ tab: 'contribution' })).page.contributionData;
+    const ROLL = new Error('rollback');
+    try {
+      await db.begin(async sql => {
+        const a = M.screen.actions.saveContributionSettings;
+        const call = (config, revision, actor = base.viewer.id) => a.run({ sql, body: a.validate({ module: 'features/student-contribution/server/actions.ts', actor, args: [config, revision] }), tenantId, importV2 });
+        assert.ok((await call(original.config, original.revision - 1)).error?.includes('설정이 바뀌었습니다'));
+        if (admin) assert.deepEqual(await call(original.config, original.revision, admin.id), { error: '기여도 설정을 바꿀 권한이 없습니다' });
+        const next = structuredClone(original.config);
+        next.rates.referralConsult.points += 1;
+        const saved = await call(next, original.revision);
+        assert.equal(saved.ok, true);
+        const [row] = await sql`select config, revision from public.student_contribution_settings where tenant_id=${tenantId}`;
+        assert.equal(Number(row.revision), original.revision + 1);
+        assert.equal(row.config.rates.referralConsult.points, next.rates.referralConsult.points);
+        const [log] = await sql`select metadata from public.audit_logs where tenant_id=${tenantId} and created_at=now() and action='student_contribution_settings_save'`;
+        assert.equal(log.metadata.students, original.studentCount); assert.equal(log.metadata.via, '3.0 연습 복사본');
+        throw ROLL;
+      });
+    } catch (e) { if (e !== ROLL) throw e; }
+  });
 
   await check('강사평가 = getPortfolioGate의 원장·직원 평가 접근 조건, 월별 원자료·설정·구성은 해당 면에서만', async () => {
     assert.equal(portfolioGate({ systemRole: 'admin', level: () => 'full' }), false, '평가를 위임받아도 전 강사 포트폴리오 설정은 불가');

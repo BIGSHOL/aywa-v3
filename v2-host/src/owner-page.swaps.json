@@ -29,7 +29,7 @@
  ],
  [
   "<ContributionSettingsFace />",
-  "<OwnerServerFace face=\"contribution\" />"
+  "<OwnerContributionFace d={contributionData!} />"
  ],
  [
   "          <DataFace canManage={canManageData} />\n          <DuplicatesFace page={page} isEmbed={isEmbed} canManage={canManageData} />\n          <SameNameFace />",
