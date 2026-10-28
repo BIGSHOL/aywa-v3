@@ -35,8 +35,9 @@ function saving(module: string, name: string, refresh: boolean) {
     } catch { return { error: UNREACHABLE, ok: false }; }
     const body = (await res.json().catch(() => null)) as { ok?: boolean; result?: unknown; message?: string } | null;
     if (!res.ok || !body?.ok) return { error: body?.message || NOT_SAVED, ok: false };
-    const r = body.result as { ok?: boolean } | null | undefined;
-    if (refresh && r?.ok === true) hostRefresh();
+    const r = body.result as { ok?: boolean; error?: unknown } | null | undefined;
+    // 2.0 revalidatePath 자리 — 실패(error)가 아니면 다시 읽는다(회차 확정 함수 중엔 ok 없이 갱신 줄만 돌려주는 것도 있다).
+    if (refresh && !(r && typeof r === 'object' && r.error)) hostRefresh();
     return r ?? undefined;
   });
 }
@@ -50,6 +51,23 @@ for (const name of ['createExpense', 'updateExpense', 'deleteExpense', 'toggleEx
 // 수납 면 — 청구서 만들기 · 수동 청구서 완납/취소.
 saving('features/billing/server/actions.ts', 'createInvoice', true);
 for (const name of ['markManualInvoicePaid', 'voidManualInvoice']) saving('features/billing/server/manual-invoice-actions.ts', name, true);
+// 회차 확정 — 저장은 2.0 서버 함수 그대로(서버가 공용 러너로) · 읽기 셋은 같은 화면의 GET(보는 사람으로).
+const SESSION = 'features/billing/session-terms/server/';
+const readBillingLater = (params: Record<string, string>, fallback: unknown) => readBilling(params, fallback);
+const SESSION_WRITES: [string, string[]][] = [
+  ['actions.ts', ['refreshPlannedTerms', 'confirmClassTerms', 'confirmSessionTerm', 'unconfirmSessionTerm', 'setSessionTermCarryover']],
+  ['class-unconfirm-actions.ts', ['unconfirmClassTerms']], ['money-carryover-actions.ts', ['saveMoneyCarryover']], ['monthly-sessions.ts', ['updateMonthlyTermSessions']],
+  ['receipt-allocation-actions.ts', ['mergeReceiptItems', 'saveReceiptAllocation', 'saveFreeReceiptAllocation']], ['selected-confirm-actions.ts', ['confirmSelectedTerms']],
+  ['splits-actions.ts', ['saveTeacherSplits']], ['delete-actions.ts', ['deleteSessionTerm']], ['note-actions.ts', ['updateSessionTermNote']],
+];
+for (const [file, names] of SESSION_WRITES) for (const name of names) saving(SESSION + file, name, true);
+const sessionRead = (file: string, name: string) => registerHostHandler(SESSION + file, name, async (...args: unknown[]) => {
+  const body = (await readBillingLater({ call: name, args: JSON.stringify(args.map((a) => (a === undefined ? null : a))) }, null)) as { value?: unknown } | null;
+  return body && 'value' in body ? body.value : { error: NOT_SAVED };
+});
+sessionRead('receipt-allocation-actions.ts', 'getReceiptAllocation');
+sessionRead('money-carryover-actions.ts', 'getMoneyCarryoverOptions');
+sessionRead('delete-actions.ts', 'getSessionTermDeletePreview');
 // 수강료 계산기 — 교재 단가표(교재 면에도 있다) · 수강료 단가 · 견적 저장/삭제.
 const CALC: [string, string[]][] = [
   ['features/billing/server/catalog-actions.ts', ['createCatalogItem', 'updateCatalogItem', 'deleteCatalogItem', 'toggleCatalogActive']],
@@ -61,7 +79,7 @@ for (const [module, names] of CALC) for (const name of names) saving(module, nam
 const REFUND = 'features/billing/server/refund-actions.ts';
 saving(REFUND, 'saveRefundRequest', true);
 saving(REFUND, 'deleteRefundRequest', true);
-const readBilling = async (params: Record<string, string>, fallback: unknown) => {
+const readBilling = async (params: Record<string, string>, fallback: unknown): Promise<unknown> => {
   const q = new URLSearchParams(params); const actor = hostActor(); if (actor) q.set('viewer', actor);
   const r = await fetch(`/api/v2/billing?${q}`, { headers: { Accept: 'application/json' } }).catch(() => null);
   return (r?.ok ? await r.json().catch(() => null) : null) ?? fallback;

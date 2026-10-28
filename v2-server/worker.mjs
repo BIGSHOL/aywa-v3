@@ -38,7 +38,16 @@ async function runSteps(sql, call) {
     for (const step of call.steps) {
       const mod = await import(new URL(step.module, SRC).href);
       if (typeof mod[step.fn] !== 'function') throw new UnsupportedShape(`${step.module}에 ${step.fn} 함수가 없습니다`);
-      try { results.push({ value: await mod[step.fn](...(step.args ?? [])) }); }
+      // 시험 전용(allowRefs — 러너를 직접 부르는 시험만 켠다 · 화면 저장 경로는 켜지 않는다): { $sql } 자리 = 같은 트랜잭션에서 읽은 첫 값.
+      // 앞 단계가 만든 행(가상 줄 확정으로 생긴 회차 행 id 등)을 다음 단계에 넘기려고. 켜지 않으면 그 모양은 그대로 2.0 함수로 간다(값 취급).
+      const ref = async v => (call.allowRefs && v && typeof v === 'object' && typeof v.$sql === 'string' ? Object.values((await sql.unsafe(v.$sql, v.params ?? []))[0] ?? {})[0] ?? null : v);
+      // 호스트 shim이 FormData를 { $formData: [[이름, 글자]…] }로 실어 보낸다 — 2.0 함수가 받던 FormData로 되돌린다.
+      const args = [];
+      for (const a of step.args ?? []) {
+        if (!a || typeof a !== 'object' || !Array.isArray(a.$formData)) { args.push(await ref(a)); continue; }
+        const fd = new FormData(); for (const [k, v] of a.$formData) fd.append(String(k), String(await ref(v))); args.push(fd);
+      }
+      try { results.push({ value: await mod[step.fn](...args) }); }
       catch (e) {
         if (e?.v2Redirect) results.push({ redirect: e.v2Redirect });
         else if (e?.v2NotFound) results.push({ notFound: true });

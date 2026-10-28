@@ -22,6 +22,8 @@
 //  features/billing/server/catalog-actions.ts         createCatalogItem · updateCatalogItem · deleteCatalogItem · toggleCatalogActive(_prev, fd) → { ok?, error? }
 //  features/billing/server/tuition-catalog-actions.ts createTuitionItem · updateTuitionItem · deleteTuitionItem · setTuitionPricingMode · toggleTuitionActive
 //  features/billing/server/tuition-quote-actions.ts   saveTuitionQuote(_prev, fd) → { ok, id } · deleteTuitionQuote(_prev, fd)
+//  features/billing/session-terms/server/*.ts      회차 확정 저장 15개 = 2.0 서버 함수 그대로(공용 러너 write · v2-billing-sessions.mjs SESSION_WRITES) ·
+//                                                      읽기 셋(getReceiptAllocation · getMoneyCarryoverOptions · getSessionTermDeletePreview) = GET ?call=&args=
 //  features/billing/server/refund-actions.ts          saveRefundRequest(_prev, fd) → RefundActionState · deleteRefundRequest(id) → { ok?, error? } ·
 //                                                      loadRefundStudentOptions() · loadRefundPrefill(studentId, months) = 읽기(GET ?refundOptions=1 · ?prefill=&months=)
 //  features/billing/server/textbook-notice-actions.ts  saveMyTextbookMent(text) → { ok } · loadMyTextbookMent() = 읽기(GET ?ment=1 → { ment })
@@ -40,7 +42,7 @@ import { readTextbooksFace, loadMyTextbookMent, textbookFaceActions } from './v2
 import { readExpensesFace, readExpenseById, loadExpenseRules, expenseActions } from './v2-billing-expenses.mjs';
 import { readCalculatorFace, calculatorActions } from './v2-billing-calculator.mjs';
 import { invoiceActions } from './v2-billing-invoice-save.mjs';
-import { readSessionsFace } from './v2-billing-sessions.mjs';
+import { readSessionsFace, sessionActions, readSessionCall } from './v2-billing-sessions.mjs';
 import { readRefundRequests, readRefundById, loadRefundRules, loadRefundStudentOptions, loadRefundPrefill, refundActions } from './v2-billing-refunds.mjs';
 
 const ID = 'billing';
@@ -57,17 +59,21 @@ const PARAMS = {
   ment: /^1$/,
   // 환불 요청서 자동입력이 부르는 2.0 읽기 둘(loadRefundStudentOptions · loadRefundPrefill) — 읽기라 GET.
   refundOptions: /^1$/, prefill: UUID, months: /^(1|2|3|6|12|all)$/,
+  // 회차 확정의 읽기 셋(배분 창 · 이월 선택지 · 지우기 미리보기) — 2.0 서버 함수 이름 · 인자(JSON 배열).
+  call: /^[A-Za-z]{1,40}$/, args: /^[^\u0000-\u001f]{0,400}$/,
 };
 
 export const screen = {
   id: ID, label: '수납관리', order: 9,
   params: PARAMS,
-  actions: { ...invoiceActions, ...textbookFaceActions, ...expenseActions, ...refundActions, ...calculatorActions },
+  actions: { ...invoiceActions, ...textbookFaceActions, ...expenseActions, ...refundActions, ...calculatorActions, ...sessionActions },
+  paramMax: { args: 400 },
   load: async ({ sql, params: sp, tenantId: t, importV2 }) => {
     const R = await loadBillingRules(importV2);
     const env = await readSettings(sql, t, R), viewers = await readBillingViewers(sql, t, R, env);
     const viewer = viewers.find(v => v.id === sp.viewer) ?? viewers[0] ?? null;
     if (sp.ment) return { ment: await loadMyTextbookMent(sql, t, importV2, viewer) };
+    if (sp.call) return { value: await readSessionCall(sql, t, importV2, viewer, sp.call, sp.args) };
     if (sp.refundOptions) return loadRefundStudentOptions(sql, viewer, await loadRefundRules(importV2));
     if (sp.prefill) return loadRefundPrefill(sql, viewer, await loadRefundRules(importV2), sp.prefill, sp.months === 'all' ? null : Number(sp.months ?? 3));
     const common = { editors: billingEditorsOf(viewers), viewer: viewer && { id: viewer.id, name: viewer.name, role: viewer.roleLabel },

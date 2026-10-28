@@ -29,7 +29,7 @@ await check('주소 열쇠 = 2.0 page.tsx · 수납관리 부품이 읽는 칸(s
   const dir = new URL('../../src/app/(shell)/billing/_components/', import.meta.url), keys = new Set();
   for (const f of [...(await readdir(dir)).filter(n => n.endsWith('.tsx')).map(n => new URL(n, dir)), new URL('../../src/app/(shell)/billing/page.tsx', import.meta.url)])
     for (const m of (await readFile(f, 'utf8')).matchAll(/\bsp\.([a-zA-Z]+)/g)) keys.add(m[1]);
-  assert.deepEqual(Object.keys(M.screen.params).filter(k => !['viewer', 'v2path', 'ment', 'refundOptions', 'prefill', 'months'].includes(k)).sort(), [...keys].sort());
+  assert.deepEqual(Object.keys(M.screen.params).filter(k => !['viewer', 'v2path', 'ment', 'refundOptions', 'prefill', 'months', 'call', 'args'].includes(k)).sort(), [...keys].sort());
   const host = await here('./v2-host/src/billing.tsx'), shell = await here('./v2-screen-billing.js');
   const listOf = text => JSON.parse(`[${/KEYS = \[([^\]]+)\]|KEEP = \[([^\]]+)\]/.exec(text).slice(1).find(Boolean).replace(/'/g, '"')}]`);
   assert.deepEqual(listOf(host).sort(), ['v2path', ...keys].sort());
@@ -644,6 +644,67 @@ try {
     assert.ok(Array.isArray(v.verification.view.rows) && v.verification.view.rows.length > 0);
     assert.deepEqual(Object.keys(v.verification.view).sort(), ['carryBlockedStudents', 'carryFailed', 'counts', 'rows']);
     assert.ok(plainDeep(v));
+  });
+
+  await check('회차 확정 저장(되돌림) = 2.0 서버 함수 그대로 — confirmSessionTerm(가상 줄 → 회차 행 · 확정액 = 시수 × 단가) · updateSessionTermNote · unconfirmSessionTerm · 감사로그 via · 바깥 요청 0 · 테스트 학생 줄만', async () => {
+    const { runV2Server } = await import('./v2-server-runner.mjs');
+    const S = 'features/billing/session-terms/server/';
+    const testIds = (await db`select id::text id from public.students where tenant_id=${tenantId} and is_test`).map(r => r.id);
+    // 테스트 학생 줄은 청구서가 없어 잠겨 있다(no_invoice) — 되돌리는 트랜잭션 안에서 2.0 createInvoice로 그 달 청구서를 먼저 만들면
+    // 같은 줄이 '회차 없음'(가상 id = 2.0 virtualTermId)이 된다.
+    const P = '2026-11', mr = await importV2('features/billing/session-terms/month-roster.ts');
+    const vrow = (await load({ tab: 'sessions', period: P })).sessions.confirm.view.rows.find(r => testIds.includes(r.studentId) && r.studentName === '학원이' && r.classId);
+    assert.ok(vrow && vrow.termState === 'no_invoice', '학원이의 11월 줄(청구서 없음)');
+    vrow.id = mr.virtualTermId(vrow.studentId, vrow.classId);
+    const termSql = { $sql: `select s.id::text from public.invoice_session_terms s join public.invoices i on i.id = s.invoice_id
+      where s.tenant_id = $1 and i.student_id = $2 and s.class_id = $3 and i.period = $4 and i.status <> 'void' order by s.created_at desc limit 1`, params: [tenantId, vrow.studentId, vrow.classId, P] };
+    const countTerms = async () => (await db`select count(*)::int n from public.invoice_session_terms s join public.invoices i on i.id=s.invoice_id where s.tenant_id=${tenantId} and i.student_id = any(${testIds}::uuid[])`)[0].n;
+    const before = await countTerms(), [{ q0 }] = await db`select count(*)::int q0 from net.http_request_queue`;
+    const { results, probes } = await runV2Server({ actorId: base.viewer.id, tenantId, mode: 'write', rollback: true, allowRefs: true, steps: [
+      { module: 'features/billing/server/actions.ts', fn: 'createInvoice', args: [null, { $formData: [['studentId', vrow.studentId], ['period', P], ['amountTotal', '100000']] }] },
+      { module: `${S}actions.ts`, fn: 'confirmSessionTerm', args: [null, { $formData: [['id', vrow.id], ['period', P], ['sessions', '4'], ['unitPrice', '25,000']] }] },
+      { module: `${S}note-actions.ts`, fn: 'updateSessionTermNote', args: [termSql, '  연습 메모 '] },
+      { module: `${S}actions.ts`, fn: 'unconfirmSessionTerm', args: [null, { $formData: [['id', termSql]] }] },
+    ], probes: [
+      { text: `select s.confirmed_sessions, s.unit_price::float8 unit_price, s.amount, s.note from public.invoice_session_terms s join public.invoices i on i.id = s.invoice_id
+        where s.tenant_id = $1 and i.student_id = $2 and s.class_id = $3 and i.period = $4 and i.status <> 'void'`, params: [tenantId, vrow.studentId, vrow.classId, P] },
+      { text: `select action, metadata->>'via' via, (metadata->>'amount')::float8 amount from public.audit_logs where tenant_id = $1 and created_at = now() order by action`, params: [tenantId] },
+      { text: `select count(*)::int n from net.http_request_queue` },
+    ] });
+    const [created, confirm, note, unconfirm] = results.map(r => r.value);
+    assert.deepEqual(created, { ok: true }, '2.0 createInvoice');
+    assert.equal(confirm.ok, true, JSON.stringify(confirm).slice(0, 200)); assert.equal(confirm.created, 1, '가상 줄 → 회차 행 하나');
+    assert.equal(confirm.terms?.[0]?.amount ?? 100000, 100000, '확정액 = 4 × 25,000');
+    assert.equal(note.note, '연습 메모', '메모 = 2.0 normalizeTermNote');
+    assert.equal(unconfirm.ok, true);
+    const [term] = probes[0];
+    assert.deepEqual([term.confirmed_sessions, term.note], [null, '연습 메모'], '해제 뒤 확정 시수는 비고 메모는 남는다');
+    const actions = probes[1].map(l => l.action);
+    assert.ok(actions.includes('session_term_confirm'), actions.join(','));
+    assert.equal(probes[1].find(l => l.action === 'session_term_confirm').amount, 100000);
+    assert.ok(probes[1].every(l => l.via === '3.0 연습 복사본'));
+    assert.equal(probes[2][0].n, q0, '바깥 요청 0');
+    assert.equal(await countTerms(), before, '되돌린 뒤 테스트 학생 회차 행 그대로');
+    // 화면 저장 통로(POST /api/v2/billing/<2.0 함수>) = 같은 함수 — 없는 대상은 2.0 거절 문구, 아무것도 바뀌지 않는다.
+    const a = M.screen.actions.updateSessionTermNote;
+    const r = await db.begin(async sql => a.run({ sql, body: a.validate({ module: `${S}note-actions.ts`, actor: base.viewer.id, args: ['virtual:x', '메모'] }), tenantId, importV2 }));
+    assert.equal(typeof r.error, 'string');
+    assert.throws(() => a.validate({ module: `${S}actions.ts`, actor: base.viewer.id, args: [] }), '모듈이 다르면 받지 않는다');
+    // 시험 전용 참조({ $sql })는 화면 통로에서 켜지지 않는다 — 값 그대로 2.0 함수로 간다.
+    const notesBefore = (await db`select count(*)::int n from public.audit_logs where tenant_id=${tenantId}`)[0].n;
+    await assert.rejects(async () => { await db.begin(async sql => a.run({ sql, body: a.validate({ module: `${S}note-actions.ts`, actor: base.viewer.id, args: [{ $sql: 'select 1' }, 'x'] }), tenantId, importV2 })); },
+      e => e.code === 'write_failed', '참조 자리는 실행되지 않고 2.0 함수가 받지 못하는 값이라 저장 실패(바뀐 것 없음)');
+    assert.equal((await db`select count(*)::int n from public.audit_logs where tenant_id=${tenantId}`)[0].n, notesBefore);
+  });
+
+  await check('회차 확정 읽기 셋(배분 창 · 이월 선택지 · 지우기 미리보기) = 2.0 서버 함수를 화면 GET으로 — 쓰기 0 · 모르는 함수 거절', async () => {
+    const sept = (await load({ tab: 'sessions', period: '2026-09' })).sessions.confirm.view.rows;
+    const row = sept.find(r => r.termState === 'term' && r.invoiceId);
+    const alloc = await load({ call: 'getReceiptAllocation', args: JSON.stringify([row.invoiceId]) });
+    assert.ok(alloc.value && (alloc.value.data || alloc.value.error), '2.0 { data } | { error } 모양');
+    const pre = await load({ call: 'getSessionTermDeletePreview', args: JSON.stringify([row.id, '2026-09']) });
+    assert.ok(pre.value && ('preview' in pre.value || 'error' in pre.value));
+    await assert.rejects(async () => { await load({ call: 'confirmSessionTerm', args: '[]' }); }, '읽기 목록 밖 함수');
   });
 } finally { await db.end(); await (await import('./v2-server-runner.mjs')).stopV2Server(); }
 
