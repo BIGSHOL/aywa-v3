@@ -1,5 +1,6 @@
 // GET /api/flow body (flow_contract v1.1). Read-only over the in-memory state; never calls AI.
 import { actorsOf } from './flow-engine.mjs';
+import { isFactSignal } from './flow-reconcile-signals.mjs';
 
 export const LIMITS = Object.freeze({ cases: 500, events: 200, entities: 3000, candidates: 100 });
 const PRIORITY_ORDER = { high: 0, normal: 1, low: 2 }, STATE_ORDER = { review: 0, open: 1, working: 2, done: 3 };
@@ -55,7 +56,8 @@ export function decisionView(c, inFlight) {
 // The full record keys of a signal (sourceRecords) and what each report covered (coveredRefs) stay in the store for
 // re-judging (flow-reconcile.mjs); the view carries counts only, so /api/flow does not grow with them.
 const evidenceView = e => { if (!Array.isArray(e.coveredRefs)) return e; const { coveredRefs, ...rest } = e; return { ...rest, coveredCount: coveredRefs.length }; };
-const caseView = (c, inFlight) => { const { pendingDecision, sourceRecords, ...rest } = c; return { ...rest, evidence: (c.evidence || []).map(evidenceView), decision: decisionView(c, inFlight), decisionPending: !!pendingDecision }; };
+// factSignal = 사실이 남는 신호(반복 결석 등, flow-rules FACT_SIGNALS) — 보고가 그 업무 안에 처리 완료로 남고 모두 처리하면 닫힌다(화면 안내 문구가 갈린다).
+const caseView = (c, inFlight) => { const { pendingDecision, sourceRecords, ...rest } = c; return { ...rest, ...(isFactSignal(c) ? { factSignal: true } : {}), evidence: (c.evidence || []).map(evidenceView), decision: decisionView(c, inFlight), decisionPending: !!pendingDecision }; };
 
 export function buildView(state, source, { aiStatus, now = new Date().toISOString(), tenantName = '', casePage = 1, eventsBefore = null, inFlight = null } = {}) {
   const all = Object.values(state.cases).sort((a, b) => STATE_ORDER[a.state] - STATE_ORDER[b.state] || PRIORITY_ORDER[a.priority] - PRIORITY_ORDER[b.priority] || (a.dueAt || '9').localeCompare(b.dueAt || '9') || b.updatedAt.localeCompare(a.updatedAt));
