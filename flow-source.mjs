@@ -5,6 +5,7 @@ import { openFullDatabase, tenantId } from './full-db.mjs';
 import { scrub } from './domain-snapshot-core.mjs';
 import { ACTOR_ROLE, ROLE_LABEL, TASK_KINDS } from './flow-rules.mjs';
 import { PROVIDER as INTEGRATION_LABEL } from './domain-snapshot-support.mjs';
+import { importV2 } from './v2-bridge.mjs';
 
 // Workspace evidence table → ontology type.
 export const TYPE_OF_TABLE = { students: 'student', users: 'staff', classes: 'class', enrollments: 'enrollment', attendance_records: 'attendance', invoices: 'invoice', student_consultations: 'consultation', enrollment_consultations: 'lead', lesson_reports: 'report', staff_tasks: 'task', approval_documents: 'approval', withdrawal_reports: 'withdrawal_report', textbook_orders: 'textbook_order', inventory_assets: 'asset', student_homework_videos: 'video', teacher_satisfaction_judgments: 'satisfaction', makeup_reservations: 'makeup', makeedu_sync_runs: 'sync_run', classnote_notices: 'notice', user_integrations: 'integration' };
@@ -25,7 +26,16 @@ export function signalWiring(signals) {
 const TASK_SUBJECT = { attendance_absent_desk: 'student', video_upload_check: 'student', video_unassigned: 'video', unsent_report: 'report', report_send_failed: 'report', enrollment_followup: 'lead', withdrawal_step: 'withdrawal_report', followup_due: 'consultation', approval_turn: 'approval' };
 const SKIP_SIGNALS = new Set(['tasks-overdue']); // the open staff_tasks themselves are source cases
 
+export function deskCloseResult(cycle, rows, outcomeLabel) {
+  const slot = String(cycle || '').split('|')[1] || '';
+  const matched = slot ? (rows.some(r => r.slot === slot) ? rows.filter(r => r.slot === slot) : rows.filter(r => !r.slot))
+    : (rows.some(r => !r.slot) ? rows.filter(r => !r.slot) : rows);
+  const labels = [...new Set(matched.map(r => r.state === 'dismissed' ? '해당 없음' : outcomeLabel[r.outcome]).filter(Boolean))];
+  return labels.length ? `데스크 확인 기록: ${labels.join(' · ')}` : '데스크 조치 기록으로 처리됨';
+}
+
 export async function loadFlowSource({ workspaces, capturedAt, asOf }) {
+  const { OUTCOME_LABEL: attendanceOutcomeLabel } = await importV2('features/attendance/live/queue.ts');
   const db = await openFullDatabase();
   try {
     return await db.begin('isolation level repeatable read read only', async sql => {
@@ -96,6 +106,13 @@ export async function loadFlowSource({ workspaces, capturedAt, asOf }) {
 
       // Every 2.0 staff_task (open and fact-closed) with its real assignees and audited history.
       const tasks = await sql`select k.id, k.kind, k.status, k.close_reason, to_char(k.closed_at at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"') closed, k.subject_id, k.title, k.detail, k.cycle, to_char(k.opened_at at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"') opened, to_char(k.due_at at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"') due, (select array_agg(a.user_id::text order by a.user_id) from public.staff_task_assignees a where a.tenant_id=${t} and a.task_id=k.id) assignees from public.staff_tasks k where k.tenant_id=${t} order by k.opened_at, k.id`;
+      const deskResults = await sql`select k.id task_id, coalesce(to_char(f.slot_start, 'HH24:MI'), '') slot, f.state, f.outcome
+        from public.staff_tasks k join public.attendance_followups f on f.tenant_id=k.tenant_id and f.student_id=k.subject_id
+          and f.session_date::text=split_part(k.cycle, '|', 1) and f.signal='absent' and f.state in ('resolved','dismissed')
+        where k.tenant_id=${t} and k.kind='attendance_absent_desk' and k.status='done' and k.close_reason='desk_settled'
+          and (split_part(k.cycle, '|', 2)='' or f.slot_start is null or to_char(f.slot_start, 'HH24:MI')=split_part(k.cycle, '|', 2))`;
+      const deskByTask = new Map();
+      for (const r of deskResults) { if (!deskByTask.has(r.task_id)) deskByTask.set(r.task_id, []); deskByTask.get(r.task_id).push(r); }
       const history = await sql`select e.id::text, e.task_id::text task, e.event, e.actor_id::text actor, to_char(e.at at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"') at from public.staff_task_events e where e.tenant_id=${t} order by e.at, e.id`;
       for (const k of tasks) {
         const key = put('task', k.id, k.title || TASK_KINDS[k.kind]?.label || '할 일', TASK_KINDS[k.kind]?.familyId || 'tasks-notifications');
@@ -110,7 +127,7 @@ export async function loadFlowSource({ workspaces, capturedAt, asOf }) {
       const signalFamilies = Object.values(workspaces?.families || {}).filter(f => ['available', 'empty'].includes(f.dataState)).map(f => f.id);
       return {
         identity: { tenantId: t, tenantSlug: 'cs', capturedAt, asOf }, loadedAt: new Date().toISOString(), signalFamilies, actors, entities, relations, signals,
-        tasks: tasks.map(k => ({ id: k.id, kind: k.kind, status: k.status, closeReason: k.close_reason, closedAt: k.closed, title: scrub(k.title), detail: scrub(k.detail), openedAt: k.opened, dueAt: k.due, assigneeIds: k.assignees || [], subjectKey: TASK_SUBJECT[k.kind] && entities.has(`${TASK_SUBJECT[k.kind]}:${k.subject_id}`) ? `${TASK_SUBJECT[k.kind]}:${k.subject_id}` : null, history: historyBy.get(k.id) || [] })),
+        tasks: tasks.map(k => ({ id: k.id, kind: k.kind, status: k.status, closeReason: k.close_reason, ...(k.kind === 'attendance_absent_desk' && k.close_reason === 'desk_settled' ? { closeResult: deskCloseResult(k.cycle, deskByTask.get(k.id) || [], attendanceOutcomeLabel) } : {}), closedAt: k.closed, title: scrub(k.title), detail: scrub(k.detail), openedAt: k.opened, dueAt: k.due, assigneeIds: k.assignees || [], subjectKey: TASK_SUBJECT[k.kind] && entities.has(`${TASK_SUBJECT[k.kind]}:${k.subject_id}`) ? `${TASK_SUBJECT[k.kind]}:${k.subject_id}` : null, history: historyBy.get(k.id) || [] })),
         candidates: { absence: absences.filter(a => studentKey(a.student_id)).map(a => a.id), billing: invoices.filter(i => i.remaining > 0 && studentKey(i.student_id)).map(i => i.id), consultation: consults.filter(c => studentKey(c.student_id)).map(c => c.id) },
       };
     });

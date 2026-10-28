@@ -12,7 +12,7 @@ export { coveredRefs, isFactSignal, settleFact, signalGroups, stepRecords } from
 // ── tasks ───────────────────────────────────────────────────────────────────────────────────────────
 const kindOf = t => TASK_KINDS[t.kind] || { label: '할 일', familyId: 'tasks-notifications', doneRule: '' };
 const closedOf = t => !!t.status && t.status !== 'open';
-const reasonOf = t => CLOSE_REASON[t.closeReason] || TASK_STATE_LABEL[t.status];
+const reasonOf = t => t.closeReason === 'desk_settled' && t.closeResult ? t.closeResult : CLOSE_REASON[t.closeReason] || TASK_STATE_LABEL[t.status];
 const lastAt = (t, ev) => t.history.filter(h => h.event === ev).at(-1)?.at || null;
 function taskRoute(source, t) {
   const ids = t.assigneeIds.filter(a => source.actors.some(x => x.id === a));

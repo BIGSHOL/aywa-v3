@@ -5,7 +5,8 @@ import assert from 'node:assert/strict';
 import { readdir, readFile } from 'node:fs/promises';
 import { IDS, fixtureSource, send, service } from './verify-flow-engine-fixture.mjs';
 import { CLOSE_REASON, FACT_SIGNALS } from './flow-rules.mjs';
-import { SIGNAL_RECORD_TABLE, TYPE_OF_TABLE, signalWiring } from './flow-source.mjs';
+import { SIGNAL_RECORD_TABLE, TYPE_OF_TABLE, deskCloseResult, signalWiring } from './flow-source.mjs';
+import { importV2 } from './v2-bridge.mjs';
 import { signalOwner } from './flow-engine.mjs';
 import { signalStepRefs } from './flow-hierarchy.mjs';
 import { coveredRefs } from './flow-reconcile.mjs';
@@ -49,6 +50,29 @@ test('tasks: source close → done with its time and reason; reopen → open; sa
   c = stored(svc, 'src-task-t-done');
   assert.deepEqual([c.state, c.factClosed, c.closedReason, c.steps[0].status, typesOf(svc, c.id).at(-1)], ['open', false, null, 'ready', 'source.task_reopened']);
   await svc.close();
+});
+
+test('데스크 할 일은 실제 저장 결과를 닫힘 사유로 보이고 결과 정정도 따라간다', async () => {
+  const { svc } = await service();
+  const closedAt = '2026-10-28T13:55:14Z';
+  for (const result of ['기타', '연락 안 됨', '해당 없음']) {
+    const closeResult = `데스크 확인 기록: ${result}`;
+    await svc.reloadSource(sourceWith({ tasks: { 't-open': { status: 'done', closeReason: 'desk_settled', closeResult, closedAt } } }));
+    const c = stored(svc, 'src-task-t-open');
+    assert.equal(c.state, 'done');
+    assert.equal(c.closedReason, closeResult);
+    assert.doesNotMatch(c.closedReason, /학부모 확인을 마침/);
+  }
+  await svc.close();
+});
+
+test('데스크 결과 문구는 2.0 결과표를 따르고 같은 교시 기록을 우선한다', async () => {
+  const { OUTCOME_LABEL } = await importV2('features/attendance/live/queue.ts');
+  const row = (slot, state, outcome) => ({ slot, state, outcome });
+  assert.equal(deskCloseResult('2026-10-28|09:00', [row('', 'resolved', 'other'), row('09:00', 'resolved', 'no_answer')], OUTCOME_LABEL), '데스크 확인 기록: 연락 안 됨');
+  assert.equal(deskCloseResult('2026-10-28|', [row('', 'dismissed', null), row('09:00', 'resolved', 'other')], OUTCOME_LABEL), '데스크 확인 기록: 해당 없음');
+  assert.equal(deskCloseResult('2026-10-28|', [row('09:00', 'resolved', 'other'), row('10:00', 'resolved', 'no_answer')], OUTCOME_LABEL), '데스크 확인 기록: 기타 · 연락 안 됨');
+  assert.equal(deskCloseResult('2026-10-28|', [row('', 'resolved', 'unknown')], OUTCOME_LABEL), '데스크 조치 기록으로 처리됨');
 });
 
 test('tasks: source assignee follows unless a person reassigned or confirmed the step; a vanished task closes', async () => {
