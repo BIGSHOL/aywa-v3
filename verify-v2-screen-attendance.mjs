@@ -69,7 +69,7 @@ test('호스트 조립(attendance-page.tsx)이 page.tsx의 달 이동·달 표�
   // page.tsx의 부품을 같은 이름으로 쓴다(손으로 그린 표·칸이 아니다).
   for (const c of ['AttendanceSearchProvider', 'AttendanceScopeProvider', 'GridProvider', 'FilterSelect', 'PeriodNav', 'PeriodModeToggle', 'HrefSelect', 'AttendanceSortSelect', 'CollapseAllChip',
     'AttendanceSearchToggle', 'ExcelMenu', 'HubStudentSearch', 'LiveStats', 'AttendanceHub', 'EmptyState', 'MatrixTable', 'AttendanceLegend', 'SubstituteCellsNote', 'HideRetiredToggle',
-    'ClassMonthPrintButton', 'UnitsMasterButton', 'AbsenceIntakeButton', 'PayslipWindowButton']) {
+    'ClassMonthPrintButton', 'UnitsMasterButton', 'AbsenceIntakeButton', 'PayslipWindowButton', 'SalaryRatesButton', 'SalaryVisibleButton']) {
     assert.match(page, new RegExp(`<${c}\\b`), `page.tsx draws ${c}`); assert.match(host, new RegExp(`<${c}\\b`), `host draws ${c}`);
   }
   assert.match(host, /buildGridSource\(allGroups, visibleDays, orderedRows\)/, 'grid source = 2.0 buildGridSource');
@@ -85,7 +85,7 @@ test('매개변수는 정해진 값만 받는다(나머지는 공통 틀이 400)
   assert.ok(ok('subject', 'subject_1') && !ok('subject', 'Math'));
   assert.equal(screen.id, 'attendance'); assert.equal(screen.order, 4); assert.equal(screen.label, '출석부');
   assert.deepEqual(Object.keys(screen.actions).sort(), ['cancelMakeupReservation', 'clearSeatPeriodChoices', 'commitSeatJjEdits', 'fillSeatPrevAbsent', 'fillSeatSlot', 'generateRecapSummary', 'getMakeupPeriodOptions',
-    'moveSeatStudentPeriod', 'previewAbsenceIntake', 'pullSeatMemorizedWords', 'recordAbsenceIntake', 'recordFollowup', 'requestAttendanceInput', 'reserveMakeup', 'resetSeatPlacements', 'saveAttendanceCollapsed', 'saveAttendanceHideRetired', 'saveAttendancePeriodMode', 'saveAttendanceSort',
+    'moveSeatStudentPeriod', 'previewAbsenceIntake', 'pullSeatMemorizedWords', 'recordAbsenceIntake', 'recordFollowup', 'requestAttendanceInput', 'reserveMakeup', 'resetSeatPlacements', 'saveAttendanceCollapsed', 'saveAttendanceHideRetired', 'saveAttendancePeriodMode', 'saveAttendanceSalaryRates', 'saveAttendanceSalaryVisible', 'saveAttendanceSort',
     'saveLiveSubjectFilter', 'saveSeatMonthlyCollapsed', 'searchAttendanceHubStudents', 'searchIntakeStudents', 'setAttendanceBulk', 'setAttendanceCell', 'setAttendanceRange', 'setSeatCell', 'setSeatJjField']);
 });
 
@@ -184,7 +184,7 @@ const loadAs = async params => { const { tenantId: t } = await import('./full-db
 /** attendance-page.tsx가 읽는 값(AttendanceData) — 빠지면 2.0 부품이 undefined를 받는다. */
 const PROPS = ['asOf', 'lang', 'month', 'currentMonth', 'host', 'editors', 'viewer', 'viewPrefs', 'seatPick', 'eieOn', 'subjectOptions', 'effectiveSubject', 'subjectValue', 'teacherOptions',
   'effectiveTeacher', 'teacherValue', 'retiredCount', 'classOptions', 'effectiveClassId', 'mode', 'matrixWindow', 'groups', 'orderedRows', 'visibleDays', 'showGroups', 'statsCount',
-  'totalStudents', 'sheetEmpty', 'hubShown', 'notices', 'selectedClassLabel', 'searchSeed', 'attendanceScope', 'lockBefore', 'substituteCells', 'tools', 'hub'];
+  'totalStudents', 'sheetEmpty', 'hubShown', 'notices', 'selectedClassLabel', 'searchSeed', 'attendanceScope', 'lockBefore', 'substituteCells', 'tools', 'hub', 'money'];
 
 test('복사본: 반별 보기 — 명단·칸 수·시수가 독립 SQL과 같다(#88 이력 행 · 정정 줄은 최신 하나)', { skip: !db && 'local database not running' }, async () => {
   const { tenantId: t } = await import('./full-db.mjs');
@@ -1399,7 +1399,136 @@ test('저장(복사본, 되돌림): 오늘 출결 — 확인 기록 upsert · �
   assert.equal((await db`select count(*)::int n from public.audit_logs`)[0].n, before[0].audits, 'rolled back — the copy is unchanged');
 });
 
-test.after(async () => { await db?.end(); });
+// ── 금액 열(2.0 서버 함수 그대로 · 공용 러너) — 🔴 금액은 시험 출력에 찍지 않는다(참거짓 · 개수 · 줄 키만). ──
+const MONEY_MONTH = '2026-09';
+let salaryTeacher = null;
+/** 실급여 스위치가 켜진 선생님 하나(그 달) — 2.0 getAttendanceSalaryRates가 visible을 돌려준 사람. */
+async function findSalaryTeacher() {
+  if (salaryTeacher) return salaryTeacher;
+  const { tenantId: t } = await import('./full-db.mjs');
+  const rows = await db`select v.teacher_id::text id from public.attendance_salary_teacher_view v join public.users u on u.id=v.teacher_id
+    where v.tenant_id=${t} and v.period=${MONEY_MONTH} and v.visible and u.status='active' order by v.teacher_id`;
+  for (const { id } of rows) {
+    const d = await loadAs({ teacher: id, mode: 'teacher', month: MONEY_MONTH });
+    if (d.mode === 'teacher' && d.money.salaryConfig?.visible && d.money.showActualAmount && !d.money.salaryConfig.needsLevels) return (salaryTeacher = { id, d });
+  }
+  assert.fail('실급여 스위치가 켜진 선생님이 복사본에 있어야 한다');
+}
+
+test('복사본: 금액 열 = 2.0 함수 그대로 — 청구액·등록 차수·단가 줄은 표의 줄 · 등록 차수 = 회차 확정 시수 · 청구서 없는 줄 = 독립 SQL · 원장 합계', { skip: !db && 'local database not running' }, async () => {
+  const { tenantId: t } = await import('./full-db.mjs');
+  const { d } = await findSalaryTeacher();
+  const G = await importV2('features/attendance/grid/model.ts');
+  const m = d.money, rows = d.groups.flatMap(g => g.matrix.students.map(s => ({ key: G.rowKey(g.classId, s.id), classId: g.classId, studentId: s.id, g, s })));
+  const keys = new Set(rows.map(r => r.key));
+  for (const k of [...Object.keys(m.classBilledAmounts.billed), ...Object.keys(m.classBilledAmounts.confirmedSessions), ...Object.keys(m.classBilledAmounts.confirmedPrices), ...m.classBilledAmounts.priceConfirmed])
+    assert.ok(keys.has(k), '금액 칸의 줄은 표의 줄');
+  assert.ok(Object.keys(m.classBilledAmounts.billed).length > 0, '대조가 빈 값끼리가 아니다');
+  // 등록 차수 = 회차 확정 시수(살아 있는 청구서 · 그 반 · 시수 기준) — 영어 줄은 교시 몫으로 나뉘어 나누기 전 반 전체 값(classUnits · 2.0 teacherTermSessions)과 견준다
+  const math = rows;
+  const terms = await db`select s.class_id::text cid, i.student_id::text sid, sum(s.confirmed_sessions)::float8 cs, count(*)::int n, bool_and(s.quantity_basis = 'attendance_units') units
+    from public.invoice_session_terms s join public.invoices i on i.id=s.invoice_id
+    where s.tenant_id=${t} and i.period=${MONEY_MONTH} and i.status<>'void' and s.confirmed_sessions is not null and s.class_id = any(${[...new Set(math.map(r => r.classId))]}::uuid[]) group by 1, 2`;
+  let checked = 0;
+  for (const x of terms.filter(x => x.n === 1 && x.units)) {
+    const key = G.rowKey(x.cid, x.sid);
+    if (!keys.has(key)) continue;
+    const cs = m.classBilledAmounts.confirmedSessions[key];
+    assert.ok(cs && (cs.classUnits ?? cs.units) === x.cs, `등록 차수 ${key}`); checked++;
+  }
+  assert.ok(checked > 0, '등록 차수 대조 줄이 있다');
+  // 청구서 없는 줄(—) = 그 달 살아 있는 청구서가 없는 학생의 줄(2.0 attendanceNoInvoiceRows · none/void)
+  const inv = await db`select student_id::text sid, bool_or(status <> 'void') live, count(*)::int n from public.invoices where tenant_id=${t} and period=${MONEY_MONTH}
+    and student_id = any(${[...new Set(rows.map(r => r.studentId))]}::uuid[]) group by 1`;
+  const state = new Map(inv.map(x => [x.sid, x.live ? 'ok' : 'void']));
+  const want = rows.filter(r => (state.get(r.studentId) ?? 'none') !== 'ok').map(r => [r.key, state.get(r.studentId) ?? 'none']);
+  assert.deepEqual(new Map(m.noInvoiceRows), new Map(want), '청구서 없는 줄');
+  // 원장 합계(티어 정산) — 원장 + 강사 전체 보기 + 급여 켜짐에서만 실린다
+  assert.ok(m.money && m.money.totals && ['ready', 'hold', 'unwired', 'error'].includes(m.money.tierSettlement.status), '원장 합계');
+});
+
+test('복사본: 실급여 = 선생님 × 달 스위치 · 대상 학년 밖 줄은 비율 없음 · 실급여 바탕 ≤ 이 선생님 몫 청구액(2.0 salaryBilledCap · actualSalaryBase · attendanceSalaryRate)', { skip: !db && 'local database not running' }, async () => {
+  const { tenantId: t } = await import('./full-db.mjs');
+  const { id, d } = await findSalaryTeacher();
+  const S = await importV2('features/attendance/salary-rates.ts'), G = await importV2('features/attendance/grid/model.ts');
+  const [sw] = await db`select visible from public.attendance_salary_teacher_view where tenant_id=${t} and teacher_id=${id} and period=${MONEY_MONTH}`;
+  assert.equal(d.money.salaryConfig.visible, sw.visible, '스위치 = 그 선생님 그 달 줄');
+  assert.equal(d.money.salaryConfig.teacherId, id);
+  const rates = d.money.salaryConfig.rates, b = d.money.classBilledAmounts;
+  let priced = 0, capped = 0, outOfScope = 0;
+  for (const g of d.groups) for (const s of g.matrix.students) {
+    const key = G.rowKey(g.classId, s.id);
+    const rate = S.attendanceSalaryRate(rates, { classId: g.classId, className: g.className, isSpecial: g.isSpecial, grade: s.grade });
+    if (S.salaryRowOutOfScope(rates, s.grade, g)) { outOfScope++; assert.ok(rate === null, `대상 학년 밖 = 비율 없음 ${key}`); }
+    const units = R.totals.countMarks(g.matrix.marks[s.id] ?? {}, g.matrix.units[s.id] ?? {}).units;
+    const cap = S.salaryBilledCap(b.billed[key], b.confirmedSessions[key]);
+    const base = S.actualSalaryBase(b.confirmedPrices[key], units, cap);
+    if (!base || rate == null) continue;
+    priced++;
+    if (cap !== undefined) assert.ok(base.base <= cap + 1e-9, `실급여 바탕 ≤ 청구액 ${key}`);
+    if (base.capped) capped++;
+    const pay = S.actualLessonSalary(b.confirmedPrices[key], units, rate, cap);
+    assert.ok(pay !== null && pay >= 0 && (cap === undefined || pay <= cap), `실급여 ≤ 청구액 ${key}`);
+  }
+  assert.ok(priced > 0, '실급여가 서는 줄이 있다');
+  void capped; void outOfScope;
+  // 반별 보기(관리자) = 실급여 비율을 싣지 않는다(2.0: 강사 계정의 반별 보기만 렌즈가 있다)
+  const cls = d.groups.find(g => g.unitSuffix);
+  const c = await loadAs({ class: cls.classId, month: MONEY_MONTH });
+  assert.equal(c.money.salaryConfig, null);
+});
+
+test('복사본: 금액 게이트 — 원장이 아니면 정산 합계를 싣지 않는다 · 급여 칸 이름 없음', { skip: !db && 'local database not running' }, async () => {
+  const { id } = await findSalaryTeacher();
+  const base = await loadAs({ month: MONEY_MONTH });
+  const { tenantId: t } = await import('./full-db.mjs');
+  const roles = new Map((await db`select id::text id, system_role::text role from public.users where tenant_id=${t}`).map(r => [r.id, r.role]));
+  const other = base.editors.find(e => roles.get(e.id) !== 'master');
+  assert.ok(other, '원장이 아닌 출결 직원');
+  const d = await loadAs({ viewer: other.id, teacher: id, mode: 'teacher', month: MONEY_MONTH });
+  assert.equal(d.viewer, other.id);
+  assert.equal(d.money.money, null, '정산 합계 = 원장 전용');
+  assert.doesNotMatch(JSON.stringify(d), /hourly_rate|monthly_base|hourlyRate|monthlyBase|payroll_records/);
+});
+
+test('저장(복사본, 되돌림): 실급여 스위치 · 비율 = 2.0 salary-rates-actions 그대로 — 끄면 비율이 안 실린다 · 감사로그 · 권한 없는 사람은 2.0 거절 · 바깥 요청 0', { skip: !db && 'local database not running' }, async () => {
+  const { tenantId: t } = await import('./full-db.mjs');
+  const { runV2Server } = await import('./v2-server-runner.mjs');
+  const { id, d } = await findSalaryTeacher();
+  const SA = 'features/attendance/server/salary-rates-actions.ts', SR = 'features/attendance/server/salary-rates.ts';
+  const [master] = await db`select id::text id from public.users where tenant_id=${t} and system_role='master' and status='active' order by id limit 1`;
+  const [{ q0 }] = await db`select count(*)::int q0 from net.http_request_queue`;
+  const { results, probes } = await runV2Server({ actorId: master.id, tenantId: t, mode: 'write', rollback: true, steps: [
+    { module: SA, fn: 'saveAttendanceSalaryVisible', args: [{ teacherId: id, month: MONEY_MONTH, visible: false }] },
+    { module: SR, fn: 'getAttendanceSalaryRates', args: [id, MONEY_MONTH] },
+    { module: SA, fn: 'saveAttendanceSalaryVisible', args: [{ teacherId: id, month: MONEY_MONTH, visible: 'yes' }] },
+    { module: SA, fn: 'saveAttendanceSalaryRates', args: [{ teacherId: id, month: MONEY_MONTH, rates: d.money.salaryConfig.rates }] },
+  ], probes: [
+    { text: `select visible from public.attendance_salary_teacher_view where tenant_id = $1 and teacher_id = $2 and period = $3`, params: [t, id, MONEY_MONTH] },
+    { text: `select action, metadata->>'via' via from public.audit_logs where tenant_id = $1 and created_at = now()`, params: [t] },
+    { text: `select count(*)::int n from net.http_request_queue` },
+  ] });
+  assert.deepEqual(results[0].value, { ok: true });
+  assert.equal(results[1].value.visible, false, '끄면 2.0 조회가 visible=false');
+  assert.deepEqual(results[2].value, { ok: false, error: '선생님과 달을 다시 선택한 뒤 눌러 주세요' });
+  assert.equal(results[3].value?.ok, true);
+  assert.equal(probes[0][0].visible, false);
+  assert.ok(probes[1].some(l => l.action === 'payroll_sheet_visible_set') && probes[1].every(l => l.via === '3.0 연습 복사본'));
+  assert.equal(probes[2][0].n, q0, '바깥 요청 0');
+  const [after] = await db`select visible from public.attendance_salary_teacher_view where tenant_id=${t} and teacher_id=${id} and period=${MONEY_MONTH}`;
+  assert.equal(after.visible, true, '되돌린 뒤 그대로');
+  // 급여 설정 권한이 없는 사람(강사) — 2.0 거절 문구, 아무것도 안 바뀐다
+  const [teacher] = await db`select id::text id from public.users where tenant_id=${t} and system_role='teacher' and status='active' order by id limit 1`;
+  const { results: [denied] } = await runV2Server({ actorId: teacher.id, tenantId: t, mode: 'write', rollback: true, steps: [{ module: SA, fn: 'saveAttendanceSalaryVisible', args: [{ teacherId: id, month: MONEY_MONTH, visible: false }] }] });
+  assert.equal(denied.value?.ok, false);
+  // 화면 저장 통로 = 같은 2.0 함수 · 다른 모듈·모양은 받지 않는다
+  const a = screen.actions.saveAttendanceSalaryVisible;
+  assert.throws(() => a.validate({ module: ACTIONS, actor: master.id, args: [{}] }));
+  assert.throws(() => a.validate({ module: SA, actor: 'x', args: [{}] }));
+  assert.equal(a.validate({ module: SA, actor: master.id, args: [{ teacherId: id, month: MONEY_MONTH, visible: true }] }).actor, master.id);
+});
+
+test.after(async () => { await db?.end(); await (await import('./v2-server-runner.mjs')).stopV2Server(); });
 
 test('3.0 껍데기: 주소 actor가 명단보다 먼저 와도 명단이 오면 기억(호스트가 먼저 보는 값)에 적힌다', async () => {
   const vm = await import('node:vm');

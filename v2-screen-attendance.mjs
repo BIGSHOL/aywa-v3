@@ -78,6 +78,7 @@ import * as LiveSave from './v2-attendance-live-save.mjs';
 import * as Reserve from './v2-attendance-reserve.mjs';
 import * as Range from './v2-attendance-range.mjs';
 import * as Intake from './v2-attendance-intake.mjs';
+import { readAttendanceMoney, NO_MONEY, attendanceMoneyActions } from './v2-attendance-money.mjs';
 import { loadMakeupRules, completeMakeupReservations, nativeMakeupsOn, completionKey } from './v2-attendance-makeup.mjs';
 import { loadLiveRules, quickProps, liveProps, pollFingerprint, attendanceWritersOf, readTaughtClassSet } from './v2-attendance-live.mjs';
 
@@ -678,6 +679,9 @@ export const screen = {
     // 보이지 않는 '보강' 반(0241a) — 강사 전체 보기에만 한 묶음(2.0 `loadMakeupPool`).
     const [pool] = mode === 'teacher' && effectiveTeacher ? await sql`select id from public.classes where tenant_id=${t} and teacher_id=${effectiveTeacher} and is_makeup_pool limit 1` : [];
     const poolMatrix = pool ? await buildMatrix(ctx, { month, classId: pool.id, periodMode: 'month' }) : null;
+    // 표에서 뺀 반(그 달 뒤에 담임이 된 반)의 명단 — 원장 전용 티어 정산이 종전과 같은 학생 집합을 보게 하는 재료일 뿐(그리지 않는다 · 2.0 laterMatrices).
+    const laterClasses = taughtClasses.filter(c => !teacherClasses.includes(c)), laterMatrices = [];
+    if (mode === 'teacher' && viewer?.role === 'master' && payrollOn) for (const c of laterClasses) laterMatrices.push(await buildMatrix(ctx, { month, classId: c.id, periodMode: 'month', scopeTeacherId: effectiveTeacher, scopeSince: sheetScope.sinceByClass.get(c.id) ?? null }));
     const workerClassIds = mode === 'teacher' ? teacherClasses.map(c => c.id) : effectiveClassId ? [effectiveClassId] : [];
     const [workers, substituteCells] = await Promise.all([
       readWorkers(sql, t, R, month, workerClassIds),
@@ -699,6 +703,9 @@ export const screen = {
     const totalStudents = mode === 'teacher' ? new Set(teacherMatrices.flatMap(m => m.students.map(s => s.id))).size : matrix.stats.totalStudents;
     const sheetEmpty = totalStudents === 0 && !makeupGroup, hubShown = allGroups.length === 0 && mode !== 'teacher';
     const showGroups = mode === 'teacher' && R.sort.isGroupedSort(sortKey);
+    // 금액 열 — 2.0 서버 함수를 그대로(v2-attendance-money.mjs · 공용 러너 · 보는 사람의 신분). 표가 서지 않으면 부르지 않는다(그릴 자리가 없다).
+    const moneyPart = allGroups.length > 0 && !sheetEmpty ? await readAttendanceMoney({ t, importV2, R, viewer, month, mode, effectiveTeacher, effectiveClassId, classesForSubject, teacherClasses, taughtClasses,
+      teacherMatrices, laterClasses, laterMatrices, matrix, sinceByClass: sheetScope.sinceByClass, pool, poolMatrix, payrollOn, operations }) : NO_MONEY;
     const subjectOfClass = new Map((mode === 'teacher' ? teacherClasses : selectedClass ? [selectedClass] : []).map(c => [c.id, c.subject]));
     const roleAnchorTeacher = effectiveTeacher ?? selectedClass?.teacherId ?? null;
     const roleSessions = sortKey === 'role' && roleAnchorTeacher && allGroups.length > 0 ? await readSubjectSessions(sql, t, R, [...new Set(allGroups.flatMap(g => g.matrix.students.map(s => s.id)))], today) : null;
@@ -712,6 +719,7 @@ export const screen = {
     const tools = { printClass, showUnitsMaster: hubShown && !!viewer && ['master', 'admin', 'manager'].includes(viewer.role), canIntakeAbsence: !!viewer, canOpenPayslip };
     // 안내문 — 2.0 `notices`(관리자 보기라 7일 잠금·실급여 축 안내는 없다). 굵은 낱말은 'b'.
     const notices = allGroups.length === 0 || sheetEmpty ? [] : [
+      moneyPart.salaryAxisNotice ? { key: 'salaryAxis', parts: [['', T('att.notice.salaryAxis')]] } : null,
       mode === 'teacher' ? { key: 'scope', parts: [['', T('att.notice.scope.a')], ['b', T('att.notice.scope.b')], ['', T('att.notice.scope.c')], ['b', T('att.notice.scope.d')], ['', T('att.notice.scope.e')]] } : null,
       statsCount.recorded === 0 && !allGroups.some(g => g.matrix.derivedActive) ? { key: 'empty', parts: [['', T(mode === 'teacher' ? 'att.notice.empty.teacherPre' : 'att.notice.empty.classPre')], ['b', T(mode === 'teacher' ? 'att.notice.empty.teacherBold' : 'att.notice.empty.classBold')], ['', T('att.notice.empty.c')]] } : null,
       allGroups.some(g => g.matrix.derivedActive) ? { key: 'derived', parts: [['', T('att.notice.derived.a')], ['b', R.attLabel.attendanceLabelOf('present', 'ko')], ['', T('att.notice.derived.b')], ['b', R.attLabel.attendanceLabelOf('absent', 'ko')], ['', T('att.notice.derived.c')], ['b', T('att.notice.derived.d')], ['', T('att.notice.derived.e')]] } : null,
@@ -735,7 +743,7 @@ export const screen = {
       classOptions, effectiveClassId, mode, matrixWindow: matrix.window, groups: allGroups, orderedRows, visibleDays, showGroups,
       statsCount, totalStudents, sheetEmpty, hubShown, notices, selectedClassLabel, searchSeed,
       attendanceScope: mode === 'teacher' && effectiveTeacher ? { teacherId: effectiveTeacher, classIds: teacherClasses.map(c => c.id) } : null,
-      lockBefore: null, substituteCells, tools,
+      lockBefore: null, substituteCells, tools, money: moneyPart,
       hub: hubShown ? { teachers: hubTeachers.filter(x => !viewPrefs.hideRetired || !x.retired), holiday: hubHoliday, todayLabel: hubTodayLabel(today),
         seats: showSeats ? R.seat.SEAT_KEYS.map(k => ({ key: k, name: R.seat.SEAT_NAME[k], room: R.seat.SEAT_ROOM[k], href: `/attendance/seat/${k}`, monthHref: `/attendance/seat/${k}/month?month=${month}`, open: R.seat.USABLE_SEAT_KEYS.includes(k) })) : [] } : null,
     };
@@ -1336,7 +1344,16 @@ const intakeAction = (validate, fn) => ({
 const prefs = (check, update) => ({ validate: prefsBody(check), run: async ({ sql, body, tenantId, importV2 }) => { const R = await loadRules(importV2); return mergeAttendancePrefs(sql, tenantId, R, body.actor, prev => update(R, prev, body.value)); } });
 
 // 2.0 "use server" 함수와 1:1 — 이름 = 2.0 export 이름(호스트가 그 이름으로 부른다), 인자 = 2.0 인자 그대로.
+/** 저장하는 사람 = 출석부 '출결 전체 권한' 재직 직원(운영자 계정 제외) — 아니면 2.0 '로그인 없음' 자리. */
+const attendanceActorOk = async (sql, t, importV2, actor) => {
+  if (!actor) return false;
+  const R = await loadRules(importV2);
+  return (await actorsOf(sql, t, R, await readSettings(sql, t, R))).some(e => e.id === actor);
+};
+
 screen.actions = {
+  // 실급여 비율 · '합계 및 실급여 보여주기'(2.0 salary-rates-actions.ts 그대로 · 공용 러너 write).
+  ...attendanceMoneyActions(attendanceActorOk),
   setAttendanceCell: { validate: cellBody, run: async ({ sql, body, tenantId, importV2 }) => setCell(sql, tenantId, body, await loadRules(importV2), await loadLiveRules(importV2), await loadMakeupRules(importV2)) },
   setAttendanceBulk: { validate: bulkBody, run: async ({ sql, body, tenantId, importV2 }) => setBulk(sql, tenantId, body, await loadRules(importV2), await loadLiveRules(importV2), await loadMakeupRules(importV2)) },
   // 범위 채우기·지우기(2.0 setAttendanceRange — v2-attendance-range.mjs). 저장하는 사람 = 출결을 쓸 수 있는 직원(아니면 2.0 실패 모양).

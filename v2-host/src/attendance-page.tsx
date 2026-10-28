@@ -2,8 +2,8 @@
 // page.tsx는 서버 부품(쿠키·세션·DB)이라 그대로 불러올 수 없어서, 서버가 하던 조회·판정은 /api/v2/attendance(Docker 복사본)가
 // page.tsx와 같은 이름의 값으로 내려 주고(v2-screen-attendance.mjs), 여기서는 page.tsx의 JSX를 그 값으로 그대로 그린다.
 // 보는 사람 = 3.0 띠에서 고른 '출결 전체 권한' 직원(2.0의 로그인한 사람 · 관리자 보기 — 강사 렌즈 없음).
-// 이 판에 아직 없는 것(2.0은 서다): 금액 열(청구액·등록 차수·차이확인·단가·실수업액·실급여)과 원장 전용 합계 — 회차 확정·금액 이월·
-// 강사 몫 가중치·티어 정산 조회를 옮기기 전이라 열을 세우지 않는다(값 없는 열을 '미확정'으로 세우면 거짓이 된다).
+// 금액 열(청구액·등록 차수·차이확인·단가·실수업액·실급여)과 원장 전용 합계 = 서버가 2.0 함수를 그대로 돌려 낸 값(`money` · v2-attendance-money.mjs) —
+// 급여성 값은 2.0 게이트를 지난 것만 실려 온다(못 지나면 2.0 함수가 null·false). '실급여 ≤ 청구액'은 2.0 표 부품이 그린다.
 import { Users } from '@/components/icons/aywa-icon-compat';
 import { PeriodNav } from '@/components/period-nav';
 import { TOOLBAR_CHIP, TOOLBAR_CHIP_OFF, TOOLBAR_SELECT } from '@/components/toolbar-controls';
@@ -42,6 +42,12 @@ import { ClassMonthPrintButton } from '@/app/(shell)/attendance/_components/clas
 import { AbsenceIntakeButton } from '@/app/(shell)/attendance/_components/absence-intake-button';
 import { UnitsMasterButton } from '@/app/(shell)/attendance/_components/units-master-button';
 import { SubstituteCellsNote } from '@/app/(shell)/attendance/_components/substitute-cells-note';
+import { SalaryRatesButton } from '@/app/(shell)/attendance/_components/salary-rates-button';
+import { SalaryVisibleButton } from '@/app/(shell)/attendance/_components/salary-visible-button';
+import type { AttendanceClassBilling } from '@/features/attendance/server/class-billing';
+import type { AttendanceInvoiceGap } from '@/features/attendance/class-billing';
+import type { getAttendanceSalaryRates } from '@/features/attendance/server/salary-rates';
+import type { TeacherMoney } from '@/features/attendance/server/teacher-money';
 
 type Option = { value: string; label: string; hint?: string };
 /** /api/v2/attendance가 내려 주는 값 — 이름은 page.tsx의 지역 변수 그대로. */
@@ -61,6 +67,12 @@ export type AttendanceData = {
   tools: { printClass: { id: string; className: string } | null; showUnitsMaster: boolean; canIntakeAbsence: boolean; canOpenPayslip: boolean };
   hub: { teachers: HubTeacher[]; holiday: { name: string; activity: HolidayActivityCounts | null } | null; todayLabel: string;
     seats: { key: string; name: string; room: string; href: string; monthHref: string; open: boolean }[] } | null;
+  /** 2.0 page.tsx 금액 조각 — classBilledAmounts(표가 읽는 칸) · noInvoiceRows · showActualAmount · salaryConfig · money · moneyNote · settlementNote. */
+  money: {
+    classBilledAmounts: Pick<AttendanceClassBilling, 'billed' | 'carryMarks' | 'confirmedSessions' | 'confirmedPrices' | 'priceConfirmed'>;
+    noInvoiceRows: [string, AttendanceInvoiceGap][]; showActualAmount: boolean; salaryConfig: Awaited<ReturnType<typeof getAttendanceSalaryRates>>;
+    money: TeacherMoney | null; moneyNote: string | null; settlementNote: string | null; salaryClasses: { id: string; name: string }[];
+  };
 };
 
 /** page.tsx `shiftMonth` — 툴바의 이전·다음 달. */
@@ -85,6 +97,8 @@ export function AttendancePage({ data }: { data: AttendanceData }) {
   const visibleDays = d.visibleDays, sortKey = viewPrefs.sort, showGroups = d.showGroups, orderedRows = d.orderedRows;
   const hubShown = d.hubShown, sheetEmpty = d.sheetEmpty, totalStudents = d.totalStudents, statsCount = d.statsCount;
   const gridShown = allGroups.length > 0 && !sheetEmpty;
+  const noInvoiceRows = new Map(d.money.noInvoiceRows);
+  const { classBilledAmounts, showActualAmount, salaryConfig, money, moneyNote, settlementNote } = d.money, sessionBillingOn = d.sessionBillingOn;
   const { printClass, showUnitsMaster, canIntakeAbsence, canOpenPayslip } = d.tools;
   const sheetTools =
     showUnitsMaster || canIntakeAbsence || (canOpenPayslip && effectiveTeacher) || printClass ? (
@@ -191,9 +205,21 @@ export function AttendancePage({ data }: { data: AttendanceData }) {
         </div>
       ) : (
         <div className="isolate flex min-h-0 flex-1 flex-col">
-          <MatrixTable groups={allGroups} days={visibleDays} ordered={orderedRows} showGroups={showGroups} showActualAmount={false}
+          <MatrixTable groups={allGroups} days={visibleDays} ordered={orderedRows} showGroups={showGroups}
+            classBilledAmounts={classBilledAmounts.billed} carryMarksByRow={sessionBillingOn ? classBilledAmounts.carryMarks : {}} showActualAmount={showActualAmount}
+            salaryRates={salaryConfig?.visible ? salaryConfig.rates : undefined} salaryView={!!salaryConfig?.manage}
             optionsLeading={<>{scopeChip}<AttendanceLegend lang={lang} showToday={visibleDays.some((x) => x.isToday)} showMathUnits={allGroups.some((g) => g.unitSuffix === 'T')} showEnglishUnits={allGroups.some((g) => g.unitSuffix === 'U')} eieOn={d.eieOn} /></>}
-            optionsTools={sheetTools} money={null} moneyNote={null} settlementNote={null} lang={lang} lockBefore={d.lockBefore}
+            optionsTools={sheetTools}
+            optionsExtra={salaryConfig?.manage ? <>
+              {salaryConfig.canEdit ? <SalaryRatesButton teacherId={salaryConfig.teacherId} month={month}
+                teacherName={d.teacherOptions.find((t) => t.value === salaryConfig.teacherId)?.label ?? ''}
+                rates={salaryConfig.rates} mixed={salaryConfig.mixed} classes={d.money.salaryClasses} /> : null}
+              {showActualAmount && salaryConfig.needsLevels ? <span className="text-danger text-xs break-keep">{sheetT(lang, 'att.actualSalary.needsLevels')}</span>
+                : showActualAmount ? <SalaryVisibleButton key={`${salaryConfig.teacherId}:${month}`} teacherId={salaryConfig.teacherId} month={month} checked={salaryConfig.visible} canEdit={salaryConfig.canEdit} /> : null}
+            </> : undefined}
+            termSessionsByRow={sessionBillingOn ? classBilledAmounts.confirmedSessions : {}} confirmedPricesByRow={sessionBillingOn ? classBilledAmounts.confirmedPrices : {}}
+            priceConfirmedRows={sessionBillingOn ? classBilledAmounts.priceConfirmed : []} noInvoiceRows={noInvoiceRows}
+            money={money} moneyNote={moneyNote} settlementNote={settlementNote} lang={lang} lockBefore={d.lockBefore}
             holidays={buildHolidayMap(d.host.operations.holidays)} />
           <SubstituteCellsNote cells={d.substituteCells} lang={lang} />
         </div>
