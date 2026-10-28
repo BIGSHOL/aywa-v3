@@ -84,7 +84,7 @@ test('매개변수는 정해진 값만 받는다(나머지는 공통 틀이 400)
   assert.ok(ok('mode', 'teacher') && !ok('mode', 'Teacher') && ok('q', '김 수') && !ok('q', 'a\nb') && !ok('q', 'x'.repeat(81)));
   assert.ok(ok('subject', 'subject_1') && !ok('subject', 'Math'));
   assert.equal(screen.id, 'attendance'); assert.equal(screen.order, 4); assert.equal(screen.label, '출석부');
-  assert.deepEqual(Object.keys(screen.actions).sort(), ['clearSeatPeriodChoices', 'commitSeatJjEdits', 'fillSeatPrevAbsent', 'fillSeatSlot', 'moveSeatStudentPeriod', 'previewAbsenceIntake',
+  assert.deepEqual(Object.keys(screen.actions).sort(), ['clearSeatPeriodChoices', 'commitSeatJjEdits', 'fillSeatPrevAbsent', 'fillSeatSlot', 'generateRecapSummary', 'moveSeatStudentPeriod', 'previewAbsenceIntake',
     'pullSeatMemorizedWords', 'recordAbsenceIntake', 'resetSeatPlacements', 'saveAttendanceCollapsed', 'saveAttendanceHideRetired', 'saveAttendancePeriodMode', 'saveAttendanceSort',
     'saveSeatMonthlyCollapsed', 'searchAttendanceHubStudents', 'searchIntakeStudents', 'setAttendanceBulk', 'setAttendanceCell', 'setSeatCell', 'setSeatJjField']);
 });
@@ -107,7 +107,8 @@ test('아직 옮기지 않은 조회 셋은 그 함수의 2.0 실패 모양으�
 });
 
 test('화면 파일에 운영 2.0 주소·끼워 넣기가 없고, 손그림 CSS는 지웠다', async () => {
-  for (const f of ['v2-screen-attendance.js', 'v2-screen-attendance.mjs', 'v2-host/src/attendance.tsx', 'v2-host/src/attendance-page.tsx']) {
+  for (const f of ['v2-screen-attendance.js', 'v2-screen-attendance.mjs', 'v2-host/src/attendance.tsx', 'v2-host/src/attendance-page.tsx', 'v2-host/src/attendance-quick-page.tsx',
+    'v2-host/src/attendance-live-page.tsx', 'v2-attendance-live.mjs', 'v2-attendance-seat-save.mjs']) {
     const text = await here(f);
     assert.doesNotMatch(text, /aywa\.co\.kr|vercel\.app|<iframe|https?:\/\/(?!127\.0\.0\.1)/i, f);
   }
@@ -117,7 +118,12 @@ test('화면 파일에 운영 2.0 주소·끼워 넣기가 없고, 손그림 CSS
   assert.deepEqual([...js.matchAll(/fetch\(([^,)]+)/g)].map(m => m[1]), ['HOST'], 'the shell only checks that the host page exists');
   // 호스트 진입점은 같은 출처 /api/v2/attendance만 읽는다.
   const entry = await here('v2-host/src/attendance.tsx');
-  assert.deepEqual([...entry.matchAll(/fetch\(`([^`?$]+)/g)].map(m => m[1]), ['/api/v2/attendance']);
+  const reads = [...entry.matchAll(/fetch\(`([^`?$]+)/g)].map(m => m[1]);
+  assert.ok(reads.length >= 1 && reads.every(u => u === '/api/v2/attendance'), JSON.stringify(reads));
+  // 화면 폴링(2.0 poll-actions 두 함수)은 그 읽기 경로(GET ?poll=)로만 — 쓰기 경로(POST)를 타지 않는다.
+  assert.match(entry, /registerHostHandler\('features\/attendance\/live\/server\/poll-actions\.ts', 'getLiveRecordedCount'/);
+  assert.match(entry, /registerHostHandler\('features\/attendance\/recap\/server\/poll-actions\.ts', 'getRecapStatus'/);
+  assert.doesNotMatch(entry, /method:\s*['"]POST/);
 });
 
 test('3.0 껍데기: 호스트 iframe 하나를 자리 위에 겹치고, 이동·저장하는 사람을 주고받는다', async () => {
@@ -391,7 +397,7 @@ test('자리: 옮긴 본문이 2.0 원문과 같다(영역 설정 기본값 · �
 test('자리: 하위 주소·날짜·교시 매개변수는 정해진 값만 받는다', () => {
   const ok = (k, v) => screen.params[k].test(v);
   for (const v of ['/attendance', '/attendance/seat', '/attendance/seat/lab', '/attendance/seat/jj/month']) assert.ok(ok('v2path', v), v);
-  for (const v of ['/attendance/seat/lab/print', '/attendance/live', '/attendance/seat/lab/month/x', '/timetable', '/attendance/seat/LAB']) assert.ok(!ok('v2path', v), v);
+  for (const v of ['/attendance/seat/lab/print', '/attendance/livex', '/attendance/live/x', '/attendance/seat/lab/month/x', '/timetable', '/attendance/seat/LAB']) assert.ok(!ok('v2path', v), v);
   assert.ok(ok('date', '2026-10-27') && !ok('date', '2026-10-27x') && ok('start', '14:20') && ok('start', 'all') && !ok('start', '1420'));
 });
 
@@ -539,7 +545,7 @@ test('저장(복사본, 되돌림): 자리 칸 출결·메모·지우기·남은
     assert.match((await act('fillSeatSlot', SEAT_ACTIONS_MOD, { seat: 'lab', date: TODAY, slotStart: SLOT, status: 'absent' })).error, /보강 예약이 걸린 칸/);
     assert.equal((await rows()).length, 0);
     // 바깥 연동(인재원 단어수)은 부르지 않는다 · 월간 접기 = 그 사람 ui_prefs.seatMonthly.
-    assert.match((await run(sql, 'pullSeatMemorizedWords', { module: 'features/attendance/seat/server/memorized-actions.ts', actor: writer.id, args: [{ seat: 'jj', date: TODAY }] })).error, /바깥/);
+    assert.match((await run(sql, 'pullSeatMemorizedWords', { module: 'features/attendance/seat/server/memorized-actions.ts', actor: writer.id, args: [{ seat: 'jj', date: TODAY }] })).error, /인재원 단어수 가져오기는 연습 화면에서 부르지 않습니다/);
     assert.deepEqual(await run(sql, 'saveSeatMonthlyCollapsed', { module: 'features/attendance/seat/server/monthly-prefs.ts', actor: writer.id, args: [[CLASS]] }), { ok: true });
     const [u] = await sql`select ui_prefs from public.users where id=${writer.id}`;
     same(u.ui_prefs.seatMonthly, S.monthlyPrefs.parseSeatMonthlyPrefs({ collapsed: [CLASS] }));
@@ -799,6 +805,78 @@ test('저장(복사본, 되돌림): 출결 모드 — 교시 칸 쓰기·덮어�
     assert.equal((await sql`select count(*)::int n from net.http_request_queue`)[0].n, before[0].net);
   });
   assert.equal((await db`select count(*)::int n from public.audit_logs`)[0].n, before[0].audits, 'rolled back — the copy is unchanged');
+});
+
+// ── 오늘 출결(/attendance/live) = 2.0 live/page.tsx — 좌석표 · 확인 필요(데스크 큐) · 어제 출결(요약) ──
+const liveLoad = async (sql, params) => screen.load({ sql, params: { v2path: '/attendance/live', ...params }, tenantId: (await import('./full-db.mjs')).tenantId, importV2 });
+test('오늘 출결: 호스트 조립이 2.0 live/page.tsx와 같은 부품을 그리고 TabLink는 원문 그대로다', async () => {
+  const page = await src('app/(shell)/attendance/live/page.tsx'), host = await here('v2-host/src/attendance-live-page.tsx');
+  for (const c of ['PageHeader', 'LiveDatePicker', 'AbsenceIntakeButton', 'EmptyState', 'HolidayActivityPanel', 'TabLink', 'RecapView', 'DeskView', 'SeatingChart', 'LiveRefresher']) {
+    assert.match(page, new RegExp(`<${c}\\b`), `page.tsx draws ${c}`); assert.match(host, new RegExp(`<${c}\\b`), `host draws ${c}`);
+  }
+  assert.equal(strip(extract(host, 'TabLink')), strip(extract(page, 'TabLink')), 'TabLink body');
+  for (const label of ['좌석표', '확인 필요', '어제 출결', '요약을 불러오지 못했습니다', '— 휴원일']) assert.ok(page.includes(label) && host.includes(label), label);
+  const p = screen.params;
+  assert.ok(p.v2path.test('/attendance/live') && p.tab.test('desk') && p.tab.test('recap') && !p.tab.test('x') && p.poll.test('live') && p.poll.test('recap') && !p.poll.test('y') && p.from.test('2026-10-24'));
+  // 3.0 껍데기가 tab·from을 iframe으로 넘긴다(없으면 확인 필요·어제 출결 탭이 좌석표로 열린다).
+  assert.match(await here('v2-screen-attendance.js'), /const KEEP = \[[^\]]*'tab', 'from'\]/);
+});
+
+test('복사본: 오늘 출결 — 데스크(전체 권한)는 세 탭 · 테스트 학생·연락처 없는 좌석표 · 큐는 신호 규칙대로 · 강사는 내 수업 좌석표만', { skip: !db && 'local database not running' }, async () => {
+  const { tenantId: t } = await import('./full-db.mjs');
+  const TODAY = await A.copyDay();
+  const L = await (await import('./v2-attendance-live.mjs')).loadLiveRules(importV2);
+  await db.begin('isolation level repeatable read read only', async sql => {
+    const d = await liveLoad(sql, {});
+    assert.deepEqual([d.page, d.date, d.today, d.tab, d.isDesk, d.scopedToSelf, d.holiday], ['live', TODAY, TODAY, 'seating', true, false, null]);
+    const tests = new Set((await sql`select id::text id from public.students where tenant_id=${t} and is_test`).map(r => r.id));
+    const cells = d.board.teachers.flatMap(x => x.slots.flatMap(s => s.students));
+    assert.ok(cells.length > 100 && !cells.some(s => tests.has(s.studentId)), 'desk board excludes test students');
+    assert.ok(d.board.teachers.every(x => x.teacherPhone === null) && cells.every(s => s.parentPhone === null && s.studentPhone === null), 'contacts stripped (page.tsx stripContacts)');
+    assert.equal(d.board.totals.expected, cells.length);
+    // 큐 — 시작 전·자리 교시 제외, 반 레인은 기록 없는 교시만, 학생 레인은 2.0 shouldQueueWithRequest를 지난 신호만(같은 보드에서 다시 센다).
+    const slots = d.board.teachers.flatMap(x => x.slots).filter(s => s.phase !== 'before' && !R.tlabel.isSpecialSlotLabel(s.slotTeacherLabel));
+    for (const c of d.queue.lanes.classes) assert.ok(slots.some(s => s.classId === c.classId && !s.hasAnyRecord), `${c.className} has no record`);
+    assert.equal(d.queue.counts.classes + d.queue.counts.students + d.queue.counts.done >= d.queue.lanes.classes.length, true);
+    const fu = (await sql`select count(*)::int n from public.attendance_followups where tenant_id=${t} and session_date=${TODAY}`)[0].n;
+    assert.ok(d.queue.lanes.students.filter(s => s.followup).length <= fu, 'followups come from attendance_followups');
+    // 강사(담당 반만)는 데스크가 아니다 — 좌석표만, 내 수업만, 테스트 학생도 그대로(2.0: 데스크 표면에서만 뺀다 — 여긴 selfOnly가 아니라 빠진다).
+    const teacher = d.editors.find(e => e.role === '강사');
+    const v = await liveLoad(sql, { viewer: teacher.id, tab: 'desk' });
+    assert.deepEqual([v.isDesk, v.tab, v.queue, v.carryOver, v.scopedToSelf], [false, 'seating', null, null, true]);
+    // 확인 필요 — 어제 남은 결석(조치 끝난·공결만 있는 학생 제외)이 독립 SQL과 같다.
+    const desk = await liveLoad(sql, { tab: 'desk' });
+    const prev = new Date(Date.parse(`${TODAY}T00:00:00Z`) - 86400000).toISOString().slice(0, 10);
+    const [x] = await sql`with eff as (select distinct on (student_id, class_id, coalesce(slot_start::text, '')) student_id, class_id, status::text status from public.attendance_records
+        where tenant_id=${t} and session_date=${prev} order by student_id, class_id, coalesce(slot_start::text, ''), recorded_at desc, id desc),
+      st as (select student_id, bool_or(status='absent') a, bool_and(status in ('absent','excused')) only_out from eff group by 1)
+      select count(*)::int n from st where a and only_out and student_id not in (select student_id from public.attendance_followups where tenant_id=${t} and session_date=${prev} and state in ('resolved','dismissed'))`;
+    assert.deepEqual(desk.carryOver, x.n > 0 ? { date: prev, count: x.n } : null);
+    assert.equal(desk.tab, 'desk');
+    // 어제 출결 — 기간(from~date)의 날마다 같은 보드 · 합계 = 그 날들 칸 수.
+    const span = L.recapRange.recapDatesFor(TODAY);
+    assert.equal(d.recapHref, `/attendance/live?tab=recap&from=${span[0]}&date=${span[span.length - 1]}`);
+    const r = await liveLoad(sql, { tab: 'recap', from: span[0], date: span[span.length - 1] });
+    assert.equal(r.recap.days.length, span.length);
+    let expected = 0;
+    for (const day of span) expected += (await liveLoad(sql, { date: day })).board?.totals.expected ?? 0;
+    assert.equal(r.recap.totals.cells, expected, 'recap cells = the boards of those days');
+    // 폴링 지문(2.0 getLiveRecordedCount) — 그날 기록 수 | 최근 입력 시각 | 최근 요청 시각.
+    const poll = await liveLoad(sql, { poll: 'live', date: TODAY });
+    const [{ n }] = await sql`select count(*)::int n from public.attendance_records where tenant_id=${t} and session_date=${TODAY}`;
+    assert.equal(poll.page, 'poll'); assert.equal(poll.fingerprint.split('|')[0], String(n));
+    assert.doesNotMatch(JSON.stringify([d, desk, r]), /hourly_rate|monthly_base/);
+  });
+});
+
+test('복사본(되돌림): 오늘 출결 — 휴원일이면 좌석표·큐 없이 그날 입력(지점 전체)을 읽기 전용으로', { skip: !db && 'local database not running' }, async () => {
+  const TODAY = await A.copyDay();
+  await inRollback(async ({ sql, t }) => {
+    await sql`update public.tenant_settings set data = coalesce(data, '{}'::jsonb) || jsonb_build_object('operations', coalesce(data->'operations', '{}'::jsonb)
+      || jsonb_build_object('holidays', coalesce(data->'operations'->'holidays', '[]'::jsonb) || ${sql.json([{ date: TODAY, name: '시험 휴원일' }])})) where tenant_id=${t}`;
+    const d = await liveLoad(sql, {});
+    assert.deepEqual([d.holiday, d.board, d.queue, d.holidayActivity.officeScope], ['시험 휴원일', null, null, true]);
+  });
 });
 
 test.after(async () => { await db?.end(); });

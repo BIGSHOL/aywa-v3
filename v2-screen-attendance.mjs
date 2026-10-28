@@ -37,6 +37,10 @@
 //    2.0과 다른 점: 화면 언어는 늘 한국어(3.0은 관리자 셸로 연다 — 월별·자리와 같다) · '출결 모드 종료' 링크는 강사 계정이면 담임 반
 //    과목으로만 고른다(2.0 teacherViewHome은 교시 담당·보조 반·ECS 권한까지 본다). 저장 = setAttendanceCell(교시 지정 · source 'live') ·
 //    setAttendanceBulk(아래 actions). 알림 벨(반 출결 완료·결석 확인·미출결 → 출석)은 칸 저장처럼 만들지 않는다.
+//  · `/attendance/live`(오늘 출결 — 2.0 live/page.tsx: 좌석표 · 확인 필요 · 어제 출결) = v2-attendance-live.mjs(getLiveBoard · getDeskQueue ·
+//    getCarryOverAbsences · getRangeRecap(반복 결석 = 2.0 RPC dashboard_absence_risk를 보는 사람 신분으로) · getSavedRecapBrief · loadLiveViewPrefs).
+//    화면 폴링(2.0 getLiveRecordedCount · getRecapStatus)은 읽기라 호스트가 GET ?poll=live|recap으로 받는다(보기 중 쓰기 0).
+//    2.0과 다른 점: '10분 안 본 화면이면 필터 초기화'(쿠키)는 3.0에 없다 · 'AI로 정리'는 AI를 부르지 않는다(저장된 정리는 보인다).
 // "오늘"은 복사본 기준일(백업 시각의 KST 날짜) — 3.0 다른 화면과 같은 날이다. 자리 화면의 기본 교시는 복사본 기준 시각으로 고른다.
 //
 // ── 호스트에 붙일 때(v2-host 빌드가 출석부 진입점에서 닿는 것 — 2.0 Next에만 있는 경계) ──
@@ -60,7 +64,7 @@ import { scrub } from './domain-snapshot-core.mjs';
 import { V2Error } from './v2-screens.mjs';
 import { loadSeatRules, seatDayProps, seatMonthProps, copyClock } from './v2-attendance-seat.mjs';
 import * as SeatSave from './v2-attendance-seat-save.mjs';
-import { loadLiveRules, quickProps, attendanceWritersOf, readTaughtClassSet } from './v2-attendance-live.mjs';
+import { loadLiveRules, quickProps, liveProps, pollFingerprint, attendanceWritersOf, readTaughtClassSet } from './v2-attendance-live.mjs';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const MODULES = {
@@ -598,7 +602,9 @@ export const screen = {
   params: {
     month: /^\d{4}-(0[1-9]|1[0-2])$/, subject: /^[a-z][a-z0-9_]{0,30}$/, teacher: /^(?:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|seat:[a-z]{2,8})$/,
     class: UUID, mode: /^[a-z]{1,12}$/, q: /^[^\u0000-\u001f]{1,80}$/u, viewer: UUID,
-    v2path: /^\/attendance(?:\/seat(?:\/[a-z]{1,8}(?:\/month)?)?|\/quick)?$/, date: /^\d{4}-\d{2}-\d{2}$/, start: /^(?:\d{2}:\d{2}|all)$/,
+    v2path: /^\/attendance(?:\/seat(?:\/[a-z]{1,8}(?:\/month)?)?|\/quick|\/live)?$/, date: /^\d{4}-\d{2}-\d{2}$/, start: /^(?:\d{2}:\d{2}|all)$/,
+    // `/attendance/live` — 탭(좌석표·확인 필요·어제 출결) · 요약 기간 시작 · 화면 폴링(2.0 getLiveRecordedCount·getRecapStatus 자리 — 읽기라 GET).
+    tab: /^(?:seating|desk|recap)$/, from: /^\d{4}-\d{2}-\d{2}$/, poll: /^(?:live|recap)$/,
   },
   /**
    * 2.0 page.tsx(서버 부품)가 JSX에 넘기는 값을 같은 이름·같은 모양으로 — 그리기는 호스트의 2.0 부품(attendance-page.tsx)이 한다.
@@ -606,6 +612,7 @@ export const screen = {
    */
   async load({ sql, params, tenantId: t, importV2 }) {
     if (params.v2path === '/attendance/quick') return quickLoad({ sql, params, t, importV2 });
+    if (params.v2path === '/attendance/live') return liveLoad({ sql, params, t, importV2 });
     if (params.v2path && params.v2path !== '/attendance') return seatLoad({ sql, params, t, importV2 });
     const R = await loadRules(importV2), today = await copyDay();
     const [settings, transitions] = await Promise.all([readSettings(sql, t, R), readTransitions(sql, t, R)]);
@@ -749,6 +756,13 @@ async function quickLoad({ sql, params, t, importV2 }) {
   const settings = await readSettings(sql, t, R);
   return { ...(await quickProps({ sql, t, R, S, L, settings, toSplit }, params)), host: hostOf(settings) };
 }
+/** 하위 주소 `/attendance/live` — 2.0 오늘 출결 page.tsx(좌석표 · 확인 필요 · 어제 출결). `poll`이면 화면 폴링의 지문만(2.0 poll-actions 두 함수). */
+async function liveLoad({ sql, params, t, importV2 }) {
+  if (params.poll) return { page: 'poll', fingerprint: await pollFingerprint(sql, t, params.poll, params.date ?? await copyDay(), params.from) };
+  const [R, S, L] = await Promise.all([loadRules(importV2), loadSeatRules(importV2), loadLiveRules(importV2)]);
+  const settings = await readSettings(sql, t, R);
+  return { ...(await liveProps({ sql, t, R, S, L, settings, toSplit }, params)), host: hostOf(settings) };
+}
 const hostOf = settings => ({ operations: { subjects: settings.operations.subjects, gradeLevels: settings.operations.gradeLevels, jobTitles: settings.operations.jobTitles,
   jobTitlesByDepartment: settings.operations.jobTitlesByDepartment, holidays: settings.operations.holidays }, disabledModules: settings.modules.disabled, preset: settings.preset });
 
@@ -786,7 +800,7 @@ function cellBody(raw) {
   if (input.scopeTeacherId !== undefined && input.scopeTeacherId !== null && (typeof input.scopeTeacherId !== 'string' || !UUID.test(input.scopeTeacherId))) throw bad();
   for (const k of ['noteOnly', 'quiet', 'onlyIfEmpty', 'allowMakeup', 'ghostTransfer']) if (input[k] !== undefined && typeof input[k] !== 'boolean') throw bad();
   if (input.onlyIfEmpty || input.allowMakeup || input.ghostTransfer) {
-    throw new V2Error(409, 'not_in_copy', '이 저장 방식(비파괴 첫 체크·보강 추가·다른 선생님 교시 옮기기)은 이 연습 화면에 아직 없습니다 — 바뀐 것은 없습니다.');
+    throw new V2Error(409, 'not_in_copy', '이 저장(보강 추가·다른 선생님 교시로 옮기기 등)은 연습 화면에서 아직 지원하지 않습니다. 바뀐 것은 없습니다.');
   }
   // 교시 지정(0196a "HH:MM[:SS]") · 화면 교시(데스크 10분 판정) · 당일 출결 화면(source 'live' — 데스크 게이트).
   const time = v => { if (v === undefined || v === null) return null; if (typeof v !== 'string' || !/^\d{2}:\d{2}(:\d{2})?$/.test(v)) throw bad(); return v; };
@@ -876,7 +890,7 @@ async function setCell(sql, t, b, R, L) {
   const [[cls], [stu]] = await Promise.all([sql`select id from public.classes where tenant_id=${t} and id=${classId}`, sql`select id from public.students where tenant_id=${t} and id=${studentId}`]);
   if (!cls || !stu) throw new V2Error(404, 'not_found', '반 또는 학생을 찾지 못했습니다.');
   const [resv] = await sql`select 1 from public.makeup_reservations where tenant_id=${t} and class_id=${classId} and student_id=${studentId} and makeup_date=${sessionDate} and status in ('reserved','done') limit 1`;
-  if (resv) throw new V2Error(409, 'reservation_cell', '보강 예약이 걸린 칸입니다 — 2.0은 이 저장에서 예약 이행(결석 칸 메모·시수)까지 함께 바꾸는데, 이 연습 화면은 아직 그 부분이 없어 저장하지 않습니다.');
+  if (resv) throw new V2Error(409, 'reservation_cell', '보강 예약이 걸린 칸은 연습 화면에서 아직 저장하지 않습니다. 바뀐 것은 없습니다.');
   const via = await writeViaOf(sql, t, R, settings, actor.id, classId, sessionDate);
   // 데스크 게이트(2.0 `assertDeskMayWrite`) — 당일 출결 화면에서 그 반을 안 가르치는 사람은 10분 뒤 미출결 칸만 · 지우기 금지.
   const periodStart = b.periodStart ?? b.slotStart ?? null;
@@ -1024,8 +1038,8 @@ async function reservedKeysOn(sql, t, classIds, date) {
   if (classIds.length === 0) return new Set();
   return new Set((await sql`select student_id::text s, class_id::text c from public.makeup_reservations where tenant_id=${t} and status='reserved' and makeup_date=${date} and class_id = any(${classIds}::uuid[])`).map(r => `${r.s}::${r.c}`));
 }
-const RESERVATION_CELL = '보강 예약이 걸린 칸입니다 — 2.0은 이 저장에서 예약 이행(결석 칸 메모·시수)까지 함께 바꾸는데, 이 연습 화면은 아직 그 부분이 없어 저장하지 않습니다.';
-const NATIVE_MAKEUP = '새 보강 체계(보강 참여)로 연 칸은 이 연습 화면에 아직 없습니다 — 바뀐 것은 없습니다.';
+const RESERVATION_CELL = '보강 예약이 걸린 칸은 연습 화면에서 아직 저장하지 않습니다. 바뀐 것은 없습니다.';
+const NATIVE_MAKEUP = '보강 참여로 연 칸은 연습 화면에서 아직 저장하지 않습니다. 바뀐 것은 없습니다.';
 
 /**
  * 2.0 setAttendanceCell의 강사(scoped) 게이트 — 자기 출석부로만 · 7일 창(메모만은 면제) · 담당 반(담임 ∪ 위임 ∪ JJ 담당 ∪ 교시 담당) ·
@@ -1276,6 +1290,8 @@ screen.actions = {
     run: async ctx => { const { c } = await seatCtx(ctx); return SeatSave.saveSeatMonthlyCollapsed(c, ctx.body.value); },
   },
   pullSeatMemorizedWords: notYet(SEAT_MEMORIZED, 1, () => SeatSave.MEMORIZED_PULL_REFUSAL),
+  // 오늘 출결 '어제 출결' AI 정리 — 바깥(AI) 호출이라 부르지 않는다(2.0 실패 모양 { error } · 바뀌는 것 없음). 저장된 정리는 보인다.
+  generateRecapSummary: notYet('features/attendance/recap/server/actions.ts', 2, () => ({ error: 'AI 정리는 연습 화면에서 만들지 않습니다. 바뀐 것은 없습니다.' })),
 };
 
 export const __test = { readProcessing, readClassAxis, readTransitions, actorsOf };

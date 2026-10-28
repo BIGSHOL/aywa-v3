@@ -371,7 +371,7 @@ export async function resetSeatPlacements(c, input) {
 }
 
 /** 인재원 단어수 가져오기 — 바깥 API를 부르는 일이라 이 연습 화면은 부르지 않는다(2.0 실패 모양). */
-export const MEMORIZED_PULL_REFUSAL = { error: '인재원 단어수 가져오기는 바깥(인재원) 연동이라 이 연습 화면에서는 부르지 않습니다 — 바뀐 것은 없습니다.' };
+export const MEMORIZED_PULL_REFUSAL = { error: '인재원 단어수 가져오기는 연습 화면에서 부르지 않습니다. 바뀐 것은 없습니다.' };
 
 /** 2.0 인자 검사 — 자리 액션 입력(필수 칸이 없거나 모양이 다르면 400). */
 export function seatInput(input, need) {

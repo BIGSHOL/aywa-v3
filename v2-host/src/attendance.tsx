@@ -10,16 +10,17 @@ import { EmbedProvider } from '@/components/workspace/embed-context';
 import { SheetLangProvider } from '@/features/teacher-view/lang-context';
 import { hostNavigate, onHostRefresh } from '../shims/host-nav';
 import { useHostSearch } from '../shims/next-navigation';
-import { hostActor, setHostEditors } from '../shims/server-action';
+import { hostActor, registerHostHandler, setHostEditors } from '../shims/server-action';
 import { HostFrame, HostMessage } from './host-frame';
 import { AttendancePage, type AttendanceData } from './attendance-page';
 import { AttendanceSeatPage, type SeatDayData } from './attendance-seat-page';
 import { AttendanceSeatMonth, AttendanceSeatMonthClosed, type SeatMonthData } from './attendance-seat-month';
 import { AttendanceQuickPage, type QuickData } from './attendance-quick-page';
+import { AttendanceLivePage, type LiveData } from './attendance-live-page';
 
 /** 하위 주소의 값 — 자리 하루(seatDay) · 2.0 redirect · 2.0 notFound. 월별 출석부(`/attendance`)는 page 칸이 없다. */
 type Host = { lang: 'ko' | 'en'; host: AttendanceData['host'] };
-type Data = (AttendanceData & { page?: undefined }) | (SeatDayData & Host) | (SeatMonthData & Host) | (QuickData & Host) | (Host & { page: 'seatMonthClosed'; seatName: string })
+type Data = (AttendanceData & { page?: undefined }) | (SeatDayData & Host) | (SeatMonthData & Host) | (QuickData & Host) | (LiveData & Host) | (Host & { page: 'seatMonthClosed'; seatName: string })
   | (Host & { page: 'redirect'; to: string }) | (Host & { page: 'notFound' });
 
 /** 진입점 표식(build.mjs가 찾는다) — 창 제목과 이 화면의 2.0 주소. */
@@ -30,7 +31,21 @@ export const HOST_ROUTE = '/attendance';
  * 다시 받아야 하는 주소 열쇠 — 2.0에서 서버를 다시 그리던 것(달·과목·강사·반·보기 · 하위 주소 v2path · 자리의 날짜·교시).
  * `q`(학생 검색 씨앗)는 첫 렌더 씨앗일 뿐이라(2.0도 검색어는 History API로만 바꾼다 — att-search-seed.ts) 열쇠에 넣지 않고 함께 보내기만 한다.
  */
-const KEYS = ['v2path', 'month', 'subject', 'teacher', 'class', 'mode', 'date', 'start'] as const;
+const KEYS = ['v2path', 'month', 'subject', 'teacher', 'class', 'mode', 'date', 'start', 'tab', 'from'] as const;
+
+/**
+ * 오늘 출결 화면의 폴링(2.0 `getLiveRecordedCount` · `getRecapStatus` — 바뀌었으면 router.refresh) — 읽기라 쓰기 경로(POST)가 아니라
+ * 그 화면의 읽기 경로(GET ?poll=…)로 지문만 받는다(보기 중 쓰기 0). 못 받으면 null(2.0 부품이 '바뀐 것 없음'으로 읽는다).
+ */
+const pollRead = (kind: 'live' | 'recap', date: unknown, from?: unknown) => {
+  const q = new URLSearchParams({ v2path: '/attendance/live', poll: kind });
+  if (typeof date === 'string') q.set('date', date);
+  if (typeof from === 'string') q.set('from', from);
+  return fetch(`/api/v2/attendance?${q}`, { headers: { Accept: 'application/json' } })
+    .then(async (r) => (r.ok ? ((await r.json()) as { fingerprint?: string }).fingerprint ?? null : null)).catch(() => null);
+};
+registerHostHandler('features/attendance/live/server/poll-actions.ts', 'getLiveRecordedCount', (date) => pollRead('live', date));
+registerHostHandler('features/attendance/recap/server/poll-actions.ts', 'getRecapStatus', (from, to) => pollRead('recap', to, from));
 
 function App() {
   const search = new URLSearchParams(useHostSearch());
@@ -96,6 +111,7 @@ function App() {
           {d.page === 'seatDay' ? <AttendanceSeatPage data={d} />
             : d.page === 'seatMonth' ? <AttendanceSeatMonth data={d} holidaySource={d.host.operations.holidays} />
             : d.page === 'quick' ? <AttendanceQuickPage data={d} subjects={ops.subjects} />
+            : d.page === 'live' ? <AttendanceLivePage data={d} subjects={ops.subjects} />
             : <AttendancePage data={d} />}
         </OperationsProvider>
       </SheetLangProvider>

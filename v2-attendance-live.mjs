@@ -17,6 +17,9 @@ export const LIVE_MODULES = {
   seating: 'features/attendance/live/seating.ts', splitAtt: 'features/class-splits/attendance.ts', splitRoster: 'features/attendance/live/split-roster.ts',
   mark: 'features/attendance/live/mark-state.ts', via: 'features/attendance/live/recorded-via.ts', labSplit: 'features/attendance/seat/lab-split.ts',
   makeupWrite: 'features/attendance/makeup-write.ts', makeupTypes: 'features/makeups/types.ts', homeRule: 'lib/auth/teacher-home-rule.ts',
+  // 오늘 출결(`/attendance/live`) — 데스크 큐 · 어제 출결 요약 · 보기 설정.
+  queue: 'features/attendance/live/queue.ts', viewPrefs: 'features/attendance/live/view-prefs.ts', digest: 'features/attendance/recap/digest.ts',
+  recapRange: 'features/attendance/recap/range.ts', absenceReason: 'features/attendance/absence-reason.ts', absent: 'features/dashboard/absent-students.ts',
 };
 let liveRules = null;
 export function loadLiveRules(importV2) {
@@ -332,4 +335,174 @@ export async function quickProps(ctx, params) {
   const board = await readLiveBoard(ctx, viewer, today, true);
   const classes = L.quick.quickClasses(board).map(c => ({ ...c, students: c.students.map(s => ({ ...s, parentPhone: null, studentPhone: null })) }));
   return { ...base, view: 'board', classes, canEdit: board.canEdit };
+}
+
+// ── 오늘 출결(`/attendance/live`) — 2.0 live/page.tsx: 좌석표 · 확인 필요(데스크 큐) · 어제 출결(요약) ──
+const addDays = (date, n) => new Date(Date.parse(`${date}T00:00:00Z`) + n * 86400000).toISOString().slice(0, 10);
+
+/** 2.0 `loadFollowups`(queries.ts) — 그날 조치 기록, 키 `학생|교시`(교시 없는 기록은 `학생|`에도). */
+export async function readFollowups(sql, t, date) {
+  const rows = await sql`select f.id::text id, f.student_id::text student_id, f.slot_start::text slot_start, f.state, f.signal, f.outcome, f.note,
+      to_char(f.handled_at at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"') handled_at, u.display_name handler_name
+    from public.attendance_followups f left join public.users u on u.id=f.handled_by where f.tenant_id=${t} and f.session_date=${date}`;
+  const out = new Map();
+  for (const r of rows) {
+    const brief = { id: r.id, state: r.state, signal: r.signal ?? null, outcome: r.outcome ?? null, note: r.note ?? null, handledByName: r.handler_name ?? null, handledAt: r.handled_at ?? null };
+    const slot = r.slot_start ? String(r.slot_start).slice(0, 5) : null;
+    out.set(`${r.student_id}|${slot ?? ''}`, brief);
+    if (!slot) out.set(`${r.student_id}|`, brief);
+  }
+  return out;
+}
+/** 2.0 `loadRequestMarks`(queries.ts) — 그날 이미 보낸 요청 표식, 키 `반|저장 교시`. */
+export async function readRequestMarks(sql, t, date, eventType) {
+  const rows = await sql`select subject_key, bucket from public.notification_events where tenant_id=${t} and event_type=${eventType} and bucket like ${`${date}|%`}`;
+  return new Set(rows.map(r => `${r.subject_key}|${String(r.bucket).slice(date.length + 1)}`));
+}
+
+/** 2.0 `getDeskQueue(date)`(queries.ts) — 보드에서 신호만 걸러 두 레인으로(같은 보드를 받는다 — 2.0도 React cache로 한 번만 읽는다). */
+export async function readDeskQueue(ctx, user, date, board) {
+  const { sql, t, R, L, settings } = ctx;
+  const blank = { lanes: { classes: [], students: [] }, done: [], counts: { classes: 0, students: 0, done: 0 }, date };
+  if (!user || attendanceLevelOf(R, settings, user) === 'none') return blank;
+  const [followups, requested, deskRequested] = await Promise.all([readFollowups(sql, t, date), readRequestMarks(sql, t, date, 'attendance_input_request'), readRequestMarks(sql, t, date, 'attendance_desk_confirm_request')]);
+  const students = [], classes = [];
+  for (const teacher of board.teachers) for (const slot of teacher.slots) {
+    if (slot.phase === 'before' || R.tlabel.isSpecialSlotLabel(slot.slotTeacherLabel)) continue;
+    const teacherAsked = deskRequested.has(`${slot.classId}|${slot.saveSlot ?? ''}`);
+    if (!slot.hasAnyRecord && L.signals.shouldQueueWithRequest('class_unmarked', slot.phase, teacherAsked)) {
+      classes.push({ classId: slot.classId, className: slot.className, subject: slot.subject, slotStart: slot.slotStart, teacherId: teacher.teacherId, teacherName: teacher.teacherName,
+        teacherPhone: teacher.teacherPhone, slotTeacherLabel: slot.slotTeacherLabel, expected: slot.students.length, phase: slot.phase, saveSlot: slot.saveSlot,
+        requested: requested.has(`${slot.classId}|${slot.saveSlot ?? ''}`), teacherRequested: teacherAsked, slotCount: 1, slotEnd: slot.slotStart });
+    }
+    for (const s of slot.students) {
+      if (!s.signal || s.signal === 'class_unmarked' || !L.signals.shouldQueueWithRequest(s.signal, slot.phase, teacherAsked)) continue;
+      students.push({ studentId: s.studentId, studentName: s.studentName, schoolGrade: s.schoolGrade, classId: slot.classId, className: slot.className, subject: slot.subject,
+        slotStart: slot.slotStart, saveSlot: slot.saveSlot, teacherName: teacher.teacherName, signal: s.signal, phase: slot.phase, note: s.note, parentPhone: s.parentPhone,
+        studentPhone: s.studentPhone, teacherRequested: teacherAsked, followup: followups.get(`${s.studentId}|${slot.saveSlot ?? ''}`) ?? followups.get(`${s.studentId}|`) ?? null });
+    }
+  }
+  return { ...L.queue.buildQueue(students, classes), date };
+}
+
+/** 2.0 `getAbsentStudents(date)`(dashboard/server/absent-students.ts) — 그날 기록 전부(오래된 것 먼저) → foldAbsentStudents. */
+async function readAbsentStudents(sql, t, L, date) {
+  const rows = await sql`select r.id::text id, r.student_id::text student_id, r.class_id::text class_id, r.session_date::text session_date, r.slot_start::text slot_start, r.status::text status,
+      to_char(r.recorded_at at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"') recorded_at, r.note, s.name student_name, c.subject class_subject, c.class_name
+    from public.attendance_records r left join public.students s on s.id=r.student_id left join public.classes c on c.id=r.class_id
+    where r.tenant_id=${t} and r.session_date=${date} order by r.recorded_at, r.id`;
+  return L.absent.foldAbsentStudents(rows.map(r => ({ id: r.id, student_id: r.student_id, class_id: r.class_id, session_date: r.session_date, slot_start: r.slot_start, status: r.status,
+    recorded_at: r.recorded_at, note: r.note, student: r.student_name == null ? null : { name: r.student_name }, class: r.class_name == null ? null : { subject: r.class_subject, class_name: r.class_name } })));
+}
+/** 2.0 `getCarryOverAbsences(date)`(queries.ts) — 어제 남은 미처리 결석(조치 끝난 학생 · 공결만 있는 학생 제외). 전체 권한만. */
+export async function readCarryOverAbsences(ctx, user, date) {
+  const { sql, t, R, L, settings } = ctx;
+  if (!user || attendanceLevelOf(R, settings, user) !== 'full') return null;
+  const prev = addDays(date, -1);
+  const [day, fu] = await Promise.all([readAbsentStudents(sql, t, L, prev), sql`select student_id::text student_id, state from public.attendance_followups where tenant_id=${t} and session_date=${prev}`]);
+  const settled = new Set(fu.filter(r => r.state === 'resolved' || r.state === 'dismissed').map(r => r.student_id));
+  const pending = new Set(day.absent.filter(s => s.statuses.includes('absent')).map(s => s.studentId).filter(id => !settled.has(id)));
+  return pending.size > 0 ? { date: prev, count: pending.size } : null;
+}
+
+/** 2.0 `getRangeRecap(dates)`(recap/server/queries.ts) — 날짜마다 보드(같은 적재) + 조치 + 반복 결석 → buildDayRecap → buildRangeRecap. 전체 권한만. */
+export async function readRangeRecap(ctx, user, dates, boardOf) {
+  const { sql, t, R, L, settings } = ctx;
+  if (!user || attendanceLevelOf(R, settings, user) !== 'full') return null;
+  const wanted = dates.filter(d => ISO.test(d)).slice(0, L.recapRange.RECAP_MAX_DAYS);
+  if (wanted.length === 0) return null;
+  // 2.0 RPC `dashboard_absence_risk`(최근 14일 반·하루 결석 2회 이상) — 그 사람 신분(request.jwt.claims)으로 같은 함수를 부른다.
+  await sql`select set_config('request.jwt.claims', ${JSON.stringify({ sub: user.id, role: 'authenticated' })}, true)`;
+  const repeats = new Map((await sql`select student_id::text student_id, absences from public.dashboard_absence_risk(${2})`).map(r => [r.student_id, Number(r.absences)]));
+  const [planned, loaded] = await Promise.all([readPlannedRepeats(sql, t, L, [...repeats.keys()]),
+    Promise.all(wanted.map(async date => ({ date, holiday: holidayNameOf(R, settings, date), board: await boardOf(date), followups: await readFollowups(sql, t, date) })))]);
+  const days = loaded.map(({ date, holiday, board, followups }) => ({
+    ...L.digest.buildDayRecap({ date,
+      slots: board.teachers.flatMap(teacher => teacher.slots.map(slot => ({ classId: slot.classId, className: slot.className, subject: slot.subject, slotStart: slot.slotStart, saveSlot: slot.saveSlot,
+        teacherName: teacher.teacherName, slotTeacherLabel: slot.slotTeacherLabel, hasAnyRecord: slot.hasAnyRecord,
+        students: slot.students.map(s => ({ studentId: s.studentId, studentName: s.studentName, schoolGrade: s.schoolGrade, status: s.status, note: s.note })) }))),
+      followupOf: (studentId, saveSlot) => { const hit = followups.get(`${studentId}|${saveSlot ?? ''}`) ?? followups.get(`${studentId}|`) ?? null; return hit ? { state: hit.state, outcome: hit.outcome, handledByName: hit.handledByName } : null; },
+      recentAbsenceOf: studentId => repeats.get(studentId) ?? null,
+      recentPlannedOf: studentId => { const total = repeats.get(studentId), p = planned.get(studentId); return total == null || p == null ? null : Math.min(p, total); } }),
+    holiday }));
+  return L.recapRange.buildRangeRecap(days);
+}
+/** 2.0 `loadPlannedRepeats` — 같은 14일 창(오늘 이하 마지막 기록일 기준)에서 '예정된 결석' 사유로 적힌 반·하루 수. */
+async function readPlannedRepeats(sql, t, L, studentIds) {
+  if (studentIds.length === 0) return new Map();
+  const { day: today } = await copyClock();
+  const [anchorRow] = await sql`select session_date::text d from public.attendance_records where tenant_id=${t} and session_date<=${today} order by session_date desc limit 1`;
+  if (!anchorRow) return new Map();
+  const rows = await sql`select student_id::text student_id, class_id::text class_id, session_date::text session_date, note from public.attendance_records
+    where tenant_id=${t} and status='absent' and session_date>=${addDays(anchorRow.d, -13)} and session_date<=${anchorRow.d} and student_id = any(${studentIds}::uuid[])`;
+  const planned = new Map();
+  for (const r of rows) {
+    if (L.absenceReason.classifyAbsenceReason(r.note) !== 'planned') continue;
+    (planned.get(r.student_id) ?? planned.set(r.student_id, new Set()).get(r.student_id)).add(`${r.class_id}|${r.session_date}`);
+  }
+  return new Map([...planned].map(([id, set]) => [id, set.size]));
+}
+/** 2.0 `getSavedRecapBrief(from, to)` — 저장된 AI 정리(있으면). 새로 부르지 않는다(AI 호출은 명시 버튼 — 이 복사본은 그 버튼도 부르지 않는다). */
+export async function readSavedRecapBrief(sql, t, from, to) {
+  if (!(await sql`select to_regclass('public.attendance_day_recaps') is not null ok`)[0].ok) return null;
+  const [row] = await sql`select status, summary, error, model_version, to_char(generated_at at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"') generated_at
+    from public.attendance_day_recaps where tenant_id=${t} and from_date=${from} and recap_date=${to}`;
+  return row ? { status: row.status ?? 'idle', brief: row.summary ?? null, error: row.error ?? null, model: row.model_version ?? null, generatedAt: row.generated_at ?? null } : null;
+}
+/** 2.0 `loadLiveViewPrefs` — 그 사람의 users.ui_prefs.attendanceLive(과목 필터). 2.0의 '10분 안 본 화면 필터 초기화'(쿠키)는 3.0에 없다. */
+export async function readLiveViewPrefs(sql, t, L, userId) {
+  const [row] = userId ? await sql`select ui_prefs from public.users where tenant_id=${t} and id=${userId}` : [];
+  return L.viewPrefs.parseLiveViewPrefs(row?.ui_prefs?.attendanceLive);
+}
+/** 2.0 폴링 지문 — `getLiveRecordedCount`(live/server/poll-actions.ts) · `getRecapStatus`(recap/server/poll-actions.ts). 읽기라 GET으로 답한다. */
+export async function pollFingerprint(sql, t, kind, date, from) {
+  if (kind === 'recap') {
+    if (!(await sql`select to_regclass('public.attendance_day_recaps') is not null ok`)[0].ok) return 'idle|';
+    const [row] = await sql`select status, to_char(generated_at at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"') generated_at from public.attendance_day_recaps where tenant_id=${t} and from_date=${from ?? date} and recap_date=${date}`;
+    return `${row?.status ?? 'idle'}|${row?.generated_at ?? ''}`;
+  }
+  const [[c], [latest], [req]] = await Promise.all([
+    sql`select count(*)::int n from public.attendance_records where tenant_id=${t} and session_date=${date}`,
+    sql`select to_char(recorded_at at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"') at from public.attendance_records where tenant_id=${t} and session_date=${date} order by recorded_at desc limit 1`,
+    sql`select to_char(created_at at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"') at from public.notification_events where tenant_id=${t}
+      and event_type in ('attendance_input_request', 'attendance_desk_confirm_request') and bucket like ${`${date}|%`} order by created_at desc limit 1`,
+  ]);
+  return `${c.n}|${latest?.at ?? ''}|${req?.at ?? ''}`;
+}
+
+/** 2.0 live/page.tsx `stripContacts` — 좌석표로 내려보내는 보드에서 연락처를 지운다(화면이 안 쓰는 개인정보). */
+const stripContacts = board => ({ ...board, teachers: board.teachers.map(x => ({ ...x, teacherPhone: null,
+  slots: x.slots.map(s => ({ ...s, students: s.students.map(st => ({ ...st, parentPhone: null, studentPhone: null })) })) })) });
+
+/**
+ * 2.0 `src/app/(shell)/attendance/live/page.tsx`의 값. 탭: 좌석표(기본) · 확인 필요(데스크 — 전체 권한만) · 어제 출결(전체 권한만, 기간 from~date).
+ * 휴원일이면 좌석표·큐를 만들지 않고(요약은 막지 않는다) 그날 입력을 읽기 전용으로.
+ */
+export async function liveProps(ctx, params) {
+  const { sql, t, R, L, settings } = ctx;
+  const { day: today } = await copyClock();
+  const editors = await attendanceWritersOf(sql, t, R, settings);
+  const viewer = editors.find(e => e.id === params.viewer) ?? editors[0] ?? null;
+  const isDesk = !!viewer && viewer.level === 'full';
+  const date = ISO.test(params.date ?? '') && params.date <= today ? params.date : today;
+  const tab = isDesk && (params.tab === 'desk' || params.tab === 'recap') ? params.tab : 'seating';
+  const span = L.recapRange.recapDatesFor(today);
+  const recapHref = `/attendance/live?tab=recap&from=${span[0]}&date=${span[span.length - 1]}`;
+  const recapFrom = ISO.test(params.from ?? '') && params.from <= date ? params.from : date;
+  const recapDates = tab === 'recap' ? L.recapRange.recapRangeDates(recapFrom, date) : [];
+  const holiday = holidayNameOf(R, settings, date), showHolidayScreen = !!holiday && tab !== 'recap';
+  // 2.0은 getLiveBoard(date)를 React cache로 한 요청에 한 번만 읽는다(좌석표·큐·요약이 함께) — 여기도 날짜마다 한 번.
+  const boards = new Map(), boardOf = d => boards.get(d) ?? boards.set(d, readLiveBoard(ctx, viewer, d, false)).get(d);
+  const board = holiday ? null : await boardOf(date);
+  const [queue, carryOver, recap, recapAi, prefs, holidayActivity] = await Promise.all([
+    holiday || !isDesk ? null : readDeskQueue(ctx, viewer, date, board),
+    holiday || !isDesk || tab !== 'desk' ? null : readCarryOverAbsences(ctx, viewer, date),
+    tab !== 'recap' ? null : readRangeRecap(ctx, viewer, recapDates, boardOf),
+    tab !== 'recap' ? null : readSavedRecapBrief(sql, t, recapDates[0] ?? date, date),
+    readLiveViewPrefs(sql, t, L, viewer?.id),
+    showHolidayScreen ? readHolidayDayActivity(ctx, viewer, date) : undefined,
+  ]);
+  return { page: 'live', date, today, tab, recapHref, isDesk, holiday, scopedToSelf: board?.scopedToSelf ?? false, board: board ? stripContacts(board) : null,
+    canEdit: board?.canEdit ?? false, queue, carryOver, recap, recapAi, prefs, holidayActivity: holidayActivity ?? null, lang: 'ko',
+    editors: editors.map(e => ({ id: e.id, name: e.name, role: R.roles.ROLE_LABEL?.[e.role] ?? '' })), viewer: viewer?.id ?? null };
 }
