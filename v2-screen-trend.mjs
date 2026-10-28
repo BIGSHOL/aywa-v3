@@ -31,6 +31,29 @@ async function nameOf(sql, tenantId, dim, key) {
   return key;
 }
 
+// 기준별 줄의 정보 칸(원장 10-28 "각 선생님의 과목, 담당 반 수, 담당 학생 수 표시") — 지금 운영 중인 반과 오늘 재원 수강 기준.
+// 선생님 = 담당 반의 과목 · 반 수 · 학생 수(겹치는 학생은 한 번) / 반 = 과목 · 담임 · 학생 수 / 과목 = 반 수 · 학생 수. 과목 열쇠는 영어 중 EiE를 가른다.
+const META_DIMS = new Set(['teacher', 'class', 'subject']);
+async function rowMeta(sql, tenantId, asOf, by, subjectName) {
+  if (!META_DIMS.has(by)) return null;
+  const classes = await sql`select c.id::text id, c.subject, c.english_track, c.teacher_id::text teacher_id, u.display_name teacher
+    from public.classes c left join public.users u on u.id = c.teacher_id and u.tenant_id = c.tenant_id
+    where c.tenant_id = ${tenantId} and c.is_active = true and (c.closed_at is null or c.closed_at > ${asOf})`;
+  const seats = await sql`select e.class_id::text class_id, e.student_id::text student_id from public.enrollments e
+    join public.students s on s.id = e.student_id and s.tenant_id = e.tenant_id and s.is_test = false and s.status = 'enrolled'
+    where e.tenant_id = ${tenantId} and e.start_date <= ${asOf} and (e.end_date is null or e.end_date >= ${asOf})`;
+  const studentsOf = new Map(); for (const x of seats) { if (!studentsOf.has(x.class_id)) studentsOf.set(x.class_id, new Set()); studentsOf.get(x.class_id).add(x.student_id); }
+  const keyOf = (c) => (by === 'teacher' ? c.teacher_id ?? 'unassigned' : by === 'class' ? c.id : c.subject === 'english' && c.english_track === 'eie' ? 'eie' : c.subject);
+  const groups = new Map(); for (const c of classes) { const k = keyOf(c); if (!groups.has(k)) groups.set(k, []); groups.get(k).push(c); }
+  const meta = new Map();
+  for (const [k, list] of groups) {
+    const students = new Set(list.flatMap((c) => [...(studentsOf.get(c.id) ?? [])]));
+    const subjects = [...new Set(list.map((c) => (c.subject === 'english' && c.english_track === 'eie' ? 'EiE' : subjectName(c.subject))))].join(', ');
+    meta.set(k, by === 'class' ? { subjects, teacher: list[0].teacher ?? '담당 미지정', students: students.size } : by === 'teacher' ? { subjects, classes: list.length, students: students.size } : { classes: list.length, students: students.size });
+  }
+  return meta;
+}
+
 export const screen = {
   id: 'trend', label: '확장 추세', order: 90,
   params: { metric: /^[a-z][a-z0-9-]{0,40}$/, grain: /^(day|week|month|year)$/, by: /^[a-z]{1,20}$/, f: /^[a-z]{1,20}:[A-Za-z0-9:._|-]{1,100}$/ },
@@ -49,7 +72,7 @@ export const screen = {
     // 앞쪽의 '분자 0' 창 = 이 기록을 쓰기 시작하기 전(대상만 있고 기록이 없다) — 0%로 그리지 않고 잘라 낸다.
     // raw.since = 그 지표를 믿을 수 있는 첫날(지표가 알려 줄 때) — 그보다 앞서 끝난 창도 잘라 낸다.
     const total = raw.total.map(pt), start = Math.max(0, raw.since ? windows.findIndex((w) => w.to >= raw.since) : total.findIndex((p) => has(p) && p.num > 0));
-    const subjects = by === 'subject' || filter?.dim === 'subject' ? new Map(((await sql`select data->'operations'->'subjects' s from public.tenant_settings where tenant_id=${tenantId}`)[0]?.s ?? []).map((s) => [s.key, s.label])) : new Map();
+    const subjects = by === 'subject' || filter?.dim === 'subject' || META_DIMS.has(by) ? new Map(((await sql`select data->'operations'->'subjects' s from public.tenant_settings where tenant_id=${tenantId}`)[0]?.s ?? []).map((s) => [s.key, s.label])) : new Map();
     const label = (dim, key, fallback) => (dim === 'subject' ? subjects.get(key) ?? fallback ?? key : fallback);
     const filterName = async () => {
       const named = await nameOf(sql, tenantId, filter.dim, filter.key);
@@ -57,6 +80,7 @@ export const screen = {
       const whole = await remember(`${tenantId}|${asOf}|${metric.id}|${grain}|${filter.dim}|`, () => metric.series({ sql, asOf, tenantId, importV2, windows, by: filter.dim, filter: null }));
       return whole.rows.find((r) => r.key === filter.key)?.label ?? '이름 확인 필요';
     };
+    const meta = await remember(`meta|${tenantId}|${asOf}|${by}`, () => rowMeta(sql, tenantId, asOf, by, (k) => subjects.get(k) ?? k)).catch(() => null);
     return {
       asOf, grain, by,
       metric: { id: metric.id, label: metric.label, unit: metric.unit, better: metric.better, dims },
@@ -65,7 +89,7 @@ export const screen = {
       filter: filter ? { ...filter, label: label(filter.dim, filter.key, await filterName()) } : null,
       windows: windows.slice(start),
       total: total.slice(start),
-      rows: raw.rows.map((r) => ({ key: r.key, label: label(by, r.key, r.label), points: r.points.map(pt).slice(start) })).filter((r) => r.points.some(has)),
+      rows: raw.rows.map((r) => ({ key: r.key, label: label(by, r.key, r.label), points: r.points.map(pt).slice(start), ...(meta?.has(r.key) ? { meta: meta.get(r.key) } : {}) })).filter((r) => r.points.some(has)),
     };
   },
 };

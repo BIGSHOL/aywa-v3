@@ -35,6 +35,23 @@
 .tr-table th,.tr-table td{font-size:var(--ax-xs);color:var(--ax-ink);background:transparent}
 .tr-table thead th{font-weight:650}
 .tr-table tbody tr:last-child>*{border-bottom:1px solid var(--ax-line)}
+/* 기준별 꺾은선 — 줄마다 색(--c) · 전체는 굵은 검은 선 · 범례 · 표의 칸으로 켜고 끈다. 지표를 바꾸는 동안은 직전 화면을 흐리게. */
+.tr-line.series polyline{stroke:var(--c);stroke-width:1.8}.tr-line.series .tr-solo{fill:var(--c)}
+.tr-chart.has-series .tr-line:not(.series):not(.base) polyline{stroke:#121212;stroke-width:2.8}
+.tr-chart.has-series .tr-dot{stroke:#121212}.tr-chart.has-series .chart-col.active .tr-dot,.tr-chart.has-series .chart-col:hover .tr-dot{fill:#121212}
+.tr-legend{display:flex;flex-wrap:wrap;gap:6px 14px;font-size:var(--ax-xs)}
+.tr-legend span{display:inline-flex;align-items:center;gap:6px}
+.tr-legend i{width:14px;height:3px;border-radius:2px;background:var(--ax-primary)}.tr-legend i.sum{height:4px;background:#121212}.tr-legend i.alt{background:#9aa7bf}
+.tr-table .tr-pick{width:2.6em;text-align:center}
+.tr-table .tr-pick label{display:inline-flex;align-items:center;gap:4px;cursor:pointer}
+.tr-table .tr-pick input{width:15px;height:15px;margin:0}
+.tr-table .tr-pick i{display:inline-block;width:10px;height:10px;border-radius:2px}
+.tr-table .tr-meta{width:7em}.tr-table td.tr-meta:not(.num){white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tr-table td.num strong{font-size:var(--ax-xs);font-weight:650}
+.tr.is-loading .tr-main,.tr.is-loading .tr-break{opacity:.55;transition:opacity .15s}
+/* 지표 고르개: 단추를 넓혀 창도 넓게(창 폭 = 단추 폭) · 건수 줄은 숨긴다(원장 10-28 "마지막 21개는 필요없음"). */
+.tr .heading-actions [data-cpick-name="tr-metric"] .cpick-field{min-width:15rem}
+[data-cpick-name="tr-metric"] .cpick-note{display:none}
 .tr-seg .tab{min-height:var(--ax-control-h-sm);padding:0 12px;border:1px solid var(--ax-line);border-radius:6px;background:#fff;font-size:var(--ax-xs);color:var(--ax-ink);white-space:nowrap}
 .tr-seg .tab:hover{background:var(--ax-soft)}
 .tr-seg .tab.active{border-color:var(--ax-primary);background:var(--ax-soft);color:var(--ax-primary);font-weight:650}

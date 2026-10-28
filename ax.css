@@ -387,9 +387,11 @@
 .chart-pop-label{display:inline-flex;align-items:center;gap:6px;min-width:0}
 .chart-pop-label::before{content:'';flex-shrink:0;width:8px;height:8px;border-radius:2px;background:var(--ax-primary)}
 .chart-pop-label.secondary::before{background:#a7cbbb}
+.chart-pop-label[style*="--dot"]::before{background:var(--dot)}
 .chart-pop-value{font-size:var(--ax-base);font-weight:700;color:var(--ax-primary);font-variant-numeric:tabular-nums;white-space:nowrap}
 .chart-pop-meta{margin-top:6px}
 .chart-pop-meta+.chart-pop-meta{margin-top:2px}
+.chart-pop-meta.good{color:var(--ax-good);font-weight:600}.chart-pop-meta.bad{color:var(--ax-bad);font-weight:600}
 .chart-live{position:fixed;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
 .ax-detail{font-size:var(--ax-xs)}
 .ax-detail summary{cursor:pointer;color:var(--ax-primary)}

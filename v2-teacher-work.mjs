@@ -76,7 +76,7 @@ async function fetchRaw(sql, R, t, settings, wins, scope, counselShown) {
   const attendanceFrom = minOf(wins.map((w) => w.attendanceFrom)), maxToday = maxOf(wins.map((w) => w.today)), minToday = minOf(wins.map((w) => w.today));
   const reportFetchFrom = minOf(wins.map((w) => w.reportFetchFrom)), reportFrom = minOf(wins.map((w) => w.range.reportFrom)), videoFrom = minOf(wins.map((w) => w.range.videoFrom));
   const months = [...new Set(wins.flatMap((w) => w.months))];
-  const classes = await sql`select id, class_name, subject, teacher_id, report_optout, closed_at::text closed_at from public.classes
+  const classes = await sql`select id, class_name, subject, english_track, teacher_id, report_optout, closed_at::text closed_at from public.classes
     where tenant_id=${t} and is_active = true and (closed_at is null or closed_at >= ${attendanceFrom}) order by id`;
   const inScope = classes.filter((c) => !R.isTestClass(c.class_name) && (!scope || scope.classIds.includes(c.id)));
   const visible = inScope.filter((c) => c.report_optout !== true && (!c.closed_at || c.closed_at >= minToday));
@@ -163,7 +163,9 @@ function sliceWindow(R, raw, w, scope, cutMs = null) {
 
 /** 확장 추세의 묶음 — 2.0 teacherWork는 '선생님:과목' 줄로 묶고 열람·출결은 반→줄 대응으로 붙인다. 반·과목으로 묶을 땐 그 키를 선생님 자리에 넣어
  * 같은 판정을 반·과목 줄로 받는다(보고서 담당 판정·미분류 보고서 연결은 진짜 선생님으로 끝낸 뒤에만 바꾼다). */
-const GROUP = { teacher: null, class: (c) => ({ teacherId: `class:${c.id}`, teacherName: c.name }), subject: (c) => ({ teacherId: `subject:${c.subject}`, teacherName: c.subject }) };
+// 과목 묶음에서 영어는 EiE(classes.english_track = 'eie')와 나머지 영어로 가른다(원장 10-28 "영어와 EiE 분리") — 열쇠 'eie' · 이름 'EiE'.
+export const subjectKeyOf = (c) => (c.subject === 'english' && c.track === 'eie' ? 'eie' : c.subject);
+const GROUP = { teacher: null, class: (c) => ({ teacherId: `class:${c.id}`, teacherName: c.name }), subject: (c) => ({ teacherId: `subject:${subjectKeyOf(c)}`, teacherName: subjectKeyOf(c) === 'eie' ? 'EiE' : c.subject }) };
 
 /** 2.0 loadTeacherWork의 판정부(조회 다음) — 같은 순서·같은 순수 함수. `groupBy` = 'teacher'(2.0) | 'class' | 'subject'. */
 function judge(R, settings, d, w, nowMs, counselShown, unreadGraceHours, groupBy = 'teacher') {
@@ -181,7 +183,7 @@ function judge(R, settings, d, w, nowMs, counselShown, unreadGraceHours, groupBy
   const workClasses = d.visible.filter((c) => !c.teacher_id || !retired.has(c.teacher_id)).map((c) => {
     const teacherName = c.teacher_id ? names.get(c.teacher_id) ?? '이름 확인 필요' : '담당 미지정';
     const english = R.subjectGroupOf(c.subject, programs) === 'english';
-    return { id: c.id, name: c.class_name, teacherId: c.teacher_id, teacherName, subject: c.subject,
+    return { id: c.id, name: c.class_name, teacherId: c.teacher_id, teacherName, subject: c.subject, track: c.english_track,
       reportSource: settings.report.writingExemptTeachers.includes(teacherName) ? 'none' : english && R.classnoteModuleOn(settings) ? 'classnote'
         : !english && R.isReportTrackedSubject(c.subject, settings.report.classnoteSubjects) ? 'lesson' : 'none' };
   });
@@ -208,7 +210,7 @@ function judge(R, settings, d, w, nowMs, counselShown, unreadGraceHours, groupBy
       const meets = schedules.some((s) => s.class_id === c.id && s.day_of_week === R.dowOf(date) && !!s.valid_from && s.valid_from <= date && (!s.valid_to || s.valid_to >= date));
       if (!meets) return [];
       const judged = R.judgeClassAttendanceDay({ enrollments: enrollmentsOf.get(c.id) ?? [], recorded: recordedOf.get(`${c.id}|${date}`) ?? new Set(), date, dayKey: R.dowOf(date) });
-      return judged.expected > 0 ? [{ classId: c.id, teacherId: regroup ? regroup({ id: c.id, name: c.class_name, subject: c.subject }).teacherId : c.teacher_id, subject: c.subject, unrecorded: judged.unrecorded }] : [];
+      return judged.expected > 0 ? [{ classId: c.id, teacherId: regroup ? regroup({ id: c.id, name: c.class_name, subject: c.subject, track: c.english_track }).teacherId : c.teacher_id, subject: c.subject, unrecorded: judged.unrecorded }] : [];
     }));
   const counselPick = R.pickCounselMonth(counselRows, today.slice(0, 7));
   const counsel = new Map(counselPick.rows.map((r) => [r.teacher_id, typeof r.counsel === 'number' ? r.counsel : null]));

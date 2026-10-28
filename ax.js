@@ -91,8 +91,10 @@ window.createOwnerWorkspace = function createOwnerWorkspace(api) {
     const reports=unreadReports(),top=all.filter(i=>i.id!=='enrollment').slice(0,3),rest=all.length-top.length,flowCards=flowUI?.ownerCards()||'';
     // 운영 상태 = 2.0 운영실 상단 KPI 9칸의 흐름(운영실 작업 공간과 같은 카드 · 같은 값) + 선생님 업무(운영실 '강사별 업무 현황' 판정, 선생님 수업보고서 작업 공간과 같은 카드)
     // (원장 10-28 "기존 2.0 kpi들을 전부 흐름으로"). 업무 흐름을 못 읽어도 보인다. 기간은 카드마다 제목 오른쪽.
-    const kpiRow=(title,id)=>{const list=(workspaces?.data?.(id)?.metrics||[]).filter(m=>m.kind==='kpi');return list.length&&workspaces?.kpiCard?`<div class="ax-kpi"><div class="ax-kpi-head"><h3>${h(title)}</h3></div><div class="ax-kpi-row" style="--kpi-n:${list.length<=6?list.length:Math.ceil(list.length/2)};--kpi-half:${list.length<=6?Math.ceil(list.length/2):3}">${list.map(m=>workspaces.kpiCard(m)).join('')}</div></div>`:'';};
-    const kpiBlock=kpiRow('운영실','dashboard')+kpiRow('선생님 업무','onescreen');
+    // 두 줄 모두 한 줄 4칸 — 카드 크기가 같다. 보강예정은 선생님이 할 일이라 선생님 업무 줄로(원장 10-28 "보강예정 빼고 4개 4개로 카드 크기 통일" · "보강예정은 선생님 업무로 내릴것").
+    const kpis=id=>(workspaces?.data?.(id)?.metrics||[]).filter(m=>m.kind==='kpi'),TEACHER_KPI=new Set(['makeups']);
+    const kpiRow=(title,list)=>list.length&&workspaces?.kpiCard?`<div class="ax-kpi"><div class="ax-kpi-head"><h3>${h(title)}</h3></div><div class="ax-kpi-row" style="--kpi-n:4;--kpi-half:4">${list.map(m=>workspaces.kpiCard(m)).join('')}</div></div>`:'';
+    const kpiBlock=kpiRow('운영실',kpis('dashboard').filter(m=>!TEACHER_KPI.has(m.id)))+kpiRow('선생님 업무',[...kpis('onescreen'),...kpis('dashboard').filter(m=>TEACHER_KPI.has(m.id))]);
     if(flowCards)return `<section class="ax-first" aria-labelledby="ax-first-title"><div class="ax-first-head"><h2 id="ax-first-title">지금 확인할 일</h2><span>이슈 ${all.length}건과 근거는 아래 전체 목록에 있습니다.</span></div>${kpiBlock}<div class="ax-signals">${reports.length?reportSignal(reports):''}${flowCards}</div>${changeStrip(all)}${commandForm()}</section>`;
     return `<section class="ax-first" aria-labelledby="ax-first-title"><div class="ax-first-head"><h2 id="ax-first-title">지금 확인할 일</h2>${rest>0?`<span>그 밖의 이슈 ${rest}건은 아래 전체 목록에 있습니다.</span>`:''}</div>${kpiBlock}<div class="ax-signals">${reports.length?reportSignal(reports):''}${top.map(issueSignal).join('')||'<p>지금 확인할 이슈가 없습니다.</p>'}</div>${changeStrip(all)}${commandForm()}</section>`;
   }

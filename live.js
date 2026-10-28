@@ -46,7 +46,9 @@
   const exact=(v,unit)=>v==null?'기록 없음':unit==='만원'||unit==='원'?won(v):`${fmt(v)}${unit}`;
   const isMonth=d=>/^\d{4}-\d{2}$/.test(String(d||''));
   const periodTitle=x=>{const d=String(x.month||x.date||'');if(isMonth(d))return yymm(d);if(/^\d{4}-\d{2}-\d{2}$/.test(d))return `${d.slice(0,4)}년 ${Number(d.slice(5,7))}월 ${Number(d.slice(8,10))}일`;return String(x.label||d);};
-  const tipData=(title,rows,meta=[])=>h(JSON.stringify({title,rows,meta:meta.filter(Boolean)}));
+  // 덧붙임 줄(meta) = 글자 또는 {text, tone} — tone은 좋아짐 good(빨강)·나빠짐 bad(파랑)(원장 10-28 "마우스 오버할때 나오는것도 파란색 빨간색 적용").
+  const tipData=(title,rows,meta=[])=>h(JSON.stringify({title,rows,meta:meta.filter(m=>m&&(typeof m==='string'||m.text))}));
+  const metaText=m=>typeof m==='string'?m:String(m?.text||'');
   const deltaText=(v,prev,unit,monthly)=>v==null||prev==null?'':`${monthly?'전월':'이전'} 대비 ${v>prev?'+':v<prev?'−':'±'}${exact(Math.abs(v-prev),unit)}`;
   function chart(items,key,unit='',options={}){
     if(!items.some(x=>x[key]!==null&&x[key]!==undefined))return empty('이 기간의 기록이 없습니다.','없는 기간을 추정값으로 채우지 않았습니다.');
@@ -70,7 +72,7 @@
   // Stretchable trend line: HTML hit zones over an SVG line so markers stay round when the chart grows.
   // Missing periods break the line (no interpolation). Range ≥10% of the mean so small changes never read as cliffs.
   // compare = KPI 카드와 같은 비교 문구('7일 전'·'전월') — 주면 팝오버도 카드처럼 '○○ 대비 ▲ 0.0%p'로 쓴다(원장 10-28 "카드 구조를 전부 통일할것").
-  function lineChart(rows,{key='value',label='',unit='',value,basis='',compare=''}={}){
+  function lineChart(rows,{key='value',label='',unit='',value,basis='',compare='',better=''}={}){
     const values=rows.map(r=>r[key]==null?null:Number(r[key])),known=values.filter(v=>v!==null);
     if(!known.length)return '';
     const lo=Math.min(...known),hi=Math.max(...known),mean=known.reduce((n,v)=>n+v,0)/known.length,span=Math.max(hi-lo,Math.abs(mean)*.1,1),min=(lo+hi)/2-span/2;
@@ -79,8 +81,9 @@
     const solo=new Set(runs.filter(r=>r.length===1).map(r=>r[0]));
     const zone=96/Math.max(n-1,1),edges=i=>{const left=i?Math.max(0,x(i)-zone/2):0,right=i===n-1?100:Math.min(100,x(i)+zone/2);return {left,width:right-left,at:(x(i)-left)/(right-left)*100};};
     const monthly=rows.every(r=>isMonth(r.month));
+    const tone=(v,prev)=>v===null||prev===null||v===prev?'':better==='up'?(v>prev?'good':'bad'):better==='down'?(v<prev?'good':'bad'):'';
     const point=(r,i)=>{const e=edges(i),v=values[i],prev=i?values[i-1]:null,delta=v===null||prev===null?'':compare?(v===prev?`${compare} 대비 변화 없음`:`${compare} 대비 ${v>prev?'▲':'▼'} ${unit==='%'?`${Math.abs(v-prev).toFixed(1)}%p`:text(Math.abs(v-prev))}`):`${monthly?`전월(${mlabel(rows[i-1].month)})`:'이전'} 대비 ${v>prev?'+':v<prev?'−':'±'}${text(Math.abs(v-prev))}`;
-      return `<span class="chart-pt${solo.has(i)?' solo':''}" data-point data-tip="${tipData(periodTitle(r),[{label,value:text(v),tone:'primary'}],[delta,basis])}" style="left:${e.left}%;width:${e.width}%;--x:${e.at}%;--y:${v===null?100:yv(v)/40*100}%"><i data-anchor></i></span>`;};
+      return `<span class="chart-pt${solo.has(i)?' solo':''}" data-point data-tip="${tipData(periodTitle(r),[{label,value:text(v),tone:'primary'}],[delta&&tone(v,prev)?{text:delta,tone:tone(v,prev)}:delta,basis])}" style="left:${e.left}%;width:${e.width}%;--x:${e.at}%;--y:${v===null?100:yv(v)/40*100}%"><i data-anchor></i></span>`;};
     return `<span class="chart-line" data-chart tabindex="0" role="group" aria-label="${h(label)} — 화살표 키로 기간을 옮기며 수치를 확인합니다"><svg viewBox="0 0 100 40" preserveAspectRatio="none" role="img" aria-label="${h(label)} ${rows.map((r,i)=>`${periodTitle(r)} ${text(values[i])}`).join(', ')}"><line x1="0" x2="100" y1="39" y2="39" vector-effect="non-scaling-stroke"/>${runs.filter(r=>r.length>1).map(r=>`<polyline points="${r.map(i=>`${x(i)},${yv(values[i])}`).join(' ')}" vector-effect="non-scaling-stroke"/>`).join('')}</svg>${rows.map(point).join('')}</span>`;
   }
   // Shared chart popover: one per document, moved into an open dialog so it renders above it. Never takes pointer events.
@@ -94,8 +97,8 @@
   function fillTip(d){
     const el=(cls,text,tag='div')=>{const node=document.createElement(tag);node.className=cls;node.textContent=text;return node;};
     tip.replaceChildren(el('chart-pop-head',d.title));
-    d.rows.forEach(r=>{const row=el('chart-pop-row','');row.append(el(`chart-pop-label ${r.tone==='secondary'?'secondary':''}`,String(r.label||''),'span'),el('chart-pop-value',String(r.value||''),'strong'));tip.append(row);});
-    d.meta.forEach(m=>tip.append(el('chart-pop-meta',String(m))));
+    d.rows.forEach(r=>{const row=el('chart-pop-row',''),name=el(`chart-pop-label ${r.tone==='secondary'?'secondary':''}`,String(r.label||''),'span');if(/^#[0-9a-f]{3,8}$/i.test(String(r.color||'')))name.style.setProperty('--dot',r.color);row.append(name,el('chart-pop-value',String(r.value||''),'strong'));tip.append(row);});
+    d.meta.forEach(m=>tip.append(el(`chart-pop-meta${typeof m==='object'&&['good','bad'].includes(m.tone)?` ${m.tone}`:''}`,metaText(m))));
   }
   function placeTip(){
     const {box,index}=chartState;if(!box?.isConnected||!box.getClientRects().length){hideTip();return;}
@@ -119,7 +122,7 @@
     Object.assign(chartState,{box,index,sticky});
     const host=box.closest('dialog[open]')||document.body;if(tip.parentElement!==host)host.append(tip);
     const d=tipOf(points[index]);fillTip(d);tip.hidden=false;placeTip();
-    if(announce)chartLive.textContent=[d.title,...d.rows.map(r=>`${r.label} ${r.value}`),...d.meta].filter(Boolean).join(', ');
+    if(announce)chartLive.textContent=[d.title,...d.rows.map(r=>`${r.label} ${r.value}`),...d.meta.map(metaText)].filter(Boolean).join(', ');
   }
   function hideTip(){releasePoint();Object.assign(chartState,{box:null,index:-1,sticky:false});tip.hidden=true;}
   function nearestPoint(box,clientX,clientY){
@@ -158,7 +161,11 @@
   let toastTimer;
   const toast=text=>{const node=$('#toast');node.textContent=text;node.classList.add('show');clearTimeout(toastTimer);toastTimer=setTimeout(()=>node.classList.remove('show'),3000);};
   // Factories: ax (briefing/requests/assistant) first, then workspaces (catalog-driven family screens) which uses ax.
-  const api={db,h,fmt,yymm,won,icon,chart,lineChart,exact,dialog,navigate,render,attachScroll,scrollToSection,toast,subjectLabel:subject,showStudent,showBill,showApproval,showTask,openRecord,canOpenRecord,getPage:()=>state.page,hasView:id=>Boolean(viewFor(id)),closeMenu};
+  // 과목 색 = 앱 전체 한 곳(원장 10-28 "미수강 = 회색. 영어+수학 = 보라색. 수학 = 파란색. 영어 = 빨간색. 전체 웹에 대해 통일" · "EiE 주황색").
+  // 열쇠 이름의 뜻으로 고른다(지표마다 열쇠가 다르다 — math · mathOnly · english.math · both · eie · injaewon · unknown …). 모르면 null.
+  const SUBJECT_TONE={math:'#1d4ed8',english:'#c62828',eie:'#ea580c',mixed:'#7c3aed',none:'#9ca3af'};
+  const subjectColor=key=>{const k=String(key??'').toLowerCase();if(!k)return null;if(/^(unknown|none|other|otheronly|nothing)$/.test(k))return SUBJECT_TONE.none;const math=k.includes('math'),eie=k.includes('eie'),eng=/english|injaewon/.test(k);if(k==='both'||(math&&(eie||eng)))return SUBJECT_TONE.mixed;if(eie)return SUBJECT_TONE.eie;if(eng)return SUBJECT_TONE.english;if(math)return SUBJECT_TONE.math;return null;};
+  const api={db,h,fmt,yymm,won,icon,chart,lineChart,exact,dialog,navigate,render,attachScroll,scrollToSection,toast,subjectLabel:subject,subjectColor,showStudent,showBill,showApproval,showTask,openRecord,canOpenRecord,getPage:()=>state.page,hasView:id=>Boolean(viewFor(id)),closeMenu};
   const ax=window.createOwnerWorkspace(api);
   const ws=typeof window.createWorkspaces==='function'?window.createWorkspaces({...api,ax}):null;
   ax.useWorkspaces?.(ws);
