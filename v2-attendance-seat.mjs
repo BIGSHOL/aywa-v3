@@ -258,6 +258,11 @@ async function readDaySlots(sql, t, R, S, studentIds, date, seatClassIds) {
   }
   return { live: live.map(e => ({ studentId: e.student_id, classId: e.class_id, attendanceDays: e.attendance_days })), slotsByClass, classNames, todayIdx };
 }
+/** 2.0 `getSeatStudentClasses`(server/next-destination.ts) — 교시 이동 쓰기가 화면과 같은 조회·규칙으로 다시 잰다(이 자리 배치는 얹지 않는다). */
+export async function readSeatStudentClasses(sql, t, R, S, studentIds, date, seat) {
+  if (studentIds.length === 0) return { ok: true, byStudent: {} };
+  return { ok: true, byStudent: S.stuClasses.seatStudentClassesOf(await readDaySlots(sql, t, R, S, studentIds, date, []), seat) };
+}
 /** 2.0 `getSeatNextDestinationsBySlot`(server/next-destination.ts). */
 export async function readSeatNextDestinations(sql, t, R, S, studentIds, date, afterStarts, stays) {
   const EMPTY = { startByStudent: {}, roomByStudent: {}, lastByStudent: {} };

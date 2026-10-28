@@ -23,10 +23,13 @@
 //        prefs-actions.ts loadAttendanceViewPrefs(서버 전용 — load가 같은 값)
 //  · 하위 주소(v2path) — 2.0 `/attendance/seat/<자리>`(자리 하루: SeatAllDay·SeatJjAllDay·SeatBoard) · `…/month`(자리 월간: MonthlyTable) ·
 //    `/attendance/seat`(첫 자리로 redirect). 조회·props는 v2-attendance-seat.mjs(2.0 seat/page.tsx·month/page.tsx와 같은 값).
-//    자리 쪽 2.0 서버 함수(아직 받지 않음 — 부품이 모두 `"error" in res`로 읽어 shim 공통 거절이 안전): seat/server/actions.ts setSeatCell ·
+//    자리 쪽 2.0 서버 함수 → actions.같은 이름(v2-attendance-seat-save.mjs — 같은 표·칸·감사로그): seat/server/actions.ts setSeatCell ·
 //    fillSeatSlot · fillSeatPrevAbsent / mark-actions.ts setSeatJjField · commitSeatJjEdits / period-actions.ts moveSeatStudentPeriod ·
-//    clearSeatPeriodChoices / placement-actions.ts resetSeatPlacements / memorized-actions.ts pullSeatMemorizedWords(바깥 인재원 연동) /
-//    monthly-prefs.ts saveSeatMonthlyCollapsed / jj-plan-actions.ts 6개 · class-sheets/server/actions.ts · textbooks/server/plan-actions.ts(JJ 계획 편집 — 영어 시트와 같은 기계).
+//    clearSeatPeriodChoices / placement-actions.ts resetSeatPlacements / monthly-prefs.ts saveSeatMonthlyCollapsed.
+//    memorized-actions.ts pullSeatMemorizedWords = 바깥(인재원) 연동이라 2.0 실패 모양으로 거절. 아직 받지 않는 것(shim 공통 거절 — 부품이
+//    모두 `"error" in res`·`res.ok`로 읽는다): JJ 계획 편집(로그인 화면 = ECS_PLAN_API — class-sheets/server/actions.ts · edit-audit-actions.ts ·
+//    textbooks/server/plan-actions.ts · compare-actions.ts · shift-undo-actions.ts. 영어 시트 화면 모듈(v2-screen-ecs.mjs)의 같은 이름에 위임할 예정) ·
+//    jj-plan-actions.ts 6개(공개 PIN 화면 전용 — 앱 밖이라 범위 밖).
 // "오늘"은 복사본 기준일(백업 시각의 KST 날짜) — 3.0 다른 화면과 같은 날이다. 자리 화면의 기본 교시는 복사본 기준 시각으로 고른다.
 //
 // ── 호스트에 붙일 때(v2-host 빌드가 출석부 진입점에서 닿는 것 — 2.0 Next에만 있는 경계) ──
@@ -49,6 +52,7 @@ import { activeBackup } from './full-db-paths.mjs';
 import { scrub } from './domain-snapshot-core.mjs';
 import { V2Error } from './v2-screens.mjs';
 import { loadSeatRules, seatDayProps, seatMonthProps } from './v2-attendance-seat.mjs';
+import * as SeatSave from './v2-attendance-seat-save.mjs';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const MODULES = {
@@ -975,6 +979,19 @@ const HUB_MODULE = 'features/attendance/server/hub-search-actions.ts', INTAKE_MO
 const INTAKE_NOT_YET = '결석 통보 접수는 이 연습 화면에 아직 없습니다 — 바뀐 것은 없습니다.';
 const notYet = (module, arity, reply) => ({ validate: raw => readCall(raw, module, arity), run: async ({ importV2 }) => reply(await loadRules(importV2)) });
 
+// 자리(랩실·JJ실) 저장 — 2.0 seat/server/*의 "use server" 함수(v2-attendance-seat-save.mjs).
+const SEAT_ACTIONS = 'features/attendance/seat/server/actions.ts', SEAT_MARKS = 'features/attendance/seat/server/mark-actions.ts';
+const SEAT_PREFS = 'features/attendance/seat/server/monthly-prefs.ts', SEAT_MEMORIZED = 'features/attendance/seat/server/memorized-actions.ts';
+const SEAT_PERIODS = 'features/attendance/seat/server/period-actions.ts', SEAT_PLACEMENTS = 'features/attendance/seat/server/placement-actions.ts';
+async function seatCtx({ sql, body, tenantId, importV2 }) {
+  const [R, S, X] = await Promise.all([loadRules(importV2), loadSeatRules(importV2), SeatSave.loadSeatSaveRules(importV2)]);
+  return { c: { sql, t: tenantId, R, S, settings: await readSettings(sql, tenantId, R), actorId: body.actor }, X };
+}
+const seatAction = (module, need, fn) => ({
+  validate: raw => { const { actor, args: [input] } = hostCall(raw, module, 1); return { actor, input: SeatSave.seatInput(input, need) }; },
+  run: async ctx => { const { c, X } = await seatCtx(ctx); return fn(c, ctx.body.input, X); },
+});
+
 const prefs = (check, update) => ({ validate: prefsBody(check), run: async ({ sql, body, tenantId, importV2 }) => { const R = await loadRules(importV2); return mergeAttendancePrefs(sql, tenantId, R, body.actor, prev => update(R, prev, body.value)); } });
 
 // 2.0 "use server" 함수와 1:1 — 이름 = 2.0 export 이름(호스트가 그 이름으로 부른다), 인자 = 2.0 인자 그대로.
@@ -989,6 +1006,20 @@ screen.actions = {
   searchIntakeStudents: notYet(INTAKE_MODULE, 1, () => ({ students: [], note: INTAKE_NOT_YET, truncated: false })),
   previewAbsenceIntake: notYet(INTAKE_MODULE, 1, () => ({ student: null, cells: [], error: INTAKE_NOT_YET })),
   recordAbsenceIntake: notYet(INTAKE_MODULE, 1, () => ({ error: INTAKE_NOT_YET })),
+  // 자리 출석부(2.0 seat/server/*) — 이름·인자·반환 모양 = 2.0 그대로.
+  setSeatCell: seatAction(SEAT_ACTIONS, ['slot', 'cell'], (c, input) => SeatSave.setSeatCell(c, input)),
+  fillSeatSlot: seatAction(SEAT_ACTIONS, ['slot'], (c, input) => SeatSave.fillSeatSlot(c, input)),
+  fillSeatPrevAbsent: seatAction(SEAT_ACTIONS, ['slot'], (c, input) => SeatSave.fillSeatPrevAbsent(c, input)),
+  setSeatJjField: seatAction(SEAT_MARKS, ['slot', 'cell'], (c, input, X) => SeatSave.setSeatJjField(c, input, X)),
+  commitSeatJjEdits: seatAction(SEAT_MARKS, ['slot'], (c, input, X) => SeatSave.commitSeatJjEdits(c, input, X)),
+  moveSeatStudentPeriod: seatAction(SEAT_PERIODS, ['cell', 'move'], (c, input) => SeatSave.moveSeatStudentPeriod(c, input)),
+  clearSeatPeriodChoices: seatAction(SEAT_PERIODS, ['class'], (c, input) => SeatSave.clearSeatPeriodChoices(c, input)),
+  resetSeatPlacements: seatAction(SEAT_PLACEMENTS, ['slot'], (c, input) => SeatSave.resetSeatPlacements(c, input)),
+  saveSeatMonthlyCollapsed: {
+    validate: raw => { const { actor, args: [v] } = hostCall(raw, SEAT_PREFS, 1); if (!Array.isArray(v) || v.length > 400 || !v.every(x => typeof x === 'string' && x.length <= 64)) throw bad(); return { actor, value: v }; },
+    run: async ctx => { const { c } = await seatCtx(ctx); return SeatSave.saveSeatMonthlyCollapsed(c, ctx.body.value); },
+  },
+  pullSeatMemorizedWords: notYet(SEAT_MEMORIZED, 1, () => SeatSave.MEMORIZED_PULL_REFUSAL),
 };
 
 export const __test = { readProcessing, readClassAxis, readTransitions, actorsOf };

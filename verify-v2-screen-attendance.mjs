@@ -84,8 +84,9 @@ test('매개변수는 정해진 값만 받는다(나머지는 공통 틀이 400)
   assert.ok(ok('mode', 'teacher') && !ok('mode', 'Teacher') && ok('q', '김 수') && !ok('q', 'a\nb') && !ok('q', 'x'.repeat(81)));
   assert.ok(ok('subject', 'subject_1') && !ok('subject', 'Math'));
   assert.equal(screen.id, 'attendance'); assert.equal(screen.order, 4); assert.equal(screen.label, '출석부');
-  assert.deepEqual(Object.keys(screen.actions).sort(), ['previewAbsenceIntake', 'recordAbsenceIntake', 'saveAttendanceCollapsed', 'saveAttendanceHideRetired', 'saveAttendancePeriodMode', 'saveAttendanceSort',
-    'searchAttendanceHubStudents', 'searchIntakeStudents', 'setAttendanceCell']);
+  assert.deepEqual(Object.keys(screen.actions).sort(), ['clearSeatPeriodChoices', 'commitSeatJjEdits', 'fillSeatPrevAbsent', 'fillSeatSlot', 'moveSeatStudentPeriod', 'previewAbsenceIntake',
+    'pullSeatMemorizedWords', 'recordAbsenceIntake', 'resetSeatPlacements', 'saveAttendanceCollapsed', 'saveAttendanceHideRetired', 'saveAttendancePeriodMode', 'saveAttendanceSort',
+    'saveSeatMonthlyCollapsed', 'searchAttendanceHubStudents', 'searchIntakeStudents', 'setAttendanceCell', 'setSeatCell', 'setSeatJjField']);
 });
 
 test('아직 옮기지 않은 조회 셋은 그 함수의 2.0 실패 모양으로 답한다(부품이 결과를 읽다 깨지지 않게 · 쓰기 없음)', async () => {
@@ -472,6 +473,184 @@ test('복사본: 자리 월간 — 반 묶음은 그 기간에 자리 배치가 
   same(d.collapsed, S.monthlyPrefs.parseSeatMonthlyPrefs(row?.ui_prefs?.seatMonthly).collapsed);
   assert.equal((await seatLoad({ v2path: '/attendance/seat/zz/month' })).page, 'notFound');
   assert.equal((await seatLoad({ v2path: '/attendance/seat' })).to, '/attendance/seat/lab', '2.0 redirects to the first usable seat');
+});
+
+// ── 자리 저장(2.0 seat/server/*) — 테스트 반에 그 날 자리 교시를 하나 붙여(되돌리는 거래 안) 테스트 학생 '학원이'로만. ──
+const SEAT_ACTIONS_MOD = 'features/attendance/seat/server/actions.ts', SEAT_MARKS_MOD = 'features/attendance/seat/server/mark-actions.ts';
+test('저장(복사본, 되돌림): 자리 칸 출결·메모·지우기·남은 학생 일괄·JJ 칸이 2.0과 같은 행·감사로그를 남긴다', { skip: !db && 'local database not running' }, async () => {
+  const before = await db`select (select count(*)::int from public.audit_logs) audits, (select count(*)::int from net.http_request_queue) net`;
+  const TODAY = await A.copyDay(), DOW = R.cal.DOW_KEYS[new Date(`${TODAY}T00:00:00Z`).getUTCDay()], SLOT = '22:00';
+  await inRollback(async ({ sql, run, t }) => {
+    for (const label of ['LAB', 'JJ']) await sql`insert into public.class_schedules (tenant_id, class_id, day_of_week, start_time, end_time, valid_from, slot_teacher_label) values (${t}, ${CLASS}, ${DOW}, '22:00', '22:40', '2026-10-01', ${label})`;
+    const settings = await A.readSettings(sql, t, R), [writer] = await SEAT.seatWritersOf(sql, t, R, S, settings, 'lab');
+    const act = (name, module, input, actor = writer.id) => run(sql, name, { module, actor, args: [input] });
+    const cellOf = seat => ({ seat, date: TODAY, slotStart: SLOT, classId: CLASS, studentId: STUDENT });
+    const rows = () => sql`select status::text status, seat_label, recorded_via, slot_start::text slot_start, note, recorded_by::text recorded_by from public.attendance_records where class_id=${CLASS} and student_id=${STUDENT} and session_date=${TODAY}`;
+    const audits = action => sql`select actor_id::text actor_id, metadata from public.audit_logs where tenant_id=${t} and action=${action} and metadata->>'studentId'=${STUDENT} and metadata->>'via'='3.0 연습 복사본'`;
+    const fills = action => sql`select metadata from public.audit_logs where tenant_id=${t} and action=${action} and metadata->>'via'='3.0 연습 복사본' and metadata->'studentIds' ? ${STUDENT}`;
+    await sql`delete from public.attendance_records where class_id=${CLASS} and student_id=${STUDENT} and session_date=${TODAY}`;
+    // 그 교시 명단에 테스트 학생이 선다(2.0 getSeatDay 규약).
+    const day = await screen.load({ sql, params: { v2path: '/attendance/seat/lab', start: 'all', viewer: writer.id }, tenantId: t, importV2 });
+    assert.ok(day.props.periods.find(p => p.start === SLOT)?.rosters.some(r => r.students.some(s => s.id === STUDENT)), 'test student on the lab roster at 22:00');
+    // 랩실(급여 자리) — 새 행 = 자리 라벨 + recorded_via seat + 교시.
+    assert.deepEqual(await act('setSeatCell', SEAT_ACTIONS_MOD, { ...cellOf('lab'), status: 'present' }), { ok: true, changed: 1 });
+    let [r] = await rows(); assert.deepEqual({ ...r }, { status: 'present', seat_label: 'LAB', recorded_via: 'seat', slot_start: '22:00:00', note: null, recorded_by: writer.id });
+    let [a] = await audits('seat_attendance_set'); assert.deepEqual([a.actor_id, a.metadata.status, a.metadata.rows, a.metadata.seat, a.metadata.slotStart, a.metadata.from], [writer.id, 'present', 1, 'lab', SLOT, 'menu']);
+    // 같은 칸을 다시 쓰면 그 행을 고친다(행이 늘지 않는다).
+    await act('setSeatCell', SEAT_ACTIONS_MOD, { ...cellOf('lab'), status: 'late' });
+    assert.deepEqual((await rows()).map(x => x.status), ['late']);
+    // 메모만 — 상태 그대로, 감사로그엔 본문 없이.
+    await act('setSeatCell', SEAT_ACTIONS_MOD, { ...cellOf('lab'), status: 'late', noteOnly: true, note: ' 늦게 옴 ' });
+    [r] = await rows(); assert.deepEqual([r.status, r.note], ['late', '늦게 옴']);
+    [a] = await audits('seat_attendance_note'); assert.equal(a.metadata.cleared, false); assert.ok(!JSON.stringify(a.metadata).includes('늦게'));
+    // 지우기 — 행이 사라지고 지우기 줄.
+    assert.deepEqual(await act('setSeatCell', SEAT_ACTIONS_MOD, { ...cellOf('lab'), status: null }), { ok: true, changed: 1 });
+    assert.equal((await rows()).length, 0); assert.equal((await audits('seat_attendance_clear')).length, 1);
+    // 남은 학생 모두 출석 — 아직 안 찍힌 칸만, 두 번째는 0.
+    assert.deepEqual(await act('fillSeatSlot', SEAT_ACTIONS_MOD, { seat: 'lab', date: TODAY, slotStart: SLOT, status: 'present' }), { ok: true, changed: 1 });
+    assert.deepEqual((await rows()).map(x => [x.status, x.seat_label]), [['present', 'LAB']]);
+    assert.deepEqual(await act('fillSeatSlot', SEAT_ACTIONS_MOD, { seat: 'lab', date: TODAY, slotStart: SLOT, status: 'present' }), { ok: true, changed: 0 });
+    const [f] = await fills('seat_attendance_fill'); assert.deepEqual([f.metadata.count, f.metadata.skipped, f.metadata.status, f.metadata.classId], [1, 0, 'present', CLASS]);
+    await sql`delete from public.attendance_records where class_id=${CLASS} and student_id=${STUDENT} and session_date=${TODAY}`;
+    // JJ실(비급여 자리) — 자리 라벨 없음 · 담임의 '그날 전체' 행이 있으면 그 행을 이 교시로 옮겨 쓴다(2.0 pickSaveTargets — 이중 계상 방지).
+    await sql`insert into public.attendance_records (tenant_id, class_id, student_id, session_date, slot_start, status, recorded_by) values (${t}, ${CLASS}, ${STUDENT}, ${TODAY}, null, 'present', ${writer.id})`;
+    assert.deepEqual(await act('setSeatCell', SEAT_ACTIONS_MOD, { ...cellOf('jj'), status: 'absent' }), { ok: true, changed: 1 });
+    assert.deepEqual((await rows()).map(x => [x.status, x.seat_label, x.slot_start]), [['absent', null, '22:00:00']]);
+    // JJ 칸 — 영어 시트 JJ 폼과 같은 행, 칸을 떠나면 한 줄(바뀐 칸만), 모두 비우면 행이 지워진다.
+    const marks = () => sql`select listening_level, memorized_words, updated_by::text updated_by from public.class_sheet_student_marks where class_id=${CLASS} and student_id=${STUDENT} and mark_date=${TODAY} and slot_start='22:00'`;
+    assert.deepEqual(await act('setSeatJjField', SEAT_MARKS_MOD, { ...cellOf('jj'), field: 'listeningLevel', value: ' 7 ' }), { ok: true });
+    assert.deepEqual((await marks()).map(m => [m.listening_level, m.updated_by]), [['7', writer.id]]);
+    const edit = { cell: { kind: 'seatJj', classId: CLASS, studentId: STUDENT, date: TODAY, slotStart: SLOT, field: 'listeningLevel' }, before: null };
+    assert.deepEqual(await act('commitSeatJjEdits', SEAT_MARKS_MOD, { seat: 'jj', date: TODAY, slotStart: SLOT, edits: [edit] }), { ok: true });
+    [a] = await audits('seat_jj_mark_edit'); assert.deepEqual([a.metadata.field, a.metadata.before, a.metadata.after, a.metadata.from], ['listeningLevel', null, '7', 'menu']);
+    await act('setSeatJjField', SEAT_MARKS_MOD, { ...cellOf('jj'), field: 'listeningLevel', value: '' });
+    assert.equal((await marks()).length, 0, 'all-empty mark row removed');
+    // 2.0 거절 문구 — 명단 밖 학생 · 권한 없는 사람 · 랩실에 JJ 칸.
+    const [other] = await sql`select id::text id from public.students where tenant_id=${t} and not is_test limit 1`;
+    assert.deepEqual(await act('setSeatCell', SEAT_ACTIONS_MOD, { ...cellOf('lab'), studentId: other.id, status: 'present' }), { error: '이 교시 명단에 없는 학생입니다' });
+    assert.deepEqual(await act('setSeatCell', SEAT_ACTIONS_MOD, { ...cellOf('lab'), status: 'present' }, STUDENT), { error: '자리 출석부 입력 권한이 없습니다' });
+    assert.deepEqual(await act('setSeatJjField', SEAT_MARKS_MOD, { ...cellOf('lab'), field: 'listeningLevel', value: '1' }), { error: '이 자리에는 기록 칸이 없습니다' });
+    // 보강 예약이 걸린 칸 — 2.0은 예약 이행까지 바꾸므로 쓰지 않고 사유를 말한다(칸 하나 · 일괄 모두).
+    await sql`delete from public.attendance_records where class_id=${CLASS} and student_id=${STUDENT} and session_date=${TODAY}`;
+    await sql`insert into public.makeup_reservations (tenant_id, student_id, class_id, absence_date, makeup_date, slot_start, slot_end, status) values (${t}, ${STUDENT}, ${CLASS}, '2026-10-20', ${TODAY}, '22:00', '22:40', 'reserved')`;
+    assert.match((await act('setSeatCell', SEAT_ACTIONS_MOD, { ...cellOf('lab'), status: 'present' })).error, /보강 예약이 걸린 칸/);
+    assert.match((await act('fillSeatSlot', SEAT_ACTIONS_MOD, { seat: 'lab', date: TODAY, slotStart: SLOT, status: 'absent' })).error, /보강 예약이 걸린 칸/);
+    assert.equal((await rows()).length, 0);
+    // 바깥 연동(인재원 단어수)은 부르지 않는다 · 월간 접기 = 그 사람 ui_prefs.seatMonthly.
+    assert.match((await run(sql, 'pullSeatMemorizedWords', { module: 'features/attendance/seat/server/memorized-actions.ts', actor: writer.id, args: [{ seat: 'jj', date: TODAY }] })).error, /바깥/);
+    assert.deepEqual(await run(sql, 'saveSeatMonthlyCollapsed', { module: 'features/attendance/seat/server/monthly-prefs.ts', actor: writer.id, args: [[CLASS]] }), { ok: true });
+    const [u] = await sql`select ui_prefs from public.users where id=${writer.id}`;
+    same(u.ui_prefs.seatMonthly, S.monthlyPrefs.parseSeatMonthlyPrefs({ collapsed: [CLASS] }));
+    assert.equal((await sql`select count(*)::int n from net.http_request_queue`)[0].n, before[0].net);
+  });
+  assert.equal((await db`select count(*)::int n from public.audit_logs`)[0].n, before[0].audits, 'rolled back — the copy is unchanged');
+});
+
+test('저장(복사본, 되돌림): 앞 교시 결석 → 이 교시도 결석(2.0 fillSeatPrevAbsent · seat_attendance_fill_prev)', { skip: !db && 'local database not running' }, async () => {
+  const TODAY = await A.copyDay(), DOW = R.cal.DOW_KEYS[new Date(`${TODAY}T00:00:00Z`).getUTCDay()];
+  await inRollback(async ({ sql, run, t }) => {
+    for (const st of ['21:00', '22:00']) await sql`insert into public.class_schedules (tenant_id, class_id, day_of_week, start_time, end_time, valid_from, slot_teacher_label) values (${t}, ${CLASS}, ${DOW}, ${st}, ${st.replace(':00', ':40')}, '2026-10-01', 'LAB')`;
+    const settings = await A.readSettings(sql, t, R), [writer] = await SEAT.seatWritersOf(sql, t, R, S, settings, 'lab');
+    await sql`delete from public.attendance_records where class_id=${CLASS} and student_id=${STUDENT} and session_date=${TODAY}`;
+    const act = (name, input) => run(sql, name, { module: SEAT_ACTIONS_MOD, actor: writer.id, args: [input] });
+    await act('setSeatCell', { seat: 'lab', date: TODAY, slotStart: '21:00', classId: CLASS, studentId: STUDENT, status: 'absent' });
+    // 화면의 'N명' 표식과 같은 함수(prevPeriodAbsences) — 22:00 교시에 이 학생이 후보로 선다.
+    const d = await screen.load({ sql, params: { v2path: '/attendance/seat/lab', start: 'all', viewer: writer.id }, tenantId: t, importV2 });
+    assert.equal(d.props.periods.find(p => p.start === '22:00').prevAbsentByCell[`${CLASS}|${STUDENT}`], '21:00');
+    assert.deepEqual(await act('fillSeatPrevAbsent', { seat: 'lab', date: TODAY, slotStart: '22:00' }), { ok: true, changed: 1 });
+    const recs = await sql`select slot_start::text s, status::text st from public.attendance_records where class_id=${CLASS} and student_id=${STUDENT} and session_date=${TODAY} order by slot_start`;
+    assert.deepEqual(recs.map(r => [r.s, r.st]), [['21:00:00', 'absent'], ['22:00:00', 'absent']]);
+    const [a] = await sql`select metadata from public.audit_logs where tenant_id=${t} and action='seat_attendance_fill_prev' and metadata->>'via'='3.0 연습 복사본' and metadata->'studentIds' ? ${STUDENT}`;
+    assert.deepEqual([a.metadata.prevStarts, a.metadata.count, a.metadata.slotStart], [['21:00'], 1, '22:00']);
+    assert.deepEqual(await act('fillSeatPrevAbsent', { seat: 'lab', date: TODAY, slotStart: '22:00' }), { ok: true, changed: 0 }, 'nothing left to fill');
+  });
+});
+
+// 교시 이동·해제·배치 초기화(2.0 period-actions.ts · placement-actions.ts) — 출결은 한 줄도 안 바뀐다. 테스트 반 둘(학원이 · 학원삼)만.
+const CLASS2 = '50d2ece7-6514-4474-8cfc-dd8983d15c18', SEAT_PERIODS_MOD = 'features/attendance/seat/server/period-actions.ts', SEAT_PLACE_MOD = 'features/attendance/seat/server/placement-actions.ts';
+test('저장(복사본, 되돌림): 랩실 교시 이동·상시 고정·해제·배치 초기화가 2.0과 같은 행·감사로그를 남기고 출결은 그대로다', { skip: !db && 'local database not running' }, async () => {
+  const before = await db`select (select count(*)::int from public.audit_logs) audits, (select count(*)::int from net.http_request_queue) net`;
+  const TODAY = await A.copyDay(), DOW = R.cal.DOW_KEYS[new Date(`${TODAY}T00:00:00Z`).getUTCDay()];
+  await inRollback(async ({ sql, run, t }) => {
+    for (const [cls, st] of [[CLASS, '21:00'], [CLASS, '22:00'], [CLASS2, '20:00'], [CLASS2, '22:00']])
+      await sql`insert into public.class_schedules (tenant_id, class_id, day_of_week, start_time, end_time, valid_from, slot_teacher_label) values (${t}, ${cls}, ${DOW}, ${st}, ${st.replace(':00', ':40')}, '2026-10-01', 'LAB')`;
+    await sql`delete from public.attendance_records where class_id = any(${[CLASS, CLASS2]}::uuid[]) and session_date=${TODAY}`;
+    const settings = await A.readSettings(sql, t, R), [writer] = await SEAT.seatWritersOf(sql, t, R, S, settings, 'lab');
+    const marks = async () => (await sql`select count(*)::int n, coalesce(max(recorded_at)::text, '') at from public.attendance_records where tenant_id=${t} and session_date=${TODAY} and class_id = any(${[CLASS, CLASS2]}::uuid[])`)[0];
+    const marksBefore = await marks();
+    const move = (input, actor = writer.id) => run(sql, 'moveSeatStudentPeriod', { module: SEAT_PERIODS_MOD, actor, args: [{ seat: 'lab', date: TODAY, studentId: STUDENT, classId: CLASS, ...input }] });
+    const audits = action => sql`select actor_id::text actor_id, metadata from public.audit_logs where tenant_id=${t} and action=${action} and metadata->>'via'='3.0 연습 복사본' and metadata->>'date'=${TODAY} order by created_at, id`;
+    const dayView = async () => (await screen.load({ sql, params: { v2path: '/attendance/seat/lab', start: 'all', viewer: writer.id }, tenantId: t, importV2 })).props;
+    const movesRows = () => sql`select slot_start::text s, moved_by::text by from public.seat_period_moves where tenant_id=${t} and seat='lab' and session_date=${TODAY} and student_id=${STUDENT}`;
+    // 하루 두 번 도는 반의 교시 고르기(21:00 → 22:00 · 그 반의 자리 교시 = crossTime 아님).
+    assert.deepEqual(await move({ fromSlot: '21:00', toSlot: '22:00' }), { ok: true, pinned: false });
+    assert.deepEqual((await movesRows()).map(r => [r.s, r.by]), [['22:00:00', writer.id]]);
+    let [a] = await audits('seat_period_move');
+    assert.deepEqual([a.actor_id, a.metadata.fromSlot, a.metadata.toSlot, a.metadata.crossTime, a.metadata.classId, a.metadata.from], [writer.id, '21:00', '22:00', false, CLASS, 'menu']);
+    let v = await dayView();
+    same(v.choiceDay.moves, [{ classId: CLASS, studentId: STUDENT, slotStart: '22:00' }]);
+    // 다른 시간(옆 반의 자리 교시 20:00 · 이 반엔 없는 교시 = crossTime) + 상시 고정 — 그날 줄은 제자리에서 고친다.
+    assert.deepEqual(await move({ fromSlot: '22:00', toSlot: '20:00', pin: true }), { ok: true, pinned: true });
+    assert.deepEqual((await sql`select day_of_week, slot_start::text s, effective_from::text f, pinned_by::text by from public.seat_period_pins where tenant_id=${t} and seat='lab' and student_id=${STUDENT}`).map(r => [r.day_of_week, r.s, r.f, r.by]), [[DOW, '20:00:00', TODAY, writer.id]]);
+    assert.deepEqual((await movesRows()).map(r => r.s), ['20:00:00'], 'same day row updated in place');
+    [a] = await audits('seat_period_pin');
+    assert.deepEqual([a.metadata.crossTime, a.metadata.dayOfWeek, a.metadata.effectiveFrom, a.metadata.confirmOnly], [true, DOW, TODAY, undefined]);
+    // 고정 확인만(창의 두 번째 호출 — 학생은 이미 20:00에 서 있다).
+    assert.deepEqual(await move({ fromSlot: '22:00', toSlot: '20:00', pin: true }), { ok: true, pinned: true });
+    // ⚠️ 한 거래 안이라 created_at이 같다 — 줄 순서에 기대지 않고 내용으로 고른다.
+    assert.deepEqual((await audits('seat_period_pin')).map(x => x.metadata.confirmOnly ?? false).sort(), [false, true]);
+    // 2.0 거절 문구 — 같은 교시 · 없는 교시 · 명단 밖 · JJ실 · 권한 없음 · 찍힌 학생.
+    assert.deepEqual(await move({ fromSlot: '20:00', toSlot: '20:00' }), { error: S.choice.SEAT_PERIOD_SAME });
+    assert.deepEqual(await move({ fromSlot: '20:00', toSlot: '23:00' }), { error: S.choice.SEAT_PERIOD_NO_SLOT });
+    assert.deepEqual(await move({ fromSlot: '21:00', toSlot: '22:00' }), { error: '이 교시 명단에 없는 학생입니다' }, 'moved away from 21:00 already');
+    assert.deepEqual(await run(sql, 'moveSeatStudentPeriod', { module: SEAT_PERIODS_MOD, actor: writer.id, args: [{ seat: 'jj', date: TODAY, studentId: STUDENT, classId: CLASS, fromSlot: '21:00', toSlot: '22:00' }] }), { error: 'JJ실은 자리 이동을 쓰지 않습니다' });
+    assert.deepEqual(await move({ fromSlot: '20:00', toSlot: '22:00' }, STUDENT), { error: '자리 출석부 입력 권한이 없습니다' });
+    await sql`insert into public.attendance_records (tenant_id, class_id, student_id, session_date, slot_start, status, seat_label, recorded_by) values (${t}, ${CLASS}, ${STUDENT}, ${TODAY}, '20:00', 'present', 'LAB', ${writer.id})`;
+    assert.deepEqual(await move({ fromSlot: '20:00', toSlot: '22:00' }), { error: S.placement.SEAT_MOVE_MARKED_ERROR });
+    await sql`delete from public.attendance_records where class_id=${CLASS} and student_id=${STUDENT} and session_date=${TODAY}`;
+    // 해제 — 그날 이동 + 그 요일 고정을 함께(두 번째는 0 · 줄 없음).
+    const clear = () => run(sql, 'clearSeatPeriodChoices', { module: SEAT_PERIODS_MOD, actor: writer.id, args: [{ seat: 'lab', date: TODAY, classId: CLASS }] });
+    assert.deepEqual(await clear(), { ok: true, changed: 2 });
+    [a] = await audits('seat_period_clear');
+    assert.deepEqual([a.metadata.count, a.metadata.dayOfWeek, a.metadata.removedMoves, a.metadata.removedPins], [2, DOW, [{ studentId: STUDENT, slotStart: '20:00' }], [{ studentId: STUDENT, slotStart: '20:00' }]]);
+    assert.deepEqual(await clear(), { ok: true, changed: 0 }); assert.equal((await audits('seat_period_clear')).length, 1);
+    v = await dayView(); same([v.choiceDay.moves, v.choiceDay.pins], [[], []]);
+    // 배치 초기화 — 22:00에 학원이를 옆 반(학원삼) 묶음에 옮겨 둔 줄(드래그로 새로 만드는 길은 2.0에 없다 — 이미 있는 줄).
+    const place = () => sql`insert into public.seat_placements (tenant_id, seat, session_date, slot_start, student_id, from_class_id, to_class_id, moved_by) values (${t}, 'lab', ${TODAY}, '22:00', ${STUDENT}, ${CLASS}, ${CLASS2}, ${writer.id})`;
+    const reset = classId => run(sql, 'resetSeatPlacements', { module: SEAT_PLACE_MOD, actor: writer.id, args: [{ seat: 'lab', date: TODAY, slotStart: '22:00', ...(classId ? { classId } : {}) }] });
+    await place();
+    same((await dayView()).periods.find(p => p.start === '22:00').placements, [{ studentId: STUDENT, fromClassId: CLASS, toClassId: CLASS2 }]);
+    assert.deepEqual(await reset(CLASS), { ok: true, changed: 0 }, 'nobody was moved INTO the home class');
+    assert.deepEqual(await reset(CLASS2), { ok: true, changed: 1 });
+    [a] = await audits('seat_placement_reset');
+    assert.deepEqual([a.metadata.scope, a.metadata.classId, a.metadata.slotStart, a.metadata.count, a.metadata.moves], ['class', CLASS2, '22:00', 1, [{ studentId: STUDENT, fromClassId: CLASS2, toClassId: CLASS }]]);
+    await place();
+    assert.deepEqual(await reset(), { ok: true, changed: 1 });
+    const resets = (await audits('seat_placement_reset')).map(x => x.metadata), last = resets.find(m => m.scope === 'period');
+    assert.deepEqual([resets.length, 'classId' in last, last.count], [2, false, 1]);
+    assert.equal((await sql`select count(*)::int n from public.seat_placements where tenant_id=${t} and session_date=${TODAY}`)[0].n, 0);
+    assert.deepEqual(await run(sql, 'resetSeatPlacements', { module: SEAT_PLACE_MOD, actor: writer.id, args: [{ seat: 'lab', date: TODAY, slotStart: '23:00' }] }), { error: '그 시각에는 이 자리 수업이 없습니다' });
+    // 출결은 한 줄도 안 바뀌었다(2.0: 이 두 파일은 attendance_records에 쓰지 않는다) · 바깥 요청 없음.
+    assert.deepEqual(await marks(), marksBefore);
+    assert.equal((await sql`select count(*)::int n from net.http_request_queue`)[0].n, before[0].net);
+  });
+  assert.equal((await db`select count(*)::int n from public.audit_logs`)[0].n, before[0].audits, 'rolled back — the copy is unchanged');
+});
+
+test('저장: 자리 액션 입력 검사는 복사본에 닿기 전에 거절한다', () => {
+  const v = (name, module, input) => screen.actions[name].validate({ module, actor: CLASS, args: [input] });
+  const base = { seat: 'lab', date: '2026-10-27', slotStart: '22:00', classId: CLASS, studentId: STUDENT };
+  assert.equal(v('setSeatCell', SEAT_ACTIONS_MOD, base).input.seat, 'lab');
+  for (const bad of [{ ...base, seat: 'LAB!' }, { ...base, date: '2026-10' }, { ...base, slotStart: '2200' }, { ...base, classId: 'x' }, { ...base, studentId: undefined }]) assert.throws(() => v('setSeatCell', SEAT_ACTIONS_MOD, bad), /입력 값/);
+  assert.throws(() => v('setSeatCell', SEAT_MARKS_MOD, base), /입력 값/, 'another 2.0 module');
+  assert.throws(() => screen.actions.saveSeatMonthlyCollapsed.validate({ module: 'features/attendance/seat/server/monthly-prefs.ts', actor: CLASS, args: ['x'] }), /입력 값/);
+  const mv = { seat: 'lab', date: '2026-10-27', studentId: STUDENT, classId: CLASS, fromSlot: '21:00', toSlot: '22:00' };
+  assert.equal(v('moveSeatStudentPeriod', SEAT_PERIODS_MOD, { ...mv, pin: true }).input.pin, true);
+  for (const bad of [{ ...mv, toSlot: undefined }, { ...mv, fromSlot: '9:00' }, { ...mv, pin: 'yes' }, { ...mv, studentId: 'x' }]) assert.throws(() => v('moveSeatStudentPeriod', SEAT_PERIODS_MOD, bad), /입력 값/);
+  assert.throws(() => v('clearSeatPeriodChoices', SEAT_PERIODS_MOD, { seat: 'lab', date: '2026-10-27' }), /입력 값/, 'classId required');
+  assert.equal(v('resetSeatPlacements', SEAT_PLACE_MOD, { seat: 'lab', date: '2026-10-27', slotStart: '22:00' }).input.classId, undefined);
+  assert.throws(() => v('resetSeatPlacements', SEAT_PLACE_MOD, { seat: 'lab', date: '2026-10-27' }), /입력 값/, 'slotStart required');
+  assert.throws(() => v('resetSeatPlacements', SEAT_PERIODS_MOD, { seat: 'lab', date: '2026-10-27', slotStart: '22:00' }), /입력 값/, 'another 2.0 module');
 });
 
 test.after(async () => { await db?.end(); });
