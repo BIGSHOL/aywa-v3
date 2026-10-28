@@ -48,7 +48,8 @@ export function scrub(text) {
 export const metric = (label, value, unit, detail = '') => ({ label, value: finite(value), unit, detail });
 export const field = (label, value) => ({ label, value: value === null || value === undefined || value === '' ? '—' : scrub(value) });
 export const record = ({ id, label, detail = '', date = '', status = '', fields = [], facets = [] }) => ({ id: String(id), label: scrub(label) || '—', detail: scrub(detail) || '', date: date || '', status: scrub(status) || '', fields: fields.map(f => ({ label: f.label, value: scrub(f.value) })), facetIds: facets.filter(Boolean).map(String) });
-export const signal = ({ id, title, summary, priority, source, recordIds = [], draft }) => ({ id, title, summary, priority, source, recordIds: recordIds.map(String), draft });
+// facet = 이 신호를 처리하는 목록의 걸러 보기(일 카드의 '○○ 열기'가 그 걸러 보기로 연다 — 원장 10-28 "어디로 가야하는지 배선 같은게 없음").
+export const signal = ({ id, title, summary, priority, source, recordIds = [], draft, facet = '' }) => ({ id, title, summary, priority, source, recordIds: recordIds.map(String), draft, ...(facet ? { facet } : {}) });
 export const sumOf = rows => rows.reduce((n, r) => n + (Number(r.count) || 0), 0);
 export const countOf = (rows, key) => rows.find(r => r.key === key)?.count || 0;
 

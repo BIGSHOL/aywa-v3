@@ -157,3 +157,5 @@
 .ws-screens button[aria-pressed=true]{background:var(--ax-primary);border-color:var(--ax-primary);color:#fff}
 .ws-action-group.focus h3{color:var(--ax-primary)}
 .ws-records-title{margin-top:8px;font-size:var(--ax-sm)}
+/* 기록 첨부(원장 10-28) */
+.ws-attach{display:flex;flex-direction:column;gap:8px;padding:10px 12px;border:1px dashed var(--ax-line);border-radius:8px}.ws-attach>small{font-size:var(--ax-xs)}

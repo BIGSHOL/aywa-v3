@@ -424,5 +424,18 @@ window.createWorkspaces = function createWorkspaces(api) {
   document.addEventListener('click',event=>{const summary=event.target.closest?.('[data-ws-group]>summary');if(!summary)return;const d=summary.parentElement,g=d.dataset.wsGroup;if(d.open){state.open.delete(g);state.closed.add(g);}else{state.open.add(g);state.closed.delete(g);}},true);
   window.addEventListener('ax-catalog',()=>api.render());
 
-  return {has,familyOf,view,sidebar,homeSignals,searchItems,coverage,area,areas,showRecord,kpiCard,data};
+  // 기록 첨부(원장 10-28 "후속 보고 쓰기에 실제 db를 활용해 결과 첨부" · "업무요청에도 실제 db를 활용해 요청가능하게"): 영역을 고르고
+  // 그 영역 기록을 복사본 DB에서 읽은 기록 저장소에서 찾아 여러 건 붙인다. 값 = "영역|기록"(name="attach") — 서버가 저장소에서 다시 찾아 확인된 값만 남긴다.
+  function attachRecordPicker(scope,fam){const CP=window.ContextPicker;if(!CP||!has(fam))return '';
+    const tag=r=>({...r,id:`${fam}|${r.id}`}),items=previews(fam).map(tag),list=CP.lists.records({items,familyLabel:area(fam)?.label||'기록',total:Number(data(fam)?.totalRecords)||items.length});
+    return CP.html({id:`${scope}-attach-records`,name:'attach',label:'첨부할 기록',multiple:true,unit:'건',addLabel:'기록 고르기',multiHint:'여러 건 고를 수 있음',...list,
+      remote:{load:async(q,{signal})=>{const r=await fetch(`/api/workspaces/${encodeURIComponent(fam)}/records?q=${encodeURIComponent(q)}&pageSize=50`,{signal,headers:{Accept:'application/json'}});const b=await r.json().catch(()=>null);if(!r.ok)throw new Error(b?.message||'기록을 찾지 못했습니다.');return {options:(b.items||[]).map(tag).map(list.option),filtered:b.filteredTotal};}}});}
+  function attachField(scope,fam=''){const CP=window.ContextPicker;if(!CP)return '';const start=has(fam)?fam:'';
+    const areaPick=CP.html({id:`${scope}-attach-area`,name:'attachArea',label:'기록 첨부 · 영역',clearable:false,selected:start?[start]:[],attrs:{'data-attach-area':scope},
+      ...CP.lists.choices({noun:'영역',columns:[{key:'name',label:'영역'},{key:'group',label:'묶음'},{key:'count',label:'기록',w:'6em'}],items:areas().filter(a=>Number(data(a.id)?.totalRecords)).map(a=>({value:a.id,title:a.label,cells:{group:a.group||'',count:`${fmt(Number(data(a.id)?.totalRecords)||0)}건`}}))})});
+    return `<div class="ws-attach" data-attach-scope="${h(scope)}">${areaPick}<div class="ws-attach-records">${start?attachRecordPicker(scope,start):''}</div><small>복사본 DB의 기록을 고르면, 저장할 때 그 기록의 이름·날짜·상태가 함께 남습니다. 영역을 바꾸면 고른 기록은 비워집니다.</small></div>`;}
+  document.addEventListener('change',event=>{const root=event.target.closest?.('[data-attach-area]');if(!root)return;const scope=root.dataset.attachArea,fam=root.querySelector('input[type=hidden]')?.value||'',box=document.querySelector(`.ws-attach[data-attach-scope="${CSS.escape(scope)}"] .ws-attach-records`);if(box)box.innerHTML=attachRecordPicker(scope,fam);});
+  /** Opens a family's workspace, optionally on one record facet (일 카드의 '○○ 열기'). */
+  function openFamily(id,facet=''){if(!has(id))return false;state.facet[id]=facet||'';state.page[id]=1;api.navigate(`workspace-${id}`);return true;}
+  return {has,familyOf,view,sidebar,homeSignals,searchItems,coverage,area,areas,showRecord,kpiCard,data,openFamily,attachField};
 };

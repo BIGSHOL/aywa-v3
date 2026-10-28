@@ -1,7 +1,7 @@
 // POST /api/flow/actions command layer: strict validation, idempotent commandId, revision check,
 // server-side actor eligibility, and the state transitions. AI is only reached through `ai`.
 import { scrub } from './domain-snapshot-core.mjs';
-import { FAMILY_IDS } from './domain-snapshot.mjs';
+import { FAMILY_IDS, workspaceRecords } from './domain-snapshot.mjs';
 import { COMMAND_KINDS, COMMAND_ROLES, PRIORITIES, REPORT_OUTCOMES, SCENARIOS, TEMPLATES } from './flow-rules.mjs';
 import { actorMap, advance, entityRef, newEvent, refreshCase, resolveRole, step } from './flow-engine.mjs';
 import { signalStepRefs } from './flow-hierarchy.mjs';
@@ -55,6 +55,22 @@ const assignable = (actors, ids) => {
   for (const id of ids) { const a = actors.get(id); if (!a || a.preview || !a.assignable) throw new CommandError(400, 'assignee_not_allowed', '배정할 수 없는 사람이 있습니다.'); }
   return ids;
 };
+// 기록 첨부(원장 10-28 "후속 보고 쓰기에 실제 db를 활용해 결과 첨부할 수 있게" · "업무요청에도 실제 db를 활용해 요청가능하게"):
+// "영역|기록" 목록을 복사본 DB에서 읽은 작업 공간 기록 저장소에서 다시 찾아, 확인된 값(이름·날짜·상태·칸)만 남긴다. 화면이 보낸 값은 쓰지 않는다.
+function attachments(list, max = 20) {
+  if (list === undefined) return [];
+  if (!Array.isArray(list) || list.length > max) throw bad(`첨부 기록은 ${max}건까지 붙일 수 있습니다.`);
+  const store = workspaceRecords(); if (!store) throw new CommandError(503, 'records_unavailable', '기록 저장소가 아직 준비되지 않았습니다. 잠시 뒤 다시 시도해 주세요.');
+  const out = new Map();
+  for (const x of list) {
+    const m = typeof x === 'string' ? /^([a-z][a-z-]{0,40})\|([A-Za-z0-9][A-Za-z0-9:._-]{0,99})$/.exec(x) : null;
+    if (!m) throw bad('첨부 기록 값이 올바르지 않습니다.');
+    const r = store.families.get(m[1])?.records.find(y => y.id === m[2]);
+    if (!r) throw new CommandError(400, 'attachment_not_found', '복사본에서 찾을 수 없는 기록입니다.');
+    out.set(`${m[1]}|${r.id}`, { familyId: m[1], recordId: r.id, label: r.label, date: r.date || '', status: r.status || '', detail: r.detail || '', fields: (r.fields || []).slice(0, 6) });
+  }
+  return [...out.values()];
+}
 function recordRefs(source, list, allowed, max = 20) {
   if (list === undefined) return [];
   if (!Array.isArray(list) || list.length > max) throw bad(`연결 기록은 ${max}개까지 붙일 수 있습니다.`);
@@ -96,7 +112,8 @@ export async function applyCommand(state, source, cmd, { now, inFlight = new Map
 
   switch (cmd.kind) {
     case 'request.create': {
-      keys(payload, ['title', 'body', 'assigneeIds', 'dueAt', 'priority', 'familyId', 'recordRefs', 'channels', 'source']);
+      keys(payload, ['title', 'body', 'assigneeIds', 'dueAt', 'priority', 'familyId', 'recordRefs', 'channels', 'source', 'attachments']);
+      const atts = attachments(payload.attachments);
       if (!str(payload.title, 1, 80) || !str(payload.body, 1, 2000)) throw bad('제목(80자)과 내용(2,000자)을 입력해 주세요.');
       const who = assignable(actors, payload.assigneeIds);
       if (payload.dueAt !== undefined && (!/^\d{4}-\d{2}-\d{2}$/.test(payload.dueAt))) throw bad('기한 날짜 형식이 올바르지 않습니다.');
@@ -108,7 +125,7 @@ export async function applyCommand(state, source, cmd, { now, inFlight = new Map
       const refs = recordRefs(source, payload.recordRefs);
       const steps = who.map((id, i) => step(`s${i + 1}`, { key: 'assignee_report', label: `${actors.get(id).name} 확인·보고`, role: 'assignee', evidenceRequired: true }, { assigneeIds: [id], queue: null, rule: '요청한 사람이 지정', ruleSource: 'request.create' }, 1));
       steps.push(step(`s${who.length + 1}`, { key: 'manager_review', label: '관리자 검토 후 마감', role: 'manager', review: true }, resolveRole(source, 'manager', []), 2));
-      const c = local({ kind: 'request', scenario: null, familyId: payload.familyId || 'tasks-notifications', title: scrub(payload.title.trim()), summary: scrub(payload.body.trim()), priority: payload.priority || 'normal', dueAt: payload.dueAt || null, entityRefs: refs, channels: payload.channels || ['app'], requestSource: src || { kind: 'direct' } }, steps);
+      const c = local({ kind: 'request', scenario: null, attachments: atts, familyId: payload.familyId || 'tasks-notifications', title: scrub(payload.title.trim()), summary: scrub(payload.body.trim()), priority: payload.priority || 'normal', dueAt: payload.dueAt || null, entityRefs: refs, channels: payload.channels || ['app'], requestSource: src || { kind: 'direct' } }, steps);
       c.steps.forEach(s => { s.id = `${c.id}-${s.id}`; });
       const trigger = emit({ caseId: c.id, type: 'request.created', targetActorIds: who, data: { channels: c.channels, preview: true } });
       c.trigger = { eventId: trigger.id, type: 'request.created', label: '업무 요청', actorId: actor.id, at };
@@ -147,13 +164,14 @@ export async function applyCommand(state, source, cmd, { now, inFlight = new Map
       refreshCase(c, at); return { caseId: c.id, eventIds: ids };
     }
     case 'case.report': {
-      keys(payload, ['stepId', 'note', 'recordRefs', 'outcome']);
+      keys(payload, ['stepId', 'note', 'recordRefs', 'outcome', 'attachments']);
+      const atts = attachments(payload.attachments);
       const c = getCase(), s = pickStep(c, payload, x => (x.status === 'ready' || x.status === 'working') && !x.review, actor);
       if (!str(payload.note, 2, 2000)) throw new CommandError(400, 'evidence_required', '처리 결과를 2자 이상 적어 주세요.');
       if (payload.outcome !== undefined && !REPORT_OUTCOMES[payload.outcome]) throw bad('결과 값이 올바르지 않습니다.');
       // A hierarchy student cell sends all of its records (one class, real max 18): 60 there, 20 everywhere else.
       const refs = recordRefs(source, payload.recordRefs, reportRefKeys(source, c, s), signalStepRefs(source, c) ? 60 : 20);
-      const evidence = { id: `ev-${state.seq + 1}`, note: scrub(payload.note.trim()), recordRefs: refs, actorId: actor.id, at, stepId: s.id, outcome: payload.outcome || 'done' };
+      const evidence = { id: `ev-${state.seq + 1}`, note: scrub(payload.note.trim()), recordRefs: refs, actorId: actor.id, at, stepId: s.id, outcome: payload.outcome || 'done', ...(atts.length ? { attachments: atts } : {}) };
       if (c.closure === 'fact') {
         // Source facts never close locally: the report becomes a linked local follow-up case.
         const f = local({ kind: 'request', scenario: null, familyId: c.familyId, title: `${c.title} — 후속 보고`, summary: '원본 할 일은 원본 기록이 바뀔 때 닫힙니다. 이 보고는 로컬 기록입니다.', entityRefs: c.entityRefs.slice(0, 10), linkedCaseIds: [c.id], evidence: [evidence] }, [step('f1', { key: 'followup_report', label: '후속 보고', role: 'source', evidenceRequired: true }, { assigneeIds: [actor.id], queue: null, rule: '원래 할 일 담당', ruleSource: 'staff_task_assignees.user_id' }, 1, { status: 'done' })]);

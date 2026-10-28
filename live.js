@@ -165,7 +165,7 @@
   api.insightEntry=(from,to,label)=>insight?.entry(from,to,label)||'';
   const declinePair=key=>{const rows=recentTrend();for(let i=rows.length-1;i>0;i-=1)if(rows[i][key]<rows[i-1][key])return [rows[i-1].month,rows[i].month];return null;};
   // Durable work flow (GET /api/flow): preview selector, role views, request store. Absent → session-only requests.
-  const flowUI=typeof window.createFlowUI==='function'?window.createFlowUI({...api,ax,familyLabel:id=>ws?.area(id)?.label||'',showWorkspaceRecord:(family,record)=>ws?.showRecord(family,record)}):null;
+  const flowUI=typeof window.createFlowUI==='function'?window.createFlowUI({...api,ax,familyLabel:id=>ws?.area(id)?.label||'',showWorkspaceRecord:(family,record)=>ws?.showRecord(family,record),openWorkspace:(family,facet)=>ws?.openFamily(family,facet),attachField:(scope,family)=>ws?.attachField(scope,family)||''}):null;
   ax.useFlow?.(flowUI);
   const viewFor=page=>{if(!page)return null;if(views[page])return views[page];const v2=window.V2Screens?.view(page);if(v2)return v2;const id=ws?.familyOf(page);return id&&ws.has(id)?()=>ws.view(id):null;};
   const mobileNav=matchMedia('(max-width: 760px)');

@@ -1,5 +1,5 @@
 // 수업 영역 두 번째 묶음 — 출석부·수업목록·보강·교재·수업보고서·직원 평가.
-import { PRIORITY, addDays, countOf, family, field, md, metric, monthlyTrend, record, signal, sumOf } from './domain-snapshot-core.mjs';
+import { PRIORITY, addDays, countOf, family, field, md, metric, monthlyTrend, record, signal, sumOf, yymm } from './domain-snapshot-core.mjs';
 
 const ATT = { present: '출석', late: '지각', absent: '결석', early_leave: '조퇴', makeup: '보강' };
 const SEND = { success: '발송 완료', failed: '발송 실패', recalled: '회수', too_old: '기한 지남', none: '미발송' };
@@ -98,13 +98,17 @@ async function reportFamilies({ sql, t, asOf, month, monthStart, notTest, subjec
   const judgments = await sql`select state as key, count(*)::int count from public.teacher_satisfaction_judgments where tenant_id=${t} group by 1`;
   const [cr] = await sql`select count(*)::int reviews, max(to_char(created_at at time zone 'Asia/Seoul','YYYY-MM-DD')) last_review from public.academy_documents where tenant_id=${t} and form_type='class_review'`;
   const pending = countOf(judgments, 'pending');
+  // 만족도 확인 대기 글 = 신호의 근거(원장 10-28 "만족도를 확인하러 가고 싶은데 어디로 가야하는지 배선 같은게 없음"). 학생·반·담임·날짜로 이름을 붙인다.
+  const satisfaction = pending ? await sql`select j.id, s.name student, c.class_name, u.display_name teacher, j.posted_on::text d, j.verdict, j.method, j.reason, j.phrase from public.teacher_satisfaction_judgments j left join public.students s on s.id=j.student_id and s.tenant_id=${t} left join public.classes c on c.id=j.class_id and c.tenant_id=${t} left join public.users u on u.id=c.teacher_id and u.tenant_id=${t} where j.tenant_id=${t} and j.state='pending' order by j.posted_on desc, j.id` : [];
+  const VERDICT = { plus: '만족 쪽', minus: '불만 쪽' };
+  const satisfactionRecords = satisfaction.map(r => record({ id: r.id, label: `${r.student || '학생 모름'} · ${r.class_name || '반 모름'} · ${md(r.d)} 학부모 글`, date: r.d, status: '확인 대기', detail: r.reason || r.phrase || '', fields: [field('담임', r.teacher), field('판정 방식', r.method === 'ai' ? 'AI 판정' : '문구 규칙'), field('잠정 판정', VERDICT[r.verdict] || '판정 못 함')], facets: ['satisfaction:pending'] }));
   out['class-review'] = family('class-review', '직원 평가·직원 포트폴리오', {
     summary: `수업 평가 문서 ${cr.reviews}건, 직원 포트폴리오 ${new Set(portfolio.map(p => p.display_name)).size}명·월 기록 ${portfolio.length}건(마감 ${portfolio.filter(p => p.closed).length}건). 만족도 확인 대기 ${pending}건.`,
     metrics: [metric('수업 평가 문서', cr.reviews, '건', `최근 ${cr.last_review || '기록 없음'}`), metric('포트폴리오 대상 직원', new Set(portfolio.map(p => p.display_name)).size, '명'), metric('포트폴리오 월 기록', portfolio.length, '건', `마감 ${portfolio.filter(p => p.closed).length}건`), metric('만족도 확인 대기', pending, '건', `반영 ${countOf(judgments, 'applied')} · 제외 ${countOf(judgments, 'dismissed')}`)],
-    evidence: portfolio.map(r => record({ id: r.id, label: r.display_name, detail: r.month, status: r.closed ? '마감' : '집계 중', fields: [field('담당 반', r.class_count), field('계산된 항목', r.known_count)], facets: [r.closed ? 'closed' : 'open', `month:${r.month}`] })),
-    facetLabels: { closed: '마감', open: '집계 중', ...Object.fromEntries([...new Set(portfolio.map(p => p.month))].map(m => [`month:${m}`, m])) }, recordSource: 'teacher_portfolio_months',
-    signals: pending ? [signal({ id: 'satisfaction-pending', title: `만족도 확인 대기 ${pending}건`, summary: '문구만으로 판정하지 못해 사람이 확인할 학부모 글입니다.', priority: PRIORITY.check, source: '강사평가 만족도 판정', draft: { title: '만족도 확인 대기 글 검토', body: '강사평가 만족도 판정에서 확인 대기로 남은 학부모 글을 검토해 주세요.' } })] : [],
-    sourceLabel: '수업 평가 문서 · 직원 포트폴리오 · 만족도 판정', coverageNote: '근거 목록은 직원 포트폴리오 월 기록 전체이며 점수 값은 보여 주지 않습니다. 평가 구성은 기본값을 따릅니다.',
+    evidence: [...satisfactionRecords, ...portfolio.map(r => record({ id: r.id, label: `${r.display_name} · ${yymm(r.month)}`, detail: '', status: r.closed ? '마감' : '집계 중', fields: [field('담당 반', r.class_count), field('계산된 항목', r.known_count)], facets: [r.closed ? 'closed' : 'open', `month:${r.month}`] }))],
+    facetOrder: ['satisfaction:pending', 'open', 'closed', ...[...new Set(portfolio.map(p => p.month))].map(m => `month:${m}`)], facetLabels: { 'satisfaction:pending': '만족도 확인 대기', closed: '마감', open: '집계 중', ...Object.fromEntries([...new Set(portfolio.map(p => p.month))].map(m => [`month:${m}`, yymm(m)])) }, recordSource: 'teacher_portfolio_months',
+    signals: pending ? [signal({ id: 'satisfaction-pending', title: `만족도 확인 대기 ${pending}건`, summary: '문구만으로 판정하지 못해 사람이 확인할 학부모 글입니다.', priority: PRIORITY.check, source: '강사평가 만족도 판정', recordIds: satisfaction.map(r => r.id), facet: 'satisfaction:pending', draft: { title: '만족도 확인 대기 글 검토', body: '강사평가 만족도 판정에서 확인 대기로 남은 학부모 글을 검토해 주세요.' } })] : [],
+    sourceLabel: '수업 평가 문서 · 직원 포트폴리오 · 만족도 판정', coverageNote: '근거 목록은 만족도 확인 대기 학부모 글과 직원 포트폴리오 월 기록 전체이며 점수 값은 보여 주지 않습니다. 평가 구성은 기본값을 따릅니다.',
     sources: [{ table: 'teacher_portfolio_months', rows: portfolio.length }, { table: 'teacher_satisfaction_judgments', rows: sumOf(judgments) }, { table: 'academy_documents', rows: cr.reviews }],
   });
   return out;

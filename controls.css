@@ -11,3 +11,6 @@
   padding-block: 0 !important; line-height: normal;
 }
 .ax-enabled .icon-button:not(.v2s *) { width: var(--ax-control-h); min-width: var(--ax-control-h); }
+/* 공용 선택창은 바깥 테두리 상자가 한 줄 높이다(안쪽 단추만 맞추면 겉은 40px로 남았다). 여러 건 칩이 늘면 상자만 아래로 자란다. */
+.ax-enabled .cpick-field:not(.v2s *) { min-height: var(--ax-control-h) !important; padding: 0 !important; }
+.ax-enabled .cpick-field .cpick-trigger:not(.v2s *) { height: calc(var(--ax-control-h) - 2px) !important; min-height: calc(var(--ax-control-h) - 2px) !important; }

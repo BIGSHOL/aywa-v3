@@ -142,3 +142,4 @@
 .fl-tree-more p{margin-top:4px}
 .fl-node-kids>.fl-node-links{margin-left:34px}
 @media(max-width:760px){.fl-node-kids>.fl-node-links{margin-left:10px}}
+.fl-attach{list-style:none;margin:4px 0 8px;padding:0;display:grid;gap:4px}.fl-attach li{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 8px}.fl-attach small{font-size:var(--ax-xs)}
