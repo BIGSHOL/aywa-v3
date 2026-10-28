@@ -1,0 +1,13 @@
+{
+ "page": [
+  [
+   "export default async function MeetingsPage({\n  searchParams,\n}: {\n  searchParams: Promise<{ range?: RangeKey; status?: StatusKey; q?: string; page?: string }>;\n}) {\n  await requireAccess(\"meetings\");\n  const sp = await searchParams;",
+   "export function MeetingsPage({\n  data,\n  sp: searchParams,\n}: {\n  data: MeetingsListData;\n  sp: { range?: RangeKey; status?: StatusKey; q?: string; page?: string };\n}) {\n  const sp = searchParams;"
+  ],
+  [
+   "  const result = await getMeetingsPage({ range, status, q, page, pageSize: PAGE_SIZE });",
+   "  const result = data.result;"
+  ]
+ ],
+ "removed": []
+}

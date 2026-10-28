@@ -1,0 +1,13 @@
+{
+ "page": [
+  [
+   "export default async function MeetingDetailPage({\n  params,\n}: {\n  params: Promise<{ id: string }>;\n}) {\n  await requireAccess(\"meetings\");\n  const { id } = await params;\n  const meeting = await getMeetingById(id);\n  if (!meeting) notFound();",
+   "export function MeetingDetailPage({\n  data,\n  id,\n}: {\n  data: MeetingDetailData;\n  id: string;\n}) {\n  const meeting = data.meeting;"
+  ],
+  [
+   "  const staffOptions = meeting.transcription ? await getStaffOptions() : [];",
+   "  const staffOptions = data.staffOptions;"
+  ]
+ ],
+ "removed": []
+}
