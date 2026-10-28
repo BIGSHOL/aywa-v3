@@ -174,6 +174,15 @@
 .fl-table thead th{padding:2px 2px;font-weight:650;border-top:1px solid var(--ax-line);border-bottom-color:rgba(29,29,31,.3)}
 .fl-table tbody tr:last-child td{border-bottom:1px solid var(--ax-line)}
 .fl-table .c-state{width:10.4em}.fl-table .c-rec{width:8em}.fl-table .c-who{width:6.4em}.fl-table .c-due{width:4.4em}.fl-table .c-at{width:7.2em}.fl-table .c-place{width:8.4em}.fl-table .c-act{width:9em}
+.fl-table .c-sel{width:2.6em;padding-left:6px;padding-right:2px;text-align:center}
+.fl-table .c-sel input{width:16px;height:16px;margin:0;vertical-align:middle;cursor:pointer}
+.fl-table tbody tr:has([data-fl-pick]:checked){background:#f3f6fb}
+/* 고른 일 막대 — 제목 줄 가운데(표를 밀어내지 않는다) */
+.fl-bulk{display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px;margin-right:auto;font-size:var(--ax-xs)}
+.fl-bulk[hidden]{display:none}
+.fl-bulk strong{font-size:var(--ax-sm);color:var(--ax-primary)}
+.fl-bulk .button{height:var(--ax-control-h-sm);min-height:var(--ax-control-h-sm);padding:0 12px;font-size:var(--ax-xs)}
+.fl-board-head .fl-board-title{margin-right:8px}
 .fl-table tbody tr{scroll-margin-top:16px}
 .fl-table tbody tr:hover{background:var(--ax-soft)}
 .fl-table .fl-cut{display:block;min-width:0;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
