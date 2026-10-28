@@ -164,13 +164,59 @@ try {
     const [open] = await q1`select count(*)::int n from public.classrooms where tenant_id=${tenantId} and archived_at is null`;
     const fresh = await load({ v2path: '/classes/new' });
     assert.equal(fresh.classrooms.length, open.n, '새 반 = 보관 안 된 강의실만');
-    assert.deepEqual(Object.keys(fresh).sort(), ['classrooms', 'settings', 'teachers']);
+    assert.deepEqual(Object.keys(fresh).sort(), ['classrooms', 'editors', 'settings', 'teachers'], '2.0 Promise.all 셋 + 저장하는 사람');
     const any = archivedHolder ?? (await q1`select id::text id, classroom_id::text room from public.classes where tenant_id=${tenantId} and classroom_id is not null limit 1`)[0];
     const edit = await load({ v2path: `/classes/${any.id}/edit` });
     assert.ok(edit.classrooms.some(r => r.id === any.room), '이 반의 강의실은 보관됐어도 선택지에 남는다');
     assert.equal(edit.classrooms.length, open.n + (archivedHolder ? 1 : 0));
     assert.equal(edit.klass.id, any.id); assert.deepEqual(edit.teachers, fresh.teachers);
     assert.deepEqual(await load({ v2path: '/classes/00000000-0000-0000-0000-000000000000/edit' }), { notFound: true });
+  });
+
+  await check('저장(2단계) — 반 만들기·고치기 = 2.0 createClass · updateClass 이름·문구·반환 모양 · 교시 줄 · 감사로그(class_create · class_update changes) · 바깥 요청 0 (되돌림)', async () => {
+    const A = C.screen.actions, M = 'features/classes/server/actions.ts', ROLL = new Error('rollback');
+    const text = await src('features/classes/server/actions.ts');
+    for (const n of Object.keys(A)) assert.ok(text.includes(`export async function ${n}(`), n);
+    assert.throws(() => A.createClass.validate({ module: 'x.ts', args: [null, { $formData: [] }] }), e => e.status === 400, '다른 파일 이름으로는 못 부른다');
+    const tx = async fn => { let out; try { await db.begin(async sql => { out = await fn(sql); throw ROLL; }); } catch (e) { if (e !== ROLL) throw e; } return out; };
+    const call = (sql, name, actor, fields) => A[name].run({ sql, body: A[name].validate({ module: M, actor, args: [null, { $formData: fields }] }), tenantId, importV2 });
+    const actor = base.editors[0].id, CLS = 'e4a2c026-8992-4211-a5fe-b9e93be8a0f3';
+    const [teacher] = await q1`select id::text id from public.users where tenant_id=${tenantId} and status::text='active' and system_role::text='teacher' limit 1`;
+    assert.ok(!base.editors.some(e => e.id === teacher.id), '강사는 저장하는 사람 목록에 없다');
+    assert.deepEqual(await tx(sql => call(sql, 'createClass', teacher.id, [['className', '연습 시험 반'], ['subject', 'math']])), { error: '학원 전체 반 설정은 관리자만 할 수 있습니다' });
+    assert.deepEqual(await tx(sql => call(sql, 'createClass', actor, [['className', ' '], ['subject', 'math']])), { fieldErrors: { className: '반 이름은 필수입니다' } });
+    const [other] = await q1`select id::text id, class_name from public.classes where tenant_id=${tenantId} and is_active and closed_at is null and subject='math' and id <> ${CLS} limit 1`;
+    const dup = await tx(sql => call(sql, 'createClass', actor, [['className', other.class_name], ['subject', 'math']]));
+    assert.deepEqual([dup.nameConflict?.status, dup.nameConflict?.holderId, dup.fieldErrors?.className], ['operating', other.id, '같은 과목에 중복되는 반 이름이 있습니다. (운영 중인 반)']);
+    const made = await tx(async sql => {
+      const queued = async () => (await sql`select count(*)::int c from net.http_request_queue`)[0].c, q0 = await queued();
+      const res = await call(sql, 'createClass', actor, [['className', '연습 시험 반 X'], ['subject', 'math'], ['schedule_day_0', 'sat'], ['schedule_start_0', '09:00'], ['schedule_end_0', '10:00']]);
+      const id = res.redirectTo?.split('/').pop();
+      return { res, slots: await sql`select day_of_week::text d, start_time::text s, valid_from::text f from public.class_schedules where class_id=${id}`,
+        log: (await sql`select actor_id::text a, target_label, metadata from public.audit_logs where tenant_id=${tenantId} and created_at >= now() and action='class_create'`)[0], extra: (await queued()) - q0 };
+    });
+    assert.equal(made.res.ok, true); assert.match(made.res.redirectTo, /^\/classes\/[0-9a-f-]{36}$/); assert.deepEqual(made.res.overlaps.length >= 0, true);
+    assert.deepEqual([...made.slots], [{ d: 'sat', s: '09:00:00', f: today }], '교시 = 오늘부터 무기한');
+    assert.deepEqual([made.log.a, made.log.target_label, made.log.metadata.via, made.log.metadata.schedules], [actor, '연습 시험 반 X', '3.0 연습 복사본', 1]);
+    assert.equal(made.extra, 0, '바깥 요청 대기열이 늘지 않는다');
+    // 반 고치기 — 지금 교시를 그대로 보내면 교시 줄·감사로그가 그대로(2.0: 바뀐 것이 없으면 기록 없음).
+    const edit = await load({ v2path: `/classes/${CLS}/edit` }), k = edit.klass, live = k.scheduleSlots.filter(x => !x.validTo || x.validTo >= today);
+    const form = [['id', k.id], ['className', k.className], ['subject', k.subject], ['teacherId', k.teacherId ?? ''], ['classroomId', k.classroomId ?? ''], ['notes', k.notes ?? ''],
+      ['bgColor', k.bgColor ?? ''], ...live.flatMap((x, i) => [[`custom_day_${i}`, x.dayOfWeek], [`custom_start_${i}`, x.startTime], [`custom_end_${i}`, x.endTime], [`custom_teacher_${i}`, x.teacherId ?? ''], [`custom_classroom_${i}`, x.classroomId ?? '']])];
+    const same = await tx(async sql => ({ res: await call(sql, 'updateClass', actor, form),
+      n: (await sql`select count(*)::int n from public.class_schedules where class_id=${CLS}`)[0].n,
+      logs: (await sql`select count(*)::int n from public.audit_logs where tenant_id=${tenantId} and created_at >= now() and action='class_update'`)[0].n }));
+    assert.deepEqual([same.res.ok, same.res.redirectTo, same.n, same.logs], [true, `/classes/${CLS}`, k.scheduleSlots.length, 0]);
+    const [t2] = await q1`select id::text id, display_name from public.users where tenant_id=${tenantId} and status::text='active' and system_role::text='teacher' and id is distinct from ${k.teacherId} limit 1`;
+    const moved = await tx(async sql => ({ res: await call(sql, 'updateClass', actor, form.map(([n, v]) => (n === 'teacherId' ? [n, t2.id] : [n, v]))),
+      log: (await sql`select metadata from public.audit_logs where tenant_id=${tenantId} and created_at >= now() and action='class_update'`)[0]?.metadata }));
+    assert.equal(moved.res.ok, true);
+    assert.deepEqual([moved.log.changed, moved.log.changes[0].to, moved.log.newTeacherId, moved.log.effectiveDate, moved.log.via], [['담임'], t2.display_name, t2.id, today, '3.0 연습 복사본']);
+    const renamed = await tx(sql => call(sql, 'updateClass', actor, form.map(([n, v]) => (n === 'className' ? [n, other.class_name] : [n, v]))));
+    assert.equal(renamed.nameConflict?.holderId, other.id, '고치기도 같은 과목 같은 이름은 막는다');
+    assert.deepEqual(await tx(sql => call(sql, 'updateClass', actor, form.map(([n, v]) => (n === 'id' ? [n, '00000000-0000-0000-0000-000000000000'] : [n, v])))), { error: '반을 찾을 수 없습니다' });
+    const [after] = await q1`select class_name, teacher_id::text t, (select count(*)::int from public.class_schedules where class_id=${CLS}) n from public.classes where id=${CLS}`;
+    assert.deepEqual([after.class_name, after.t, after.n], [k.className, k.teacherId, k.scheduleSlots.length], '시험 뒤 복사본은 그대로');
   });
 } finally { await db.end(); }
 
@@ -191,8 +237,9 @@ await check('호스트: 2.0 부품을 고치지 않고 묶인다 — 서버 전�
 await check('3.0 쪽: 같은 출처 iframe 자리와 안내 한 줄뿐 — 운영 2.0 주소·외부 주소·저장 요청 없음', async () => {
   const js = await here('./v2-screen-classes.js');
   for (const bad of [/https?:\/\//, /aywa\.co\.kr/, /vercel\.app/, /ctx\.act\(/, /method:\s*'POST'/]) assert.doesNotMatch(js, bad, String(bad));
+  assert.match(js, /\[data-v2h-actor\]`\)/, '저장하는 사람 고르기는 이 화면 안의 선택만 본다');
   // 화면에 보이는 글자(주석 뺀 코드)에 '2.0'·개발자용 말이 없다(원장 10-28).
-  const shown = [/<p><b>연습 화면<\/b>([^<]*)<\/p>/, /toast\?\.\('([^']*)'\)/, /hostOk === false \? '([^']*)'/, /hostOk === null \? '([^']*)'/, /frame\.title = '([^']*)'/]
+  const shown = [/<p><b>연습 화면<\/b>([^<]*)<\/p>/, /<span>(저장하는 사람)<\/span>/, /toast\?\.\('([^']*)'\)/, /hostOk === false \? '([^']*)'/, /hostOk === null \? '([^']*)'/, /frame\.title = '([^']*)'/]
     .map(re => { const m = re.exec(js); assert.ok(m, String(re)); return m[1]; }).join('\n');
   for (const bad of [/2\.0/, /Docker|복사본|v2path|iframe|호스트/i]) assert.doesNotMatch(shown, bad, String(bad));
   assert.match(js, /HOST = `\/v2-host\/\$\{ID\}\.html`/); assert.match(js, /e\.origin !== location\.origin/); assert.match(js, /e\.source !== frame\.contentWindow/);

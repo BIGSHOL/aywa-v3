@@ -10,6 +10,7 @@ import { ClassesListPage, type ClassListData } from './classes-list';
 import { ClassDetailPage, type ClassDetailData } from './classes-detail';
 import { EditClassPage, NewClassPage, type ClassEditData, type ClassNewData } from './classes-form';
 import { onHostRefresh } from '../shims/host-nav';
+import { setHostEditors } from '../shims/server-action';
 import { usePathname, useSearchParams } from '../shims/next-navigation';
 import { HostFrame, HostMessage } from './host-frame';
 
@@ -24,7 +25,7 @@ function List() {
   const search = useSearchParams();
   const sp = useMemo(() => Object.fromEntries(KEYS.flatMap((k) => (search.has(k) ? [[k, search.get(k) ?? '']] : []))) as Record<string, string | undefined>, [search]);
   const key = new URLSearchParams(sp as Record<string, string>).toString();
-  const [state, setState] = useState<{ key?: string; data?: ClassListData; error?: string }>({});
+  const [state, setState] = useState<{ key?: string; data?: ClassListData & { editors?: Editors }; error?: string }>({});
   const [tick, setTick] = useState(0);
   useEffect(() => onHostRefresh(() => setTick((n) => n + 1)), []);
   useEffect(() => {
@@ -35,6 +36,7 @@ function List() {
       .catch((e: Error) => live && setState({ key, error: e.message }));
     return () => { live = false; };
   }, [key, tick]);
+  useEditors(state.data?.editors);
   // 다른 조건의 자료로 새 주소를 그리지 않는다(필터를 바꾼 직후 · 받기 실패).
   if (!state.data || state.key !== key) {
     const failed = state.key === key && !!state.error;
@@ -48,7 +50,10 @@ function List() {
   );
 }
 
-type SubData = { settings: { operations: unknown; modules: { disabled: unknown } } };
+type SubData = { settings: { operations: unknown; modules: { disabled: unknown } }; editors?: Editors };
+type Editors = Parameters<typeof setHostEditors>[0];
+/** 저장할 수 있는 사람(수업 관리 '전체') — 3.0 띠가 이 목록에서 '저장하는 사람'을 고른다(시간표와 같은 신호). */
+const useEditors = (editors: Editors | undefined) => useEffect(() => { if (editors) setHostEditors(editors); }, [editors]);
 /** 하위 화면(반 상세 · 반 수정 · 새 반) — 같은 화면의 GET(v2path)으로 읽는다. 없는(또는 고칠 수 없는) 반이면 2.0 notFound 자리에 안내 한 줄. */
 function Sub<T extends SubData>({ path, render }: { path: string; render: (data: T) => ReactNode }) {
   const [state, setState] = useState<{ path?: string; data?: T; missing?: boolean; error?: string }>({});
@@ -62,6 +67,7 @@ function Sub<T extends SubData>({ path, render }: { path: string; render: (data:
       .catch((e: Error) => live && setState({ path, error: e.message }));
     return () => { live = false; };
   }, [path, tick]);
+  useEditors(state.data?.editors);
   if (state.path !== path || (!state.data && !state.missing && !state.error)) return <HostMessage text="반 정보를 불러오는 중…" />;
   if (state.missing) return <HostMessage text="찾을 수 없는 반입니다. 목록으로 돌아가 다시 골라 주세요." error />;
   if (!state.data) return <HostMessage text={state.error!} error />;

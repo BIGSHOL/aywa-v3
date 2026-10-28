@@ -8,6 +8,8 @@
 //  · 2.0은 사용자 클라이언트(RLS)로 이 지점 줄만 읽는다 — 복사본 접속은 RLS를 안 타서 모든 조회에 tenant_id를 직접 건다.
 import { deepMerge, normalizeSubjects } from './v2-screen-timetable.mjs';
 import { buildClassDetail, buildClassEdit, buildClassNew } from './v2-classes-detail.mjs';
+import { classesActions } from './v2-classes-save.mjs';
+import { loadExtra, readEditors } from './v2-timetable-save.mjs';
 
 const ID = 'classes';
 let rulesPromise = null;
@@ -204,12 +206,16 @@ export const screen = {
     kind: /^[a-z_]{1,20}$/, subject: /^[a-z0-9_]{1,40}$/, teacher: new RegExp(`^(all|${UUID_BODY})$`), days: /^[a-z,]{0,40}$/,
     q: /^[^\u0000-\u001f]{0,100}$/, view: /^[a-z]{1,10}$/, sort: /^[a-z_]{1,20}$/, status: /^[a-z]{1,10}$/, page: /^\d{1,4}$/,
   },
+  actions: classesActions(loadRules, loadExtra, { readSettings }),
   load: async ({ sql, params, tenantId, importV2 }) => {
-    const R = await loadRules(importV2), sub = SUB.exec(params.v2path ?? '');
-    if (!sub) return buildClassList({ sql, params, tenantId, R });
+    const [R, X] = await Promise.all([loadRules(importV2), loadExtra(importV2)]), sub = SUB.exec(params.v2path ?? '');
+    // 저장하는 사람(수업 관리 '전체') — 3.0 띠가 이 목록에서 고른다(시간표와 같은 판정 readEditors).
+    const editors = await readEditors(sql, tenantId, R, X);
+    if (!sub) return { ...(await buildClassList({ sql, params, tenantId, R })), editors };
     const io = { sql, tenantId, importV2, readSettings: (s, t) => readSettings(s, t, R), readTeacherOptions: (s, t) => readTeacherOptions(s, t, R) };
-    if (sub[1]) return buildClassNew(io);
-    return sub[3] ? buildClassEdit({ ...io, id: sub[2] }) : buildClassDetail({ ...io, id: sub[2], buildSubjectMaps: list => R.buildSubjectMaps(list) });
+    const data = sub[1] ? await buildClassNew(io)
+      : sub[3] ? await buildClassEdit({ ...io, id: sub[2] }) : await buildClassDetail({ ...io, id: sub[2], buildSubjectMaps: list => R.buildSubjectMaps(list) });
+    return data.notFound ? data : { ...data, editors };
   },
 };
 export { loadRules };
