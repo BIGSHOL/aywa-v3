@@ -207,7 +207,7 @@ test('호스트 진입점: 읽기 둘은 GET(쓰기 기록 밖) · 반환 모양
     else assert.ok(/^\(\) => /.test(value), `${name}: 부를 때마다 새 값`);
   }
   assert.match((await src('features/attendance/server/actions.ts')).replace(/\r\n/g, '\n'), /export type BulkCellResult =[\s\S]*?\n {2}\| \{ error: string \};/, 'BulkCellResult의 실패 갈래 = { error }');
-  assert.ok(!('setAttendanceBulk' in screen.actions), "일괄 출석은 이 화면이 받지 않는다(호스트가 2.0 실패 모양으로 거절 — 오늘 면 요약 카드의 '전원 출석')");
+  assert.ok('setAttendanceBulk' in screen.actions, "오늘 면 요약 카드의 '전원 출석'을 출석부 저장 본문으로 받는다");
   assert.match(await src('features/attendance/components/makeup-add-flow.tsx'), /EMPTY_ABSENCES: MakeupAbsenceList = \{ options: \[\], hiddenBySubject: 0 \}/, '빈 결석 목록 = 2.0 EMPTY_ABSENCES');
 });
 
@@ -876,7 +876,7 @@ test('복사본: 오늘 면 날짜 지정(테스트 반) = 그 날의 카드 · 
   assert.deepEqual([none.res.date, none.res.cards.length, none.res.hasAnyClass, none.sheets], [TODAY_DAY, 0, true, null], '반은 있는데 그 날 수업이 없다(빈 화면 문구가 원인별)');
 });
 
-test('복사본(되돌림): 오늘 면의 저장 = 주간 시트와 같은 액션(교시 칸 출결 · 학생 기록 · 지우기 · 반 순서)이 오늘 카드·시트에 그대로 · 요약 카드의 그날 전체 칸은 거절(쓰기 없음)', { skip: !db && 'local database not running' }, async () => {
+test('복사본(되돌림): 오늘 면의 교시 칸·하루 전체 칸·전원 출석·학생 기록·지우기·반 순서가 카드와 시트에 그대로', { skip: !db && 'local database not running' }, async () => {
   const R = await C.loadRules(importV2), t = await topEnglishTeacher();
   const before = await db`select (select count(*)::int from public.audit_logs) audits, (select count(*)::int from net.http_request_queue) net`;
   await inRollback(async ({ sql, run }) => {
@@ -897,14 +897,23 @@ test('복사본(되돌림): 오늘 면의 저장 = 주간 시트와 같은 액�
     assert.deepEqual([s1.attendance, s1.attendanceSlots, s1.marks['17:15']?.status], ['present', ['17:15:00'], '좋음'], '오늘 카드 = 방금 저장한 같은 행');
     const sheet = d1.sheets.find(s => s.classId === T_CLASS).res.data;
     assert.ok(Object.keys(sheet.attendanceByStudentDate).some(k => k.startsWith(`${T_STU}|${TODAY_DAY}`)) && Object.keys(sheet.marks).some(k => k.startsWith(`${T_STU}|${TODAY_DAY}`)), '오늘 시트도 같은 기록');
-    // 요약 카드의 출결 드롭다운(그날 전체 칸 — slotStart 없음)은 연습 화면에서 받지 않는다 — 2.0 부품은 실패 모양으로 받고 칸을 되돌린다.
+    // 요약 카드의 출결 드롭다운(그날 전체 칸 — slotStart 없음)은 출석부의 같은 저장 본문으로 그날 교시 행을 고친다.
     const n = async () => (await sql`select count(*)::int n from public.attendance_records where class_id=${T_CLASS} and session_date=${TODAY_DAY}`)[0].n, n0 = await n();
-    await assert.rejects(sql.savepoint(s => run(s, 'setAttendanceCell', T_ACTOR, { classId: T_CLASS, studentId: T_STU, sessionDate: TODAY_DAY, status: 'absent' })),
-      e => e.status === 409 && /연습 화면에서 아직 지원하지 않습니다/.test(e.message));
-    assert.equal(await n(), n0, '쓰기 없음');
+    assert.equal((await run(sql, 'setAttendanceCell', T_ACTOR, { classId: T_CLASS, studentId: T_STU, sessionDate: TODAY_DAY, status: 'absent' })).ok, true);
+    assert.equal(await n(), n0, '하루 전체 칸은 기존 교시 행을 고친다');
+    assert.deepEqual((await sql`select distinct status::text status from public.attendance_records where class_id=${T_CLASS} and student_id=${T_STU} and session_date=${TODAY_DAY}`).map(r => r.status), ['absent']);
+    assert.equal(stuOf((await reload({ viewer: T_ACTOR })).today).attendance, 'absent');
+    assert.equal((await run(sql, 'setAttendanceCell', T_ACTOR, { classId: T_CLASS, studentId: T_STU, sessionDate: TODAY_DAY, status: 'present' })).ok, true);
     // '선택 안 함' = 화면이 보던 행의 교시 그대로(attendanceSlots — 2.0 TodayBoard clear).
     assert.deepEqual(await run(sql, 'clearPresentAttendance', T_ACTOR, { classId: T_CLASS, studentId: T_STU, date: TODAY_DAY, slot: s1.attendanceSlots[0] }), { ok: true, cleared: 1 });
     assert.equal(stuOf((await reload({ viewer: T_ACTOR })).today).attendance, null);
+    // 전원 출석은 빈 칸만 채우고, 같은 요청을 다시 보내도 기존 기록은 건드리지 않는다.
+    const bulk = { sessionDate: TODAY_DAY, status: 'present', cells: [{ classId: T_CLASS, studentId: T_STU }], fillEmptyOnly: true };
+    const first = await run(sql, 'setAttendanceBulk', T_ACTOR, bulk);
+    assert.deepEqual([first.ok, first.applied.map(c => c.studentId)], [true, [T_STU]]);
+    assert.equal(stuOf((await reload({ viewer: T_ACTOR })).today).attendance, 'present');
+    const second = await run(sql, 'setAttendanceBulk', T_ACTOR, bulk);
+    assert.deepEqual([second.ok, second.applied.length], [true, 0], '이미 적은 출결은 지킨다');
     // 반 순서(TodayOrderList → setMyEcsTodayOrder) — 그 사람 ui_prefs.ecs.todayOrder · 시트·요약 카드가 같은 순서로.
     await sql`update public.users set ui_prefs = ui_prefs #- '{ecs,todayOrder}' where id=${t}`;
     const a = (await reload({ viewer: t, date: TODAY_DAY })).today;

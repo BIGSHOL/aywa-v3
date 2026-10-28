@@ -47,15 +47,15 @@
 //   textbooks/server/compare-actions.ts        getSlotPlanCompare (읽기 — 호스트는 GET ?read=compare)
 //   출석부(로그인 JJ실 = 2.0 ECS_PLAN_API)가 같은 이름으로 쓰는 것: flushSheetPatches · createPlanLine · movePlanLine · deletePlanLine ·
 //   copySlotFromPrevious · commitSheetEdits · getSlotPlanCompare(screen.actions.<이름> — 모듈 경로까지 2.0과 같아야 받는다).
-//   반환 모양이 { ok, error }가 아닌 넷(searchMakeupStudents · fetchMakeupAbsences · fetchMakeupHostClasses · setAttendanceBulk)은 저장이 안 될 때 ecs.tsx가 2.0 실패 모양을 정한다.
-//   오늘 면(v2-ecs-today.mjs)의 저장 = 위 이름 그대로 — 시트 모드는 주간 시트와 같은 액션, 요약 카드는 setAttendanceCell(그날 전체 칸 — slotStart 없음: 409로 거절, 카드가 되돌린다) ·
+//   반환 모양이 { ok, error }가 아닌 넷(searchMakeupStudents · fetchMakeupAbsences · fetchMakeupHostClasses · setAttendanceBulk)은 저장 실패 때 ecs.tsx가 2.0 실패 모양을 정한다.
+//   오늘 면(v2-ecs-today.mjs)의 저장 = 위 이름 그대로 — 시트 모드는 주간 시트와 같은 액션, 요약 카드는 setAttendanceCell(그날 전체 칸 — 출석부 저장 본문) ·
 //     clearPresentAttendance · upsertStudentMark · commitSheetEdits · flushSheetPatches · setSlotShouting · removeMakeupAttendee · copySlotFromPrevious · setMyEcsFontSize ·
 //     반 순서 setMyEcsTodayOrder(users.ui_prefs.ecs.todayOrder, 감사로그 없음 — 2.0과 같다).
 //   아직 잇지 않은 2.0 서버 액션(호스트가 '복사본 보기 전용'으로 거절):
 //   (교재 지우기·되돌리기 넷 deleteClassTextbookPlan · undoPlanDelete · undoPlanImport · undoLessonShift는 v2-ecs-plan-undo.mjs 머리 주석의 표 ·
 //    회차 미룸·당김 setLessonShift는 v2-ecs-shift.mjs 머리 주석의 표)
 //   class-sheets/server/memorized-actions.ts pullEcsMemorizedWords — 바깥 연동(인재원 SRS)이라 2.0 게이트를 지난 뒤 늘 거절(쓰기 없음).
-//   attendance/server/actions.ts setAttendanceBulk(오늘 면 요약 카드의 '전원 출석' — 반환 { error } 그대로 거절, 카드가 되돌린다) ·
+//   attendance/server/actions.ts setAttendanceBulk(오늘 면 요약 카드의 '전원 출석' — 출석부 저장 본문) ·
 //   attendance/server/makeup-actions.ts fetchMakeupHostClasses(원스크린 보강 반 고르기 — ECS 흐름은 안 부른다).
 //
 // ■ 호스트에 붙일 때(v2-host 빌드 메타 기준 — 2.0 ECS 묶음이 끌어오는 것)
@@ -69,7 +69,7 @@
 // 2.0과 다른 것: v2-ecs-props.mjs · v2-ecs-save.mjs 머리 주석(보는 사람 고르기 · 10분 필터 되돌리기 없음 · 알림 끔 · 보강 예약 칸(새 보강 체계 학원만 거절 — 아니면 출석부의 이행 본문으로 이행) · JJ 이어받기 · 연락처 가림).
 import { DAY, UUID, canWriteLevel, copyDay, editorsOf, loadRules, readSettings, readViewers, teacherEnglishNames, teacherScopeOf } from './v2-ecs-core.mjs';
 import { classOptionsOf, landingData, monthData, sheetWeekData, textbookOptions } from './v2-ecs-props.mjs';
-import { ACTIONS, readDayPlan, readSlotCompare } from './v2-ecs-save.mjs';
+import { ACTIONS, MODULE, serverFn, readDayPlan, readSlotCompare } from './v2-ecs-save.mjs';
 import { MAKEUP_ACTIONS } from './v2-ecs-makeup.mjs';
 import { GOALS_ACTIONS, goalsData } from './v2-ecs-goals.mjs';
 import { planGapData } from './v2-ecs-gap.mjs';
@@ -78,9 +78,21 @@ import { todayFaceData } from './v2-ecs-today.mjs';
 import { TEXTBOOK_ACTIONS, readAssignableTextbooks, readClassTextbookPlans, readSlotChoices } from './v2-ecs-textbooks.mjs';
 import { PLAN_UNDO_ACTIONS } from './v2-ecs-plan-undo.mjs';
 import { SHIFT_ACTIONS } from './v2-ecs-shift.mjs';
+import { screen as attendanceScreen } from './v2-screen-attendance.mjs';
 
 /** 2.0 주소 — /ecs · /ecs/<반> · /ecs/<반>/month · /ecs/goals · /ecs/plan-gap. */
 const ROUTE = /^\/ecs(?:\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})(\/month)?|\/(goals|plan-gap))?$/;
+const attendanceDayCell = serverFn(MODULE.attendance, 1, async ({ sql, t, user, importV2 }, raw) => {
+  const body = attendanceScreen.actions.setAttendanceCell.validate({ module: MODULE.attendance, actor: user.id, args: [raw] });
+  return attendanceScreen.actions.setAttendanceCell.run({ sql, body, tenantId: t, importV2 });
+});
+const attendanceCell = { ...ACTIONS.setAttendanceCell,
+  run(ctx) { return ctx.body.args[0]?.slotStart ? ACTIONS.setAttendanceCell.run(ctx) : attendanceDayCell.run(ctx); },
+};
+const attendanceBulk = serverFn(MODULE.attendance, 1, async ({ sql, t, user, importV2 }, raw) => {
+  const body = attendanceScreen.actions.setAttendanceBulk.validate({ module: MODULE.attendance, actor: user.id, args: [raw] });
+  return attendanceScreen.actions.setAttendanceBulk.run({ sql, body, tenantId: t, importV2 });
+});
 
 export const screen = {
   id: 'ecs', label: '강사 시트', order: 3,
@@ -88,7 +100,8 @@ export const screen = {
     period: /^(month|session)$/, day: DAY, readonly: /^1$/,
     // 읽기 서버 액션(호스트 registerHostHandler) — 그 2.0 함수의 인자 칸만.
     read: /^(dayPlan|compare|slotChoices|textbookPlans|assignable)$/, class: UUID, slot: /^\d{2}:\d{2}(?::\d{2})?$/ },
-  actions: { ...ACTIONS, ...MAKEUP_ACTIONS, ...GOALS_ACTIONS, ...TEXTBOOK_ACTIONS, ...PLAN_UNDO_ACTIONS, ...SHIFT_ACTIONS },
+  actions: { ...ACTIONS, ...MAKEUP_ACTIONS, ...GOALS_ACTIONS, ...TEXTBOOK_ACTIONS, ...PLAN_UNDO_ACTIONS, ...SHIFT_ACTIONS,
+    setAttendanceCell: attendanceCell, setAttendanceBulk: attendanceBulk },
   async load({ sql, params: q, tenantId: t, importV2 }) {
     const R = await loadRules(importV2), today = await copyDay(), env = await readSettings(sql, t, R);
     const viewers = await readViewers(sql, t, R, env);

@@ -11,7 +11,7 @@
 //  · 표가 없을 때 2.0이 오류를 삼키는 조회(보강 예약 · 수업 나누기 · Shouting · ClassNote 게시)는 읽기 전용 트랜잭션이 깨지지 않게 표가 있는지 먼저 묻는다.
 //  · 오늘 출석 미입력 줄 · 내 할 일 줄(서버 부품 TodayAttendanceStrip · MyTasksStrip)은 아직 옮기지 않았다 — 다른 화면(오늘 출결 보드 · 할 일)의 조회라 그 화면을 옮길 때 함께.
 //  · 저장은 이미 옮긴 액션 그대로(시트 모드 = 주간 시트와 같은 교시 칸). 요약 카드의 출결(출석·지각·결석 = 그날 전체 칸 setAttendanceCell, '전원 출석' = setAttendanceBulk)은
-//    아직 받지 않는다 — 409 / 2.0 실패 모양 { error }로 거절하고 카드가 칠한 칸을 되돌린다(쓰기 없음). '선택 안 함'(clearPresentAttendance)과 반 순서는 저장된다.
+//    출석부 저장 본문을 함께 쓰고, '선택 안 함'(clearPresentAttendance)과 반 순서도 저장된다.
 import { canWriteLevel, delegatedClassIds, isoAt, readClassNameAsOf, shown, teacherScopeOf } from './v2-ecs-core.mjs';
 import { sheetWeekData, textbookOptions, visibleClassFilter } from './v2-ecs-props.mjs';
 import { teachingClassIds } from './v2-ecs-seat.mjs';
