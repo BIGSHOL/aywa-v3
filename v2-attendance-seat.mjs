@@ -84,7 +84,7 @@ function toSeatStudent(s, rec) {
 }
 
 /** 2.0 `loadLabSplitInputs`(server/lab-split.ts) — `lookupLabSeparateIds` 'window' + 켠 수강(`loadFlaggedCells`). 칸이 없으면 null. */
-async function readLabSplit(sql, t, R, S, classIds, date) {
+export async function readLabSplit(sql, t, R, S, classIds, date) {
   if (classIds.length === 0) return null;
   if (!(await hasColumn(sql, 'class_schedules', 'lab_separate')) || !(await hasColumn(sql, 'enrollments', 'lab_separate'))) return null;
   const [sep, rows] = await Promise.all([

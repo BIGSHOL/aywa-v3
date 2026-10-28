@@ -15,10 +15,11 @@ import { HostFrame, HostMessage } from './host-frame';
 import { AttendancePage, type AttendanceData } from './attendance-page';
 import { AttendanceSeatPage, type SeatDayData } from './attendance-seat-page';
 import { AttendanceSeatMonth, AttendanceSeatMonthClosed, type SeatMonthData } from './attendance-seat-month';
+import { AttendanceQuickPage, type QuickData } from './attendance-quick-page';
 
 /** 하위 주소의 값 — 자리 하루(seatDay) · 2.0 redirect · 2.0 notFound. 월별 출석부(`/attendance`)는 page 칸이 없다. */
 type Host = { lang: 'ko' | 'en'; host: AttendanceData['host'] };
-type Data = (AttendanceData & { page?: undefined }) | (SeatDayData & Host) | (SeatMonthData & Host) | (Host & { page: 'seatMonthClosed'; seatName: string })
+type Data = (AttendanceData & { page?: undefined }) | (SeatDayData & Host) | (SeatMonthData & Host) | (QuickData & Host) | (Host & { page: 'seatMonthClosed'; seatName: string })
   | (Host & { page: 'redirect'; to: string }) | (Host & { page: 'notFound' });
 
 /** 진입점 표식(build.mjs가 찾는다) — 창 제목과 이 화면의 2.0 주소. */
@@ -94,6 +95,7 @@ function App() {
         <OperationsProvider subjects={ops.subjects} gradeLevels={ops.gradeLevels} jobTitles={ops.jobTitles} jobTitlesByDepartment={ops.jobTitlesByDepartment} disabledModules={d.host.disabledModules}>
           {d.page === 'seatDay' ? <AttendanceSeatPage data={d} />
             : d.page === 'seatMonth' ? <AttendanceSeatMonth data={d} holidaySource={d.host.operations.holidays} />
+            : d.page === 'quick' ? <AttendanceQuickPage data={d} subjects={ops.subjects} />
             : <AttendancePage data={d} />}
         </OperationsProvider>
       </SheetLangProvider>

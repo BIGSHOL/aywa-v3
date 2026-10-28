@@ -30,6 +30,11 @@
 //    모두 `"error" in res`·`res.ok`로 읽는다): JJ 계획 편집(로그인 화면 = ECS_PLAN_API — class-sheets/server/actions.ts · edit-audit-actions.ts ·
 //    textbooks/server/plan-actions.ts · compare-actions.ts · shift-undo-actions.ts. 영어 시트 화면 모듈(v2-screen-ecs.mjs)의 같은 이름에 위임할 예정) ·
 //    jj-plan-actions.ts 6개(공개 PIN 화면 전용 — 앱 밖이라 범위 밖).
+//  · `/attendance/quick`(출결 모드 — 2.0 quick/page.tsx: 오늘 고정 · 내 수업만 · 휴원일이면 읽기 전용 패널) = v2-attendance-live.mjs
+//    (getLiveBoard(오늘, selfOnly) · getHolidayDayActivity). 보는 사람 = 출결을 쓸 수 있는 직원(전체 ∪ 담당 반만 — 강사 포함).
+//    2.0과 다른 점: 화면 언어는 늘 한국어(3.0은 관리자 셸로 연다 — 월별·자리와 같다) · '출결 모드 종료' 링크는 강사 계정이면 담임 반
+//    과목으로만 고른다(2.0 teacherViewHome은 교시 담당·보조 반·ECS 권한까지 본다). 저장(setAttendanceCell 교시 지정 · setAttendanceBulk)은 아직 —
+//    교시 지정 칸은 칸 저장이 409로 거절하고, 일괄은 shim 거절(둘 다 2.0 부품이 `"error" in res`로 되돌린다).
 // "오늘"은 복사본 기준일(백업 시각의 KST 날짜) — 3.0 다른 화면과 같은 날이다. 자리 화면의 기본 교시는 복사본 기준 시각으로 고른다.
 //
 // ── 호스트에 붙일 때(v2-host 빌드가 출석부 진입점에서 닿는 것 — 2.0 Next에만 있는 경계) ──
@@ -53,6 +58,7 @@ import { scrub } from './domain-snapshot-core.mjs';
 import { V2Error } from './v2-screens.mjs';
 import { loadSeatRules, seatDayProps, seatMonthProps } from './v2-attendance-seat.mjs';
 import * as SeatSave from './v2-attendance-seat-save.mjs';
+import { loadLiveRules, quickProps } from './v2-attendance-live.mjs';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const MODULES = {
@@ -590,13 +596,14 @@ export const screen = {
   params: {
     month: /^\d{4}-(0[1-9]|1[0-2])$/, subject: /^[a-z][a-z0-9_]{0,30}$/, teacher: /^(?:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|seat:[a-z]{2,8})$/,
     class: UUID, mode: /^[a-z]{1,12}$/, q: /^[^\u0000-\u001f]{1,80}$/u, viewer: UUID,
-    v2path: /^\/attendance(?:\/seat(?:\/[a-z]{1,8}(?:\/month)?)?)?$/, date: /^\d{4}-\d{2}-\d{2}$/, start: /^(?:\d{2}:\d{2}|all)$/,
+    v2path: /^\/attendance(?:\/seat(?:\/[a-z]{1,8}(?:\/month)?)?|\/quick)?$/, date: /^\d{4}-\d{2}-\d{2}$/, start: /^(?:\d{2}:\d{2}|all)$/,
   },
   /**
    * 2.0 page.tsx(서버 부품)가 JSX에 넘기는 값을 같은 이름·같은 모양으로 — 그리기는 호스트의 2.0 부품(attendance-page.tsx)이 한다.
    * 그룹마다 `matrix`는 2.0 `AttendanceMatrix` 그대로다(단, 표가 안 읽는 `classes` 목록은 그룹마다 싣지 않고 맨 위 `base.classes` 한 벌만).
    */
   async load({ sql, params, tenantId: t, importV2 }) {
+    if (params.v2path === '/attendance/quick') return quickLoad({ sql, params, t, importV2 });
     if (params.v2path && params.v2path !== '/attendance') return seatLoad({ sql, params, t, importV2 });
     const R = await loadRules(importV2), today = await copyDay();
     const [settings, transitions] = await Promise.all([readSettings(sql, t, R), readTransitions(sql, t, R)]);
@@ -733,6 +740,15 @@ async function seatLoad({ sql, params, t, importV2 }) {
   if (!seat || sub) return { page: 'notFound', lang: 'ko', host };
   return { page: 'seatDay', lang: 'ko', host, ...(await seatDayProps({ sql, t, R, S, settings, seat, params, viewerId: params.viewer })) };
 }
+
+/** 하위 주소 `/attendance/quick` — 2.0 출결 모드 page.tsx(오늘 고정 · 내 수업만 · 휴원일이면 읽기 전용 패널). 조회 = v2-attendance-live.mjs. */
+async function quickLoad({ sql, params, t, importV2 }) {
+  const [R, S, L] = await Promise.all([loadRules(importV2), loadSeatRules(importV2), loadLiveRules(importV2)]);
+  const settings = await readSettings(sql, t, R);
+  return { ...(await quickProps({ sql, t, R, S, L, settings, toSplit }, params)), host: hostOf(settings) };
+}
+const hostOf = settings => ({ operations: { subjects: settings.operations.subjects, gradeLevels: settings.operations.gradeLevels, jobTitles: settings.operations.jobTitles,
+  jobTitlesByDepartment: settings.operations.jobTitlesByDepartment, holidays: settings.operations.holidays }, disabledModules: settings.modules.disabled, preset: settings.preset });
 
 /** 허브 '오늘' 표기 — 2.0은 `Intl.DateTimeFormat('ko-KR', { timeZone: 'Asia/Seoul', month:'long', day:'numeric', weekday:'short' })`(3.0은 복사본 기준일로). */
 const hubTodayLabel = ymd => new Intl.DateTimeFormat('ko-KR', { timeZone: 'Asia/Seoul', month: 'long', day: 'numeric', weekday: 'short' }).format(new Date(`${ymd}T12:00:00+09:00`));

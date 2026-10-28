@@ -653,4 +653,66 @@ test('저장: 자리 액션 입력 검사는 복사본에 닿기 전에 거절�
   assert.throws(() => v('resetSeatPlacements', SEAT_PERIODS_MOD, { seat: 'lab', date: '2026-10-27', slotStart: '22:00' }), /입력 값/, 'another 2.0 module');
 });
 
+// ── 출결 모드(/attendance/quick) = 2.0 quick/page.tsx — getLiveBoard(오늘, selfOnly) · 학생 연락처 지움 · 휴원일이면 읽기 전용 패널 ──
+const quickLoad = async (sql, viewer) => screen.load({ sql, params: { v2path: '/attendance/quick', ...(viewer ? { viewer } : {}) }, tenantId: (await import('./full-db.mjs')).tenantId, importV2 });
+test('출결 모드: 호스트 조립이 2.0 quick/page.tsx와 같은 부품·같은 문구 키를 쓴다', async () => {
+  const page = await src('app/(shell)/attendance/quick/page.tsx'), host = await here('v2-host/src/attendance-quick-page.tsx');
+  for (const c of ['PageHeader', 'Button', 'EmbedLink', 'EmptyState', 'HolidayActivityPanel', 'QuickBoard']) {
+    assert.match(page, new RegExp(`<${c}\\b`), `page.tsx draws ${c}`); assert.match(host, new RegExp(`<${c}\\b`), `host draws ${c}`);
+  }
+  const keys = [...new Set(page.match(/"quick\.[a-z.]+"/g))];
+  assert.ok(keys.length >= 8);
+  for (const key of keys) assert.ok(host.includes(key.replace(/"/g, "'")), `host uses ${key}`);
+  assert.match(host, /<QuickBoard date=\{today\} classes=\{data\.classes\} canEdit=\{data\.canEdit\} \/>/);
+  assert.doesNotMatch(host, /<table|<td\b|className="at-/, 'no hand-drawn board');
+  assert.ok(screen.params.v2path.test('/attendance/quick') && !screen.params.v2path.test('/attendance/quick/x') && !screen.params.v2path.test('/attendance/quickx'));
+});
+
+test('복사본: 출결 모드 — 강사 본인 반만 · 반 카드 명단이 독립 SQL과 같다 · 학생 연락처 없음 · 자리 교시 빠짐', { skip: !db && 'local database not running' }, async () => {
+  const { tenantId: t } = await import('./full-db.mjs');
+  const TODAY = await A.copyDay(), dow = R.cal.DOW_KEYS[new Date(`${TODAY}T00:00:00Z`).getUTCDay()];
+  await db.begin('isolation level repeatable read read only', async sql => {
+    // 오늘 정규 교시가 가장 많은 강사 둘(수학 하나 · 영어 하나).
+    for (const subject of ['math', 'english']) {
+      const [x] = await sql`select c.teacher_id::text id from public.classes c join public.class_schedules s on s.class_id=c.id where c.tenant_id=${t} and c.is_active and c.subject=${subject}
+        and c.teacher_id is not null and s.day_of_week::text=${dow} and s.valid_from<=${TODAY} and (s.valid_to is null or s.valid_to>=${TODAY}) group by 1 order by count(*) desc, 1 limit 1`;
+      const d = await quickLoad(sql, x.id);
+      assert.deepEqual([d.page, d.view, d.date, d.viewer, d.lang], ['quick', 'board', TODAY, x.id, 'ko']);
+      assert.ok(d.editors.some(e => e.id === x.id), 'teachers (scoped) are editors here');
+      // 독립 SQL — 그 강사의 반(담임 · 그날 교시 담당 · 그날 위임) 중 오늘 자리 아닌 교시가 있는 반의 오늘 재원생.
+      const slots = await sql`select s.class_id::text class_id, s.slot_teacher_label from public.class_schedules s join public.classes c on c.id=s.class_id
+        where c.tenant_id=${t} and c.is_active and (c.closed_at is null or c.closed_at>=${TODAY}) and s.day_of_week::text=${dow} and s.valid_from<=${TODAY} and (s.valid_to is null or s.valid_to>=${TODAY})
+          and (c.teacher_id=${x.id} or exists (select 1 from public.class_schedules s2 where s2.class_id=c.id and s2.teacher_id=${x.id} and s2.valid_from<=${TODAY} and (s2.valid_to is null or s2.valid_to>=${TODAY}))
+            or exists (select 1 from public.class_delegations dl where dl.class_id=c.id and dl.delegate_user_id=${x.id} and dl.revoked_at is null and dl.from_date<=${TODAY} and dl.to_date>=${TODAY}))`;
+      const regular = [...new Set(slots.filter(s => !R.tlabel.specialSlotLabel(s.slot_teacher_label)).map(s => s.class_id))];
+      const pairs = regular.length ? await sql`select distinct e.class_id::text c, e.student_id::text s from public.enrollments e where e.class_id = any(${regular}::uuid[])
+        and not e.on_hold and e.start_date<=${TODAY} and (e.end_date is null or e.end_date>${TODAY} or (e.end_date=${TODAY} and not coalesce(e.is_transferred,false)))
+        and (e.attendance_days is null or cardinality(e.attendance_days)=0 or ${dow}=any(e.attendance_days::text[]))` : [];
+      const mine = d.classes.flatMap(c => c.students.filter(s => !s.reservedMakeup && !s.splitMark).map(s => `${c.classId}|${s.studentId}`)).sort();
+      assert.deepEqual([...new Set(mine)], [...new Set(pairs.map(p => `${p.c}|${p.s}`))].sort(), `${subject}: roster = enrollments active today`);
+      assert.ok(d.classes.length > 0 && d.classes.every(c => !c.seatLabel), 'seat periods (LAB·JJ) are not in 출결 모드');
+      assert.ok(d.classes.every(c => c.students.every(s => s.parentPhone === null && s.studentPhone === null)), 'phones stripped');
+      assert.equal(d.canEdit, true);
+      assert.doesNotMatch(JSON.stringify(d), /hourly_rate|monthly_base|\d{6}-[1-4]\d{6}/);
+    }
+    // 담당 수업이 없는 사람 = 빈 보드(2.0 EmptyState) · 강사 홈은 원스크린.
+    const owner = (await quickLoad(sql)).editors[0];
+    const o = await quickLoad(sql, owner.id);
+    assert.deepEqual([o.view, o.classes.length, o.homeHref], ['board', 0, '/onescreen']);
+  });
+});
+
+test('복사본(되돌림): 출결 모드 — 휴원일이면 명단 없이 그날 입력(내 반만)을 읽기 전용으로', { skip: !db && 'local database not running' }, async () => {
+  const TODAY = await A.copyDay();
+  await inRollback(async ({ sql, t }) => {
+    await sql`update public.tenant_settings set data = coalesce(data, '{}'::jsonb) || jsonb_build_object('operations', coalesce(data->'operations', '{}'::jsonb)
+      || jsonb_build_object('holidays', coalesce(data->'operations'->'holidays', '[]'::jsonb) || ${sql.json([{ date: TODAY, name: '시험 휴원일' }])})) where tenant_id=${t}`;
+    const [x] = await sql`select teacher_id::text id from public.classes where tenant_id=${t} and id=${CLASS}`;
+    const d = await quickLoad(sql, x.id);
+    assert.deepEqual([d.view, d.holiday, 'classes' in d], ['holiday', '시험 휴원일', false]);
+    assert.equal(d.activity.officeScope, false, 'selfOnly — 내 반만');
+    assert.ok(Array.isArray(d.activity.rows) && d.activity.date === TODAY);
+  });
+});
+
 test.after(async () => { await db?.end(); });
