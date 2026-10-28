@@ -390,6 +390,8 @@ async function procInfo(sql, fn) {
   return rows[0];
 }
 
+/** 파일 저장소가 없을 때 remove가 돌려주는 오류(Supabase storage 오류 모양). */
+export const STORAGE_MISSING = Object.freeze({ message: '파일 저장소가 없습니다', statusCode: '503' });
 class Client {
   constructor(kind) {
     this.kind = kind;
@@ -399,7 +401,18 @@ class Client {
       getSession: async () => ({ data: { session: null }, error: null }),
       admin: new Proxy({}, { get: (_, k) => { throw new UnsupportedShape(`auth.admin.${String(k)}`); } }),
     };
-    this.storage = new Proxy({}, { get: (_, k) => { throw new UnsupportedShape(`storage.${String(k)}`); } });
+    // 파일 저장소 — 복사본엔 없다. remove 하나만 Supabase가 실패할 때의 모양({ data: null, error })을 돌려준다(던지지 않는다 — 팀장 결정 10-28):
+    // 2.0 코드가 저장소 실패를 판단하는 그대로 흐르게(녹음 있는 회의록 삭제 등). upload · download · createSignedUrl … 나머지는 흉내 밖(던짐).
+    this.storage = new Proxy({}, { get: (_, k) => {
+      if (k !== 'from') throw new UnsupportedShape(`storage.${String(k)}`);
+      return (bucket) => new Proxy({}, { get: (__, m) => {
+        if (m !== 'remove') throw new UnsupportedShape(`storage.from(${String(bucket)}).${String(m)}`);
+        return async (paths) => {
+          if (!Array.isArray(paths)) throw new UnsupportedShape('storage remove 경로가 배열이 아님');
+          return { data: null, error: STORAGE_MISSING };
+        };
+      } });
+    } });
   }
   from(table) { return new Builder(this, table); }
   schema(s) { throw new UnsupportedShape(`schema(${s})`); }

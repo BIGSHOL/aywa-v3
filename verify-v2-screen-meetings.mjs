@@ -299,3 +299,32 @@ test('화면 저장 경로(run) — 명단 밖 사람 = 2.0 \'로그인이 필�
   const [{ left }] = await db`select count(*)::int left from public.meeting_minutes where tenant_id = ${t} and title like ${`${MARK}%`}`;
   assert.equal(left, 0);
 });
+
+// ── 공용 러너: 파일 저장소 없음 = 저장소 실패(팀장 결정 10-28) ─────────────────────────────────────────────────────────────
+test('러너 단위 — storage.from(bucket).remove는 던지지 않고 Supabase 실패 모양 { data: null, error } · 그 밖의 저장소 호출은 흉내 밖', async () => {
+  const { adminClient, sessionClient, STORAGE_MISSING } = await import('./v2-server/postgrest.mjs');
+  for (const c of [adminClient(), sessionClient()]) {
+    assert.deepEqual(await c.storage.from('meeting-recordings').remove(['t/a.webm']), { data: null, error: { message: '파일 저장소가 없습니다', statusCode: '503' } });
+    assert.equal((await c.storage.from('x').remove([])).error, STORAGE_MISSING);
+    for (const m of ['upload', 'download', 'createSignedUrl', 'list']) assert.throws(() => c.storage.from('x')[m], (e) => e.code === 'V2_UNSUPPORTED', m);
+    assert.throws(() => c.storage.listBuckets, (e) => e.code === 'V2_UNSUPPORTED');
+  }
+});
+
+test('녹음 있는 회의록 삭제 = 2.0 deleteMeeting 그대로 끝난다(저장소 실패는 2.0이 삼킨다) · 감사로그 audioRemoved는 2.0 판정 그대로 · 되돌림', { skip: SKIP }, async () => {
+  const actor = (await load({})).editors[0];
+  const [m] = await db`select id::text id, title, audio_path, audio_duration_sec from public.meeting_minutes where tenant_id = ${t} and audio_path is not null order by held_at desc limit 1`;
+  assert.ok(m, '시험하려면 녹음 있는 회의록이 있어야 한다');
+  // 2.0 판정(audio-path.ts isTenantAudioPath) — 그 지점 경로의 녹음인가. 저장소 결과는 보지 않는다(2.0 그대로).
+  const own = (await importV2('lib/storage/audio-path.ts')).isTenantAudioPath(m.audio_path, t);
+  const { results, probes } = await runWrite(t, actor.id, [{ module: A, fn: 'deleteMeeting', args: [null, fd({ id: m.id, redirectTo: '/meetings' })] }], { rollback: true, probes: [
+    { text: `select count(*)::int n from public.meeting_minutes where id = $1`, params: [m.id] },
+    { text: `select metadata from public.audit_logs where tenant_id = $1 and action = 'meeting_delete' and metadata->>'meetingId' = $2`, params: [t, m.id] },
+  ] });
+  assert.deepEqual(results[0], { redirect: '/meetings' });
+  const [[{ n }], [log]] = probes;
+  assert.equal(n, 0, '되돌림 트랜잭션 안에서는 지워졌다');
+  assert.equal(log.metadata.hadAudio, true); assert.equal(log.metadata.audioRemoved, own); assert.equal(log.metadata.audioDurationSec, m.audio_duration_sec);
+  const [{ left }] = await db`select count(*)::int left from public.meeting_minutes where id = ${m.id}`;
+  assert.equal(left, 1, '되돌림 뒤 회의록은 그대로');
+});
