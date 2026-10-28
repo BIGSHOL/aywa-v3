@@ -2,7 +2,7 @@
 //   features/attendance/server/actions.ts linkMakeupToAbsence(보강 추가 → 분리: 결석 칸 메모 + 보강한 날 칸 시수·메모)
 //   features/attendance/server/makeup-reservation-actions.ts setReservationReportMode(보강 보고서 합치기↔나누기) ·
 //     moveReservationToRegular(예약 보강을 그날 정규 반으로 옮겨 합치기) · checkMakeupReservation(보강 했음 / 못 했음)
-//   features/video-homework/server/actions.ts setVideoHomeworkMark · setVideoHomeworkMarksBulk(지난 수업 영상 숙제 검사 칸)
+//   features/video-homework/server/actions.ts setVideoHomeworkMark · setVideoHomeworkMarksBulk(지난 수업 영상 숙제 검사 칸 — 권한·대상·쓰기 본문은 영상 제출 현황 화면 모듈의 것을 import)
 // · 판정 순서·문구·반환 모양·감사로그(action 이름 · metadata — via '3.0 연습 복사본' 덧붙임)는 2.0 그대로. 판정은 2.0 순수 함수(importV2).
 // · 보강 예약 이행(예약 done · 메모 · 시수 자동값 · 결석 칸 '예정 → 완료')은 출석부 화면의 이행 본문(v2-attendance-makeup.mjs
 //   completeMakeupReservations · isRegularLessonDay)을 그대로 부른다 — 2.0도 같은 함수 하나(makeup-reservation-complete.ts)다.
@@ -14,11 +14,13 @@
 import { V2Error } from './v2-screens.mjs';
 import { loadRules as attendanceRules, readSettings as attendanceSettings } from './v2-screen-attendance.mjs';
 import { loadMakeupRules, completeMakeupReservations, completionKey, isRegularLessonDay, nativeMakeupsOn } from './v2-attendance-makeup.mjs';
+import { loadRules as vhRules, videoHomeworkWriteError, loadTarget, writeMark } from './v2-screen-video-homework.mjs';
+import { readPeople, deepMerge } from './v2-proc-people.mjs';
 
 const ATTENDANCE = 'features/attendance/server/actions.ts';
 const RESERVATION = 'features/attendance/server/makeup-reservation-actions.ts';
 const VIDEO = 'features/video-homework/server/actions.ts';
-const EXTRA = { options: 'features/attendance/makeup-options.ts', host: 'features/attendance/makeup-host.ts', policy: 'features/video-homework/policy.ts',
+const EXTRA = { options: 'features/attendance/makeup-options.ts', host: 'features/attendance/makeup-host.ts',
   vtypes: 'features/video-homework/types.ts' };
 let extraP = null;
 const extra = (importV2) => (extraP ??= Promise.all(Object.entries(EXTRA).map(async ([k, p]) => [k, await importV2(p)])).then(Object.fromEntries)
@@ -386,12 +388,16 @@ async function linkMakeupToAbsence(c, input) {
 
 // ── setVideoHomeworkMark · setVideoHomeworkMarksBulk ──────────────────────────────────────────────────────────────────
 const VH_STATUSES = ['submitted', 'missing', null];
-/** 2.0 videoHomeworkWriteError — 수업보고서 '전체'면 통과 · 아니면 원스크린 쓰기 + 그날 가르치는 반(getTeachingClassIds — 담임 · 위임 · JJ 보고서 담당). */
-async function videoHomeworkWriteError(c, classId, date) {
-  if (c.level('lesson_reports') === 'full') return null;
-  if (!c.canWrite('teacher_onescreen')) return '수정 권한이 없습니다.';
-  const ids = await c.H.teachingClassIds(c.sql, c.t, c.R, c.env, c.actor.id, date);
-  return ids.includes(classId) ? null : '담당 반만 수정할 수 있습니다.';
+/**
+ * 영상 제출 현황 화면 모듈(v2-screen-video-homework.mjs)의 저장 본문 셋(videoHomeworkWriteError · loadTarget · writeMark)이 읽는 쓰기 문맥 —
+ * 그 모듈의 writer()와 같은 모양 { R, people, u, S, level, full, sql, t }. 저장하는 사람 = 원스크린이 고른 선생님(actAs가 확인한 활성 계정).
+ * ⚠️ 그 화면은 운영자 계정을 고르는 사람에서 빼지만, 이 화면의 저장하는 사람은 actAs 그대로(원스크린 다른 저장과 같게) — 사람을 명단에서만 찾는다.
+ */
+async function vhWriter(c) {
+  const [R, people] = await Promise.all([vhRules(c.importV2), readPeople(c.sql, c.t, c.importV2, 'lesson_reports')]);
+  const u = people.users.find((x) => x.id === c.actor.id) ?? null;
+  const level = (m) => (u ? people.level(u, m) : 'none');
+  return { R, people, u, S: { report: deepMerge(people.settings.base.report, people.settings.stored?.report) }, level, full: level('lesson_reports') === 'full', sql: c.sql, t: c.t };
 }
 /** 2.0 isCancelledHomework(cancels.ts) — 취소 기록이 있고, 그날 보고서 '있음'·따로 낸 숙제가 없다. 못 읽으면 false(2.0과 같다). */
 async function isCancelledHomework(c, key) {
@@ -406,15 +412,12 @@ async function isCancelledHomework(c, key) {
     });
   } catch { return false; }
 }
-/** 2.0 writeCheckedMark — 대상 · 취소한 숙제 · 그날 명단(수강 · 보강 출결·예약 · 이미 있는 기록) 확인 뒤 writeVideoHomeworkMark. */
-async function writeCheckedMark(c, input) {
+/** 2.0 writeCheckedMark — 대상(loadTarget) · 취소한 숙제 · 그날 명단(수강 · 보강 출결·예약 · 이미 있는 기록) 확인 뒤 writeVideoHomeworkMark(writeMark). */
+async function writeCheckedMark(c, w, input) {
   if (input.status !== null) {
-    const [[cls], [student]] = await Promise.all([
-      c.sql`select subject, class_name from public.classes where tenant_id=${c.t} and id=${input.classId}`,
-      c.sql`select grade, name from public.students where tenant_id=${c.t} and id=${input.studentId}`]);
-    if (!cls || !student) return { ok: false, error: '해당 반이나 학생을 찾을 수 없습니다.' };
-    if (!c.X.policy.isVideoHomeworkEnabled(c.env.report.videoHomeworkPolicy, { classId: input.classId, subjectKey: cls.subject, grade: student.grade }))
-      return { ok: false, error: '영상 제출 검사 대상이 아닙니다. 보고서 설정을 확인해 주세요.' };
+    const target = await loadTarget(w, input.classId, input.studentId);
+    if (target.error) return { ok: false, error: target.error };
+    if (!target.enabled) return { ok: false, error: '영상 제출 검사 대상이 아닙니다. 보고서 설정을 확인해 주세요.' };
     if (input.homeworkDate && await isCancelledHomework(c, { classId: input.classId, studentId: input.studentId, date: input.homeworkDate }))
       return { ok: false, error: '영상 제출 현황에서 취소한 숙제입니다. 화면을 새로고침해 주세요.' };
   }
@@ -429,33 +432,8 @@ async function writeCheckedMark(c, input) {
     // 2.0 nativeWriteAllowance — 새 보강 체계 참여만 허용하는 갈래(꺼진 학원 = 허용 안 함 · 켜진 학원은 옮기지 않아 거절).
     if (!att.length && !res.length && !existing.length) return { ok: false, error: '해당 수업 날짜의 학생을 찾을 수 없습니다.' };
   }
-  return writeMark(c, { classId: input.classId, studentId: input.studentId, slotDate: input.checkDate, slotIsMine: true, homeworkDate: input.homeworkDate,
+  return writeMark(w, { classId: input.classId, studentId: input.studentId, slotDate: input.checkDate, slotIsMine: true, homeworkDate: input.homeworkDate,
     submittedDate: input.submittedDate, status: input.status });
-}
-/** 2.0 writeVideoHomeworkMark(mark-write.ts) — 같은 숙제 = 한 줄(있으면 그 줄을 고치고, 없을 때만 자리에 새로 · 미확인 = 지운다). */
-async function writeMark(c, input) {
-  const { sql, t } = c;
-  const scope = sql`tenant_id=${t} and class_id=${input.classId} and student_id=${input.studentId}`;
-  const sameIds = input.homeworkDate ? (await sql`select id::text id from public.video_homework_marks where ${scope} and homework_date=${input.homeworkDate}::date`).map((r) => r.id) : [];
-  if (input.status === null) {
-    const slot = input.homeworkDate && !input.slotIsMine
-      ? await sql`select id::text id from public.video_homework_marks where ${scope} and check_date=${input.slotDate}::date and (homework_date is null or homework_date=${input.homeworkDate}::date)`
-      : await sql`select id::text id from public.video_homework_marks where ${scope} and check_date=${input.slotDate}::date`;
-    const ids = [...new Set([...sameIds, ...slot.map((r) => r.id)])];
-    if (ids.length) await sql`delete from public.video_homework_marks where tenant_id=${t} and id = any(${ids}::uuid[])`;
-    return { ok: true };
-  }
-  const submitted = input.status === 'missing' ? { set: true, value: null } : input.submittedDate !== undefined ? { set: true, value: input.submittedDate } : { set: false };
-  if (sameIds.length) {
-    await sql`update public.video_homework_marks set status=${input.status}, updated_by=${c.actor.id}, updated_at=now()
-      ${submitted.set ? sql`, submitted_date=${submitted.value}::date` : sql``} where tenant_id=${t} and id = any(${sameIds}::uuid[])`;
-    return { ok: true };
-  }
-  await sql`insert into public.video_homework_marks (tenant_id, class_id, student_id, check_date, homework_date, status, updated_by, updated_at ${submitted.set ? sql`, submitted_date` : sql``})
-    values (${t}, ${input.classId}, ${input.studentId}, ${input.slotDate}::date, ${input.homeworkDate}::date, ${input.status}, ${c.actor.id}, now() ${submitted.set ? sql`, ${submitted.value}::date` : sql``})
-    on conflict (tenant_id, class_id, student_id, check_date) do update set homework_date=excluded.homework_date, status=excluded.status, updated_by=excluded.updated_by,
-      updated_at=excluded.updated_at ${submitted.set ? sql`, submitted_date=excluded.submitted_date` : sql``}`;
-  return { ok: true };
 }
 const badSubmittedDate = (c, v) => v != null && (typeof v !== 'string' || !c.X.vtypes.isVideoHomeworkDate(v) || v > c.today);
 async function setVideoHomeworkMark(c, input) {
@@ -466,9 +444,9 @@ async function setVideoHomeworkMark(c, input) {
   if (input.homeworkDate && input.homeworkDate > input.checkDate) return { ok: false, error: '지난 숙제 날짜는 검사일보다 늦을 수 없습니다.' };
   if (!VH_STATUSES.includes(input.status)) return { ok: false, error: '유효하지 않은 상태입니다.' };
   if (![input.classId, input.studentId].every((v) => typeof v === 'string' && UUID_RE.test(v))) return { ok: false, error: '해당 반이나 학생을 찾을 수 없습니다.' };
-  const denied = await videoHomeworkWriteError(c, input.classId, input.checkDate);
+  const w = await vhWriter(c), denied = await videoHomeworkWriteError(w, input.classId, input.checkDate);
   if (denied) return { ok: false, error: denied };
-  return writeCheckedMark(c, { classId: input.classId, studentId: input.studentId, checkDate: input.checkDate, homeworkDate: input.homeworkDate,
+  return writeCheckedMark(c, w, { classId: input.classId, studentId: input.studentId, checkDate: input.checkDate, homeworkDate: input.homeworkDate,
     submittedDate: input.submittedDate, status: input.status });
 }
 const BULK_MAX_CELLS = 300;
@@ -488,14 +466,14 @@ async function setVideoHomeworkMarksBulk(c, input) {
   }
   const cells = [...byKey.values()];
   if (!cells.length) return { ok: true, applied: [], failed };
-  const classIds = [...new Set(cells.map((x) => x.classId))], allowed = new Set();
-  for (const id of classIds) if (!(await videoHomeworkWriteError(c, id, input.checkDate))) allowed.add(id);
+  const classIds = [...new Set(cells.map((x) => x.classId))], allowed = new Set(), w = await vhWriter(c);
+  for (const id of classIds) if (!(await videoHomeworkWriteError(w, id, input.checkDate))) allowed.add(id);
   const applied = [];
   // 한 칸씩 차례로(한 연결 · 저장점마다 — 한 칸의 실패가 다른 칸을 되돌리지 않게. 2.0은 6개씩 나란히, 칸마다 실패를 센다).
   for (const cell of cells) {
     if (!allowed.has(cell.classId)) { failed += 1; continue; }
     let result;
-    try { result = await c.sql.savepoint((sp) => writeCheckedMark({ ...c, sql: sp }, { ...cell, checkDate: input.checkDate, status: input.status })); }
+    try { result = await c.sql.savepoint((sp) => writeCheckedMark({ ...c, sql: sp }, { ...w, sql: sp }, { ...cell, checkDate: input.checkDate, status: input.status })); }
     catch { result = { ok: false }; }
     if (result.ok) applied.push({ classId: cell.classId, studentId: cell.studentId }); else failed += 1;
   }
