@@ -1039,8 +1039,11 @@ window.createFlowUI = function createFlowUI(api) {
   // 영상 제출 현황은 기록 하나를 여는 주소가 없다 — 업무 종류에 맞는 상태(미배정 영상 = 배정 필요 · 그 밖 = 미수행)와, 학생이 한 명이면 그 이름 찾기로.
   // 선생님이 처리할 차례면 강사 화면(내가 낸 숙제 — 2.0 /onescreen/video-homework)으로.
   const oneStudent=c=>{const s=refsOf(c).filter(r=>r.familyId==='students'&&r.label);return s.length===1?{q:String(s[0].label).split(' · ')[0]}:{};};
+  // screen = 영역과 다른 2.0 화면으로 열 때 · use = 그 길을 탈 업무만(아니면 영역 기본 길) — 진도 기록 이상은 학생 한 명이면 원생 상세 진도 탭으로.
+  const studentIdOf=c=>{const s=refsOf(c).filter(r=>r.familyId==='students'&&r.recordId);return s.length===1?String(s[0].recordId):'';};
   const V2_ROUTE={'withdrawal-reports':{record:id=>({v2path:`/withdrawal-reports/${id}`}),list:{status:'pending'}},approvals:{record:id=>({v2path:`/approvals/${id}`}),list:{tab:'waiting'}},
-    'video-homework':{list:c=>({status:c.taskKind==='video_unassigned'?'assign':'missing',...oneStudent(c),...(actorById(v2Actor(c))?.role==='teacher'?{view:'mine'}:{})})}};
+    'video-homework':{list:c=>({status:c.taskKind==='video_unassigned'?'assign':'missing',...oneStudent(c),...(actorById(v2Actor(c))?.role==='teacher'?{view:'mine'}:{})})},
+    'class-sheets':{screen:'students',use:c=>c.taskKind==='progress_anomaly'&&!!studentIdOf(c),list:c=>({v2path:`/students/${studentIdOf(c)}`,tab:'progress'})}};
   // 2.0 화면의 '보는 사람'(= 저장하는 사람, 주소 actor가 화면에서 고른 사람보다 이긴다) — 지금 보는 사람이 그 단계 담당이면 그대로, 아니면 그 단계 담당(승인·결재 차례인 사람).
   // 화면이 고를 수 없는 사람이면 화면이 무시하고 제 규칙(원장 먼저)으로 돈다.
   const v2Actor=c=>{const me=actor()?.id,ids=activeSteps(c).flatMap(s=>s.assigneeIds||[]);return ids.includes(me)?me:ids[0]||me||'';};
@@ -1090,7 +1093,7 @@ window.createFlowUI = function createFlowUI(api) {
     if(action==='reload'){load();return;}
     if(action==='attach-open'){api.showWorkspaceRecord?.(id,el.dataset.record);return;}
     // 처리 화면('전자결재' 등): 2.0 화면이 있으면 그 화면, 없으면 작업 공간을 신호의 걸러 보기로 — 이 화면 위 엿보기 창에 연다(원장 10-28).
-    if(action==='goto'){const c=caseById(id);if(!c)return;const facet=(db.workspaces?.families?.[c.familyId]?.signals||[]).find(x=>x.id===c.signalId)?.facet||'',own=refsOf(c).filter(r=>r.familyId===c.familyId&&r.type!=='task'&&(r.recordId||r.id)),record=own.length===1?String(own[0].recordId||own[0].id):'',route=V2_ROUTE[c.familyId],v2=(route||!facet)&&window.V2Screens?.target(c.familyId);
+    if(action==='goto'){const c=caseById(id);if(!c)return;const facet=(db.workspaces?.families?.[c.familyId]?.signals||[]).find(x=>x.id===c.signalId)?.facet||'',own=refsOf(c).filter(r=>r.familyId===c.familyId&&r.type!=='task'&&(r.recordId||r.id)),record=own.length===1?String(own[0].recordId||own[0].id):'',route=(r=>r&&(!r.use||r.use(c))?r:null)(V2_ROUTE[c.familyId]),v2=(route||!facet)&&window.V2Screens?.target(route?.screen||c.familyId);
       if(v2&&route){const who=v2Actor(c),q=new URLSearchParams({...(record&&route.record?route.record(record):typeof route.list==='function'?route.list(c):route.list),...(who?{actor:who}:{})});openPeek({page:`${v2.slice(1)}?${q}`},el);return;}
       openPeek(v2?{page:v2.slice(1)}:{page:`workspace-${c.familyId}`,family:c.familyId,facet,...(record?{record}:{})},el);return;}
     if(action==='older'){el.disabled=true;loadOlder(id);return;}
