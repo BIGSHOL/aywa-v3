@@ -13,6 +13,7 @@ import { createFlowService, defaultStoreDir, startFlow } from './flow-service.mj
 import { createFlowRoute } from './flow-http.mjs';
 import { createExitRoute, startExitInsight } from './exit-http.mjs';
 import { createV2ScreenRoute, loadScreens, screenAsset } from './v2-screens.mjs';
+import { createV2HostRoute, ensureV2Host } from './v2-host-route.mjs';
 
 const port=Number(process.env.OWNER_CONCEPT_PORT||4310);
 if(!Number.isInteger(port)||port<1024||port>65535)throw new Error('Invalid local dev port');
@@ -58,6 +59,9 @@ const insight=flowEnabled?startExitInsight({snapshot,dir:defaultStoreDir({dataRo
 const insightRoute=createExitRoute({insight,headers,enabled:flowEnabled});
 // 2.0 화면 (V2-SCREENS.md): 2.0 형태의 새 3.0 페이지, 복사본 DB 읽기 전용. v2-screen-<id>.mjs 파일마다 한 화면(공용 파일 수정 없음).
 const v2ScreenRoute=createV2ScreenRoute({screens:loadScreens(),headers});
+// 2.0 부품 호스트(v2-host/): 2.0 React 부품 그대로 — 3.0 화면 안의 같은 출처 iframe. 산출물이 없으면 시작할 때 한 번 짓는다.
+await ensureV2Host();
+const v2HostRoute=createV2HostRoute({headers});
 async function documentFile(id){
  const db=await openFullDatabase();let document;
  try{[document]=await db.begin('read only',sql=>sql`select file_path,file_name from public.academy_documents where id=${id} and tenant_id=${tenantId}`);}finally{await db.end();}
@@ -77,6 +81,7 @@ const server=createServer(async(req,res)=>{
  if(path===assistant.path){try{await assistant.handle(req,res);}catch{if(!res.headersSent)reject(500,'로컬 비서를 실행하지 못했습니다.');}return;}
  if(flowRoute.handles(path)){try{await flowRoute.handle(req,res,path);}catch{if(!res.headersSent)reject(500,'업무 흐름을 처리하지 못했습니다.');}return;}
  if(insightRoute.handles(path)){try{insightRoute.handle(req,res);}catch{if(!res.headersSent)reject(500,'이탈 분석을 처리하지 못했습니다.');}return;}
+ if(v2HostRoute.handles(path)){try{await v2HostRoute.handle(req,res,path);}catch{if(!res.headersSent)reject(500,'2.0 화면 파일을 읽지 못했습니다.');}return;}
  if(v2ScreenRoute.handles(path)){try{await v2ScreenRoute.handle(req,res,path);}catch{if(!res.headersSent)reject(500,'2.0 화면을 불러오지 못했습니다.');}return;}
  // JSON endpoints answer their own method errors; cross-site requests still fall through to the guards below.
  if(req.headers['sec-fetch-site']!=='cross-site'){try{if(handleWorkspaceRecords(req,res,headers))return;}catch{if(!res.headersSent)reject(500,'기록을 읽지 못했습니다.');return;}}
