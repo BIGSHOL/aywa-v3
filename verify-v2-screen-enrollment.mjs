@@ -82,13 +82,13 @@ test('반 배정 수 = 연결 학생의 미종료 수강(상담 과목이 없으
       join public.classes k on k.id=e.class_id where c.tenant_id=${t} and c.consulted_at >= ${since(sql, 12)} and (e.end_date is null or e.end_date >= (now() at time zone 'Asia/Seoul')::date)`;
     const by = new Map();
     for (const r of enr) (by.get(r.id) ?? by.set(r.id, []).get(r.id)).push(r.subject);
-    let assigned = 0, nullSubject = 0;
+    let assigned = 0;
     for (const k of d.kanbanItems) {
       const list = by.get(k.id) ?? [], row = (await sql`select subject from public.enrollment_consultations where id=${k.id}`)[0];
       const keys = CS.consultClassKeys(row.subject, subjects);
       const want = !k.studentId ? 0 : keys === null ? list.length : list.filter((s) => keys.includes(s)).length;
       assert.equal(k.assignedClassCount, want, `${k.id} ${row.subject}`);
-      if (want > 0) assigned++; if (keys === null && list.length) nullSubject++;
+      if (want > 0) assigned++;
     }
     assert.ok(assigned > 0, '반 배정 상담이 있어야 시험이 된다');
   });
@@ -159,7 +159,10 @@ test('화면 글자 — 2.0·내부 이름이 보이지 않는다 · 껍데기�
       assert.ok(!/Docker|복사본|[a-z]+_[a-z_]+|\bget[A-Z]\w+|\bv2-/.test(lit), `${name}: 내부 이름 ${lit}`);
   }
   assert.ok(!/https?:\/\//.test(code(shell)), '껍데기에 바깥 주소');
-  assert.ok(!/method:\s*['"]POST/.test(shell) && !/method:\s*['"]POST/.test(entry), '보기 경로에서 쓰기 요청');
+  assert.ok(!/method:\s*['"]POST/.test(shell), '껍데기에서 쓰기 요청');
+  // 진입점의 쓰기 요청은 상담 삭제 단추 하나뿐(2.0 redirect를 호스트 이동으로 받으려고 직접 보낸다) — 보기 경로엔 없다.
+  assert.equal((entry.match(/method:\s*['"]POST/g) ?? []).length, 1, '진입점 쓰기 요청 = 삭제 하나');
+  assert.ok(/fetch\(`\/api\/v2\/\$\{SCREEN\}\/deleteEnrollmentConsultation`/.test(entry), '그 쓰기 요청은 삭제 저장 경로');
 });
 
 // ── 2단계: 상세 · 수정 · updateEnrollmentConsultation ─────────────────────────────────────────────────────────────────
@@ -438,5 +441,56 @@ test('통계 = 독립 SQL — 연도 목록 · 그 해 상담·등록(달마다)
     assert.equal(now.progressRows.length, days); void K;
     // 신규 문의 추이(기본 12개월)의 합계 = 그 기간 상담 수(오늘까지)
     assert.ok(now.intake.trend && now.intake.groups, '신규 문의 추이 자료');
+  });
+});
+
+// ── 남은 저장: 삭제 · AI 리포트 섹션 글 · 요약 붙이기(AI 호출 없음) ────────────────────────────────────────────────────
+/** 시험용 AI 분석 한 줄(이 트랜잭션 안에서만) — 저장된 요약이 있는 상담. */
+async function withAnalysis(sql, consultationId, summary = '시험 요약 문장') {
+  const [{ id }] = await sql`insert into public.consultation_ai_analysis (consultation_id, model_version, diagnosis, learning_plan, print_payload, generated_at)
+    values (${consultationId}, 'test', ${sql.json({})}, ${sql.json({})}, ${sql.json({ audioReport: { summary, warnings: '옛 글' }, speakerRoles: {} })}, now()) returning id::text id`;
+  return id;
+}
+
+test('상담 삭제 = 2.0 deleteEnrollmentConsultation — 분석·녹음 행 함께 · 감사로그 · 성공 = 목록 주소(2.0 redirect) · 없는 상담 거절', { skip: SKIP }, async () => {
+  await rollback(async (sql) => {
+    const f = await editFixture(sql);
+    await withAnalysis(sql, f.id);
+    assert.deepEqual(await call(sql, 'deleteEnrollmentConsultation', f.owner.id, [null, fdOf({ id: f.id, redirectTo: '/enrollment' })]), { redirectTo: '/enrollment' });
+    const [left] = await sql`select (select count(*)::int from public.enrollment_consultations where id=${f.id}) c, (select count(*)::int from public.consultation_ai_analysis where consultation_id=${f.id}) a`;
+    assert.deepEqual(left, { c: 0, a: 0 });
+    const [log] = await sql`select action, target_label, metadata from public.audit_logs where tenant_id=${t} and metadata->>'consultationId'=${f.id}`;
+    assert.equal(log.action, 'enrollment_consultation_delete'); assert.equal(log.target_label, '시험상담'); assert.equal(log.metadata.hadRecording, false);
+    assert.deepEqual(await call(sql, 'deleteEnrollmentConsultation', f.owner.id, [null, fdOf({ id: f.id })]), { error: '상담을 찾을 수 없습니다' });
+  });
+});
+
+test('AI 리포트 섹션 글 고치기 = 2.0 updateConsultationReportSection — 그 섹션만 바뀌고 나머지 보존 · 고친 사람·시각 · 감사로그(글자 수만) · 모르는 섹션 거절', { skip: SKIP }, async () => {
+  await rollback(async (sql) => {
+    const f = await editFixture(sql);
+    const aid = await withAnalysis(sql, f.id);
+    assert.deepEqual(await call(sql, 'updateConsultationReportSection', f.owner.id, [null, fdOf({ analysisId: aid, consultationId: f.id, key: 'extracted', content: 'x' })]), { error: '잘못된 섹션입니다' });
+    const res = await call(sql, 'updateConsultationReportSection', f.owner.id, [null, fdOf({ analysisId: aid, consultationId: f.id, key: 'warnings', content: '  고친 글 ' })]);
+    assert.equal(res.ok, true); assert.equal(res.editedBy, f.owner.name);
+    const [a] = await sql`select print_payload, report_edited_by from public.consultation_ai_analysis where id=${aid}`;
+    assert.equal(a.print_payload.audioReport.warnings, '고친 글'); assert.equal(a.print_payload.audioReport.summary, '시험 요약 문장'); assert.deepEqual(a.print_payload.speakerRoles, {});
+    assert.equal(a.report_edited_by, f.owner.name);
+    const [log] = await sql`select action, metadata from public.audit_logs where tenant_id=${t} and metadata->>'analysisId'=${aid}`;
+    assert.equal(log.action, 'enrollment_consultation_report_edit'); assert.equal(log.metadata.section, 'warnings'); assert.equal(log.metadata.chars, 4);
+    assert.ok(!JSON.stringify(log.metadata).includes('고친 글'), '본문은 감사로그에 남기지 않는다');
+  });
+});
+
+test('요약 붙이기 = 2.0 appendAiSummaryToConsultationContent — 저장된 요약을 상담 내용 끝에 · 두 번은 거절 · 요약 없으면 거절 · 감사로그 항목 이름만', { skip: SKIP }, async () => {
+  await rollback(async (sql) => {
+    const f = await editFixture(sql, { parent_request: '원래 내용' });
+    assert.deepEqual(await call(sql, 'appendAiSummaryToConsultationContent', f.owner.id, [f.id]), { error: '추가할 AI 요약이 없습니다. 먼저 분석/재분석을 실행하세요.' });
+    await withAnalysis(sql, f.id);
+    assert.deepEqual(await call(sql, 'appendAiSummaryToConsultationContent', f.owner.id, [f.id]), { ok: true });
+    const [r] = await sql`select parent_request from public.enrollment_consultations where id=${f.id}`;
+    assert.equal(r.parent_request, '원래 내용\n\n— AI 상담 요약 —\n시험 요약 문장');
+    assert.deepEqual(await call(sql, 'appendAiSummaryToConsultationContent', f.owner.id, [f.id]), { error: '이미 이 AI 요약이 상담 내용에 들어 있습니다.' });
+    const [log] = await sql`select metadata from public.audit_logs where tenant_id=${t} and metadata->>'consultationId'=${f.id}`;
+    assert.deepEqual(log.metadata.changed, ['상담 내용']); assert.equal(log.metadata.surface, 'ai_summary');
   });
 });

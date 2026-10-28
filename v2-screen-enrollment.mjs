@@ -16,7 +16,10 @@
 //  | setEnrollmentOutcome(server/actions.ts) — 칸반 끌기·상태 칸·상태 변경 | actions.setEnrollmentOutcome |
 //  | patchConsultationCells(server/actions.ts) — 목록 칸 수정        | actions.patchConsultationCells |
 //  | 통계의 보기 설정(view-pref-actions 다섯 · saveSchoolStatsPrefs) — 계정 저장 | 호스트가 보내지 않고 { ok:false }(3.0엔 계정이 없다 · 부품은 결과를 기다리지 않는다) |
-//  | 그 밖의 저장(삭제·수업 배정·병합·보고서 섹션·요약 붙이기) | 아직 없음 — 2.0 실패 모양으로 거절 |
+//  | deleteEnrollmentConsultation(server/actions.ts) — 상담 삭제 | actions.deleteEnrollmentConsultation(성공 = { redirectTo } → 호스트가 이동 · 2.0 redirect) |
+//  | updateConsultationReportSection(server/actions.ts) — AI 리포트 섹션 글 고치기(사람) | actions.updateConsultationReportSection |
+//  | appendAiSummaryToConsultationContent(server/actions.ts) — 저장된 요약 붙이기(AI 호출 없음) | actions.appendAiSummaryToConsultationContent |
+//  | 그 밖의 저장(수업 배정·병합) | 아직 없음 — 2.0 실패 모양으로 거절 |
 //
 // 호스트에 붙일 때(의존)
 //  · Next 전용: next/link · next/navigation(useRouter — enrollment-kanban · column-cards · sheet-editable-cells · new-consultation-watcher · month-picker) ·
@@ -31,7 +34,8 @@ import { buildList, getConsultationTotalCount, listRules } from './v2-enrollment
 import { activeClasses, canViewClasses, detailRules, findMergeSuccessor, getAssignedClasses, getEnrollmentConsultationById, getSiblingConsultations,
   listReferrerOptions, loadConsultationReferrer, referrerCandidatesFor } from './v2-enrollment-detail.mjs';
 import { buildStats } from './v2-enrollment-stats.mjs';
-import { createEnrollmentConsultation, formDataOf, patchConsultationCells, setEnrollmentOutcome, updateEnrollmentConsultation } from './v2-enrollment-save.mjs';
+import { appendAiSummaryToConsultationContent, createEnrollmentConsultation, deleteEnrollmentConsultation, formDataOf, patchConsultationCells, setEnrollmentOutcome,
+  updateConsultationReportSection, updateEnrollmentConsultation } from './v2-enrollment-save.mjs';
 
 const ID = 'enrollment', MENU = 'enrollment', ACTIONS = 'features/enrollment/server/actions.ts';
 const UUID_BODY = UUID.source.slice(1, -1);
@@ -144,6 +148,9 @@ export const screen = {
     createEnrollmentConsultation: ACT(2, (c, args) => createEnrollmentConsultation(c, formDataOf(args[1]))),
     setEnrollmentOutcome: ACT(2, (c, args) => setEnrollmentOutcome(c, formDataOf(args[1]))),
     patchConsultationCells: ACT(2, (c, args) => patchConsultationCells(c, args[0], args[1])),
+    deleteEnrollmentConsultation: ACT(2, (c, args) => deleteEnrollmentConsultation(c, formDataOf(args[1]))),
+    updateConsultationReportSection: ACT(2, (c, args) => updateConsultationReportSection(c, formDataOf(args[1]))),
+    appendAiSummaryToConsultationContent: ACT(1, (c, args) => appendAiSummaryToConsultationContent(c, args[0])),
   },
   load,
 };

@@ -153,8 +153,8 @@ export async function updateEnrollmentConsultation(ctx, formData) {
 }
 
 const OUTCOMES = ['pending', 'scheduled', 'consulted', 'ai_done', 'enrolled', 'declined', 'no_show'];
-const dbWhy = (S, error, fallback) => S.dbError.describeDbError({ code: error?.code, message: error?.message ?? '', details: error?.detail ?? null, hint: error?.hint ?? null },
-  { fallback, op: 'write' }).message;
+const dbWhy = (S, error, fallback, op = 'write') => S.dbError.describeDbError({ code: error?.code, message: error?.message ?? '', details: error?.detail ?? null, hint: error?.hint ?? null },
+  { fallback, op }).message;
 
 /** setEnrollmentOutcome(_prev, formData) — 칸반 끌기 · 목록 상태 칸 · 상세 '상태 변경'. 2.0 반환 { error } · { ok: true }. */
 export async function setEnrollmentOutcome(ctx, formData) {
@@ -301,4 +301,91 @@ export async function createEnrollmentConsultation(ctx, formData) {
     ...(referrer.cols.referrer_student_id || referrer.cols.referrer_staff_id ? { referrer: await referrerLabelOf(sql, t, referrer.cols) } : {}),
   });
   return { id: data.id };
+}
+
+/**
+ * deleteEnrollmentConsultation(_prev, formData) — 상담 완전 삭제(AI 분석·녹음 행은 FK cascade). 2.0은 성공하면 redirect(redirectTo) — 여기선
+ * { redirectTo }를 돌려주고 호스트가 그 주소로 옮긴다(2.0 반환은 undefined). 녹음 파일(Storage) 정리는 하지 않는다(복사본엔 파일 저장소가 없다).
+ */
+export async function deleteEnrollmentConsultation(ctx, formData) {
+  const { sql, t, user, importV2 } = ctx;
+  const S = await saveRules(importV2);
+  if (!user) return { error: '로그인이 필요합니다' };
+  if (!ctx.canWrite) return { error: '신규 콜&상담 권한이 없습니다' };
+  const id = String(formData.get('id') ?? '').trim();
+  const redirectTo = String(formData.get('redirectTo') ?? '').trim();
+  if (!id) return { error: '상담 ID가 누락되었습니다' };
+  const [c] = /^[0-9a-f-]{36}$/i.test(id)
+    ? await sql`select id::text id, audio_path, prospect_name, student_id::text student_id from public.enrollment_consultations where tenant_id = ${t} and id = ${id}` : [];
+  if (!c) return { error: '상담을 찾을 수 없습니다' };
+  const [{ n: recCount }] = await sql`select count(*)::int n from public.consultation_recordings where consultation_id = ${id}`;
+  try {
+    await sql.savepoint((sp) => sp`delete from public.enrollment_consultations where tenant_id = ${t} and id = ${id}`);
+  } catch (error) { return { error: dbWhy(S, error, '상담을 삭제하지 못했습니다. 잠시 후 다시 시도해 주세요.', 'delete') }; }
+  await audit(sql, t, user.row, 'enrollment_consultation_delete', 'enrollment_consultations', c.prospect_name ?? null,
+    { consultationId: id, studentId: c.student_id ?? null, hadRecording: !!c.audio_path || recCount > 0 });
+  return redirectTo ? { redirectTo } : undefined;
+}
+
+const EDITABLE_AUDIO_KEYS = new Set(['consultationType', 'summary', 'familyBackground', 'parentConcerns', 'parentQuestions', 'parentRequests', 'parentSatisfaction',
+  'studentTraits', 'teacherResponse', 'salesPoints', 'agreements', 'followUps', 'warnings']);
+
+/** updateConsultationReportSection(_prev, formData) — AI 분석 리포트 한 섹션의 글을 사람이 고친다(AI 호출 없음). 2.0 반환 { ok, editedBy, editedAt } · { error }. */
+export async function updateConsultationReportSection(ctx, formData) {
+  const { sql, t, user, importV2 } = ctx;
+  const S = await saveRules(importV2);
+  if (!user) return { error: '로그인이 필요합니다' };
+  if (!ctx.canWrite) return { error: '신규 콜&상담 권한이 없습니다' };
+  const analysisId = String(formData.get('analysisId') ?? '').trim();
+  const consultationId = String(formData.get('consultationId') ?? '').trim();
+  const key = String(formData.get('key') ?? '').trim();
+  const content = String(formData.get('content') ?? '');
+  if (!analysisId) return { error: '분석 ID가 누락되었습니다' };
+  if (!EDITABLE_AUDIO_KEYS.has(key)) return { error: '잘못된 섹션입니다' };
+  // 2.0은 RLS(분석 행 → 상담 행의 지점)로 가린다 — 여기선 상담 행의 지점을 직접 본다.
+  const [row] = /^[0-9a-f-]{36}$/i.test(analysisId)
+    ? await sql`select a.print_payload, a.consultation_id::text consultation_id, c.prospect_name from public.consultation_ai_analysis a
+      join public.enrollment_consultations c on c.id = a.consultation_id and c.tenant_id = ${t} where a.id = ${analysisId}` : [];
+  if (!row) return { error: 'AI 분석을 찾을 수 없습니다' };
+  const pp = row.print_payload && typeof row.print_payload === 'object' ? row.print_payload : {};
+  const audioReport = pp.audioReport && typeof pp.audioReport === 'object' ? pp.audioReport : {};
+  const now = new Date().toISOString();
+  try {
+    await sql.savepoint((sp) => sp`update public.consultation_ai_analysis set print_payload = ${sp.json({ ...pp, audioReport: { ...audioReport, [key]: content.trim() } })},
+      report_edited_by = ${user.displayName}, report_edited_at = ${now} where id = ${analysisId}`);
+  } catch (error) { return { error: dbWhy(S, error, '분석 내용을 저장하지 못했습니다. 잠시 후 다시 시도해 주세요.') }; }
+  await audit(sql, t, user.row, 'enrollment_consultation_report_edit', 'enrollment_consultations', row.prospect_name ?? null,
+    { consultationId: row.consultation_id ?? (consultationId || null), analysisId, section: key, chars: content.trim().length });
+  return { ok: true, editedBy: user.displayName, editedAt: now };
+}
+
+/** appendAiSummaryToConsultationContent(consultationId) — 이미 저장된 AI 요약을 상담 내용 끝에 붙인다(AI 호출 없음 · 같은 요약은 두 번 안 붙인다). */
+export async function appendAiSummaryToConsultationContent(ctx, consultationId) {
+  const { sql, t, user, importV2 } = ctx;
+  const S = await saveRules(importV2);
+  if (!user) return { error: '로그인이 필요합니다' };
+  if (!ctx.canWrite) return { error: '신규 콜&상담 권한이 없습니다' };
+  if (typeof consultationId !== 'string' || !consultationId) return { error: '상담 ID가 누락되었습니다' };
+  const [consult] = /^[0-9a-f-]{36}$/i.test(consultationId)
+    ? await sql`select id::text id, parent_request, prospect_name from public.enrollment_consultations where tenant_id = ${t} and id = ${consultationId}` : [];
+  if (!consult) return { error: '상담을 찾을 수 없습니다' };
+  const [ai] = await sql`select print_payload from public.consultation_ai_analysis where consultation_id = ${consultationId} order by generated_at desc limit 1`;
+  const pp = ai?.print_payload && typeof ai.print_payload === 'object' ? ai.print_payload : null;
+  const audioReport = pp?.audioReport && typeof pp.audioReport === 'object' ? pp.audioReport : null;
+  const summary = typeof audioReport?.summary === 'string' ? audioReport.summary.trim() : '';
+  if (!summary) return { error: '추가할 AI 요약이 없습니다. 먼저 분석/재분석을 실행하세요.' };
+  const existing = (consult.parent_request ?? '').trim();
+  if (existing.includes(summary)) return { error: '이미 이 AI 요약이 상담 내용에 들어 있습니다.' };
+  const next = existing ? `${existing}\n\n— AI 상담 요약 —\n${summary}` : summary;
+  let appended;
+  try {
+    [appended] = await sql.savepoint((sp) => sp`update public.enrollment_consultations set parent_request = ${next}, updated_at = ${new Date().toISOString()}
+      where tenant_id = ${t} and id = ${consultationId} returning prospect_name`);
+  } catch (error) { return { error: dbWhy(S, error, '상담 내용에 요약을 붙이지 못했습니다. 잠시 후 다시 시도해 주세요.') }; }
+  if (appended) {
+    // 2.0 metadata.via = 'ai_summary' — 공통 규약 via와 자리가 겹쳐 surface에 둔다(목록 칸 수정과 같은 규칙).
+    await audit(sql, t, user.row, 'enrollment_consultation_update', 'enrollment_consultations', appended.prospect_name ?? null, {
+      consultationId, ...S.audit.summarizeConsultationChanges({ parent_request: consult.parent_request }, { parent_request: next }), surface: 'ai_summary' });
+  }
+  return { ok: true };
 }

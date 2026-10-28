@@ -55,6 +55,25 @@ for (const name of ['saveIntakeChartKind', 'saveIntakeTrendMode', 'saveProgressT
   registerHostHandler('features/enrollment/server/view-pref-actions.ts', name, noAccountPrefs);
 registerHostHandler('features/enrollment/server/school-prefs-actions.ts', 'saveSchoolStatsPrefs', noAccountPrefs);
 
+/**
+ * 상담 삭제 — 2.0은 성공하면 서버에서 redirect(목록)한다. 호스트는 같은 쓰기 경로로 보내고, 서버가 돌려준 redirectTo로 옮긴다(2.0 반환 = undefined).
+ * 실패는 2.0 모양 그대로({ error }).
+ */
+registerHostHandler('features/enrollment/server/actions.ts', 'deleteEnrollmentConsultation', async (_prev, fd) => {
+  let res: Response;
+  try {
+    res = await fetch(`/api/v2/${SCREEN}/deleteEnrollmentConsultation`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify({ module: 'features/enrollment/server/actions.ts', actor: hostActor(), args: [null, { $formData: [...(fd as FormData).entries()].filter(([, v]) => typeof v === 'string') }] }),
+    });
+  } catch { return { error: '연습 서버에 닿지 못했습니다 — 바뀐 것은 없습니다' }; }
+  const body = (await res.json().catch(() => null)) as { ok?: boolean; result?: { error?: string; redirectTo?: string } | null; message?: string } | null;
+  if (!res.ok || !body?.ok) return { error: body?.message || '삭제하지 못했습니다 — 바뀐 것은 없습니다' };
+  if (body.result?.error) return { error: body.result.error };
+  if (body.result?.redirectTo) hostNavigate(body.result.redirectTo, 'replace');
+  return undefined;
+});
+
 const ACTOR_KEY = `v2-host-actor:${SCREEN}`;
 /** 저장하는 사람 — 3.0 띠가 고른 값(같은 출처 저장소 + v2-host-actor 알림). 바뀌면 다시 읽는다(끌기·칸 수정 권한이 그 사람의 것). */
 function useActor() {
