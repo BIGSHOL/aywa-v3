@@ -8,7 +8,7 @@
   // 2.0 page.tsx가 읽는 주소 열쇠 그대로 + v2path(2.0 하위 경로).
   const KEEP = ['v2path', 'form', 'view', 'month', 'consultant', 'q', 'outcome', 'page', 'range', 'year', 'received', 'from',
     'trend', 'trendMonth', 'trendFrom', 'trendTo', 'trendSpan', 'pg', 'pgMonth', 'pgFrom', 'pgTo', 'pgSpan'];
-  let api = null, frame = null, requested = null, hostOk = null, wired = false, editors = [], actor = null;
+  let api = null, frame = null, requested = null, hostOk = null, wired = false, editors = [], actor = null, urlActor = null;
   const ACTOR_KEY = `v2-host-actor:${ID}`, SEL = `[data-v2-screen="${ID}"]`;
   const esc = s => S.esc(s);
   const queryOf = q => { const o = new URLSearchParams(); for (const k of KEEP) { const v = q.get(k); if (v) o.set(k, v); } return o.toString(); };
@@ -87,6 +87,15 @@
     id: ID, label: LABEL,
     render(ctx) {
       api = ctx.api; wire();
+      // 주소의 actor=<직원 id>가 가장 먼저 이긴다(업무 흐름 '처리 화면' — 후속 조치 업무가 `v2path=/enrollment/<상담 id>&actor=<담당>`으로 연다, 메인 10-28).
+      // 고를 수 있는 사람이 아니면 currentActor가 무시하고, 기억은 명단에 있는 사람일 때만 쓴다(출석부 화면과 같은 규칙).
+      const asked = ctx.query.get('actor');
+      if (asked && /^[0-9a-f-]{36}$/i.test(asked) && location.hash !== urlActor) {
+        urlActor = location.hash; actor = asked;
+        if (editors.some(e => e.id === asked)) try { localStorage.setItem(ACTOR_KEY, asked); } catch { /* 이 창에서만 */ }
+        if (editors.length) { const at = document.querySelector(`${SEL} [data-v2h-actor-slot]`); if (at) at.innerHTML = actorPicker(); }
+        tellHost();
+      }
       const query = queryOf(ctx.query);
       if (hostOk === null) fetch(HOST, { method: 'HEAD' }).then(r => r.ok, () => false).then(ok => { if (hostOk === null) { hostOk = ok; api?.render?.(); } });
       else if (hostOk) requestAnimationFrame(() => { ensureFrame(query); place(); });

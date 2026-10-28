@@ -370,3 +370,40 @@ test('목록 칸 수정 = 2.0 patchConsultationCells — 준 칸만 · 학원설
     assert.deepEqual(await patchCells({ prospectName: 'x' }, '00000000-0000-4000-8000-000000000000'), { error: '상담을 불러오지 못했습니다. 다시 시도해 주세요.' });
   });
 });
+
+test('3.0 껍데기: 주소의 actor=<직원 id>가 고른 사람보다 먼저 이긴다 · 호스트 주소로는 안 간다 · 명단 밖 id는 기억을 지우지 않는다', async () => {
+  const vm = await import('node:vm');
+  const text = await here('v2-screen-enrollment.js');
+  let def = null, onMessage = null, frame = null;
+  const posted = [], last = () => JSON.parse(JSON.stringify(posted.at(-1))), stored = new Map(), actorSlot = { innerHTML: '' };
+  const cw = { postMessage: (m) => posted.push(m) };
+  const slot = { style: {}, getBoundingClientRect: () => ({ top: 100, left: 20, width: 900, height: 600 }) };
+  const document = {
+    createElement: () => (frame = { style: {}, dataset: {}, hidden: true, contentWindow: cw, src: '' }),
+    body: { append() {} }, querySelector: (sel) => (sel.includes('[data-v2-host-slot]') ? slot : sel.includes('[data-v2h-actor-slot]') ? actorSlot : null),
+  };
+  const ctx = {
+    window: { V2Screens: { register: (x) => { def = x; }, esc: (s) => String(s ?? '') } }, document, innerHeight: 800, scrollX: 0, scrollY: 0,
+    location: { origin: 'http://127.0.0.1:4334', hash: '#v2-enrollment', replace() {} },
+    localStorage: { getItem: (k) => stored.get(k) ?? null, setItem: (k, v) => stored.set(k, v) },
+    addEventListener: (type, fn) => { if (type === 'message') onMessage = fn; },
+    requestAnimationFrame: (fn) => fn(), MutationObserver: class { observe() {} },
+    fetch: () => Promise.resolve({ ok: true }), HTMLSelectElement: class {}, URLSearchParams,
+  };
+  vm.runInNewContext(text, ctx);
+  const api = { render() {}, toast() {}, canOpenRecord: () => false };
+  def.render({ api, query: new URLSearchParams('') });
+  await new Promise((r) => setTimeout(r, 0));
+  const A1 = '11111111-1111-4111-8111-111111111111', A2 = '22222222-2222-4222-8222-222222222222', ID = '33333333-3333-4333-8333-333333333333';
+  def.render({ api, query: new URLSearchParams('') });
+  onMessage({ origin: ctx.location.origin, source: cw, data: { type: 'v2-host-editors', screen: 'enrollment', editors: [{ id: A1, name: '원장' }, { id: A2, name: '김그린' }] } });
+  assert.deepEqual(last(), { type: 'v2-host-actor', id: A1 });
+  ctx.location.hash = `#v2-enrollment?v2path=/enrollment/${ID}&actor=${A2}`;
+  def.render({ api, query: new URLSearchParams(`v2path=/enrollment/${ID}&actor=${A2}`) });
+  assert.deepEqual(last(), { type: 'v2-host-actor', id: A2 }); assert.equal(stored.get('v2-host-actor:enrollment'), A2);
+  assert.ok(frame.src.includes(`v2path=%2Fenrollment%2F${ID}`) && !frame.src.includes('actor='), '상세 주소는 가고 actor는 안 간다');
+  ctx.location.hash = '#v2-enrollment?actor=44444444-4444-4444-8444-444444444444';
+  def.render({ api, query: new URLSearchParams('actor=44444444-4444-4444-8444-444444444444') });
+  assert.deepEqual(last(), { type: 'v2-host-actor', id: A2 }, '명단 밖 id는 무시하고 앞 사람 그대로');
+  assert.equal(stored.get('v2-host-actor:enrollment'), A2);
+});
