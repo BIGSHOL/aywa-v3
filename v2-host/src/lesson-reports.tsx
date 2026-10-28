@@ -107,9 +107,8 @@ registerHostHandler("features/onescreen/server/actions.ts", "generateReportComme
 registerHostHandler("features/onescreen/server/love-note-actions.ts", "suggestLoveNote", async () => NO_AI);
 registerHostHandler("features/onescreen/server/ment-style-actions.ts", "rebuildMentStylesNow", async () => NO_AI);
 // 직접 발송 · 답글 창의 읽기 넷은 서버 화면 actions가 2.0 함수를 읽기 전용 러너로 실행한다.
-// AI를 부르는 미리보기는 연습 화면에서 하지 않는다 · 학부모 글 공감 상태는 바깥(ClassNote) 조회라 2.0 실패 값(null) 그대로.
+// AI를 부르는 미리보기는 연습 화면에서 하지 않는다. 학부모 글 공감 상태는 2.0 원본 읽기를 사용한다.
 registerHostHandler("features/onescreen/server/prompt-actions.ts", "testPrompt", async () => ({ ok: false, error: "연습 화면에서는 AI 미리보기를 하지 않습니다" }));
-registerHostHandler("features/classnote-reply/server/reaction-actions.ts", "getParentReactionState", async () => null);
 
 type Loaded = { key?: string; data?: LessonReportsData; missing?: boolean; redirect?: string; error?: string };
 

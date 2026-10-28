@@ -61,6 +61,7 @@ test('대응표 = 2.0 서버 함수 이름 그대로(그 파일이 내보내는 
   }
   for (const n of ['sendClassNotice', 'sendClassWideNotice', 'previewClassNotice']) assert.ok(n in lessonReportsActions, `${n}을 Docker에 연결`);
   for (const n of Object.values(LR_READS).flat()) assert.ok(n in lessonReportsActions, `${n}을 원본 읽기로 연결`);
+  assert.ok(!entry.includes('"getParentReactionState", async () => null'), '공감 상태를 고정 null로 덮지 않는다');
   assert.match(entry, /연습 복사본이라 실제로 보내지지 않습니다 — 발송 대기로만 남습니다/);
   // 직접 발송·공지·답글 등은 아직 받지 않는다(진입점이 그 자리에서 거절).
   assert.ok('saveAdminReport' in lessonReportsActions);
@@ -158,13 +159,15 @@ test('직접 발송·답글 읽기 넷 = 고른 사람의 2.0 함수 · 읽기 �
     [`${RA}compose-actions.ts`, 'getAdminSendClassOptions', [{ studentId: student.id, subject: 'math' }], master.id, 'candidates'],
     ['features/classnote-reply/server/reply-actions.ts', 'getParentReplyContext', [message.id], master.id, 'thread'],
     ['features/classnote-reply/server/notification-reply.ts', 'getNotificationReplyContext', [notification.id], notification.recipient_id, 'thread'],
+    ['features/classnote-reply/server/reaction-actions.ts', 'getParentReactionState', [message.id], master.id, 'messageId'],
   ];
   for (const [module, fn, args, actor, key] of cases) {
     const action = S.lessonReportsActions[fn];
     const body = action.validate({ module, actor, args });
     const result = await db.begin('read only', (sql) => action.run({ sql, body, tenantId: t, importV2 }));
-    assert.equal(result.ok, true, `${fn}: ${result.error ?? ''}`);
-    assert.ok(key in result, `${fn} 원본 반환 모양`);
+    if (fn !== 'getParentReactionState') assert.equal(result.ok, true, `${fn}: ${result.error ?? ''}`);
+    if (fn === 'getParentReactionState') assert.ok(result === null || result.messageId === message.id, '연동 PC 미준비면 원본 null, 준비되면 공감 상태');
+    else assert.ok(key in result, `${fn} 원본 반환 모양`);
   }
   const [{ n: afterNet }] = await db.unsafe(NET);
   assert.equal(afterNet, net, '읽기 중 pg_net 바깥 요청 큐 증가 0');
