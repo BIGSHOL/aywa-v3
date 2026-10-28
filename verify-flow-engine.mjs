@@ -81,6 +81,13 @@ test('confident AI skips the optional review; billing always gets a person', asy
   assert.deepEqual([stepOf(bc, 'staff_check').queue, stepOf(bc, 'decision').review], ['manager', true]);
   await send(svc, { actorId: IDS.manager, kind: 'case.ack', caseId: bc.id }); // manager claims the queue step
   assert.deepEqual(stepOf(caseOf(svc, bc.id), 'staff_check').assigneeIds, [IDS.manager]);
+  // '확인' 되돌리기: 확인한 본인만 · 확인하면서 맡은 담당도 비워 대기열로 돌아간다 · 다시 확인할 수 있다
+  await fails(send(svc, { actorId: IDS.owner, kind: 'case.unack', caseId: bc.id }), 409, 'step_not_ready');
+  await send(svc, { actorId: IDS.manager, kind: 'case.unack', caseId: bc.id });
+  assert.deepEqual([stepOf(caseOf(svc, bc.id), 'staff_check').status, stepOf(caseOf(svc, bc.id), 'staff_check').assigneeIds, stepOf(caseOf(svc, bc.id), 'staff_check').ack], ['ready', [], undefined]);
+  await fails(send(svc, { actorId: IDS.manager, kind: 'case.unack', caseId: bc.id }), 409, 'step_not_ready');
+  await send(svc, { actorId: IDS.manager, kind: 'case.ack', caseId: bc.id });
+  assert.deepEqual(stepOf(caseOf(svc, bc.id), 'staff_check').assigneeIds, [IDS.manager]);
   await send(svc, { actorId: IDS.manager, kind: 'case.report', caseId: bc.id, payload: { note: '입금 내역 대조 완료' } });
   await send(svc, { actorId: IDS.owner, kind: 'case.review', caseId: bc.id, payload: { decision: 'accept', note: '안내 보류' } });
   assert.equal(caseOf(svc, bc.id).state, 'done');

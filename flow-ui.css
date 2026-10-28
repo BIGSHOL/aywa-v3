@@ -310,3 +310,8 @@ html.peek .sidebar,html.peek .sidebar-scrim,html.peek .topbar,html.peek .workspa
 html.peek .workspace{margin-left:0!important}
 html.peek main{padding:20px 28px 32px;min-height:0}
 html.peek #toast{left:50%}
+
+/* 확인 직후 알림의 '되돌리기' — 알림 상자는 평소 누를 수 없어서(pointer-events:none) 단추가 있을 때만 받는다. */
+#toast.has-action{display:flex;align-items:center;gap:14px;pointer-events:auto}
+#toast .fl-undo{padding:0;border:0;background:none;color:#fff;font:inherit;font-weight:700;text-decoration:underline;text-underline-offset:3px;cursor:pointer}
+#toast .fl-undo:focus-visible{outline:2px solid #fff;outline-offset:2px}

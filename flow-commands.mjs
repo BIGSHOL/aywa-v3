@@ -158,9 +158,20 @@ export async function applyCommand(state, source, cmd, { now, inFlight = new Map
     case 'case.ack': {
       keys(payload, ['stepId']);
       const c = getCase(), s = pickStep(c, payload, x => x.status === 'ready' && !x.review, actor);
-      if (!s.assigneeIds.length) s.assigneeIds = [actor.id];
-      s.status = 'working';
+      const claimed = !s.assigneeIds.length;
+      if (claimed) s.assigneeIds = [actor.id];
+      s.status = 'working'; s.ack = { actorId: actor.id, claimed };
       emit({ caseId: c.id, type: 'step.acknowledged', stepId: s.id, targetActorIds: c.watchers || [], causeId: c.history.at(-1) });
+      refreshCase(c, at); return { caseId: c.id, eventIds: ids };
+    }
+    // 잘못 누른 '확인'을 되돌린다(검수 10-28 H4 — 누르는 즉시 저장되는데 되돌릴 길이 없었다). 확인한 본인만, 보고 전(진행 중)에만.
+    // 확인하면서 맡은 단계(담당이 비어 있던 단계)는 담당도 비운다.
+    case 'case.unack': {
+      keys(payload, ['stepId']);
+      const c = getCase(), s = pickStep(c, payload, x => x.status === 'working' && !x.review && x.ack?.actorId === actor.id, actor);
+      if (s.ack.claimed) s.assigneeIds = [];
+      s.status = 'ready'; delete s.ack;
+      emit({ caseId: c.id, type: 'step.unacknowledged', stepId: s.id, targetActorIds: c.watchers || [], causeId: c.history.at(-1) });
       refreshCase(c, at); return { caseId: c.id, eventIds: ids };
     }
     case 'case.report': {
@@ -214,7 +225,7 @@ export async function applyCommand(state, source, cmd, { now, inFlight = new Map
       const c = getCase(), who = assignable(actors, payload.assigneeIds);
       const s = c.steps.find(x => (payload.stepId ? x.id === payload.stepId : true) && (x.status === 'ready' || x.status === 'working'));
       if (!s) throw new CommandError(409, 'step_not_ready', '담당을 바꿀 남은 단계가 없습니다.');
-      const from = s.assigneeIds; s.assigneeIds = who; s.queue = null; s.unassignedReason = null; s.status = 'ready'; s.rule = '관리자가 직접 다시 지정'; s.ruleSource = 'case.reassign';
+      const from = s.assigneeIds; s.assigneeIds = who; s.queue = null; delete s.ack; s.unassignedReason = null; s.status = 'ready'; s.rule = '관리자가 직접 다시 지정'; s.ruleSource = 'case.reassign';
       emit({ caseId: c.id, type: 'step.reassigned', stepId: s.id, targetActorIds: who, causeId: c.history.at(-1), data: { from, to: who } });
       refreshCase(c, at); return { caseId: c.id, eventIds: ids };
     }

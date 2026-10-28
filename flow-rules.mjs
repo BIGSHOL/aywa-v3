@@ -39,6 +39,7 @@ export const EVENT_TYPES = {
   'decision.recorded': { label: '판정 기록', implemented: true },
   'step.routed': { label: '담당 지정', implemented: true },
   'step.acknowledged': { label: '확인함', implemented: true },
+  'step.unacknowledged': { label: '확인 취소', implemented: true },
   'step.reported': { label: '결과 보고', implemented: true },
   'step.reviewed': { label: '검토 완료', implemented: true },
   'step.returned': { label: '보완 요청', implemented: true },
@@ -91,6 +92,7 @@ export const COMMAND_ROLES = {
   'case.reopen': ['owner', 'manager'],
   'case.review': ['owner', 'manager'],
   'case.ack': ['owner', 'manager', 'teacher', 'staff'],
+  'case.unack': ['owner', 'manager', 'teacher', 'staff'],
   'case.report': ['owner', 'manager', 'teacher', 'staff'],
 };
 export const COMMAND_KINDS = Object.keys(COMMAND_ROLES);

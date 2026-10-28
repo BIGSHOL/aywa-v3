@@ -867,6 +867,16 @@ window.createFlowUI = function createFlowUI(api) {
   document.addEventListener('pointerdown',()=>{if(tipFor)hideTip();},true);
   addEventListener('scroll',()=>{if(tipFor)hideTip();},{passive:true,capture:true});
 
+  // '확인'은 누르는 즉시 저장된다 — 6초 동안 알림에 '되돌리기'를 단다(검수 10-28 H4: 잘못 누르면 되돌릴 길이 없었다).
+  let undoTimer=0;
+  function undoToast(text,undo){
+    const node=document.getElementById('toast');if(!node){toast(text);return;}
+    const hide=()=>{clearTimeout(undoTimer);node.classList.remove('show','has-action');};
+    clearTimeout(undoTimer);node.innerHTML=`<span>${h(text)}</span><button type="button" class="fl-undo">되돌리기</button>`;node.classList.add('show','has-action');
+    node.querySelector('.fl-undo').addEventListener('click',()=>{hide();undo();},{once:true});
+    undoTimer=setTimeout(hide,6000);
+  }
+
   /* ---------- 고른 일 한꺼번에(원장 10-28 "토글로 전체 선택같은거 해서 한번에 담당바꾸기 처리도 가능하게") ---------- */
   // 제목 줄 가운데 막대: 고른 수 · (이 조건의 일을 다 고르기) · 담당 바꾸기 · 고르기 해제. 체크를 바꿀 때는 표를 다시 그리지 않고 막대와 머리 칸만 맞춘다.
   function bulkHtml(){
@@ -1063,7 +1073,7 @@ window.createFlowUI = function createFlowUI(api) {
     if(action==='tree-reload'){const e=treeEntry(id);e.retry=0;if(!e.data)e.status='loading';paintTree(id);fetchTree(id);return;}
     if(action==='open'){showCase(id);return;}
     const stepId=el.dataset.step?{stepId:el.dataset.step}:{};
-    if(action==='ack'){command('case.ack',{caseId:id,payload:stepId}).then(r=>{if(r)toast('확인했습니다. 진행 중으로 바뀌었습니다.');});return;}
+    if(action==='ack'){command('case.ack',{caseId:id,payload:stepId}).then(r=>{if(r)undoToast('확인했습니다. 진행 중으로 바뀌었습니다.',()=>command('case.unack',{caseId:id,payload:stepId}).then(x=>{if(x)toast('확인을 되돌렸습니다.');}));});return;}
     if(['report-open','review-open','reassign-open','reopen-open'].includes(action)){openForm(action.replace('-open',''),id,el.dataset.step||'',action==='report-open'?el.dataset.node||'':'');return;}
     if(action==='analyze'||action==='analyze-draft'){const box=el.closest('.fl-decision');box?.querySelectorAll('[data-fl^="analyze"]').forEach(b=>{b.disabled=true;});if(box&&!box.querySelector('.fl-wait'))box.insertAdjacentHTML('beforeend','<p class="ax-note fl-wait" role="status">판정을 기다리는 중입니다. 화면은 그대로 쓸 수 있습니다.</p>');command('case.analyze',{caseId:id,payload:action==='analyze-draft'?{draft:true}:{}}).then(r=>{if(r)toast(r.duplicate?'이미 판정 중입니다. 결과가 나오면 화면에 나타납니다.':r.decision==='pending'?'판정을 요청했습니다. 결과는 잠시 뒤 이 화면에 나타납니다.':'판정 결과를 기록했습니다.');reopenCase(id);});return;}
     if(action==='request'){ax.showRequest({source:'direct'});return;}
