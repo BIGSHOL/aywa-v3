@@ -33,7 +33,7 @@ export function buildContext(source, c, { today = kstToday() } = {}) {
     knownOpenWork.push({ area: 'attendance', code: 'absence_recorded' });
   } else if (c.scenario === 'billing') {
     text = '학생A의 이번 달 수강료 청구에 남은 금액이 있어 수납 내역 확인이 요청되었습니다.';
-    Object.assign(facts, { remaining_won: Math.round(e?.remaining || 0), invoice_period: (e?.label || '').slice(0, 7) });
+    Object.assign(facts, { remaining_won: Math.round(e?.remaining || 0), invoice_period: e?.period || '' });
     knownOpenWork.push({ area: 'billing', code: 'invoice_balance_remaining' });
   } else if (c.scenario === 'consultation') {
     sourceKind = 'consultation_note';

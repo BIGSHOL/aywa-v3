@@ -25,7 +25,7 @@ export function fixtureSource() {
   put('enrollment', 'e2', '수강', 'classes'); link('enrollment_of', 'enrollment:e2', 'student:s1', 'enrollments.student_id'); link('enrollment_in', 'enrollment:e2', 'class:c2', 'enrollments.class_id');
   put('attendance', 'a1', '2026-10-24 결석', 'attendance', { date: '2026-10-24', studentId: 's1', classId: 'c1' }); link('about_student', 'attendance:a1', 'student:s1', 'attendance_records.student_id'); link('in_class', 'attendance:a1', 'class:c1', 'attendance_records.class_id');
   put('attendance', 'a2', '2026-10-25 결석', 'attendance', { date: '2026-10-25', studentId: 's2', classId: 'c2' }); link('about_student', 'attendance:a2', 'student:s2', 'attendance_records.student_id'); link('in_class', 'attendance:a2', 'class:c2', 'attendance_records.class_id');
-  put('invoice', 'i1', '2026-10 청구', 'billing', { remaining: 20000, dueDate: '2026-10-31' }); link('billed_to', 'invoice:i1', 'student:s1', 'invoices.student_id');
+  put('invoice', 'i1', '홍길동 · 10월 청구', 'billing', { remaining: 20000, dueDate: '2026-10-31', period: '2026-10' }); link('billed_to', 'invoice:i1', 'student:s1', 'invoices.student_id');
   put('consultation', 'k1', '2026-10-20 상담', 'consultations', { date: '2026-10-20' }); link('about_student', 'consultation:k1', 'student:s2', 'student_consultations.student_id'); link('counselor', 'consultation:k1', `staff:${IDS.t2}`, 'student_consultations.counselor_id');
   for (const id of ['t-open', 't-done', 't-orphan']) put('task', id, '결석 확인 전화', 'attendance');
   link('assigned_to', 'task:t-open', `staff:${IDS.desk}`, 'staff_task_assignees.user_id'); link('about', 'task:t-open', 'student:s1', 'staff_tasks.subject_id');
