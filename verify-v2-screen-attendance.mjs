@@ -84,8 +84,8 @@ test('매개변수는 정해진 값만 받는다(나머지는 공통 틀이 400)
   assert.ok(ok('mode', 'teacher') && !ok('mode', 'Teacher') && ok('q', '김 수') && !ok('q', 'a\nb') && !ok('q', 'x'.repeat(81)));
   assert.ok(ok('subject', 'subject_1') && !ok('subject', 'Math'));
   assert.equal(screen.id, 'attendance'); assert.equal(screen.order, 4); assert.equal(screen.label, '출석부');
-  assert.deepEqual(Object.keys(screen.actions).sort(), ['clearSeatPeriodChoices', 'commitSeatJjEdits', 'fillSeatPrevAbsent', 'fillSeatSlot', 'generateRecapSummary', 'moveSeatStudentPeriod', 'previewAbsenceIntake',
-    'pullSeatMemorizedWords', 'recordAbsenceIntake', 'recordFollowup', 'requestAttendanceInput', 'resetSeatPlacements', 'saveAttendanceCollapsed', 'saveAttendanceHideRetired', 'saveAttendancePeriodMode', 'saveAttendanceSort',
+  assert.deepEqual(Object.keys(screen.actions).sort(), ['cancelMakeupReservation', 'clearSeatPeriodChoices', 'commitSeatJjEdits', 'fillSeatPrevAbsent', 'fillSeatSlot', 'generateRecapSummary', 'getMakeupPeriodOptions',
+    'moveSeatStudentPeriod', 'previewAbsenceIntake', 'pullSeatMemorizedWords', 'recordAbsenceIntake', 'recordFollowup', 'requestAttendanceInput', 'reserveMakeup', 'resetSeatPlacements', 'saveAttendanceCollapsed', 'saveAttendanceHideRetired', 'saveAttendancePeriodMode', 'saveAttendanceSort',
     'saveLiveSubjectFilter', 'saveSeatMonthlyCollapsed', 'searchAttendanceHubStudents', 'searchIntakeStudents', 'setAttendanceBulk', 'setAttendanceCell', 'setSeatCell', 'setSeatJjField']);
 });
 
@@ -444,6 +444,150 @@ test('저장(복사본, 되돌림): 보강 예약 이행 — 시수 자동값 ·
   });
   assert.equal((await db`select count(*)::int n from public.audit_logs`)[0].n, before[0].audits, 'rolled back — the copy is unchanged');
   assert.equal((await db`select data->'makeups'->>'mode' m from public.tenant_settings where tenant_id=(select tenant_id from public.classes where id=${CLASS})`)[0].m, 'off', 'setting restored');
+});
+
+test('보강 예약 창·취소: 입력은 2.0 인자 모양만 받고, 2.0 서버 전용 결석 칸 고르기를 옮긴 본문이 원문과 같은 답을 낸다', async () => {
+  const Rv = await import('./v2-attendance-reserve.mjs'), MOD = Rv.RESERVE_MODULE;
+  const v = (name, args, actor = CLASS) => screen.actions[name].validate({ module: MOD, actor, args });
+  assert.throws(() => v('reserveMakeup', [{}], 'x'), /저장하는 사람을 먼저 고르세요/);
+  assert.throws(() => screen.actions.reserveMakeup.validate({ module: ACTIONS, actor: CLASS, args: [{}] }), /입력 값/, 'another 2.0 module');
+  assert.throws(() => v('getMakeupPeriodOptions', [CLASS, '2026-10-30', STUDENT, null, 'x']), /입력 값/, 'four arguments at most');
+  assert.throws(() => v('getMakeupPeriodOptions', [CLASS, '2026-10-30', 'not-a-uuid']), /입력 값/);
+  assert.throws(() => v('reserveMakeup', [{ studentId: STUDENT, classId: CLASS, periodIds: 'p1' }]), /입력 값/);
+  assert.throws(() => v('reserveMakeup', [{ studentId: STUDENT, classId: CLASS, periodIds: Array(21).fill('p') }]), /입력 값/);
+  assert.throws(() => v('reserveMakeup', [{ studentId: STUDENT, classId: CLASS, hostClassId: 'x' }]), /입력 값/);
+  assert.throws(() => v('cancelMakeupReservation', [{ id: 5 }]), /입력 값/);
+  assert.deepEqual(v('cancelMakeupReservation', [{ id: 'abc' }]), { actor: CLASS, id: 'abc' }, 'a non-uuid id is answered by run (2.0: not found)');
+  const text = await src('features/attendance/server/absence-cell.ts');
+  const O = original([extract(text, 'MADE_UP_RE'), extract(text, 'pickAbsenceNoteTarget')], ['pickAbsenceNoteTarget'],
+    { hasMemoLine: (await importV2('features/onescreen/makeup-absence-link.ts')).hasMemoLine });
+  const { hasMemoLine } = await importV2('features/onescreen/makeup-absence-link.ts');
+  const cases = [[], [{ id: 'a', note: null }], [{ id: 'a', note: '10/5 보강 예정' }, { id: 'b', note: '병결' }], [{ id: 'a', note: '병결' }, { id: 'b', note: '병결\n10/30 보강 예정' }],
+    [{ id: 'a', note: '10/5 보강 완료' }, { id: 'b', note: '9/1 보강 예정' }]];
+  for (const rows of cases) same(Rv.PORTED.pickAbsenceNoteTarget(rows, '10/30 보강 예정', hasMemoLine), O.pickAbsenceNoteTarget(rows, '10/30 보강 예정'), JSON.stringify(rows));
+});
+
+test('저장(복사본, 되돌림): 보강 예약 창·취소 — 교시 선택지·기록할 반 · 예약 행 + 결석일 칸 · 취소 + 결석 칸 되돌리기가 2.0과 같은 행·감사로그', { skip: !db && 'local database not running' }, async () => {
+  const before = await db`select (select count(*)::int from public.audit_logs) audits, (select count(*)::int from net.http_request_queue) net, (select count(*)::int from public.makeup_reservations) resv`;
+  const Rv = await import('./v2-attendance-reserve.mjs'), MOD = Rv.RESERVE_MODULE, M = await (await import('./v2-attendance-makeup.mjs')).loadMakeupRules(importV2);
+  const LV = await import('./v2-attendance-live.mjs');
+  const TODAY = await A.copyDay(), addDays = (d, n) => new Date(Date.parse(`${d}T00:00:00Z`) + n * 86400000).toISOString().slice(0, 10);
+  const dowOf = d => ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'][new Date(`${d}T00:00:00Z`).getUTCDay()];
+  const nextWeekday = d => { let x = addDays(d, 1); while (['sat', 'sun'].includes(dowOf(x))) x = addDays(x, 1); return x; };
+  const ABS = addDays(TODAY, -1), MK1 = nextWeekday(TODAY), MK2 = nextWeekday(MK1);
+  await inRollback(async ({ sql, run, t }) => {
+    const settings = await A.readSettings(sql, t, R), writers = await LV.attendanceWritersOf(sql, t, R, settings);
+    const [{ teacher_id: homeroom, class_name: className }] = await sql`select teacher_id, class_name from public.classes where id=${CLASS}`;
+    const full = writers.find(w => w.level === 'full' && w.id === homeroom) ?? writers.find(w => w.level === 'full'), teacher = writers.find(w => w.level === 'scoped');
+    assert.ok(full && teacher, 'a full-access writer and a scoped teacher');
+    const go = (name, args, who = full) => run(sql, name, { module: MOD, actor: who.id ?? who, args });
+    assert.equal((await sql`select count(*)::int n from public.makeup_reservations where tenant_id=${t} and student_id=${STUDENT}`)[0].n, 0, 'no other reservation of the test student');
+    await sql`delete from public.attendance_records where class_id=${CLASS} and student_id=${STUDENT} and session_date in (${ABS}, ${MK1}, ${MK2})`;
+    const audits = action => sql`select actor_id::text actor_id, target_label, metadata from public.audit_logs where tenant_id=${t} and action=${action} and metadata->>'studentId'=${STUDENT} and metadata->>'via'='3.0 연습 복사본'`;
+    const absRows = () => sql`select status::text status, note, session_units::float8 units, recorded_by::text recorded_by from public.attendance_records where class_id=${CLASS} and student_id=${STUDENT} and session_date=${ABS}`;
+    const resvRows = () => sql`select id::text id, class_id::text class_id, absence_class_id::text absence_class_id, absence_date::text absence_date, makeup_date::text makeup_date,
+      left(slot_start::text, 5) s, left(slot_end::text, 5) e, period_label, note, status, created_by::text created_by, report_mode from public.makeup_reservations where tenant_id=${t} and student_id=${STUDENT} order by makeup_date`;
+
+    // ① 교시 선택지 — 평일 = 그 과목 평일 교시표(수학은 학원 설정 평일 교시표 그대로) · 기록할 반 후보 = 그날 다니는 같은 과목의 열린 반(결석난 반 먼저) · 쓰지 않는다.
+    const auditsBefore = (await sql`select count(*)::int n from public.audit_logs`)[0].n;
+    const opt = await go('getMakeupPeriodOptions', [CLASS, MK1, STUDENT, null]);
+    const [{ wd }] = await sql`select data->'operations'->'weekdayPeriods' wd from public.tenant_settings where tenant_id=${t}`;
+    assert.equal(opt.ok, true);
+    assert.deepEqual(opt.options.map(o => [o.startTime, o.endTime]), wd.map(p => [p.startTime, p.endTime]), 'weekday options = the academy weekday period table');
+    assert.deepEqual([opt.subjectLabel, opt.weekend, opt.autoUnits], [settings.operations.subjects.find(s => s.key === 'math')?.label, false, true]);
+    const hosts = await sql`select c.id::text id, c.class_name from public.classes c where c.tenant_id=${t} and c.subject='math' and coalesce(c.is_active, true) and (c.closed_at is null or c.closed_at>=${MK1})
+      and c.id in (select class_id from public.enrollments where student_id=${STUDENT} and (start_date is null or start_date<=${MK1}) and (end_date is null or end_date>=${MK1}) and not coalesce(on_hold, false) and not coalesce(is_transferred, false))`;
+    assert.deepEqual(opt.hostChoices.map(h => h.classId).sort(), hosts.map(h => h.id).sort(), 'host choices = independent SQL');
+    assert.deepEqual([opt.hostChoices[0], opt.hostClassId, opt.regularDay], [{ classId: CLASS, className, absenceClass: true }, CLASS, true]);
+    assert.deepEqual(await go('getMakeupPeriodOptions', [CLASS, '2026-13-1', STUDENT, null]), { error: '날짜를 고르세요' });
+    assert.deepEqual(await go('getMakeupPeriodOptions', [STUDENT, MK1]), { error: '반을 찾지 못했습니다' });
+    assert.equal((await sql`select count(*)::int n from public.audit_logs`)[0].n, auditsBefore, 'options write nothing');
+
+    // ② 거절 — 2.0 문장 그대로, 바뀌는 것 없음.
+    const base = { studentId: STUDENT, classId: CLASS, absenceDate: ABS, makeupDate: MK1, periodIds: [opt.options[2].id, opt.options[3].id], note: ' 교재 챙기기 ', reportMode: 'merge' };
+    const [outsider] = await sql`select id::text id from public.users where tenant_id=${t} and status='active' and not (id::text = any(${writers.map(w => w.id)}::text[])) limit 1`;
+    assert.deepEqual(await go('reserveMakeup', [base], outsider), { error: '출석 관리 권한이 없습니다' });
+    assert.deepEqual(await go('reserveMakeup', [{ ...base, makeupDate: addDays(TODAY, -2) }]), { error: M.resv.validateReservationDates({ absenceDate: ABS, makeupDate: addDays(TODAY, -2), today: TODAY }).error });
+    assert.deepEqual(await go('reserveMakeup', [{ ...base, periodIds: [] }]), { error: '교시를 고르세요 — 학원설정 교시표에 있는 시간만 예약할 수 있습니다' });
+    assert.deepEqual(await go('reserveMakeup', [{ ...base, periodIds: [opt.options[1].id, opt.options[3].id] }]), { error: '이어진 교시만 한 예약으로 잡을 수 있습니다 — 중간이 빈 선택은 나눠서 예약하세요' });
+    assert.deepEqual(await go('reserveMakeup', [{ ...base, reportMode: null }]), { error: '그날은 이 학생의 정규 수업일입니다 — 보고서를 정규와 합칠지(합침) 따로 보낼지(분리) 고르세요' });
+    assert.deepEqual(await go('reserveMakeup', [{ ...base, hostClassId: STUDENT }]), { error: '기록할 반을 다시 골라 주세요 — 보강일에 이 학생이 다니는 같은 과목 반만 고를 수 있습니다' });
+    assert.deepEqual(await go('reserveMakeup', [base], teacher), { error: '담당 반이 아닙니다' }, 'a teacher not teaching the class on the absence day');
+    assert.deepEqual([(await resvRows()).length, (await absRows()).length], [0, 0]);
+
+    // ③ 예약 — 결석일 칸에 기록이 없으면 출석부 칸 저장으로 결석(시수 기본) + '보강 예정' 메모 · 예약 행 · makeup_reserve(absence created).
+    const range = M.resv.contiguousPeriodRange(opt.options, base.periodIds, MK1), memo1 = M.resv.reservationAbsenceMemo({ makeupDate: MK1, absenceDate: ABS });
+    const r1 = await go('reserveMakeup', [base]);
+    assert.deepEqual(Object.keys(r1).sort(), ['absence', 'id', 'ok', 'span']);
+    assert.deepEqual([r1.ok, r1.absence, r1.span], [true, 'created', `${MK1} ${range.label} · ${range.startTime}~${range.endTime}`]);
+    assert.deepEqual((await resvRows()).map(x => ({ ...x })), [{ id: r1.id, class_id: CLASS, absence_class_id: null, absence_date: ABS, makeup_date: MK1, s: range.startTime, e: range.endTime,
+      period_label: range.label, note: '교재 챙기기', status: 'reserved', created_by: full.id, report_mode: 'merge' }]);
+    assert.deepEqual((await absRows()).map(x => ({ ...x })), [{ status: 'absent', note: memo1, units: null, recorded_by: full.id }]);
+    assert.ok((await audits('attendance_cell')).some(x => x.metadata.date === ABS && x.metadata.status === 'absent' && x.metadata.created === true), 'absence went through the cell save');
+    let [log] = await audits('makeup_reserve');
+    assert.deepEqual([log.actor_id, log.target_label], [full.id, `학원이 · ${className}`]);
+    assert.deepEqual(Object.fromEntries(Object.entries(log.metadata).filter(([k]) => k !== 'via')), { reservationId: r1.id, studentId: STUDENT, classId: CLASS, absenceDate: ABS, makeupDate: MK1,
+      slotStart: range.startTime, slotEnd: range.endTime, periodLabel: range.label, periodCount: range.count, absence: 'created', reportMode: 'merge', hasNote: true });
+    // 같은 날 같은 교시 = 유니크가 막는다(2.0 문장) — 결석 칸·감사로그 그대로.
+    assert.deepEqual(await go('reserveMakeup', [base]), { error: '같은 날 같은 교시에 이미 이 학생의 보강 예약이 있습니다' });
+    assert.deepEqual([(await resvRows()).length, (await audits('makeup_reserve')).length, (await absRows())[0].note], [1, 1, memo1]);
+
+    // ④ 같은 결석에 다른 보강일 — 이미 결석이라 그 칸 메모에 한 줄만(absence noted).
+    const memo2 = M.resv.reservationAbsenceMemo({ makeupDate: MK2, absenceDate: ABS });
+    const r2 = await go('reserveMakeup', [{ ...base, makeupDate: MK2, periodIds: [opt.options[2].id], note: null }]);
+    assert.deepEqual([r2.ok, r2.absence], [true, 'noted']);
+    assert.deepEqual((await absRows()).map(x => [x.status, x.note]), [['absent', `${memo1}\n${memo2}`]]);
+    assert.ok(!('hasNote' in (await audits('makeup_reserve')).find(x => x.metadata.reservationId === r2.id).metadata));
+
+    // ⑤ 취소 — 강사(담당 아님) 거절 · 이행된 예약 거절 · 둘째 취소 = 그 줄만 빼고 칸은 남김 · 첫째 취소 = 예약이 만든 맨 칸이라 칸째 지움.
+    assert.deepEqual(await go('cancelMakeupReservation', [{ id: r2.id }], teacher), { error: '담당 반이 아닙니다' });
+    assert.deepEqual(await go('cancelMakeupReservation', [{ id: 'abc' }]), { error: '예약을 찾지 못했습니다(이미 취소됐을 수 있습니다)' });
+    await sql`update public.makeup_reservations set status='done' where id=${r2.id}`;
+    assert.deepEqual(await go('cancelMakeupReservation', [{ id: r2.id }]), { error: '이미 이행된 예약은 취소할 수 없습니다 — 보강일 출결을 고치세요' });
+    await sql`update public.makeup_reservations set status='reserved' where id=${r2.id}`;
+    assert.deepEqual(await go('cancelMakeupReservation', [{ id: r2.id }]), { ok: true });
+    assert.deepEqual([(await resvRows()).map(x => x.id), (await absRows()).map(x => [x.status, x.note])], [[r1.id], [['absent', memo1]]]);
+    [log] = (await audits('makeup_reserve_cancel')).filter(x => x.metadata.reservationId === r2.id);
+    assert.deepEqual([log.actor_id, log.target_label, log.metadata.memoCleared, log.metadata.absenceCleared, log.metadata.makeupDate], [full.id, `학원이 · ${className}`, true, undefined, MK2]);
+    assert.deepEqual(await go('cancelMakeupReservation', [{ id: r1.id }]), { ok: true });
+    assert.deepEqual([(await resvRows()).length, (await absRows()).length], [0, 0], 'the bare absence the reservation made is erased');
+    [log] = (await audits('makeup_reserve_cancel')).filter(x => x.metadata.reservationId === r1.id);
+    assert.deepEqual([log.metadata.memoCleared, log.metadata.absenceCleared], [true, true]);
+    assert.ok((await audits('attendance_clear')).some(x => x.metadata.date === ABS), 'erased through the cell save');
+    // 사람이 적은 사유가 있는 결석은 칸을 지우지 않고 줄만 뺀다.
+    const r3 = await go('reserveMakeup', [base]);
+    await sql`update public.attendance_records set note=${`병결\n${memo1}`} where class_id=${CLASS} and student_id=${STUDENT} and session_date=${ABS}`;
+    assert.deepEqual(await go('cancelMakeupReservation', [{ id: r3.id }]), { ok: true });
+    assert.deepEqual((await absRows()).map(x => [x.status, x.note]), [['absent', '병결']]);
+
+    // ⑥ 온 날(출석)엔 예약하지 않는다(2.0 문장).
+    await run(sql, 'setAttendanceCell', call('setAttendanceCell', full.id, { studentId: STUDENT, classId: CLASS, sessionDate: ABS, status: 'present' }));
+    assert.deepEqual(await go('reserveMakeup', [base]), { error: `${ABS}은(는) 이미 '${R.cell.statusTextOf('present')}'으로 기록된 날입니다 — 결석으로 고친 뒤 예약하세요` });
+    await sql`delete from public.attendance_records where class_id=${CLASS} and student_id=${STUDENT} and session_date=${ABS}`;
+
+    // ⑦ 반쪽 상태 금지 — 결석 칸을 못 쓰면(강사 · 7일 지난 날) 예약도 남지 않는다.
+    const OLD = addDays(TODAY, -10);
+    await sql`insert into public.class_schedules (tenant_id, class_id, day_of_week, start_time, end_time, valid_from, teacher_id) values (${t}, ${CLASS}, ${dowOf(OLD)}, '22:00', '22:40', '2026-09-01', ${teacher.id})`;
+    await sql`delete from public.attendance_records where class_id=${CLASS} and student_id=${STUDENT} and session_date=${OLD}`;
+    const half = await go('reserveMakeup', [{ ...base, absenceDate: OLD }], teacher);
+    assert.deepEqual(half, { error: `결석일(${OLD}) 칸을 처리하지 못해 예약을 취소했습니다 — ${R.edit.attendanceLockMessage(OLD, TODAY)}` });
+    assert.deepEqual([(await resvRows()).length, (await sql`select count(*)::int n from public.attendance_records where class_id=${CLASS} and student_id=${STUDENT} and session_date=${OLD}`)[0].n], [0, 0]);
+    assert.ok(!(await audits('makeup_reserve')).some(x => x.metadata.absenceDate === OLD), 'no reserve audit for the rolled-back reservation');
+
+    // ⑧ 새 보강 체계(보강관리 켜짐)인 학원 — 연결 확인을 옮기지 않아 예약·취소를 저장하지 않는다(바뀌는 것 없음).
+    //    보강관리 설정은 2.0 설정 명령만 바꿀 수 있어(트리거) 그 명령의 표식(makeup.ctx)을 이 트랜잭션에서만 잠깐 세운다.
+    const r4 = await go('reserveMakeup', [base]);
+    await sql`select set_config('makeup.ctx', pg_current_xact_id()::text, true)`;
+    await sql`update public.tenant_settings set data = jsonb_set(coalesce(data, '{}'::jsonb), '{makeups}', ${sql.json({ mode: 'on', allowAdditional: false, pilotSubjects: ['math'] })}) where tenant_id=${t}`;
+    await sql`select set_config('makeup.ctx', '', true)`;
+    const nativeText = '새 보강관리를 쓰는 학원의 보강 예약은 연습 화면에서는 아직 지원하지 않는 저장입니다. 바뀐 것은 없습니다.';
+    assert.deepEqual(await go('reserveMakeup', [{ ...base, makeupDate: MK2 }]), { error: nativeText });
+    assert.deepEqual(await go('cancelMakeupReservation', [{ id: r4.id }]), { error: nativeText });
+    assert.deepEqual((await resvRows()).map(x => x.id), [r4.id]);
+    assert.equal((await sql`select count(*)::int n from net.http_request_queue`)[0].n, before[0].net);
+  });
+  const after = await db`select (select count(*)::int from public.audit_logs) audits, (select count(*)::int from public.makeup_reservations) resv`;
+  assert.deepEqual([after[0].audits, after[0].resv], [before[0].audits, before[0].resv], 'rolled back — the copy is unchanged');
 });
 
 test('저장(복사본, 되돌림): 보기 설정 4종 = 2.0 prefs-actions — 그 사람의 ui_prefs.attendance만, 다른 화면 설정은 그대로', { skip: !db && 'local database not running' }, async () => {

@@ -50,6 +50,11 @@ async function classDayMinutes(sql, t, R, M, classId, date) {
   for (const m of M.grid.liveSlotMinutesOn(date, rows.map(R.auto.toAutoUnitsSchedule)).values()) total += m;
   return total;
 }
+/** 2.0 `isRegularLessonDay` — 보강일이 그 학생의 이 반 정규 수업일인가(수강 유효 + 등원 요일 · 그날 반이 실제로 돈다). 예약 창이 '합침/분리'를 물을지 정한다. */
+export async function isRegularLessonDay(sql, t, R, M, at) {
+  if (!(await isRegularAttendee(sql, t, R, { studentId: at.studentId, classId: at.classId, makeupDate: at.date }))) return false;
+  return (await classDayMinutes(sql, t, R, M, at.classId, at.date)) > 0;
+}
 const audit = (sql, t, actor, action, targetLabel, metadata) => sql`insert into public.audit_logs (tenant_id, actor_id, actor_name, action, target_type, target_label, metadata)
   values (${t}, ${actor.id}, ${actor.name}, ${action}, 'attendance', ${targetLabel ?? null}, ${sql.json({ ...metadata, via: VIA })})`;
 

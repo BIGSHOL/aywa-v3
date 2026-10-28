@@ -18,6 +18,9 @@
 //                                                 (v2-attendance-makeup.mjs — 옛 예약 갈래: 이행·되돌림 · makeup_reserve_done/_revert).
 //                                                 2.0과 다른 점: 새 보강 체계(보강관리 켜짐·정리 중)인 학원의 보강 예약 칸은 그 연결 갈래를
 //                                                 옮기지 않아 저장하지 않는다(사유를 말하고 바뀌는 것 없음 — 이 복사본은 꺼져 있다).
+//      server/makeup-reservation-actions.ts getMakeupPeriodOptions · reserveMakeup · cancelMakeupReservation → actions.같은 이름
+//                                                 (v2-attendance-reserve.mjs — 예약 창 교시·기록할 반 · 예약 행 + 결석일 칸 · 취소 + 결석 칸 되돌리기 ·
+//                                                 makeup_reserve / makeup_reserve_cancel). 결석 칸 쓰기·지우기는 칸 저장(setAttendanceCell)을 그대로 지난다.
 //      features/attendance/server/prefs-actions.ts saveAttendanceSort · saveAttendancePeriodMode · saveAttendanceHideRetired ·
 //                                                 saveAttendanceCollapsed → actions.같은 이름 (users.ui_prefs.attendance · 감사로그 없음 = 2.0과 같다)
 //      hub-search-actions.ts searchAttendanceHubStudents · intake/server/actions.ts searchIntakeStudents · previewAbsenceIntake ·
@@ -25,7 +28,7 @@
 //                                                 답한다(쓰기 없음). shim 공통 거절 `{ok:false}`로는 부품이 결과를 읽다 깨진다.
 //      아직 받지 않는 것(shim이 '복사본 보기 전용' `{ok:false,error}`로 거절 — 부르는 2.0 부품이 모두 `"error" in res`로 읽는다):
 //        actions.ts setAttendanceRange(범위 지우기·채우기) · saveAttendance · linkMakeupToAbsence · searchMakeupStudents
-//        makeup-reservation-actions.ts getMakeupPeriodOptions · reserveMakeup · cancelMakeupReservation · setReservationReportMode
+//        makeup-reservation-actions.ts setReservationReportMode · moveReservationToRegular · checkMakeupReservation(원스크린이 부른다)
 //        prefs-actions.ts loadAttendanceViewPrefs(서버 전용 — load가 같은 값)
 //  · 하위 주소(v2path) — 2.0 `/attendance/seat/<자리>`(자리 하루: SeatAllDay·SeatJjAllDay·SeatBoard) · `…/month`(자리 월간: MonthlyTable) ·
 //    `/attendance/seat`(첫 자리로 redirect). 조회·props는 v2-attendance-seat.mjs(2.0 seat/page.tsx·month/page.tsx와 같은 값).
@@ -69,6 +72,7 @@ import { V2Error } from './v2-screens.mjs';
 import { loadSeatRules, seatDayProps, seatMonthProps, copyClock } from './v2-attendance-seat.mjs';
 import * as SeatSave from './v2-attendance-seat-save.mjs';
 import * as LiveSave from './v2-attendance-live-save.mjs';
+import * as Reserve from './v2-attendance-reserve.mjs';
 import { loadMakeupRules, completeMakeupReservations, nativeMakeupsOn, completionKey } from './v2-attendance-makeup.mjs';
 import { loadLiveRules, quickProps, liveProps, pollFingerprint, attendanceWritersOf, readTaughtClassSet } from './v2-attendance-live.mjs';
 
@@ -782,7 +786,7 @@ const hubTodayLabel = ymd => new Intl.DateTimeFormat('ko-KR', { timeZone: 'Asia/
 // attendance_clear)를 Docker 복사본에. 저장하는 사람(actor)은 화면에서 고른 '출결 전체 권한' 직원(2.0 권한 표 그대로), 감사로그
 // metadata.via = '3.0 연습 복사본'. 월별 출석부의 칸은 교시를 지정하지 않으므로(slotStart 없음) 2.0의 '그날 칸' 갈래만 탄다.
 // 2.0과 다른 점(이유를 화면·시험이 함께 적는다):
-//  · 보강 예약(예정·이행)이 걸린 칸은 저장하지 않는다 — 2.0은 같은 저장에서 예약 이행(결석 칸 메모·시수)까지 바꾸는데 그 갈래를 옮기지 않았다.
+//  · 보강 예약 이행은 2.0처럼 저장 뒤에 본다(v2-attendance-makeup.mjs). 새 보강 체계(보강관리 켜짐·정리 중) 학원의 예약 칸만 저장하지 않는다.
 //  · 알림 벨(반 출결 완료·결석 확인·미출결 → 출석)은 만들지 않는다 — 저장 뒤 따로 도는 알림이라 연습 복사본에선 끈다.
 const VIA = '3.0 연습 복사본';
 const STATUSES = ['present', 'absent', 'late', 'excused', 'makeup', 'early_leave'];
@@ -1302,6 +1306,18 @@ const followupOk = v => isObj(v) && typeof v.studentId === 'string' && UUID.test
   && (v.allowFuture === undefined || typeof v.allowFuture === 'boolean');
 const requestOk = v => isObj(v) && typeof v.classId === 'string' && UUID.test(v.classId) && typeof v.sessionDate === 'string' && optText(v.slotStart, 8);
 
+/** 보강 예약 세 함수 — 저장하는 사람 = 출결을 쓸 수 있는 직원(전체 ∪ 담당 반만 · 2.0 canWriteTenant). 아니면 2.0 실패 모양. */
+const reserveAction = (validate, fn) => ({
+  validate,
+  run: async ({ sql, body, tenantId, importV2 }) => {
+    const [R, L, M, P] = await Promise.all([loadRules(importV2), loadLiveRules(importV2), loadMakeupRules(importV2), Reserve.loadReserveRules(importV2)]);
+    const [settings, today] = await Promise.all([readSettings(sql, tenantId, R), copyDay()]);
+    const actor = await attendanceWriterOf(sql, tenantId, R, settings, body.actor);
+    if (!actor) return { error: '출석 관리 권한이 없습니다' };
+    return fn({ sql, t: tenantId, R, M, P, settings, today, actor, cellIn: (s, b) => setCell(s, tenantId, b, R, L, M) }, body);
+  },
+});
+
 const prefs = (check, update) => ({ validate: prefsBody(check), run: async ({ sql, body, tenantId, importV2 }) => { const R = await loadRules(importV2); return mergeAttendancePrefs(sql, tenantId, R, body.actor, prev => update(R, prev, body.value)); } });
 
 // 2.0 "use server" 함수와 1:1 — 이름 = 2.0 export 이름(호스트가 그 이름으로 부른다), 인자 = 2.0 인자 그대로.
@@ -1335,6 +1351,10 @@ screen.actions = {
   recordFollowup: liveAction(LIVE_ACTIONS, followupOk, LiveSave.recordFollowup),
   requestAttendanceInput: liveAction(LIVE_ACTIONS, requestOk, LiveSave.requestAttendanceInput),
   saveLiveSubjectFilter: liveAction(LIVE_PREFS, v => typeof v === 'string' && v.length <= 40, LiveSave.saveLiveSubjectFilter),
+  // 보강 예약 창·취소(2.0 makeup-reservation-actions.ts — v2-attendance-reserve.mjs). 결석 칸 쓰기·지우기는 위 칸 저장을 그대로 지난다.
+  getMakeupPeriodOptions: reserveAction(Reserve.optionsBody, Reserve.getMakeupPeriodOptions),
+  reserveMakeup: reserveAction(Reserve.reserveBody, Reserve.reserveMakeup),
+  cancelMakeupReservation: reserveAction(Reserve.cancelBody, Reserve.cancelMakeupReservation),
   // 오늘 출결 '어제 출결' AI 정리 — 바깥(AI) 호출이라 부르지 않는다(2.0 실패 모양 { error } · 바뀌는 것 없음). 저장된 정리는 보인다.
   generateRecapSummary: notYet('features/attendance/recap/server/actions.ts', 2, () => ({ error: 'AI 정리는 연습 화면에서 만들지 않습니다. 바뀐 것은 없습니다.' })),
 };
