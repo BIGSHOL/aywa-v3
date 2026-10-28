@@ -10,7 +10,7 @@
   ],
   [
    "{active === \"video\" ? <VideoDriveCard /> : null}",
-   "{active === \"video\" ? <OwnerServerFace face=\"video\" /> : null}"
+   "{active === \"video\" ? <OwnerVideoCard view={d.video} /> : null}"
   ],
   [
    "{active === \"todaysMath\" ? <TodaysMathCard report={settings.report} /> : null}",

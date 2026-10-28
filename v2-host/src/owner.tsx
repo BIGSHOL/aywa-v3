@@ -24,6 +24,7 @@ for (const [module, names] of [
 ] as const) for (const name of names) registerHostHandler(module, name,
   async () => ({ error: name === 'listSlackChannels' ? '연습 화면에서는 슬랙 채널 목록을 불러올 수 없습니다'
     : name === 'loadSlackPeople' ? '연습 화면에서는 슬랙 직원 목록을 불러올 수 없습니다' : VIEW_ONLY }));
+registerHostHandler('features/video-submit/server/drive-settings-actions.ts', 'saveVideoDriveSetting', async () => ({ error: VIEW_ONLY }));
 
 // 슬랙 API 조회·발송은 외부 서비스에 닿는다. 2.0 부품의 함수 호출을 이 화면에서 즉시 거절한다.
 for (const [module, names] of [
