@@ -183,6 +183,7 @@
   const api={db,h,fmt,yymm,won,icon,chart,lineChart,exact,dialog,navigate,render,attachScroll,scrollToSection,toast,subjectLabel:subject,subjectColor,showStudent,showAbsences,showBill,showApproval,showTask,openRecord,canOpenRecord,getPage:()=>state.page,hasView:id=>Boolean(viewFor(id)),closeMenu};
   const ax=window.createOwnerWorkspace(api);
   const ws=typeof window.createWorkspaces==='function'?window.createWorkspaces({...api,ax}):null;
+  api.showWorkspaceRecord=(family,id)=>ws?ws.showRecord(family,id):toast('이 기록은 여기서 바로 열 수 없습니다.');
   ax.useWorkspaces?.(ws);
   window.V2Screens?.bind(api); // 2.0 화면 (v2-screens.js): 2.0 형태의 새 3.0 페이지 — #v2-<id>
   // '왜 줄었나' (exit-insight.js, INSIGHT-EXITS.md): entry buttons on the billing/student cards; fetched only when pressed; records open by exact id.

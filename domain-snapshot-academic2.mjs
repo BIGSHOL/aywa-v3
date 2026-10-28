@@ -74,11 +74,20 @@ async function reportFamilies(ctx) {
   const out = {};
   // 교재목록 — 사용 중인 교재(근거)·차수·반 배정 계획.
   const books = await sql`select b.id, b.title, b.subject, b.skill_area, b.session_count, (select count(*)::int from public.textbook_lessons l where l.tenant_id=${t} and l.textbook_id=b.id) lessons, (select count(*)::int from public.class_textbook_plans p where p.tenant_id=${t} and p.textbook_id=b.id and p.is_active) plans from public.textbooks b where b.tenant_id=${t} and b.is_active order by plans desc, b.subject, b.title`;
+  const plans = await sql`select p.id::text id, p.textbook_id::text textbook_id, p.class_id::text class_id, c.class_name,
+    p.slot_axis, p.pace, p.term_mode, p.start_date::text start_date, p.start_lesson_no, p.last_applied_at::text last_applied_at
+    from public.class_textbook_plans p join public.classes c on c.id=p.class_id and c.tenant_id=p.tenant_id
+    where p.tenant_id=${t} and p.is_active order by c.class_name, p.id`;
+  const plansByBook = new Map();
+  for (const p of plans) plansByBook.set(p.textbook_id, [...(plansByBook.get(p.textbook_id) ?? []), p]);
   const [tb] = await sql`select (select count(*)::int from public.textbooks where tenant_id=${t}) rows_all, (select count(*)::int from public.class_textbook_plans where tenant_id=${t} and is_active) plans, (select count(*)::int from public.class_textbook_plans where tenant_id=${t} and is_active and last_applied_at is not null) applied`;
   out.textbooks = family('textbooks', '교재목록(커리큘럼·반 배정)', {
     summary: `사용 중인 교재 중 반에 배정된 교재 ${books.filter(b => b.plans).length}권.`,
     metrics: [metric('사용 중인 교재', books.length, '권'), metric('교재 차수', books.reduce((n, b) => n + b.lessons, 0), '차', '사용 중인 교재'), metric('반 배정 계획', tb.plans, '건'), metric('영어 시트에 반영된 배정', tb.applied, '건'), metric('반에 배정된 교재', books.filter(b => b.plans).length, '권')],
-    evidence: books.map(r => record({ id: r.id, label: r.title, status: subjectLabel(r.subject), detail: r.skill_area ? skillAreaLabel(r.subject, r.skill_area) : '', fields: [field('차수', r.lessons), field('배정된 반', r.plans)], facets: [`subject:${r.subject || 'none'}`, r.plans ? 'assigned' : 'unassigned'] })),
+    evidence: books.map(r => ({ ...record({ id: r.id, label: r.title, status: subjectLabel(r.subject), detail: r.skill_area ? skillAreaLabel(r.subject, r.skill_area) : '',
+      fields: [field('차수', r.lessons), field('배정된 반', r.plans), ...(r.plans ? [field('반 이름', [...new Set((plansByBook.get(r.id) ?? []).map(p => p.class_name))].join(', '))] : [])],
+      facets: [`subject:${r.subject || 'none'}`, r.plans ? 'assigned' : 'unassigned'] }),
+      assignments: plansByBook.get(r.id) ?? [] })),
     facetOrder: [...Object.keys(subjectFacets), 'assigned', 'unassigned'], facetLabels: { ...subjectFacets, assigned: '반 배정 있음', unassigned: '반 배정 없음' }, recordSource: 'textbooks',
     sourceLabel: '교재 마스터 · 차수 · 반 배정', coverageNote: '목록은 사용 중인 교재입니다(반 배정 많은 순).',
     sources: [{ table: 'textbooks', rows: tb.rows_all }, { table: 'class_textbook_plans', rows: tb.plans }],

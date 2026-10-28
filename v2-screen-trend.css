@@ -78,6 +78,12 @@
 .tr-roster-table td{font-variant-numeric:tabular-nums}
 .tr-roster-more{margin:0;font-size:var(--ax-xs);color:var(--ax-ink)}
 .tr-roster-table .ax-text-link{font:inherit;min-height:0;padding:0;line-height:inherit;color:inherit}
+.tr-report-controls,.tr-report-pages{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:8px 0;font-size:var(--ax-xs);color:var(--ax-ink)}
+.tr-report-controls label{display:inline-flex;align-items:center;gap:6px}
+.tr-report-controls select{max-width:240px;padding:5px 8px;border:1px solid var(--ax-line);border-radius:7px;background:var(--ax-white);color:var(--ax-ink);font:inherit}
+.tr-report-pages{justify-content:flex-end}
+.tr-report-pages button{padding:5px 10px;border:1px solid var(--ax-line);border-radius:7px;background:var(--ax-white);color:var(--ax-ink);font:inherit;cursor:pointer}
+.tr-report-pages button:disabled{opacity:.45;cursor:default}
 /* 기준별 표 열 맞춤(원장 10-28 "각 항목별로 가운데정렬할지 왼쪽 혹은 오른쪽 정렬할지는 알아서. 추세는 가운데 정렬이 좋을듯 행제목을") — 제목과 값은 같은 쪽:
    이름 왼쪽 · 과목·담임·학교학년·직전 대비·대상 가운데 · 반 수·학생 수·값 오른쪽(자리 맞춤) · 추세 가운데. 정렬 화살표는 제목 옆에 떠서 제목 자리를 밀지 않는다. */
 .tr-table th.l,.tr-table td.l{text-align:left}

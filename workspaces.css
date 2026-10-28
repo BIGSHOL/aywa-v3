@@ -266,3 +266,10 @@ th:is(.al-c,.al-r) .ws-th-caret{margin-left:0}
 .ws-kpi[data-trend]:hover .ws-kpi-title>a,.ws-kpi-title>a:focus-visible{text-decoration:underline}
 /* 기록 첨부가 든 대화 창은 PC에서 넓게 — 영역마다 열이 여럿이라 좁으면 칸이 다 잘린다(원장 10-28 "pc뷰이상으로 신경써"). */
 .modal:has(.ws-attach){width:min(1000px,calc(100vw - 28px))}
+.ws-textbook-plans{margin:14px 0;padding:12px;border:1px solid var(--ax-line);border-radius:8px}
+.ws-textbook-plans h3{margin:0 0 10px;font-size:var(--ax-sm)}
+.ws-textbook-plan-list{display:grid;gap:10px}
+.ws-textbook-plan-list article{padding:10px;border:1px solid var(--ax-line);border-radius:7px}
+.ws-textbook-plan-list dl{display:grid;grid-template-columns:max-content minmax(0,1fr);gap:4px 10px;margin:8px 0 0;font-size:var(--ax-xs)}
+.ws-textbook-plan-list dt{color:var(--ax-ink)}
+.ws-textbook-plan-list dd{margin:0;overflow-wrap:anywhere}

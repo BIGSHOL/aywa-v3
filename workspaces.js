@@ -606,10 +606,15 @@ window.createWorkspaces = function createWorkspaces(api) {
     if(!open&&!v2)actionsOf(a).filter(x=>x.mode==='navigate'&&!familyOf(targetOf(x).page)&&resolvePage(targetOf(x).page)).forEach(x=>out.push(btn(x.label,'action',`data-id="${h(a.id)}" data-action="${h(x.id)}" data-record="${h(rid)}"`)));
     return `<div class="ax-actions">${out.join('')}</div>`;
   }
+  function textbookAssignments(r){
+    if(!Array.isArray(r.assignments))return '';
+    const rows=r.assignments;
+    return `<section class="ws-textbook-plans"><h3>배정된 반 ${rows.length}건</h3>${rows.length?`<div class="ws-textbook-plan-list">${rows.map(p=>`<article><button type="button" class="ax-text-link" data-ws="textbook-class" data-record="${h(p.class_id)}">${h(p.class_name)}</button><dl><dt>배정 기록</dt><dd>${h(p.id)}</dd><dt>시작</dt><dd>${h(p.start_date||'미정')} · ${h(p.start_lesson_no||1)}차</dd><dt>자리</dt><dd>${p.slot_axis==='jj'?'JJ':'반 수업'}</dd><dt>진도 단위</dt><dd>${({period:'교시마다 한 차수',day:'수업일마다 한 차수',min25:'25분마다 한 차수'})[p.pace]||'교시마다 한 차수'}</dd><dt>구분</dt><dd>${p.term_mode==='exam'?'시험':'정규'}</dd><dt>시트 반영</dt><dd>${h(p.last_applied_at?String(p.last_applied_at).slice(0,10):'아직 없음')}</dd></dl></article>`).join('')}</div>`:'<p>배정된 반이 없습니다.</p>'}</section>`;
+  }
   function renderRecord(a,familyId,r,pin=false){
     const recordId=String(r.id),local=(state.local[familyId]||[]).filter(e=>e.recordId===recordId);
     state.cur[familyId]=recordId;
-    dialog('detail',r.label,a.label,`${factsHtml(a,r)}${recordActions(a,r)}${local.length?`<section class="ax-evidence"><h3>이 기록의 미리보기 ${local.length}건</h3>${local.map(e=>`<p><strong>${h(e.label)}</strong> · ${h(e.values.map(v=>`${v.label} ${v.value}`).join(' · '))}</p>`).join('')}</section>`:''}`);
+    dialog('detail',r.label,a.label,`${factsHtml(a,r)}${familyId==='textbooks'?textbookAssignments(r):''}${recordActions(a,r)}${local.length?`<section class="ax-evidence"><h3>이 기록의 미리보기 ${local.length}건</h3>${local.map(e=>`<p><strong>${h(e.label)}</strong> · ${h(e.values.map(v=>`${v.label} ${v.value}`).join(' · '))}</p>`).join('')}</section>`:''}`);
     if(pin&&api.getPage()===`workspace-${familyId}`){state.pin[familyId]=recordId;refreshMain(familyId);}
     // 그 줄이 화면 안에 들어오게(경로를 옮겨 온 것이라 곧바로 — 스크롤 원칙의 '화면 전환'). 이미 보이면 움직이지 않는다.
     const row=markCurrent(familyId);
@@ -795,6 +800,7 @@ window.createWorkspaces = function createWorkspaces(api) {
     if(action==='reload'){if(boardMode(id)){delete state.board[id];loadBoard(id);refreshMain(id);return;}if(state.remote[id])state.remote[id].key='';loadRecords(id);return;}
     if(action==='record'){if(id==='attendance'&&['repeat-absence','repeat-absence-absent'].includes(state.facet[id])){api.showAbsences(null,{attendanceId:record});return;}showRecord(id,record);return;}
     if(action==='record-open'){api.openRecord(record);return;}
+    if(action==='textbook-class'){showRecord('classes',record);return;}
     if(action==='goto'){navigate(el.dataset.page);return;}
     if(action==='record-request'){const a=area(id),r=recordById(id,record);if(!a||!r)return;document.querySelectorAll('dialog[open]').forEach(d=>d.close());requestFrom(a,{title:`${r.label} 확인`,body:`${a.label}의 이 기록을 확인하고 필요한 조치와 결과를 보고해 주세요.`,records:[r]});return;}
     if(action==='action'){if(el.closest('dialog'))el.closest('dialog').close();openAction(id,el.dataset.action,record||'');return;}

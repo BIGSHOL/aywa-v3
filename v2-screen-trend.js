@@ -164,10 +164,31 @@
   // 필터를 건 보기에서 지표가 records(창마다 그 숫자를 이루는 기록)를 줄 때만. 최근 창이 먼저 · 0건인 창은 건너뛰고 모두 0이면 구역째 없음.
   // 열 = 기간 | 이름 | 학교·학년 | (날짜) | 내용 — 짧은 값은 가운데, 내용은 왼쪽. 이름은 열 수 있는 기록이면 단추(api.openRecord). 200줄까지.
   const ROSTER_MAX = 200;
+  const reportState = { key: '', window: -1, page: 1 };
+  const REPORT_PAGE = 50;
+  function reportRoster(d) {
+    const key = `${viewKey(d)}|${d.grain}|${d.range?.from || ''}|${d.range?.to || ''}|${d.windows[0]?.from || ''}`;
+    if (reportState.key !== key) Object.assign(reportState, { key, window: d.windows.length - 1, page: 1 });
+    const wi = Math.min(Math.max(reportState.window, 0), d.windows.length - 1);
+    const rows = Array.isArray(d.records[wi]) ? d.records[wi] : [];
+    const ordered = [...rows].sort((a, b) => b.date.localeCompare(a.date) || a.className.localeCompare(b.className, 'ko') || a.name.localeCompare(b.name, 'ko'));
+    const pages = Math.max(1, Math.ceil(ordered.length / REPORT_PAGE)); reportState.page = Math.min(reportState.page, pages);
+    const shown = ordered.slice((reportState.page - 1) * REPORT_PAGE, reportState.page * REPORT_PAGE);
+    const written = rows.filter(r => r.written).length, point = d.total[wi];
+    const aligned = point && point.num === written && point.den === rows.length;
+    return `<section class="tr-break tr-roster tr-report-roster"><h3>작성 의무 명단 <span>${esc(d.filter.label)} · ${fmt(ordered.length)}건</span></h3>`
+      + `<div class="tr-report-controls"><label>기간 <select data-tr-report-window aria-label="보고서 명단 기간">${d.windows.map((w, i) => `<option value="${i}"${i === wi ? ' selected' : ''}>${esc(dayName(w))}</option>`).join('')}</select></label>`
+      + `<span>작성 ${fmt(written)}건 · 미작성 ${fmt(rows.length - written)}건${aligned ? '' : ' · 집계 확인 필요'}</span></div>`
+      + `<div class="tr-table-wrap"><table class="tr-roster-table"><thead><tr><th scope="col">수업일</th><th scope="col">반</th><th scope="col">학생</th><th scope="col">작성</th><th scope="col">기록</th></tr></thead>`
+      + `<tbody>${shown.map(r => `<tr><td>${esc(r.date)}</td><td>${esc(r.className)}</td><td>${esc(r.name)}</td><td>${r.written ? '작성' : '미작성'}</td><td>${r.reportId ? `<button type="button" class="ax-text-link" data-tr-report="${esc(r.reportId)}">보고서 열기</button>` : r.source === 'classnote' && r.written ? '알림장 게시' : '—'}</td></tr>`).join('') || '<tr><td colspan="5">이 기간의 작성 의무가 없습니다.</td></tr>'}</tbody></table></div>`
+      + (pages > 1 ? `<div class="tr-report-pages"><button type="button" data-tr-report-page="prev"${reportState.page === 1 ? ' disabled' : ''}>이전</button><span>${reportState.page} / ${pages}</span><button type="button" data-tr-report-page="next"${reportState.page === pages ? ' disabled' : ''}>다음</button></div>` : '')
+      + '</section>';
+  }
   const dateText = (day, asOf) => (!/^\d{4}-\d{2}-\d{2}$/.test(String(day || '')) ? '' : day.slice(0, 4) === String(asOf || '').slice(0, 4)
     ? `${Number(day.slice(5, 7))}/${Number(day.slice(8, 10))}` : `${day.slice(2, 4)}.${day.slice(5, 7)}.${day.slice(8, 10)}`);
   function roster(d, api) {
     if (!d.filter || !Array.isArray(d.records)) return '';
+    if (d.metric.id === 'report-written') return reportRoster(d);
     const groups = d.windows.map((w, i) => ({ w, list: Array.isArray(d.records[i]) ? d.records[i].filter(r => r && r.name) : [] })).filter(g => g.list.length).reverse();
     const total = groups.reduce((n, g) => n + g.list.length, 0); if (!total) return '';
     const all = groups.flatMap(g => g.list), hasSub = all.some(r => r.sub), hasDate = all.some(r => r.date), hasNote = all.some(r => r.note);
@@ -273,7 +294,9 @@
     if (!t.closest?.('[data-v2-screen="trend"]')) return;
     const col = t.closest('.tr-chart .chart-col[data-tr-drill]');
     if (col) { if (!down?.touch || down.armed) drill(col); return; }
-    const b = t.closest('[data-tr-grain],[data-tr-by],[data-tr-filter],[data-tr-unfilter],[data-tr-undrill],[data-tr-sort],[data-tr-more],[data-tr-open],[data-tr-chip]'); if (!b) return;
+    const b = t.closest('[data-tr-grain],[data-tr-by],[data-tr-filter],[data-tr-unfilter],[data-tr-undrill],[data-tr-sort],[data-tr-more],[data-tr-open],[data-tr-chip],[data-tr-report],[data-tr-report-page]'); if (!b) return;
+    if (b.dataset.trReport) { last.api.showWorkspaceRecord?.('lesson-reports', b.dataset.trReport); return; }
+    if (b.dataset.trReportPage) { reportState.page += b.dataset.trReportPage === 'next' ? 1 : -1; const node=document.querySelector('[data-v2-screen="trend"] .tr-report-roster'); if(node){node.outerHTML=reportRoster(last.d);document.querySelector(`[data-v2-screen="trend"] [data-tr-report-page="${b.dataset.trReportPage}"]`)?.focus({preventScroll:true});} return; }
     if (b.dataset.trOpen) { if(last.d.metric.id==='recent-absent')last.api.showAbsences?.(b.dataset.trOpen);else last.api.openRecord?.(b.dataset.trOpen); return; }
     if (b.dataset.trChip) { const k = b.dataset.trChip; if (finder.chips.has(k)) finder.chips.delete(k); else finder.chips.add(k); showAll = false; last.api.render(); return; }
     // 기간 단위를 바꾸면 쪼개 보기도 끝난다(쪼개 보는 중 눌린 단추 = 나눈 단위 — 누르면 그 단위의 보통 보기).
@@ -289,6 +312,7 @@
   const onFind = ev => { const el = ev.target; if (!last || el?.id !== 'tr-find' || ev.isComposing || finder.q === el.value) return; finder.q = el.value; showAll = false; last.api.render(); };
   document.addEventListener('input', onFind); document.addEventListener('compositionend', onFind);
   document.addEventListener('change', ev => {
+    if (ev.target.matches?.('[data-v2-screen="trend"] [data-tr-report-window]') && last) { reportState.window=Number(ev.target.value); reportState.page=1; const node=document.querySelector('[data-v2-screen="trend"] .tr-report-roster'); if(node){node.outerHTML=reportRoster(last.d);document.querySelector('[data-v2-screen="trend"] [data-tr-report-window]')?.focus({preventScroll:true});} return; }
     // 전체 선택 = 거른 줄 모두 켜기(이미 다 켜져 있으면 모두 끄기).
     if (ev.target.matches?.('[data-v2-screen="trend"] [data-tr-all]') && last) {
       const set = picked.get(last.view), keys = last.visibleKeys || [];

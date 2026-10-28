@@ -214,12 +214,12 @@ function studentSplit(R, workClasses, workReports, outcomeRows, range, obligatio
  * 2.0 loadTeacherWork의 판정부(조회 다음) — 같은 순서·같은 순수 함수. `groupBy` = 'teacher'(2.0) | 'class' | 'subject' | 'student'.
  * 'student'는 선생님 묶음 결과에 `{ students: 짝 칸 줄, classNameOf: { 반id: 반 이름 } }`을 덧붙여 돌려준다(합계는 쪼개기 전 줄로 — 학생 없는 판정까지 든 값).
  */
-function judge(R, settings, d, w, nowMs, counselShown, unreadGraceHours, groupBy = 'teacher') {
+function judge(R, settings, d, w, nowMs, counselShown, unreadGraceHours, groupBy = 'teacher', includeReportDrill = false) {
   if (!(groupBy in GROUP)) throw new Error(`묶음 기준이 아닙니다: ${groupBy}`);
   const { today, range, attendanceFrom, attendanceTo, unreadFrom } = w;
   const deliveryShown = R.classnoteModuleOn(settings);
-  if (!d.classIds.length) return R.withTeacherWorkExtras(R.teacherWork([], [], [], range, []), { unread: [], attendance: [], counsel: new Map(),
-    attendanceFrom, attendanceTo, unreadFrom, counselAsOf: null, counselMonth: null, deliveryShown, counselShown });
+  if (!d.classIds.length) return { ...R.withTeacherWorkExtras(R.teacherWork([], [], [], range, []), { unread: [], attendance: [], counsel: new Map(),
+    attendanceFrom, attendanceTo, unreadFrom, counselAsOf: null, counselMonth: null, deliveryShown, counselShown }), ...(includeReportDrill ? { reportDrill: [] } : {}) };
   const { reports, outcomes, schedules, enrollments, attendance, posts, unclassified, extraIssues, counselRows } = d;
   const extraStudentOf = new Map((d.extraStudents ?? []).map((s) => [s.id, s]));
   const names = new Map(d.teachers.map((u) => [u.id, u.display_name]));
@@ -242,6 +242,17 @@ function judge(R, settings, d, w, nowMs, counselShown, unreadGraceHours, groupBy
   const obligations = R.reportWorkObligations({ classes: workClasses, reports: workReports, schedules, enrollments, attendance,
     posts: posts.map((p) => ({ boardName: p.board_name, postedOn: p.posted_on })), from: range.reportFrom, to: today,
     nowMinutes: R.kstMinutesOfDay(new Date(nowMs)), holidays: settings.operations.holidays.map((h) => h.date) });
+  // 작성률의 분모와 같은 의무 줄을 그대로 싣는다. ClassNote 반 전체 게시에는 수업보고서 id가 없다.
+  const classForDrill = includeReportDrill ? new Map(workClasses.map((c) => [c.id, c])) : null;
+  const reportForDrill = includeReportDrill ? new Map() : null;
+  if (reportForDrill) for (const r of workReports) { const key = `${r.classId}|${r.studentId}|${r.date}`; if (!reportForDrill.has(key)) reportForDrill.set(key, r); }
+  const reportDrill = includeReportDrill ? obligations.map((o) => {
+    const cls = classForDrill.get(o.classId);
+    const written = o.written && cls?.reportSource === 'lesson'
+      ? reportForDrill.get(`${o.classId}|${o.studentId}|${o.date}`) : null;
+    return { date: o.date, classId: o.classId, className: cls?.name ?? '반 확인 필요', studentId: o.studentId,
+      written: o.written, source: cls?.reportSource ?? 'lesson', reportId: written?.id ?? null };
+  }) : null;
   // 과목 이름 = 2.0 programLabel(운영실 지표 groupLabel과 같은 출처) — EiE 모듈이 켜졌으면 english = '인재원 영어' · eie = 'EiE', 그 밖은 학원 설정 이름.
   const eieOn = R.isModuleEnabled(settings.modules.disabled, 'eie'), programSubjects = settings.operations.subjects.map((s) => ({ key: s.key, label: s.label }));
   const subjectName = (key) => (key === 'eie' ? R.programLabel('eie', programSubjects, eieOn) : key === 'english' ? R.programLabel('injaewon', programSubjects, eieOn)
@@ -271,7 +282,7 @@ function judge(R, settings, d, w, nowMs, counselShown, unreadGraceHours, groupBy
   const counselAsOf = counselPick.rows.map((r) => r.period_end?.slice(0, 10) ?? '').filter(Boolean).sort().at(-1) ?? null;
   const extrasOf = (unreadList, attendanceList) => ({ unread: deliveryShown ? unreadList : [], attendance: attendanceList, counsel, attendanceFrom, attendanceTo, unreadFrom, counselAsOf,
     counselMonth: counselPick.month, deliveryShown, counselShown });
-  const whole = R.withTeacherWorkExtras(work, extrasOf(unread, attendanceDays));
+  const whole = { ...R.withTeacherWorkExtras(work, extrasOf(unread, attendanceDays)), ...(reportDrill ? { reportDrill } : {}) };
   if (groupBy !== 'student') return whole;
   return { ...whole, students: studentSplit(R, workClasses, workReports, outcomeRows, range, obligations, extraRows, unreadRows, extrasOf).rows,
     classNameOf: Object.fromEntries(workClasses.map((c) => [c.id, c.name])) };
@@ -303,14 +314,14 @@ export async function loadTeacherWork({ sql, tenantId, today, scope = null, sett
  * 여러 기준일(예: 8개 주 창의 끝 날)을 한 번에 — 가장 넓은 범위를 한 번 읽고 창마다 2.0 조건으로 걸러 2.0 판정을 돌린다(B4 · 창마다 따로 읽지 않는다).
  * 돌려줌 = `todays` 순서의 결과 배열. 창마다 결과 = 그 날짜로 `loadTeacherWork`를 따로 부른 결과(시험이 잠근다).
  */
-export async function loadTeacherWorkWindows({ sql: tx, tenantId, todays, scope = null, settings, importV2, now, asOfCut = true, spans = null, groupBy = 'teacher', period = false }) {
+export async function loadTeacherWorkWindows({ sql: tx, tenantId, todays, scope = null, settings, importV2, now, asOfCut = true, spans = null, groupBy = 'teacher', period = false, includeReportDrill = false }) {
   if (!todays?.length) return [];
   const { sql, R, clock, settings: s, counselShown, wins } = await prepare(tx, tenantId, todays, settings, importV2, spans);
   const fetched = await fetchRaw(sql, R, tenantId, s, wins, scope, counselShown, period);
   // period = 종강 반의 시간표·수강을 종강일에서 한 번 끊고(closedCut) 창마다 같은 원자료를 쓴다(반이 없으면 끊을 것도 없다).
   const raw = period && fetched.schedules ? { ...fetched, ...closedCut(fetched) } : fetched;
   return wins.map((w) => { const nowMs = nowOf(w.today, clock, now);
-    return judge(R, s, sliceWindow(R, raw, w, scope, asOfCut ? nowMs : null, period), w, nowMs, counselShown, R.UNREAD_GRACE_HOURS, groupBy); });
+    return judge(R, s, sliceWindow(R, raw, w, scope, asOfCut ? nowMs : null, period), w, nowMs, counselShown, R.UNREAD_GRACE_HOURS, groupBy, includeReportDrill); });
 }
 
 // ── 3.0 KPI: 최근 7일 창 8개(원장 10-28 "원하는건 추세") ─────────────────────────────────────────────────────────────
@@ -387,20 +398,32 @@ export async function teacherWorkTrend({ sql, asOf, tenantId: t = COPY_TENANT, i
   const studentBy = by === 'student', studentRows = studentBy && !!scope && m.byStudent !== false;
   // 학생 줄을 못 내는 경우(필터 없음 · 학생 기준 없는 지표)는 선생님 묶음으로 합계만 — 줄은 비운다(오류 아님).
   // period = 창 안에 있었던 반·학생만(원장 10-28 "기간내에 존재하는 항목들로만") — 종강한 반·퇴원한 학생도 창 안에 기록이 있으면 든다(sliceWindow).
-  const works = await loadTeacherWorkWindows({ sql, tenantId: t, todays, spans, groupBy: studentBy && !studentRows ? 'teacher' : by, scope, importV2: load, asOfCut: false, period: true });
+  const includeReportDrill = m.id === 'report-written' && !!scope;
+  const works = await loadTeacherWorkWindows({ sql, tenantId: t, todays, spans, groupBy: studentBy && !studentRows ? 'teacher' : by, scope, importV2: load, asOfCut: false, period: true, includeReportDrill });
   const [{ first: videoFrom }] = await sql`select min(report_date)::text first from public.lesson_reports where tenant_id=${t} and video_homework is not null`;
   // 써야 할 보고서·출결 대상은 시간표 배치에서 나온다 — 배치가 처음 생기기 전의 창은 들어온 보고서만 대상이 되어 100%로 보인다(옮겨 온 옛 보고서). 그 날을 알린다.
   const [{ first: since }] = await sql`select min(valid_from)::text first from public.class_schedules where tenant_id=${t}`;
   const sum = (rows) => Object.fromEntries(SUMS.map((k) => [k, rows.reduce((s, r) => s + (Number(r[k]) || 0), 0)]));
   const point = (rows, w) => (m.video && (!videoFrom || w.to < videoFrom) ? null : m.part(sum(rows), sum(rows.filter((r) => r.reportSource === 'lesson'))));
   const total = works.map((wk, i) => point(wk.rows, windows[i]));
-  const out = { since: m.video ? videoFrom ?? since : since, total };
+  const out = { since: m.video ? videoFrom ?? since : since, total,
+    ...(includeReportDrill ? { records: await reportDrillRecords(sql, t, works) } : {}) };
   if (studentBy) return { ...out, rows: studentRows ? await studentTrendRows(sql, t, load, works, windows, point) : [] };
   const keyOf = (r) => r.teacherId ?? 'unassigned', groups = new Map();
   works.forEach((wk, i) => { for (const r of wk.rows) { const k = keyOf(r), g = groups.get(k) ?? groups.set(k, { key: k, label: r.teacherName, perWindow: windows.map(() => []) }).get(k); g.perWindow[i].push(r); } });
   return { ...out,
     rows: [...groups.values()].map((g) => ({ key: by === 'teacher' ? g.key : g.key.slice(g.key.indexOf(':') + 1), label: g.label, points: g.perWindow.map((rows, i) => (rows.length ? point(rows, windows[i]) : null)) })),
   };
+}
+
+/** 작성 의무에서 학생 이름을 한 번에 찾는다. 반 전체 ClassNote 게시에는 학생 이름을 붙이지 않는다. */
+async function reportDrillRecords(sql, tenantId, works) {
+  const ids = [...new Set(works.flatMap((w) => (w.reportDrill ?? []).map((r) => r.studentId).filter((id) => id !== 'class-post')))];
+  const names = new Map();
+  for (let i = 0; i < ids.length; i += NAME_CHUNK) {
+    for (const s of await sql`select id::text id, name from public.students where tenant_id=${tenantId} and id = any(${ids.slice(i, i + NAME_CHUNK)}::uuid[])`) names.set(s.id, s.name);
+  }
+  return works.map((w) => (w.reportDrill ?? []).map((r) => ({ ...r, name: r.studentId === 'class-post' ? '반 전체' : names.get(r.studentId) ?? '이름 확인 필요' })));
 }
 
 /** 이름 조회 한 번에 넣는 학생 수 — postgres 직결이라 URL·1000행 상한은 없지만 큰 배열 하나로 보내지 않는다(B3 결). */
