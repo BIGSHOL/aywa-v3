@@ -43,6 +43,11 @@ test('연결: 원생 화면이 탭 저장을 싣는다 · 수업 탭 저장 여�
   assert.throws(() => A.createStudentMemo.validate({ module: 'features/x.ts', actor: OWNER.id, args: [null, { $formData: [] }] }), /입력 값/);
   await inTx(async (sql, call, form) => {
     await assert.rejects(call('createStudentMemo', [null, form({ studentId: SID, content: 'x' })], STUDENTS, '00000000-0000-4000-8000-000000000000'), /저장하는 사람/);
+    // 수업 탭 저장 = 반 화면 규칙(수업 관리 '전체' — 2.0 게이트와 같은 축). 그 권한이 없는 사람이면 2.0 거절 문구 그대로(메인 10-28).
+    const [teacher] = await sql`select id::text id from public.users where tenant_id=${t} and status::text='active' and system_role::text='teacher' order by id limit 1`;
+    const [klass] = await sql`select id::text id from public.classes where tenant_id=${t} and is_active order by id limit 1`;
+    const out = await call('createEnrollment', [null, form({ studentId: SID, classId: klass.id, startDate: '2026-10-27' })], 'features/enrollments/server/actions.ts', teacher.id);
+    assert.deepEqual(out, { error: '반 배정 권한이 없습니다 — 강사 계정은 열람 전용입니다' });
   });
 });
 
