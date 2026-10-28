@@ -88,6 +88,7 @@ registerHostHandler('features/enrollment/server/merge-actions.ts', 'previewConsu
 });
 
 const ACTOR_KEY = `v2-host-actor:${SCREEN}`;
+const EXCEL_ACTOR_COOKIE = 'v2-enrollment-actor';
 /** 저장하는 사람 — 3.0 띠가 고른 값(같은 출처 저장소 + v2-host-actor 알림). 바뀌면 다시 읽는다(끌기·칸 수정 권한이 그 사람의 것). */
 function useActor() {
   const [actor, setActor] = useState<string | null>(() => { try { return localStorage.getItem(ACTOR_KEY); } catch { return null; } });
@@ -120,6 +121,11 @@ function App() {
     return () => { if (useWindowStore.getState().open === bridged) useWindowStore.setState({ open: original }); };
   }, []);
   const path = usePathname(), search = useSearchParams(), actor = useActor();
+  // 2.0 공용 ExcelImportDialog는 직원 인자를 받지 않는다. 같은 출처의 가져오기 주소에만 선택한 직원을 싣는다.
+  useEffect(() => {
+    const id = actor && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(actor) ? actor : '';
+    document.cookie = `${EXCEL_ACTOR_COOKIE}=${id}; Path=/api/excel-import/enrollment-consultations; SameSite=Strict${location.protocol === 'https:' ? '; Secure' : ''}`;
+  }, [actor]);
   const known = path === HOST_ROUTE || path === '/enrollment/new' || DETAIL.test(path) || PRINT.test(path);
   const q = new URLSearchParams(search.toString());
   q.delete('actor');
