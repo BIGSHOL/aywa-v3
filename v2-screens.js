@@ -1,25 +1,39 @@
 /* 2.0 화면 (V2-SCREENS.md): screens that keep 2.0's form (시간표 격자·원스크린·출석부 …) as new 3.0 pages over the local
    Docker copy. 3.0 is built to replace 2.0 entirely, so nothing here sends people to the 2.0 site. Each screen is one script
    `v2-screen-<id>.js` (loaded from GET /api/v2) that calls V2Screens.register({ id, label, render }). Pages live at
-   #v2-<id>[?query]; render(ctx) returns HTML synchronously from cached data (ctx.load) and the page re-renders when data lands. */
+   #v2-<id>[?query]; render(ctx) returns HTML synchronously from cached data (ctx.load) and the page re-renders when data lands.
+   ctx.act(action, body) saves to the Docker copy (원장 2026-10-28 "연습용이므로 모두 docker"), then refreshes that screen's data in
+   place. Screens that save show ctx.copyNote so nobody mistakes the practice copy for 2.0. */
 window.V2Screens = (() => {
   'use strict';
   const screens = new Map(), cache = new Map();
   let api = null, index = null;
+  const COPY_NOTE = '연습용 복사본(Docker)에 저장됩니다. 2.0 운영 데이터와 실제 발송(ClassNote·알림톡·슬랙)에는 닿지 않습니다.';
   const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const parse = page => { const m = /^v2-([a-z][a-z0-9-]{0,30})(?:\?(.*))?$/.exec(page || ''); return m ? { id: m[1], query: new URLSearchParams(m[2] || '') } : null; };
   const current = () => parse(location.hash.slice(1));
 
+  const fetchInto = (id, qs, entry) => fetch(`/api/v2/${encodeURIComponent(id)}${qs ? `?${qs}` : ''}`, { headers: { Accept: 'application/json' } })
+    .then(async r => { const body = await r.json().catch(() => null); if (!r.ok) throw new Error(body?.message || '불러오지 못했습니다.'); entry.status = 'ready'; entry.data = body; entry.error = null; })
+    .catch(error => { entry.error = error.message; if (entry.status !== 'ready') entry.status = 'error'; }) // kept: retried only by ctx.refresh(), never by a re-render; a failed refresh after a save keeps the shown data
+    .finally(() => { entry.refreshing = false; if (current()?.id === id) api?.render(); });
   /** Read-only data for this screen and these params: cached; the first call fetches and re-renders the page on arrival. */
   function load(id, params = {}) {
     const qs = new URLSearchParams(Object.entries(params).filter(([, v]) => v !== undefined && v !== null && v !== '')).toString(), key = `${id}?${qs}`;
     const hit = cache.get(key); if (hit) return hit;
-    const entry = { status: 'loading', data: null, error: null }; cache.set(key, entry);
-    fetch(`/api/v2/${encodeURIComponent(id)}${qs ? `?${qs}` : ''}`, { headers: { Accept: 'application/json' } })
-      .then(async r => { const body = await r.json().catch(() => null); if (!r.ok) throw new Error(body?.message || '불러오지 못했습니다.'); entry.status = 'ready'; entry.data = body; })
-      .catch(error => { entry.status = 'error'; entry.error = error.message; }) // kept: a failed load is retried only by ctx.refresh(), never by a re-render
-      .finally(() => { if (current()?.id === id) api?.render(); });
+    const entry = { status: 'loading', data: null, error: null, refreshing: false }; cache.set(key, entry);
+    fetchInto(id, qs, entry);
     return entry;
+  }
+  /** After a save: every cached view of the screen refetches in place (the old data stays on screen until the new arrives). */
+  const revalidate = id => { for (const [key, entry] of cache) if (key.startsWith(`${id}?`) && !entry.refreshing) { entry.refreshing = true; fetchInto(id, key.slice(id.length + 1), entry); } };
+  /** Save through the screen's action on the Docker copy. Resolves with the action's result; rejects with a Korean message. */
+  async function act(id, action, body = {}) {
+    const r = await fetch(`/api/v2/${encodeURIComponent(id)}/${encodeURIComponent(action)}`, { method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/json' }, body: JSON.stringify(body) });
+    const data = await r.json().catch(() => null);
+    if (!r.ok || !data?.ok) throw new Error(data?.message || '저장하지 못했습니다.');
+    revalidate(id);
+    return data.result;
   }
   const go = (id, params = {}) => { const qs = new URLSearchParams(Object.entries(params).filter(([, v]) => v !== undefined && v !== null && v !== '')).toString(); api?.navigate(`v2-${id}${qs ? `?${qs}` : ''}`); };
 
@@ -33,7 +47,8 @@ window.V2Screens = (() => {
   function view(page) {
     const p = parse(page), def = p && screens.get(p.id); if (!def) return null;
     return () => {
-      const ctx = { api, query: p.query, esc, load: params => load(def.id, params), go: params => go(def.id, params), refresh: () => { for (const k of [...cache.keys()]) if (k.startsWith(`${def.id}?`)) cache.delete(k); api?.render(); } };
+      const writable = !!(index || []).find(s => s.id === def.id)?.writable;
+      const ctx = { api, query: p.query, esc, writable, copyNote: COPY_NOTE, load: params => load(def.id, params), act: (action, body) => act(def.id, action, body), go: params => go(def.id, params), refresh: () => { for (const k of [...cache.keys()]) if (k.startsWith(`${def.id}?`)) cache.delete(k); api?.render(); } };
       try { return `<div class="v2s" data-v2-screen="${esc(def.id)}">${def.render(ctx)}</div>`; }
       catch (error) { console.error(error); return `<div class="v2s"><p class="v2s-note">이 화면을 그리지 못했습니다.</p></div>`; }
     };
