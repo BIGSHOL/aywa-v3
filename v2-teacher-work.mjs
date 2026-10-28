@@ -165,9 +165,36 @@ function sliceWindow(R, raw, w, scope, cutMs = null) {
  * 같은 판정을 반·과목 줄로 받는다(보고서 담당 판정·미분류 보고서 연결은 진짜 선생님으로 끝낸 뒤에만 바꾼다). */
 // 과목 묶음에서 영어는 EiE(classes.english_track = 'eie')와 나머지 영어로 가른다(원장 10-28 "영어와 EiE 분리") — 열쇠 'eie' · 이름 'EiE'.
 export const subjectKeyOf = (c) => (c.subject === 'english' && c.track === 'eie' ? 'eie' : c.subject);
-const GROUP = { teacher: null, class: (c) => ({ teacherId: `class:${c.id}`, teacherName: c.name }), subject: (c) => ({ teacherId: `subject:${subjectKeyOf(c)}`, teacherName: subjectKeyOf(c) === 'eie' ? 'EiE' : c.subject }) };
+// 학생은 반을 바꿔 끼울 키가 없다(한 반 = 여러 학생) — 판정은 선생님 묶음 그대로 하고, 끝에서 반 칸을 (반, 학생) 짝 칸으로 쪼갠다(judge의 studentSplit).
+const GROUP = { teacher: null, class: (c) => ({ teacherId: `class:${c.id}`, teacherName: c.name }), subject: (c) => ({ teacherId: `subject:${subjectKeyOf(c)}`, teacherName: subjectKeyOf(c) === 'eie' ? 'EiE' : c.subject }), student: null };
+/** 학생 묶음의 짝 칸 id(`반id|학생id`)와 그 줄의 teacherId(`student:반id|학생id`) — teacherWorkTrend가 이 모양을 풀어 학생으로 다시 묶는다. */
+const pairId = (classId, studentId) => `${classId}|${studentId}`;
+const STUDENT_PREFIX = 'student:';
 
-/** 2.0 loadTeacherWork의 판정부(조회 다음) — 같은 순서·같은 순수 함수. `groupBy` = 'teacher'(2.0) | 'class' | 'subject'. */
+/**
+ * 학생 묶음 — 같은 판정 재료(보고서·작성 의무·따로 낸 숙제·열람 판정)의 반 id를 (반, 학생) 짝 id로 바꿔 같은 teacherWork·withTeacherWorkExtras에 넣는다.
+ * teacherWork의 열쇠(`반:학생:날짜`)는 짝 id로도 1:1이라 중복 제거·숙제↔제출 짝짓기가 그대로이고, 셈만 학생 줄로 옮겨 간다(새로 세지 않는다).
+ * 짝마다 한 줄(teacherId = `student:짝id`) — 그 반의 reportSource를 그대로 지녀 수업보고서 줄만 고르는 지표가 반별과 같은 줄을 고른다.
+ * 학생이 없는 판정은 학생 줄에 들어가지 않는다: 영어 알림장 반의 작성 의무(반×날 하나 · studentId 'class-post') · 출결(반×날 판정).
+ * 짝 칸은 판정 재료에 그 학생이 있을 때만 생긴다(제출 판정은 낸 숙제가 있을 때만 세므로 짝을 만들지 않는다).
+ */
+function studentSplit(R, workClasses, workReports, outcomeRows, range, obligations, extraRows, unreadRows, extrasOf) {
+  const reports = workReports.map((r) => ({ ...r, classId: pairId(r.classId, r.studentId) }));
+  const outcomes = outcomeRows.map((o) => ({ ...o, classId: pairId(o.classId, o.studentId) }));
+  const owned = obligations.filter((o) => o.studentId !== 'class-post').map((o) => ({ ...o, classId: pairId(o.classId, o.studentId) }));
+  const extras = extraRows.map((x) => ({ ...x, classId: pairId(x.classId, x.studentId) }));
+  const unread = unreadRows.map((u) => ({ classId: pairId(u.classId, u.studentId), judgeable: u.judgeable, unread: u.unread }));
+  const classOf = new Map(workClasses.map((c) => [c.id, c]));
+  const pairs = new Set([...reports, ...owned, ...extras, ...unread].map((x) => x.classId));
+  const pairClasses = [...pairs].flatMap((id) => { const c = classOf.get(id.slice(0, id.indexOf('|')));
+    return c ? [{ ...c, id, teacherId: `${STUDENT_PREFIX}${id}`, teacherName: id.slice(id.indexOf('|') + 1) }] : []; });
+  return R.withTeacherWorkExtras(R.teacherWork(pairClasses, reports, outcomes, range, owned, extras), extrasOf(unread, []));
+}
+
+/**
+ * 2.0 loadTeacherWork의 판정부(조회 다음) — 같은 순서·같은 순수 함수. `groupBy` = 'teacher'(2.0) | 'class' | 'subject' | 'student'.
+ * 'student'는 선생님 묶음 결과에 `{ students: 짝 칸 줄, classNameOf: { 반id: 반 이름 } }`을 덧붙여 돌려준다(합계는 쪼개기 전 줄로 — 학생 없는 판정까지 든 값).
+ */
 function judge(R, settings, d, w, nowMs, counselShown, unreadGraceHours, groupBy = 'teacher') {
   if (!(groupBy in GROUP)) throw new Error(`묶음 기준이 아닙니다: ${groupBy}`);
   const { today, range, attendanceFrom, attendanceTo, unreadFrom } = w;
@@ -195,11 +222,13 @@ function judge(R, settings, d, w, nowMs, counselShown, unreadGraceHours, groupBy
     posts: posts.map((p) => ({ boardName: p.board_name, postedOn: p.posted_on })), from: range.reportFrom, to: today,
     nowMinutes: R.kstMinutesOfDay(new Date(nowMs)), holidays: settings.operations.holidays.map((h) => h.date) });
   const regroup = GROUP[groupBy], groupClasses = regroup ? workClasses.map((c) => ({ ...c, ...regroup(c) })) : workClasses;
-  const work = R.teacherWork(groupClasses, workReports, outcomes.map((r) => ({ classId: r.class_id, studentId: r.student_id, date: r.homework_date, status: r.status, observedAt: r.observed_at })),
-    range, obligations, extraIssues.filter((x) => { const student = extraStudentOf.get(x.studentId); return !x.kept && !!student && !student.is_test
-      && R.isVideoHomeworkEnabled(settings.report.videoHomeworkPolicy, { classId: x.classId, subjectKey: subjects.get(x.classId) ?? '', grade: student.grade }); }));
+  const outcomeRows = outcomes.map((r) => ({ classId: r.class_id, studentId: r.student_id, date: r.homework_date, status: r.status, observedAt: r.observed_at }));
+  const extraRows = extraIssues.filter((x) => { const student = extraStudentOf.get(x.studentId); return !x.kept && !!student && !student.is_test
+    && R.isVideoHomeworkEnabled(settings.report.videoHomeworkPolicy, { classId: x.classId, subjectKey: subjects.get(x.classId) ?? '', grade: student.grade }); });
+  const work = R.teacherWork(groupClasses, workReports, outcomeRows, range, obligations, extraRows);
   const cutoffMs = nowMs - unreadGraceHours * 3_600_000;
-  const unread = reports.filter((r) => r.report_date >= unreadFrom).map((r) => ({ classId: r.class_id, ...R.judgeUnreadReport(r, cutoffMs) }));
+  const unreadRows = reports.filter((r) => r.report_date >= unreadFrom).map((r) => ({ classId: r.class_id, studentId: r.student_id, ...R.judgeUnreadReport(r, cutoffMs) }));
+  const unread = unreadRows.map(({ classId, judgeable, unread: u }) => ({ classId, judgeable, unread: u }));
   const enrollmentsOf = new Map();
   for (const e of enrollments) enrollmentsOf.set(e.class_id, [...(enrollmentsOf.get(e.class_id) ?? []), e]);
   const recordedOf = new Map();
@@ -215,8 +244,12 @@ function judge(R, settings, d, w, nowMs, counselShown, unreadGraceHours, groupBy
   const counselPick = R.pickCounselMonth(counselRows, today.slice(0, 7));
   const counsel = new Map(counselPick.rows.map((r) => [r.teacher_id, typeof r.counsel === 'number' ? r.counsel : null]));
   const counselAsOf = counselPick.rows.map((r) => r.period_end?.slice(0, 10) ?? '').filter(Boolean).sort().at(-1) ?? null;
-  return R.withTeacherWorkExtras(work, { unread: deliveryShown ? unread : [], attendance: attendanceDays, counsel, attendanceFrom, attendanceTo, unreadFrom, counselAsOf,
+  const extrasOf = (unreadList, attendanceList) => ({ unread: deliveryShown ? unreadList : [], attendance: attendanceList, counsel, attendanceFrom, attendanceTo, unreadFrom, counselAsOf,
     counselMonth: counselPick.month, deliveryShown, counselShown });
+  const whole = R.withTeacherWorkExtras(work, extrasOf(unread, attendanceDays));
+  if (groupBy !== 'student') return whole;
+  return { ...whole, students: studentSplit(R, workClasses, workReports, outcomeRows, range, obligations, extraRows, unreadRows, extrasOf).rows,
+    classNameOf: Object.fromEntries(workClasses.map((c) => [c.id, c.name])) };
 }
 
 async function prepare(tx, tenantId, todays, settings, importV2, spans = null) {
@@ -295,7 +328,8 @@ export const TEACHER_WORK_METRICS = Object.freeze([
   { id: 'report-written', label: '수업보고서 작성률', part: (a) => [a.reports, a.reportTarget], basis: () => '써야 할 수업보고서 중 쓴 것' },
   { id: 'report-sent', label: '수업보고서 발송률', part: (a, l) => [l.sent, l.reports - l.recalled], basis: () => '쓴 수업보고서 중 학부모에게 보낸 것(회수한 보고서 제외)' },
   { id: 'parent-read', label: '학부모 보고서 열람률', part: (a, l) => [l.unreadJudged - l.unread, l.unreadJudged], basis: (g) => `보낸 수업보고서 중 학부모가 읽은 것 · 보낸 지 ${g}시간이 안 된 것은 빼고 셈` },
-  { id: 'attendance-input', label: '출결 입력률', part: (a) => [a.attendanceDays - a.attendanceUnrecorded, a.attendanceDays], basis: () => '수업한 날 출결 칸 중 입력된 것', attendance: true },
+  // 학생 기준 없음(byStudent:false) — 2.0 판정 단위가 '반 × 수업한 날'(그날 명단 중 한 명이라도 비면 미입력)이라 학생으로 나눌 행이 없다.
+  { id: 'attendance-input', label: '출결 입력률', part: (a) => [a.attendanceDays - a.attendanceUnrecorded, a.attendanceDays], basis: () => '수업한 날 출결 칸 중 입력된 것', attendance: true, byStudent: false },
   { id: 'video-issued', label: '영상 숙제 출제율', part: (a, l) => [l.videoIssuedReports, l.reportsWritten], basis: () => '쓴 수업보고서 중 영상 숙제를 낸 것', video: true },
   // 원장 10-28: '영상 업로드가 숙제 출제에 비해 잘되고 있냐 안되고 있냐'
   { id: 'video-submitted', label: '영상 숙제 제출률', part: (a) => [a.videoSubmitted, a.videoAssigned], basis: () => '낸 영상 숙제 중 학생이 영상을 올린 것', video: true },
@@ -308,7 +342,10 @@ export const TEACHER_WORK_METRICS = Object.freeze([
  * (카드의 추세선은 비교를 공정하게 하려고 지난 창도 오늘과 같은 시각에 자른다 — 하루 창에선 오후 수업이 빠져 쓸 수 없다.) 학부모 열람은 같은 창의 보고서로 센다.
  * 출결은 2.0처럼 '기준일 전날까지'다 — 출결 창은 어제까지로 끝나게 받고(trend-metrics의 endsYesterday) 기준일은 창 끝 다음 날로 잡아
  * 창 안의 날을 그대로 센다(주별 = 카드의 '어제까지 7일' 창 그대로 · 창끼리 겹치지 않는다).
- * `scope` = 2.0 TeacherScope({ classIds }) — 필터(선생님·반·과목)를 반 목록으로 좁힌다. 학생 묶음은 아직 없다.
+ * `scope` = 2.0 TeacherScope({ classIds }) — 필터(선생님·반·과목)를 반 목록으로 좁힌다.
+ * `by='student'`(원장 10-28 "반 자세히 보기 … 각 학생별 보고서 작성률") = 같은 판정 재료를 학생으로 묶은 줄(judge의 studentSplit) — 필터가 있을 때만(학원 전체 학생
+ * 수백 줄은 내지 않는다) · 학생 기준이 없는 지표(byStudent:false)도 빈 줄. 합계는 쪼개기 전 값(학생 없는 판정까지 — 다른 기준과 같은 선).
+ * 학생 줄 = { key: 학생 id, label: 학생 이름(동명이인 접미사 그대로), meta: { school: 학교·학년 압축, classes: 이 창들에서 그 학생이 든 반 이름 ', ' } }.
  */
 export async function teacherWorkTrend({ sql, asOf, tenantId: t = COPY_TENANT, importV2, metric, windows, by = 'teacher', scope = null }) {
   const m = TEACHER_WORK_METRICS.find((x) => x.id === metric);
@@ -317,17 +354,45 @@ export async function teacherWorkTrend({ sql, asOf, tenantId: t = COPY_TENANT, i
   const day = (d) => Date.parse(`${d}T00:00:00Z`) / 86_400_000;
   const todays = windows.map((w) => (m.attendance ? R.addDays(w.to, 1) : w.to));
   const spans = windows.map((w) => day(w.to) - day(w.from) + 1);
-  const works = await loadTeacherWorkWindows({ sql, tenantId: t, todays, spans, groupBy: by, scope, importV2: load, asOfCut: false });
+  const studentBy = by === 'student', studentRows = studentBy && !!scope && m.byStudent !== false;
+  // 학생 줄을 못 내는 경우(필터 없음 · 학생 기준 없는 지표)는 선생님 묶음으로 합계만 — 줄은 비운다(오류 아님).
+  const works = await loadTeacherWorkWindows({ sql, tenantId: t, todays, spans, groupBy: studentBy && !studentRows ? 'teacher' : by, scope, importV2: load, asOfCut: false });
   const [{ first: videoFrom }] = await sql`select min(report_date)::text first from public.lesson_reports where tenant_id=${t} and video_homework is not null`;
   // 써야 할 보고서·출결 대상은 시간표 배치에서 나온다 — 배치가 처음 생기기 전의 창은 들어온 보고서만 대상이 되어 100%로 보인다(옮겨 온 옛 보고서). 그 날을 알린다.
   const [{ first: since }] = await sql`select min(valid_from)::text first from public.class_schedules where tenant_id=${t}`;
   const sum = (rows) => Object.fromEntries(SUMS.map((k) => [k, rows.reduce((s, r) => s + (Number(r[k]) || 0), 0)]));
   const point = (rows, w) => (m.video && (!videoFrom || w.to < videoFrom) ? null : m.part(sum(rows), sum(rows.filter((r) => r.reportSource === 'lesson'))));
+  const total = works.map((wk, i) => point(wk.rows, windows[i]));
+  const out = { since: m.video ? videoFrom ?? since : since, total };
+  if (studentBy) return { ...out, rows: studentRows ? await studentTrendRows(sql, t, load, works, windows, point) : [] };
   const keyOf = (r) => r.teacherId ?? 'unassigned', groups = new Map();
   works.forEach((wk, i) => { for (const r of wk.rows) { const k = keyOf(r), g = groups.get(k) ?? groups.set(k, { key: k, label: r.teacherName, perWindow: windows.map(() => []) }).get(k); g.perWindow[i].push(r); } });
-  return {
-    since: m.video ? videoFrom ?? since : since,
-    total: works.map((wk, i) => point(wk.rows, windows[i])),
+  return { ...out,
     rows: [...groups.values()].map((g) => ({ key: by === 'teacher' ? g.key : g.key.slice(g.key.indexOf(':') + 1), label: g.label, points: g.perWindow.map((rows, i) => (rows.length ? point(rows, windows[i]) : null)) })),
   };
+}
+
+/** 이름 조회 한 번에 넣는 학생 수 — postgres 직결이라 URL·1000행 상한은 없지만 큰 배열 하나로 보내지 않는다(B3 결). */
+const NAME_CHUNK = 500;
+/** 학생 줄 — judge가 짝 칸(`student:반id|학생id`)으로 낸 줄을 학생으로 다시 묶는다. 짝 줄이 없는 창 = null(그 창에 그 학생의 판정 재료 없음). */
+async function studentTrendRows(sql, t, load, works, windows, point) {
+  const groups = new Map();
+  works.forEach((wk, i) => { for (const r of wk.students ?? []) {
+    const pair = r.teacherId.slice(STUDENT_PREFIX.length), cut = pair.indexOf('|'), sid = pair.slice(cut + 1);
+    const g = groups.get(sid) ?? groups.set(sid, { perWindow: windows.map(() => []), classes: new Set() }).get(sid);
+    g.perWindow[i].push(r);
+    const name = wk.classNameOf?.[pair.slice(0, cut)];
+    if (name) g.classes.add(name);
+  } });
+  if (!groups.size) return [];
+  const ids = [...groups.keys()], who = new Map();
+  const names = async () => { for (let i = 0; i < ids.length; i += NAME_CHUNK) {
+    for (const s of await sql`select id::text id, name, school, grade from public.students where tenant_id=${t} and id = any(${ids.slice(i, i + NAME_CHUNK)})`) who.set(s.id, s); } };
+  // 2.0 표준 표기(lib/format/school-grade.ts) — "경명여중"+"중1" → "경명여중1".
+  const [{ schoolGradeLabel }] = await Promise.all([load('lib/format/school-grade.ts'), names()]);
+  const ko = (a, b) => a.localeCompare(b, 'ko');
+  return ids.map((sid) => { const g = groups.get(sid), s = who.get(sid);
+    return { key: sid, label: s?.name || '이름 확인 필요', meta: { school: (s && schoolGradeLabel(s.school, s.grade)) || '—', classes: [...g.classes].sort(ko).join(', ') },
+      points: g.perWindow.map((rows, i) => (rows.length ? point(rows, windows[i]) : null)) }; })
+    .sort((a, b) => ko(a.label, b.label) || ko(a.key, b.key));
 }
