@@ -24,7 +24,7 @@
 | `timetable` | 시간표(기본·강사·통합) — **호스트 시범** | 상 | `src/app/(shell)/timetable/**`, `src/features/timetable/**` | T |
 | `onescreen` | 선생님 원스크린(보고서 작성·발송·공지, 격자 보기) | 상 | `src/app/(shell)/onescreen/**`, `src/features/onescreen/**`, `src/features/lesson-reports/**` | O |
 | `ecs` | 강사 시트 · 영어(목록·주간·월간·MP·레일·오늘) | 상 | `src/app/(shell)/ecs/**`, `src/features/class-sheets/**` | L |
-| `attendance` | 출석부(월별·출결 모드·오늘 출결·자리 출석부 메뉴) | 상 | `src/app/(shell)/attendance/**`, `src/features/attendance/**` | L |
+| `attendance` | 출석부(월별·출결 모드·오늘 출결·자리 출석부 메뉴) — 남은 일: 일별 목록·일별 폼(`saveAttendance`·보강 학생 추가, 30일 방문 0회) · 금액 열(청구액·실급여, 수납 뒤) · `linkMakeupToAbsence` → O(원스크린에서만 부름) | 상 | `src/app/(shell)/attendance/**`, `src/features/attendance/**` | L |
 | `video-homework` | 영상 제출 현황(관리자 장부·강사 '내가 낸') | 상 | `src/app/(shell)/lesson-reports/video-homework/**`, `src/app/(shell)/onescreen/video-homework/**`, `src/features/video-homework/**` | R |
 | `billing` | 수납관리 전체(수납·교재·지출·회차 확정·환불·계산기) | 상(교재·지출·회차) | `src/app/(shell)/billing/**`, `src/features/billing/**` | L |
 | `dashboard` | 운영실(KPI 9칸·카드·역할별 배치) | 상 | `src/app/(shell)/dashboard/**`, `src/features/dashboard/**` | O |
