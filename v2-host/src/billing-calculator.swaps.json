@@ -1,0 +1,88 @@
+{
+ "panel": [
+  [
+   "import { getTuitionCatalogActive } from \"@/features/billing/server/tuition-catalog-queries\";\n",
+   ""
+  ],
+  [
+   "import { getCatalogOptions } from \"@/features/billing/server/catalog-queries\";\nimport { getQuoteById } from \"@/features/billing/server/tuition-quote-queries\";\n",
+   ""
+  ],
+  [
+   "import { getTenantSettings } from \"@/features/owner/server/queries\";\n",
+   ""
+  ],
+  [
+   "import { getCurrentUser } from \"@/lib/auth/current-user\";\nimport { resolveBrandingSrc } from \"@/lib/storage/media-storage\";\nimport { TuitionCalculator } from \"./tuition-calculator\";\nimport { TuitionPricesPanel } from \"./tuition-prices-panel\";\nimport { CatalogPanel } from \"./catalog-panel\";\nimport { SavedQuotesPanel } from \"./saved-quotes-panel\";\n",
+   "import { TuitionCalculator } from \"@/app/(shell)/billing/_components/tuition-calculator\";\nimport { TuitionPricesPanel } from \"./billing-tuition-prices-panel\";\nimport { CatalogPanel } from \"./billing-catalog-panel\";\nimport { SavedQuotesPanel } from \"./billing-saved-quotes-panel\";\nimport type { CalculatorFaceData } from \"./billing-types\";\n"
+  ],
+  [
+   "export async function CalculatorPanel({ sp }: { sp: Sp }) {",
+   "export function CalculatorPanel({ sp, data }: { sp: Sp; data: CalculatorFaceData }) {"
+  ],
+  [
+   "<TuitionPricesPanel sp={sp} />",
+   "<TuitionPricesPanel sp={sp} data={data.prices!} />"
+  ],
+  [
+   "<CatalogPanel sp={sp} base={{ tab: \"calculator\", csub: \"catalog\" }} />",
+   "<CatalogPanel sp={sp} base={{ tab: \"calculator\", csub: \"catalog\" }} data={data.catalog!} />"
+  ],
+  [
+   "<HolidayPanel sp={sp} />",
+   "<HolidayPanel sp={sp} settings={data.settings} />"
+  ],
+  [
+   "<SavedQuotesPanel sp={sp} />",
+   "<SavedQuotesPanel sp={sp} data={data.quotes!} />"
+  ],
+  [
+   "<CalculatorTab qid={sp.qid} />",
+   "<CalculatorTab settings={data.settings} data={data.calculator!} />"
+  ],
+  [
+   "async function CalculatorTab({ qid }: { qid?: string }) {\n  const [settings, catalog, textbooks, initial, user] = await Promise.all([\n    getTenantSettings(),\n    getTuitionCatalogActive(),\n    getCatalogOptions(), // 교재 단가표(146권) — 교재/기타 picker에 합쳐 교재명 검색 가능\n    qid ? getQuoteById(qid) : Promise.resolve(null),\n    getCurrentUser(), // 로고 signed URL 해석에 tenantId 필요(React cache라 추가 라운드트립 0)\n  ]);\n  // 학원 로고 이미지 → 수강료 안내문 헤더. 미업로드면 null → 안내문이 학원명 머리글자 배지로 폴백.\n  const logoSrc = user ? await resolveBrandingSrc(settings.profile.logoUrl, user.tenantId) : null;\n",
+   "function CalculatorTab({ settings, data }: { settings: CalculatorFaceData[\"settings\"]; data: NonNullable<CalculatorFaceData[\"calculator\"]> }) {\n  const { catalog, textbooks, initial } = data; // 서버가 2.0 조회 셋(사용 중 단가 · 교재 단가표 · 고른 견적)과 같은 모양으로\n  const logoSrc = settings.profile.logoUrl; // 학원 로고 = 파일 저장소(복사본 밖) — 비워서 온다\n"
+  ],
+  [
+   "async function HolidayPanel({ sp }: { sp: Sp }) {\n  const settings = await getTenantSettings();\n",
+   "function HolidayPanel({ sp, settings }: { sp: Sp; settings: CalculatorFaceData[\"settings\"] }) {\n"
+  ]
+ ],
+ "prices": [
+  [
+   "import {\n  getTuitionCatalogPage,\n  getTuitionCatalogStats,\n  getTuitionCategoryOptions,\n} from \"@/features/billing/server/tuition-catalog-queries\";\n",
+   "import type { TuitionPricesData } from \"./billing-types\";\n"
+  ],
+  [
+   "import { TuitionPricesTable } from \"./tuition-prices-table\";\n",
+   "import { TuitionPricesTable } from \"@/app/(shell)/billing/_components/tuition-prices-table\";\n"
+  ],
+  [
+   "export async function TuitionPricesPanel({ sp }: { sp: Sp }) {",
+   "export function TuitionPricesPanel({ sp, data }: { sp: Sp; data: TuitionPricesData }) {"
+  ],
+  [
+   "  const [{ rows, total }, stats, categories] = await Promise.all([\n    getTuitionCatalogPage({ q, category, pmode, active }, page, PAGE_SIZE),\n    getTuitionCatalogStats(),\n    getTuitionCategoryOptions(),\n  ]);\n",
+   "  const [{ rows, total }, stats, categories] = [data.page, data.stats, data.categories];\n"
+  ]
+ ],
+ "quotes": [
+  [
+   "import { getQuotesPage } from \"@/features/billing/server/tuition-quote-queries\";\nimport { getStudentOptions } from \"@/features/billing/server/textbook-queries\";\n",
+   "import type { SavedQuotesData } from \"./billing-types\";\n"
+  ],
+  [
+   "import { SavedQuotesList } from \"./saved-quotes-list\";\n",
+   "import { SavedQuotesList } from \"@/app/(shell)/billing/_components/saved-quotes-list\";\n"
+  ],
+  [
+   "export async function SavedQuotesPanel({ sp }: { sp: Sp }) {",
+   "export function SavedQuotesPanel({ sp, data }: { sp: Sp; data: SavedQuotesData }) {"
+  ],
+  [
+   "  const [{ rows, total }, students] = await Promise.all([\n    getQuotesPage({ q }, page, PAGE_SIZE),\n    getStudentOptions(),\n  ]);\n",
+   "  const [{ rows, total }, students] = [data.page, data.students];\n"
+  ]
+ ]
+}

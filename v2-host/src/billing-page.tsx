@@ -7,7 +7,8 @@ import { BillingContent, type BillingFaceData } from "./billing-content";
 import { TextbooksFace } from "./billing-textbooks-face";
 import { ExpensesPanel } from "./billing-expenses-panel";
 import { RefundsFace } from "./billing-refunds-face";
-import type { ExpensesPanelData, RefundsFaceData, TextbooksFaceData } from "./billing-types";
+import { CalculatorPanel } from "./billing-calculator-panel";
+import type { CalculatorFaceData, ExpensesPanelData, RefundsFaceData, TextbooksFaceData } from "./billing-types";
 import { HostFaceNotReady, HostNoAccess, HostRedirect } from "./billing-host-parts";
 import type { MakeeduSyncState } from "@/features/integrations/server/makeedu-sync";
 import { FaceTabs, type Face } from "@/components/face-tabs";
@@ -60,6 +61,7 @@ export type BillingPageData = {
   textbooks: TextbooksFaceData | null;
   expenses: ExpensesPanelData | null;
   refunds: RefundsFaceData | null;
+  calculator: CalculatorFaceData | null;
 };
 
 export function BillingPage({ d, sp }: { d: BillingPageData; sp: Sp }) {
@@ -105,7 +107,7 @@ export function BillingPage({ d, sp }: { d: BillingPageData; sp: Sp }) {
       ) : effectiveTab === "expenses" ? (
         <ExpensesPanel sp={sp} canImport={canImport} data={d.expenses!} />
       ) : effectiveTab === "calculator" ? (
-        <HostFaceNotReady />
+        <CalculatorPanel sp={sp} data={d.calculator!} />
       ) : effectiveTab === "refunds" ? (
         <RefundsFace sp={sp} data={d.refunds!} />
       ) : effectiveTab === "sessions" ? (

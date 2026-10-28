@@ -47,6 +47,13 @@ saving(NOTICE, 'saveMyTextbookMent', false);
 // 지출 — 증빙 파일(올리기·열기·지우기)은 파일 저장소라 받지 않는다(보내지 않고 '아직 지원하지 않는 저장').
 const EXPENSE = 'features/billing/server/expense-actions.ts';
 for (const name of ['createExpense', 'updateExpense', 'deleteExpense', 'toggleExpenseApproval', 'duplicateExpense', 'setExpenseReceiptType']) saving(EXPENSE, name, true);
+// 수강료 계산기 — 교재 단가표(교재 면에도 있다) · 수강료 단가 · 견적 저장/삭제.
+const CALC: [string, string[]][] = [
+  ['features/billing/server/catalog-actions.ts', ['createCatalogItem', 'updateCatalogItem', 'deleteCatalogItem', 'toggleCatalogActive']],
+  ['features/billing/server/tuition-catalog-actions.ts', ['createTuitionItem', 'updateTuitionItem', 'deleteTuitionItem', 'setTuitionPricingMode', 'toggleTuitionActive']],
+  ['features/billing/server/tuition-quote-actions.ts', ['saveTuitionQuote', 'deleteTuitionQuote']],
+];
+for (const [module, names] of CALC) for (const name of names) saving(module, name, true);
 // 환불 요청서 — 저장 · 지우기는 쓰기 경로, 자동입력 읽기 둘은 같은 화면의 GET(보는 사람으로).
 const REFUND = 'features/billing/server/refund-actions.ts';
 saving(REFUND, 'saveRefundRequest', true);
