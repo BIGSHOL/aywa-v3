@@ -10,6 +10,7 @@ import { scrub } from './domain-snapshot-core.mjs';
 import { V2Error } from './v2-screens.mjs';
 import { loadOnescreenProps } from './v2-onescreen-roster.mjs';
 import { onescreenExtraActions } from './v2-onescreen-save-extra.mjs';
+import { getTeachingClassIds } from './v2-screen-video-homework.mjs';
 import { loadRules as attendanceRules, readSettings as attendanceSettings } from './v2-screen-attendance.mjs';
 import { loadMakeupRules, completeMakeupReservations, completionKey } from './v2-attendance-makeup.mjs';
 
@@ -268,21 +269,11 @@ async function actAs(sql, t, actorId) {
 }
 /** 2.0 accessLevel over the academy's role and personal overrides (getUserPermMatrix without the 'other teacher view' and lab caps — not used here). */
 const menuMatrix = (R, env, actor) => R.applyUserOverrides(R.resolveMatrix(env.permissions.overrides || []), actor.id, actor.role, env.permissions.userOverrides || []);
-/** 2.0 getTeachingClassIds: own classes (any state) + delegations active that day + JJ classes for the JJ report managers. */
+/** 2.0 getTeachingClassIds — 영상 제출 현황 화면 모듈의 판정 한 벌(담임 · 그날 위임 · JJ 보고서 담당이면 자리 슬롯의 반, 요일은 보지 않는다).
+ *  그 모듈의 쓰기 문맥 { sql, t, R, u, people }: R = 이 화면 규칙(같은 2.0 함수 isDelegationActiveOn · isSeatSlot · specialSlotLabel · slotLiveOn) ·
+ *  JJ 담당 명단 = 이 화면이 읽은 학원 설정 권한(env.permissions — readPeople의 settings.permissions와 같은 원본). 중복은 걷는다. */
 async function teachingClassIds(sql, t, R, env, actorId, date) {
-  // JJ 반 = 2.0 fetchJjManagedClassIds — 요일을 보지 않는다(그날 살아 있는 자리 교시가 하나라도 있는 반). 화면 명단에서 그날 수업 없는 반을 숨기는 것은 load의 일이다.
-  const jjManager = (env.permissions.specialAccess?.jjReportManagerIds || []).includes(actorId);
-  const [own, dels, jj] = await Promise.all([
-    sql`select id::text id from public.classes where tenant_id=${t} and teacher_id=${actorId}`,
-    sql`select class_id::text class_id, delegate_user_id::text delegate_user_id, from_date::text from_date, to_date::text to_date, revoked_at from public.class_delegations
-      where tenant_id=${t} and revoked_at is null and from_date<=${date} and to_date>=${date}`,
-    jjManager ? sql`select class_id::text class_id, teacher_id, slot_teacher_label, valid_from::text valid_from, valid_to::text valid_to from public.class_schedules
-      where tenant_id=${t} and teacher_id is null and slot_teacher_label is not null` : []]);
-  const ownIds = own.map(c => c.id), ownSet = new Set(ownIds);
-  const jjIds = jj.filter(r => { const slot = { teacherId: r.teacher_id, slotTeacherLabel: r.slot_teacher_label, validFrom: r.valid_from.slice(0, 10), validTo: r.valid_to ? r.valid_to.slice(0, 10) : null };
-    return R.isSeatSlot(slot) && R.specialSlotLabel(r.slot_teacher_label) === R.SELF_STUDY_ROOM_LABEL && R.slotLiveOn(slot, date); }).map(r => r.class_id);
-  const delegated = [...new Set([...dels.filter(d => d.delegate_user_id === actorId && R.isDelegationActiveOn({ fromDate: d.from_date, toDate: d.to_date, revokedAt: d.revoked_at }, date)).map(d => d.class_id), ...jjIds])];
-  return [...ownIds, ...delegated.filter(id => !ownSet.has(id))];
+  return [...new Set(await getTeachingClassIds({ sql, t, R, u: { id: actorId }, people: { settings: { permissions: env.permissions } } }, date))];
 }
 /** 2.0 userTaughtClassSet: teaching classes + classes whose timetable slot names this person that day. */
 async function taughtClassSet(sql, t, R, env, actorId, date) {

@@ -209,29 +209,57 @@ test('복사본(강사 권한): 담당 반 · 7일 잠금 · 수강생 확인 �
   }).catch((e) => { if (e !== ROLLBACK) throw e; });
 });
 
-test('복사본: 담당 반 판정(JJ 보고서 담당) = 영상 제출 현황 판정(2.0 getTeachingClassIds) — 요일이 다른 두 날 모두, 요일로 거르지 않는다', { skip: !db && 'local database not running' }, async () => {
+/** 바꾸기 전 원스크린 판정(요일 조건을 뺀 뒤 · R 모듈 import 전) — 새 판정이 같은 결과인지 견주는 기준. */
+async function previousTeachingClassIds(sql, t, R, env, actorId, date) {
+  const jjManager = (env.permissions.specialAccess?.jjReportManagerIds || []).includes(actorId);
+  const [own, dels, jj] = await Promise.all([
+    sql`select id::text id from public.classes where tenant_id=${t} and teacher_id=${actorId}`,
+    sql`select class_id::text class_id, delegate_user_id::text delegate_user_id, from_date::text from_date, to_date::text to_date, revoked_at from public.class_delegations
+      where tenant_id=${t} and revoked_at is null and from_date<=${date} and to_date>=${date}`,
+    jjManager ? sql`select class_id::text class_id, teacher_id, slot_teacher_label, valid_from::text valid_from, valid_to::text valid_to from public.class_schedules
+      where tenant_id=${t} and teacher_id is null and slot_teacher_label is not null` : []]);
+  const ownIds = own.map((c) => c.id), ownSet = new Set(ownIds);
+  const jjIds = jj.filter((r) => { const slot = { teacherId: r.teacher_id, slotTeacherLabel: r.slot_teacher_label, validFrom: r.valid_from.slice(0, 10), validTo: r.valid_to ? r.valid_to.slice(0, 10) : null };
+    return R.isSeatSlot(slot) && R.specialSlotLabel(r.slot_teacher_label) === R.SELF_STUDY_ROOM_LABEL && R.slotLiveOn(slot, date); }).map((r) => r.class_id);
+  const delegated = [...new Set([...dels.filter((d) => d.delegate_user_id === actorId && R.isDelegationActiveOn({ fromDate: d.from_date, toDate: d.to_date, revokedAt: d.revoked_at }, date)).map((d) => d.class_id), ...jjIds])];
+  return [...ownIds, ...delegated.filter((id) => !ownSet.has(id))];
+}
+
+test('복사본: 담당 반 판정 = 영상 제출 현황 getTeachingClassIds 한 벌 — JJ 담당(요일 다른 두 날) · 담임 · 위임, 바꾸기 전과 같은 결과', { skip: !db && 'local database not running' }, async () => {
   const { tenantId: t } = await import('./full-db.mjs'), { importV2 } = await import('./v2-bridge.mjs');
   const { forTests } = await import('./v2-screen-onescreen.mjs');
   const { loadRules: vhRules, videoHomeworkWriteError } = await import('./v2-screen-video-homework.mjs');
-  await db.begin('isolation level repeatable read read only', async (sql) => {
-    const R = await forTests.rules(importV2), env = await forTests.settingsOf(sql, t, R);
+  await db.begin(async (sql) => {
+    const R = await forTests.rules(importV2), env = await forTests.settingsOf(sql, t, R), VR = await vhRules(importV2);
     const [manager] = env.permissions.specialAccess?.jjReportManagerIds ?? [];
     assert(manager, '복사본에 JJ 보고서 담당이 있다');
-    // R 판정의 '담당 반' 갈래만 보게 — 전체 권한 지름길을 끄고 원스크린 쓰기는 연다.
-    const w = { R: await vhRules(importV2), people: { settings: { permissions: env.permissions } }, u: { id: manager }, full: false, level: () => 'full', sql, t };
     const { asOf: day } = await screen.load({ sql, params: { teacher: TEACHER }, tenantId: t, importV2 });
+    // 위임 강사: 학원삼(테스트)만 그날 위임받는 담임 반 없는 강사(되돌리는 트랜잭션 안).
+    const [del] = await sql`select u.id::text id from public.users u where u.tenant_id=${t} and u.status::text='active' and u.system_role::text='teacher'
+      and not exists (select 1 from public.classes c where c.tenant_id=${t} and c.teacher_id=u.id) order by u.display_name limit 1`;
+    await sql`insert into public.class_delegations (tenant_id, class_id, delegate_user_id, from_date, to_date, created_by) values (${t}, ${CLASS2}, ${del.id}, ${day}, ${day}, ${TEACHER})`;
     const seatClasses = (await sql`select distinct class_id::text id from public.class_schedules where tenant_id=${t} and teacher_id is null and slot_teacher_label is not null`).map((r) => r.id);
+    const cases = [[manager, day], [manager, shift(day, 1)], [TEACHER, day], [del.id, day], [del.id, shift(day, 1)]];
+    for (const [who, date] of cases) {
+      const now = await forTests.teachingClassIds(sql, t, R, env, who, date), before = await previousTeachingClassIds(sql, t, R, env, who, date);
+      assert.deepEqual([...now].sort(), [...before].sort(), `${who} ${date}: 바꾸기 전과 같은 반(순서는 판정에 쓰지 않는다)`); assert.equal(new Set(now).size, now.length, "중복 없음");
+      // R 판정(담당 반 갈래만 — 전체 권한 지름길은 끈다)과도 같다.
+      const w = { R: VR, people: { settings: { permissions: env.permissions } }, u: { id: who }, full: false, level: () => 'full', sql, t };
+      for (const id of new Set([...seatClasses, CLASS, CLASS2])) assert.equal(now.includes(id), (await videoHomeworkWriteError(w, id, date)) === null, `${who} ${date} ${id}`);
+    }
+    assert((await forTests.teachingClassIds(sql, t, R, env, TEACHER, day)).includes(CLASS), '담임 반');
+    assert.deepEqual(await forTests.teachingClassIds(sql, t, R, env, del.id, day), [CLASS2], '그날 위임받은 반');
+    assert.deepEqual(await forTests.teachingClassIds(sql, t, R, env, del.id, shift(day, 1)), [], '위임이 끝난 다음 날은 없다');
+    // 그날 요일에 JJ 교시가 없는 JJ 반도 담당 반이다(2.0 fetchJjManagedClassIds는 요일을 보지 않는다).
     for (const date of [day, shift(day, 1)]) {
-      const mine = new Set(await forTests.teachingClassIds(sql, t, R, env, manager, date));
       const dow = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'][new Date(`${date}T00:00:00Z`).getUTCDay()];
-      for (const id of seatClasses) assert.equal(mine.has(id), (await videoHomeworkWriteError(w, id, date)) === null, `${date} ${id}`);
-      // 그날 요일에 자리 교시가 없는 JJ 반도 담당 반이다(2.0 fetchJjManagedClassIds는 요일을 보지 않는다).
       const offDay = (await sql`select class_id::text id from public.class_schedules s where tenant_id=${t} and teacher_id is null and slot_teacher_label='JJ'
         and valid_from<=${date} and (valid_to is null or valid_to>=${date}) and not exists (select 1 from public.class_schedules x where x.class_id=s.class_id
         and x.teacher_id is null and x.slot_teacher_label='JJ' and x.day_of_week::text=${dow} and x.valid_from<=${date} and (x.valid_to is null or x.valid_to>=${date})) limit 1`)[0];
-      assert(offDay && mine.has(offDay.id), `${date}: 그 요일에 JJ 교시가 없는 JJ 반도 들어간다`);
+      assert(offDay && (await forTests.teachingClassIds(sql, t, R, env, manager, date)).includes(offDay.id), `${date}: 그 요일에 JJ 교시가 없는 JJ 반도 들어간다`);
     }
-  });
+    throw ROLLBACK;
+  }).catch((e) => { if (e !== ROLLBACK) throw e; });
 });
 
 test('이동: /onescreen/video-homework만 #v2-video-homework?view=mine으로(2.0 page 열쇠 그대로 + 지금 선생님 actor)', async () => {
