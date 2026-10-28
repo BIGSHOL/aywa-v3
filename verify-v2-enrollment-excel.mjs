@@ -5,12 +5,54 @@ import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import { once } from 'node:events';
 import { Worker } from 'node:worker_threads';
+import { readFile, unlink } from 'node:fs/promises';
+import { randomUUID } from 'node:crypto';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import ExcelJS from 'exceljs';
-import { createEnrollmentExcelRoute } from './v2-enrollment-excel.mjs';
-import { openFullDatabase, tenantId } from './full-db.mjs';
+import { createEnrollmentExcelRoute, EXCEL_JOURNAL } from './v2-enrollment-excel.mjs';
+import { openFullDatabase, sandbox, tenantId } from './full-db.mjs';
 
 const ENDPOINT = '/api/excel-import/enrollment-consultations';
 const WORKER = new URL('./v2-server/v2-enrollment-excel-worker.mjs', import.meta.url);
+
+test('엑셀 반영 기록은 복사본별 JSONL에 반영 시도 한 줄씩만 남긴다', async (t) => {
+  assert.ok(EXCEL_JOURNAL.pathname.endsWith(sandbox ? 'v2-writes-sandbox.jsonl' : 'v2-writes.jsonl'));
+  const journal = join(tmpdir(), `v2-enrollment-excel-${randomUUID()}.jsonl`);
+  t.after(async () => { await unlink(journal).catch(() => {}); });
+  const writes = [];
+  let applyCount = 0;
+  const route = createEnrollmentExcelRoute({ journal, onWrite: (value) => writes.push(value), run: async (call) => {
+    if (call.dryRun) return { ok: true, result: { kind: 'json', body: { dryRun: true, applied: false, counts: [] } } };
+    applyCount++;
+    return { ok: true, result: { kind: 'json', body: { applied: applyCount === 1,
+      error: applyCount === 1 ? undefined : '반영할 행이 없습니다', counts: [{ label: '상담', total: 2, insert: applyCount === 1 ? 2 : 0, update: 0, skip: applyCount === 1 ? 0 : 2 }] } } };
+  } });
+  const server = createServer((req, res) => route.handle(req, res).catch(() => { if (!res.headersSent) res.writeHead(500).end(); }));
+  server.listen(0, '127.0.0.1');
+  await once(server, 'listening');
+  t.after(async () => { server.close(); await once(server, 'close'); });
+  const url = `http://127.0.0.1:${server.address().port}${ENDPOINT}`;
+  async function post(dryRun) {
+    const fd = new FormData();
+    fd.set('file', new File([new Uint8Array([1])], '검증.xlsx'));
+    fd.set('mode', 'append');
+    if (dryRun) fd.set('dryRun', '1');
+    const response = await fetch(url, { method: 'POST', headers: { Cookie: 'v2-enrollment-actor=aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', 'Sec-Fetch-Site': 'same-origin' }, body: fd });
+    assert.equal(response.status, 200);
+    return response.json();
+  }
+  assert.equal((await post(true)).applied, false);
+  assert.equal((await post(false)).applied, true);
+  assert.equal((await post(false)).applied, false);
+  const entries = (await readFile(journal, 'utf8')).trim().split('\n').map(JSON.parse);
+  assert.equal(entries.length, 2);
+  assert.deepEqual(entries.map((e) => e.result), ['applied', 'refused']);
+  assert.deepEqual(entries.map((e) => e.ok), [true, false]);
+  assert.deepEqual(entries.map((e) => e.counts[0].insert), [2, 0]);
+  assert.ok(entries.every((e) => !Number.isNaN(Date.parse(e.at)) && e.screen === 'enrollment' && e.action === 'excelImport' && e.file === '검증.xlsx'));
+  assert.deepEqual(writes, [{ screen: 'enrollment', action: 'excelImport' }]);
+});
 
 async function rollbackApply(call) {
   const worker = new Worker(WORKER);
