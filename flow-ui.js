@@ -437,7 +437,7 @@ window.createFlowUI = function createFlowUI(api) {
   }
   function ownerBelow({heading=true}={}){
     if(!ready())return stateNote();
-    const p=boardParts();hideTip();warmPeek();
+    const p=boardParts();hideTip();
     // 화면 전체를 다시 그려도 검색칸의 글자와 커서를 지킨다(8초 갱신·담당 변경 뒤). 열 머리 메뉴는 새 머리 칸 아래로 옮긴다.
     if(document.activeElement?.matches?.('[data-fl-search]'))queueMicrotask(()=>{const i=document.querySelector('[data-fl-search]');if(i){i.focus({preventScroll:true});i.setSelectionRange(i.value.length,i.value.length);}});
     if(colMenu.el)requestAnimationFrame(placeColMenu);requestAnimationFrame(syncBulk);
@@ -1024,10 +1024,10 @@ window.createFlowUI = function createFlowUI(api) {
   /* ---------- 엿보기 창(원장 10-28 "페이지 이동하지말고 내부에 오버레이창으로 바로 처리할 수 있게 … 노션처럼?") ---------- */
   // 처리 화면(전자결재·신규 콜&상담·출석부 …)과 관련 기록을 이 화면 위 오른쪽 창에 연다. 창 안은 같은 앱을 엿보기 모드(?peek=1)로
   // 띄운 것이라 그 화면의 버튼·저장이 본래 화면과 똑같이 돈다(같은 문서에 그리면 그 화면의 동작이 바깥 화면을 다시 그린다).
-  // 창은 처음 한 번만 띄우고 닫아도 남겨 둔다 — 다음부터는 화면만 바꿔 바로 열린다. 업무 흐름 표가 보이면 쉬는 틈에 미리 띄운다.
+  // 창은 처음 열 때 만들고 닫아도 남겨 둔다 — 다음부터는 화면만 바꿔 바로 열린다.
   // 닫으면 업무 흐름을 다시 읽는다(창 안에서 처리한 일이 표에 반영되게). Esc · 창 밖 누르기 · 바깥 화면 이동으로 닫힌다.
   const PEEK_MSG='aywa-peek';
-  const peek={dlg:null,frame:null,ready:false,want:null,spec:null,page:'',opener:null,warm:false,timer:0};
+  const peek={dlg:null,frame:null,ready:false,want:null,spec:null,page:'',opener:null,timer:0};
   // 지금 문서 안에서 그 화면으로(엿보기 창 안 · '전체 화면으로 열기'). 기록이 있으면 그 화면이 그려진 뒤 기록을 연다.
   function moveTo(spec){
     if(spec.family){
@@ -1089,15 +1089,13 @@ window.createFlowUI = function createFlowUI(api) {
     if(peek.ready)sendPeek();
   }
   function peekFull(){const spec=peek.spec,page=peek.page;peek.dlg.close();if(spec&&(!page||page===spec.page))moveTo(spec);else if(page)navigate(page);}
-  // 업무 흐름 표가 처음 보일 때 쉬는 틈에 창을 미리 띄운다(넓은 화면만 — 휴대폰은 처음 누를 때).
-  function warmPeek(){if(PEEK||peek.warm)return;peek.warm=true;setTimeout(()=>{const go=()=>{if(!peek.dlg&&matchMedia('(min-width: 761px)').matches)peekBox();};if('requestIdleCallback' in window)requestIdleCallback(go,{timeout:4000});else go();},1500);}
   let peekTicket=0;
   addEventListener('message',event=>{
     if(event.origin!==location.origin||event.data?.type!==PEEK_MSG)return;
     if(PEEK){
       if(event.source!==parent||!event.data.open)return;const spec=event.data.open;
       const show=()=>{document.querySelectorAll('dialog[open]').forEach(d=>d.close());moveTo(spec);},missing=()=>parent.postMessage({type:PEEK_MSG,event:'missing'},location.origin);
-      // 2.0 화면 스크립트는 /api/v2 목록을 받은 뒤에 붙는다 — 미리 띄운 창이 그 전에 신호를 받으면 등록될 때까지 잠깐(10초) 기다린다.
+      // 2.0 화면 스크립트는 /api/v2 목록을 받은 뒤에 붙는다 — 새 창이 그 전에 신호를 받으면 등록될 때까지 잠깐(10초) 기다린다.
       const ticket=++peekTicket; // 기다리는 사이 다른 업무를 누르면 앞의 기다림은 버린다
       if(!api.hasView(spec.page)){if(!/^v2-/.test(spec.page)){missing();return;}const t0=Date.now(),wait=()=>{if(ticket!==peekTicket)return;if(api.hasView(spec.page))show();else if(Date.now()-t0<10000)setTimeout(wait,200);else missing();};wait();return;}
       show();return;

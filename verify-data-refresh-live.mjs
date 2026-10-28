@@ -85,14 +85,17 @@ try {
     browser = await chromium.launch({ headless: true });
     const page = await browser.newPage({ viewport: { width: 1280, height: 640 } }), pageErrors = [];
     page.on('pageerror', e => pageErrors.push(e.message));
-    const detailUrls = [];
-    page.on('request', request => { if (new URL(request.url()).pathname === '/snapshot.json') detailUrls.push(request.url()); });
+    const detailUrls = [], bootUrls = [];
+    page.on('request', request => { const path = new URL(request.url()).pathname; if (path === '/snapshot.json') detailUrls.push(request.url()); if (path === '/snapshot.js') bootUrls.push(request.url()); });
     const poke = async () => { await sleep(2100); await page.evaluate(() => dispatchEvent(new Event('focus'))); }; // 화면은 2초에 한 번만 묻는다
     await page.goto(base); await page.waitForFunction(() => document.querySelector('#footer')?.textContent.includes(window.AcademySnapshot.meta.tenant));
     await page.waitForSelector('.fl-count');
     const homeFacts = () => page.evaluate(() => [...document.querySelectorAll('.ax-kpi-row .ws-kpi, .fl-count, .ax-change-cell')].map(node => node.textContent.replace(/\s+/g, ' ').trim()));
     const beforeDetail = await homeFacts();
     assert(beforeDetail.length >= 3, '핵심 KPI·원장 결정·업무 수가 첫 화면에 있다');
+    await sleep(6000); // 옛 엿보기 사전 로드(1.5초 + idle 최장 4초)가 일어나도 잡는다.
+    assert.equal(bootUrls.length, 1, '첫 화면은 /snapshot.js를 한 번만 받는다');
+    assert.equal(page.frames().length, 1, '엿보기 iframe은 처리를 누를 때 만든다');
     assert.equal(detailUrls.length, 0, '첫 화면과 빈 엿보기는 상세 자료를 받지 않는다');
     assert.equal(await page.evaluate(() => window.AcademySnapshot.meta.detailDeferred), true, '첫 화면은 요약 자료로 시작');
     assert.equal(await page.evaluate(() => window.AcademySnapshot.students[0].lessons), undefined);
@@ -102,6 +105,12 @@ try {
     await page.evaluate(() => { location.hash = '#home'; });
     await page.waitForFunction(() => document.querySelector('#main .ax-fold'));
     assert.deepEqual(await homeFacts(), beforeDetail, '전체 자료를 받은 뒤에도 같은 지점·기준일의 KPI·결정 대기·업무 수가 같다');
+    await page.locator('.fl-nav [data-fl="filter"][data-id="moving"]').click();
+    await page.locator('#fl-board-list [data-fl="goto"]').first().click();
+    await page.waitForFunction(() => { const frame = document.querySelector('.fl-peek[open] iframe'); return frame?.contentWindow?.location.hash && frame.contentWindow.location.hash !== '#peek'; });
+    assert.equal(bootUrls.length, 2, '처리 화면을 처음 열 때 엿보기 문서가 자체 자료를 받는다');
+    await page.locator('.fl-peek [data-peek="close"]').click();
+    await page.waitForFunction(() => !document.querySelector('.fl-peek[open]'));
     const tenant = await page.evaluate(() => window.AcademySnapshot.meta.tenant);
     assert.deepEqual(await page.evaluate(() => window.AcademySnapshotRevision), { revision: 1, etag: start.etag });
     assert.equal(await page.evaluate(() => typeof window.V2Screens?.dataChanged), 'function');
