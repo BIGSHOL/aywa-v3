@@ -20,7 +20,7 @@ import * as serverActionShim from '../shims/server-action';
 import { HostFrame, HostMessage } from './host-frame';
 
 /** 진입점 표식(build.mjs가 찾는다) — 창 제목과 이 화면의 2.0 주소. */
-export const HOST_TITLE = '선생님 원스크린';
+export const HOST_TITLE = '선생님 수업보고서';
 export const HOST_ROUTE = '/onescreen';
 
 type Ops = ComponentProps<typeof OperationsProvider>;
@@ -52,7 +52,7 @@ function App() {
     const q = new URLSearchParams({ props: '1' });
     for (const k of [...KEYS, 'view', 'class', 'student']) { const v = search.get(k); if (v) q.set(k, v); }
     fetch(`/api/v2/onescreen?${q}`, { headers: { Accept: 'application/json' } })
-      .then(async (r) => { const body = await r.json().catch(() => null); if (!r.ok) throw new Error(body?.message || '원스크린을 불러오지 못했습니다.'); return body as Data; })
+      .then(async (r) => { const body = await r.json().catch(() => null); if (!r.ok) throw new Error(body?.message || '수업보고서를 불러오지 못했습니다.'); return body as Data; })
       .then((data) => {
         if (!live) return;
         // 저장하는 사람 = 이 화면의 선생님 한 명(2.0에서 원스크린은 로그인한 선생님의 것 — 다른 사람으로 저장하지 않는다).
@@ -67,7 +67,7 @@ function App() {
   }, [key, tick]);
   if (!state.data || state.key !== key) {
     const failed = state.key === key && !!state.error;
-    return <HostMessage text={failed ? state.error! : '원스크린을 불러오는 중…'} error={failed} />;
+    return <HostMessage text={failed ? state.error! : '수업보고서를 불러오는 중…'} error={failed} />;
   }
   const d = state.data;
   if (!d.oneScreen || !d.videoHomework) return <HostMessage text="담당 반이 있는 선생님이 없습니다." />;

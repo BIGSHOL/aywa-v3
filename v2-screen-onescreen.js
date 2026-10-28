@@ -15,7 +15,7 @@
   function ensureFrame(query) {
     if (!frame) {
       frame = document.createElement('iframe');
-      frame.className = 'osh-frame'; frame.title = '선생님 원스크린(2.0 화면)'; frame.dataset.v2Host = ID; frame.hidden = true;
+      frame.className = 'osh-frame'; frame.title = '선생님 수업보고서(2.0 화면)'; frame.dataset.v2Host = ID; frame.hidden = true;
       document.body.append(frame);
     }
     if (query === requested) return;
@@ -64,7 +64,7 @@
   }
 
   S.register({
-    id: ID, label: '선생님 원스크린',
+    id: ID, label: '선생님 수업보고서',
     render(ctx) {
       api = ctx.api; last = ctx; wire();
       // Coming back by the sidebar link (#v2-onescreen, no query) keeps the teacher and day that were showing.
@@ -73,9 +73,9 @@
       const pick = q.get('teacher') || '';
       if (hostOk === null) fetch(HOST, { method: 'HEAD' }).then(r => r.ok, () => false).then(ok => { if (hostOk === null) { hostOk = ok; api?.render?.(); } });
       else if (hostOk) { const query = queryOf(q); requestAnimationFrame(() => { ensureFrame(query); place(); }); }
-      const wait = hostOk === false ? '2.0 부품 화면이 이 서버에 아직 연결되지 않았습니다.' : hostOk === null ? '선생님 원스크린을 여는 중…' : '';
+      const wait = hostOk === false ? '2.0 부품 화면이 이 서버에 아직 연결되지 않았습니다.' : hostOk === null ? '선생님 수업보고서를 여는 중…' : '';
       const picker = `<label class="osh-pick"><span>보는 선생님</span><select data-osh="teacher" aria-label="보는 선생님">${pick ? '' : '<option value="" selected>최근 보고서가 가장 많은 선생님</option>'}${teachers.map(t => `<option value="${h(t.id)}" ${t.id === pick ? 'selected' : ''}>${h(t.name)} · 반 ${h(t.classes)}</option>`).join('')}</select></label>`;
-      return `<div class="osh-bar"><p class="osh-note" role="note"><b>연습 복사본(Docker)</b> 2.0 선생님 원스크린 부품 그대로, 고른 선생님의 화면입니다. 보고서 저장·ClassNote 발송·출결은 그 선생님 이름으로 연습 복사본에만 저장되고 실제 발송은 없습니다. 아직 잇지 않은 기능은 같은 자리에서 '복사본 보기 전용'으로 거절됩니다.</p>${picker}</div>
+      return `<div class="osh-bar"><p class="osh-note" role="note"><b>연습 복사본(Docker)</b> 2.0 선생님 수업보고서 부품 그대로, 고른 선생님의 화면입니다. 보고서 저장·ClassNote 발송·출결은 그 선생님 이름으로 연습 복사본에만 저장되고 실제 발송은 없습니다. 아직 잇지 않은 기능은 같은 자리에서 '복사본 보기 전용'으로 거절됩니다.</p>${picker}</div>
         <div class="osh-slot" data-v2-host-slot>${wait ? `<p class="osh-wait">${wait}</p>` : ''}</div>`;
     },
   });

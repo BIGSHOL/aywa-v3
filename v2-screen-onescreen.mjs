@@ -34,7 +34,7 @@ async function copyDay() {
 }
 
 export const screen = {
-  id: 'onescreen', label: '선생님 원스크린', order: 1,
+  id: 'onescreen', label: '선생님 수업보고서', order: 1,
   // props=1 (+ 2.0's own address keys view · class · student) = the props 2.0's page.tsx hands OneScreenClient and VideoHomeworkProvider,
   // for the v2-host entry (v2-onescreen-roster.mjs); without it, the interim hand-drawn page's data.
   params: { teacher: /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/, date: /^\d{4}-\d{2}-\d{2}$/, all: /^1$/, props: /^1$/, list: /^teachers$/, view: /^[a-z-]{1,20}$/,
