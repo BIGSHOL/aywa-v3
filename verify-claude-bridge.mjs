@@ -137,6 +137,23 @@ test('structured answers: footnotes renumbered from server facts only, links and
   assert.throws(() => normalizeAnswer({ headline: 'OK', keyFacts: [], points: [], checks: [], table: null, links: [], issueIds: [], suggestedTask: null }, { facts }), error => error.code === 'invalid_output');
 });
 
+test('서버 근거와 다른 건수·금액·기간은 AI 호출 없이 답변 단계에서 거절한다', () => {
+  const facts = { facts: [{ n: 1, text: '2026-10 기준 청구 100건 · 남은 금액 50,000원 · 10/27 확인' }] };
+  const base = { headline: '10월 청구 100건', keyFacts: [{ label: '남은 금액', value: '50,000원', change: '', ref: 1 }], points: [{ text: '10/27 확인', refs: [1] }], checks: [], table: null, links: [], suggestedTask: null };
+  assert.equal(normalizeAnswer(base, { facts }).keyFacts[0].value, '50,000원');
+  for (const changed of [
+    { headline: '10월 청구 999건' },
+    { headline: '11월 청구 100건' },
+    { headline: '2026-11 청구 100건' },
+    { keyFacts: [{ label: '청구', value: '999', ref: 1 }] },
+    { keyFacts: [{ label: '남은 금액', value: '999원', ref: 1 }] },
+    { points: [{ text: '11/27 확인', refs: [1] }] },
+    { table: { columns: ['기간', '건수'], rows: [['10월', '999건']] } },
+  ]) assert.throws(() => normalizeAnswer({ ...base, ...changed }, { facts }), error => error.code === 'unverified_fact');
+  assert.throws(() => normalizeAnswer({ answer: '청구 999건입니다.' }, { facts }), error => error.code === 'unverified_fact');
+  assert.throws(() => normalizeAnswer({ headline: '정리', keyFacts: [{ label: '건수', value: '999' }] }, { facts: { facts: [{ n: 1, text: '1,999건' }] } }), error => error.code === 'unverified_fact');
+});
+
 test('subprocess: prompt only via stdin, stripped env, fixed argv', async () => {
   const cwd = await fresh('stdin'), runner = runnerIn(cwd);
   const { output } = await runner.ask({ input: buildInput(context, validateRequest({ prompt: '마커-질문-777 FAKE:ok' })) });

@@ -3,6 +3,7 @@ import { randomBytes } from 'node:crypto';
 import { ASSISTANT_ISSUE_IDS, contextFacts, destinationText } from './claude-bridge-context.mjs';
 import { BridgeError } from './claude-bridge.mjs';
 import { hasSensitive } from './sensitive-text.mjs';
+import { unsupportedAnswerFacts } from './claude-bridge-facts.mjs';
 
 export const LIMITS = Object.freeze({ prompt: 1000, historyItems: 12, historyItem: 2000, historyTotal: 8000, body: 32 * 1024 });
 const KEYS = new Set(['prompt', 'contextIssueId', 'history']);
@@ -74,6 +75,10 @@ const text = (v, max) => (typeof v === 'string' ? limit(clean(v), max) : '');
 // 화면이 입히는 표식은 ⟦ ⟧ 하나 — 그 밖의 꺾쇠·마크다운 기호는 글자로 남는다(화면이 이스케이프한다). 대화 기록에는 표식을 뗀 글을 쓴다.
 const plain = v => v.replace(/[⟦⟧]/g, '');
 const bad = () => new BridgeError('invalid_output', 502, '답변 형식을 확인하지 못했습니다. 다시 시도해 주세요.');
+const verified = (answer, facts) => {
+  if (unsupportedAnswerFacts(answer, facts).length) throw new BridgeError('unverified_fact', 502, '답변의 숫자나 기간이 확인된 자료와 일치하지 않아 표시하지 않았습니다. 다시 시도해 주세요.');
+  return answer;
+};
 
 /**
  * 질문에 원장이 적은 학생·반 이름 → 그 영역의 기록(서버 기록 저장소에서 확인한 것만). 같은 이름의 기록은 한 사람·한 반으로 보고
@@ -124,7 +129,7 @@ export function normalizeAnswer(output, { facts = { facts: [] }, destinations = 
     const body = clean(output.answer);
     if (!body || !/[가-힣]/.test(body)) throw bad();
     const answer = limit(body, 3000), notice = CLAIM.test(answer) && !answer.includes(DRAFT_NOTICE);
-    return { answer: notice ? `${answer}\n\n${DRAFT_NOTICE}` : answer, issueIds, suggestedTask, provider: 'claude-cli', body: answer, ...(notice ? { notice: DRAFT_NOTICE } : {}) };
+    return verified({ answer: notice ? `${answer}\n\n${DRAFT_NOTICE}` : answer, issueIds, suggestedTask, provider: 'claude-cli', body: answer, ...(notice ? { notice: DRAFT_NOTICE } : {}) }, facts);
   }
 
   const headline = text(output.headline, 200);
@@ -158,5 +163,5 @@ export function normalizeAnswer(output, { facts = { facts: [] }, destinations = 
   const flat = [plain(headline), ...keyFacts.map(f => `${f.label} ${f.value}${f.change ? `(${f.change})` : ''}`), ...points.map(p => plain(p.text)), ...checks.map(c => `확인: ${plain(c)}`)].join('\n');
   const notice = CLAIM.test(flat) && !flat.includes(DRAFT_NOTICE);
   const answer = limit(notice ? `${flat}\n\n${DRAFT_NOTICE}` : flat, 3000);
-  return { answer, issueIds, suggestedTask, provider: 'claude-cli', headline, keyFacts, points, notes, checks, table, links, ...(notice ? { notice: DRAFT_NOTICE } : {}) };
+  return verified({ answer, issueIds, suggestedTask, provider: 'claude-cli', headline, keyFacts, points, notes, checks, table, links, ...(notice ? { notice: DRAFT_NOTICE } : {}) }, facts);
 }
