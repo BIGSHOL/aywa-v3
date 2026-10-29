@@ -11,6 +11,45 @@ window.V2Screens = (() => {
   const COPY_NOTE = '연습용 복사본에 저장됩니다. 운영 데이터와 실제 발송(ClassNote·알림톡·슬랙)에는 닿지 않습니다.';
   const PRACTICE_COPY = Object.freeze({ selectedPerson: '선택한 사람' });
   const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const overviewHref = href => /^#v2-[a-z][a-z0-9-]{0,30}(?:\?[^\u0000-\u001f]*)?$/.test(String(href || '')) ? esc(href) : null;
+  const overviewScroll = new Map();
+  // 각 화면은 같은 모양의 현재 층만 준다. 표·경로·마지막 목록 필터는 이 틀 한 곳에서 그린다.
+  function renderOverview(model) {
+    if (!model || !Array.isArray(model.columns) || !Array.isArray(model.rows)) return '<p class="v2s-note">현황을 확인하지 못했습니다.</p>';
+    const crumbs = (model.path || []).map((part, i) => {
+      const href = overviewHref(part.href);
+      return `${i ? '<span aria-hidden="true">›</span>' : ''}${href ? `<a href="${href}">${esc(part.label)}</a>` : `<strong aria-current="page">${esc(part.label)}</strong>`}`;
+    }).join('');
+    const filters = (model.filters || []).map(f => `<div class="v2o-filter"><b>${esc(f.label)}</b>${(f.options || []).map(o => {
+      const href = overviewHref(o.href);
+      return href ? `<a href="${href}" ${o.current ? 'aria-current="true"' : ''}>${esc(o.label)}</a>` : `<span>${esc(o.label)}</span>`;
+    }).join('')}</div>`).join('');
+    const hasAction = model.rows.some(r => r.action);
+    let previousGroup = null;
+    const rows = model.rows.map(row => {
+      let group = '';
+      if (row.group && row.group !== previousGroup) group = `<tr class="v2o-group"><th colspan="${model.columns.length + Number(hasAction)}" scope="rowgroup">${esc(row.group)}</th></tr>`;
+      previousGroup = row.group || null;
+      const href = overviewHref(row.href);
+      const cells = model.columns.map((column, i) => {
+        const raw = row.cells?.[column.key], value = raw && typeof raw === 'object' ? raw.text : raw;
+        const tone = raw && typeof raw === 'object' && ['low', 'high', 'muted'].includes(raw.tone) ? ` data-tone="${raw.tone}"` : '';
+        const content = i === 0 && href ? `<a href="${href}">${esc(value ?? '—')}<span class="v2o-enter">들어가기 ›</span></a>` : esc(value ?? '—');
+        return `<${i === 0 ? 'th scope="row"' : 'td'}${tone}>${content}</${i === 0 ? 'th' : 'td'}>`;
+      }).join('');
+      const action = hasAction ? `<td>${row.action ? `<button type="button" class="button" data-v2-overview-action="${esc(row.action.kind)}" data-key="${esc(row.action.key ?? '')}" ${row.action.disabled ? 'disabled' : ''}>${esc(row.action.label)}</button>` : ''}</td>` : '';
+      return `${group}<tr>${cells}${action}</tr>`;
+    }).join('');
+    return `<section class="v2o" aria-label="${esc(model.title || '현황표')}"><header class="v2o-head"><nav aria-label="분류 경로">${crumbs}</nav><h1>${esc(model.title || '현황표')}</h1><p>${esc(model.purpose || '')}</p>${model.summary ? `<strong class="v2o-summary">${esc(model.summary)}</strong>` : ''}</header>${filters}<div class="v2o-scroll" data-v2-overview-scroll><table><thead><tr>${model.columns.map(c => `<th scope="col">${esc(c.label)}</th>`).join('')}${hasAction ? '<th scope="col">할 일</th>' : ''}</tr></thead><tbody>${rows || `<tr><td colspan="${model.columns.length + Number(hasAction)}">${esc(model.empty || '이 조건에 해당하는 기록이 없습니다.')}</td></tr>`}</tbody></table></div>${model.note ? `<p class="v2s-note">${esc(model.note)}</p>` : ''}</section>`;
+  }
+  function updateOverviewScroll() {
+    for (const el of document.querySelectorAll('[data-v2-overview-scroll]')) {
+      const key = location.hash;
+      if (el.dataset.scrollKey !== key) { el.scrollLeft = overviewScroll.get(key) || 0; el.dataset.scrollKey = key; }
+      el.dataset.start = el.scrollLeft > 1 ? 'true' : 'false';
+      el.dataset.end = el.scrollLeft + el.clientWidth < el.scrollWidth - 1 ? 'true' : 'false';
+    }
+  }
   const parse = page => { const m = /^v2-([a-z][a-z0-9-]{0,30})(?:\?(.*))?$/.exec(page || ''); return m ? { id: m[1], query: new URLSearchParams(m[2] || '') } : null; };
   const current = () => parse(location.hash.slice(1));
 
@@ -54,9 +93,9 @@ window.V2Screens = (() => {
     const p = parse(page), def = p && screens.get(p.id); if (!def) return null;
     return () => {
       const writable = !!(index || []).find(s => s.id === def.id)?.writable;
-      const ctx = { api, query: p.query, esc, writable, copyNote: COPY_NOTE, load: params => load(def.id, params), act: (action, body) => act(def.id, action, body), go: params => go(def.id, params), refresh: () => { for (const k of [...cache.keys()]) if (k.startsWith(`${def.id}?`)) cache.delete(k); api?.render(); } };
+      const ctx = { api, query: p.query, esc, writable, overview: (index || []).find(s => s.id === def.id)?.overview || null, copyNote: COPY_NOTE, load: params => load(def.id, params), act: (action, body) => act(def.id, action, body), go: params => go(def.id, params), refresh: () => { for (const k of [...cache.keys()]) if (k.startsWith(`${def.id}?`)) cache.delete(k); api?.render(); } };
       // native = 3.0 고유 화면(확장 추세 등) — 2.0 모양을 지키는 .v2s 예외 없이 3.0 컨트롤 규칙을 그대로 받는다.
-      try { return `<div class="${def.native ? 'v3s' : 'v2s'}" data-v2-screen="${esc(def.id)}">${def.render(ctx)}</div>`; }
+      try { const html = def.render(ctx); requestAnimationFrame(updateOverviewScroll); return `<div class="${def.native ? 'v3s' : 'v2s'}" data-v2-screen="${esc(def.id)}">${html}</div>`; }
       catch (error) { console.error(error); return `<div class="v2s"><p class="v2s-note">이 화면을 그리지 못했습니다.</p></div>`; }
     };
   }
@@ -68,6 +107,8 @@ window.V2Screens = (() => {
   }
   function bind(a) {
     api = a;
+    document.addEventListener('scroll', e => { const el = e.target; if (!el?.matches?.('[data-v2-overview-scroll]')) return; overviewScroll.set(location.hash, el.scrollLeft); updateOverviewScroll(); }, true);
+    addEventListener('resize', updateOverviewScroll);
     fetch('/api/v2', { headers: { Accept: 'application/json' } }).then(r => (r.ok ? r.json() : { screens: [] })).catch(() => ({ screens: [] })).then(({ screens: list }) => {
       index = list || [];
       for (const s of index) {
@@ -80,5 +121,5 @@ window.V2Screens = (() => {
   /** A 3.0 workspace id → its 2.0 screen address when that screen is registered (workspace links open the 2.0 form first). */
   const WORKSPACE_ALIAS = { 'class-sheets': 'ecs' }; // the only workspace whose id differs from its 2.0 screen
   const target = wsId => { const id = WORKSPACE_ALIAS[wsId] || wsId; return screens.has(id) ? `#v2-${id}` : null; };
-  return { register, view, sidebar, bind, esc, target, dataChanged, practiceCopy: PRACTICE_COPY };
+  return { register, view, sidebar, bind, esc, target, renderOverview, updateOverviewScroll, dataChanged, practiceCopy: PRACTICE_COPY };
 })();

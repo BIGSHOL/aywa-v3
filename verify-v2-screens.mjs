@@ -43,7 +43,7 @@ const screens = Promise.resolve(new Map([
       validationResult: { validate: raw => raw, run: async ({ body }) => ({ error: body.message }) },
       validationRefusal: { validate: raw => raw, run: async () => { throw new V2Error(400, 'invalid_request', 'Invalid UUID'); } },
     } }],
-  ['view', { id: 'view', label: '보기', load: async () => ({}) }],
+  ['view', { id: 'view', label: '보기', overview: { purpose: '무엇을 볼지 고릅니다.', layers: [{ key: 'program', label: '프로그램' }], columns: [{ key: 'name', label: '이름' }], listFilters: ['program'] }, load: async () => ({}) }],
 ]));
 const route = createV2ScreenRoute({ screens, open, journal });
 const server = createServer((req, res) => { const path = new URL(req.url, 'http://x').pathname; if (route.handles(path)) route.handle(req, res, path); else { res.writeHead(404); res.end(); } });
@@ -59,6 +59,7 @@ try {
   await check('list marks which screens save', async () => {
     const r = await call('/api/v2'); assert.equal(r.status, 200);
     assert.deepEqual(r.body.screens.map(s => [s.id, s.writable]), [['demo', true], ['view', false]]);
+    assert.deepEqual(r.body.screens[1].overview, { purpose: '무엇을 볼지 고릅니다.', layers: [{ key: 'program', label: '프로그램' }], columns: [{ key: 'name', label: '이름' }], listFilters: ['program'] });
   });
   await check('read is a read-only transaction and checks params', async () => {
     assert.equal((await call('/api/v2/demo?month=2026-08')).body.readOnly, true);

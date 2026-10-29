@@ -41,6 +41,10 @@ export async function loadScreens(log = console.error) {
     try {
       const { screen } = await import(new URL(name, here).href);
       if (!screen?.id || typeof screen.load !== 'function' || `v2-screen-${screen.id}.mjs` !== name) throw new Error('screen export must match its file name');
+      if (screen.overview && (typeof screen.overview.purpose !== 'string' || !screen.overview.purpose.trim() || !Array.isArray(screen.overview.layers) ||
+          !screen.overview.layers.length || screen.overview.layers.length > 4 || screen.overview.layers.some(x => !/^[a-z][a-z0-9-]{0,30}$/.test(x?.key || '') || typeof x?.label !== 'string' || !x.label.trim()) ||
+          !Array.isArray(screen.overview.columns) || !screen.overview.columns.length || screen.overview.columns.some(x => !/^[a-z][a-z0-9-]{0,30}$/.test(x?.key || '') || typeof x?.label !== 'string' || !x.label.trim()) ||
+          !Array.isArray(screen.overview.listFilters))) throw new Error('overview needs purpose, layers, columns and list filters');
       for (const [k, a] of Object.entries(screen.actions || {})) if (!ACTION.test(k) || typeof a?.validate !== 'function' || typeof a?.run !== 'function') throw new Error(`action ${k} needs validate and run`);
       // 화면 스크립트(v2-screen-<id>.js)가 아직 없는 화면 = 공유 작업 트리에서 만드는 중 — 등록하지 않는다(사이드바에 깨진 화면·MIME 오류가 뜨던 것).
       if (!existsSync(new URL(`v2-screen-${screen.id}.js`, here))) throw new Error('client script not written yet (screen in progress)');
@@ -157,7 +161,7 @@ export function createV2ScreenRoute({ screens, headers = {}, open = openFullData
         catch (e) { return fail(req, res, e); }
       }
       if (!['GET', 'HEAD'].includes(req.method)) return send(req, res, 405, { error: 'method_not_allowed', message: '저장은 화면의 저장 동작으로만 할 수 있습니다.' });
-      if (!parts.length) return send(req, res, 200, { screens: [...s.values()].sort((a, b) => (a.order ?? 99) - (b.order ?? 99)).map(x => ({ id: x.id, label: x.label, order: x.order ?? 99, writable: Object.keys(x.actions || {}).length > 0, script: `/v2-screen-${x.id}.js`, style: screenAsset(`/v2-screen-${x.id}.css`) ? `/v2-screen-${x.id}.css` : null })) });
+      if (!parts.length) return send(req, res, 200, { screens: [...s.values()].sort((a, b) => (a.order ?? 99) - (b.order ?? 99)).map(x => ({ id: x.id, label: x.label, order: x.order ?? 99, writable: Object.keys(x.actions || {}).length > 0, script: `/v2-screen-${x.id}.js`, style: screenAsset(`/v2-screen-${x.id}.css`) ? `/v2-screen-${x.id}.css` : null, ...(x.overview ? { overview: x.overview } : {}) })) });
       const screen = parts.length === 1 ? s.get(parts[0]) : null;
       if (!screen) return send(req, res, 404, { error: 'screen_not_found', message: '없는 화면입니다.' });
       const q = new URL(req.url, 'http://127.0.0.1').searchParams, rules = screen.params || {}, params = {};
