@@ -81,7 +81,7 @@ export async function supportFamilies({ sql, t, asOf, month, monthStart, subject
   const failingNames = [...new Set(failingLinks.map(l => PROVIDER[l.provider] || '기타 연동'))].join('·');
   // 오류가 남은 연동 = '연동 오류' 신호의 근거(AX-H5). 이름 · 상태 · 오류를 적은 때 · 정해진 한국어 요약만 — 키·토큰·설정·시트 주소·오류 원문은 싣지 않는다.
   const linkRecords = failingLinks.map(l => record({ id: l.id, label: `${PROVIDER[l.provider] || '기타 연동'} 연동`, detail: linkError(l.err_text), date: l.err_d, status: '오류 남음', fields: [field('오류 기록', l.err_d ? `${md(l.err_d)} ${l.err_hm}` : null)], facets: ['link-error'] }));
-  out.integrations = family('integrations', '외부 연동(makeedu·구글 시트·오늘 수학·IJW)', {
+  out.integrations = family('integrations', '외부 연동(메이크에듀·구글 시트·오늘 수학·IJW)', {
     summary: `오류가 남은 연동 ${failingLinks.length}개${failingNames ? `(${failingNames})` : ''} · ClassNote 반 보드 동기화 실패 ${ig.board_failed}회(전체 기간).`,
     metrics: [metric('메이크에듀 동기화 실행', runs.length, '회', `전체 기간 · 실패 ${runs.filter(r => r.status === 'error').length} · 일부 실패 ${runs.filter(r => r.status === 'partial').length}`), metric('최근 7일 메이크에듀 동기화 문제', recentBad.length, '회', '실패 · 일부 실패'), metric('연동 PC', ig.agents, '대', `마지막 응답 ${ig.agent_seen ? md(ig.agent_seen) : '기록 없음'}`), metric('연동 PC 정기 작업 실패', ig.agent_failed, '회', `전체 ${ig.agent_runs}회 중`), metric('ClassNote 반 보드 동기화 실패', ig.board_failed, '회', `전체 ${ig.board_runs}회 중`), metric('오류가 남은 연동', failingLinks.length, '개', `마지막 동기화 ${links.map(l => `${PROVIDER[l.provider] || '기타 연동'} ${l.last ? md(l.last) : '날짜 없음'}`).join(' · ')}`), metric('오늘 수학 결과', ig.todays_math, '건')],
     trend: monthlyTrend('월별 메이크에듀 동기화', '회', Object.entries(Object.groupBy(runs.filter(r => r.d <= asOf), r => r.d.slice(0, 7))).map(([m, rows]) => ({ month: m, value: rows.length })), asOf),
@@ -108,7 +108,7 @@ export async function supportFamilies({ sql, t, asOf, month, monthStart, subject
     sources: [{ table: 'tenant_settings', rows: pf ? 1 : 0 }],
   });
   out['auth-session'] = notApplicable('auth-session', '로그인·세션·링크 만료·지점 보기 안내', '로그인과 세션은 기반 기능이며 원장 업무로 보여 주지 않습니다. 로그인 기록과 인증 정보는 싣지 않습니다.');
-  out['platform-console'] = notApplicable('platform-console', '운영 콘솔(슈퍼관리자)', '운영 콘솔 설정(지점 발급·라이선스·AI 모델)은 지점 화면에 드러내지 않는 운영자 영역입니다.');
+  out['platform-console'] = notApplicable('platform-console', '운영 콘솔', '운영 설정은 이 화면에서 확인할 수 없습니다.');
   out['recording-transcription'] = notApplicable('recording-transcription', '녹음·전사 파이프라인', '녹음·전사 처리 상태는 회의록·원생상담·신규 콜&상담의 지표로 보여 줍니다. 파이프라인 자체는 원장 업무 화면이 아닙니다.');
   out['shell-infrastructure'] = notApplicable('shell-infrastructure', '공용 기반(검색·동시편집·메뉴 기록·최대화·내보내기·통계·학교명)', '검색·내보내기 같은 공용 기능은 각 화면 안에서 쓰입니다. 이용 분석은 운영자만 보는 자료라 싣지 않습니다.');
   out['demo-tenant'] = notApplicable('demo-tenant', '데모 지점 갱신', '데모 지점 전용 작업이라 이 지점(침산)과 관계가 없습니다.');
