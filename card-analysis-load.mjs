@@ -2,6 +2,7 @@
 import { dashboardKpiCards, DASHBOARD_KPI_ORDER } from './v2-dashboard-flow.mjs';
 import { teacherWorkWeekly, TEACHER_WORK_METRICS } from './v2-teacher-work.mjs';
 import { buildCardAnalysis } from './card-analysis.mjs';
+import { cardInput } from './card-insight.mjs';
 
 const ROSTER_METRICS = new Set(['exits', 'intake', 'level-tests', 'new-enrollments', 'recent-absent', 'makeups', 'report-written']);
 const PORT = Number(process.env.OWNER_CONCEPT_PORT || 4310);
@@ -55,5 +56,7 @@ export async function loadCardAnalysis({ sql, tenantId, importV2, metricId, load
       records = [...gathered.values()];
     } else records = [];
   }
-  return buildCardAnalysis({ trend, byDimension, card, flowCases: await flowCases(), records });
+  const analysis = buildCardAnalysis({ trend, byDimension, card, flowCases: await flowCases(), records });
+  analysis.metricInfo = { name: card.label, unit: trend.metric.unit, better: trend.metric.better };
+  return { ...analysis, fingerprint: cardInput(analysis).fingerprint };
 }

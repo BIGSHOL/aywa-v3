@@ -15,13 +15,17 @@ const line = { type: 'object', additionalProperties: false, required: ['text', '
 export const CARD_SCHEMA = { type: 'object', additionalProperties: false, required: ['summary', 'watch', 'checks'], properties: {
   summary: line, watch: { type: 'array', maxItems: 3, items: line }, checks: { type: 'array', maxItems: 3, items: line },
 } };
-export const CARD_PROMPT = ['당신은 학원 원장의 카드 분석 문장을 작성하는 검토 보조입니다. 입력은 코드가 계산한 사실입니다. 한국어로 씁니다.', GUARD,
+export const CARD_PROMPT = ['당신은 학원 원장의 카드 분석 문장을 작성하는 검토 보조입니다. 입력의 지표와 사실은 코드가 정한 내용입니다. 한국어로 씁니다.', GUARD,
   'summary는 요약 한 줄, watch는 눈여겨볼 점 최대 세 줄, checks는 사람이 확인할 것 최대 세 줄입니다. 각 줄에는 근거인 입력 F- id를 factIds에 넣습니다. 숫자와 수량은 화면의 코드 사실에 따로 있습니다. 근거가 없으면 해당 목록을 비웁니다.'].join('\n');
 
 // 로컬 원본 facts를 AI에 보낼 때 사람 이름·반/학교 이름·기록 열쇠를 제외한다.
 // 식별자를 가린 F-id는 서버에서만 원본 fact id와 연결한다.
 export function cardInput(analysis) {
   const labels = new Map();
+  const indicator = { 이름: analysis.metricInfo.name, 단위: analysis.metricInfo.unit,
+    방향: analysis.metricInfo.better === 'up' ? '높을수록 좋음' : analysis.metricInfo.better === 'down' ? '낮을수록 좋음' : '좋고 나쁨의 방향 없음',
+    '기준 문장': analysis.facts.find(f => f.item === 5 && f.kind === 'basis')?.text || '',
+    '기간 단위': { day: '일별', week: '주별', month: '월별', year: '연별' }[analysis.period] || '주별' };
   const facts = analysis.facts.map(f => {
     const id = `F-${sha([analysis.metric, f.id, f.item, f.kind]).slice(0, 8)}`;
     labels.set(id, f.text);
@@ -29,12 +33,11 @@ export function cardInput(analysis) {
       !['key', 'name', 'basis', 'note'].includes(k) && (typeof v === 'number' || typeof v === 'boolean' || v === null || k === 'dimension' || k === 'field' || k === 'band')));
     const safe = f.item === 2 && !f.kind.endsWith('empty') ? `${f.values?.dimension === 'teacher' ? '담당 선생님' : f.values?.dimension === 'class' ? '반' : f.values?.dimension || '기준'} 한 항목의 ${f.kind === 'increase' ? '증가' : '감소'}`
       : f.item === 3 && f.kind === 'cluster' ? `${{ className: '반', teacher: '담당 선생님', school: '학교', grade: '학년' }[f.values?.field] || '기준'} 한곳에 몰림`
-      : f.item === 5 && f.kind === 'basis' ? '셈의 기준은 화면의 코드 집계와 같습니다.'
       : f.item === 5 && f.kind === 'difference' ? '큰 숫자와 추세선의 셈 기준 비교'
       : f.text;
     return { id, text: safe, values };
   });
-  return { metric: analysis.metric, fingerprint: sha(analysis.facts.map(f => ({ id: f.id, text: f.text, values: f.values }))), facts, labels };
+  return { metric: analysis.metric, fingerprint: sha([indicator, analysis.facts.map(f => ({ id: f.id, text: f.text, values: f.values }))]), indicator, facts, labels };
 }
 
 export function validateCardOutput(output, facts) {
@@ -60,15 +63,16 @@ export const openCardInsightStore = ({ dir, identity, lock }) => openStore({ dir
 export function createCardInsight({ store, provider = null, reserve = async () => false, clock = () => Date.now() }) {
   const busy = new Set();
   const state = () => store.state.cardInsight || { results: {} };
-  const view = analysis => {
-    const built = cardInput(analysis), record = state().results[built.metric], saved = record?.byFingerprint?.[record.latest] || null;
-    const stale = !!saved && saved.fingerprint !== built.fingerprint;
-    return { metric: built.metric, fingerprint: built.fingerprint, status: !saved ? 'empty' : stale ? 'stale' : 'ready',
+  const viewFingerprint = (metric, fingerprint) => {
+    const record = state().results[metric], saved = record?.byFingerprint?.[record.latest] || null;
+    const stale = !!saved && saved.fingerprint !== fingerprint;
+    return { metric, fingerprint, status: !saved ? 'empty' : stale ? 'stale' : 'ready',
       note: stale ? '자료가 바뀌었습니다. 분석 문장을 다시 만들려면 버튼을 누르세요.' : null,
       result: saved ? { ...displayCardOutput(saved.output, saved.facts),
         modelLabel: modelLabel(saved.model) || 'Claude', createdAt: saved.createdAt } : null,
       enabled: !!provider };
   };
+  const view = analysis => viewFingerprint(analysis.metric, cardInput(analysis).fingerprint);
   async function make(analysis) {
     if (!provider) return { status: 503, error: 'ai_disabled', message: '이 서버에서는 분석 문장 만들기를 켜지 않았습니다.' };
     const built = cardInput(analysis);
@@ -81,7 +85,7 @@ export function createCardInsight({ store, provider = null, reserve = async () =
         const fragments = attempt ? [...new Set(Object.values(checked.samples || {}).flat())].slice(0, 8) : [];
         answer = await provider.ask({ schema: CARD_SCHEMA, prompt: attempt ? `${CARD_PROMPT}\n${repairNote(fragments)}` : CARD_PROMPT,
           model: 'sonnet', effort: attempt ? 'medium' : 'low', timeoutMs: 240_000,
-          input: { facts: built.facts } });
+          input: { 지표: built.indicator, facts: built.facts } });
         checked = validateCardOutput(answer.output, built.facts);
         if (checked.ok) break;
         if (checked.issues.includes('fact_id_or_shape') || checked.issues.includes('unknown_id')) break;
@@ -98,6 +102,6 @@ export function createCardInsight({ store, provider = null, reserve = async () =
       return { ...view(analysis), httpStatus: 200 };
     } finally { busy.delete(built.metric); }
   }
-  return { view, make };
+  return { view, viewFingerprint, make };
 }
 export const validCardMetric = x => METRIC.test(x || '');

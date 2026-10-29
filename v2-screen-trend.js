@@ -17,12 +17,12 @@
   const analysisOpen = new Set();
   const insightState = new Map();
   function loadInsight(data) {
-    const metric = data.metric, signature = JSON.stringify(data.facts);
+    const metric = data.metric, signature = data.fingerprint || JSON.stringify(data.facts);
     const old = insightState.get(metric);
     if (old?.signature === signature) return old;
     const state = { signature, status: 'loading', data: null };
     insightState.set(metric, state);
-    fetch(`/api/insight/cards?metric=${encodeURIComponent(metric)}`, { headers: { Accept: 'application/json' } })
+    fetch(`/api/insight/cards?metric=${encodeURIComponent(metric)}${data.fingerprint ? `&fp=${encodeURIComponent(data.fingerprint)}` : ''}`, { headers: { Accept: 'application/json' } })
       .then(async r => { const body = await r.json(); if (!r.ok) throw new Error(body.message || '저장된 문장을 불러오지 못했습니다.'); return body; })
       .then(body => { if (insightState.get(metric) === state) { state.status = 'ready'; state.data = body; last?.api.render(); } })
       .catch(error => { if (insightState.get(metric) === state) { state.status = 'error'; state.error = error.message; last?.api.render(); } });
@@ -363,8 +363,8 @@
       state.status = 'making'; last?.api.render();
       fetch(`/api/insight/cards?metric=${encodeURIComponent(metric)}`, { method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/json' }, body: '{}' })
         .then(async r => { const body = await r.json(); if (!r.ok) throw new Error(body.message || '문장을 만들지 못했습니다.'); return body; })
-        .then(body => { state.status = 'ready'; state.data = body; last?.api.render(); })
-        .catch(error => { state.status = 'error'; state.error = error.message; last?.api.render(); });
+        .then(body => { if (insightState.get(metric) === state) { state.status = 'ready'; state.data = body; last?.api.render(); } })
+        .catch(error => { if (insightState.get(metric) === state) { state.status = 'error'; state.error = error.message; last?.api.render(); } });
       return;
     }
     const record = t.closest('[data-ca-record]');
