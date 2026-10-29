@@ -105,6 +105,11 @@ const expected = [
   '/ax.css=>ax.css|text/css; charset=utf-8', '/workspace-catalog.js=>workspace-catalog.js|text/javascript; charset=utf-8',
   '/workspaces.js=>workspaces.js|text/javascript; charset=utf-8', '/workspaces.css=>workspaces.css|text/css; charset=utf-8',
   '/flow-ui.js=>flow-ui.js|text/javascript; charset=utf-8', '/flow-ui.css=>flow-ui.css|text/css; charset=utf-8',
+  '/ax-chat.js=>ax-chat.js|text/javascript; charset=utf-8', '/ax-chat.css=>ax-chat.css|text/css; charset=utf-8',
+  '/context-picker.js=>context-picker.js|text/javascript; charset=utf-8', '/context-picker.css=>context-picker.css|text/css; charset=utf-8',
+  '/exit-insight.js=>exit-insight.js|text/javascript; charset=utf-8', '/exit-insight.css=>exit-insight.css|text/css; charset=utf-8',
+  '/v2-screens.js=>v2-screens.js|text/javascript; charset=utf-8', '/v2-screens.css=>v2-screens.css|text/css; charset=utf-8',
+  '/controls.css=>controls.css|text/css; charset=utf-8',
   '/fonts/PretendardVariable.woff2=>../../public/fonts/PretendardVariable.woff2|font/woff2',
 ];
 const serving = [];
