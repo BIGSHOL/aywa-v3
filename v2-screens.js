@@ -9,6 +9,7 @@ window.V2Screens = (() => {
   const screens = new Map(), cache = new Map();
   let api = null, index = null;
   const COPY_NOTE = '연습용 복사본에 저장됩니다. 운영 데이터와 실제 발송(ClassNote·알림톡·슬랙)에는 닿지 않습니다.';
+  const PRACTICE_COPY = Object.freeze({ selectedPerson: '선택한 사람' });
   const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const parse = page => { const m = /^v2-([a-z][a-z0-9-]{0,30})(?:\?(.*))?$/.exec(page || ''); return m ? { id: m[1], query: new URLSearchParams(m[2] || '') } : null; };
   const current = () => parse(location.hash.slice(1));
@@ -79,5 +80,5 @@ window.V2Screens = (() => {
   /** A 3.0 workspace id → its 2.0 screen address when that screen is registered (workspace links open the 2.0 form first). */
   const WORKSPACE_ALIAS = { 'class-sheets': 'ecs' }; // the only workspace whose id differs from its 2.0 screen
   const target = wsId => { const id = WORKSPACE_ALIAS[wsId] || wsId; return screens.has(id) ? `#v2-${id}` : null; };
-  return { register, view, sidebar, bind, esc, target, dataChanged };
+  return { register, view, sidebar, bind, esc, target, dataChanged, practiceCopy: PRACTICE_COPY };
 })();

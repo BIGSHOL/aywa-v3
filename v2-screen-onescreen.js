@@ -93,7 +93,7 @@
       else if (hostOk) { const query = queryOf(q); requestAnimationFrame(() => { ensureFrame(query); place(); }); }
       const wait = hostOk === false ? '이 화면이 이 서버에 아직 연결되지 않았습니다.' : hostOk === null ? '선생님 수업보고서를 여는 중…' : '';
       const picker = `<label class="osh-pick"><span>보는 선생님</span><select data-osh="teacher" aria-label="보는 선생님">${pick ? '' : '<option value="" selected>최근 보고서가 가장 많은 선생님</option>'}${teachers.map(t => `<option value="${h(t.id)}" ${t.id === pick ? 'selected' : ''}>${h(t.name)} · 반 ${h(t.classes)}</option>`).join('')}</select></label>`;
-      return `<div class="osh-bar"><p class="osh-note" role="note"><b>연습 화면</b> 고른 선생님의 수업보고서 화면입니다. 보고서 저장·ClassNote 발송·출결은 그 선생님 이름으로 연습 데이터에만 남고 실제 발송은 없습니다. 아직 지원하지 않는 기능은 눌러도 저장되지 않습니다.</p>${picker}</div>
+      return `<div class="osh-bar"><p class="osh-note" role="note"><b>연습 화면</b> 선택한 선생님의 수업보고서 화면입니다. 보고서 저장·ClassNote 발송·출결은 그 선생님 이름으로 연습 데이터에만 남고 실제 발송은 없습니다. 아직 지원하지 않는 기능은 눌러도 저장되지 않습니다.</p>${picker}</div>
         <div class="osh-slot" data-v2-host-slot>${wait ? `<p class="osh-wait">${wait}</p>` : ''}</div>`;
     },
   });

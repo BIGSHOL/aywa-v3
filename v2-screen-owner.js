@@ -89,7 +89,7 @@
       if (hostOk === null) fetch(HOST, { method: 'HEAD' }).then(r => r.ok, () => false).then(ok => { if (hostOk === null) { hostOk = ok; api?.render?.(); } });
       else if (hostOk) requestAnimationFrame(() => { ensureFrame(query); place(); });
       const wait = hostOk === false ? '학원 설정을 열지 못했습니다. 잠시 후 새로고침해 주세요.' : hostOk === null ? '학원 설정을 여는 중…' : '';
-      return `<div class="v2h-note" role="note"><p><b>연습 화면</b> 고른 사람이 열 수 있는 면만 보이고, 저장도 고른 사람으로 합니다. 일부 관리 면과 보강 운영·대시보드 배치 저장은 아직 지원하지 않습니다.</p><span data-v2h-actor-slot>${actorPicker()}</span></div>
+      return `<div class="v2h-note" role="note"><p><b>연습 화면</b> ${S.practiceCopy.selectedPerson}이 열 수 있는 면만 보이고, 저장도 ${S.practiceCopy.selectedPerson}으로 합니다. 일부 관리 면과 보강 운영·대시보드 배치 저장은 아직 지원하지 않습니다.</p><span data-v2h-actor-slot>${actorPicker()}</span></div>
         <div class="v2h-slot" data-v2-host-slot>${wait ? `<p class="v2h-wait">${wait}</p>` : ''}</div>`;
     },
   });

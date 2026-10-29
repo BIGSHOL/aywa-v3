@@ -88,7 +88,7 @@
       if (hostOk === null) fetch(HOST, { method: 'HEAD' }).then(r => r.ok, () => false).then(ok => { if (hostOk === null) { hostOk = ok; api?.render?.(); } });
       else if (hostOk) requestAnimationFrame(() => { ensureFrame(query); place(); });
       const wait = hostOk === false ? '시간표를 열지 못했습니다. 잠시 후 새로고침해 주세요.' : hostOk === null ? '시간표를 여는 중…' : '';
-      return `<div class="v2h-note" role="note"><p><b>연습 화면</b> 여기서 저장한 내용은 이 PC의 연습 자료에만 남고, 실제 발송은 없습니다. 학생 반 이동·등원 요일·대기와 퇴원(수강 종료)·메모 시트를 저장할 수 있고, 그 밖의 저장은 아직 지원하지 않습니다.</p><span data-v2h-actor-slot>${actorPicker()}</span></div>
+      return `<div class="v2h-note" role="note"><p><b>연습 화면</b> 여기서 저장한 내용은 이 PC의 연습 자료에만 남고, 실제 발송은 없습니다. 원생 반 이동·등원 요일·대기와 퇴원(수강 종료)·메모 시트를 저장할 수 있고, 그 밖의 저장은 아직 지원하지 않습니다.</p><span data-v2h-actor-slot>${actorPicker()}</span></div>
         <div class="v2h-slot" data-v2-host-slot>${wait ? `<p class="v2h-wait">${wait}</p>` : ''}</div>`;
     },
   });

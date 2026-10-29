@@ -89,7 +89,7 @@
       if (hostOk === null) fetch(HOST, { method: 'HEAD' }).then(r => r.ok, () => false).then(ok => { if (hostOk === null) { hostOk = ok; api?.render?.(); } });
       else if (hostOk) requestAnimationFrame(() => { ensureFrame(query); place(); });
       const wait = hostOk === false ? '교재 요청을 열지 못했습니다. 잠시 후 새로고침해 주세요.' : hostOk === null ? '교재 요청을 여는 중…' : '';
-      return `<div class="v2h-note" role="note"><p><b>연습 화면</b> 고른 사람의 화면으로 보입니다(선생님은 담당 학생과 본인 요청만). 요청서도 고른 사람으로 씁니다. 학원 로고는 보이지 않고, 학부모 발송은 아직 지원하지 않습니다.</p><span data-v2h-actor-slot>${actorPicker()}</span></div>
+      return `<div class="v2h-note" role="note"><p><b>연습 화면</b> ${S.practiceCopy.selectedPerson}의 화면으로 보입니다(선생님은 담당 원생과 본인 요청만). 요청서도 ${S.practiceCopy.selectedPerson}으로 씁니다. 학원 로고는 보이지 않고, 학부모 발송은 아직 지원하지 않습니다.</p><span data-v2h-actor-slot>${actorPicker()}</span></div>
         <div class="v2h-slot" data-v2-host-slot>${wait ? `<p class="v2h-wait">${wait}</p>` : ''}</div>`;
     },
   });

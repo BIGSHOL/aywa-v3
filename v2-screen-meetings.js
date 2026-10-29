@@ -103,7 +103,7 @@
       if (hostOk === null) fetch(HOST, { method: 'HEAD' }).then(r => r.ok, () => false).then(ok => { if (hostOk === null) { hostOk = ok; api?.render?.(); } });
       else if (hostOk) requestAnimationFrame(() => { ensureFrame(query); place(); });
       const wait = hostOk === false ? '회의록을 열지 못했습니다. 잠시 후 새로고침해 주세요.' : hostOk === null ? '회의록을 여는 중…' : '';
-      return `<div class="v2h-note" role="note"><p><b>연습 화면</b> 여기서 저장한 내용은 이 PC의 연습 자료에만 남고, 실제 발송은 없습니다. 제목·메모장·AI 분석 글 고치기·화자 지정·새 회의록은 고른 사람의 권한과 이름으로 저장됩니다. 녹음·전사·AI로 정리·인쇄 미리보기는 연습 화면에서 쓰지 않습니다.</p><span data-v2h-actor-slot>${actorPicker()}</span></div>
+      return `<div class="v2h-note" role="note"><p><b>연습 화면</b> 여기서 저장한 내용은 이 PC의 연습 자료에만 남고, 실제 발송은 없습니다. 제목·메모장·AI 분석 글 고치기·화자 지정·새 회의록은 ${S.practiceCopy.selectedPerson}의 권한과 이름으로 저장됩니다. 녹음·전사·AI로 정리·인쇄 미리보기는 연습 화면에서 쓰지 않습니다.</p><span data-v2h-actor-slot>${actorPicker()}</span></div>
         <div class="v2h-slot" data-v2-host-slot>${wait ? `<p class="v2h-wait">${wait}</p>` : ''}</div>`;
     },
   });

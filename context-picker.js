@@ -88,7 +88,7 @@ window.ContextPicker = (function () {
     e.view = items.slice(0, MAX_ROWS);
     list.innerHTML = e.view.map((o, i) => row(e, o, i)).join('');
     const loading = e.config.remote && raw && r?.query === raw && r.status === 'loading';
-    status.textContent = loading ? '전체 기록에서 찾는 중입니다…' : e.config.remote && raw && r?.query === raw && r.status === 'error' ? r.message : items.length ? '' : raw ? `‘${raw}’에 맞는 ${e.config.noun || '항목'}이 없습니다. ${e.config.searchHint || '이름을 다시 확인해 주세요.'}` : e.config.emptyText || '고를 수 있는 항목이 없습니다.';
+    status.textContent = loading ? '전체 기록에서 찾는 중입니다…' : e.config.remote && raw && r?.query === raw && r.status === 'error' ? r.message : items.length ? '' : raw ? `‘${raw}’에 맞는 ${e.config.noun || '항목'}이 없습니다. ${e.config.searchHint || '이름을 다시 확인해 주세요.'}` : e.config.emptyText || '선택할 수 있는 항목이 없습니다.';
     root.querySelector('.cpick-panel').classList.toggle('is-loading', Boolean(loading));
     e.hidden = items.length - e.view.length; e.useRemote = useRemote;
     note.textContent = noteText(e);

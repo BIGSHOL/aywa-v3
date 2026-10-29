@@ -84,7 +84,7 @@
       // 기본(최근 활동이 가장 많은 원장)은 늘 고를 수 있다 · 목록에 없는 id면 서버도 기본 원장으로 그린다 — 칸도 기본을 가리킨다.
       const listed = viewers.some(v => v.id === pick);
       const picker = `<label class="dsh-pick"><span>보는 원장</span><select data-dsh="viewer" aria-label="보는 원장"><option value="" ${listed ? '' : 'selected'}>최근 활동이 가장 많은 원장</option>${viewers.map(v => `<option value="${h(v.id)}" ${v.id === pick ? 'selected' : ''}>${h(v.name)}</option>`).join('')}</select></label>`;
-      return `<div class="dsh-bar"><p class="dsh-note" role="note"><b>연습 화면</b> 고른 원장의 운영실 화면입니다. 숫자는 연습 데이터를 만든 때 기준이고, 저절로 새로 고쳐지지 않습니다. 카드는 그 원장의 운영실 배치대로 보입니다.</p>${picker}</div>
+      return `<div class="dsh-bar"><p class="dsh-note" role="note"><b>연습 화면</b> 선택한 원장의 운영실 화면입니다. 숫자는 연습 데이터를 만든 때 기준이고, 저절로 새로 고쳐지지 않습니다. 카드는 그 원장의 운영실 배치대로 보입니다.</p>${picker}</div>
         <div class="dsh-slot" data-v2-host-slot>${wait ? `<p class="dsh-wait">${wait}</p>` : ''}</div>`;
     },
   });
