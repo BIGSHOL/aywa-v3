@@ -3,7 +3,7 @@
 // 지표는 trend-metrics.mjs 한 곳에서 온다. 기록이 시작되기 전의 창은 앞에서 잘라 내고, 중간에 기록이 없는 창은 '기록 없음'(0이 아니다).
 // 명단 계약(원장 10-28 "자세히보기를 눌러 들어왔을때 이걸 체크할 수 있는 리스트가 있으면 더 좋을듯. 아래쪽에"):
 //   metric.series는 filter가 있을 때 선택적으로 records를 함께 돌려줄 수 있다 — windows와 같은 길이, 칸마다 null(기록 없음 창) 또는
-//   [{ id(학생 id 또는 그 기록 id), name, sub?(학교·학년 — 경명여중1), date?(YYYY-MM-DD), dateLabel?(그 날짜의 이름 — 퇴원일), note?(한 줄 내용 — '등록 4/2 · 29일 만에') }].
+//   [{ id(학생 id 또는 그 기록 id), name, sub?(학교·학년 — 경명여중1), teacher?(퇴원 계열 담당 선생님 — 여러 명은 가운뎃점, 판정 실패는 —), date?(YYYY-MM-DD), dateLabel?(그 날짜의 이름 — 퇴원일), note?(한 줄 내용 — '등록 4/2 · 29일 만에') }].
 //   load는 필터를 건 보기에서만 records를 windows·total과 같은 자리(start)로 잘라 넘긴다. 없는 지표는 명단을 그리지 않는다(안내 문구 없음). 기억 키는 그대로(필터가 이미 키에 있다).
 import { addDays, weekWindows, yymm, rate } from './domain-snapshot-core.mjs';
 import { copyClock } from './v2-onescreen-roster.mjs';

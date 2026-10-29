@@ -511,4 +511,4 @@ export const screen = {
   actions,
   load,
 };
-export { loadRules, VIA };
+export { loadRules, getWithdrawnStudents, loadExitTeacherJudge, teacherNames, VIA };

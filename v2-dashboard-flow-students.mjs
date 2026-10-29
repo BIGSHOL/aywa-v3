@@ -19,6 +19,7 @@ import { rules as kpiRules, consts, tenantSettings, trendRaw, cleanupBilling, re
   enrolledInputs, enrolledItemsIn, monthWithdrawalRows } from './v2-student-kpis.mjs';
 import { recordCoverage } from './v2-dashboard-trends.mjs';
 import { tenantId as COPY_TENANT } from './full-db.mjs';
+import { getWithdrawnStudents, loadExitTeacherJudge, loadRules as exitRules, teacherNames } from './v2-screen-withdrawals.mjs';
 
 const EXTRA = { program: 'features/students/enrollment/program.ts', intake: 'features/enrollment/intake-groups.ts', early: 'features/withdrawals/early-exit.ts',
   modules: 'lib/modules.ts' };
@@ -234,6 +235,44 @@ function exitRowsIn(b, inputs, from, to) {
 }
 /** 등록·퇴원 계열의 기록 시작(위 머리말) — `subjectScoped` = 과목으로 좁히거나 수업종료를 센다. */
 const flowSince = (b, subjectScoped = false) => monthStart(later(b.flowFrom, subjectScoped ? b.breakdownFrom : null));
+// 퇴원관리 담당 칸과 같은 판정·퇴원 원자료. 무거운 담당 판정은 명단을 낼 때만, 한 트랜잭션에서 한 번 읽는다.
+async function exitTeacherBasis(b) {
+  return once(b, 'exitTeacherJudge', () => b.gate.soft(async sp => {
+    const L = await exitRules(b.load), today = L.dk.kstToday(), thisMonth = L.dk.kstMonth(), judgeFromMonth = L.dk.shiftMonth(thisMonth, -26);
+    const withdrawn = await getWithdrawnStudents(sp, b.t, L);
+    const judge = await loadExitTeacherJudge(sp, b.t, L,
+      { from: L.dk.monthRange(L.dk.shiftMonth(judgeFromMonth, -5)).from, end: L.dk.monthRange(thisMonth).to }, { today, thisMonth });
+    return { L, judge, today, from: `${judgeFromMonth}-01`, withdrawn: new Map(L.rows.toExitRows(withdrawn, []).map(r => [r.key, r])) };
+  }, e => { console.error(`trend.exitTeacherJudge: ${e?.code || ''} ${e?.message || ''}`); return null; }));
+}
+async function withExitTeachers(b, lists, out, { perSubject = false } = {}) {
+  if (!out.records) return out;
+  const fallback = () => ({ ...out, records: out.records.map(l => l && l.map(r => ({ ...r, teacher: '—' }))) });
+  if (!out.records.some(l => l?.length)) return fallback();
+  const basis = await exitTeacherBasis(b);
+  if (!basis) return fallback();
+  try {
+    const { L, judge, withdrawn } = basis;
+    const judgedRows = out.records.map((cell, i) => {
+      const source = new Map((lists[i] ?? []).map(x => [x.eventKey ?? x.id, x]));
+      return cell?.map((r, j) => {
+        const x = source.get(r.key), base = x?.kind === 'subject-ended'
+          ? { studentId: x.id, date: x.withdrawnAt, subjects: [x.subject].filter(Boolean), systemBulk: false, cleanup: false }
+          : withdrawn.get(r.id);
+        return base ? { ...base, key: `${i}:${j}`, subjects: perSubject ? [x?.subject].filter(Boolean) : base.subjects } : null;
+      }) ?? null;
+    });
+    const judged = L.breakdown.attributeTeachers(judgedRows.flatMap(l => l ?? []).filter(Boolean), judge, { from: basis.from, today: basis.today });
+    const ids = [...new Set([...judged.values()].flatMap(per => [...per.values()].flat()))];
+    const names = await b.gate.soft(sp => teacherNames(sp, b.t, ids), null);
+    if (!names) return fallback();
+    return { ...out, records: out.records.map((cell, i) => cell && cell.map((r, j) => {
+      const per = judged.get(`${i}:${j}`), subjects = judgedRows[i]?.[j]?.subjects;
+      const facets = per ? L.breakdown.teacherFacetsIn(per, subjects) : null;
+      return { ...r, teacher: L.breakdown.teacherCellText(facets, id => names[id] ?? null) || '—' };
+    })) };
+  } catch (e) { console.error(`trend.exitTeacherNames: ${e?.message || ''}`); return fallback(); }
+}
 /** 퇴원·수업종료 — 2.0 칸 판정(퇴원은 과목마다 한 줄 + 과목 전체 종료) · 프로그램별 = 2.0 countWithdrawalPrograms(EiE를 안 쓰는 학원은 그 줄 없음). */
 async function exitsSeries({ sql, tenantId: t = COPY_TENANT, importV2, windows, by, filter }) {
   const b = await prep(sql, t, importV2), P = b.X.program;
@@ -241,10 +280,10 @@ async function exitsSeries({ sql, tenantId: t = COPY_TENANT, importV2, windows, 
   const lists = windows.map((w) => (flowOff(b, w, since) ? null : exitRowsIn(b, inputs, w.from, min(w.to, b.today))));
   const programs = [...P.visiblePrograms(b.eieOn), 'other'];
   const programName = (k) => (k === 'other' ? '그 밖·모름' : P.programLabel(k, b.programSubjects, b.eieOn));
-  return { since, ...await namedRecords(b.gate, t, b.load, tallyItems(lists, { by, filter, keysOf: { program: (x) => [x.program ?? 'other'] },
+  return { since, ...await namedRecords(b.gate, t, b.load, await withExitTeachers(b, lists, tallyItems(lists, { by, filter, keysOf: { program: (x) => [x.program ?? 'other'] },
     labelOf: { program: programName }, fixed: { program: programs },
     record: (x) => ({ id: x.id, key: x.eventKey ?? x.id, name: x.name, date: x.withdrawnAt, dateLabel: x.kind === 'subject-ended' ? '수업종료일' : '퇴원일',
-      note: [x.kind === 'subject-ended' ? '수업종료' : '퇴원', programName(x.program ?? 'other'), x.className].filter(Boolean).join(' · ') }) })) };
+      note: [x.kind === 'subject-ended' ? '수업종료' : '퇴원', programName(x.program ?? 'other'), x.className].filter(Boolean).join(' · ') }) }), { perSubject: true })) };
 }
 /** 반들({ subject, track }) → 과목 묶음(2.0 subjectGroupOf · 학원 설정 과목의 묶음만 · 영어는 EiE · 인재원 영어로) — 하나도 없으면 '과목 모름'. */
 const subjectGroups = (b) => {
@@ -259,8 +298,8 @@ async function withdrawnSeries({ sql, tenantId: t = COPY_TENANT, importV2, windo
   const lists = windows.map((w) => (flowOff(b, w, since) ? null : inputs.withdrawn.filter((r) => !r.cleanup && r.withdrawnAt >= w.from && r.withdrawnAt <= min(w.to, b.today))));
   const keyOf = (r) => groupsOf(r.exitClasses.length ? r.exitClasses.map((c) => ({ subject: c.subject, track: c.englishTrack }))
     : [{ subject: r.lastClassSubject, track: r.lastClassEnglishTrack }]);
-  return { since, ...await namedRecords(b.gate, t, b.load, tallyItems(lists, { by, filter, ...groupDim(b, keyOf),
-    record: (r) => ({ id: r.id, key: r.id, name: r.name, date: r.withdrawnAt, dateLabel: '퇴원일', note: keyOf(r).map(b.groupLabel).join('·') }) })) };
+  return { since, ...await namedRecords(b.gate, t, b.load, await withExitTeachers(b, lists, tallyItems(lists, { by, filter, ...groupDim(b, keyOf),
+    record: (r) => ({ id: r.id, key: r.id, name: r.name, date: r.withdrawnAt, dateLabel: '퇴원일', note: keyOf(r).map(b.groupLabel).join('·') }) }))) };
 }
 /** 등록 후 3개월 내 퇴원 — 2.0 early-exit.ts(등록일부터 30·60·90일 누적 · 판정 못 하는 퇴원 제외) · 추세선과 같이 단체 장부 정리 제외. */
 async function earlyExitsSeries({ sql, tenantId: t = COPY_TENANT, importV2, windows, by, filter }) {
@@ -269,10 +308,10 @@ async function earlyExitsSeries({ sql, tenantId: t = COPY_TENANT, importV2, wind
   const spansOf = (r) => { const days = E.tenureDays(r.enrolledAt, r.withdrawnAt); return E.EARLY_SPANS.filter((s) => E.isEarlyWithin(days, s.key)).map((s) => s.key); };
   const lists = windows.map((w) => (flowOff(b, w, since) ? null
     : inputs.withdrawn.filter((r) => !r.cleanup && r.withdrawnAt >= w.from && r.withdrawnAt <= min(w.to, b.today) && spansOf(r).length > 0)));
-  return { since, ...await namedRecords(b.gate, t, b.load, tallyItems(lists, { by, filter, keysOf: { tenure: spansOf }, labelOf: { tenure: (k) => E.earlySpan(k).label },
+  return { since, ...await namedRecords(b.gate, t, b.load, await withExitTeachers(b, lists, tallyItems(lists, { by, filter, keysOf: { tenure: spansOf }, labelOf: { tenure: (k) => E.earlySpan(k).label },
     fixed: { tenure: E.EARLY_SPANS.map((s) => s.key) },
     record: (r) => ({ id: r.id, key: r.id, name: r.name, date: r.withdrawnAt, dateLabel: '퇴원일',
-      note: `등록 ${md(r.enrolledAt)} → 퇴원 ${md(r.withdrawnAt)} · ${E.tenureDays(r.enrolledAt, r.withdrawnAt)}일` }) })) };
+      note: `등록 ${md(r.enrolledAt)} → 퇴원 ${md(r.withdrawnAt)} · ${E.tenureDays(r.enrolledAt, r.withdrawnAt)}일` }) }))) };
 }
 
 // ── 신규문의 · 신규 등록 · 등록(흐름) ────────────────────────────────────────────────────────────────────────────────
