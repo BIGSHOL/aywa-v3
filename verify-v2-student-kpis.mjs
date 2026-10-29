@@ -1,6 +1,7 @@
 // 원생 현황 KPI 이식 시험 — node --test experiments/owner-concept/verify-v2-student-kpis.mjs
 // 복사본 기준일의 2.0 칸 값(재원생 · 강좌수 · 이번 달 퇴원&수업종료 · 오늘 신규문의 · 이달 신규)을 2.0 조건을 그대로 적은 독립 SQL과 대조하고,
 // 추세 점(재원생·강좌수·퇴원&수업종료·신규문의는 지난 점 값까지 따로 센 값과) · 큰 숫자 = 칸 · 지난 기준일 · 화면 문구 · 같은 트랜잭션 한 번 계산을 확인한다.
+// 2.0 KPI에는 지난 기간 점이 없다. 관련 퇴원 월별 열은 지난달 말일까지(withdrawals/window.ts:18), 신규 문의 추이는 지난 날짜 하루 전체(enrollment/server/intake-trend.ts:26).
 // 복사본 DB가 없으면 건너뛴다. 모두 읽기 전용.
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -31,8 +32,9 @@ if (db) {
   var monthsBack = (n) => Array.from({ length: n }, (_, i) => new Date(Date.UTC(Number(asOf.slice(0, 4)), Number(asOf.slice(5, 7)) - n + i, 1)).toISOString().slice(0, 7));
   // 그 달의 같은 날(없으면 말일).
   var sameDay = (m) => { const end = new Date(Date.UTC(Number(m.slice(0, 4)), Number(m.slice(5, 7)), 0)).toISOString().slice(0, 10), d = `${m}-${asOf.slice(8, 10)}`; return d > end ? end : d; };
-  // 창의 끝 = 그날 복사본을 뜬 시각.
+  // 기준일 칸의 끝 = 그날 복사본을 뜬 시각. 지난 기간의 점은 그날 끝까지(3.0 확장 추세 규칙).
   var cut = (d) => new Date(clock.at.getTime() - (Date.parse(`${asOf}T00:00:00Z`) - Date.parse(`${d}T00:00:00Z`)));
+  var periodEnd = (d) => d < asOf ? kst(addDays(d, 1)) : cut(d);
   var [{ data: stored }] = await db`select data from public.tenant_settings where tenant_id=${t}`;
   var subjects = stored.operations.subjects;
   // 병합 표식(2.0 MERGE_NOTE_PATTERN · 앞 공백 무시).
@@ -154,8 +156,8 @@ test('재원생·강좌수 추이: 달마다 한 점(에이와 기록이 갖춰�
 // 지난 날짜(복사본 날짜 전)는 그날 뒤에 퇴원한 학생(병합 제외 · 추세면 단체 장부 정리 퇴원생도 제외)도 그날 재원생으로 보고, 그날 복사본을 뜬
 // 시각 뒤에 만든 수강은 뺀다 — 단 그 시각이 지점의 첫 수강 생성 전이면 컷을 걸지 않는다(첫 묶음은 옛 기록을 옮긴 것).
 // `current` = 하한 비교용: 지금 재원·휴원 학생만 · 컷 없음(지난 날짜 규칙은 그 날짜의 재원생을 더하기만 한다).
-async function exitCount(day, trend, { current = false } = {}) {
-  const from = `${day.slice(0, 7)}-01`, past = day < asOf && !current, cutAt = cut(day), createdCut = past && cutAt >= firstCreated;
+async function exitCount(day, trend, { current = false, periodPoint = false } = {}) {
+  const from = `${day.slice(0, 7)}-01`, past = day < asOf && !current, cutAt = periodPoint ? periodEnd(day) : cut(day), createdCut = past && cutAt >= firstCreated;
   const withdrawn = await db`with w as (select s.id, s.withdrawn_at::text withdrawn_at, s.withdrawal_metadata md from public.students s
         where s.tenant_id=${t} and s.status = 'withdrawn' and s.withdrawn_at between ${from} and ${day} and coalesce(s.notes, '') !~ ${MERGE}),
       ended as (select e.student_id, e.end_date, c.subject from public.enrollments e left join public.classes c on c.id = e.class_id
@@ -183,7 +185,7 @@ async function exitCount(day, trend, { current = false } = {}) {
     cleanup: withdrawn.filter((r) => V.isCleanupExit(r.md) && r.hist).reduce((n, r) => n + Math.max(1, r.subjects), 0) };
 }
 
-test('퇴원&수업종료: 카드 수치 = 2.0 칸 = 독립 SQL · 달마다 1일~같은 날 점 6개 = 같은 SQL(단체 장부 정리 퇴원 제외) · 전월 대비 = 점끼리 · 이관 전 날짜도 센다', { skip: SKIP }, async () => {
+test('퇴원&수업종료: 카드 수치 = 2.0 칸 = 독립 SQL · 지난달은 말일·이번 달은 오늘까지 점 6개 = 같은 SQL(단체 장부 정리 퇴원 제외) · 전월 대비 = 점끼리', { skip: SKIP }, async () => {
   const card = await exitCount(asOf, false);
   assert.equal(out.cards.withdrawals, card.total);
   const k = K['퇴원&수업종료'], months = monthsBack(6);
@@ -191,13 +193,14 @@ test('퇴원&수업종료: 카드 수치 = 2.0 칸 = 독립 SQL · 달마다 1�
   assert.deepEqual(k.points.map((p) => p.label), months.map(yymm));
   let cleanupMonths = 0;
   for (const [i, m] of months.entries()) {
-    const day = sameDay(m), [trendN, cardN] = [await exitCount(day, true), await exitCount(day, false)];
+    const day = m < asOf.slice(0, 7) ? lastDay(m) : asOf;
+    const [trendN, cardN] = [await exitCount(day, true, { periodPoint: true }), await exitCount(day, false, { periodPoint: true })];
     assert.equal(k.points[i].value, trendN.total, `${m} 1일~${day.slice(8)}일`);
     // 칸 − 점 ≥ 이번 달 장부 정리 퇴원 줄(그날 뒤 퇴원한 장부 정리 학생의 수업종료도 칸에만 든다).
     assert(cardN.total - trendN.total >= trendN.cleanup, `${m}: 칸과 점의 차이 ≥ 수업 기록 있는 단체 장부 정리 퇴원`);
     if (trendN.cleanup > 0) cleanupMonths += 1;
     // 지난 날짜 규칙은 그날의 재원생을 더하기만 한다 — 첫 수강 생성 전 날짜(컷 없음)의 점은 지금 재원생만 센 값보다 작을 수 없다(모듈 값에 건다).
-    if (day < asOf && cut(day) < firstCreated) assert(k.points[i].value >= (await exitCount(day, true, { current: true })).total, `${m}: 이관 전 날짜를 지우지 않는다`);
+    if (day < asOf && periodEnd(day) < firstCreated) assert(k.points[i].value >= (await exitCount(day, true, { current: true })).total, `${m}: 이관 전 날짜를 지우지 않는다`);
   }
   // 전월 대비 = 선의 점끼리(점 팝오버와 같은 비교) — 큰 숫자(칸)와 마지막 점은 장부 정리 퇴원만큼 다를 수 있다.
   assert.equal(k.previous, k.points.at(-2).value);
@@ -208,18 +211,18 @@ test('퇴원&수업종료: 카드 수치 = 2.0 칸 = 독립 SQL · 달마다 1�
   assert.equal(k.better, 'down');
 });
 
-test('신규문의: 2.0 칸(오늘 접수 · 입력 시각) = 독립 SQL · 최근 7일 창 8개 = 창마다 같은 시각까지 상담일 수 · 마지막 창 = 7일 전체', { skip: SKIP }, async () => {
+test('신규문의: 2.0 칸(오늘 접수 · 입력 시각) = 독립 SQL · 최근 7일 창 8개 = 지난 창은 끝 날까지 상담일 수 · 이번 창은 복사본 시각까지', { skip: SKIP }, async () => {
   const [{ n: today }] = await db`select count(*)::int n from public.enrollment_consultations where tenant_id=${t} and created_at >= ${kst(asOf)} and created_at < ${kst(addDays(asOf, 1))}`;
   assert.equal(out.cards.intakeToday, today);
   const k = K['신규문의'], weeks = weekWindows(asOf, 8);
   assert.deepEqual(k.points.map((p) => p.label), weeks.map((w) => w.label));
   const [{ first }] = await db`select min(consulted_at) first from public.enrollment_consultations where tenant_id=${t}`;
   for (const [i, w] of weeks.entries()) {
-    const [{ n }] = await db`select count(*)::int n from public.enrollment_consultations where tenant_id=${t} and consulted_at >= ${kst(w.from)} and consulted_at < ${cut(w.to)}`;
+    const [{ n }] = await db`select count(*)::int n from public.enrollment_consultations where tenant_id=${t} and consulted_at >= ${kst(w.from)} and consulted_at < ${periodEnd(w.to)}`;
     assert.equal(k.points[i].value, kst(w.from) < first ? null : n, w.label);
   }
-  // 복사본을 뜬 뒤의 상담일은 없다(미리 적은 상담일이 있으면 마지막 창이 그만큼 작다) — 마지막 창(그 시각까지) = 7일 하루 전체 합.
-  const [{ n: full }] = await db`select count(*)::int n from public.enrollment_consultations where tenant_id=${t} and consulted_at >= ${kst(weeks[7].from)} and consulted_at < ${kst(addDays(asOf, 1))}`;
+  // 마지막 창은 복사본을 뜬 시각까지. 상담일을 미래로 적어 두어도 아직 점에 넣지 않는다.
+  const [{ n: full }] = await db`select count(*)::int n from public.enrollment_consultations where tenant_id=${t} and consulted_at >= ${kst(weeks[7].from)} and consulted_at < ${periodEnd(asOf)}`;
   assert.equal(k.value, full);
   assert(k.points.some((p) => p.value > 0), '접수가 있는 창이 있어야 의미가 있다');
 });
@@ -250,7 +253,7 @@ async function enrolledRows(startIso, endIso, today) {
   return [...viaLog, ...viaAssignment];
 }
 
-test('신규 등록: 2.0 칸(이달 신규) = 2.0 조회 창·가르기 그대로 · 최근 7일 창 8개 = 창마다 같은 시각까지 다시 센 값 · 상태 변경 기록 전 창은 기록 없음', { skip: SKIP }, async () => {
+test('신규 등록: 2.0 칸(이달 신규) = 2.0 조회 창·가르기 그대로 · 최근 7일 창 8개 = 지난 창은 끝 날까지 · 상태 변경 기록 전 창은 기록 없음', { skip: SKIP }, async () => {
   // 2.0 칸 — 조회 창 = 전일 첫날과 이번 달 1일 중 이른 날 ~ 오늘 끝, 이번 달로 가른다.
   const month = V.splitEnrolledRecent(await enrolledRows(kst(V.enrolledRecentFrom(asOf)).toISOString(), kst(addDays(asOf, 1)).toISOString(), asOf), asOf).month.length;
   assert.equal(out.cards.enrolledMonth, month);
@@ -258,25 +261,25 @@ test('신규 등록: 2.0 칸(이달 신규) = 2.0 조회 창·가르기 그대�
   assert.deepEqual(k.points.map((p) => p.label), weeks.map((w) => w.label));
   const [{ first }] = await db`select min(created_at) first from public.audit_logs where tenant_id=${t} and action = 'enrollment_consultation_outcome'`;
   for (const [i, w] of weeks.entries()) {
-    const expect = kst(w.from) < first ? null : (await enrolledRows(kst(w.from).toISOString(), cut(w.to).toISOString(), w.to)).length;
+    const expect = kst(w.from) < first ? null : (await enrolledRows(kst(w.from).toISOString(), periodEnd(w.to).toISOString(), w.to)).length;
     assert.equal(k.points[i].value, expect, w.label);
   }
-  // 복사본을 뜬 뒤의 일은 없다 — 마지막 창(그 시각까지) = 7일 하루 전체.
-  assert.equal(k.value, (await enrolledRows(kst(weeks[7].from).toISOString(), kst(addDays(asOf, 1)).toISOString(), asOf)).length);
+  // 마지막 창은 복사본을 뜬 시각까지.
+  assert.equal(k.value, (await enrolledRows(kst(weeks[7].from).toISOString(), periodEnd(asOf).toISOString(), asOf)).length);
   // 기록 전 창 = '기록 없음'(위 창마다 대조) — 첫 창이 기록 시작 전이면 null 창이 반드시 있다.
   if (kst(weeks[0].from) < first) assert(k.points.some((p) => p.value === null), '상태 변경 기록 전 창은 기록 없음');
   assert(k.points.some((p) => p.value > 0), '등록이 있는 창이 있어야 의미가 있다');
   assert.equal(k.period, 'week'); assert.equal(k.span, '최근 7일'); assert.equal(k.better, 'up');
 });
 
-test('지난 기준일: 창 끝 = 그날 복사본을 뜬 시각(복사본 날짜에서 거꾸로) · 복사본 날짜 뒤는 거절', { skip: SKIP }, async () => {
+test('지난 기준일: 지난 기간 점은 끝 날까지 · 복사본 날짜 뒤는 거절', { skip: SKIP }, async () => {
   const past = addDays(asOf, -7), weeks = weekWindows(past, 8);
   const p = await ro((sql) => studentStatusKpis({ sql, asOf: past, tenantId: t, importV2 }));
   const k = p.kpis.find((x) => x.label === '신규문의');
   assert.deepEqual(k.points.map((x) => x.label), weeks.map((w) => w.label));
   const [{ first }] = await db`select min(consulted_at) first from public.enrollment_consultations where tenant_id=${t}`;
   for (const [i, w] of weeks.entries()) {
-    const [{ n }] = await db`select count(*)::int n from public.enrollment_consultations where tenant_id=${t} and consulted_at >= ${kst(w.from)} and consulted_at < ${cut(w.to)}`;
+    const [{ n }] = await db`select count(*)::int n from public.enrollment_consultations where tenant_id=${t} and consulted_at >= ${kst(w.from)} and consulted_at < ${periodEnd(w.to)}`;
     assert.equal(k.points[i].value, kst(w.from) < first ? null : n, w.label);
   }
   // 재원생·강좌수: 그 기준일 달 전의 점은 지금 기준일과 같고, 그날 칸 = 추이의 그날 점 = 따로 센 값(칸 조회는 지금 상태로만 세어 그날로 되감지 못한다).
@@ -301,7 +304,7 @@ test('지난 달들의 같은 날을 기준일로: 재원생·강좌수 칸 = �
     assert.deepEqual({ students: p.cards.students, courses: p.cards.courses }, on(day), `${day}: 재원생·강좌수`);
     const ex = p.kpis.find((x) => x.label === '퇴원&수업종료');
     assert.equal(ex.value, (await exitCount(day, false)).total, `${day}: 퇴원 칸`);
-    assert.equal(ex.points.at(-1).value, (await exitCount(day, true)).total, `${day}: 퇴원 점`);
+    assert.equal(ex.points.at(-1).value, (await exitCount(day, true, { periodPoint: true })).total, `${day}: 퇴원 점`);
   }
 });
 
@@ -318,7 +321,7 @@ test('그날 뒤에 퇴원한 단체 장부 정리 학생: 그날 칸의 수업�
   let shown = false;
   for (const r of rows.slice(0, 4)) {
     const p = await ro((sql) => studentStatusKpis({ sql, asOf: r.day, tenantId: t, importV2 }));
-    const ex = p.kpis.find((x) => x.label === '퇴원&수업종료'), [cardN, trendN] = [await exitCount(r.day, false), await exitCount(r.day, true)];
+    const ex = p.kpis.find((x) => x.label === '퇴원&수업종료'), [cardN, trendN] = [await exitCount(r.day, false), await exitCount(r.day, true, { periodPoint: true })];
     assert.equal(ex.value, cardN.total, `${r.day}: 칸`); assert.equal(ex.points.at(-1).value, trendN.total, `${r.day}: 점`);
     if (cardN.total - trendN.total > trendN.cleanup) shown = true;
   }
