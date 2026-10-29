@@ -110,12 +110,26 @@ for (const name of ["requestParentReply", "requestParentReplyEdit", "requestPare
   } catch { return { ok: false, error: "답글 요청을 저장하지 못했습니다." }; }
 });
 
+// 공감도 같은 복사본 경계를 쓴다. 원본은 생존 PC·확정 학생·중복·낙관적 잠금을 다시 판정한다.
+const REACTION_MODULE = "features/classnote-reply/server/reaction-actions.ts";
+for (const name of ["requestParentReaction", "requestParentReactionRemove"]) registerHostHandler(REACTION_MODULE, name, async (...args) => {
+  try {
+    const response = await fetch(`/api/v2/lesson-reports/${name}`, {
+      method: "POST", headers: { "Content-Type": "application/json", Accept: "application/json" },
+      body: JSON.stringify({ module: REACTION_MODULE, actor: hostActor(), args }),
+    });
+    const body = await response.json().catch(() => null) as { ok?: boolean; result?: unknown; message?: string } | null;
+    if (!response.ok || !body?.ok) return { ok: false, error: body?.message ?? "공감 요청을 저장하지 못했습니다." };
+    const result = body.result as { ok?: boolean; message?: string } | null;
+    if (result?.ok && typeof result.message === "string" && result.message.includes(" — 연동 PC가"))
+      return { ...result, message: `${result.message.split(" — 연동 PC가")[0]} · 연습 복사본이라 실제로 보내지지 않습니다` };
+    return result;
+  } catch { return { ok: false, error: "공감 요청을 저장하지 못했습니다." }; }
+});
+
 // 저장(회수 · 멈춤 복구 · 원아 연결 · 프롬프트 · 보고서 설정 · 통계 보기 기억)은 이 화면 actions(v2-lesson-reports-save.mjs)가 받는다 —
 // 여기 적지 않은 함수는 shim이 쓰기 경로로 보낸다. 아래는 그 경로가 받지 않는 저장 — 보내지 않고 그 자리에서 2.0 거절 모양으로.
-const REFUSE: Record<string, string[]> = {
-  // 학부모 공감 — 아직 받지 않는 일.
-  "features/classnote-reply/server/reaction-actions.ts": ["requestParentReaction", "requestParentReactionRemove"],
-};
+const REFUSE: Record<string, string[]> = {};
 for (const [module, names] of Object.entries(REFUSE)) for (const name of names) registerHostHandler(module, name, async () => ({ ok: false, error: VIEW_ONLY }));
 // AI를 부르는 일(멘트 자동작성 · 사랑의 한마디 초안 · 말투 지금 갱신)도 연습 화면에서 하지 않는다.
 const NO_AI = { ok: false, error: "연습 화면에서는 AI를 부르지 않습니다" };
