@@ -1,12 +1,12 @@
-// 운영 영역 두 번째 묶음 — 캘린더·할 일·알림·슬랙·대시보드.
+// 운영 영역 두 번째 묶음 — 캘린더·업무·알림·슬랙·대시보드.
 import { PRIORITY, addDays, family, field, latest, md, metric, monthlyTrend, record, signal } from './domain-snapshot-core.mjs';
 import { dashboardKpiCards } from './v2-dashboard-flow.mjs';
 import { importV2 } from './v2-bridge.mjs';
 
 // live.js taskKind와 같은 라벨 = 2.0 staff_tasks 종류 원문(src/features/staff-tasks/kinds.ts). owner_review는 시안의 원장 개인 업무.
 const TASK_KIND = { report_send_failed: '보고서 발송 실패', followup_due: '상담 후속조치', enrollment_followup: '콜&상담 후속 조치', progress_anomaly: '진도 기록 이상', attendance_absent_desk: '결석 확인 전화', video_upload_check: '영상 업로드 확인', video_unassigned: '미배정 영상', unsent_report: '미발송 수업 보고서', approval_turn: '전자결재 차례', withdrawal_step: '퇴원보고서', help_question: '도움말 질문', owner_review: '원장 개인 업무' };
-// 2.0 TASK_STATE_LABEL 원문. 기한이 지났지만 열린 일은 2.0처럼 '늦음'(아래 overdue)으로 따로 표시한다.
-const TASK_STATUS = { open: '처리 전', done: '처리됨', cancelled: '취소됨', expired: '기한 지남' };
+// 2.0 상태값은 유지하고 3.0 화면에는 지난 업무로 표시한다.
+const TASK_STATUS = { open: '처리 전', done: '처리됨', cancelled: '취소됨', expired: '지난 업무' };
 const pre = (p, labels) => Object.fromEntries(Object.entries(labels).map(([k, v]) => [`${p}:${k}`, v]));
 
 export async function opsFamilies2({ sql, t, asOf, month, monthStart }) {
@@ -25,17 +25,17 @@ export async function opsFamilies2({ sql, t, asOf, month, monthStart }) {
     sources: [{ table: 'calendar_events', rows: events.length }, { table: 'calendar_tags', rows: tags.c }],
   });
 
-  // 할 일·알림 — 할 일은 기록의 사실로 자동 생성·종료된다(버튼 완료 아님).
+  // 업무·알림 — 업무는 기록의 사실로 자동 생성·종료된다(버튼 완료 아님).
   const tasks = await sql`select k.id, k.title, k.detail, k.kind, k.status, to_char(k.opened_at at time zone 'Asia/Seoul','YYYY-MM-DD') opened, to_char(k.due_at at time zone 'Asia/Seoul','YYYY-MM-DD') due, (select string_agg(u.display_name, ', ' order by u.display_name) from public.staff_task_assignees a join public.users u on u.id=a.user_id and u.tenant_id=${t} where a.tenant_id=${t} and a.task_id=k.id) owners from public.staff_tasks k where k.tenant_id=${t} order by (k.status='open') desc, k.due_at asc nulls last`;
   const [nt] = await sql`select count(*) filter (where (created_at at time zone 'Asia/Seoul')::date between ${monthStart} and ${asOf})::int month_n, count(*) filter (where read_at is null and archived_at is null)::int unread, count(*)::int rows_all, (select count(*)::int from public.push_subscriptions where tenant_id=${t}) push from public.notifications where tenant_id=${t}`;
   const overdue = tasks.filter(k => k.status === 'open' && k.due && k.due < asOf);
-  out['tasks-notifications'] = family('tasks-notifications', '할 일·알림(벨·푸시)', {
+  out['tasks-notifications'] = family('tasks-notifications', '업무·알림(벨·푸시)', {
     summary: `읽지 않은 알림 ${nt.unread}건(보관함 제외) · 폰 알림 받는 기기 ${nt.push}대.`,
-    metrics: [metric('남은 할 일', tasks.filter(k => k.status === 'open').length, '건', '늦은 할 일 포함'), metric('늦은 할 일', overdue.length, '건', '기한이 지났고 아직 처리 전'), metric('처리된 할 일', tasks.filter(k => k.status === 'done').length, '건', '원래 기록이 처리되면 저절로 닫힘'), metric('이번 달 알림', nt.month_n, '건', '받는 사람마다 셈'), metric('읽지 않은 알림', nt.unread, '건', '보관함으로 옮긴 알림 제외'), metric('폰 알림 받는 기기', nt.push, '대')],
-    evidence: tasks.map(k => record({ id: k.id, label: k.detail ? `${k.title} — ${String(k.detail).split(' — ')[0].slice(0, 60)}` : k.title, date: k.due, detail: (TASK_KIND[k.kind] || '운영 업무') === k.title ? '' : TASK_KIND[k.kind] || '운영 업무', status: overdue.includes(k) ? '늦음' : TASK_STATUS[k.status] || '기타', fields: [field('담당', k.owners || '담당 미지정'), field('생성', k.opened)], facets: [`status:${k.status}`, `kind:${k.kind}`, overdue.includes(k) && 'overdue'] })),
-    facetOrder: ['overdue', ...Object.keys(TASK_STATUS).map(s => `status:${s}`), ...Object.keys(TASK_KIND).map(k => `kind:${k}`)], facetLabels: { overdue: '늦음', ...pre('status', { ...TASK_STATUS, open: '남은 일' }), ...pre('kind', TASK_KIND) }, recordSource: 'staff_tasks',
-    signals: overdue.length ? [signal({ id: 'tasks-overdue', title: `늦은 할 일 ${overdue.length}건`, summary: `종류별: ${Object.entries(Object.groupBy(overdue, k => TASK_KIND[k.kind] || '운영 업무')).sort((a, b) => b[1].length - a[1].length).map(([k, v]) => `${k} ${v.length}`).join(' · ')}. 원래 기록이 처리되면 저절로 닫힙니다.`, priority: PRIORITY.check, source: '할 일 · 기한·처리 상태', recordIds: overdue.map(k => k.id), facet: 'overdue', at: latest(overdue.map(k => k.due)), draft: { title: '늦은 할 일 확인', body: '기한이 지난 아래 할 일이 지금 어떻게 되어 있는지, 언제까지 처리할 수 있는지 알려 주세요. 이미 처리한 일은 결과를 남겨 주세요.' } })] : [],
-    sourceLabel: '할 일 · 알림', coverageNote: '목록은 할 일 전체입니다(남은 일 먼저 · 기한 빠른 순). 알림은 건수만 셉니다.',
+    metrics: [metric('남은 업무', tasks.filter(k => k.status === 'open').length, '건', '지난 업무 포함'), metric('지난 업무', overdue.length, '건', '기한이 지났고 아직 처리 전'), metric('처리된 업무', tasks.filter(k => k.status === 'done').length, '건', '원래 기록이 처리되면 저절로 닫힘'), metric('이번 달 알림', nt.month_n, '건', '받는 사람마다 셈'), metric('읽지 않은 알림', nt.unread, '건', '보관함으로 옮긴 알림 제외'), metric('폰 알림 받는 기기', nt.push, '대')],
+    evidence: tasks.map(k => record({ id: k.id, label: k.detail ? `${k.title} — ${String(k.detail).split(' — ')[0].slice(0, 60)}` : k.title, date: k.due, detail: (TASK_KIND[k.kind] || '운영 업무') === k.title ? '' : TASK_KIND[k.kind] || '운영 업무', status: overdue.includes(k) ? '지난 업무' : TASK_STATUS[k.status] || '기타', fields: [field('담당', k.owners || '담당 미지정'), field('생성', k.opened)], facets: [`status:${k.status}`, `kind:${k.kind}`, overdue.includes(k) && 'overdue'] })),
+    facetOrder: ['overdue', ...Object.keys(TASK_STATUS).map(s => `status:${s}`), ...Object.keys(TASK_KIND).map(k => `kind:${k}`)], facetLabels: { overdue: '지난 업무', ...pre('status', { ...TASK_STATUS, open: '남은 업무' }), ...pre('kind', TASK_KIND) }, recordSource: 'staff_tasks',
+    signals: overdue.length ? [signal({ id: 'tasks-overdue', title: `지난 업무 ${overdue.length}건`, summary: `종류별: ${Object.entries(Object.groupBy(overdue, k => TASK_KIND[k.kind] || '운영 업무')).sort((a, b) => b[1].length - a[1].length).map(([k, v]) => `${k} ${v.length}`).join(' · ')}. 원래 기록이 처리되면 저절로 닫힙니다.`, priority: PRIORITY.check, source: '업무 · 기한·처리 상태', recordIds: overdue.map(k => k.id), facet: 'overdue', at: latest(overdue.map(k => k.due)), draft: { title: '지난 업무 확인', body: '기한이 지난 아래 업무가 지금 어떻게 되어 있는지, 언제까지 처리할 수 있는지 알려 주세요. 이미 처리한 업무는 결과를 남겨 주세요.' } })] : [],
+    sourceLabel: '업무 · 알림', coverageNote: '목록은 업무 전체입니다(남은 업무 먼저 · 기한 빠른 순). 알림은 건수만 셉니다.',
     sources: [{ table: 'staff_tasks', rows: tasks.length }, { table: 'notifications', rows: nt.rows_all }],
   });
 

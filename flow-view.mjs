@@ -12,13 +12,13 @@ const REASON = {
   local_rate_limit: '자동 판정을 받지 못함', adapter_busy: '자동 판정을 받지 못함', jev_auth_failed: '자동 판정을 받지 못함', jev_timeout: '판정 시간 초과',
   jev_rate_limited: '자동 판정을 받지 못함', jev_overloaded: '자동 판정을 받지 못함', jev_unavailable: '자동 판정을 받지 못함', jev_circuit_open: '자동 판정을 받지 못함',
   jev_invalid_answer: '자동 판정을 받지 못함', jev_request_rejected: '자동 판정을 받지 못함', jev_config: '자동 판정을 받지 못함', decision_call_failed: '자동 판정을 받지 못함',
-  decision_interrupted: '판정이 중간에 멈춤', cancelled: '판정이 취소됨', uncertain_action: '할 일인지 확실하지 않음', uncertain_area: '업무 영역이 확실하지 않음',
+  decision_interrupted: '판정이 중간에 멈춤', cancelled: '판정이 취소됨', uncertain_action: '업무인지 확실하지 않음', uncertain_area: '업무 영역이 확실하지 않음',
   safety_signal: '안전·법적 확인이 필요해 보임', manager_review_signal: '관리자 확인이 필요해 보임', manager_review: '관리자 확인이 필요해 보임', insufficient_context: '판단할 정보가 부족함',
-  area_unclear: '업무 영역을 알 수 없음', no_eligible_staff: '맡길 직원을 찾지 못함', no_eligible_manager: '맡길 관리자를 찾지 못함', no_action: '할 일이 없어 보임', no_open_task: '남은 할 일이 없음', no_content: '판단할 내용이 없음',
+  area_unclear: '업무 영역을 알 수 없음', no_eligible_staff: '맡길 직원을 찾지 못함', no_eligible_manager: '맡길 관리자를 찾지 못함', no_action: '업무가 없어 보임', no_open_task: '남은 업무가 없음', no_content: '판단할 내용이 없음',
 };
 const UNAVAILABLE = new Set(['decision_module_unavailable', 'no_key', 'jev_not_configured', 'jev_key_error', 'local_rate_limit', 'adapter_busy']);
 const FAILURE = code => UNAVAILABLE.has(code) || code.startsWith('jev_') || code.startsWith('invalid_context') || code === 'decision_call_failed' || code === 'decision_interrupted';
-const ROUTE_LABEL = { auto_route: '정해진 담당자에게 바로 배정', no_action: '할 일 없음으로 판단', manager_review: '관리자 검토로 보냄', human_review: '사람이 판단하도록 보냄', insufficient_context: '정보가 부족해 사람이 되묻도록 보냄' };
+const ROUTE_LABEL = { auto_route: '정해진 담당자에게 바로 배정', no_action: '업무 없음으로 판단', manager_review: '관리자 검토로 보냄', human_review: '사람이 판단하도록 보냄', insufficient_context: '정보가 부족해 사람이 되묻도록 보냄' };
 const PROVIDER_LABEL = { typesafe: 'AI 판정', 'claude-cli': 'AI 설명 초안' };
 /** Friendly model label; unknown raw ids are not shown. */
 export function modelLabel(model) {
@@ -26,7 +26,7 @@ export function modelLabel(model) {
   const cl = /^claude-(opus|sonnet|haiku|fable)-(\d+)(?:-(\d{1,2}))?(?:-|$)/.exec(model || '');
   return cl ? `Claude ${cl[1][0].toUpperCase()}${cl[1].slice(1)} ${cl[2]}${cl[3] ? `.${cl[3]}` : ''}` : null;
 }
-const DEADLINE_LABEL = { overdue: '기한 지남', today: '오늘', tomorrow: '내일', this_week: '7일 안', future: '8일 이후', unknown: '기한 모름' };
+const DEADLINE_LABEL = { overdue: '지난 업무', today: '오늘', tomorrow: '내일', this_week: '7일 안', future: '8일 이후', unknown: '기한 모름' };
 const DRAFT_STATE = { drafted: 'ok', busy: 'unavailable', unavailable: 'unavailable', cancelled: 'skipped', not_applicable: 'skipped' };
 function friendlyDecision(r) {
   const codes = String(r.reason || '').split(',').filter(Boolean);

@@ -10,25 +10,25 @@ window.createFlowUI = function createFlowUI(api) {
   const STATE={open:'처리 전',working:'진행 중',review:'검토 대기',done:'완료'};
   const STEP={waiting:'대기',ready:'할 차례',working:'진행 중',review:'검토 차례',done:'완료'};
   const OUTCOME={done:'처리함',needs_review:'검토 필요',unreachable:'연락 안 됨',not_needed:'해당 없음'};
-  const OUTCOME_NOTE={done:'맡은 일을 끝냈습니다',needs_review:'다른 사람의 확인이 더 필요합니다',unreachable:'연락했지만 닿지 않았습니다',not_needed:'처리할 일이 아니었습니다'};
+  const OUTCOME_NOTE={done:'맡은 업무를 끝냈습니다',needs_review:'다른 사람의 확인이 더 필요합니다',unreachable:'연락했지만 닿지 않았습니다',not_needed:'처리할 업무가 아니었습니다'};
   // Judgment codes from the server's decision modules are translated here; unknown codes are never shown.
-  const ROUTE={auto_route:'정해진 담당자에게 바로 배정',no_action:'할 일 없음으로 판단',manager_review:'관리자 검토로 보냄',human_review:'사람이 판단하도록 보냄',insufficient_context:'정보가 부족해 사람이 되묻도록 보냄'};
+  const ROUTE={auto_route:'정해진 담당자에게 바로 배정',no_action:'업무 없음으로 판단',manager_review:'관리자 검토로 보냄',human_review:'사람이 판단하도록 보냄',insufficient_context:'정보가 부족해 사람이 되묻도록 보냄'};
   const AREA={attendance:'출결',billing:'수납',counseling:'상담',academic:'학업',enrollment:'신규 상담',staff_hr:'직원·인사',operations:'운영'};
   const URGENCY={today:'오늘 처리',this_week:'며칠 안에',no_deadline:'급하지 않음'};
   const CONCERN={none:'배정에 이견 없음',route_may_be_wrong:'배정이 맞지 않을 수 있음',needs_more_context:'정보가 더 필요함'};
   const PROVIDER={typesafe:'AI 판정',jev:'AI 판정','claude-cli':'AI 설명 초안',claude:'AI 설명 초안'};
-  const REASON={safety_signal:'안전·법적 우려 신호가 보였습니다',known_open_work_guard:'끝나지 않은 관련 업무가 이미 있습니다',uncertain_action:'할 일인지 확실하지 않습니다',manager_review_signal:'관리자 확인이 필요해 보입니다',personnel_always_reviewed:'직원·인사 문제는 늘 사람이 확인합니다',multiple_areas:'여러 업무 영역에 걸쳐 있습니다',area_unclear:'업무 영역이 분명하지 않습니다',uncertain_area:'업무 영역 판단이 확실하지 않습니다',context_insufficient:'판단할 정보가 부족합니다',missing_link:'학생·반·청구 연결이 부족합니다',no_eligible_staff:'배정할 수 있는 담당자가 없습니다',no_eligible_manager:'배정할 수 있는 관리자가 없습니다',no_open_task:'남은 할 일이 없습니다',no_content:'판단할 내용이 없습니다',auto_route_thresholds_met:'자동 배정 기준을 넘었습니다',cancelled:'판정이 취소되었습니다',decision_module_unavailable:'자동 판정을 받지 못했습니다',decision_call_failed:'자동 판정을 받지 못했습니다',local_rate_limit:'자동 판정을 받지 못했습니다',jev_not_configured:'자동 판정을 받지 못했습니다',jev_timeout:'판정 응답이 늦어 멈췄습니다',jev_rate_limited:'자동 판정을 받지 못했습니다',jev_overloaded:'자동 판정을 받지 못했습니다',jev_unavailable:'자동 판정을 받지 못했습니다',jev_circuit_open:'자동 판정을 받지 못했습니다',jev_auth_failed:'자동 판정을 받지 못했습니다',jev_key_error:'자동 판정을 받지 못했습니다',jev_invalid_answer:'자동 판정을 받지 못했습니다',jev_request_rejected:'자동 판정을 받지 못했습니다',jev_config:'자동 판정을 받지 못했습니다',adapter_busy:'자동 판정을 받지 못했습니다',context_too_large:'판정할 내용이 너무 깁니다',rate_limited:'자동 판정을 받지 못했습니다',http_error:'자동 판정을 받지 못했습니다'};
+  const REASON={safety_signal:'안전·법적 우려 신호가 보였습니다',known_open_work_guard:'끝나지 않은 관련 업무가 이미 있습니다',uncertain_action:'업무인지 확실하지 않습니다',manager_review_signal:'관리자 확인이 필요해 보입니다',personnel_always_reviewed:'직원·인사 문제는 늘 사람이 확인합니다',multiple_areas:'여러 업무 영역에 걸쳐 있습니다',area_unclear:'업무 영역이 분명하지 않습니다',uncertain_area:'업무 영역 판단이 확실하지 않습니다',context_insufficient:'판단할 정보가 부족합니다',missing_link:'학생·반·청구 연결이 부족합니다',no_eligible_staff:'배정할 수 있는 담당자가 없습니다',no_eligible_manager:'배정할 수 있는 관리자가 없습니다',no_open_task:'남은 업무가 없습니다',no_content:'판단할 내용이 없습니다',auto_route_thresholds_met:'자동 배정 기준을 넘었습니다',cancelled:'판정이 취소되었습니다',decision_module_unavailable:'자동 판정을 받지 못했습니다',decision_call_failed:'자동 판정을 받지 못했습니다',local_rate_limit:'자동 판정을 받지 못했습니다',jev_not_configured:'자동 판정을 받지 못했습니다',jev_timeout:'판정 응답이 늦어 멈췄습니다',jev_rate_limited:'자동 판정을 받지 못했습니다',jev_overloaded:'자동 판정을 받지 못했습니다',jev_unavailable:'자동 판정을 받지 못했습니다',jev_circuit_open:'자동 판정을 받지 못했습니다',jev_auth_failed:'자동 판정을 받지 못했습니다',jev_key_error:'자동 판정을 받지 못했습니다',jev_invalid_answer:'자동 판정을 받지 못했습니다',jev_request_rejected:'자동 판정을 받지 못했습니다',jev_config:'자동 판정을 받지 못했습니다',adapter_busy:'자동 판정을 받지 못했습니다',context_too_large:'판정할 내용이 너무 깁니다',rate_limited:'자동 판정을 받지 못했습니다',http_error:'자동 판정을 받지 못했습니다'};
   const reasonText=code=>{const c=String(code||'').trim();if(/[가-힣]/.test(c))return c;if(REASON[c])return REASON[c];if(c.startsWith('signals_conflict'))return '판정 신호가 서로 맞지 않습니다';if(c.startsWith('invalid_context'))return '판정에 넘긴 정보가 올바르지 않습니다';return '';};
   const pct=p=>Number.isFinite(Number(p))&&p!==null?`${Math.round(Number(p)*100)}%`:'';
   const modelLabel=m=>{const x=String(m||'');const jev=/^jev-(\d+)\.(\d+)/.exec(x);return jev?`Jev ${jev[1]}.${jev[2]}`:/^claude/i.test(x)?'Claude':'';};
   // Assignment rules are written for people; drop parenthesised source identifiers (column or table names).
   const ruleText=r=>String(r||'').replace(/\s*\([^)]*[A-Za-z_]{2,}[^)]*\)/g,'').trim();
   const PRIORITY={high:'높음',normal:'보통',low:'낮음'};
-  const ORIGIN={snapshot:'학원 기록',dev:'직접 만든 일'};
+  const ORIGIN={snapshot:'학원 기록',dev:'직접 등록한 업무'};
   const CLOSURE={fact:'원본 기록이 처리되면 닫힙니다',manual:'사람이 확인하고 보고해 닫습니다'};
   const BILLING_HINT='수납 반영은 메이크에듀 동기화로 들어옵니다 — 학부모 안내 등 처리 뒤 보고로 닫기';
   const ROLE_ORDER=['owner','manager','teacher','staff'],ROLE_GROUP={owner:'원장',manager:'관리자',teacher:'선생님',staff:'직원'};
-  // 보드 보기 상태: q = 검색어 · sort = 정렬 열과 방향 · cols = 열별 값 필터(열 → 고른 값들, 없으면 전부) · pages = 목록별 쪽.
+  // 보드 보기 상태: q = 검색어 · sort = 정렬 열과 방향 · cols = 열별 값 필터(열 → 선택한 값들, 없으면 전부) · pages = 목록별 쪽.
   const store={status:'idle',flow:null,error:'',controller:null,pending:new Set(),actorId:'',filter:'',q:'',sort:{col:'',dir:''},cols:{},pages:{},sel:new Set(),selView:'',deferred:false,retry:0,etag:'',older:new Map(),partial:false};
   const PEEK=document.documentElement.classList.contains('peek');
   try{store.actorId=localStorage.getItem(ACTOR_KEY)||'';}catch{/* storage unavailable: first owner actor is used */}
@@ -49,7 +49,7 @@ window.createFlowUI = function createFlowUI(api) {
   const flow=()=>store.flow||{actors:[],cases:[],events:[],entities:[],relations:[],metrics:{}};
   const actors=()=>Array.isArray(flow().actors)?flow().actors:[];
   const actorById=id=>actors().find(a=>a.id===id);
-  const nameOf=id=>actorById(id)?.name||db.staff.find(s=>s.id===id)?.name||'담당 미정';
+  const nameOf=id=>actorById(id)?.name||db.staff.find(s=>s.id===id)?.name||'담당 미지정';
   const actor=()=>actorById(store.actorId)||actors().find(a=>a.role==='owner')||actors()[0]||null;
   const role=()=>actor()?.role||'owner';
   const cases=()=>Array.isArray(flow().cases)?flow().cases:[];
@@ -65,7 +65,7 @@ window.createFlowUI = function createFlowUI(api) {
   function myStep(c,id=actor()?.id){const list=activeSteps(c);return list.find(s=>(s.assigneeIds||[]).includes(id))||(id===actor()?.id&&lead()?list.find(queued):null)||null;}
   const stepOf=c=>(c.steps||[]).find(s=>s.id===c.currentStepId)||activeSteps(c)[0]||null;
   const asOf=()=>String(flow().asOf||db.meta.asOf).slice(0,10);
-  // 요약 글의 날짜를 화면 표기(M/D)로 — 원본 할 일의 글은 '10-21 15:40'·'2026-10-21'처럼 적혀 온다(검수 10-28 L2). 올해가 아니면 연도를 남긴다.
+  // 요약 글의 날짜를 화면 표기(M/D)로 — 원본 업무의 글은 '10-21 15:40'·'2026-10-21'처럼 적혀 온다(검수 10-28 L2). 올해가 아니면 연도를 남긴다.
   const dateWords=t=>String(t||'').replace(/(?<![\d-])(\d{4})-(\d{2})-(\d{2})(?![\d-])/g,(m,y,mo,d)=>`${y===asOf().slice(0,4)?'':`${y}. `}${+mo}/${+d}`).replace(/(?<![\d-])(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])(?![\d-])/g,(m,mo,d)=>`${+mo}/${+d}`);
   const sumOf=c=>dateWords(c.summary);
   const late=c=>c.state!=='done'&&c.dueAt&&kstDate(c.dueAt)<asOf();
@@ -137,7 +137,7 @@ window.createFlowUI = function createFlowUI(api) {
   // New work for the previewed person arrives without them looking around.
   function announce(before){
     const fresh=cases().filter(c=>mine(c)&&!before.has(c.id));if(!fresh.length)return;
-    toast(fresh.length===1?`새로 들어온 일: ${fresh[0].title}`:`새로 들어온 일 ${fresh.length}건 · ${fresh[0].title} 외`);
+    toast(fresh.length===1?`새로 등록된 업무: ${fresh[0].title}`:`새로 등록된 업무 ${fresh.length}건 · ${fresh[0].title} 외`);
   }
   let pressing=false;
   function paint(){
@@ -162,7 +162,7 @@ window.createFlowUI = function createFlowUI(api) {
     if(focus)d.querySelector(focus)?.focus({preventScroll:true});
   }
   document.addEventListener('focusout',()=>{if(store.deferred&&!pressing)setTimeout(flush,0);});
-  const ERROR={revision_conflict:'다른 변경이 먼저 반영되어 화면을 새로 불러왔습니다. 내용을 확인하고 다시 시도해 주세요.',command_conflict:'같은 요청이 다른 내용으로 이미 처리되었습니다.',step_not_ready:'지금 처리할 단계가 없습니다. 화면을 새로 불러왔습니다.',not_assignee:'이 단계의 담당자가 아닙니다.',fact_case:'원본 할 일은 원본 기록이 처리되어야 닫힙니다.',not_done:'완료된 업무만 다시 열 수 있습니다.',no_source_record:'시나리오에 쓸 실제 기록이 없습니다.',evidence_required:'근거 내용을 적어 주세요.',assignee_not_allowed:'배정할 수 없는 사람이 있습니다.',record_ref_not_allowed:'이 업무와 관련된 기록만 근거로 붙일 수 있습니다.',actor_not_allowed:'직원 목록에 없는 사람입니다.',action_not_allowed:'이 역할로는 할 수 없는 작업입니다.',case_not_found:'업무를 찾을 수 없습니다.',flow_starting:'업무 흐름 서버가 준비 중입니다. 잠시 뒤 다시 시도해 주세요.',flow_state_mismatch:'업무 흐름 기록이 학원 기록과 맞지 않아 멈췄습니다.',store_locked:'다른 처리가 저장 중입니다. 잠시 뒤 다시 시도해 주세요.',store_write_failed:'저장하지 못했습니다. 아무것도 바뀌지 않았습니다.'};
+  const ERROR={revision_conflict:'다른 변경이 먼저 반영되어 화면을 새로 불러왔습니다. 내용을 확인하고 다시 시도해 주세요.',command_conflict:'같은 요청이 다른 내용으로 이미 처리되었습니다.',step_not_ready:'지금 처리할 단계가 없습니다. 화면을 새로 불러왔습니다.',not_assignee:'이 단계의 담당자가 아닙니다.',fact_case:'원본 업무는 원본 기록이 처리되어야 닫힙니다.',not_done:'완료된 업무만 다시 열 수 있습니다.',no_source_record:'시나리오에 쓸 실제 기록이 없습니다.',evidence_required:'근거 내용을 적어 주세요.',assignee_not_allowed:'배정할 수 없는 사람이 있습니다.',record_ref_not_allowed:'이 업무와 관련된 기록만 근거로 붙일 수 있습니다.',actor_not_allowed:'직원 목록에 없는 사람입니다.',action_not_allowed:'이 역할로는 할 수 없는 작업입니다.',case_not_found:'업무를 찾을 수 없습니다.',flow_starting:'업무 흐름 서버가 준비 중입니다. 잠시 뒤 다시 시도해 주세요.',flow_state_mismatch:'업무 흐름 기록이 학원 기록과 맞지 않아 멈췄습니다.',store_locked:'다른 처리가 저장 중입니다. 잠시 뒤 다시 시도해 주세요.',store_write_failed:'저장하지 못했습니다. 아무것도 바뀌지 않았습니다.'};
   // Server messages are shown only when they are written for people (Korean); otherwise a translated fallback.
   // A conflict or a vanished step is already handled by reloading, so the screen says what it did.
   function message(json,status){if(['revision_conflict','step_not_ready'].includes(json?.error))return ERROR[json.error];const m=typeof json?.message==='string'&&/[가-힣]/.test(json.message)?json.message:'';return m||ERROR[json?.error]||(status>=500?'업무 흐름 서버 오류로 반영하지 못했습니다.':'요청을 처리하지 못했습니다.');}
@@ -210,7 +210,7 @@ window.createFlowUI = function createFlowUI(api) {
     return entityChips(c,refs).replace(/<\/div>$/,refs.length>4?`<span class="fl-entity-more">외 ${fmt(refs.length-4)}건</span></div>`:'</div>');
   }
   function entityChips(c,refs){
-    return `<div class="fl-entities" aria-label="관련 기록">${refs.slice(0,4).map(r=>{const fam=r.type==='task'?'tasks-notifications':r.familyId||'',ws=fam&&api.hasView(`workspace-${fam}`);return `<button type="button" class="fl-entity" data-fl="entity" data-family="${h(fam)}" data-record="${h(r.recordId||r.id||'')}" ${ws||api.canOpenRecord?.(r.recordId||r.id)?'':'disabled'}>${h(r.type==='task'&&r.label===c.title?'원본 할 일':refLabel(r))}${fam?`<small>${h(api.familyLabel?.(fam)||'')}</small>`:''}</button>`;}).join('')}</div>`;
+    return `<div class="fl-entities" aria-label="관련 기록">${refs.slice(0,4).map(r=>{const fam=r.type==='task'?'tasks-notifications':r.familyId||'',ws=fam&&api.hasView(`workspace-${fam}`);return `<button type="button" class="fl-entity" data-fl="entity" data-family="${h(fam)}" data-record="${h(r.recordId||r.id||'')}" ${ws||api.canOpenRecord?.(r.recordId||r.id)?'':'disabled'}>${h(r.type==='task'&&r.label===c.title?'원본 업무':refLabel(r))}${fam?`<small>${h(api.familyLabel?.(fam)||'')}</small>`:''}</button>`;}).join('')}</div>`;
   }
   function why(c){
     const t=c.trigger||{},s=stepOf(c),d=c.decision;
@@ -218,34 +218,34 @@ window.createFlowUI = function createFlowUI(api) {
     // A case split into one step per teacher is described by its open steps, not by one step's label and count.
     const split=splitCase(c)&&activeSteps(c).length>1;
     const reason=d?.status==='pending'||c.decisionPending===true?'판정 중':d&&dRoute(d)&&['ok','decided','review_needed'].includes(d.status)?`판정: ${dRoute(d)}${d.area&&AREA[d.area]?` · ${AREA[d.area]}`:''}`:split?`담당자별로 남은 단계 ${activeSteps(c).length}개`:s?`${s.label}${s.roleLabel||ROLE_GROUP[s.role]?` · ${s.roleLabel||ROLE_GROUP[s.role]} 차례`:''}`:'';
-    const start=t.label&&t.label!==c.title?t.label:c.closure==='fact'?(signalCase(c)?'학원 기록에서 찾은 일':'자동으로 생긴 할 일'):t.label||'시작 기록 없음',why=[c.title,start].reduce((r,x)=>r.startsWith(`${x} · `)?r.slice(x.length+3):r,reason).replace(/^[\d,]+건 · /,'');
+    const start=t.label&&t.label!==c.title?t.label:c.closure==='fact'?(signalCase(c)?'학원 기록에서 찾은 업무':'자동으로 생긴 업무'):t.label||'시작 기록 없음',why=[c.title,start].reduce((r,x)=>r.startsWith(`${x} · `)?r.slice(x.length+3):r,reason).replace(/^[\d,]+건 · /,'');
     return `<p class="fl-why"><span>${h(start)}</span>${who?`<span>${h(who)}</span>`:''}<span>${h(when(t.at||c.createdAt))}</span>${why?`<span>${h(why)}</span>`:''}</p>`;
   }
-  // 상태 = 처리 상태 하나 + 걸리는 표시(원장 10-28 "원본늦음 우선이 뭐지?"). 같은 뜻은 한 번만 — 원본 할 일의 '우선'은 서버가
-  // 기한 지난 일에 붙인 것이라 '기한 지남'과 같은 말이다(flow-engine). 표시마다 뜻을 두고, 상태 칸에 마우스를 올리면 보인다.
-  // 원본 기록이 끝난 상태(처리됨·취소됨)만 원본 말을 쓰고, 늦음·기한 지남은 '기한 지남' 하나로 모은다.
-  const STATE_HINT={open:'아직 아무도 처리하지 않았습니다.',working:'담당자가 확인하고 처리하는 중입니다.',review:'보고가 들어와 검토를 기다립니다.',done:'끝난 일입니다.'};
+  // 상태 = 처리 상태 하나 + 걸리는 표시(원장 10-28 "원본지난 업무 우선이 뭐지?"). 같은 뜻은 한 번만 — 원본 업무의 '우선'은 서버가
+  // 기한 지난 일에 붙인 것이라 '지난 업무'과 같은 말이다(flow-engine). 표시마다 뜻을 두고, 상태 칸에 마우스를 올리면 보인다.
+  // 원본 기록이 끝난 상태(처리됨·취소됨)만 원본 말을 쓰고, 지난 업무·지난 업무는 '지난 업무' 하나로 모은다.
+  const STATE_HINT={open:'아직 아무도 처리하지 않았습니다.',working:'담당자가 확인하고 처리하는 중입니다.',review:'보고가 들어와 검토를 기다립니다.',done:'완료된 업무입니다.'};
   function flags(c){
     const out=[],add=(t,hint,tone='')=>{if(!out.some(f=>f[0]===t))out.push([t,hint,tone]);};
-    if(c.kind==='scenario')add('연습 시나리오','연습용으로 만든 일입니다. 집계에 들지 않습니다.','amber');
+    if(c.kind==='scenario')add('연습 시나리오','연습용으로 만든 업무입니다. 집계에 들지 않습니다.','amber');
     const src=c.closure==='fact'&&c.sourceStatusLabel&&['done','cancelled'].includes(c.sourceStatus)?c.sourceStatusLabel:'';
-    add(src||STATE[c.state]||'상태 미확인',src?(c.sourceStatus==='cancelled'?'원본 기록에서 취소된 일입니다.':'원본 기록에서 처리된 일입니다.'):STATE_HINT[c.state]||'');
-    if(late(c)||c.state!=='done'&&c.sourceStatus==='expired')add('기한 지남',c.dueAt?`${md(kstDate(c.dueAt))}까지였는데 아직 끝나지 않았습니다.`:'기한이 지났는데 아직 끝나지 않았습니다.','amber');
-    if(unassigned(c))add('담당 없음','맡을 사람이 정해지지 않았습니다.','amber');
-    if(c.priority==='high'&&c.state!=='done'&&!(c.closure==='fact'&&c.taskKind))add(...(c.signalId?['결정 필요','원장·관리자가 정해야 하는 일입니다.']:c.decision?.priority==='high'?['오늘 처리','오늘 안에 처리할 일로 판정됐습니다.']:['중요','요청할 때 중요로 표시한 일입니다.']),'amber');
+    add(src||STATE[c.state]||'상태 미확인',src?(c.sourceStatus==='cancelled'?'원본 기록에서 취소된 업무입니다.':'원본 기록에서 처리된 업무입니다.'):STATE_HINT[c.state]||'');
+    if(late(c)||c.state!=='done'&&c.sourceStatus==='expired')add('지난 업무',c.dueAt?`${md(kstDate(c.dueAt))}까지였는데 아직 끝나지 않았습니다.`:'기한이 지났는데 아직 끝나지 않았습니다.','amber');
+    if(unassigned(c))add('담당 미지정','맡을 사람이 정해지지 않았습니다.','amber');
+    if(c.priority==='high'&&c.state!=='done'&&!(c.closure==='fact'&&c.taskKind))add(...(c.signalId?['결정 필요','원장·관리자가 정해야 하는 업무입니다.']:c.decision?.priority==='high'?['오늘 처리','오늘 안에 처리할 업무로 판정됐습니다.']:['중요','요청할 때 중요로 표시한 업무입니다.']),'amber');
     if(c.flags?.needsReview&&c.state!=='done')add('검토 필요','자동 배정이 확실하지 않아 사람이 확인해야 합니다.','amber');
     return out;
   }
   function chips(c){return flags(c).map(([t,,tone])=>pill(t,tone)).join('');}
-  const whoOf=s=>queued(s)?'관리자·원장 누구나':(s.assigneeIds||[]).map(nameOf).join(', ')||'담당 없음';
+  const whoOf=s=>queued(s)?'관리자·원장 누구나':(s.assigneeIds||[]).map(nameOf).join(', ')||'담당 미지정';
   function caseCard(c,{actions=true}={}){
     const s=myStep(c)||stepOf(c),open=activeSteps(c),links=(c.linkedCaseIds||[]).filter(caseById);
     return `<article class="fl-case" data-case="${h(c.id)}"><header><div class="ax-issue-meta">${chips(c)}</div><h3><button type="button" data-fl="open" data-id="${h(c.id)}">${h(c.title)}</button></h3></header>${c.summary?`<p class="fl-summary">${h(sumOf(c))}</p>`:''}${c.signalId==='billing-remaining'?`<p class="fl-step">${h(BILLING_HINT)}</p>`:''}${c.taskKind==='attendance_absent_desk'&&c.factClosed&&c.closedReason?`<p class="fl-step">${h(c.closedReason)}</p>`:''}${why(c)}${entityLinks(c)}${s?`<p class="fl-step">${!String(s.label||'').startsWith(c.title)&&!splitCase(c)?`${h(s.label)} · `:''}${h(s.skipped?'건너뜀':isReview(s)&&s.status==='ready'?STEP.review:STEP[s.status]||'상태 미확인')} · ${h(whoOf(s))}${open.length>1?` · 함께 남은 단계 ${open.length}개`:''}${c.dueAt?` · ${h(md(kstDate(c.dueAt)))}까지`:''}</p>`:''}${links.length?`<p class="fl-step">후속 보고 ${links.length}건 · ${signalCase(c)?'원본 기록이 바뀌면 닫힙니다':'원본 기록이 처리되면 닫힙니다'}</p>`:''}${actions?actionBar(c):''}</article>`;
   }
   // 업무 흐름 보드 = 표(원장 10-28 "열정렬안되어있는거 정렬" · "열마다 딱 너비가 정해져있어서 넘치면 짤라버려. 마우스 올리면 짤린거 볼 수 있게").
   // 열 너비는 표 머리 한 곳(table-layout:fixed)이 정한다 — 줄마다 글 길이가 달라도 열이 흔들리지 않는다. 넘친 글은 말줄임(.fl-cut),
-  // 마우스·초점이 오면 전부 보인다(fl-tip). 처리 화면 = 그 일을 처리하는 화면, 누르면 이 화면 위 엿보기 창으로 연다.
-  const COLS=[['state','상태'],['title','일'],['rec','관련 기록'],['who','할 차례'],['due','기한'],['at','발생 시간'],['place','처리 화면'],['act','']];
+  // 마우스·초점이 오면 전부 보인다(fl-tip). 처리 화면 = 그 업무를 처리하는 화면, 누르면 이 화면 위 엿보기 창으로 연다.
+  const COLS=[['state','상태'],['title','업무'],['rec','관련 기록'],['who','할 차례'],['due','기한'],['at','발생 시간'],['place','처리 화면'],['act','']];
   // 관련 기록 이름 = 지금 원본의 이름(flow().entities, 읽을 때마다 원본에서 다시 풀린다). 업무에 저장된 이름은 그 일이 생길 때 적은 것이라
   // 옛 모양('2026-10 청구')일 수 있다 — 없을 때만 쓴다(검수 10-28 H3).
   let entSrc=null,entMap=new Map();
@@ -258,14 +258,14 @@ window.createFlowUI = function createFlowUI(api) {
   const atOf=c=>signalAt(c)||(c.trigger||{}).at||c.createdAt||'';
   // 열마다 걸러 보는 값(한 일이 값을 여럿 가질 수 있다 — 상태 표시·관련 기록·담당자)과 정렬 값. 빈 값은 '없음'으로 걸러지고 정렬에선 늘 맨 뒤.
   const COLV={state:c=>flags(c).map(f=>f[0]),title:c=>[c.title||'제목 없음'],rec:c=>{const r=refsOf(c).map(refLabel);return r.length?[...new Set(r)]:['없음'];},who:c=>{const w=whoText(c);return w?w.split(', '):['없음'];},due:c=>[c.dueAt?md(kstDate(c.dueAt)):'없음'],at:c=>[md(kstDate(atOf(c)))||'없음'],place:c=>[placeOf(c)||'없음']};
-  const FLAG_RANK=['기한 지남','담당 없음','결정 필요','오늘 처리','중요','검토 필요','검토 대기','진행 중','처리 전','연습 시나리오'];
+  const FLAG_RANK=['지난 업무','담당 미지정','결정 필요','오늘 처리','중요','검토 필요','검토 대기','진행 중','처리 전','연습 시나리오'];
   const SORTV={state:c=>Math.min(...flags(c).map(f=>{const i=FLAG_RANK.indexOf(f[0]);return i<0?FLAG_RANK.length:i;})),title:c=>c.title||'',rec:c=>refLabel(refsOf(c)[0]),who:whoText,due:c=>c.dueAt?kstDate(c.dueAt):'',at:c=>Date.parse(atOf(c))||'',place:placeOf};
-  // 고르기(원장 10-28 "토글로 전체 선택같은거 해서 한번에 담당바꾸기 처리도 가능하게") — 원장·관리자만, 남은 단계가 있는 일만.
-  // 고른 일은 쪽·정렬을 넘어 남고 보기를 바꾸면 비운다. 검색·필터로 목록에서 빠진 일은 고른 것에서도 뺀다(안 보이는 일을 바꾸지 않게).
+  // 선택(원장 10-28 "토글로 전체 선택같은거 해서 한번에 담당바꾸기 처리도 가능하게") — 원장·관리자만, 남은 단계가 있는 일만.
+  // 선택한 업무는 쪽·정렬을 넘어 남고 보기를 바꾸면 비운다. 검색·필터로 목록에서 빠진 일은 선택한 것에서도 뺀다(안 보이는 일을 바꾸지 않게).
   const canPick=c=>lead()&&c.state!=='done'&&activeSteps(c).length>0&&c.familyId!=='approvals';
   function caseRow(c){
     const refs=refsOf(c),fl=flags(c),place=placeOf(c),who=whoText(c),at=when(atOf(c));
-    const pick=lead()?`<td class="c-sel">${canPick(c)?`<input type="checkbox" data-fl-pick="${h(c.id)}" aria-label="${h([c.title,sumOf(c)].filter(Boolean).join(' — '))} 고르기" ${store.sel.has(c.id)?'checked':''}>`:''}</td>`:'';
+    const pick=lead()?`<td class="c-sel">${canPick(c)?`<input type="checkbox" data-fl-pick="${h(c.id)}" aria-label="${h([c.title,sumOf(c)].filter(Boolean).join(' — '))} 선택" ${store.sel.has(c.id)?'checked':''}>`:''}</td>`:'';
     // 관련 기록 = '기록 보기' 단추 하나(원장 10-28 "[기록보기] 라벨로 바꾸고 마우스 올리면 리스트 깔끔하게 정리해서 보여주는것도 · 혹은 눌렀을때도 오버레이로").
     return `<tr class="fl-row" data-case="${h(c.id)}">${pick}<td class="c-state"><span class="fl-cut fl-line" data-hint="${h(fl.map(([t,hint])=>hint?`${t} — ${hint}`:t).join('\n'))}">${chips(c)}</span></td><td class="c-title"><button type="button" class="fl-cut" data-fl="open" data-id="${h(c.id)}">${h(c.title)}</button>${c.summary?`<small class="fl-cut">${h(sumOf(c))}</small>`:''}</td><td class="c-rec">${refs.length?`<button type="button" class="fl-recbtn" data-fl="recs" data-id="${h(c.id)}" aria-haspopup="dialog">기록 보기<b>${fmt(c.signalId?c.entityTotal||refs.length:refs.length)}</b></button>`:'<span class="fl-dim">—</span>'}</td><td class="c-who"><span class="fl-cut">${h(who||'—')}</span></td><td class="c-due"><span class="fl-cut">${c.dueAt?h(md(kstDate(c.dueAt))):'—'}</span></td><td class="c-at"><span class="fl-cut">${h(at)}</span></td><td class="c-place">${place?`<button type="button" class="fl-place fl-cut" data-fl="goto" data-id="${h(c.id)}" aria-label="${h(place)} 열기">${h(place)}</button>`:'<span class="fl-dim">—</span>'}</td><td class="c-act">${actionBar(c,{compact:true})}</td></tr>`;
   }
@@ -282,7 +282,7 @@ window.createFlowUI = function createFlowUI(api) {
     }
     const out=[];
     if(s&&!isReview(s)&&s.status==='ready')out.push(btn('확인','ack',`data-id="${id}" data-step="${sk}" data-fl-key="case.ack:${id}"`,true));
-    if(s&&!isReview(s))out.push(btn(c.closure==='fact'?'후속 보고 쓰기':'보고 쓰기','report-open',`data-id="${id}" data-step="${sk}"`,s.status==='working'));
+    if(s&&!isReview(s))out.push(btn(c.closure==='fact'?'후속 보고 작성':'보고 작성','report-open',`data-id="${id}" data-step="${sk}"`,s.status==='working'));
     if(s&&isReview(s)&&lead())out.push(btn('검토','review-open',`data-id="${id}" data-step="${sk}"`,true));
     if(lead()&&activeSteps(c).length)out.push(btn(unassigned(c)?'담당 지정':'담당 바꾸기','reassign-open',`data-id="${id}"`));
     if(!drawer)out.push(btn('근거와 흐름','open',`data-id="${id}"`));
@@ -339,41 +339,41 @@ window.createFlowUI = function createFlowUI(api) {
   function staffView(){
     const me=actor(),mineAll=cases().filter(c=>mine(c)),readyNow=newest(mineAll.filter(c=>myStep(c)?.status==='ready')),working=newest(mineAll.filter(c=>myStep(c)?.status!=='ready')),reviewing=cases().filter(c=>c.state!=='done'&&!mine(c)&&inReview(c)&&(c.evidence||[]).some(e=>e.actorId===me?.id));
     const done=cases().filter(c=>c.state==='done'&&(c.evidence||[]).some(e=>e.actorId===me?.id)).slice(0,6);
-    return `<div class="fl-fold"><div class="page-heading"><div><h1>${h(me?.name||'')}님의 할 일</h1><p>${h(me?.roleLabel||'')}</p></div></div>${sourceLine()}${stateNote()}<section class="ax-first" aria-label="지금 할 일"><div class="ax-signals">${countCard('지금 할 차례',readyNow.length,'확인하면 진행 중으로 바뀝니다','ready')}${countCard('진행 중',working.length,'보고를 남기면 다음 사람에게 넘어갑니다','working')}${countCard('검토 기다림',reviewing.length,'내가 보고한 일의 검토 상태','reviewing')}</div></section><div class="fl-now"><h2>지금 할 일 ${readyNow.length+working.length}건</h2>${list([...readyNow,...working],'지금 할 일이 없습니다.','now')}</div></div><section class="fl-section" id="fl-detail"><h2>검토 기다림 ${reviewing.length}건</h2>${list(reviewing,'검토를 기다리는 보고가 없습니다.','reviewing')}<h2>최근 끝낸 일</h2>${list(done,'아직 끝낸 일이 없습니다.')}</section>`;
+    return `<div class="fl-fold"><div class="page-heading"><div><h1>${h(me?.name||'')}님의 업무</h1><p>${h(me?.roleLabel||'')}</p></div></div>${sourceLine()}${stateNote()}<section class="ax-first" aria-label="지금 처리할 업무"><div class="ax-signals">${countCard('지금 할 차례',readyNow.length,'확인하면 진행 중으로 바뀝니다','ready')}${countCard('진행 중',working.length,'보고를 남기면 다음 사람에게 넘어갑니다','working')}${countCard('검토 대기',reviewing.length,'내가 보고한 업무의 검토 상태','reviewing')}</div></section><div class="fl-now"><h2>지금 처리할 업무 ${readyNow.length+working.length}건</h2>${list([...readyNow,...working],'지금 처리할 업무가 없습니다.','now')}</div></div><section class="fl-section" id="fl-detail"><h2>검토 대기 ${reviewing.length}건</h2>${list(reviewing,'검토를 기다리는 보고가 없습니다.','reviewing')}<h2>최근 완료 업무</h2>${list(done,'아직 완료한 업무가 없습니다.')}</section>`;
   }
   function managerView(){
     const open=cases().filter(c=>c.state!=='done'),my=newest(open.filter(c=>mine(c))),queue=open.filter(unassigned),overdue=open.filter(late),review=open.filter(inReview),back=open.filter(returned),chain=open.filter(c=>new Set((c.steps||[]).flatMap(s=>s.assigneeIds||[])).size>1);
     // A manager can also hold a step (e.g. teaches the class); their own turn comes first when there is one.
-    const lists={mine:[my,'지금 내 차례인 일이 없습니다.'],queue:[queue,'담당 미지정 업무가 없습니다.'],late:[overdue,'지난 업무가 없습니다.'],review:[review,'검토를 기다리는 일이 없습니다.'],returned:[back,'되돌린 일이 없습니다.'],chain:[chain,'여러 사람을 거치는 일이 없습니다.'],all:[open,'남은 일이 없습니다.']};
+    const lists={mine:[my,'지금 내 차례인 업무가 없습니다.'],queue:[queue,'담당 미지정 업무가 없습니다.'],late:[overdue,'지난 업무가 없습니다.'],review:[review,'검토를 기다리는 업무가 없습니다.'],returned:[back,'보완 요청 업무가 없습니다.'],chain:[chain,'여러 사람을 거치는 업무가 없습니다.'],all:[open,'남은 업무가 없습니다.']};
     const f=lists[store.filter]?store.filter:my.length?'mine':'queue',[items,empty]=lists[f];
-    return `<div class="fl-fold"><div class="page-heading"><div><h1>업무 조율</h1><p>${h(actor()?.name||'')} · ${h(actor()?.roleLabel||'')}</p></div></div>${sourceLine()}${stateNote()}<section class="ax-first" aria-label="조율할 일"><div class="ax-signals">${my.length?countCard('내 차례',my.length,'내가 맡은 단계','mine','urgent'):''}${countCard('담당 없음',queue.length,'담당을 지정해야 다음 단계가 시작됩니다','queue','urgent')}${countCard('늦음',overdue.length,'기한이 지났고 아직 끝나지 않은 일','late')}${countCard('검토 대기',review.length,'보고가 들어와 확인이 필요한 일','review')}${countCard('되돌림',back.length,'보완하라고 돌려보낸 일','returned')}</div>${scenarioPanel()}</section></div><section class="fl-section" id="fl-detail">${filterBar(f,[['mine','내 차례',my.length],['queue','담당 없음',queue.length],['late','늦음',overdue.length],['review','검토 대기',review.length],['returned','되돌림',back.length],['chain','여러 사람 거침',chain.length],['all','남은 일 전체',open.length]])}${list(items,empty,f)}${stageOverview()}</section>`;
+    return `<div class="fl-fold"><div class="page-heading"><div><h1>업무 조율</h1><p>${h(actor()?.name||'')} · ${h(actor()?.roleLabel||'')}</p></div></div>${sourceLine()}${stateNote()}<section class="ax-first" aria-label="조율할 업무"><div class="ax-signals">${my.length?countCard('내 차례',my.length,'내가 맡은 단계','mine','urgent'):''}${countCard('담당 미지정',queue.length,'담당을 지정해야 다음 단계가 시작됩니다','queue','urgent')}${countCard('지난 업무',overdue.length,'기한이 지났고 아직 끝나지 않은 업무','late')}${countCard('검토 대기',review.length,'보고가 들어와 확인이 필요한 일','review')}${countCard('보완 요청',back.length,'보완 요청 업무','returned')}</div>${scenarioPanel()}</section></div><section class="fl-section" id="fl-detail">${filterBar(f,[['mine','내 차례',my.length],['queue','담당 미지정',queue.length],['late','지난 업무',overdue.length],['review','검토 대기',review.length],['returned','보완 요청',back.length],['chain','여러 사람 거침',chain.length],['all','남은 업무 전체',open.length]])}${list(items,empty,f)}${stageOverview()}</section>`;
   }
   function stageOverview(){
     const real=cases().filter(c=>!local(c)),dev=cases().filter(local),total=Number(flow().casesTotal)||cases().length;
     const jams=(flow().metrics?.bottlenecks||[]).filter(b=>b&&b.waiting>0&&/[가-힣]/.test(b.label||'')).slice(0,4);
     // bottlenecks = open steps (ready or working) grouped by step role, over every case including local ones.
-    return `<section class="fl-stages" aria-label="상태별 업무 수"><h2>상태별 업무 수</h2><div class="fl-stage-row">${stageCounts(real).map(([k,n])=>`<div><span>${h(STATE[k])}</span><strong>${fmt(n)}</strong></div>`).join(`<i aria-hidden="true">${icon('chevron')}</i>`)}</div>${jams.length?`<p class="fl-jams">남은 단계가 많은 담당(직접 만든 일 포함) ${jams.map(b=>`<span>${h(b.label)} ${fmt(b.waiting)}개</span>`).join('')}</p>`:''}<p class="ax-note">학원 기록에서 생긴 일 ${fmt(real.length)}건 기준입니다(직접 만든 일 ${fmt(dev.length)}건 제외).${total>cases().length?` 전체 ${fmt(total)}건 중 ${fmt(cases().length)}건을 불러왔습니다.`:''}</p></section>`;
+    return `<section class="fl-stages" aria-label="상태별 업무 수"><h2>상태별 업무 수</h2><div class="fl-stage-row">${stageCounts(real).map(([k,n])=>`<div><span>${h(STATE[k])}</span><strong>${fmt(n)}</strong></div>`).join(`<i aria-hidden="true">${icon('chevron')}</i>`)}</div>${jams.length?`<p class="fl-jams">남은 단계가 많은 담당(직접 등록한 업무 포함) ${jams.map(b=>`<span>${h(b.label)} ${fmt(b.waiting)}개</span>`).join('')}</p>`:''}<p class="ax-note">학원 기록에서 생긴 업무 ${fmt(real.length)}건 기준입니다(직접 등록한 업무 ${fmt(dev.length)}건 제외).${total>cases().length?` 전체 ${fmt(total)}건 중 ${fmt(cases().length)}건을 불러왔습니다.`:''}</p></section>`;
   }
   // 일은 상태 묶음(막힌·열린)보다 무슨 일인지로 먼저 보인다(원장 10-28 "막힌일, 열린일 보다 실제 어떤 일인지 분화해서 알려주는게 더 좋을듯").
-  // 종류 = 2.0 할 일 종류(taskKind)의 단계 이름, 묶음 신호는 제목에서 건수를 뗀 이름. 카드와 아래 목록이 같은 열쇠(kind:…)로 맞물린다.
+  // 종류 = 2.0 업무 종류(taskKind)의 단계 이름, 묶음 신호는 제목에서 건수를 뗀 이름. 카드와 아래 목록이 같은 열쇠(kind:…)로 맞물린다.
   // 원장 결정 = 원장에게 직접 맡겨진 단계만(관리자 대기열의 담당 없는 일은 빼고 — 원장 10-28 "원장 결정이 8건이고 대기가 1건인데, 굳이 8건을 보여줄 필요가 잇나").
   const ownerDecides=c=>activeSteps(c).some(s=>(s.assigneeIds||[]).includes(actor()?.id));
   const kindLabel=c=>c.taskKind?(c.steps?.[0]?.label||c.title||c.taskKind):String(c.title||'').replace(/\s*·\s*[\d,]+\s*원$/,'').replace(/\s*[\d,]+\s*(건|명|개)$/,'').replace(/\s*[\d,]+\s*(건|명|개)$/,'')||'기타';
   const kindKey=c=>`kind:${c.taskKind||kindLabel(c)}`;
   function kindGroups(open){const g=new Map();for(const c of open){const k=kindKey(c);if(!g.has(k))g.set(k,{key:k,label:kindLabel(c),items:[]});g.get(k).items.push(c);}return [...g.values()].sort((a,b)=>b.items.length-a.items.length||a.label.localeCompare(b.label,'ko'));}
-  const kindDetail=items=>{const parts=[['늦음',items.filter(late).length],['담당 없음',items.filter(unassigned).length],['되돌림',items.filter(returned).length]].filter(([,n])=>n);return parts.length?parts.map(([l,n])=>`${l} ${fmt(n)}`).join(' · '):stageCounts(items).filter(([k,n])=>k!=='done'&&n).map(([k,n])=>`${STATE[k]} ${fmt(n)}`).join(' · ');};
+  const kindDetail=items=>{const parts=[['지난 업무',items.filter(late).length],['담당 미지정',items.filter(unassigned).length],['보완 요청',items.filter(returned).length]].filter(([,n])=>n);return parts.length?parts.map(([l,n])=>`${l} ${fmt(n)}`).join(' · '):stageCounts(items).filter(([k,n])=>k!=='done'&&n).map(([k,n])=>`${STATE[k]} ${fmt(n)}`).join(' · ');};
   // Owner: critical blocked handoffs, required decisions and stage counts on the first screen (cards reused by ax).
   function ownerCards(){
     if(!ready())return '';
     const open=cases().filter(c=>c.state!=='done'),decide=open.filter(ownerDecides),blocked=open.filter(c=>unassigned(c)||late(c)||returned(c)),moving=open.filter(c=>!local(c));
     // 원장 첫 화면은 원장의 일만(원장 10-28 "원장은 영상 업로드가 숙제 출제에 비해 잘되고 있냐 안되고 있냐만 보면 되는거 아닌가"):
     // 개별 처리 건(결석 전화·영상 확인 …)의 종류 카드는 첫 화면에서 빼고 아래 목록의 걸러 보기에만 둔다. 운영 상태는 ax.js가 지표 추세 카드로 그린다.
-    return countCard('원장 결정 대기',decide.length,decide.length?kindGroups(decide).map(k=>`${k.label} ${fmt(k.items.length)}`).join(' · '):'지금 결정할 일이 없습니다','decide',decide.length?'urgent':'');
+    return countCard('원장 결정 대기',decide.length,decide.length?kindGroups(decide).map(k=>`${k.label} ${fmt(k.items.length)}`).join(' · '):'지금 결정할 업무가 없습니다','decide',decide.length?'urgent':'');
   }
   function ownerStageCell(){
     if(!ready())return '';
     const real=cases().filter(c=>!local(c)),recent=events().filter(e=>e.origin!=='snapshot').slice(-1)[0];
-    return `<div class="ax-change-cell"><button type="button" class="ax-change-link" data-fl="filter" data-id="moving"><span>업무 흐름</span><strong>남은 일 ${fmt(real.filter(c=>c.state!=='done').length)}건</strong><span class="ax-stages">${stageCounts(real).map(([k,n])=>`<span><b>${fmt(n)}</b>${STATE[k]}</span>`).join('')}</span><span class="ax-recent"><small>${recent?`최근 변화: ${h(recent.label||'')} · ${h(when(recent.at))}`:'아직 변화가 없습니다.'}</small></span></button></div>`;
+    return `<div class="ax-change-cell"><button type="button" class="ax-change-link" data-fl="filter" data-id="moving"><span>업무 흐름</span><strong>남은 업무 ${fmt(real.filter(c=>c.state!=='done').length)}건</strong><span class="ax-stages">${stageCounts(real).map(([k,n])=>`<span><b>${fmt(n)}</b>${STATE[k]}</span>`).join('')}</span><span class="ax-recent"><small>${recent?`최근 변화: ${h(recent.label||'')} · ${h(when(recent.at))}`:'아직 변화가 없습니다.'}</small></span></button></div>`;
   }
   // 업무 흐름 검색(원장 10-28 "당연히 각종 내용에 대해 검색가능해야함") — 제목 · 요약(학생·날짜·내용) · 상태 · 관련 기록 · 할 차례 · 기한 · 생긴 때 · 영역 · 종류.
   // 띄어쓰기로 나눈 낱말이 모두 들어 있어야 맞음 · 공백·대소문자는 무시.
@@ -384,10 +384,10 @@ window.createFlowUI = function createFlowUI(api) {
     return fold([c.title,c.summary,sumOf(c),kindLabel(c),plain(chips(c)),...(c.entityRefs||[]).flatMap(r=>[r?.label,refLabel(r)]),...activeSteps(c).flatMap(st=>[st.label,whoOf(st)]),s?whoOf(s):'',c.dueAt?`${md(kstDate(c.dueAt))}까지`:'',when(t.at||c.createdAt),api.familyLabel?.(c.familyId)].filter(Boolean).join(' '));
   }
   const matchCase=(c,q)=>{const hay=haystack(c);return q.split(/\s+/).filter(Boolean).every(w=>hay.includes(fold(w)));};
-  // 열 필터: 열마다 고른 값 중 하나라도 가진 일만 남긴다. skip = 값 목록을 뽑는 그 열(자기 필터는 빼고 센다 — 엑셀과 같다).
+  // 열 필터: 열마다 선택한 값 중 하나라도 가진 일만 남긴다. skip = 값 목록을 뽑는 그 열(자기 필터는 빼고 센다 — 엑셀과 같다).
   const colOn=()=>Object.entries(store.cols).filter(([k,v])=>COLV[k]&&Array.isArray(v));
-  // 값을 여럿 가진 열(상태 표시·관련 기록·담당)은 칩과 같은 뜻으로 거른다: 뺀 값이 고른 값보다 적으면 'OO 제외' = 뺀 값을 하나라도
-  // 가진 일은 숨김, 아니면 'OO만' = 고른 값을 하나라도 가진 일만(담당이 여럿인 일도 그 사람 몫으로 남는다).
+  // 값을 여럿 가진 열(상태 표시·관련 기록·담당)은 칩과 같은 뜻으로 거른다: 뺀 값이 선택한 값보다 적으면 'OO 제외' = 뺀 값을 하나라도
+  // 가진 일은 숨김, 아니면 'OO만' = 선택한 값을 하나라도 가진 일만(담당이 여럿인 일도 그 사람 몫으로 남는다).
   const allVals=k=>{const all=new Set();for(const x of board.base||[])for(const v of COLV[k](x))all.add(v);return [...all];};
   let modeKey='',modes=new Map();
   const colMode=k=>{const key=`${JSON.stringify(store.cols)}|${(board.base||[]).length}`;if(key!==modeKey){modeKey=key;modes=new Map(colOn().map(([col,vals])=>{const out=allVals(col).filter(v=>!vals.includes(v)).length;return [col,out&&out<vals.length?'except':'only'];}));}return modes.get(k)||'only';};
@@ -413,10 +413,10 @@ window.createFlowUI = function createFlowUI(api) {
     board.items=items;
     // 보기는 왼쪽 세로 목록(상태 · 종류 많은 순), 일은 오른쪽 표 — 칩 20여 개를 가로로 늘어놓지 않는다(원장 10-28 "너무 가로로 나열되어있고 공간 낭비 최악").
     // '내 차례' = 사이드바 '업무 흐름' 배지와 같은 수(검수 10-28 L8 — 배지와 맞는 보기가 없었다).
-    const states=[['decide','원장 결정 대기',lists.decide.length],['mine','내 차례',lists.mine.length],['moving','남은 일 전체',lists.moving.length],['blocked','지난 업무 · 담당 미지정 업무',lists.blocked.length],['local','직접 만든 일',lists.local.length],['done','끝난 일',lists.done.length]];
+    const states=[['decide','원장 결정 대기',lists.decide.length],['mine','내 차례',lists.mine.length],['moving','남은 업무 전체',lists.moving.length],['blocked','지난 업무 · 담당 미지정 업무',lists.blocked.length],['local','직접 등록한 업무',lists.local.length],['done','완료된 업무',lists.done.length]];
     const byKind=[...kinds].sort((a,b)=>b.items.length-a.items.length).map(k=>[k.key,k.label,k.items.length]),label=[...states,...byKind].find(([id])=>id===f)?.[1]||'';
     // 제목 옆 건수는 걸러 볼 때만(찾은 수) — 보기 전체 건수는 왼쪽 목록에 있다(원장 10-28 "왼쪽에도 있으므로 전체개수는 숨겨줘 상단은").
-    return {f,q,states,byKind,label,count:narrowed?`찾은 일 ${fmt(items.length)}건`:'',listHtml:boardTable(items,f,narrowed?'조건과 맞는 일이 없습니다.':'이 조건의 일이 없습니다.')};
+    return {f,q,states,byKind,label,count:narrowed?`찾은 업무 ${fmt(items.length)}건`:'',listHtml:boardTable(items,f,narrowed?'조건에 맞는 업무가 없습니다.':'이 조건에 맞는 업무가 없습니다.')};
   }
   function boardTable(items,f,empty){
     const {page,pages,shown}=pageOf(items,'board');
@@ -431,9 +431,9 @@ window.createFlowUI = function createFlowUI(api) {
   // 걸러 보는 조건을 표 위에 칩으로 — 칩을 누르면 그 열의 필터만 지운다.
   function activeFilters(){
     const on=colOn();if(!on.length)return '';
-    // 뺀 값이 고른 값보다 적으면 'OO 제외'로 적는다(하나만 끈 필터가 남은 값 목록으로 길어지지 않게).
+    // 뺀 값이 선택한 값보다 적으면 'OO 제외'로 적는다(하나만 끈 필터가 남은 값 목록으로 길어지지 않게).
     const name=k=>COLS.find(c=>c[0]===k)?.[1]||'',few=v=>v.length>2?`${v.slice(0,2).join(', ')} 외 ${fmt(v.length-2)}`:v.join(', ');
-    const vals=(k,v)=>{if(!v.length)return '고른 값 없음';const out=allVals(k).filter(x=>!v.includes(x));return colMode(k)==='except'?`${few(out)} 제외`:few(v);};
+    const vals=(k,v)=>{if(!v.length)return '선택한 값 없음';const out=allVals(k).filter(x=>!v.includes(x));return colMode(k)==='except'?`${few(out)} 제외`:few(v);};
     return `<div class="fl-active" role="group" aria-label="걸러 보는 조건">${on.map(([k,v])=>`<button type="button" class="fl-active-chip" data-fl="col-clear" data-col="${k}" aria-label="${h(name(k))} 필터 지우기"><span>${h(name(k))}: ${h(vals(k,v))}</span><b aria-hidden="true">×</b></button>`).join('')}${on.length>1?'<button type="button" class="ax-text-link" data-fl="col-clear" data-col="">필터 모두 지우기</button>':''}</div>`;
   }
   function ownerBelow({heading=true}={}){
@@ -443,7 +443,7 @@ window.createFlowUI = function createFlowUI(api) {
     if(document.activeElement?.matches?.('[data-fl-search]'))queueMicrotask(()=>{const i=document.querySelector('[data-fl-search]');if(i){i.focus({preventScroll:true});i.setSelectionRange(i.value.length,i.value.length);}});
     if(colMenu.el)requestAnimationFrame(placeColMenu);requestAnimationFrame(syncBulk);
     // 업무 흐름 화면에서는 소제목을 숨긴다 — 페이지 제목이 같은 말이다(원장 10-28 "여기도 하단의 업무 흐름 중복임"). 이동 목표로는 남긴다.
-    return `<section class="fl-section" id="fl-detail" aria-labelledby="fl-detail-title">${heading?'<div class="ax-section-head"><h2 id="fl-detail-title" tabindex="-1">업무 흐름</h2></div>':'<h2 id="fl-detail-title" class="ax-visually-hidden" tabindex="-1">업무 흐름</h2>'}<div class="fl-board"><div class="fl-board-head"><h3 class="fl-board-title">${h(p.label)}<span id="fl-board-count">${p.count}</span></h3><div class="fl-bulk" id="fl-bulk" role="group" aria-label="고른 일" ${store.sel.size?"":"hidden"}>${bulkHtml()}</div><input type="search" class="fl-search" data-fl-search value="${h(p.q)}" placeholder="이름·내용·담당·기록으로 찾기" aria-label="업무 흐름에서 찾기" autocomplete="off"></div><nav class="fl-nav" aria-label="보기">${navList(p.f,'상태',p.states)}${navList(p.f,'종류',p.byKind)}</nav><div id="fl-board-list" class="fl-board-list">${p.listHtml}</div></div>${scenarioPanel()}${stageOverview()}</section>`;
+    return `<section class="fl-section" id="fl-detail" aria-labelledby="fl-detail-title">${heading?'<div class="ax-section-head"><h2 id="fl-detail-title" tabindex="-1">업무 흐름</h2></div>':'<h2 id="fl-detail-title" class="ax-visually-hidden" tabindex="-1">업무 흐름</h2>'}<div class="fl-board"><div class="fl-board-head"><h3 class="fl-board-title">${h(p.label)}<span id="fl-board-count">${p.count}</span></h3><div class="fl-bulk" id="fl-bulk" role="group" aria-label="선택한 업무" ${store.sel.size?"":"hidden"}>${bulkHtml()}</div><input type="search" class="fl-search" data-fl-search value="${h(p.q)}" placeholder="이름·내용·담당·기록으로 찾기" aria-label="업무 흐름에서 찾기" autocomplete="off"></div><nav class="fl-nav" aria-label="보기">${navList(p.f,'상태',p.states)}${navList(p.f,'종류',p.byKind)}</nav><div id="fl-board-list" class="fl-board-list">${p.listHtml}</div></div>${scenarioPanel()}${stageOverview()}</section>`;
   }
   // 제목만 — 설명 줄은 두지 않는다(원장 10-28 "이런 자질구리한 멘트 필요없을듯").
   function fullView(){return role()==='owner'?`<div class="page-heading"><div><h1>업무 흐름</h1></div></div>${ownerBelow({heading:false})}`:role()==='manager'?managerView():staffView();}
@@ -486,7 +486,7 @@ window.createFlowUI = function createFlowUI(api) {
     const p=d.probabilities||{},route=dRoute(d),reasons=dReasons(d).filter(r=>r!==route),draft=d.draft,provider=dProvider(d);
     // 확률·모델 이름·걸린 시간은 개발자용이라 싣지 않는다(원장 10-28). 긴급도는 등급이라 남긴다.
     const facts=[URGENCY[p.urgency]&&`긴급도 ${URGENCY[p.urgency]}`].filter(Boolean);
-    const people=(d.suggestedAssigneeIds||[]).map(nameOf).filter(n=>n!=='담당 미정');
+    const people=(d.suggestedAssigneeIds||[]).map(nameOf).filter(n=>n!=='담당 미지정');
     const draftHtml=draft&&draft.status==='ok'&&draft.explanation?`<div class="fl-draft"><p><strong>AI 설명 초안</strong>${CONCERN[draft.routeConcern]?` · ${h(CONCERN[draft.routeConcern])}`:''}</p><p class="live-pre">${h(draft.explanation)}</p>${draft.nextAction?.title?`<p>다음 조치 제안: ${h(draft.nextAction.title)}${draft.nextAction.body?` — ${h(draft.nextAction.body)}`:''}</p>`:''}${Array.isArray(draft.missingInfo)&&draft.missingInfo.length?`<p>더 필요한 정보: ${h(draft.missingInfo.filter(x=>typeof x==='string').join(', '))}</p>`:''}<small>초안은 검토할 글입니다. 아무것도 보내지 않습니다.</small></div>`:draft&&['unavailable','error'].includes(draft.status)?'<p class="ax-note">AI 설명 초안을 받지 못했습니다.</p>':'';
     return `<p>${provider?pill(provider,'blue'):''} ${h(dStatus(d))}${d.at?` · ${h(when(d.at))}`:''}</p>${route||AREA[d.area]?`<p><strong>${h(route)}</strong>${AREA[d.area]?`${route?' · ':''}업무 영역 ${h(AREA[d.area])}`:''}</p>`:''}${facts.length?`<ul class="fl-facts">${facts.map(f=>`<li>${h(f)}</li>`).join('')}</ul>`:''}${people.length?`<p>추천 담당: ${h(people.join(', '))} <small>(배정은 정해진 규칙과 사람이 합니다)</small></p>`:''}${reasons.length?`<p>이유: ${h(reasons.join(' · '))}</p>`:''}${draftHtml}`;
   }
@@ -496,7 +496,7 @@ window.createFlowUI = function createFlowUI(api) {
     const lock=pending?'disabled':'',key=`data-id="${h(c.id)}" data-fl-key="case.analyze:${h(c.id)}" ${lock}`;
     const buttons=lead()&&c.state!=='done'?`<div class="ax-actions">${btn(d?'AI 판정 다시 받기':'AI 판정 받기','analyze',key)}${btn('AI 설명 초안까지 받기','analyze-draft',key)}</div>${off(jev)||off(claude)?`<p class="ax-note">${[jev,claude].filter(off).map(p=>h(PROVIDER[p.id]||'자동 판정')).join('·')}을 지금 쓸 수 없습니다. 눌러도 사람이 판단하도록 넘어갑니다.</p>`:''}`:'';
     if(!d&&!pending)return '';
-    if(pending)return `<section class="ax-evidence fl-decision"><h3>판정</h3><p role="status">${pill('판정 중','amber')} ${d?.requestedAt?`${h(when(d.requestedAt))} 요청 · `:''}결과가 나오면 이 화면에 바로 나타납니다. 그동안 일은 정해진 담당자에게 그대로 있습니다.</p>${d?.previous?`<details class="ax-detail"><summary>이전 판정</summary>${decisionMemo(d.previous)}</details>`:''}${buttons}</section>`;
+    if(pending)return `<section class="ax-evidence fl-decision"><h3>판정</h3><p role="status">${pill('판정 중','amber')} ${d?.requestedAt?`${h(when(d.requestedAt))} 요청 · `:''}결과가 나오면 이 화면에 바로 나타납니다. 그동안 업무는 정해진 담당자에게 그대로 있습니다.</p>${d?.previous?`<details class="ax-detail"><summary>이전 판정</summary>${decisionMemo(d.previous)}</details>`:''}${buttons}</section>`;
     return `<section class="ax-evidence fl-decision"><h3>판정</h3>${decisionMemo(d)}${buttons}</section>`;
   }
   /* ---------- relationship tree: GET /api/flow/hierarchy?caseId= (contract v1) ----------
@@ -508,7 +508,7 @@ window.createFlowUI = function createFlowUI(api) {
   const HIER='/api/flow/hierarchy';
   const LEVEL={teacher:'선생님',class:'반',student:'학생'};
   const AI_STATE={queued:['AI 정리 대기',''],running:['AI 정리 중',''],ready:['AI 정리','blue'],review_needed:['AI 정리 · 사람 확인 필요','amber'],error:['AI 정리 실패','amber'],stale:['AI 정리 · 그 뒤 기록이 바뀜','amber'],skipped:['AI 정리 생략','']};
-  const AI_WAIT={not_started:'아직 AI 정리를 하지 않았습니다.',queued:'AI 정리를 기다리고 있습니다.',running:'AI가 정리하고 있습니다.',error:'AI 정리를 하지 못했습니다.',stale:'기록이 바뀌어 AI 정리를 다시 해야 합니다.',review_needed:'사람이 판단할 일로 넘겼습니다.',skipped:'AI 정리를 하지 않고 넘겼습니다.'};
+  const AI_WAIT={not_started:'아직 AI 정리를 하지 않았습니다.',queued:'AI 정리를 기다리고 있습니다.',running:'AI가 정리하고 있습니다.',error:'AI 정리를 하지 못했습니다.',stale:'기록이 바뀌어 AI 정리를 다시 해야 합니다.',review_needed:'사람이 판단할 업무로 넘겼습니다.',skipped:'AI 정리를 하지 않고 넘겼습니다.'};
   const FLOW_STATE={open:['처리 전',''],working:['진행 중','blue'],reported:['보고됨','green'],not_needed:['해당 없음','green'],needs_review:['검토 필요','amber'],unreachable:['연락 안 됨','amber'],partial:['일부 처리','blue']};
   // Facts the server computed in code (origin 'code'); keys without a label here are not shown.
   const FACTS=[['absencesInClass','이 반 결석','건'],['absencesAllClasses','모든 반 결석','건'],['classesWithAbsences','결석한 반','개'],['absencesLast7Days','최근 7일 결석','건'],['daysSinceLast','마지막 결석 뒤','일'],['firstDate','처음',''],['lastDate','마지막',''],['studentsAlsoInOtherClasses','다른 반에도 있는 학생','명'],['managerQueueRecords','관리자 대기열 기록','건'],['managerQueueTeachers','대기열로 간 담임','명']];
@@ -588,9 +588,9 @@ window.createFlowUI = function createFlowUI(api) {
   function stepActions(c,s,scoped=null){
     if(!s||s.skipped||c.state==='done'||!['ready','working','review'].includes(s.status))return '';
     const id=h(c.id),sk=h(s.id),mine=(s.assigneeIds||[]).includes(actor()?.id)||(lead()&&queued(s)),fact=c.closure==='fact',out=[];
-    if(scoped){if(mine&&!isReview(s))out.push(btn(fact?'이 학생 후속 보고 쓰기':'이 학생 보고 쓰기','report-open',`data-id="${id}" data-step="${sk}" data-node="${h(scoped.id)}"`,true));return out.length?`<div class="ax-actions">${out.join('')}</div>`:'';}
+    if(scoped){if(mine&&!isReview(s))out.push(btn(fact?'이 학생 후속 보고 작성':'이 학생 보고 작성','report-open',`data-id="${id}" data-step="${sk}" data-node="${h(scoped.id)}"`,true));return out.length?`<div class="ax-actions">${out.join('')}</div>`:'';}
     if(mine&&!isReview(s)&&s.status==='ready')out.push(btn('확인','ack',`data-id="${id}" data-step="${sk}" data-fl-key="case.ack:${id}"`,true));
-    if(mine&&!isReview(s))out.push(btn(relational(c)?(fact?'단계 전체 후속 보고':'단계 전체 보고 쓰기'):fact?'후속 보고 쓰기':'보고 쓰기','report-open',`data-id="${id}" data-step="${sk}"`,s.status==='working'));
+    if(mine&&!isReview(s))out.push(btn(relational(c)?(fact?'단계 전체 후속 보고':'단계 전체 보고 작성'):fact?'후속 보고 작성':'보고 작성','report-open',`data-id="${id}" data-step="${sk}"`,s.status==='working'));
     if(isReview(s)&&lead())out.push(btn('검토','review-open',`data-id="${id}" data-step="${sk}"`,true));
     if(lead())out.push(btn((s.assigneeIds||[]).length?'담당 바꾸기':'담당 지정','reassign-open',`data-id="${id}" data-step="${sk}"`));
     return out.length?`<div class="ax-actions">${out.join('')}</div>`:'';
@@ -619,7 +619,7 @@ window.createFlowUI = function createFlowUI(api) {
     if(!list.length)return '';
     const groups=[];for(const x of list){const s=stepOf(x),state=s?`${stepState(s)} · ${whoOf(s)}`:STATE[x.state]||'';const g=groups.find(y=>y.title===x.title&&y.state===state);if(g)g.list.push(x);else groups.push({title:x.title,state,list:[x]});}
     const day=x=>{const d=kstDate(x.dueAt||x.createdAt);return d?md(d):'열기';};
-    return `<div class="fl-node-other"><p><strong>이 학생의 다른 일</strong></p>${groups.map(g=>g.list.length===1?`<div class="ax-actions">${btn(`${g.title} · ${g.state}`,'open',`data-id="${h(g.list[0].id)}"`)}</div>`:`<p>${h(g.title)} ${fmt(g.list.length)}건 · ${h(g.state)}</p><div class="ax-actions">${g.list.map(x=>btn(day(x),'open',`data-id="${h(x.id)}" aria-label="${h(`${g.title} ${day(x)}`)}"`)).join('')}</div>`).join('')}</div>`;
+    return `<div class="fl-node-other"><p><strong>이 학생의 다른 업무</strong></p>${groups.map(g=>g.list.length===1?`<div class="ax-actions">${btn(`${g.title} · ${g.state}`,'open',`data-id="${h(g.list[0].id)}"`)}</div>`:`<p>${h(g.title)} ${fmt(g.list.length)}건 · ${h(g.state)}</p><div class="ax-actions">${g.list.map(x=>btn(day(x),'open',`data-id="${h(x.id)}" aria-label="${h(`${g.title} ${day(x)}`)}"`)).join('')}</div>`).join('')}</div>`;
   }
   // Search keeps matches, their ancestors (opened to show them) and everything under a match.
   function searchSets(e){
@@ -637,7 +637,7 @@ window.createFlowUI = function createFlowUI(api) {
     const steps=lv==='teacher'?stepsOf(c,n):[],step=steps.find(s=>['ready','working','review'].includes(s.status))||steps[0];
     const a=n.ai||{},judged=!a.summary&&korean(a.priorityLabel);
     const aiTags=judged?`${pill(a.priorityLabel,a.priority==='first'?'amber':'')}${a.status==='review_needed'||a.uncertain?pill('사람 확인 필요','amber'):''}${busy(a.status)||['error','stale'].includes(a.status)?pill(AI_STATE[a.status][0],AI_STATE[a.status][1]):''}`:`${AI_STATE[a.status]?pill(AI_STATE[a.status][0],AI_STATE[a.status][1]):''}${korean(a.priorityLabel)?pill(a.priorityLabel,a.priority==='first'?'amber':''):''}`;
-    const tags=`${n.unassigned?pill('관계 모름','amber'):''}${n.status==='inactive'?pill('재직 아님','amber'):''}${step?pill((step.assigneeIds||[]).length?stepState(step):'담당 없음',(step.assigneeIds||[]).length?'':'amber'):''}${lv==='student'?n.flow?.scope==='record'&&n.flow.state!=='open'?flowPill(n.flow):'':['partial','needs_review'].includes(n.flow?.state)?flowPill(n.flow,'학생 '):''}${aiTags}`;
+    const tags=`${n.unassigned?pill('관계 모름','amber'):''}${n.status==='inactive'?pill('재직 아님','amber'):''}${step?pill((step.assigneeIds||[]).length?stepState(step):'담당 미지정',(step.assigneeIds||[]).length?'':'amber'):''}${lv==='student'?n.flow?.scope==='record'&&n.flow.state!=='open'?flowPill(n.flow):'':['partial','needs_review'].includes(n.flow?.state)?flowPill(n.flow,'학생 '):''}${aiTags}`;
     const row=`<div class="fl-node-row"><button type="button" class="fl-node-btn" data-fl="${leaf?'pick':'node'}" data-node="${h(n.id)}" aria-expanded="${open}" aria-controls="${dom}"><span class="fl-chev" aria-hidden="true">${icon('chevron')}</span><span class="fl-node-name">${h(label)}${detail?`<small>${h(detail)}</small>`:''}${mineNode(n)?'<small class="fl-mine">내 담당</small>':''}${same>1?'<small>같은 이름 있음</small>':''}</span><span class="fl-node-count">${h(countText(n.counts,lv,q.word))}</span></button>${tags?`<span class="fl-node-tags">${tags}</span>`:''}</div>`;
     if(leaf)return `<li class="fl-node" data-level="${h(lv||'')}">${row}<div class="fl-pane" id="${dom}" ${open?'':'hidden'}>${open?paneHtml(c,e,n):''}</div></li>`;
     const facts=factsText(n.facts),note=`${byStateLine(n)}${n.ai&&n.ai.status!=='not_started'||facts?aiBlock(n.ai,{facts,e,self:n.id}):''}`;
@@ -726,8 +726,8 @@ window.createFlowUI = function createFlowUI(api) {
     const c=caseById(id);if(!c)return;
     const timeline=(c.history||[]).map(eventById).filter(Boolean),missing=(c.history||[]).length-timeline.length;
     const links=(c.linkedCaseIds||[]).map(caseById).filter(Boolean);
-    // 닫히는 조건은 부제(CLOSURE)가 이미 말한다 — 원본 할 일의 상태만 한 줄(검수 10-28 M6).
-    const fact=c.closure==='fact'&&!signalCase(c)&&(c.sourceStatusLabel||c.factClosed)?`<section class="ax-evidence"><h3>원본 할 일</h3><p>${h(c.sourceStatusLabel?`원본 상태: ${c.sourceStatus==='open'&&late(c)?'기한 지남':c.sourceStatusLabel}`:'원본 기록')}${c.factClosed?` · 원본에서 닫힘${c.closedReason?`(${h(c.closedReason)})`:''}`:''}</p></section>`:'';
+    // 닫히는 조건은 부제(CLOSURE)가 이미 말한다 — 원본 업무의 상태만 한 줄(검수 10-28 M6).
+    const fact=c.closure==='fact'&&!signalCase(c)&&(c.sourceStatusLabel||c.factClosed)?`<section class="ax-evidence"><h3>원본 업무</h3><p>${h(c.sourceStatusLabel?`원본 상태: ${c.sourceStatus==='open'&&late(c)?'지난 업무':c.sourceStatusLabel}`:'원본 기록')}${c.factClosed?` · 원본에서 닫힘${c.closedReason?`(${h(c.closedReason)})`:''}`:''}</p></section>`:'';
     const evid=c.evidence||[];
     const linkList=links.length?`<section class="ax-evidence"><h3>연결된 업무 ${links.length}건</h3><div class="ax-actions">${links.map(x=>btn(x.title,'open',`data-id="${h(x.id)}"`)).join('')}</div></section>`:'';
     dialog('detail',c.title,c.factSignal?'근거별 처리 보고로 닫습니다':CLOSURE[c.closure]||'',`<div data-fl-case-root="${h(c.id)}"><div class="ax-issue-meta">${chips(c)}</div>${c.summary?`<p class="live-pre">${h(sumOf(c))}</p>`:''}${why(c)}${entityLinks(c)}${fact}${treeSlot(c)}${decisionView(c)}${evid.length||(c.attachments||[]).length?`<section class="ax-evidence"><h3>근거 ${evid.length}건</h3>${evid.map(e=>`<p><strong>${h(nameOf(e.actorId))}</strong> · ${h(when(e.at))}${OUTCOME[e.outcome]?` · ${h(OUTCOME[e.outcome])}`:e.outcome==='returned'?' · 보완 요청':e.outcome==='accepted'?' · 승인':''}<br><span class="live-pre">${h(e.note||'')}</span>${(e.recordRefs||[]).length?`<br><small>연결 기록 ${(e.recordRefs||[]).map(r=>h(r.label||'기록')).join(', ')}</small>`:''}</p>${attachList(e.attachments)}`).join('')}${(c.attachments||[]).length?`<h4>요청에 붙인 기록</h4>${attachList(c.attachments)}`:''}</section>`:''}${linkList}<section class="ax-request-timeline"><h3>사건 기록</h3><ol>${timeline.map(e=>`<li><strong>${h(e.label||'기록')}</strong><p>${h(e.actorId?nameOf(e.actorId):e.origin!=='snapshot'?'자동 처리':'원본 기록')} · ${h(when(e.at))}</p></li>`).join('')||'<li><p>사건 기록이 없습니다.</p></li>'}</ol>${missing>0?`<div class="ax-actions">${btn(`이전 사건 ${fmt(missing)}건 더 보기`,'older',`data-id="${h(c.id)}"`)}</div>`:''}</section>${actionBar(c,{drawer:true})}</div>`);
@@ -747,12 +747,12 @@ window.createFlowUI = function createFlowUI(api) {
   }
   function openForm(kind,id,step='',node=''){
     const c=caseById(id);if(!c)return;const s=(step&&(c.steps||[]).find(x=>x.id===step))||myStep(c)||stepOf(c),sk=s?h(s.id):'';
-    if(kind==='report')dialog('modal',c.closure==='fact'&&!c.factSignal?'후속 보고 쓰기':'보고 쓰기',c.title,`<form class="ws-form" data-fl-form="report" data-id="${h(id)}" data-step="${sk}" novalidate>${c.factSignal?`<p class="ax-note">${h(c.doneRule||'완료·해당 없음으로 보고하면 이 단계의 기록이 처리된 것으로 남고, 모든 단계가 처리되면 이 일이 닫힙니다.')}</p>`:c.closure==='fact'?`<p class="ax-note">${signalCase(c)?'이 일은 원본 기록이 바뀌어야 닫힙니다. 이 보고는 따로 남는 후속 기록이 되고, 이 일은 끝나지 않은 채로 남습니다.':'원본 할 일은 원본 기록이 처리되어야 닫힙니다. 이 보고는 따로 남는 후속 기록이 되고, 원본 할 일은 끝나지 않은 채로 남습니다.'}</p>`:''}${reportScope(c,s,node)}${picker(()=>({id:'fl-report-outcome',name:'outcome',label:'결과',clearable:false,selected:['done'],...window.ContextPicker.lists.choices({columns:[{key:'name',label:'결과'},{key:'note',label:'뜻',w:'minmax(0,1.6fr)'}],items:Object.entries(OUTCOME).map(([k,v])=>({value:k,title:v,cells:{note:OUTCOME_NOTE[k]||''}}))})}),`<label>결과<select name="outcome">${Object.entries(OUTCOME).map(([k,v])=>`<option value="${k}">${h(v)}</option>`).join('')}</select></label>`)}<label><span>보고 내용 <em aria-hidden="true">*</em></span><textarea name="note" rows="4" maxlength="2000" required></textarea></label>${api.attachField?.(`fl-report-${c.id}`.replace(/[^\w-]/g,'_'),c.familyId)||''}<p class="ax-form-error" role="alert"></p><div class="ws-form-foot"><span class="ax-note">보고는 이 일의 근거로 남습니다.</span><button class="button primary" type="submit" data-fl-key="case.report:${h(id)}">보고 보내기</button></div></form>`);
-    if(kind==='review')dialog('modal','검토',c.title,`<div class="fl-review-evidence">${(c.evidence||[]).slice(-2).map(e=>`<p><strong>${h(nameOf(e.actorId))}</strong> · ${h(e.note||'')}</p>`).join('')||'<p>보고 내용이 없습니다.</p>'}</div><form class="ws-form" data-fl-form="review" data-id="${h(id)}" data-step="${sk}" novalidate><fieldset class="ws-multi"><legend>결정</legend><label><input type="radio" name="decision" value="accept" required> 승인하고 다음 단계로</label><label><input type="radio" name="decision" value="return"> 보완하라고 되돌림</label></fieldset><label>메모(되돌릴 때 필수)<textarea name="note" rows="3" maxlength="2000"></textarea></label><p class="ax-form-error" role="alert"></p><div class="ws-form-foot"><span class="ax-note">결정은 사건 기록에 남습니다.</span><button class="button primary" type="submit" data-fl-key="case.review:${h(id)}">결정 보내기</button></div></form>`);
+    if(kind==='report')dialog('modal',c.closure==='fact'&&!c.factSignal?'후속 보고 작성':'보고 작성',c.title,`<form class="ws-form" data-fl-form="report" data-id="${h(id)}" data-step="${sk}" novalidate>${c.factSignal?`<p class="ax-note">${h(c.doneRule||'완료·해당 없음으로 보고하면 이 단계의 기록이 처리된 것으로 남고, 모든 단계가 처리되면 이 업무가 닫힙니다.')}</p>`:c.closure==='fact'?`<p class="ax-note">${signalCase(c)?'이 업무는 원본 기록이 바뀌어야 닫힙니다. 이 보고는 따로 남는 후속 기록이 되고, 이 업무는 끝나지 않은 채로 남습니다.':'원본 업무는 원본 기록이 처리되어야 닫힙니다. 이 보고는 따로 남는 후속 기록이 되고, 원본 업무는 끝나지 않은 채로 남습니다.'}</p>`:''}${reportScope(c,s,node)}${picker(()=>({id:'fl-report-outcome',name:'outcome',label:'결과',clearable:false,selected:['done'],...window.ContextPicker.lists.choices({columns:[{key:'name',label:'결과'},{key:'note',label:'뜻',w:'minmax(0,1.6fr)'}],items:Object.entries(OUTCOME).map(([k,v])=>({value:k,title:v,cells:{note:OUTCOME_NOTE[k]||''}}))})}),`<label>결과<select name="outcome">${Object.entries(OUTCOME).map(([k,v])=>`<option value="${k}">${h(v)}</option>`).join('')}</select></label>`)}<label><span>보고 내용 <em aria-hidden="true">*</em></span><textarea name="note" rows="4" maxlength="2000" required></textarea></label>${api.attachField?.(`fl-report-${c.id}`.replace(/[^\w-]/g,'_'),c.familyId)||''}<p class="ax-form-error" role="alert"></p><div class="ws-form-foot"><span class="ax-note">보고는 이 업무의 근거로 남습니다.</span><button class="button primary" type="submit" data-fl-key="case.report:${h(id)}">보고 보내기</button></div></form>`);
+    if(kind==='review')dialog('modal','검토',c.title,`<div class="fl-review-evidence">${(c.evidence||[]).slice(-2).map(e=>`<p><strong>${h(nameOf(e.actorId))}</strong> · ${h(e.note||'')}</p>`).join('')||'<p>보고 내용이 없습니다.</p>'}</div><form class="ws-form" data-fl-form="review" data-id="${h(id)}" data-step="${sk}" novalidate><fieldset class="ws-multi"><legend>결정</legend><label><input type="radio" name="decision" value="accept" required> 승인하고 다음 단계로</label><label><input type="radio" name="decision" value="return"> 보완 요청</label></fieldset><label>메모(보완 요청 시 필수)<textarea name="note" rows="3" maxlength="2000"></textarea></label><p class="ax-form-error" role="alert"></p><div class="ws-form-foot"><span class="ax-note">결정은 사건 기록에 남습니다.</span><button class="button primary" type="submit" data-fl-key="case.review:${h(id)}">결정 보내기</button></div></form>`);
     // A step chosen from the tree (a teacher's own step) wins; otherwise an unassigned step first, as before.
     const open=activeSteps(c),target=(step&&open.find(x=>x.id===step))||open.find(x=>!(x.assigneeIds||[]).length)||s;
     if(kind==='reassign')dialog('modal',unassigned(c)?'담당 지정':'담당 바꾸기',[c.title,sumOf(c)].filter(Boolean).join(' — '),`<form class="ws-form" data-fl-form="reassign" data-id="${h(id)}" novalidate>${open.length>1?`${picker(()=>({id:'fl-reassign-step',name:'step',label:'바꿀 단계',clearable:false,selected:target?[target.id]:[],...window.ContextPicker.lists.choices({noun:'단계',columns:[{key:'name',label:'단계'},{key:'who',label:'지금 담당'}],items:open.map(x=>({value:x.id,title:x.label,cells:{who:whoOf(x)}}))})}),`<label>바꿀 단계<select name="step">${open.map(x=>`<option value="${h(x.id)}" ${x===target?'selected':''}>${h(x.label)} · ${h(whoOf(x))}</option>`).join('')}</select></label>`)}`:`<p>지금 담당: ${h(target?whoOf(target):'없음')}</p><input type="hidden" name="step" value="${h(target?.id||'')}">`}${pickerHtml(target?.queue?[]:target?.assigneeIds||[])}<p class="ax-form-error" role="alert"></p><div class="ws-form-foot"><span class="ax-note">바꾼 기록이 사건 기록에 남습니다.</span><button class="button primary" type="submit" data-fl-key="case.reassign:${h(id)}">담당 저장</button></div></form>`);
-    if(kind==='reopen')dialog('modal','다시 열기',c.title,`<form class="ws-form" data-fl-form="reopen" data-id="${h(id)}" novalidate><label>다시 여는 이유 <em aria-hidden="true">*</em><textarea name="note" rows="3" maxlength="2000" required></textarea></label><p class="ax-form-error" role="alert"></p><div class="ws-form-foot"><span class="ax-note">마지막 단계 담당자의 할 일로 돌아갑니다.</span><button class="button primary" type="submit" data-fl-key="case.reopen:${h(id)}">다시 열기</button></div></form>`);
+    if(kind==='reopen')dialog('modal','다시 열기',c.title,`<form class="ws-form" data-fl-form="reopen" data-id="${h(id)}" novalidate><label>다시 여는 이유 <em aria-hidden="true">*</em><textarea name="note" rows="3" maxlength="2000" required></textarea></label><p class="ax-form-error" role="alert"></p><div class="ws-form-foot"><span class="ax-note">마지막 단계 담당자의 업무로 돌아갑니다.</span><button class="button primary" type="submit" data-fl-key="case.reopen:${h(id)}">다시 열기</button></div></form>`);
     $('#modal form :is(textarea,select,input:not([type=hidden]))')?.focus();
   }
 
@@ -829,7 +829,7 @@ window.createFlowUI = function createFlowUI(api) {
     const w=el.offsetWidth,hh=el.offsetHeight;let top=r.bottom+4;if(top+hh>innerHeight-8)top=Math.max(8,r.top-hh-4);
     el.style.left=`${Math.min(Math.max(8,r.left),innerWidth-w-8)}px`;el.style.top=`${top}px`;
   }
-  // 값 고르기 — 다 고르면 그 열 필터를 지운다(전부와 같다). 하나도 안 고르면 맞는 일이 없다.
+  // 값 선택 — 다 고르면 그 열 필터를 지운다(전부와 같다). 하나도 안 고르면 맞는 일이 없다.
   function setColValues(key,values,on){
     const all=colValues(key).map(([v])=>v),sel=new Set(Array.isArray(store.cols[key])?store.cols[key]:all);
     values.forEach(v=>on?sel.add(v):sel.delete(v));
@@ -888,11 +888,11 @@ window.createFlowUI = function createFlowUI(api) {
     undoTimer=setTimeout(hide,6000);
   }
 
-  /* ---------- 고른 일 한꺼번에(원장 10-28 "토글로 전체 선택같은거 해서 한번에 담당바꾸기 처리도 가능하게") ---------- */
-  // 제목 줄 가운데 막대: 고른 수 · (이 조건의 일을 다 고르기) · 담당 바꾸기 · 고르기 해제. 체크를 바꿀 때는 표를 다시 그리지 않고 막대와 머리 칸만 맞춘다.
+  /* ---------- 선택한 업무 한꺼번에(원장 10-28 "토글로 전체 선택같은거 해서 한번에 담당바꾸기 처리도 가능하게") ---------- */
+  // 제목 줄 가운데 막대: 선택한 수 · (이 조건의 일을 다 선택) · 담당 바꾸기 · 선택 해제. 체크를 바꿀 때는 표를 다시 그리지 않고 막대와 머리 칸만 맞춘다.
   function bulkHtml(){
     const n=store.sel.size,pickable=board.items.filter(canPick).length;
-    return `<strong>${fmt(n)}건 선택</strong>${pickable>n?`<button type="button" class="ax-text-link" data-fl="bulk-all">선택한 업무 ${fmt(pickable)}건 모두 선택</button>`:''}<button type="button" class="button primary" data-fl="bulk-reassign">담당 바꾸기</button><button type="button" class="button" data-fl="bulk-clear">선택 해제</button>`;
+    return `<strong>${fmt(n)}건 선택</strong>${pickable>n?`<button type="button" class="ax-text-link" data-fl="bulk-all">이 조건의 업무 ${fmt(pickable)}건 모두 선택</button>`:''}<button type="button" class="button primary" data-fl="bulk-reassign">담당 바꾸기</button><button type="button" class="button" data-fl="bulk-clear">선택 해제</button>`;
   }
   function syncBulk(){
     const bar=document.getElementById('fl-bulk');if(bar){bar.hidden=!store.sel.size;bar.innerHTML=bulkHtml();}
@@ -905,10 +905,10 @@ window.createFlowUI = function createFlowUI(api) {
     if(t.matches?.('[data-fl-pick]')){if(t.checked)store.sel.add(t.dataset.flPick);else store.sel.delete(t.dataset.flPick);syncBulk();return;}
     if(t.matches?.('[data-fl-pick-page]')){document.querySelectorAll('#fl-board-list [data-fl-pick]').forEach(b=>{b.checked=t.checked;if(t.checked)store.sel.add(b.dataset.flPick);else store.sel.delete(b.dataset.flPick);});syncBulk();}
   });
-  // 한꺼번에 담당 바꾸기 — 일마다 담당이 빈 단계(없으면 지금 단계)를 고른 사람에게. 한 건씩 차례로 보내고(서버가 건마다 검사) 끝에 한 번 그린다.
+  // 한꺼번에 담당 바꾸기 — 업무마다 담당이 빈 단계(없으면 지금 단계)를 선택한 사람에게. 한 건씩 차례로 보내고(서버가 건마다 검사) 끝에 한 번 그린다.
   function openBulkReassign(){
-    const list=[...store.sel].map(caseById).filter(c=>c&&canPick(c));if(!list.length){toast('담당을 바꿀 일을 골라 주세요.');return;}
-    dialog('modal','담당 한꺼번에 바꾸기',`${fmt(list.length)}건 · ${kindGroups(list).map(k=>`${k.label} ${fmt(k.items.length)}`).join(' · ')}`,`<form class="ws-form" data-fl-form="bulk-reassign" novalidate>${pickerHtml([])}<p class="ax-form-error" role="alert"></p><div class="ws-form-foot"><span class="ax-note">바꾼 기록이 일마다 사건 기록에 남습니다.</span><button class="button primary" type="submit">담당 저장</button></div></form>`);
+    const list=[...store.sel].map(caseById).filter(c=>c&&canPick(c));if(!list.length){toast('담당을 바꿀 업무를 선택해 주세요.');return;}
+    dialog('modal','담당 한꺼번에 바꾸기',`${fmt(list.length)}건 · ${kindGroups(list).map(k=>`${k.label} ${fmt(k.items.length)}`).join(' · ')}`,`<form class="ws-form" data-fl-form="bulk-reassign" novalidate>${pickerHtml([])}<p class="ax-form-error" role="alert"></p><div class="ws-form-foot"><span class="ax-note">바꾼 기록이 업무마다 사건 기록에 남습니다.</span><button class="button primary" type="submit">담당 저장</button></div></form>`);
     $('#modal form :is(input:not([type=hidden]),button.cpick-trigger)')?.focus();
   }
   const bulkTarget=c=>{const open=activeSteps(c);return open.find(x=>!(x.assigneeIds||[]).length)||myStep(c)||open[0]||null;};
@@ -1073,13 +1073,13 @@ window.createFlowUI = function createFlowUI(api) {
   const V2_ROUTE={'withdrawal-reports':{record:id=>({v2path:`/withdrawal-reports/${id}`}),list:{status:'pending'}},approvals:{record:id=>({v2path:`/approvals/${id}`}),list:{tab:'waiting'}},
     'video-homework':{list:c=>({status:c.taskKind==='video_unassigned'?'assign':'missing',...oneStudent(c),...(actorById(v2Actor(c))?.role==='teacher'?{view:'mine'}:{})})},
     'class-sheets':{screen:'students',use:c=>c.taskKind==='progress_anomaly'&&!!studentIdOf(c),list:c=>({v2path:`/students/${studentIdOf(c)}`,tab:'progress'})},
-    // 결석 확인 전화 = 그날 오늘 출결의 '확인 필요' 탭(2.0 주소에 학생 하나를 짚는 열쇠가 없다 — 그 학생 줄은 목록에 뜬다) · 할 일은 결석을 적은 날 생긴다.
+    // 결석 확인 전화 = 그날 오늘 출결의 '확인 필요' 탭(2.0 주소에 학생 하나를 짚는 열쇠가 없다 — 그 학생 줄은 목록에 뜬다) · 업무는 결석을 적은 날 생긴다.
     attendance:{use:c=>c.taskKind==='attendance_absent_desk'&&!!c.createdAt,list:c=>({v2path:'/attendance/live',tab:'desk',date:kstDate(c.createdAt)})},
     // 콜&상담 후속 조치 = 그 상담 상세(여럿이면 칸반).
     enrollment:{record:id=>({v2path:`/enrollment/${id}`}),list:{}},
     // 원생상담 후속조치 = 그 상담 상세('완료 표시'가 처리 자리) · 여럿이면 기한 지난 후속 목록.
     consultations:{record:id=>({v2path:`/consultations/${id}`}),list:{urg:'overdue'}}};
-  // 2.0 화면의 '보는 사람'(= 저장하는 사람, 주소 actor가 화면에서 고른 사람보다 이긴다) — 지금 보는 사람이 그 단계 담당이면 그대로, 아니면 그 단계 담당(승인·결재 차례인 사람).
+  // 2.0 화면의 '보는 사람'(= 저장하는 사람, 주소 actor가 화면에서 선택한 사람보다 이긴다) — 지금 보는 사람이 그 단계 담당이면 그대로, 아니면 그 단계 담당(승인·결재 차례인 사람).
   // 화면이 고를 수 없는 사람이면 화면이 무시하고 제 규칙(원장 먼저)으로 돈다.
   const v2Actor=c=>{const me=actor()?.id,ids=activeSteps(c).flatMap(s=>s.assigneeIds||[]);return ids.includes(me)?me:ids[0]||me||'';};
   async function processRecord(c,family,type,id,opener){
@@ -1182,9 +1182,9 @@ window.createFlowUI = function createFlowUI(api) {
     const v=new FormData(form),error=form.querySelector('.ax-form-error'),id=form.dataset.id,fail=m=>{if(error)error.textContent=m;};
     const done=(r,msg)=>{if(!r)return;form.closest('dialog')?.close();toast(msg);if(id)reopenCase(id);};
     const step=form.dataset.step?{stepId:form.dataset.step}:{};
-    if(kind==='simulate'){const record=String(v.get('record')||''),scenario=form.dataset.scenario;command('event.simulate',{payload:{scenario,...(record?{recordRef:record}:{})},key:`event.simulate:${scenario}`}).then(r=>{if(!r)return;if(r.duplicate){toast('같은 기록으로 만든 시나리오가 아직 끝나지 않아 그 일을 보여 드립니다. 새 일은 만들지 않았습니다.');if(r.caseId)showCase(r.caseId);return;}toast(`연습 시나리오를 시작했습니다. 담당자의 할 일에 생겼습니다.${r.decision==='pending'?' 판정 결과는 잠시 뒤 나타납니다.':''}`);});return;}
-    if(kind==='report'){const c=caseById(id),note=String(v.get('note')||'').trim(),outcome=String(v.get('outcome')||'done');if(note.length<2){fail('보고 내용을 두 글자 이상 적어 주세요.');form.querySelector('textarea').focus();return;}const scope=String(v.get('scope')||''),node=scope?trees.get(id)?.index.get(scope):null;if(scope&&!node){fail('보고할 학생의 기록을 찾지 못했습니다. 창을 닫고 학생을 다시 골라 주세요.');return;}const refs=node?(Array.isArray(node.records)?node.records:[]).map(r=>String(r?.id||'')).filter(Boolean):v.getAll('ref').map(Number).map(i=>c?.entityRefs?.[i]).filter(Boolean).map(r=>`${r.type}:${r.id}`);if(c?.signalId==='billing-remaining'&&!refs.length){fail('처리한 청구를 한 건 이상 골라 주세요.');return;}if(node&&!refs.length){fail('이 학생에게 붙일 기록이 없습니다.');return;}command('case.report',{caseId:id,payload:{...step,note,outcome,...(refs.length?{recordRefs:refs}:{}),...(v.getAll('attach').filter(Boolean).length?{attachments:v.getAll('attach').filter(Boolean).slice(0,20)}:{})}}).then(r=>done(r,c?.factSignal?(caseById(id)?.state==='done'?'보고를 남겼습니다. 근거 기록이 모두 처리되어 이 일이 닫혔습니다.':['done','not_needed'].includes(outcome)?`${node?`${nodeLabel(node)} 학생의 `:''}기록을 처리한 것으로 남겼습니다.`:'보고를 남겼습니다. 아직 남은 일로 열려 있습니다.'):node?`${nodeLabel(node)} 학생의 ${c?.closure==='fact'?'후속 ':''}보고를 남겼습니다. 같은 단계의 다른 학생은 그대로입니다.`:c?.closure==='fact'?(signalCase(c)?'후속 보고를 남겼습니다. 이 일은 원본 기록이 바뀌면 닫힙니다.':'후속 보고를 남겼습니다. 원본 할 일은 원본 기록이 처리되면 닫힙니다.'):caseById(id)?.state==='done'?'보고를 남겼습니다. 이 일은 끝났습니다.':'보고를 남겼습니다.'));return;}
-    if(kind==='review'){const decision=String(v.get('decision')||''),note=String(v.get('note')||'').trim();if(!decision){fail('결정을 골라 주세요.');return;}if(decision==='return'&&note.length<2){fail('되돌릴 때는 보완할 내용을 적어 주세요.');form.querySelector('textarea').focus();return;}command('case.review',{caseId:id,payload:{...step,decision,...(note?{note}:{})}}).then(r=>done(r,decision==='accept'?'승인했습니다.':'보완하라고 되돌렸습니다.'));return;}
+    if(kind==='simulate'){const record=String(v.get('record')||''),scenario=form.dataset.scenario;command('event.simulate',{payload:{scenario,...(record?{recordRef:record}:{})},key:`event.simulate:${scenario}`}).then(r=>{if(!r)return;if(r.duplicate){toast('같은 기록으로 만든 시나리오가 아직 끝나지 않아 그 업무를 보여 드립니다. 새 업무는 만들지 않았습니다.');if(r.caseId)showCase(r.caseId);return;}toast(`연습 시나리오를 시작했습니다. 담당자의 업무에 생겼습니다.${r.decision==='pending'?' 판정 결과는 잠시 뒤 나타납니다.':''}`);});return;}
+    if(kind==='report'){const c=caseById(id),note=String(v.get('note')||'').trim(),outcome=String(v.get('outcome')||'done');if(note.length<2){fail('보고 내용을 두 글자 이상 적어 주세요.');form.querySelector('textarea').focus();return;}const scope=String(v.get('scope')||''),node=scope?trees.get(id)?.index.get(scope):null;if(scope&&!node){fail('보고할 학생의 기록을 찾지 못했습니다. 창을 닫고 학생을 다시 골라 주세요.');return;}const refs=node?(Array.isArray(node.records)?node.records:[]).map(r=>String(r?.id||'')).filter(Boolean):v.getAll('ref').map(Number).map(i=>c?.entityRefs?.[i]).filter(Boolean).map(r=>`${r.type}:${r.id}`);if(c?.signalId==='billing-remaining'&&!refs.length){fail('처리한 청구를 한 건 이상 골라 주세요.');return;}if(node&&!refs.length){fail('이 학생에게 붙일 기록이 없습니다.');return;}command('case.report',{caseId:id,payload:{...step,note,outcome,...(refs.length?{recordRefs:refs}:{}),...(v.getAll('attach').filter(Boolean).length?{attachments:v.getAll('attach').filter(Boolean).slice(0,20)}:{})}}).then(r=>done(r,c?.factSignal?(caseById(id)?.state==='done'?'보고를 남겼습니다. 근거 기록이 모두 처리되어 이 업무가 닫혔습니다.':['done','not_needed'].includes(outcome)?`${node?`${nodeLabel(node)} 학생의 `:''}기록을 처리한 것으로 남겼습니다.`:'보고를 남겼습니다. 아직 남은 업무로 열려 있습니다.'):node?`${nodeLabel(node)} 학생의 ${c?.closure==='fact'?'후속 ':''}보고를 남겼습니다. 같은 단계의 다른 학생은 그대로입니다.`:c?.closure==='fact'?(signalCase(c)?'후속 보고를 남겼습니다. 이 업무는 원본 기록이 바뀌면 닫힙니다.':'후속 보고를 남겼습니다. 원본 업무는 원본 기록이 처리되면 닫힙니다.'):caseById(id)?.state==='done'?'보고를 남겼습니다. 이 업무는 끝났습니다.':'보고를 남겼습니다.'));return;}
+    if(kind==='review'){const decision=String(v.get('decision')||''),note=String(v.get('note')||'').trim();if(!decision){fail('결정을 골라 주세요.');return;}if(decision==='return'&&note.length<2){fail('보완 요청할 때는 보완할 내용을 적어 주세요.');form.querySelector('textarea').focus();return;}command('case.review',{caseId:id,payload:{...step,decision,...(note?{note}:{})}}).then(r=>done(r,decision==='accept'?'승인했습니다.':'보완 요청했습니다.'));return;}
     if(kind==='reassign'){const ids=v.getAll('assignee').map(String),stepId=String(v.get('step')||'');if(!ids.length){fail('담당자를 한 명 이상 골라 주세요.');form.querySelector('[data-cpick-name="assignee"] .cpick-trigger,[name="assignee"]')?.focus();return;}if(ids.length>10){fail('담당자는 10명까지 고를 수 있습니다.');return;}command('case.reassign',{caseId:id,payload:{...(stepId?{stepId}:{}),assigneeIds:ids}}).then(r=>done(r,'담당을 저장했습니다.'));return;}
     if(kind==='bulk-reassign'){const ids=v.getAll('assignee').map(String);if(!ids.length){fail('담당자를 한 명 이상 골라 주세요.');return;}if(ids.length>10){fail('담당자는 10명까지 고를 수 있습니다.');return;}if(form.dataset.busy)return;form.dataset.busy='1';bulkReassign(form,ids).finally(()=>{delete form.dataset.busy;});return;}
     if(kind==='reopen'){const note=String(v.get('note')||'').trim();if(note.length<2){fail('다시 여는 이유를 적어 주세요.');form.querySelector('textarea').focus();return;}command('case.reopen',{caseId:id,payload:{note}}).then(r=>done(r,'다시 열었습니다.'));}

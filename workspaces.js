@@ -278,21 +278,21 @@ window.createWorkspaces = function createWorkspaces(api) {
     const owners=ax.recipient?.owners()||[],staffId=state.recipient||owners[0]||db.staff[0]?.id||'',person=db.staff.find(s=>s.id===staffId);
     const list=ax.recipient?.list(staffId)||[],auto=person?db.tasks.filter(t=>t.status==='open'&&!t.local&&t.owners.includes(person.name)):[];
     const status={requested:'확인 대기',working:'진행 중',done:'완료 보고'};
-    return `<section class="ws-recipient" aria-labelledby="ws-recipient-title"><div class="ax-section-head"><h2 id="ws-recipient-title">받는 사람 수신함 미리보기</h2>${recipientPicker(staffId,owners)}</div>${list.length?list.map(r=>`<article class="ws-inbox-item"><header>${pill(status[r.status],r.status==='done'?'green':'blue')}<strong>${h(r.title)}</strong><small>${h(r.due)}까지 · ${h(r.priority)}${r.context?.familyLabel?` · ${h(r.context.familyLabel)}`:''}</small></header><p class="live-pre">${h(r.body)}</p>${r.status==='requested'?btn('확인했습니다','recipient-ack',`data-request="${h(r.id)}"`,true):r.status==='working'?`<form class="ws-form" data-ws-form="recipient-report" data-request="${h(r.id)}" novalidate><label>완료 보고<textarea name="result" rows="2" maxlength="3000" required></textarea></label><p class="ax-form-error" role="alert"></p><div class="ws-form-foot"><button class="button primary" type="submit">완료 보고</button></div></form>`:`<p class="ax-note">보고 내용: ${h(r.result)}</p>`}</article>`).join(''):`<p class="live-empty">이 직원에게 보낸 원장 요청이 없습니다.</p>`}<section class="ws-auto"><h3>자동 할 일 ${auto.length}건</h3>${autoTasks(auto.slice(0,6))}${auto.length>6?`<p class="ax-note">나머지 ${auto.length-6}건은 할 일 목록에서 확인합니다.</p>`:''}</section></section>`;
+    return `<section class="ws-recipient" aria-labelledby="ws-recipient-title"><div class="ax-section-head"><h2 id="ws-recipient-title">받는 사람 수신함 미리보기</h2>${recipientPicker(staffId,owners)}</div>${list.length?list.map(r=>`<article class="ws-inbox-item"><header>${pill(status[r.status],r.status==='done'?'green':'blue')}<strong>${h(r.title)}</strong><small>${h(r.due)}까지 · ${h(r.priority)}${r.context?.familyLabel?` · ${h(r.context.familyLabel)}`:''}</small></header><p class="live-pre">${h(r.body)}</p>${r.status==='requested'?btn('확인했습니다','recipient-ack',`data-request="${h(r.id)}"`,true):r.status==='working'?`<form class="ws-form" data-ws-form="recipient-report" data-request="${h(r.id)}" novalidate><label>완료 보고<textarea name="result" rows="2" maxlength="3000" required></textarea></label><p class="ax-form-error" role="alert"></p><div class="ws-form-foot"><button class="button primary" type="submit">완료 보고</button></div></form>`:`<p class="ax-note">보고 내용: ${h(r.result)}</p>`}</article>`).join(''):`<p class="live-empty">이 직원에게 보낸 원장 요청이 없습니다.</p>`}<section class="ws-auto"><h3>자동 업무 ${auto.length}건</h3>${autoTasks(auto.slice(0,6))}${auto.length>6?`<p class="ax-note">나머지 ${auto.length-6}건은 업무 목록에서 확인합니다.</p>`:''}</section></section>`;
   }
-  // 자동 할 일 = 공통 리스트(할 일 | 내용 | 기한). 줄을 누르면 그 할 일(원본 기록으로 가는 상세).
+  // 자동 업무 = 공통 리스트(할 일 | 내용 | 기한). 줄을 누르면 그 할 일(원본 기록으로 가는 상세).
   function autoTasks(list){
     if(!list.length)return '';
     const rows=list.map(t=>({...t,label:String(t.title||'')}));
     const cols=[{key:'detail',label:'내용',text:t=>String(t.detail||'')},{key:'due',label:'기한',text:t=>t.due?`${dateText(t.due)}까지`:''}].filter(c=>rows.some(t=>c.text(t)));
-    return tableHtml({shape:sizeColumns('teacher-tasks',cols,rows,{nameLabel:'할 일'}),rows,nameLabel:'할 일',main:t=>`<button type="button" class="ws-rowmain ws-cut" data-task="${h(t.id)}">${h(t.label)}</button>`});
+    return tableHtml({shape:sizeColumns('teacher-tasks',cols,rows,{nameLabel:'업무'}),rows,nameLabel:'업무',main:t=>`<button type="button" class="ws-rowmain ws-cut" data-task="${h(t.id)}">${h(t.label)}</button>`});
   }
   const localCount=(id,rid)=>(state.local[id]||[]).filter(e=>e.recordId===String(rid)).length;
   /* ---------- 공통 리스트(원장 10-28 "카드로 보여주지말고 리스트로. 우리가 사용하는 리스트 서식을 공통으로 활용해서") ----------
      업무 흐름 표(flow-ui)와 같은 규칙 한 벌 — 표 한 장(table-layout:fixed) · 열 머리 한 줄 · 열마다 정해진 너비 · 넘친 칸은 말줄임, 마우스·초점이 오면
      전부(.ws-att-tip) · 금액은 오른쪽, 짧은 값은 가운데, 긴 글은 왼쪽(머리도 같은 쪽) · 열 머리를 누르면 정렬(오름·내림)·값 거르기 · 아래 쪽 번호.
      줄 어디를 눌러도 그 줄의 이름 단추가 하는 일(기록이면 상세 서랍). 칸 값이 없으면 빈 칸(다음 값을 당기지 않는다).
-     작업 공간의 기록 목록(목록·날짜순·문서·설정 값·업무 단계 목록) · 칸반 칸 안의 줄 · 직원 수신함의 자동 할 일이 모두 이 한 벌(tableHtml · sizeColumns)로 그린다. */
+     작업 공간의 기록 목록(목록·날짜순·문서·설정 값·업무 단계 목록) · 칸반 칸 안의 줄 · 직원 수신함의 자동 업무를 모두 이 한 벌(tableHtml · sizeColumns)로 그린다. */
   const MONEY=/^-?[\d,]+원$/,collate=new Intl.Collator('ko',{numeric:true}).compare;
   // 글 폭 어림(em) — 한글 1 · 숫자 0.6 · 영문 0.62 · 빈칸 0.3 · 그 밖 0.4.
   const emOf=s=>{let n=0;for(const ch of String(s??''))n+=/[가-힣ㄱ-ㆎ一-鿿]/.test(ch)?1:/\d/.test(ch)?.6:/[A-Za-z]/.test(ch)?.62:/\s/.test(ch)?.3:.4;return n;};
@@ -486,7 +486,7 @@ window.createWorkspaces = function createWorkspaces(api) {
     if(window.ContextPicker&&['student','staff','class','record'].includes(t))return pickerField(a,f,t,id,recordId,scope);
     if(t==='textarea')return `<label for="${id}">${label}<textarea id="${id}" name="${h(f.id)}" rows="3" maxlength="2000" ${req}></textarea></label>`;
     if(t==='checkbox'||t==='boolean')return `<label class="ws-check" for="${id}"><input type="checkbox" id="${id}" name="${h(f.id)}" value="예"> ${h(f.label)}</label>`;
-    if(t==='student')return `<label for="${id}">${label}<input id="${id}" name="${h(f.id)}" list="ws-students" autocomplete="off" maxlength="60" placeholder="이름 입력 후 목록에서 선택" ${req}><small>재원생 목록에서 고릅니다.</small></label>`;
+    if(t==='student')return `<label for="${id}">${label}<input id="${id}" name="${h(f.id)}" list="ws-students" autocomplete="off" maxlength="60" placeholder="이름 입력 후 목록에서 선택" ${req}><small>재원생 목록에서 선택합니다.</small></label>`;
     // 일반 고르기·과목·여러 개 고르기도 공용 선택창(원장 10-28 "모든 드랍다운 … 서식 일치"). 값과 이름(name)은 그대로라 저장 쪽은 바뀌지 않는다.
     if(window.ContextPicker&&['select','subject','multiselect'].includes(t)){const CP=window.ContextPicker,opts=options(t==='multiselect'?'select':t);try{return CP.html({id,name:f.id,label:f.label,required:!!f.required,multiple:t==='multiselect',clearable:!f.required,...CP.lists.choices({items:opts.map(o=>({value:o.value,title:o.label})),columns:[{key:'name',label:f.label}]})});}catch{}}
     if(['select','record','staff','class','subject'].includes(t)){const opts=options(t);return `<label for="${id}">${label}<select id="${id}" name="${h(f.id)}" ${req}><option value="">선택</option>${opts.map(o=>`<option value="${h(o.value)}" ${t==='record'&&String(recordId)===o.value?'selected':''}>${h(o.label)}</option>`).join('')}</select>${t==='record'&&!opts.length?'<small>선택할 기록이 없습니다.</small>':''}</label>`;}
@@ -550,8 +550,8 @@ window.createWorkspaces = function createWorkspaces(api) {
       const lo=Number.isFinite(Number(f.min))?Number(f.min):0,hi=Number.isFinite(Number(f.max))?Number(f.max):null;
       if(v&&['number','money','amount'].includes(f.type)&&!(Number.isFinite(Number(v))&&Number(v)>=lo&&(hi===null||Number(v)<=hi)))errors.push(hi===null?`${f.label} 칸은 ${lo} 이상의 숫자로 입력해 주세요.`:`${f.label} 칸은 ${lo}~${hi} 사이의 숫자로 입력해 주세요.`);
       if(v&&f.type==='date'&&!/^\d{4}-\d{2}-\d{2}$/.test(v))errors.push(`${f.label} 날짜 형식을 확인해 주세요.`);
-      if(v&&f.type==='student'&&!studentFor(v))errors.push(`${f.label} 칸은 재원생 목록에서 골라 주세요.`);
-      if(v&&['select'].includes(f.type)&&Array.isArray(f.options)&&f.options.length&&!f.options.some(o=>String(typeof o==='object'?o.value??o.id??o.label:o)===v))errors.push(`${f.label} 선택지를 다시 골라 주세요.`);
+      if(v&&f.type==='student'&&!studentFor(v))errors.push(`${f.label} 칸은 재원생 목록에서 선택해 주세요.`);
+      if(v&&['select'].includes(f.type)&&Array.isArray(f.options)&&f.options.length&&!f.options.some(o=>String(typeof o==='object'?o.value??o.id??o.label:o)===v))errors.push(`${f.label} 선택지를 다시 선택해 주세요.`);
     });
     return errors;
   }
@@ -710,7 +710,7 @@ window.createWorkspaces = function createWorkspaces(api) {
     if(f?.status==='error'&&!completeBase(id))return `<p class="ws-colpop-note">${h(f.message)}</p>`;
     const vals=colValues();if(vals===null)return '<p class="ws-colpop-note" role="status">값을 불러오는 중입니다.</p>';
     const sel=state.cols[id]?.[colMenu.col],on=v=>!Array.isArray(sel)||sel.includes(v),q=norm(colMenu.q),shown=q?vals.filter(([v])=>norm(v||'빈 칸').includes(q)):vals;
-    if(!shown.length)return `<p class="ws-colpop-note">${vals.length?'맞는 값이 없습니다.':'고를 값이 없습니다.'}</p>`;
+    if(!shown.length)return `<p class="ws-colpop-note">${vals.length?'맞는 값이 없습니다.':'선택할 값이 없습니다.'}</p>`;
     return `<label class="ws-colpop-all"><input type="checkbox" data-wsc="all"><span>${q?'찾은 값 모두':'모두'}</span></label>${shown.slice(0,VALUE_MAX).map(([v,n])=>`<label><input type="checkbox" data-wsc="val" value="${h(v)}" ${on(v)?'checked':''}><span>${h(v||'빈 칸')}</span><b>${fmt(n)}</b></label>`).join('')}${shown.length>VALUE_MAX?`<p class="ws-colpop-note">값이 ${fmt(shown.length)}가지라 앞의 ${fmt(VALUE_MAX)}가지만 보입니다. 찾기 칸으로 좁혀 주세요.</p>`:''}`;
   }
   // '모두' 칸 = 보이는 값이 다 골라졌으면 체크, 일부면 반만. 정렬 단추는 기록이 너무 많으면 잠근다.
@@ -806,7 +806,7 @@ window.createWorkspaces = function createWorkspaces(api) {
     if(action==='record-request'){const a=area(id),r=recordById(id,record);if(!a||!r)return;document.querySelectorAll('dialog[open]').forEach(d=>d.close());requestFrom(a,{title:`${r.label} 확인`,body:`${a.label}의 이 기록을 확인하고 필요한 조치와 결과를 보고해 주세요.`,records:[r]});return;}
     if(action==='action'){if(el.closest('dialog'))el.closest('dialog').close();openAction(id,el.dataset.action,record||'');return;}
     if(action==='request'){const a=area(id);requestFrom(a,{title:`${a.label} 확인 요청`,body:`${a.label}에서 확인할 내용을 정리해 결과를 보고해 주세요.`});return;}
-    if(action==='ask'){ax.openChat?.({topic:area(id).label,prompt:`${area(id).label}에서 지금 확인할 점과 담당자에게 요청할 일을 정리해줘`});return;}
+    if(action==='ask'){ax.openChat?.({topic:area(id).label,prompt:`${area(id).label}에서 지금 확인할 점과 담당자에게 요청할 업무를 정리해줘`});return;}
     if(action==='signal-evidence'||action==='signal-request'){
       const a=area(id),s=(data(id)?.signals||[]).find(x=>x.id===el.dataset.signal);if(!s)return;
       if(action==='signal-request'){requestFrom(a,{title:s.draft?.title||s.title,body:s.draft?.body||s.summary||s.title,signal:s.id,records:(s.recordIds||[]).map(r=>recordById(id,r)).filter(Boolean)});return;}

@@ -1,6 +1,6 @@
 /* AI 업무 지원 — 답 그리기(원장 10-28 "그냥 나열하지말고 서식등을 동원해서 정리해서 나열하게. 실제로 해당 메뉴로 갈 수도 있게.
    업무 요청도 할 수 있게"). ax.js가 대화·요청 창을 맡고, 이 파일은 한 답의 모양과 그 안의 이동만 맡는다.
-   · 순서 = 결론 한 줄 → 핵심 숫자 → 근거(미주 [n]) → 짧은 표 → 확인할 일 → 미주 → 바로 가기 → 요청안.
+   · 순서 = 결론 한 줄 → 핵심 숫자 → 근거(미주 [n]) → 짧은 표 → 확인할 업무 → 미주 → 바로 가기 → 요청안.
    · 모델 글은 이스케이프한 뒤에만 서식을 입힌다: ⟦이름·숫자⟧ = 굵게, '다만 …' 문장 = 밑줄(퇴원 분석 exit-insight.js와 같은 결).
    · 미주 글은 서버가 계산한 사실 줄 그대로다(모델이 쓴 글이 아니다). 마우스를 올리면 카드로, 누르면 아래 미주로 미끄러져 간다.
    · 바로 가기는 서버가 아는 목적지(작업 영역·연습 화면·확장 추세 지표)뿐 — 여기서는 그 id를 화면 주소로 옮기기만 한다.
@@ -50,7 +50,7 @@ window.createAxChat = function createAxChat(api) {
     const facts = r.keyFacts.length ? `<dl class="axc-facts">${r.keyFacts.map(f => `<div class="axc-fact"><dt>${h(f.label)}</dt><dd><strong>${h(f.value)}</strong>${f.change ? ` <span class="axc-change ${f.tone}">${h(f.change)}</span>` : ''}${f.note ? fnMark(tid, f.note) : ''}</dd></div>`).join('')}</dl>` : '';
     const points = r.points.length ? `<h4 class="axc-h">근거</h4><ul class="axc-points">${r.points.map(p => `<li>${rich(p.text)}${marks(tid, p.notes)}</li>`).join('')}</ul>` : '';
     const table = r.table && r.table.columns.length >= 2 && r.table.rows.length ? `<div class="axc-table-wrap"><table class="axc-table"><thead><tr>${r.table.columns.map(c => `<th scope="col">${h(c)}</th>`).join('')}</tr></thead><tbody>${r.table.rows.map(row => `<tr>${r.table.columns.map((_, i) => `<td>${h(row[i] ?? '')}</td>`).join('')}</tr>`).join('')}</tbody></table></div>` : '';
-    const checks = r.checks.length ? `<h4 class="axc-h">확인할 일</h4><ul class="axc-checks">${r.checks.map(c => `<li>${rich(c)}</li>`).join('')}</ul>` : '';
+    const checks = r.checks.length ? `<h4 class="axc-h">확인할 업무</h4><ul class="axc-checks">${r.checks.map(c => `<li>${rich(c)}</li>`).join('')}</ul>` : '';
     const notes = r.notes.length ? `<ol class="axc-notes" aria-label="근거 미주">${r.notes.map(n => `<li id="axc-n-${h(tid)}-${n.n}"><span class="axc-n-no">[${n.n}]</span><span class="axc-n-text">${h(n.text)}</span></li>`).join('')}</ol>` : '';
     const links = r.links.length ? `<div class="axc-links"><span class="ax-note">바로 가기</span>${r.links.map(l => `<button type="button" class="button axc-go" data-axc-go="${h(l.id)}">${h(l.label)} <span aria-hidden="true">→</span></button>`).join('')}</div>` : '';
     const task = t.suggestedTask ? taskCard(t) : '';

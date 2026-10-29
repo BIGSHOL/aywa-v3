@@ -195,7 +195,7 @@ try{
   const source=(await flow()).cases.find(x=>x.closure==='fact'&&x.state!=='done'&&active(x).some(s=>s.assigneeIds.length));
   if(source){
     const s=active(source).find(x=>x.assigneeIds.length);await asActor(s.assigneeIds[0]);
-    await (await showCard(source.id)).locator('[data-fl="report-open"]').click();await expectText('#modal',/원본 할 일은 2\.0에서 처리되어야 닫힙니다|이 일은 원본 기록이 바뀌어야 닫힙니다/);
+    await (await showCard(source.id)).locator('[data-fl="report-open"]').click();await expectText('#modal',/원본 업무는 원본 기록이 처리되어야 닫힙니다|이 업무는 원본 기록이 바뀌어야 닫힙니다/);
     await page.locator('#modal textarea[name="note"]').fill('보호자 연락 완료, 원본 기록 입력은 데스크가 진행');
     const r=await sent(()=>submit('report'));assert.equal(r.status,200);
     const after=await caseOf(source.id),follow=await caseOf(r.body.caseId);

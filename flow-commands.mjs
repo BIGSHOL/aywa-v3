@@ -197,7 +197,7 @@ export async function applyCommand(state, source, cmd, { now, inFlight = new Map
       }
       if (c.closure === 'fact') {
         // Source facts never close locally: the report becomes a linked local follow-up case.
-        const f = local({ kind: 'request', scenario: null, familyId: c.familyId, title: `${c.title} — 후속 보고`, summary: '원본 할 일은 원본 기록이 바뀔 때 닫힙니다. 이 보고는 따로 남는 후속 기록입니다.', entityRefs: c.entityRefs.slice(0, 10), linkedCaseIds: [c.id], evidence: [evidence] }, [step('f1', { key: 'followup_report', label: '후속 보고', role: 'source', evidenceRequired: true }, { assigneeIds: [actor.id], queue: null, rule: '원래 할 일 담당', ruleSource: 'staff_task_assignees.user_id' }, 1, { status: 'done' })]);
+        const f = local({ kind: 'request', scenario: null, familyId: c.familyId, title: `${c.title} — 후속 보고`, summary: '원본 업무는 원본 기록이 바뀔 때 닫힙니다. 이 보고는 따로 남는 후속 기록입니다.', entityRefs: c.entityRefs.slice(0, 10), linkedCaseIds: [c.id], evidence: [evidence] }, [step('f1', { key: 'followup_report', label: '후속 보고', role: 'source', evidenceRequired: true }, { assigneeIds: [actor.id], queue: null, rule: '원래 업무 담당', ruleSource: 'staff_task_assignees.user_id' }, 1, { status: 'done' })]);
         f.steps[0].id = `${f.id}-f1`; c.linkedCaseIds.push(f.id); c.evidence.push({ ...evidence, followupCaseId: f.id });
         const linked = emit({ caseId: c.id, type: 'followup.linked', stepId: s.id, data: { followupCaseId: f.id } });
         emit({ caseId: f.id, type: 'step.reported', stepId: f.steps[0].id, causeId: linked.id });
@@ -212,9 +212,9 @@ export async function applyCommand(state, source, cmd, { now, inFlight = new Map
     }
     case 'case.review': {
       keys(payload, ['stepId', 'decision', 'note']);
-      if (!['accept', 'return'].includes(payload.decision)) throw bad('검토 결정은 승인 또는 되돌림만 고를 수 있습니다.');
+      if (!['accept', 'return'].includes(payload.decision)) throw bad('검토 결정은 승인 또는 보완 요청만 선택할 수 있습니다.');
       if (payload.note !== undefined && !str(payload.note, 0, 2000)) throw bad('메모는 2,000자까지 쓸 수 있습니다.');
-      const c = getCase(); if (c.closure === 'fact') throw new CommandError(409, 'fact_case', '원본 할 일은 원본 기록이 바뀔 때만 닫힙니다.');
+      const c = getCase(); if (c.closure === 'fact') throw new CommandError(409, 'fact_case', '원본 업무는 원본 기록이 바뀔 때만 닫힙니다.');
       const s = pickStep(c, payload, x => x.status === 'ready' && x.review, actor);
       if (payload.decision === 'return') {
         if (!str(payload.note, 2, 2000)) throw new CommandError(400, 'evidence_required', '보완 요청 사유를 적어 주세요.');
@@ -243,7 +243,7 @@ export async function applyCommand(state, source, cmd, { now, inFlight = new Map
     }
     case 'case.reopen': {
       keys(payload, ['note']);
-      const c = getCase(); if (c.closure === 'fact') throw new CommandError(409, 'fact_case', '원본 할 일은 다시 열 수 없습니다.');
+      const c = getCase(); if (c.closure === 'fact') throw new CommandError(409, 'fact_case', '원본 업무는 다시 열 수 없습니다.');
       if (c.state !== 'done') throw new CommandError(409, 'not_done', '완료된 업무만 다시 열 수 있습니다.');
       if (!str(payload.note, 2, 2000)) throw new CommandError(400, 'evidence_required', '다시 여는 사유를 적어 주세요.');
       const last = Math.max(...c.steps.filter(x => !x.skipped).map(x => x.group));

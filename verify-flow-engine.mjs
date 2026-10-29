@@ -298,7 +298,7 @@ test('trusted dates only → requestedActionDate; a code deadline outranks model
   assert.equal(seen[0].requestedActionDate, '2026-10-24');
   assert.equal(d.priority, 'high', 'overdue absence → high even though the model said no deadline');
   const shown = decisionView({ decision: d.record }, null);
-  assert.deepEqual([shown.deadline.relation, shown.deadline.label, shown.probabilities.urgency], ['overdue', '기한 지남', 'no_deadline']);
+  assert.deepEqual([shown.deadline.relation, shown.deadline.label, shown.probabilities.urgency], ['overdue', '지난 업무', 'no_deadline']);
 });
 
 test('HTTP: GET view, strict POST guards, safe errors, store never served', async t => {
