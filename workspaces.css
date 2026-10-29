@@ -20,6 +20,7 @@
 .ws-kpi-title em{font-style:normal;font-size:var(--ax-xs);font-weight:600;white-space:nowrap}
 .ws-kpi>strong,.ws-kpi-change{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .ws-kpi-change{font-weight:600}.ws-kpi-change.good{color:var(--ax-good)}.ws-kpi-change.bad{color:var(--ax-bad)} /* 좋아짐 = 빨강 · 나빠짐 = 파랑(원장 10-28) */
+.ws-kpi-cleanup{display:block;white-space:normal;color:var(--ax-ink);font-weight:500;line-height:1.4}
 .ws-kpi-spark{display:flex;height:40px;margin-top:2px}.ws-kpi-spark .chart-line{flex:1 1 auto}
 .ws-kpi-basis{grid-column:1/-1;margin:0;font-size:var(--ax-xs);color:var(--ax-ink)}
 .ws-trend{min-width:0;padding:14px 16px;border:1px solid var(--ax-line);border-radius:8px}

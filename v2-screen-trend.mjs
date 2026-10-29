@@ -224,6 +224,7 @@ export const screen = {
       filter: filter ? { ...filter, label: await filterName() } : null,
       windows: shown,
       total: total.slice(start),
+      ...(Array.isArray(raw.cleanupNotes) && raw.cleanupNotes.length === windows.length ? { cleanupNotes: raw.cleanupNotes.slice(start) } : {}),
       // 보여 줄 줄만(keep — 건수는 보이는 창 모두 0·기록 없음이면 빼고, 비율은 분모가 있는 창이 하나도 없을 때만 뺀다) · 쪼개 보면 그 창들로 다시 본다 · 전체(total)는 늘 남는다.
       rows: raw.rows.map((r) => ({ key: r.key, label: label(by, r.key, r.label), points: r.points.map(pt).slice(start), ...(meta?.has(r.key) ? { meta: meta.get(r.key) } : r.meta ? { meta: r.meta } : {}) })).filter((r) => keep(r.points)),
       ...(filter && Array.isArray(raw.records) && raw.records.length === windows.length ? { records: raw.records.slice(start) } : {}),

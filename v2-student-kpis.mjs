@@ -241,6 +241,19 @@ export function monthWithdrawalRows(R, withdrawn, ended, today, subjects, win = 
   ended, win, subjects, () => null);
 }
 
+/** 장부 정리 퇴원은 2.0 카드에만 포함한다. 수는 카드와 같은 과목별 퇴원 행 단위다. */
+export function exitCleanupCount(R, withdrawn, today, subjects, win = R.win.withdrawalMonthWindow(today.slice(0, 7), today), program = null) {
+  const rows = monthWithdrawalRows(R, withdrawn.filter(row => row.cleanup), [], today, subjects, win);
+  return R.win.countWithdrawalPrograms(program ? rows.filter(row => (row.program ?? 'other') === program) : rows).total;
+}
+
+/** 카드와 추세의 차이·안내 문구를 한 곳에서 정의한다. 0건이면 안내가 없다. */
+export function exitCleanupPolicy(trendValue, cleanupCount) {
+  if (!Number.isSafeInteger(cleanupCount) || cleanupCount < 0) throw new Error('장부 정리 건수가 올바르지 않습니다');
+  return { trendValue, cardValue: trendValue == null ? null : trendValue + cleanupCount,
+    note: cleanupCount ? `장부 정리 ${cleanupCount}명 포함 · 추세선은 제외` : null };
+}
+
 // ── 이달 신규(콜&상담 '등록 완료') ──────────────────────────────────────────────────────────────────────────────────────
 /**
  * 2.0 getEnrolledRecent의 재료를 가장 넓은 창 [lo, hi)로 한 번에 — 상태 변경 기록(등록 완료로 옮김) + 반 배정으로 '등록 완료' 칸에 선 상담의 후보와 그 학생의 수강.
@@ -354,13 +367,15 @@ async function compute({ sql: tx, asOf, tenantId: t, importV2 }) {
   const exitsKpi = kpi(metric('exits').label, '명', await trendPoints('exits', 'month', months.length),
     { id: 'exits', better: 'down', period: 'month', span: '이번 달',
       basis: '그 달 퇴원한 학생과 한 과목을 모두 끝낸 학생(과목마다 한 번) · 큰 숫자는 단체 장부 정리 퇴원도 셈 · 추세선과 전월 대비는 빼고 셈 · 지난달은 말일까지, 이번 달은 오늘까지' });
+  const cleanupCount = exitCleanupCount(R, withdrawn, asOf, subjects);
+  const cleanup = exitCleanupPolicy(exitsKpi.points.at(-1).value, cleanupCount);
   const kpis = [
     kpi(metric('enrolled-students').label, '명', withToday(trends.students, studentsCard),
       { id: 'enrolled-students', better: 'up', period: 'month', span: '오늘 기준', basis: '재원 학생(반 수업이 모두 아직 시작 전인 학생은 뺌) · 지난달까지는 그 달 말일 기준' }),
     kpi(metric('courses').label, '개', withToday(trends.courses, coursesCard),
       { id: 'courses', better: 'up', period: 'month', span: '오늘 기준', basis: '재원생이 듣는 과목 수(한 학생이 같은 과목 반을 여럿 들어도 하나) · 지난달까지는 그 달 말일 기준' }),
     // 큰 숫자만 칸 값 — 전월 대비(previous·delta)는 kpi()가 센 추세 점끼리 그대로(선의 점 팝오버와 같은 비교).
-    { ...exitsKpi, value: withdrawalsCard },
+    { ...exitsKpi, value: withdrawalsCard, cleanupCount, cleanupNote: cleanup.note },
     kpi(metric('intake').label, '건', await trendPoints('intake', 'week', weeks.length),
       { id: 'intake', better: 'up', period: 'week', span: '최근 7일', basis: '상담일이 그 7일 안인 신규 콜&상담 · 지난 창은 그날 끝까지, 지금 창은 복사본을 뜬 시각까지 셈' }),
     kpi(metric('new-enrollments').label, '명', await trendPoints('new-enrollments', 'week', weeks.length),

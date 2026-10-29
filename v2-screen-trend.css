@@ -9,6 +9,7 @@
 .tr-now span{font-size:var(--ax-xs)}
 .tr-now strong{font-size:var(--ax-xl);font-weight:700;color:var(--ax-primary);font-variant-numeric:tabular-nums}
 .tr-now small{font-size:var(--ax-xs);font-variant-numeric:tabular-nums}
+.tr-now .tr-cleanup-note{flex-basis:100%;color:var(--ax-ink);font-weight:500}
 .tr .good{color:var(--ax-good)}.tr .bad{color:var(--ax-bad)}
 .tr .tr-now small.good,.tr .tr-now small.bad,.tr td.good,.tr td.bad{font-weight:600}
 .tr-chart svg{display:block;width:100%;height:auto}

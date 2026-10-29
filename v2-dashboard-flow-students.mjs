@@ -3,8 +3,7 @@
 // (같은 데이터는 같은 원본) — 여기는 그 판정을 화면이 고른 창(일 31 · 주 13 · 월 12 · 연 3)마다 돌릴 뿐이다.
 // · 재고 지표(재원생 · 강좌수) = 창 끝 날의 값(오늘을 넘으면 오늘). 흐름 지표 = 창 안에 생긴 것의 수.
 // · 시각이 있는 기록(상담일 · 등록 전환 · 수업종료의 수강 생성)은 지난 창이면 그 창 마지막 날이 끝날 때까지, 지금 창(마지막 날 = 오늘)이면 복사본을 뜬
-//   순간까지 센다 — 선생님 수업보고서 확장 추세와 같은 규칙. 지금 창은 카드의 큰 숫자와 같다. (카드의 추세선은 비교를 공정하게 하려고 지난 창도
-//   오늘과 같은 시각에 자르고, 퇴원·수업종료는 달마다 1일~같은 날로 센다 — 지난 점은 카드가 확장 추세보다 작거나 같다.)
+//   순간까지 센다 — 선생님 수업보고서 확장 추세와 같은 규칙. 지금 창은 카드의 큰 숫자와 같다(퇴원·수업종료의 장부 정리 제외 예외는 안내한다).
 // · 기록 범위: 흐름 지표는 창이 기록 시작 전에 시작하면 '기록 없음'(앞쪽이 비어 덜 센 값을 그리지 않는다) · 재고 지표는 창 끝 날이 기록 시작 전이면.
 //   등록·퇴원 계열의 기록 시작 = 2.0 원생 통계 flowBounds(퇴원 기록이 시작된 달과 에이와 수강 기록이 갖춰진 달 중 늦은 달 · 과목으로 좁히거나
 //   수업종료를 세면 수강 종료가 처음 기록된 달도 — 그 전 달은 실제보다 낮게 나온다).
@@ -16,7 +15,7 @@
 // · 읽기 전용 · 쓰기 없음 · 바깥 호출 없음.
 import { queryGate, copyClock } from './v2-onescreen-roster.mjs';
 import { rules as kpiRules, consts, tenantSettings, trendRaw, cleanupBilling, recordTrustFrom, windowWithdrawals, subjectEndedInputs, subjectEnded,
-  enrolledInputs, enrolledItemsIn, monthWithdrawalRows } from './v2-student-kpis.mjs';
+  enrolledInputs, enrolledItemsIn, monthWithdrawalRows, exitCleanupCount, exitCleanupPolicy } from './v2-student-kpis.mjs';
 import { recordCoverage } from './v2-dashboard-trends.mjs';
 import { tenantId as COPY_TENANT } from './full-db.mjs';
 import { getWithdrawnStudents, loadExitTeacherJudge, loadRules as exitRules, teacherNames } from './v2-screen-withdrawals.mjs';
@@ -278,9 +277,11 @@ async function exitsSeries({ sql, tenantId: t = COPY_TENANT, importV2, windows, 
   const b = await prep(sql, t, importV2), P = b.X.program;
   const inputs = await exitInputs(b, windows), since = flowSince(b, true);
   const lists = windows.map((w) => (flowOff(b, w, since) ? null : exitRowsIn(b, inputs, w.from, min(w.to, b.today))));
+  const cleanupNotes = windows.map(w => flowOff(b, w, since) ? null : exitCleanupPolicy(null,
+    exitCleanupCount(b.R, inputs.withdrawn, min(w.to, b.today), b.subjects, { from: w.from, to: min(w.to, b.today) }, filter?.dim === 'program' ? filter.key : null)).note);
   const programs = [...P.visiblePrograms(b.eieOn), 'other'];
   const programName = (k) => (k === 'other' ? '그 밖·모름' : P.programLabel(k, b.programSubjects, b.eieOn));
-  return { since, ...await namedRecords(b.gate, t, b.load, await withExitTeachers(b, lists, tallyItems(lists, { by, filter, keysOf: { program: (x) => [x.program ?? 'other'] },
+  return { since, cleanupNotes, ...await namedRecords(b.gate, t, b.load, await withExitTeachers(b, lists, tallyItems(lists, { by, filter, keysOf: { program: (x) => [x.program ?? 'other'] },
     labelOf: { program: programName }, fixed: { program: programs },
     record: (x) => ({ id: x.id, key: x.eventKey ?? x.id, name: x.name, date: x.withdrawnAt, dateLabel: x.kind === 'subject-ended' ? '수업종료일' : '퇴원일',
       note: [x.kind === 'subject-ended' ? '수업종료' : '퇴원', programName(x.program ?? 'other'), x.className].filter(Boolean).join(' · ') }) }), { perSubject: true })) };
