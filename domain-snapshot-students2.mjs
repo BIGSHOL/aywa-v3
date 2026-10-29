@@ -11,7 +11,7 @@ const isCleanupMemo = memo => !!memo?.trim() && (memo.trim() === '데이터 정�
 export const isBookkeepingOnlyExit = (reason, memo, hasHistory) => { const key = normalizeReason(reason); return !hasHistory && !(key && key !== 'other') && isCleanupMemo(memo); };
 const REPORT_STATUS = { requested: '작성 요청', revision: '반려 · 수정 요청', manager_pending: '관리자 승인 대기', director_pending: '원장 승인 대기', scheduled: '처리 예약', completed: '처리 완료' };
 // src/features/retention/components/campaign-board.tsx COLUMNS와 같은 라벨.
-const CAMPAIGN = { pending: '대상', contacted: '연락함', enrolled: '재등록 완료', declined: '이탈' };
+const CAMPAIGN = { pending: '대상', contacted: '연락 완료', enrolled: '재등록 완료', declined: '이탈' };
 const BUCKETS = [['d7', '0~7일', 7], ['d30', '8~30일', 30], ['d60', '31~60일', 60], ['d90', '61~90일', 90]];
 const days = (a, b) => Math.round((Date.parse(`${b}T00:00:00Z`) - Date.parse(`${a}T00:00:00Z`)) / 86400000);
 

@@ -17,7 +17,7 @@ const f=(id,label,type='text',extra={})=>({id,label,type,...extra});
 // Preview forms for the priority flows (2.0 operation groups by index in operations.key).
 const FIELDS={
   makeups:{0:[f('case','보강 사례','record',{required:true}),f('command','명령','select',{required:true,options:[{value:'intake',label:'접수'},{value:'assign',label:'배정'},{value:'merge',label:'병합'},{value:'close',label:'종결'}]}),f('date','보강일','date',{required:true}),f('time','시작 시각','time'),f('note','메모','textarea')]},
-  retention:{0:[f('student','원생','student',{required:true}),f('status','캠페인 상태','select',{required:true,options:['대상','연락함','재등록','보류']}),f('due','다음 연락일','date')],1:[f('student','원생 이름','text',{required:true}),f('action','조치 내용','textarea',{required:true}),f('date','조치일','date',{required:true})]},
+  retention:{0:[f('student','원생','student',{required:true}),f('status','캠페인 상태','select',{required:true,options:['대상','연락 완료','재등록','보류']}),f('due','다음 연락일','date')],1:[f('student','원생 이름','text',{required:true}),f('action','조치 내용','textarea',{required:true}),f('date','조치일','date',{required:true})]},
   newcomers:{0:[f('student','신입생','record',{required:true}),f('item','체크 항목','select',{required:true,options:['첫 수업 전 전화','첫 수업 후 전화','2주 상담','30일 상담','90일 상담']}),f('done','완료일','date',{required:true})]},
   withdrawals:{1:[f('student','퇴원생','record',{required:true}),f('reason','퇴원 사유','select',{required:true,options:['이사','시간 조정','성적·진도','학원 이동','기타']}),f('memo','메모','textarea')]},
   'withdrawal-reports':{1:[f('report','퇴원보고서','text',{required:true}),f('decision','단계 변경','select',{required:true,options:['승인','반려','보완 요청']}),f('comment','의견','textarea')]},
