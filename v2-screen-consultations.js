@@ -25,16 +25,11 @@
         rate: { ...row.cells.rate, tone: !Number.isFinite(percent) ? '' : percent < RATE_LIMITS.danger ? 'low' : percent < RATE_LIMITS.caution ? 'muted' : 'high' },
       } };
     });
-    const noPrevious = model.period === '2026-10' && rows.every(row => row.cells.prev === '—');
     const template = document.createElement('template');
     template.innerHTML = S.renderOverview({ ...model, rows });
     const section = template.content.querySelector('.v2o');
     section.classList.add('v2o-consultations');
-    for (const line of [
-      noPrevious ? '지난달 기록 없음: 담임 상담 현황은 2026년 10월부터 집계합니다. 3개월 기록도 종료한 세 달이 모인 뒤 표시합니다.' : '',
-      `이행률 색: ${RATE_LIMITS.danger}% 미만 빨강 · ${RATE_LIMITS.caution}% 미만 주황`,
-    ]) {
-      if (!line) continue;
+    for (const line of [`이행률 색: ${RATE_LIMITS.danger}% 미만 빨강 · ${RATE_LIMITS.caution}% 미만 주황`]) {
       const note = document.createElement('p'); note.className = 'v2s-note'; note.textContent = line; section.append(note);
     }
     const table = section.querySelector('table');
