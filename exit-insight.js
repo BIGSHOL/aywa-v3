@@ -78,7 +78,7 @@ window.createExitInsight = function createExitInsight(api) {
   const rich = t => h(t).replace(/⟦([^⟧]*)⟧/g, '<strong>$1</strong>').replace(/(^|[.!?]\s+)(다만 [^.!?]*[.!?])/g, '$1<u class="xi-caveat">$2</u>');
   function overall(d) {
     if (!d.overall) return '';
-    return `<section class="xi-overall"><h3>AI 정리 ${pill('AI 초안', 'blue')}</h3><p>${rich(d.overall.summary)}</p>${d.overall.reasons.length ? `<ul>${d.overall.reasons.map(r => `<li>${rich(r)}</li>`).join('')}</ul>` : ''}${d.overall.checks.length ? `<h4>사람이 확인할 일</h4><ul class="xi-checks">${d.overall.checks.map(r => `<li>${rich(r)}</li>`).join('')}</ul>` : ''}<p class="xi-note">숫자·날짜·인원은 기록에서 센 값입니다. 문장 끝 번호에 마우스를 올리면 근거가 보입니다.</p></section>`;
+    return `<section class="xi-overall"><h3>AI 정리 ${pill('AI 초안', 'blue')}</h3><p>${rich(d.overall.summary)}</p>${d.overall.reasons.length ? `<ul>${d.overall.reasons.map(r => `<li>${rich(r)}</li>`).join('')}</ul>` : ''}${d.overall.checks.length ? `<h4>사람이 확인할 업무</h4><ul class="xi-checks">${d.overall.checks.map(r => `<li>${rich(r)}</li>`).join('')}</ul>` : ''}<p class="xi-note">숫자·날짜·인원은 기록에서 센 값입니다. 문장 끝 번호에 마우스를 올리면 근거가 보입니다.</p></section>`;
   }
   const factOpen = f => (f.open ? btn('원본 기록 열기', `data-xi="record" data-family="${h(f.open.family)}" data-id="${h(f.open.id)}"`, 'link') : '');
   const factSource = f => (f.source ? `<small class="xi-src">${h(TABLE[f.source.table] || '기록')}</small>` : '');
@@ -162,7 +162,7 @@ window.createExitInsight = function createExitInsight(api) {
     const t = event.target.closest?.('[data-xi]'); if (!t) return;
     const kind = t.dataset.xi;
     if (kind === 'open') { event.preventDefault(); open(t.dataset.from, t.dataset.to); }
-    else if (kind === 'custom') { const f = pickedMonth('xi-from'), to = pickedMonth('xi-to'); if (!f || !to || f >= to) { toast('앞 달이 뒤 달보다 이른 두 달을 골라 주세요.'); return; } open(f, to); }
+    else if (kind === 'custom') { const f = pickedMonth('xi-from'), to = pickedMonth('xi-to'); if (!f || !to || f >= to) { toast('앞 달이 뒤 달보다 이른 두 달을 선택해 주세요.'); return; } open(f, to); }
     else if (kind === 'row') toggleRow(t.dataset.xiRow);
     else if (kind === 'sort') { st.sort = { key: t.dataset.key, dir: st.sort.key === t.dataset.key ? 1 - st.sort.dir : 0 }; paint(); }
     else if (kind === 'filter') applyFilter(t.dataset.filter || '');

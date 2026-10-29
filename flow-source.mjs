@@ -115,7 +115,7 @@ export async function loadFlowSource({ workspaces, capturedAt, asOf }) {
       for (const r of deskResults) { if (!deskByTask.has(r.task_id)) deskByTask.set(r.task_id, []); deskByTask.get(r.task_id).push(r); }
       const history = await sql`select e.id::text, e.task_id::text task, e.event, e.actor_id::text actor, to_char(e.at at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"') at from public.staff_task_events e where e.tenant_id=${t} order by e.at, e.id`;
       for (const k of tasks) {
-        const key = put('task', k.id, k.title || TASK_KINDS[k.kind]?.label || '할 일', TASK_KINDS[k.kind]?.familyId || 'tasks-notifications');
+        const key = put('task', k.id, k.title || TASK_KINDS[k.kind]?.label || '업무', TASK_KINDS[k.kind]?.familyId || 'tasks-notifications');
         for (const a of k.assignees || []) link('assigned_to', key, staffKey(a), 'staff_task_assignees.user_id');
         const subjectType = TASK_SUBJECT[k.kind];
         if (subjectType && entities.has(`${subjectType}:${k.subject_id}`)) link('about', key, `${subjectType}:${k.subject_id}`, 'staff_tasks.subject_id');

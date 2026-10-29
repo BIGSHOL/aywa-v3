@@ -42,7 +42,7 @@ export function buildContext(source, c, { today = kstToday() } = {}) {
     knownOpenWork.push({ area: 'counseling', code: 'consultation_followup' });
   } else if (c.kind === 'source') {
     const area = TASK_AREA[c.taskKind] || FAMILY_AREA[c.familyId] || null;
-    text = `학원 시스템이 확인할 일을 만들었습니다: ${pseudonymize(source, `${c.title}. ${c.summary || ''}`)}`.slice(0, 600);
+    text = `학원 시스템이 확인할 업무를 만들었습니다: ${pseudonymize(source, `${c.title}. ${c.summary || ''}`)}`.slice(0, 600);
     Object.assign(facts, { record_count: c.entityTotal || c.entityRefs.length, fact_closed_in_source: !!c.factClosed });
     if (area && !c.factClosed) knownOpenWork.push({ area, code: c.taskKind || c.signalId || 'source_fact' });
   } else {
@@ -77,7 +77,7 @@ export function pseudonymize(source, text) {
 
 // DecisionResult → flow decision record + routing effects (code, not AI).
 function toRecord(result, { area, draft, reason }) {
-  const routeLabel = { auto_route: '정해진 담당자에게 바로 배정', no_action: '할 일 없음으로 판단', manager_review: '관리자 검토로 보냄', human_review: '사람이 판단하도록 보냄', insufficient_context: '정보가 부족해 사람이 되묻도록 보냄' };
+  const routeLabel = { auto_route: '정해진 담당자에게 바로 배정', no_action: '업무 없음으로 판단', manager_review: '관리자 검토로 보냄', human_review: '사람이 판단하도록 보냄', insufficient_context: '정보가 부족해 사람이 되묻도록 보냄' };
   const id = `dec-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
   if (!result) return { id, status: 'unavailable', route: 'human_review', label: '판정 사용 불가 — 사람 검토', needsReview: true, record: { id, provider: 'none', model: null, status: 'unavailable', reason: reason || 'decision_module_unavailable', route: 'human_review', probabilities: null, elapsedMs: 0, usage: null, at: new Date().toISOString() } };
   const p = result.signals || null;

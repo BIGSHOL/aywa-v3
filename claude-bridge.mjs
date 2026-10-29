@@ -39,7 +39,7 @@ export const SYSTEM_PROMPT = [
   '- headline = 결론 한 문장(60자 안팎).',
   '- keyFacts = 핵심 숫자 0~5개 {label: 짧은 이름, value: 숫자와 단위(금액은 쉼표와 원), change: 컨텍스트에 비교값이 있을 때만 "−7명"·"+3건"처럼 차이, 없으면 "", tone: 학원 운영에 좋아진 변화면 "good", 나빠졌으면 "bad", 판단할 수 없으면 "none", ref: 근거 줄 번호(없으면 0)}.',
   '- points = 근거 1~6개 {text: 한 문장, refs: 근거 줄 번호 배열}. 이름·숫자는 ⟦ ⟧로 감싸 굵게 보이게 한다. 해석의 한계·예외는 "다만 …"으로 시작하는 문장으로 따로 쓴다.',
-  '- checks = 원장이나 담당자가 확인할 일 0~4개(짧은 문장, ⟦ ⟧ 가능).',
+  '- checks = 원장이나 담당자가 확인할 업무 0~4개(짧은 문장, ⟦ ⟧ 가능).',
   '- table = 여러 달·여러 항목을 견주는 것이 답의 핵심일 때만 {columns: 2~4개 머리, rows: 1~8줄(칸 수 = 머리 수)}, 아니면 null.',
   '- links = 답과 관련된 화면 0~4개. "이동할 수 있는 화면" 목록의 id만 그대로 쓴다.',
   '- issueIds = 답변이 다룬 이슈 ID(billing, admissions, attendance, approval, tasks, books, enrollment 중에서만).',

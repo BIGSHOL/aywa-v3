@@ -10,13 +10,13 @@ import { assignees, clearSignal, createSignal, human, json, reconcileSignal, reo
 export { coveredRefs, isFactSignal, settleFact, signalGroups, stepRecords } from './flow-reconcile-signals.mjs';
 
 // ── tasks ───────────────────────────────────────────────────────────────────────────────────────────
-const kindOf = t => TASK_KINDS[t.kind] || { label: '할 일', familyId: 'tasks-notifications', doneRule: '' };
+const kindOf = t => TASK_KINDS[t.kind] || { label: '업무', familyId: 'tasks-notifications', doneRule: '' };
 const closedOf = t => !!t.status && t.status !== 'open';
 const reasonOf = t => t.closeReason === 'desk_settled' && t.closeResult ? t.closeResult : CLOSE_REASON[t.closeReason] || TASK_STATE_LABEL[t.status];
 const lastAt = (t, ev) => t.history.filter(h => h.event === ev).at(-1)?.at || null;
 function taskRoute(source, t) {
   const ids = t.assigneeIds.filter(a => source.actors.some(x => x.id === a));
-  return routeOf(ids.length ? { assigneeIds: ids, queue: null, rule: '원래 할 일 담당', ruleSource: 'staff_task_assignees.user_id' } : { assigneeIds: [], queue: 'manager', reason: t.assigneeIds.length ? '배정된 사람이 재직 직원 목록에 없어 관리자 대기열' : '배정된 사람이 없어 관리자 대기열' });
+  return routeOf(ids.length ? { assigneeIds: ids, queue: null, rule: '원래 업무 담당', ruleSource: 'staff_task_assignees.user_id' } : { assigneeIds: [], queue: 'manager', reason: t.assigneeIds.length ? '배정된 사람이 재직 직원 목록에 없어 관리자 대기열' : '배정된 사람이 없어 관리자 대기열' });
 }
 const taskFacts = (source, t) => ({ title: t.title || kindOf(t).label, summary: t.detail || kindOf(t).label, dueAt: t.dueAt ?? null, doneRule: kindOf(t).doneRule, entityRefs: [`task:${t.id}`, ...(t.subjectKey ? [t.subjectKey] : [])].map(k => entityRef(source, k)).filter(Boolean) });
 const taskPriority = (source, t) => !closedOf(t) && t.dueAt && t.dueAt < source.identity.capturedAt ? 'high' : 'normal';
@@ -26,7 +26,7 @@ function createTask(state, source, t, seededAt) {
   state.cases[id] = { id, kind: 'source', scenario: null, familyId: kind.familyId, ...taskFacts(source, t), taskKind: t.kind, sourceStatus: status, sourceStatusLabel: TASK_STATE_LABEL[status], factClosed: closed, closedReason: closed ? reasonOf(t) : null, closedAt: closed ? t.closedAt : null, ...(closed ? { closedBy: 'source' } : {}), priority: taskPriority(source, t), state: 'open', closure: 'fact', origin: 'snapshot', trigger: null, steps: [step(`${id}-s1`, { key: 'source_task', label: kind.label, role: 'source', evidenceRequired: true }, { ...route, reason: route.unassignedReason }, 1, { status: closed ? 'done' : 'ready', ...(closed ? { closedBy: 'source' } : {}) })], currentStepId: null, assigneeIds: [], createdAt: t.openedAt || seededAt, updatedAt: t.closedAt || t.openedAt || seededAt, evidence: [], decision: null, history: [], linkedCaseIds: [], sourceKey: `task:${t.id}`, flags: {} };
   const c = state.cases[id];
   let cause = null;
-  for (const h of t.history) cause = newEvent(state, { caseId: id, type: h.event === 'opened' ? 'source.task_opened' : 'source.task_event', label: TASK_EVENT_LABEL[h.event] || '할 일 변경', actorId: h.actor, origin: 'snapshot', at: h.at, causeId: cause?.id || null, targetActorIds: h.event === 'assigned' || h.event === 'opened' ? route.assigneeIds : [] });
+  for (const h of t.history) cause = newEvent(state, { caseId: id, type: h.event === 'opened' ? 'source.task_opened' : 'source.task_event', label: TASK_EVENT_LABEL[h.event] || '업무 변경', actorId: h.actor, origin: 'snapshot', at: h.at, causeId: cause?.id || null, targetActorIds: h.event === 'assigned' || h.event === 'opened' ? route.assigneeIds : [] });
   if (!cause) newEvent(state, { caseId: id, type: 'source.task_opened', origin: 'snapshot', at: t.openedAt || seededAt, targetActorIds: route.assigneeIds });
   c.trigger = { eventId: c.history[0], type: 'source.task_opened', label: kind.label, actorId: null, at: c.createdAt };
   refreshCase(c);
@@ -37,7 +37,7 @@ function reconcileTask(source, c, t, at) {
   const out = [], s0 = c.steps[0], closed = closedOf(t), status = t.status || 'open', facts = taskFacts(source, t), prevClosedAt = c.closedAt;
   const changed = ['title', 'summary', 'dueAt'].filter(k => json(c[k]) !== json(facts[k]));
   Object.assign(c, facts);
-  if (changed.length) out.push({ type: 'source.task_changed', label: `원본 할 일 내용이 바뀜(${changed.map(k => ({ title: '제목', summary: '내용', dueAt: '기한' })[k]).join('·')})`, at, data: { fields: changed } });
+  if (changed.length) out.push({ type: 'source.task_changed', label: `원본 업무 내용이 바뀜(${changed.map(k => ({ title: '제목', summary: '내용', dueAt: '기한' })[k]).join('·')})`, at, data: { fields: changed } });
   if (closed && !c.factClosed) {
     for (const s of c.steps) if (s.status !== 'done') { s.status = 'done'; s.closedBy = 'source'; }
     Object.assign(c, { sourceStatus: status, sourceStatusLabel: TASK_STATE_LABEL[status], factClosed: true, closedReason: reasonOf(t), closedAt: t.closedAt, closedBy: 'source' });
@@ -123,8 +123,8 @@ export function reconcileSource(state, source, { at, mode = 'apply' } = {}) {
     const before = JSON.stringify(c);
     if (key.startsWith('task:') && source.tasks.length && !c.factClosed) {
       for (const s of c.steps) if (s.status !== 'done') { s.status = 'done'; s.closedBy = 'source'; }
-      Object.assign(c, { factClosed: true, closedReason: '원본에서 이 할 일을 찾을 수 없음', closedAt: when, closedBy: 'source' });
-      commit(state, c, before, [{ type: 'source.task_closed', label: '원본에서 할 일을 찾을 수 없어 닫음', at: when, data: { missing: true } }], when, summary);
+      Object.assign(c, { factClosed: true, closedReason: '원본에서 이 업무를 찾을 수 없음', closedAt: when, closedBy: 'source' });
+      commit(state, c, before, [{ type: 'source.task_closed', label: '원본에서 업무를 찾을 수 없어 닫음', at: when, data: { missing: true } }], when, summary);
     } else if (key.startsWith('signal:') && (!families || families.has(c.familyId))) commit(state, c, before, clearSignal(c, when), when, summary);
     else summary.unchanged += 1;
   }

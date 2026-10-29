@@ -87,7 +87,7 @@ test('tasks: source assignee follows unless a person reassigned or confirmed the
   await svc.reloadSource(sourceWith({ tasks: { 't-orphan': { assigneeIds: [IDS.manager] }, 't-open': { assigneeIds: [IDS.t2] } } }));
   assert.deepEqual(stored(svc, 'src-task-t-orphan').steps[0].assigneeIds, [IDS.t2], 'a manager\'s reassignment is not overwritten');
   const gone = await svc.reloadSource(sourceWith({ dropTasks: ['t-orphan'], tasks: { 't-open': { assigneeIds: [IDS.t2] } } }));
-  assert.equal(gone.closed, 1); assert.deepEqual([stored(svc, 'src-task-t-orphan').factClosed, stored(svc, 'src-task-t-orphan').closedReason], [true, '원본에서 이 할 일을 찾을 수 없음']);
+  assert.equal(gone.closed, 1); assert.deepEqual([stored(svc, 'src-task-t-orphan').factClosed, stored(svc, 'src-task-t-orphan').closedReason], [true, '원본에서 이 업무를 찾을 수 없음']);
   const empty = sourceWith(); empty.tasks = [];
   const none = await svc.reloadSource(empty);
   assert.equal(stored(svc, 'src-task-t-open').factClosed, false, 'an empty task list closes nothing');
