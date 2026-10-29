@@ -95,7 +95,8 @@
     // 점은 그 기간의 칸(chart-col) 안에 그려 마우스·초점이 간 기간의 모든 줄 점이 함께 채워진다(같은 세로선).
     const cols = d.windows.map((w, i) => {
       const p = d.total[i], q = i ? d.total[i - 1] : null, b = base?.total?.[i], drill = sub && p?.value != null, u = d.metric.unit, bt = d.metric.better;
-      const rows = [{ label: many && !d.filter ? `${name} (학원 전체)` : name, value: shown(p?.value, u), tone: 'primary', color: many ? '#121212' : '', delta: deltaOf(p, q, u, bt) },
+      // 합계 선 이름은 범례와 같은 sumName 하나(원장 10-29 "라벨은 항상 동일하게" · "같은 곳을 보면 문구, 수치 모든곳이 동일해야함").
+      const rows = [{ label: sumName, value: shown(p?.value, u), tone: 'primary', color: many ? '#121212' : '', delta: deltaOf(p, q, u, bt) },
         ...(base ? [{ label: '학원 전체', value: shown(b?.value, u), tone: 'secondary', delta: deltaOf(b, i ? base.total[i - 1] : null, u, bt) }] : []),
         ...series.map(s => ({ label: s.label, value: shown(s.points[i]?.value, u), color: s.color, delta: deltaOf(s.points[i], i ? s.points[i - 1] : null, u, bt) }))];
       const dots = series.map(s => (s.points[i]?.value == null ? '' : `<circle class="tr-sdot" style="--c:${s.color}" cx="${x(i)}" cy="${y(s.points[i].value)}" r="3.5"/>`)).join('');
@@ -105,8 +106,9 @@
         + (i % every === 0 || i === n - 1 ? `<text x="${x(i)}" y="${H - 10}" text-anchor="middle">${esc(axisName(w))}</text>` : '') + '</g>';
     }).join('');
     const lines = series.map(s => `<g class="tr-line series" style="--c:${s.color}">${path(s.points)}</g>`).join('');
-    const legend = many || base ? `<div class="tr-legend">${[`<span><i class="sum" style="background:${sumColor(many)}"></i>${esc(sumName)}</span>`, ...(base ? ['<span><i class="alt"></i>학원 전체</span>'] : []),
-      ...series.map(s => `<span><i style="background:${s.color}"></i>${esc(s.label)}</span>`)].join('')}</div>` : '';
+    // 범례는 선이 하나여도 늘 — 범례가 있다 없다에 따라 같은 선의 이름이 바뀌지 않게.
+    const legend = `<div class="tr-legend">${[`<span><i class="sum" style="background:${sumColor(many)}"></i>${esc(sumName)}</span>`, ...(base ? ['<span><i class="alt"></i>학원 전체</span>'] : []),
+      ...series.map(s => `<span><i style="background:${s.color}"></i>${esc(s.label)}</span>`)].join('')}</div>`;
     return `<div class="chart-box tr-chart${many ? ' has-series' : ''}" data-chart tabindex="0" role="group" aria-label="${esc(name)} 추세 — 화살표 키로 기간을 옮기며 수치를 확인합니다${sub ? `. Enter로 그 기간을 ${sub}로 나눠 봅니다` : ''}"><svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(name)} ${d.windows.map((w, i) => `${w.label} ${shown(d.total[i]?.value, d.metric.unit)}`).join(', ')}">${grid}${vlines}${base ? `<g class="tr-line base">${path(base.total)}</g>` : ''}${lines}<g class="tr-line">${path(d.total)}</g>${cols}</svg></div>${legend}`;
   }
 
