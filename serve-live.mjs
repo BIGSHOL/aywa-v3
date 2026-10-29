@@ -1,6 +1,7 @@
 import { createServer } from 'node:http';
 import { readFile, stat } from 'node:fs/promises';
 import { createReadStream } from 'node:fs';
+import { createHash } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { loadSnapshot } from './snapshot.mjs';
 import { fullDbRoot } from './full-db-paths.mjs';
@@ -151,7 +152,15 @@ const server=createServer(async(req,res)=>{
   const file=routes.get(path)||screenAsset(path)||await publicAsset(path);if(!file){reject(404,'Not found');return;}
   // 엿보기 창(flow-ui.js — 업무 흐름 위에 처리 화면을 여는 창)은 이 앱을 같은 출처 iframe(/?peek=1)으로 띄운다 — 그 문서만 같은 출처 틀을 허용.
   const peekDoc=path==='/'&&/[?&]peek=1(?:&|$)/.test(req.url);
-  const data=await readFile(fileURLToPath(new URL(file[0],root)));res.writeHead(200,{'Content-Type':file[1],'Content-Length':data.length,...headers,...(peekDoc?{'Content-Security-Policy':headers['Content-Security-Policy'].replace("frame-ancestors 'none'","frame-ancestors 'self'")}:{})});res.end(req.method==='HEAD'?undefined:data);
+  const data=await readFile(fileURLToPath(new URL(file[0],root)));
+  const immutable=path==='/fonts/PretendardVariable.woff2';
+  const cacheHeaders={...headers,'Cache-Control':immutable?'public, max-age=31536000, immutable':'no-cache',...(peekDoc?{'Content-Security-Policy':headers['Content-Security-Policy'].replace("frame-ancestors 'none'","frame-ancestors 'self'")}:{})};
+  if(!immutable){
+   const etag=`"${createHash('sha256').update(data).digest('hex')}"`;
+   cacheHeaders.ETag=etag;
+   if(String(req.headers['if-none-match']||'').split(',').some(tag=>tag.trim()==='*'||tag.trim().replace(/^W\//,'')===etag)){res.writeHead(304,cacheHeaders);res.end();return;}
+  }
+  res.writeHead(200,{'Content-Type':file[1],'Content-Length':data.length,...cacheHeaders});res.end(req.method==='HEAD'?undefined:data);
  }catch{reject(500,'로컬 시안을 불러오지 못했습니다. DB와 파일 준비 상태를 확인해 주세요.');}
 });
 server.on('error',error=>{console.error(error.code||error.message);process.exitCode=1;});
