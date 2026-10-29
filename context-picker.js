@@ -334,8 +334,8 @@ window.ContextPicker = (function () {
           cells: { classes: f.classNames.length ? `${more(f.classNames)}${f.teachers.length ? ` · ${more(f.teachers)}` : ''}` : '', period: inv.period || '', billed: has(billed) ? won(billed) : '', paid: has(inv.paid) ? won(inv.paid) : '', remaining: has(inv.remaining) ? won(inv.remaining) : '' },
           search: [inv.period, ...f.classNames, ...f.teachers, follow ? '진행 중' : ''].join(' ') };
       });
-      return { noun: '청구 기록', unit: '건', columns: [{ key: 'name', label: '학생', w: 'minmax(0,1.1fr)' }, { key: 'classes', label: '수강 반·담임', w: 'minmax(0,1.3fr)' }, { key: 'period', label: '청구월', w: '4.6em', cend: true }, { key: 'billed', label: '청구액', w: '6.6em', align: 'end' }, { key: 'paid', label: '수납액', w: '6.6em', align: 'end' }, { key: 'remaining', label: '미수액', w: '6.6em', align: 'end', strong: true }],
-        options, compactBelow: 680, compact: { cols: '1.25rem repeat(3,minmax(0,1fr))', areas: '"tick c-name c-name c-period" "tick c-billed c-paid c-remaining" "tick c-classes c-classes c-classes"' }, searchPlaceholder: '학생·학교·반·담임·청구월로 찾기', searchHint: '학생 이름이나 반을 다시 확인해 주세요.', note: total && total > options.length ? `청구 ${total.toLocaleString('ko-KR')}건 중 ${options.length}건 표시` : `${options.length}건` };
+      return { noun: '청구 기록', unit: '건', columns: [{ key: 'name', label: '원생', w: 'minmax(0,1.1fr)' }, { key: 'classes', label: '수강 반·담임', w: 'minmax(0,1.3fr)' }, { key: 'period', label: '청구월', w: '4.6em', cend: true }, { key: 'billed', label: '청구액', w: '6.6em', align: 'end' }, { key: 'paid', label: '수납액', w: '6.6em', align: 'end' }, { key: 'remaining', label: '미수액', w: '6.6em', align: 'end', strong: true }],
+        options, compactBelow: 680, compact: { cols: '1.25rem repeat(3,minmax(0,1fr))', areas: '"tick c-name c-name c-period" "tick c-billed c-paid c-remaining" "tick c-classes c-classes c-classes"' }, searchPlaceholder: '원생·학교·반·담임·청구월로 찾기', searchHint: '원생 이름이나 반을 다시 확인해 주세요.', note: total && total > options.length ? `청구 ${total.toLocaleString('ko-KR')}건 중 ${options.length}건 표시` : `${options.length}건` };
     },
     /** Absence rows: {id, date, studentId, classId, followup} from the server, or the flow entities fallback below. */
     absences({ db, items, cases, total }) {
@@ -343,13 +343,13 @@ window.ContextPicker = (function () {
       const options = (items || []).map(x => {
         const f = studentFacts(db, x.studentId), cls = classes.get(String(x.classId || '')), sg = schoolGrade(f.s);
         const follow = x.followup || followupOf(cases, `attendance:${x.id}`), followText = follow ? FOLLOW[follow.state] || '진행 중 시나리오' : '';
-        return { value: String(x.id), title: f.s?.name || '학생 정보 없음', sub: sg, chip: x.date || x.label || '',
+        return { value: String(x.id), title: f.s?.name || '원생 정보 없음', sub: sg, chip: x.date || x.label || '',
           context: [x.date ? `${x.date} 결석` : x.label || '', cls ? `${cls.name}${cls.teacher ? `(${cls.teacher})` : ''}` : '', followText].filter(Boolean).join(' · '),
           cells: { cls: cls ? `${cls.name}${cls.teacher ? ` · ${cls.teacher}` : ''}` : '', date: x.date || x.label || '', follow: followText },
           search: [cls?.name, cls?.teacher].join(' ') };
       });
-      return { noun: '결석 기록', unit: '건', columns: [{ key: 'name', label: '학생', w: 'minmax(0,1fr)' }, { key: 'cls', label: '반·담임', w: 'minmax(0,1.4fr)' }, { key: 'date', label: '결석', w: 'minmax(7.8em,.7fr)', cend: true }, { key: 'follow', label: '후속', w: 'minmax(0,.8fr)' }],
-        options, compactBelow: 560, compact: { cols: '1.25rem repeat(2,minmax(0,1fr))', areas: '"tick c-name c-date" "tick c-cls c-follow"' }, searchPlaceholder: '학생·학교·반·담임·날짜로 찾기', searchHint: '학생 이름이나 반을 다시 확인해 주세요.', note: total && total > options.length ? `이번 달 결석 ${total.toLocaleString('ko-KR')}건 중 ${options.length}건 표시` : `이번 달 결석 ${options.length}건` };
+      return { noun: '결석 기록', unit: '건', columns: [{ key: 'name', label: '원생', w: 'minmax(0,1fr)' }, { key: 'cls', label: '반·담임', w: 'minmax(0,1.4fr)' }, { key: 'date', label: '결석', w: 'minmax(7.8em,.7fr)', cend: true }, { key: 'follow', label: '후속', w: 'minmax(0,.8fr)' }],
+        options, compactBelow: 560, compact: { cols: '1.25rem repeat(2,minmax(0,1fr))', areas: '"tick c-name c-date" "tick c-cls c-follow"' }, searchPlaceholder: '원생·학교·반·담임·날짜로 찾기', searchHint: '원생 이름이나 반을 다시 확인해 주세요.', note: total && total > options.length ? `이번 달 결석 ${total.toLocaleString('ko-KR')}건 중 ${options.length}건 표시` : `이번 달 결석 ${options.length}건` };
     },
     /** Fallback from GET /api/flow: attendance entities joined to students/classes only through FK relations. */
     absencesFromFlow({ db, flow }) {

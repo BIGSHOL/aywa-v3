@@ -100,7 +100,7 @@ window.createOwnerWorkspace = function createOwnerWorkspace(api) {
   }
   function recordList(issue){
     if(!issue.records.length)return '';
-    // 확인 대상 = 업무 흐름 '기록 보기'와 같은 종류별 표(원장 10-28 "그냥 다 리스트로" · "학생이면 학생에게서 알아야할 정보들" · "항상 열정렬").
+    // 확인 대상 = 업무 흐름 '기록 보기'와 같은 종류별 표(원장 10-28 "그냥 다 리스트로" · "원생이면 원생에게서 알아야할 정보들" · "항상 열정렬").
     // 정보는 그 표가 채운다(flow-ui fillRecords — decorateView). 업무 흐름을 못 불러오면 예전 목록.
     if(flowUI?.recordsHtml){
       const refs=issue.records.map(r=>{const [type,familyId]=REC_REF[r.type]||[r.type,''];return {type,familyId,id:String(r.id),recordId:String(r.id),label:r.name,detail:r.detail};});
