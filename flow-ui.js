@@ -93,7 +93,9 @@ window.createFlowUI = function createFlowUI(api) {
       if(response.ok)store.etag=response.headers.get('ETag')||'';
       if(response.ok&&json&&Array.isArray(json.cases)){
         const prev=store.flow,wasReady=store.status==='ready';
-        if(wasReady&&!store.partial&&prev&&Boolean(prev.summary)===Boolean(json.summary)&&prev.revision===json.revision&&prev.eventsTotal===json.eventsTotal&&prev.asOf===json.asOf)return !prev.summary;
+        // 서버 재시작 전의 전체 응답에는 이 칸이 없을 수 있다. 같은 개정의 요약 응답에서 받은 값을 이어 쓴다.
+        if(!json.firstScreen&&prev?.firstScreen&&prev.revision===json.revision)json.firstScreen=prev.firstScreen;
+        if(wasReady&&!store.partial&&prev&&Boolean(prev.summary)===Boolean(json.summary)&&Boolean(prev.firstScreen)===Boolean(json.firstScreen)&&prev.revision===json.revision&&prev.eventsTotal===json.eventsTotal&&prev.asOf===json.asOf)return !prev.summary;
         if(!json.summary){json=await allPages(json,controller.signal);if(!json)return false;}
         const before=prev&&!prev.summary?new Set(cases().filter(c=>mine(c)).map(c=>c.id)):null;
         store.flow=json;store.status='ready';store.error='';store.fullError='';store.retry=0;
@@ -326,10 +328,8 @@ window.createFlowUI = function createFlowUI(api) {
     return `<div class="nav-group">보는 사람</div><div class="fl-actor-pick">${actorPicker(groups)}${flowLink}</div>`;
   }
   function inboxCount(){
-    if(!ready())return 0;const r=role();
-    if(flow().summary)return Number(flow().firstScreen?.inboxByActor?.[actor()?.id]||0);
-    if(r==='manager')return cases().filter(c=>mine(c)||unassigned(c)).length;
-    return cases().filter(c=>mine(c)).length;
+    if(!ready())return 0;
+    return Number(flow().firstScreen?.inboxByActor?.[actor()?.id]||0);
   }
 
   /* ---------- role views ---------- */
@@ -364,10 +364,12 @@ window.createFlowUI = function createFlowUI(api) {
     return `<div class="fl-fold"><div class="page-heading"><div><h1>업무 조율</h1><p>${h(actor()?.name||'')} · ${h(actor()?.roleLabel||'')}</p></div></div>${sourceLine()}${stateNote()}<section class="ax-first" aria-label="조율할 업무"><div class="ax-signals">${my.length?countCard('내 차례',my.length,'내가 맡은 단계','mine','urgent'):''}${countCard('담당 미지정',queue.length,'담당을 지정해야 다음 단계가 시작됩니다','queue','urgent')}${countCard('지난 업무',overdue.length,'기한이 지났고 아직 끝나지 않은 업무','late')}${countCard('검토 대기',review.length,'보고가 들어와 확인이 필요한 일','review')}${countCard('보완 요청',back.length,'보완 요청 업무','returned')}</div>${scenarioPanel()}</section></div><section class="fl-section" id="fl-detail">${filterBar(f,[['mine','내 차례',my.length],['queue','담당 미지정',queue.length],['late','지난 업무',overdue.length],['review','검토 대기',review.length],['returned','보완 요청',back.length],['chain','여러 사람 거침',chain.length],['all','남은 업무 전체',open.length]])}${list(items,empty,f)}${stageOverview()}</section>`;
   }
   function stageOverview(){
-    const real=cases().filter(c=>!local(c)),dev=cases().filter(local),total=Number(flow().casesTotal)||cases().length;
+    const stages=Object.entries(flow().firstScreen?.stages||{}),total=Number(flow().casesTotal)||cases().length;
+    if(!stages.length)return '<p class="ax-note" role="status">업무 수를 확인하는 중입니다.</p>';
+    const realTotal=stages.reduce((n,[,count])=>n+count,0),devTotal=total-realTotal;
     const jams=(flow().metrics?.bottlenecks||[]).filter(b=>b&&b.waiting>0&&/[가-힣]/.test(b.label||'')).slice(0,4);
     // bottlenecks = open steps (ready or working) grouped by step role, over every case including local ones.
-    return `<section class="fl-stages" aria-label="상태별 업무 수"><h2>상태별 업무 수</h2><div class="fl-stage-row">${stageCounts(real).map(([k,n])=>`<div><span>${h(STATE[k])}</span><strong>${fmt(n)}</strong></div>`).join(`<i aria-hidden="true">${icon('chevron')}</i>`)}</div>${jams.length?`<p class="fl-jams">남은 단계가 많은 담당(직접 등록한 업무 포함) ${jams.map(b=>`<span>${h(b.label)} ${fmt(b.waiting)}개</span>`).join('')}</p>`:''}<p class="ax-note">학원 기록에서 생긴 업무 ${fmt(real.length)}건 기준입니다(직접 등록한 업무 ${fmt(dev.length)}건 제외).${total>cases().length?` 전체 ${fmt(total)}건 중 ${fmt(cases().length)}건을 불러왔습니다.`:''}</p></section>`;
+    return `<section class="fl-stages" aria-label="상태별 업무 수"><h2>상태별 업무 수</h2><div class="fl-stage-row">${stages.map(([k,n])=>`<div><span>${h(STATE[k])}</span><strong>${fmt(n)}</strong></div>`).join(`<i aria-hidden="true">${icon('chevron')}</i>`)}</div>${jams.length?`<p class="fl-jams">남은 단계가 많은 담당(직접 등록한 업무 포함) ${jams.map(b=>`<span>${h(b.label)} ${fmt(b.waiting)}개</span>`).join('')}</p>`:''}<p class="ax-note">학원 기록에서 생긴 업무 ${fmt(realTotal)}건 기준입니다(직접 등록한 업무 ${fmt(devTotal)}건 제외).${total>cases().length?` 전체 ${fmt(total)}건 중 ${fmt(cases().length)}건을 불러왔습니다.`:''}</p></section>`;
   }
   // 일은 상태 묶음(막힌·열린)보다 무슨 일인지로 먼저 보인다(원장 10-28 "막힌일, 열린일 보다 실제 어떤 일인지 분화해서 알려주는게 더 좋을듯").
   // 종류 = 2.0 업무 종류(taskKind)의 단계 이름, 묶음 신호는 제목에서 건수를 뗀 이름. 카드와 아래 목록이 같은 열쇠(kind:…)로 맞물린다.
@@ -387,8 +389,8 @@ window.createFlowUI = function createFlowUI(api) {
   }
   function ownerStageCell(){
     if(!ready())return '';
-    const real=cases().filter(c=>!local(c)),recent=events().filter(e=>e.origin!=='snapshot').slice(-1)[0];
-    const stages=flow().summary?Object.entries(flow().firstScreen.stages):stageCounts(real);
+    const stages=Object.entries(flow().firstScreen?.stages||{}),recent=events().filter(e=>e.origin!=='snapshot').slice(-1)[0];
+    if(!stages.length)return '';
     return `<div class="ax-change-cell"><button type="button" class="ax-change-link" data-fl="filter" data-id="moving"><span>업무 흐름</span><strong>남은 업무 ${fmt(stages.filter(([k])=>k!=='done').reduce((n,[,v])=>n+v,0))}건</strong><span class="ax-stages">${stages.map(([k,n])=>`<span><b>${fmt(n)}</b>${STATE[k]}</span>`).join('')}</span><span class="ax-recent"><small>${recent?`최근 변화: ${h(recent.label||'')} · ${h(when(recent.at))}`:'아직 변화가 없습니다.'}</small></span></button></div>`;
   }
   // 업무 흐름 검색(원장 10-28 "당연히 각종 내용에 대해 검색가능해야함") — 제목 · 요약(원생·날짜·내용) · 상태 · 관련 기록 · 할 차례 · 기한 · 생긴 때 · 영역 · 종류.
