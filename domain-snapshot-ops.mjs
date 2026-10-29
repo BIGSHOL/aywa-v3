@@ -3,8 +3,8 @@ import { ISO_AT, PRIORITY, family, field, latest, md, metric, monthlyTrend, reco
 import { opsFamilies2 } from './domain-snapshot-ops2.mjs';
 
 const DAY = { mon: '월', tue: '화', wed: '수', thu: '목', fri: '금', sat: '토', sun: '일' };
-// 2.0 ASSET_STATUS_LABEL 원문(src/features/inventory/status.ts). 확인필요·미등록은 복사본에 없어 뺐다.
-const ASSET = { in_use: '사용중', on_loan: '대여중', repair: '수리중', lost: '분실', disposed: '폐기' };
+// 2.0 자산 상태 값은 유지하고 3.0 표기만 띄어 쓴다. 확인필요·미등록은 복사본에 없어 뺐다.
+const ASSET = { in_use: '사용 중', on_loan: '대여 중', repair: '수리 중', lost: '분실', disposed: '폐기' };
 const APPROVAL = { draft: '작성 중', pending: '결재 대기', approved: '승인 완료', rejected: '반려', canceled: '회수' };
 // 2.0 APPROVAL_FORM_LABEL·LEAVE_KIND_LABEL 원문(src/features/approvals/types.ts · src/features/leave/request-days.ts).
 const FORM = { leave: '휴가신청서', proposal: '품의서', expense: '지출결의서', income: '수입결의서' };
