@@ -11,7 +11,7 @@ const flow = { service: { store: { state: { revision: 7, cases: { [CASE]: {
   id: CASE, taskKind: 'unsent_report', closure: 'fact', factClosed: false, state: 'open', sourceKey: 'task:' + TASK,
   entityRefs: [{ type: 'report', id: REPORT }], steps: [{ id: STEP, status: 'ready', assigneeIds: [ACTOR] }],
 } } } }, source: { actors: [{ id: ACTOR, role: 'staff' }, { id: OTHER, role: 'staff' }] } } };
-let queued = false, calls = 0, noQueue = false, lastRaw;
+let queued = false, calls = 0, noQueue = null, lastRaw;
 const sql = parts => {
   if (parts.join('?').includes('from public.staff_tasks')) return Promise.resolve([{ kind: 'unsent_report', task_status: queued ? 'done' : 'open', report_id: REPORT, classnote_status: queued ? 'queued' : null, revoked_at: null, source: 'native' }]);
   throw Error('unexpected SQL');
@@ -20,7 +20,7 @@ const open = async () => ({ begin: (_mode, fn) => fn(sql), end: async () => {} }
 const v2ScreenRoute = { performWrite: async ({ id, name, raw, beforeRun }) => {
   assert.deepEqual([id, name], ['lesson-reports', 'sendClassnoteForUnsent']);
   await beforeRun({ sql }); calls++; lastRaw = raw;
-  if (noQueue) return { ok: true, queued: 0 };
+  if (noQueue) return noQueue;
   queued = true; return { ok: true, queued: 1 };
 } };
 const card = createFlowCardReport({ flow, v2ScreenRoute, open });
@@ -28,11 +28,13 @@ const input = { caseId: CASE, stepId: STEP, recordRef: 'report:' + REPORT, expec
 
 for (const bad of [{ ...input, actorId: OTHER }, { ...input, expectedRevision: 6 }, { ...input, recordRef: 'report:' + OTHER }]) await assert.rejects(card.save(bad));
 assert.equal(calls, 0);
-noQueue = true;
-assert.deepEqual(await card.save(input), { saved: false, queued: 0, message: '발송 요청이 대기에 오르지 않았습니다. 보고서 내용을 확인해 주세요.' });
-noQueue = false;
+noQueue = { ok: false, error: '보고서 관리 권한이 없습니다' };
+assert.deepEqual(await card.save(input), { saved: false, queued: 0, message: '보고서 관리 권한이 없습니다' });
+noQueue = { ok: true, queued: 0, noClass: 1 };
+assert.deepEqual(await card.save(input), { saved: false, queued: 0, message: '보낼 반과 원생의 ClassNote 연결을 확인해 주세요. 연결 전에는 발송 요청을 저장할 수 없습니다.' });
+noQueue = null;
 assert.deepEqual(await card.save(input), { saved: true, queued: 1, sourceClosed: true, message: '원본 반영 확인 중' });
 assert.deepEqual(lastRaw, { module: 'features/report-admin/server/actions.ts', actor: ACTOR, args: [[REPORT]] });
 await assert.rejects(card.save(input), e => e.code === 'source_changed');
-assert.equal(calls, 2);
-console.log('flow card report: 6 checks passed');
+assert.equal(calls, 3);
+console.log('flow card report: 7 checks passed');
