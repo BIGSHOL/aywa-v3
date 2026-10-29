@@ -1,6 +1,6 @@
 // 결석 확인 전화 업무 카드: 근거 결석 기록을 고른 뒤 2.0 recordFollowup을 공통 쓰기 경로로 실행한다.
 import { openFullDatabase, tenantId } from './full-db.mjs';
-import { actorMap } from './flow-engine.mjs';
+import { sourceCardCase } from './flow-card-guard.mjs';
 import { V2Error } from './v2-screens.mjs';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -11,22 +11,6 @@ const VIAS = new Set(['phone', 'kakao', 'in_person', 'other']);
 const MODULE = 'features/attendance/live/server/actions.ts';
 const bad = (status, code, message) => new V2Error(status, code, message);
 const own = (o, keys) => o && typeof o === 'object' && !Array.isArray(o) && Object.keys(o).every(k => keys.includes(k));
-
-function caseOf(service, caseId, expectedRevision = null, stepId = null, actorId = null) {
-  if (!service) throw bad(503, 'flow_starting', '업무 흐름을 준비하는 중입니다.');
-  const state = service.store.state;
-  if (expectedRevision !== null && state.revision !== expectedRevision) throw bad(409, 'revision_conflict', '다른 변경이 먼저 반영되었습니다. 업무를 새로 불러와 주세요.');
-  const c = state.cases[caseId];
-  if (!c || c.taskKind !== 'attendance_absent_desk' || c.closure !== 'fact' || c.factClosed || c.state === 'done' || !/^task:[0-9a-f-]{36}$/i.test(c.sourceKey || '')) throw bad(409, 'case_not_ready', '이 결석 업무는 지금 처리할 수 없습니다.');
-  if (stepId !== null) {
-    const step = c.steps.find(s => s.id === stepId && !s.review && !s.retired && ['ready', 'working'].includes(s.status));
-    if (!step) throw bad(409, 'step_not_ready', '지금 처리할 단계가 없습니다.');
-    const actor = actorMap(service.source).get(actorId);
-    if (!actor || actor.preview || !UUID.test(actorId)) throw bad(403, 'actor_not_allowed', '처리할 직원을 확인해 주세요.');
-    if (!step.assigneeIds.includes(actorId) && !(step.queue === 'manager' && !step.assigneeIds.length && ['manager', 'owner'].includes(actor.role))) throw bad(403, 'not_assignee', '이 단계의 담당자가 아닙니다.');
-  }
-  return c.sourceKey.slice(5);
-}
 
 async function taskAndRecords(sql, taskId, lock = false) {
   const rows = lock
@@ -50,7 +34,7 @@ export function createFlowCardAttendance({ flow, v2ScreenRoute, open = openFullD
   return {
     async records(caseId) {
       if (!CASE_ID.test(caseId || '')) throw bad(400, 'invalid_request', '업무 번호를 확인해 주세요.');
-      const taskId = caseOf(flow.service, caseId);
+      const { taskId } = sourceCardCase(flow.service, caseId, 'attendance_absent_desk');
       const db = await open();
       try {
         const records = await db.begin('isolation level repeatable read read only', async sql => (await taskAndRecords(sql, taskId)).records);
@@ -63,7 +47,7 @@ export function createFlowCardAttendance({ flow, v2ScreenRoute, open = openFullD
         || !/^attendance:[0-9a-f-]{36}$/i.test(raw.recordRef || '') || !UUID.test(raw.actorId || '')
         || !['resolved', 'dismissed'].includes(raw.state) || (raw.outcome != null && !OUTCOMES.has(raw.outcome))
         || (raw.contactedVia != null && !VIAS.has(raw.contactedVia)) || (raw.note != null && (typeof raw.note !== 'string' || raw.note.length > 2000))) throw bad(400, 'invalid_request', '결석 처리 내용을 확인해 주세요.');
-      const taskId = caseOf(flow.service, raw.caseId, raw.expectedRevision, raw.stepId, raw.actorId);
+      const { taskId } = sourceCardCase(flow.service, raw.caseId, 'attendance_absent_desk', raw.expectedRevision, raw.stepId, raw.actorId);
       const recordId = raw.recordRef.slice('attendance:'.length);
       const db = await open();
       let picked;
@@ -76,7 +60,7 @@ export function createFlowCardAttendance({ flow, v2ScreenRoute, open = openFullD
         id: 'attendance', name: 'recordFollowup',
         raw: { module: MODULE, actor: raw.actorId, args: [input] },
         beforeRun: async ({ sql }) => {
-          caseOf(flow.service, raw.caseId, raw.expectedRevision, raw.stepId, raw.actorId);
+          sourceCardCase(flow.service, raw.caseId, 'attendance_absent_desk', raw.expectedRevision, raw.stepId, raw.actorId);
           const { records } = await taskAndRecords(sql, taskId, true);
           const fresh = records.find(r => r.id === recordId);
           if (!fresh || fresh.student_id !== input.studentId || fresh.class_id !== input.classId || fresh.session_date !== input.sessionDate || (fresh.slot_start || null) !== input.slotStart) throw bad(409, 'record_ref_not_allowed', '이 업무와 연결된 결석 기록이 달라졌습니다. 새로 불러와 주세요.');

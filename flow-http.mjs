@@ -7,6 +7,7 @@ import { V2Error } from './v2-screens.mjs';
 
 export const FLOW_PATH = '/api/flow', ACTIONS_PATH = '/api/flow/actions', HIERARCHY_PATH = '/api/flow/hierarchy', RECORDS_PATH = '/api/flow/records';
 export const CARD_RECORDS_PATH = '/api/flow/card-attendance/records', CARD_SAVE_PATH = '/api/flow/card-attendance/save';
+export const CARD_REPORT_PATH = '/api/flow/card-report/send';
 const BODY_LIMIT = 16 * 1024;
 const JSON_TYPE = /^application\/json\s*(?:;\s*charset\s*=\s*"?utf-8"?\s*)?$/i;
 
@@ -21,7 +22,7 @@ function readBody(req) {
   });
 }
 
-export function createFlowRoute({ flow, origins, headers = {}, enabled = true, cardAttendance = null }) {
+export function createFlowRoute({ flow, origins, headers = {}, enabled = true, cardAttendance = null, cardReport = null }) {
   const send = (res, status, body, extra = {}) => {
     if (res.headersSent || res.destroyed) return;
     const data = Buffer.from(JSON.stringify(body));
@@ -37,7 +38,7 @@ export function createFlowRoute({ flow, origins, headers = {}, enabled = true, c
   };
   const unavailable = res => { const f = flow.failure; send(res, 503, f ? { error: f.code, message: f.message } : { error: 'flow_starting', message: '업무 흐름을 준비하는 중입니다.' }, { 'Retry-After': '2' }); };
   return {
-    handles: path => path === FLOW_PATH || path === ACTIONS_PATH || path === HIERARCHY_PATH || path === RECORDS_PATH || path === CARD_RECORDS_PATH || path === CARD_SAVE_PATH,
+    handles: path => path === FLOW_PATH || path === ACTIONS_PATH || path === HIERARCHY_PATH || path === RECORDS_PATH || path === CARD_RECORDS_PATH || path === CARD_SAVE_PATH || path === CARD_REPORT_PATH,
     async handle(req, res, path) {
       if (!enabled) return send(res, 404, { error: 'not_found', message: '사용할 수 없는 주소입니다.' });
       const site = req.headers['sec-fetch-site'];
@@ -96,10 +97,11 @@ export function createFlowRoute({ flow, origins, headers = {}, enabled = true, c
       if (Number(req.headers['content-length'] || 0) > BODY_LIMIT) return send(res, 413, { error: 'body_too_large', message: '요청이 너무 큽니다.' }, { Connection: 'close' });
       if (!flow.service) return unavailable(res);
       if (path === CARD_SAVE_PATH && !cardAttendance) return send(res, 404, { error: 'not_found', message: '사용할 수 없는 주소입니다.' });
+      if (path === CARD_REPORT_PATH && !cardReport) return send(res, 404, { error: 'not_found', message: '사용할 수 없는 주소입니다.' });
       try {
         const raw = await readBody(req);
         let body; try { body = JSON.parse(raw.toString('utf8')); } catch { throw new CommandError(400, 'invalid_request', '요청 형식이 올바르지 않습니다.'); }
-        const result = path === CARD_SAVE_PATH ? await cardAttendance.save(body) : await flow.service.command(body);
+        const result = path === CARD_SAVE_PATH ? await cardAttendance.save(body) : path === CARD_REPORT_PATH ? await cardReport.save(body) : await flow.service.command(body);
         return send(res, 200, result);
       } catch (error) { return fail(res, error); }
     },
