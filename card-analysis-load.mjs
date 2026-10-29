@@ -1,7 +1,7 @@
 // 카드 분석 전용 GET의 계산. 카드·추세·업무 흐름의 기존 읽기 함수를 다시 쓴다.
 import { dashboardKpiCards, DASHBOARD_KPI_ORDER } from './v2-dashboard-flow.mjs';
 import { teacherWorkWeekly, TEACHER_WORK_METRICS } from './v2-teacher-work.mjs';
-import { buildCardAnalysis } from './card-analysis.mjs';
+import { buildCardAnalysis, CARD_FLOW_LINKS } from './card-analysis.mjs';
 import { cardInput } from './card-insight.mjs';
 
 const ROSTER_METRICS = new Set(['exits', 'intake', 'level-tests', 'new-enrollments', 'recent-absent', 'makeups', 'report-written']);
@@ -56,7 +56,12 @@ export async function loadCardAnalysis({ sql, tenantId, importV2, metricId, load
       records = [...gathered.values()];
     } else records = [];
   }
-  const analysis = buildCardAnalysis({ trend, byDimension, card, flowCases: await flowCases(), records });
+  const cases = await flowCases();
+  const analysis = buildCardAnalysis({ trend, byDimension, card, flowCases: cases, records });
   analysis.metricInfo = { name: card.label, unit: trend.metric.unit, better: trend.metric.better };
-  return { ...analysis, fingerprint: cardInput(analysis).fingerprint };
+  const built = cardInput(analysis);
+  const cardRequests = Array.isArray(cases) ? cases.filter(c => c?.kind === 'request' && c.state !== 'done' && c.requestSource?.card?.metric === metricId)
+    .map(c => ({ id: c.id, factIds: c.requestSource.card.factIds })) : [];
+  return { ...analysis, fingerprint: built.fingerprint, insightFactIds: built.facts.map(f => f.id),
+    flowLink: CARD_FLOW_LINKS[metricId] || { tasks: [], signals: [] }, cardRequests };
 }

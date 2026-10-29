@@ -123,8 +123,23 @@ export async function applyCommand(state, source, cmd, { now, inFlight = new Map
       if (payload.familyId !== undefined && !FAMILY_IDS.includes(payload.familyId)) throw bad('연결할 작업 공간이 올바르지 않습니다.');
       if (payload.channels !== undefined && (!Array.isArray(payload.channels) || payload.channels.some(ch => !['app', 'slack'].includes(ch)))) throw bad('알림 채널 값이 올바르지 않습니다.');
       const src = payload.source;
-      if (src !== undefined && (typeof src !== 'object' || !['issue', 'workspace', 'chat', 'task', 'direct'].includes(src.kind) || Object.keys(src).some(k => !['kind', 'issueIds', 'signalId', 'actionId', 'label'].includes(k)) || (src.issueIds && (!Array.isArray(src.issueIds) || src.issueIds.length > 10 || src.issueIds.some(i => !str(i, 1, 60)))) || (src.label !== undefined && !str(src.label, 0, 80)))) throw bad('요청 출처 형식이 올바르지 않습니다.');
+      if (src !== undefined && (!src || typeof src !== 'object' || !['issue', 'workspace', 'chat', 'task', 'direct'].includes(src.kind) || Object.keys(src).some(k => !['kind', 'issueIds', 'signalId', 'actionId', 'label', 'card'].includes(k)) || (src.issueIds && (!Array.isArray(src.issueIds) || src.issueIds.length > 10 || src.issueIds.some(i => !str(i, 1, 60)))) || (src.label !== undefined && !str(src.label, 0, 80)))) throw bad('요청 출처 형식이 올바르지 않습니다.');
+      if (src?.card !== undefined) {
+        const card = src.card;
+        if (src.kind !== 'direct' || !card || typeof card !== 'object' || Array.isArray(card) || Object.keys(card).sort().join(',') !== 'factIds,metric,refs' ||
+          !/^[a-z][a-z0-9-]{0,40}$/.test(card.metric || '') || !Array.isArray(card.factIds) || !card.factIds.length || card.factIds.length > 6 ||
+          new Set(card.factIds).size !== card.factIds.length || card.factIds.some(id => !/^F-[0-9a-f]{8}$/.test(id)) ||
+          !Array.isArray(card.refs) || card.refs.length > 100 || card.refs.some(ref => !ref || typeof ref !== 'object' || Array.isArray(ref) ||
+            Object.keys(ref).sort().join(',') !== 'id,type' || !/^[a-z_]{2,30}$/.test(ref.type || '') || !/^[A-Za-z0-9:_-]{1,80}$/.test(ref.id || '')))
+          throw bad('카드 분석 출처 형식이 올바르지 않습니다.');
+      }
       const refs = recordRefs(source, payload.recordRefs);
+      if (src?.card) {
+        const factKey = [...src.card.factIds].sort().join('|');
+        const existing = Object.values(state.cases).find(c => c.kind === 'request' && c.state !== 'done' && c.requestSource?.card?.metric === src.card.metric &&
+          [...(c.requestSource.card.factIds || [])].sort().join('|') === factKey);
+        if (existing) return { caseId: existing.id, eventIds: [], duplicate: true };
+      }
       const steps = who.map((id, i) => step(`s${i + 1}`, { key: 'assignee_report', label: `${actors.get(id).name} 확인·보고`, role: 'assignee', evidenceRequired: true }, { assigneeIds: [id], queue: null, rule: '요청한 사람이 지정', ruleSource: 'request.create' }, 1));
       steps.push(step(`s${who.length + 1}`, { key: 'manager_review', label: '관리자 검토 후 마감', role: 'manager', review: true }, resolveRole(source, 'manager', []), 2));
       const c = local({ kind: 'request', scenario: null, attachments: atts, familyId: payload.familyId || 'tasks-notifications', title: scrub(payload.title.trim()), summary: scrub(payload.body.trim()), priority: payload.priority || 'normal', dueAt: payload.dueAt || null, entityRefs: refs, channels: payload.channels || ['app'], requestSource: src || { kind: 'direct' } }, steps);

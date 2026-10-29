@@ -16,6 +16,11 @@
   const ANALYSIS_ITEMS = ['지금 값과 평소', '어디서 변했나', '누가', '열린 업무', '셈의 기준과 빠진 기록'];
   const analysisOpen = new Set();
   const insightState = new Map();
+  const factKey = ids => [...(ids || [])].sort().join('|');
+  function cardRequest(data, factIds) {
+    const current = last?.api?.cardRequestFor?.(data.metric, factIds);
+    return current === undefined ? data.cardRequests?.find(c => factKey(c.factIds) === factKey(factIds)) : current;
+  }
   function loadInsight(data) {
     const metric = data.metric, signature = data.fingerprint || JSON.stringify(data.facts);
     const old = insightState.get(metric);
@@ -33,9 +38,15 @@
     const lines = (items, title) => items?.length ? `<div><h4>${title}</h4><ul>${items.map(x => `<li>${esc(x.text)}<small>근거: ${x.evidence.map(esc).join(' · ')}</small></li>`).join('')}</ul></div>` : '';
     const result = body?.result;
     const at = result?.createdAt ? new Intl.DateTimeFormat('ko-KR', { timeZone: 'Asia/Seoul', dateStyle: 'medium', timeStyle: 'short' }).format(new Date(result.createdAt)) : '';
+    const checks = result?.checks?.length ? `<div><h4>확인할 것</h4><ul>${result.checks.map((x, i) => {
+      const linked = cardRequest(data, x.factIds);
+      return `<li>${esc(x.text)}<small>근거: ${x.evidence.map(esc).join(' · ')}</small><div class="tr-insight-actions">${linked
+        ? `<button type="button" class="button" data-ca-open-case="${esc(linked.id)}">업무 열기</button>`
+        : `<button type="button" class="button" data-ca-request="${i}" ${data.insightFactIds && body?.status === 'ready' ? '' : 'disabled'}>업무 만들기</button>`}<button type="button" class="button" data-ca-flow>열린 업무 보기</button></div></li>`;
+    }).join('')}</ul></div>` : '';
     return `<div class="tr-insight"><div class="tr-insight-head"><h3>분석 문장</h3><button type="button" class="button" data-ca-make="${esc(data.metric)}" ${body?.enabled === false || state.status === 'making' ? 'disabled' : ''}>${state.status === 'making' ? '만드는 중…' : '분석 문장 만들기'}</button></div>`
       + (body?.note ? `<p class="v3s-note">${esc(body.note)}</p>` : '')
-      + (result ? `<small>${esc(result.modelLabel)} · ${esc(at)}</small><p>${esc(result.summary.text)}<small>근거: ${result.summary.evidence.map(esc).join(' · ')}</small></p>${lines(result.watch, '눈여겨볼 점')}${lines(result.checks, '확인할 것')}` : '')
+      + (result ? `<small>${esc(result.modelLabel)} · ${esc(at)}</small><p>${esc(result.summary.text)}<small>근거: ${result.summary.evidence.map(esc).join(' · ')}</small></p>${lines(result.watch, '눈여겨볼 점')}${checks}` : '')
       + (state.status === 'loading' ? '<p class="v3s-note">저장된 문장을 확인하는 중…</p>' : '')
       + (state.status === 'error' ? `<p class="v3s-note">${esc(state.error)}</p>` : '')
       + (body?.enabled === false ? '<p class="v3s-note">이 서버에서는 분석 문장 만들기가 꺼져 있습니다.</p>' : '')
@@ -54,8 +65,8 @@
       }).join('')}</ol></details>` : '';
       return `<section class="tr-analysis-item"><h3>${i + 1}. ${title}</h3><ol>${lines.map(f => {
         const ref = f.kind === 'record' && f.refs?.[0], open = ref ? `<button type="button" class="ax-text-link" data-ca-record="${esc(ref.id)}" data-ca-type="${esc(ref.type)}" data-ca-metric="${esc(entry.data.metric)}">${esc(f.text)}</button>` : esc(f.text);
-        return `<li data-fact="${esc(f.id)}">${open}</li>`;
-      }).join('') || '<li>비교할 기록이 없습니다.</li>'}</ol>${records}${i === 3 && lines.some(f => f.kind === 'flow') ? '<button type="button" class="ax-text-link" data-ca-flow>업무 흐름 열기</button>' : ''}</section>`;
+        return `<li data-fact="${esc(f.id)}">${open}${i === 3 && f.kind === 'flow' ? ' <button type="button" class="ax-text-link" data-ca-flow>열린 업무 보기</button>' : ''}</li>`;
+      }).join('') || '<li>비교할 기록이 없습니다.</li>'}</ol>${records}</section>`;
     }).join('');
     return `<section class="tr-analysis" aria-label="카드 분석"><div class="tr-analysis-head"><h2>카드 분석</h2><small>${esc(entry.data.period === 'month' ? '월별 카드 기준' : '주별 카드 기준')} · ${esc(entry.data.asOf)}</small></div><div class="tr-analysis-grid">${groups}</div>${insightBox(entry.data)}</section>`;
   }
@@ -297,6 +308,7 @@
     }
     const d = e.data; last.by = d.by; last.view = viewKey(d); last.d = d;
     const analysis = CARD_IDS.has(d.metric.id) ? ctx.load({ metric: d.metric.id, analysis: '1' }) : null;
+    last.analysis = analysis?.data || null;
     const rq = d.range ? { from: d.range.from, to: d.range.to, up: d.range.up } : {}, li = d.windows.length - 1;
     // 학원 전체(필터를 걸었을 때의 비교선)는 같은 창의 시작일로 맞춘다 — 필터 쪽과 전체 쪽의 '기록 시작'이 달라 앞을 다르게 잘라도 칸이 어긋나지 않게.
     const all = d.filter ? ctx.load({ metric: d.metric.id, grain: d.grain, ...rq }).data : null;
@@ -356,6 +368,27 @@
     const card = t.closest?.('.ws-kpi[data-trend]');
     if (card && !t.closest('a,button')) { location.hash = `v2-trend?metric=${encodeURIComponent(card.dataset.trend)}&grain=${encodeURIComponent(card.dataset.grain || 'week')}`; return; }
     if (!t.closest?.('[data-v2-screen="trend"]')) return;
+    const opened = t.closest('[data-ca-open-case]');
+    if (opened) { last?.api?.openFlowCase?.(opened.dataset.caOpenCase); return; }
+    const request = t.closest('[data-ca-request]');
+    if (request) {
+      const analysis = last?.analysis, saved = insightState.get(analysis?.metric)?.data, check = saved?.result?.checks?.[Number(request.dataset.caRequest)];
+      if (!analysis || saved?.status !== 'ready' || !check || !Array.isArray(analysis.insightFactIds)) return;
+      const byId = new Map(analysis.insightFactIds.map((id, i) => [id, analysis.facts[i]]));
+      const evidence = check.factIds.map(id => byId.get(id)).filter(Boolean);
+      const refs = [...new Map(evidence.flatMap(f => f.refs || []).filter(r => r?.type && r?.id).map(r => [`${r.type}:${r.id}`, { type: String(r.type), id: String(r.id) }])).values()].slice(0, 100);
+      const title = `${analysis.metricInfo.name} · ${check.text}`.slice(0, 80);
+      const body = [`확인할 것 · ${check.text}`, '', '근거', ...evidence.map(f => `- ${f.text}`)].join('\n').slice(0, 2000);
+      last.api.showCardRequest?.({ title, body, source: 'direct', draftKey: `card:${analysis.metric}:${factKey(check.factIds)}`,
+        context: { familyLabel: `카드 분석 · ${analysis.metricInfo.name}`, card: { metric: analysis.metric, factIds: check.factIds, refs } } });
+      return;
+    }
+    if (t.closest('[data-ca-flow]')) {
+      const analysis = last?.analysis, fact = analysis?.facts?.find(f => f.item === 4);
+      if (analysis) last.api.openCardFlow?.({ label: analysis.metricInfo?.name || '카드', tasks: analysis.flowLink?.tasks || [],
+        signals: analysis.flowLink?.signals || [], caseIds: (fact?.refs || []).filter(r => r.type === 'flow').map(r => r.id) });
+      return;
+    }
     const make = t.closest('[data-ca-make]');
     if (make) {
       const metric = make.dataset.caMake, state = insightState.get(metric);
@@ -369,7 +402,6 @@
     }
     const record = t.closest('[data-ca-record]');
     if (record) { if (record.dataset.caMetric === 'report-written' && record.dataset.caType === 'record') last.api.showWorkspaceRecord?.('lesson-reports', record.dataset.caRecord); else last.api.openRecord?.(record.dataset.caRecord); return; }
-    if (t.closest('[data-ca-flow]')) { location.hash = 'flow'; return; }
     const col = t.closest('.tr-chart .chart-col[data-tr-drill]');
     if (col) { if (!down?.touch || down.armed) drill(col); return; }
     const b = t.closest('[data-tr-grain],[data-tr-by],[data-tr-filter],[data-tr-unfilter],[data-tr-undrill],[data-tr-sort],[data-tr-more],[data-tr-open],[data-tr-chip],[data-tr-report],[data-tr-report-page]'); if (!b) return;

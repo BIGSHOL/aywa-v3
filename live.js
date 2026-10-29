@@ -193,6 +193,10 @@
   // Durable work flow (GET /api/flow): preview selector, role views, request store. Absent → session-only requests.
   const flowUI=typeof window.createFlowUI==='function'?window.createFlowUI({...api,ax,familyLabel:id=>ws?.area(id)?.label||'',showWorkspaceRecord:(family,record)=>ws?.showRecord(family,record),openWorkspace:(family,facet)=>ws?.openFamily(family,facet),attachField:(scope,family)=>ws?.attachField(scope,family)||''}):null;
   ax.useFlow?.(flowUI);
+  api.showCardRequest=args=>{if(!flowUI?.ready()){toast('업무 흐름을 불러오지 못했습니다. 다시 시도해 주세요.');return;}ax.showRequest(args);};
+  api.cardRequestFor=(metric,factIds)=>flowUI?.cardRequestFor?.(metric,factIds);
+  api.openFlowCase=id=>flowUI?.showCase?.(id);
+  api.openCardFlow=args=>flowUI?.openCardFlow?.(args);
   const viewFor=page=>{if(!page)return null;if(views[page])return views[page];const v2=window.V2Screens?.view(page);if(v2)return v2;const id=ws?.familyOf(page);return id&&ws.has(id)?()=>ws.view(id):null;};
   const mobileNav=matchMedia('(max-width: 760px)');
   const scrollObserver=new ResizeObserver(entries=>entries.forEach(e=>fade(e.target)));

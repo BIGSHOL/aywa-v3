@@ -25,6 +25,7 @@ assert(validateCardOutput({ ...good, summary: { text: '14명이 늘었습니다.
 assert.equal(validateCardOutput({ ...good, summary: { text: '확인이 필요합니다.', factIds: ['F-deadbeef'] } }, built.facts).ok, false); n++;
 assert(validateCardOutput({ ...good, summary: { text: 'current 값 확인', factIds: [ids[0]] } }, built.facts).issues.includes('raw_code')); n++;
 assert.equal(displayCardOutput({ ...good, summary: { text: `${ids[0]} 확인`, factIds: [ids[0]] } }, [{ id: ids[0], text: '지금 14명' }, ...built.facts.slice(1)]).summary.text, '지금 14명 확인'); n++;
+assert.deepEqual(displayCardOutput(good, built.facts).checks[0].factIds, [ids[2]]); n++;
 const root = await mkdtemp(join(tmpdir(), 'card-insight-'));
 try {
   const store = await openCardInsightStore({ dir: root, identity });

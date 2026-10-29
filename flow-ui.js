@@ -29,7 +29,7 @@ window.createFlowUI = function createFlowUI(api) {
   const BILLING_HINT='수납 반영은 메이크에듀 동기화로 들어옵니다 — 학부모 안내 등 처리 뒤 보고로 닫기';
   const ROLE_ORDER=['owner','manager','teacher','staff'],ROLE_GROUP={owner:'원장',manager:'관리자',teacher:'선생님',staff:'직원'};
   // 보드 보기 상태: q = 검색어 · sort = 정렬 열과 방향 · cols = 열별 값 필터(열 → 선택한 값들, 없으면 전부) · pages = 목록별 쪽.
-  const store={status:'idle',flow:null,error:'',controller:null,pending:new Set(),actorId:'',filter:'',q:'',sort:{col:'',dir:''},cols:{},pages:{},sel:new Set(),selView:'',deferred:false,retry:0,etag:'',older:new Map(),partial:false,wantFull:false,fullPromise:null,fullError:''};
+  const store={status:'idle',flow:null,error:'',controller:null,pending:new Set(),actorId:'',filter:'',cardLink:null,q:'',sort:{col:'',dir:''},cols:{},pages:{},sel:new Set(),selView:'',deferred:false,retry:0,etag:'',older:new Map(),partial:false,wantFull:false,fullPromise:null,fullError:''};
   const PEEK=document.documentElement.classList.contains('peek');
   try{store.actorId=localStorage.getItem(ACTOR_KEY)||'';}catch{/* storage unavailable: first owner actor is used */}
   const pill=(text,tone='')=>`<span class="ax-chip ${tone}">${h(text)}</span>`;
@@ -418,7 +418,8 @@ window.createFlowUI = function createFlowUI(api) {
   function boardParts(){
     const open=cases().filter(c=>c.state!=='done');
     const kinds=kindGroups(open.filter(c=>!local(c)));
-    const lists={decide:open.filter(ownerDecides),mine:cases().filter(c=>mine(c)),...Object.fromEntries(kinds.map(k=>[k.key,k.items])),blocked:open.filter(c=>unassigned(c)||late(c)||returned(c)),moving:open.filter(c=>!local(c)),local:cases().filter(local),done:cases().filter(c=>c.state==='done')};
+    const lists={decide:open.filter(ownerDecides),mine:cases().filter(c=>mine(c)),...Object.fromEntries(kinds.map(k=>[k.key,k.items])),blocked:open.filter(c=>unassigned(c)||late(c)||returned(c)),moving:open.filter(c=>!local(c)),local:cases().filter(local),
+      ...(store.cardLink?{card:open.filter(c=>store.cardLink.caseIds.has(c.id)&&(store.cardLink.tasks.includes(c.taskKind)||store.cardLink.signals.includes(c.signalId)))}:{}),done:cases().filter(c=>c.state==='done')};
     const f=lists[store.filter]?store.filter:'decide',q=(store.q||'').trim();
     board.base=q?lists[f].filter(c=>matchCase(c,q)):lists[f];
     const items=sortCases(board.base.filter(c=>colPass(c))),narrowed=Boolean(q)||colOn().length>0;
@@ -427,7 +428,7 @@ window.createFlowUI = function createFlowUI(api) {
     board.items=items;
     // 보기는 왼쪽 세로 목록(상태 · 종류 많은 순), 일은 오른쪽 표 — 칩 20여 개를 가로로 늘어놓지 않는다(원장 10-28 "너무 가로로 나열되어있고 공간 낭비 최악").
     // '내 차례' = 사이드바 '업무 흐름' 배지와 같은 수(검수 10-28 L8 — 배지와 맞는 보기가 없었다).
-    const states=[['decide','원장 결정 대기',lists.decide.length],['mine','내 차례',lists.mine.length],['moving','남은 업무 전체',lists.moving.length],['blocked','지난 업무 · 담당 미지정 업무',lists.blocked.length],['local','직접 등록한 업무',lists.local.length],['done','완료된 업무',lists.done.length]];
+    const states=[...(store.cardLink?[['card',`${store.cardLink.label}의 열린 업무`,lists.card.length]]:[]),['decide','원장 결정 대기',lists.decide.length],['mine','내 차례',lists.mine.length],['moving','남은 업무 전체',lists.moving.length],['blocked','지난 업무 · 담당 미지정 업무',lists.blocked.length],['local','직접 등록한 업무',lists.local.length],['done','완료된 업무',lists.done.length]];
     const byKind=[...kinds].sort((a,b)=>b.items.length-a.items.length).map(k=>[k.key,k.label,k.items.length]),label=[...states,...byKind].find(([id])=>id===f)?.[1]||'';
     // 제목 옆 건수는 걸러 볼 때만(찾은 수) — 보기 전체 건수는 왼쪽 목록에 있다(원장 10-28 "왼쪽에도 있으므로 전체개수는 숨겨줘 상단은").
     return {f,q,states,byKind,label,count:narrowed?`찾은 업무 ${fmt(items.length)}건`:'',listHtml:boardTable(items,f,narrowed?'조건에 맞는 업무가 없습니다.':'이 조건에 맞는 업무가 없습니다.')};
@@ -821,12 +822,24 @@ window.createFlowUI = function createFlowUI(api) {
     if(people.some(a=>!assignable(a))){toast('업무 흐름에서 배정할 수 없는 사람이 있습니다. 담당자를 다시 선택해 주세요.');return null;}
     if(String(v.title).length>80){toast('업무 흐름 요청의 제목은 80자까지입니다.');return null;}
     const type=REF_TYPE[v.context?.family],known=new Set((flow().entities||[]).map(e=>`${e.type}:${e.id}`));
-    const refs=type?(v.context.records||[]).map(r=>`${type}:${r.id}`).filter(k=>ALWAYS_KNOWN.has(type)||known.has(k)).slice(0,20):[];
+    const refs=[...new Set([...(type?(v.context.records||[]).map(r=>`${type}:${r.id}`).filter(k=>ALWAYS_KNOWN.has(type)||known.has(k)):[]),...(v.context?.card?.refs||[]).map(r=>`${r.type}:${r.id}`).filter(k=>known.has(k))])].slice(0,20);
     const kind=['issue','workspace','chat','task','direct'].includes(v.source)?v.source:v.context?'workspace':'direct';
-    const source={kind,...(v.issues?.length?{issueIds:v.issues.slice(0,10)}:{}),...(v.context?.signal?{signalId:String(v.context.signal)}:{}),...(v.context?.action?{actionId:String(v.context.action)}:{}),...(v.context?.familyLabel?{label:String(v.context.familyLabel).slice(0,80)}:{})};
+    const source={kind,...(v.issues?.length?{issueIds:v.issues.slice(0,10)}:{}),...(v.context?.signal?{signalId:String(v.context.signal)}:{}),...(v.context?.action?{actionId:String(v.context.action)}:{}),...(v.context?.familyLabel?{label:String(v.context.familyLabel).slice(0,80)}:{}),...(v.context?.card?{card:v.context.card}:{})};
     const payload={title:v.title,body:String(v.body).slice(0,2000),assigneeIds:v.owners,...(/^\d{4}-\d{2}-\d{2}$/.test(v.due||'')?{dueAt:v.due}:{}),priority:v.priority==='높음'?'high':'normal',...(v.context?.family?{familyId:v.context.family}:{}),...(refs.length?{recordRefs:refs}:{}),...(v.attachments?.length?{attachments:v.attachments.slice(0,20)}:{}),channels:(v.channels||[]).filter(ch=>ch==='app'||ch==='slack'),source};
     const result=await command('request.create',{payload,key:`request.create:${v.draftKey||'direct'}`});
-    return result?result.caseId||'':null;
+    return result?{caseId:result.caseId||'',duplicate:!!result.duplicate}:null;
+  }
+  const cardRequestFor=(metric,factIds)=>{
+    if(!ready()||flow().summary)return undefined;
+    if(!Array.isArray(factIds))return null;
+    const key=[...factIds].sort().join('|');
+    return cases().find(c=>c.kind==='request'&&c.state!=='done'&&c.requestSource?.card?.metric===metric&&[...(c.requestSource.card.factIds||[])].sort().join('|')===key)||null;
+  };
+  async function openCardFlow({label='',tasks=[],signals=[],caseIds=[]}={}){
+    if(!await ensureFull()){toast('업무 목록을 불러오지 못했습니다. 다시 시도해 주세요.');return;}
+    store.cardLink={label:String(label||'카드'),tasks:[...tasks],signals:[...signals],caseIds:new Set(caseIds)};
+    store.filter='card';store.q='';store.cols={};store.pages.board=1;
+    navigate('flow');
   }
   const actAs=async(kind,caseId,actorId,payload={})=>{if(!await ensureFull())return null;const c=caseById(caseId),s=c&&myStep(c,actorId);return command(kind,{caseId,payload:{...(s?{stepId:s.id}:{}),...payload},actorId,key:`${kind}:${caseId}`});};
 
@@ -1265,5 +1278,5 @@ window.createFlowUI = function createFlowUI(api) {
   },true);
 
   load();
-  return {recordsHtml:recRows,fillRecords:fillFacts,load,ready,status:()=>store.status,actor,role,actors,nameOf,sidebar,inboxCount,ownerCards,ownerStageCell,ownerBelow,fullView,staffView,managerView,showCase,asRequests,createRequest,actAs,caseById,stepOf,myStep,notices,stateNote};
+  return {recordsHtml:recRows,fillRecords:fillFacts,load,ready,status:()=>store.status,actor,role,actors,nameOf,sidebar,inboxCount,ownerCards,ownerStageCell,ownerBelow,fullView,staffView,managerView,showCase,asRequests,createRequest,cardRequestFor,openCardFlow,actAs,caseById,stepOf,myStep,notices,stateNote};
 };

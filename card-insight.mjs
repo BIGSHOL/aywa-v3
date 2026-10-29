@@ -55,7 +55,7 @@ export function validateCardOutput(output, facts) {
 
 export const displayCardOutput = (output, facts) => {
   const labels = new Map(facts.map(f => [f.id, f.text]));
-  const expand = x => ({ text: renderText(x.text, id => labels.get(id)), evidence: x.factIds.map(id => labels.get(id)) });
+  const expand = x => ({ text: renderText(x.text, id => labels.get(id)), evidence: x.factIds.map(id => labels.get(id)), factIds: x.factIds });
   return { summary: expand(output.summary), watch: output.watch.map(expand), checks: output.checks.map(expand) };
 };
 

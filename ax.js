@@ -17,7 +17,8 @@ window.createOwnerWorkspace = function createOwnerWorkspace(api) {
   const flowRole=()=>flowUI?.ready()?flowUI.role():'owner';
   const contexts=new Map();
   // Source context of a request (workspace family, records, signal/action, auto task). Kept by draft key, copied onto the request.
-  const cleanContext=c=>c&&typeof c==='object'?{family:String(c.family||''),familyLabel:String(c.familyLabel||''),records:(Array.isArray(c.records)?c.records:[]).slice(0,20).map(r=>({id:String(r.id),label:String(r.label||'')})),signal:String(c.signal||''),action:String(c.action||''),task:String(c.task||'')}:null;
+  const cleanContext=c=>c&&typeof c==='object'?{family:String(c.family||''),familyLabel:String(c.familyLabel||''),records:(Array.isArray(c.records)?c.records:[]).slice(0,20).map(r=>({id:String(r.id),label:String(r.label||'')})),signal:String(c.signal||''),action:String(c.action||''),task:String(c.task||''),
+    ...(c.card?{card:{metric:String(c.card.metric||''),factIds:(Array.isArray(c.card.factIds)?c.card.factIds:[]).slice(0,6).map(String),refs:(Array.isArray(c.card.refs)?c.card.refs:[]).slice(0,100).map(r=>({type:String(r.type||''),id:String(r.id||'')}))}}:{})}:null;
   const sourcePage=c=>c?.family&&workspaces?.has(c.family)?`workspace-${c.family}`:'';
   // Limits mirror the backend contract (prompt ≤1000, history ≤12 items, each ≤2000, total ≤8000, server timeout 90s).
   const ASSISTANT={endpoint:'/api/assistant',promptLimit:1000,historyItems:12,historyItemLimit:2000,historyTotal:8000,timeoutMs:120000};
@@ -176,7 +177,7 @@ window.createOwnerWorkspace = function createOwnerWorkspace(api) {
     ui.requestArgs={...args,draftKey:key};
     const context=cleanContext(args.context);if(context)contexts.set(key,context);else contexts.delete(key);
     const draft=ui.drafts.get(key);
-    const value={title:draft?.title??clip(args.title??issue?.request??'',120),body:draft?.body??clip(args.body??issue?.suggestion??'',3000),owners:draft?.owners||[],due:draft?.due||db.meta.asOf,priority:draft?.priority||'보통',channels:draft?.channels||[...(ui.app?['app']:[]),...(ui.slack?['slack']:[])]};
+    const value={title:draft?.title??clip(args.title??issue?.request??'',120),body:draft?.body??clip(args.body??issue?.suggestion??'',3000),owners:draft?.owners||[],due:draft?draft.due:context?.card?'':db.meta.asOf,priority:draft?.priority||'보통',channels:draft?.channels||[...(ui.app?['app']:[]),...(ui.slack?['slack']:[])]};
     const linked=sources.map(findIssue).filter(Boolean);
     const lead=args.source==='chat'?'AI 제안 요청안':context?.familyLabel?`${context.familyLabel}에서 보내는 요청`:issue?`${issue.category} · 확인 대상 ${issue.records.length||'변동 근거'}${issue.records.length?issue.unit:''}`:'';
     dialog('modal','업무 요청',lead,`<form data-ax-form="request" class="ax-request-form" data-draft-key="${h(key)}" data-source="${h(args.source||(sources.length?'issue':'direct'))}">${sources.map(id=>`<input type="hidden" name="issue" value="${h(id)}">`).join('')}${draft?`<p class="ax-draft-note" role="status">작성하던 내용을 이어서 표시합니다. ${button('처음 내용으로','draft-reset',key)}</p>`:''}${linked.length?`<div class="ax-linked-issues"><span>연결 이슈</span>${linked.map(i=>pill(i.title)).join('')}</div>`:''}${context?.familyLabel||context?.records.length?`<div class="ax-linked-issues"><span>출처</span>${context.familyLabel?pill(context.familyLabel,'blue'):''}${context.records.slice(0,4).map(r=>pill(r.label)).join('')}${context.records.length>4?`<span>외 ${context.records.length-4}건</span>`:''}</div>`:''}<label>요청 제목<input name="title" required maxlength="${flowUI?.ready()?80:120}" value="${h(value.title)}"></label>${ownerPicker(value.owners)}<div class="ax-form-pair"><label>완료 기한<input name="due" type="date" required min="${db.meta.asOf}" value="${h(value.due)}"></label>${choicePicker({id:'ax-req-priority',name:'priority',label:'우선순위',selected:value.priority||'보통',columns:[{key:'name',label:'우선순위'},{key:'note',label:'뜻',w:'minmax(0,1.6fr)'}],items:[{value:'보통',title:'보통',cells:{note:'정한 기한 안에 처리'}},{value:'높음',title:'높음',cells:{note:'다른 일보다 먼저 처리'}}]},`<label>우선순위<select name="priority">${['보통','높음'].map(p=>`<option ${p===value.priority?'selected':''}>${p}</option>`).join('')}</select></label>`)}</div><label>요청 내용<textarea name="body" rows="5" required maxlength="${flowUI?.ready()?2000:3000}">${h(value.body)}</textarea></label>${flowUI?.ready()?workspaces?.attachField?.(`ax-req-${key}`.replace(/[^\w-]/g,'_'),context?.family||workspaces?.familyOf?.(api.getPage?.())||'')||'':''}<fieldset><legend>알림 방법</legend><div class="ax-channel-options"><label><input type="checkbox" name="channel" value="app" ${value.channels.includes('app')?'checked':''}> 앱 알림</label><label><input type="checkbox" name="channel" value="slack" ${value.channels.includes('slack')?'checked':''}> 슬랙</label></div></fieldset><p class="ax-form-error" id="ax-request-error" role="alert"></p><button class="button primary" type="submit">요청 등록</button></form>`);
@@ -191,11 +192,12 @@ window.createOwnerWorkspace = function createOwnerWorkspace(api) {
     if(flowUI?.ready()){
       // Durable path: one request.create command; the form stays open (with its draft) until the server accepts it.
       if(form.dataset.sending)return;form.dataset.sending='1';const submit=form.querySelector('button[type=submit]');submit.disabled=true;submit.textContent='등록하는 중';
-      flowUI.createRequest({title,body,owners,channels,due:String(values.get('due')),priority:String(values.get('priority')),issues:sources,context:contexts.get(form.dataset.draftKey)||null,source,draftKey:form.dataset.draftKey,attachments:values.getAll('attach').filter(Boolean)}).then(caseId=>{
+      flowUI.createRequest({title,body,owners,channels,due:String(values.get('due')),priority:String(values.get('priority')),issues:sources,context:contexts.get(form.dataset.draftKey)||null,source,draftKey:form.dataset.draftKey,attachments:values.getAll('attach').filter(Boolean)}).then(created=>{
         delete form.dataset.sending;submit.disabled=false;submit.textContent='요청 등록';
-        if(caseId===null){error.textContent='요청을 등록하지 못했습니다. 내용을 확인하고 다시 시도해 주세요.';return;}
+        if(created===null){error.textContent='요청을 등록하지 못했습니다. 내용을 확인하고 다시 시도해 주세요.';return;}
+        const caseId=typeof created==='string'?created:created.caseId;
         form.dataset.submitted='1';ui.drafts.delete(form.dataset.draftKey);sources.forEach(x=>ui.read.add(x));
-        document.querySelectorAll('dialog[open]').forEach(d=>d.close());render();if(caseId)showRequestDetail(caseId);toast('업무 흐름에 요청을 등록했습니다. 담당자의 업무에 바로 보입니다.');
+        document.querySelectorAll('dialog[open]').forEach(d=>d.close());render();if(caseId)showRequestDetail(caseId);toast(created?.duplicate?'같은 확인 항목의 열린 업무를 보여 드립니다.':'업무 흐름에 요청을 등록했습니다. 담당자의 업무에 바로 보입니다.');
       });
       return;
     }

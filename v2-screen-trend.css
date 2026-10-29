@@ -126,4 +126,5 @@
 .tr-insight h3,.tr-insight h4{margin:0;color:var(--ax-ink)}
 .tr-insight h4{margin-top:10px}.tr-insight p{margin:8px 0}.tr-insight ul{margin:4px 0;padding-left:20px}.tr-insight li+li{margin-top:6px}
 .tr-insight small{display:block;color:var(--ax-muted)}
+.tr-insight-actions{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
 @media(max-width:760px){.tr-analysis-grid{grid-template-columns:1fr}.tr-analysis-item:last-child{grid-column:auto}.tr-analysis-head{display:block}.tr-analysis-head small{display:block;margin-top:4px}}
