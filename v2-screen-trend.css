@@ -104,3 +104,17 @@
 .tr-chip:hover{background:var(--ax-soft)}
 .tr-chip[aria-pressed="true"]{border-color:var(--ax-primary);background:var(--ax-soft);color:var(--ax-primary);font-weight:650}
 .tr-table .tr-pick i.tr-pick-pad{visibility:hidden} /* 머리 체크 칸을 줄의 체크 칸(옆에 색 칸)과 같은 자리에 */
+.tr-analysis{margin:12px 0 18px;padding:18px;border:1px solid var(--ax-line);border-radius:12px;background:var(--ax-white)}
+.tr-analysis-head{display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin-bottom:12px}
+.tr-analysis h2{margin:0;font-size:1.05rem;color:var(--ax-ink)}
+.tr-analysis-head small{font-size:var(--ax-xs);color:var(--ax-muted)}
+.tr-analysis-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.tr-analysis-item{min-width:0;padding:12px;border:1px solid var(--ax-line);border-radius:9px;background:var(--ax-soft)}
+.tr-analysis-item:last-child{grid-column:1/-1}
+.tr-analysis-item h3{margin:0 0 8px;font-size:var(--ax-xs);font-weight:700;color:var(--ax-ink)}
+.tr-analysis-item ol{list-style:none;margin:0;padding:0;display:grid;gap:5px}
+.tr-analysis-item li{font-size:var(--ax-xs);line-height:1.55;color:var(--ax-ink);overflow-wrap:anywhere;font-variant-numeric:tabular-nums}
+.tr-analysis-item li+li{border-top:1px solid var(--ax-line);padding-top:5px}
+.tr-analysis-item .ax-text-link{font:inherit;text-align:left;padding:0;min-height:0;line-height:inherit}
+.tr-analysis-item [data-ca-flow]{margin-top:9px}
+@media(max-width:760px){.tr-analysis-grid{grid-template-columns:1fr}.tr-analysis-item:last-child{grid-column:auto}.tr-analysis-head{display:block}.tr-analysis-head small{display:block;margin-top:4px}}

@@ -8,6 +8,7 @@
 import { addDays, weekWindows, yymm, rate } from './domain-snapshot-core.mjs';
 import { copyClock } from './v2-onescreen-roster.mjs';
 import { TREND_METRICS } from './trend-metrics.mjs';
+import { loadCardAnalysis } from './card-analysis-load.mjs';
 
 const GRAINS = Object.freeze([{ id: 'day', label: '일별' }, { id: 'week', label: '주별' }, { id: 'month', label: '월별' }, { id: 'year', label: '연별' }]);
 const md = (d) => `${Number(d.slice(5, 7))}/${Number(d.slice(8, 10))}`;
@@ -142,8 +143,11 @@ async function rowMeta(sql, tenantId, importV2, from, to, by, subjectName) {
 export const screen = {
   id: 'trend', label: '확장 추세', order: 90,
   params: { metric: /^[a-z][a-z0-9-]{0,40}$/, grain: /^(day|week|month|year)$/, by: /^[a-z]{1,20}$/, f: /^[a-z]{1,20}:[A-Za-z0-9:._|-]{1,100}$/,
+    analysis: /^1$/,
     from: DAY, to: DAY, up: /^(week|month|year)$/ },
   async load({ sql, params, tenantId, importV2 }) {
+    if (params.analysis === '1') return loadCardAnalysis({ sql, tenantId, importV2, metricId: params.metric,
+      loadTrend: p => screen.load({ sql, params: p, tenantId, importV2 }) });
     const metric = TREND_METRICS.find((m) => m.id === params.metric) ?? TREND_METRICS[0];
     const grains = metric.grains ? GRAINS.filter((g) => metric.grains.includes(g.id)) : GRAINS;
     const grain = grains.some((g) => g.id === params.grain) ? params.grain : grains.some((g) => g.id === 'week') ? 'week' : grains[0].id;
@@ -210,7 +214,7 @@ export const screen = {
     const meta = !META_DIMS.has(by) ? null : await remember(`meta|${tenantId}|${asOf}|${by}|${from}~${to}`, async () => rowMeta(sql, tenantId, importV2, from, to, by, await subjectName()))
       .catch((e) => { console.error(`확장 추세 정보 칸: ${e.message}`); return null; });
     return {
-      asOf, grain, by,
+      asOf, grain, by, since: raw.since ?? null, endsYesterday: !!metric.endsYesterday,
       // range = 지금 쪼개 보는 범위(없으면 null) · drill = 점을 누르면 쪼갤 단위(쪼개 보는 중이거나 더 잘게 못 나누면 null — 그 점은 누를 수 없다).
       range, drill: range ? null : drillOf(grain, grains.map((g) => g.id)),
       metric: { id: metric.id, label: metric.label, unit: metric.unit, better: metric.better, dims: dims.map((d) => ({ id: d.id, label: d.label, ...(d.needsFilter ? { needsFilter: true } : {}) })) },

@@ -11,6 +11,23 @@
   let showAll = false;
 
   const shown = (v, unit) => (v === null || v === undefined ? '기록 없음' : unit === '%' ? `${v.toFixed(1)}%` : `${fmt(v)}${unit}`);
+  const CARD_IDS = new Set(['enrolled-students', 'courses', 'exits', 'intake', 'level-tests', 'new-enrollments', 'first-classes', 'recent-absent', 'makeups',
+    'report-written', 'report-sent', 'parent-read', 'attendance-input', 'video-issued', 'video-submitted']);
+  const ANALYSIS_ITEMS = ['지금 값과 평소', '어디서 변했나', '누가', '열린 업무', '셈의 기준과 빠진 기록'];
+  function analysisBox(entry) {
+    if (!entry) return '';
+    if (entry.status === 'error') return `<section class="tr-analysis" aria-label="카드 분석"><h2>카드 분석</h2><p class="v3s-note">${esc(entry.error || '분석을 불러오지 못했습니다.')}</p></section>`;
+    if (!entry.data) return `<section class="tr-analysis" aria-label="카드 분석"${entry.status === 'ready' ? '' : ' aria-busy="true"'}><h2>카드 분석</h2><p class="v3s-note">${entry.status === 'ready' ? '이 카드의 분석 자료가 없습니다.' : '카드 숫자를 살펴보는 중…'}</p></section>`;
+    const facts = entry.data.facts || [];
+    const groups = ANALYSIS_ITEMS.map((title, i) => {
+      const lines = facts.filter(f => f.item === i + 1);
+      return `<section class="tr-analysis-item"><h3>${i + 1}. ${title}</h3><ol>${lines.map(f => {
+        const ref = f.kind === 'record' && f.refs?.[0], open = ref ? `<button type="button" class="ax-text-link" data-ca-record="${esc(ref.id)}" data-ca-type="${esc(ref.type)}" data-ca-metric="${esc(entry.data.metric)}">${esc(f.text)}</button>` : esc(f.text);
+        return `<li data-fact="${esc(f.id)}">${open}</li>`;
+      }).join('') || '<li>비교할 기록이 없습니다.</li>'}</ol>${i === 3 && lines.some(f => f.kind === 'flow') ? '<button type="button" class="ax-text-link" data-ca-flow>업무 흐름 열기</button>' : ''}</section>`;
+    }).join('');
+    return `<section class="tr-analysis" aria-label="카드 분석"><div class="tr-analysis-head"><h2>카드 분석</h2><small>${esc(entry.data.period === 'month' ? '월별 카드 기준' : '주별 카드 기준')} · ${esc(entry.data.asOf)}</small></div><div class="tr-analysis-grid">${groups}</div></section>`;
+  }
   const changeOf = (p, q, unit, better) => {
     if (p?.value == null || q?.value == null) return { text: '—', tone: '' };
     const d = p.value - q.value; if (!d) return { text: '변화 없음', tone: '' };
@@ -248,6 +265,7 @@
       return lastHtml ? lastHtml.replace('<div class="tr">', '<div class="tr is-loading" aria-busy="true">') : '<div class="tr"><p class="v3s-note">추세를 계산하는 중…</p></div>';
     }
     const d = e.data; last.by = d.by; last.view = viewKey(d); last.d = d;
+    const analysis = CARD_IDS.has(d.metric.id) ? ctx.load({ metric: d.metric.id, analysis: '1' }) : null;
     const rq = d.range ? { from: d.range.from, to: d.range.to, up: d.range.up } : {}, li = d.windows.length - 1;
     // 학원 전체(필터를 걸었을 때의 비교선)는 같은 창의 시작일로 맞춘다 — 필터 쪽과 전체 쪽의 '기록 시작'이 달라 앞을 다르게 잘라도 칸이 어긋나지 않게.
     const all = d.filter ? ctx.load({ metric: d.metric.id, grain: d.grain, ...rq }).data : null;
@@ -261,6 +279,7 @@
       + `<div class="tr-bar"><div class="tr-seg" role="group" aria-label="기간 단위">${seg('data-tr-grain', d.grains, d.grain)}</div><div class="tr-seg" role="group" aria-label="기준">${seg('data-tr-by', d.metric.dims.filter(x => (d.byOptions ? d.byOptions.includes(x.id) : x.id !== d.filter?.dim && !x.needsFilter)), d.by)}</div>`
       + (d.range ? `<span class="tr-filter tr-range"><strong>${esc(d.range.label)}</strong> ${esc(grainName(d, d.grain))}<button type="button" class="icon-button" data-tr-undrill aria-label="나눠 보기 닫기 — ${esc(grainName(d, d.range.up))} 보기로">×</button></span>` : '')
       + (d.filter ? `<span class="tr-filter"><strong>${esc(d.filter.label)}</strong>만 보는 중<button type="button" class="icon-button" data-tr-unfilter aria-label="필터 풀기">×</button></span>` : '') + '</div>'
+      + analysisBox(analysis)
       + `<section class="tr-main"><div class="tr-now"><span>${esc(d.windows[li] ? dayName(d.windows[li]) : '')}</span><strong>${shown(p?.value, d.metric.unit)}</strong><small class="${c.tone}">${li ? `직전 대비 ${c.text}` : ''}</small><small>${ratio(p, d.metric.unit)}</small></div>${bigChart(d, base, seriesOf(d))}</section>`
       + (d.rows.length ? table(d, ctx.api) : '<p class="v3s-note">이 조건의 기록이 없습니다.</p>') + roster(d, ctx.api) + '</div>';
     warm(d, params.grain);
@@ -305,6 +324,9 @@
     const card = t.closest?.('.ws-kpi[data-trend]');
     if (card && !t.closest('a,button')) { location.hash = `v2-trend?metric=${encodeURIComponent(card.dataset.trend)}&grain=${encodeURIComponent(card.dataset.grain || 'week')}`; return; }
     if (!t.closest?.('[data-v2-screen="trend"]')) return;
+    const record = t.closest('[data-ca-record]');
+    if (record) { if (record.dataset.caMetric === 'report-written' && record.dataset.caType === 'record') last.api.showWorkspaceRecord?.('lesson-reports', record.dataset.caRecord); else last.api.openRecord?.(record.dataset.caRecord); return; }
+    if (t.closest('[data-ca-flow]')) { location.hash = 'flow'; return; }
     const col = t.closest('.tr-chart .chart-col[data-tr-drill]');
     if (col) { if (!down?.touch || down.armed) drill(col); return; }
     const b = t.closest('[data-tr-grain],[data-tr-by],[data-tr-filter],[data-tr-unfilter],[data-tr-undrill],[data-tr-sort],[data-tr-more],[data-tr-open],[data-tr-chip],[data-tr-report],[data-tr-report-page]'); if (!b) return;
