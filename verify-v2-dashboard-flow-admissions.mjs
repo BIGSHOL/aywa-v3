@@ -31,7 +31,7 @@ if (db) {
 }
 
 test('지표 모양: 운영실 묶음 · 건수 · 오르면 좋음 · 과목별 기준 · 어제까지 · 창마다 [값, 1]', { skip: SKIP }, () => {
-  assert.deepEqual([metric.id, metric.label, metric.group, metric.unit, metric.better, metric.endsYesterday], ['level-tests', '레벨테스트', '운영실', '건', 'up', true]);
+  assert.deepEqual([metric.id, metric.label, metric.group, metric.unit, metric.better, metric.endsYesterday], ['level-tests', '입학테스트', '운영실', '건', 'up', true]);
   assert(metric.dims.length >= 1 && metric.dims.every((d) => d.id && d.label));
   assert.equal(typeof metric.series, 'function');
 });
@@ -96,7 +96,7 @@ test('KPI 카드: 레벨테스트 하나 · 점 = 어제까지 7일 창 8개(따
     assert.equal(admissionsKpiCards({ sql, asOf, importV2 }), p, '같은 트랜잭션 · 지점 기본값도 같은 열쇠');
     const [card, ...rest] = await p;
     assert.equal(rest.length, 0);
-    assert.deepEqual([card.kind, card.id, card.label, card.unit, card.period, card.better, card.span], ['kpi', metric.id, '레벨테스트', '건', 'week', 'up', '어제까지 7일']);
+    assert.deepEqual([card.kind, card.id, card.label, card.unit, card.period, card.better, card.span], ['kpi', metric.id, '입학테스트', '건', 'week', 'up', '어제까지 7일']);
     assert.deepEqual(card.points.map((x) => [x.label, x.value]), windows.map((w) => [w.label, expected(w)]));
     assert.deepEqual([card.value, card.previous], [card.points.at(-1).value, card.points.at(-2).value]);
     for (const text of [card.label, card.span, card.basis]) { assert.doesNotMatch(text, /2\.0|[A-Za-z]/, text); assert(text.length > 0); }

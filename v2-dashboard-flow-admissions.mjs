@@ -150,12 +150,12 @@ async function levelTests({ sql, asOf, tenantId: t = COPY_TENANT, importV2, wind
     }
   }
   // '자세히 보기' 아래 목록(원장 10-28) — 필터를 걸었을 때만 · 창마다 그 창에 든 레벨테스트 일정(줄 id = 일정 id · 이름 = 일정 제목).
-  // 줄 = 이은 원생(id = 학생 id · 이름·학교학년은 원생 표) · 이은 상담(id = 상담 id · 문의 이름·학교·학년) · 없으면 '레벨테스트'(id = 일정 id) · key = 일정 id.
+  // 줄 = 이은 원생(id = 학생 id · 이름·학교학년은 원생 표) · 이은 상담(id = 상담 id · 문의 이름·학교·학년) · 없으면 '입학테스트'(id = 일정 id) · key = 일정 id.
   const recordOf = (e) => {
     const w = who.get(e.id), base = { key: e.id, date: e.startDate, dateLabel: '일정일', ...(groups.get(e.id) ? { note: groups.get(e.id).map(labelOf).join('·') } : {}) };
     if (w?.studentId) return { id: w.studentId, ...base };
     if (w?.consult) return { id: w.consult.id, student: false, name: w.consult.name, school: w.consult.school, grade: w.consult.grade, ...base };
-    return { id: e.id, student: false, name: '레벨테스트', school: null, grade: null, ...base };
+    return { id: e.id, student: false, name: '입학테스트', school: null, grade: null, ...base };
   };
   const records = filter ? windows.map((w) => (recorded(w) ? chosen.filter((e) => inWindow(e, w)).map(recordOf) : null)) : null;
   return { since, ...await namedRecords(gate, t, load, { total: windows.map((w) => count(chosen, w)), rows, ...(records ? { records } : {}) }) };
@@ -163,13 +163,13 @@ async function levelTests({ sql, asOf, tenantId: t = COPY_TENANT, importV2, wind
 
 /** 확장 추세 지표(trend-metrics.mjs 형식) — 운영실 묶음. */
 export const ADMISSIONS_TREND_METRICS = Object.freeze([Object.freeze({
-  id: 'level-tests', label: '레벨테스트', group: '운영실', unit: '건', better: 'up', dims: Object.freeze([{ id: 'subject', label: '과목별' }]), endsYesterday: true,
+  id: 'level-tests', label: '입학테스트', group: '운영실', unit: '건', better: 'up', dims: Object.freeze([{ id: 'subject', label: '과목별' }]), endsYesterday: true,
   series({ sql, asOf, tenantId, importV2, windows, filter }) {
     return levelTests({ sql, asOf, tenantId, importV2, windows, filter: filter?.dim === 'subject' ? filter : null });
   },
 })]);
 
-const BASIS = '학원 일정에 잡힌 레벨테스트 중 취소되지 않은 것 · 일정 날짜로 셈';
+const BASIS = '학원 일정에 잡힌 입학테스트(레벨테스트) 중 취소되지 않은 것 · 일정 날짜로 셈';
 const cardMemo = new WeakMap();
 /**
  * 운영실 KPI 카드 [레벨테스트] — 어제까지 7일 창 8개(점 = 확장 추세 주별과 같은 값 · 큰 숫자 = 마지막 창). 같은 트랜잭션 안에서는 한 번만 센다.
@@ -185,6 +185,6 @@ async function cards({ sql, asOf, tenantId, importV2 }) {
   if (!DAY.test(asOf ?? '')) throw new Error(`기준일 형식이 아닙니다: ${asOf}`);
   const windows = weekWindows(addDays(asOf, -1), 8);
   const { total } = await levelTests({ sql, asOf, tenantId, importV2, windows, bySubject: false });
-  return [kpi('레벨테스트', '건', windows.map((w, i) => ({ label: w.label, value: total[i]?.[0] ?? null })),
+  return [kpi('입학테스트', '건', windows.map((w, i) => ({ label: w.label, value: total[i]?.[0] ?? null })),
     { id: 'level-tests', better: 'up', period: 'week', span: '어제까지 7일', basis: BASIS })];
 }
