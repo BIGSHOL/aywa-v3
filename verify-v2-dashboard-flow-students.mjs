@@ -46,7 +46,7 @@ test('카드와의 관계: 재원생·강좌수 지난 달 점 = 같은 값 · �
       assert.deepEqual(card, trend, `${id}: 카드 점 = 확장 추세의 같은 주간 점`);
     }
     // 퇴원·수업종료: 이번 달 점(장부 정리 퇴원 뺀 값) = 확장 추세 월별 마지막 창(1일 ~ 오늘).
-    assert.equal(vals((await series(sql, 'exits', windowsFor('month', asOf))).total).at(-1), K.exits.points.at(-1).value, '퇴원·수업종료 이번 달');
+    assert.equal(vals((await series(sql, 'exits', windowsFor('month', asOf))).total).at(-1), K.exits.points.at(-1).value, '퇴원&수업종료 이번 달');
   });
 });
 

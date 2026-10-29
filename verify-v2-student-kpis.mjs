@@ -183,10 +183,10 @@ async function exitCount(day, trend, { current = false } = {}) {
     cleanup: withdrawn.filter((r) => V.isCleanupExit(r.md) && r.hist).reduce((n, r) => n + Math.max(1, r.subjects), 0) };
 }
 
-test('퇴원·수업종료: 큰 숫자 = 2.0 칸 = 독립 SQL · 달마다 1일~같은 날 점 6개 = 같은 SQL(단체 장부 정리 퇴원 제외) · 전월 대비 = 점끼리 · 이관 전 날짜도 센다', { skip: SKIP }, async () => {
+test('퇴원&수업종료: 카드 수치 = 2.0 칸 = 독립 SQL · 달마다 1일~같은 날 점 6개 = 같은 SQL(단체 장부 정리 퇴원 제외) · 전월 대비 = 점끼리 · 이관 전 날짜도 센다', { skip: SKIP }, async () => {
   const card = await exitCount(asOf, false);
   assert.equal(out.cards.withdrawals, card.total);
-  const k = K['퇴원·수업종료'], months = monthsBack(6);
+  const k = K['퇴원&수업종료'], months = monthsBack(6);
   assert.equal(k.value, card.total, '큰 숫자 = 칸(이번 달 단체 장부 정리 퇴원도 든다)');
   assert.deepEqual(k.points.map((p) => p.label), months.map(yymm));
   let cleanupMonths = 0;
@@ -293,13 +293,13 @@ test('지난 기준일: 창 끝 = 그날 복사본을 뜬 시각(복사본 날�
   await assert.rejects(ro((sql) => studentStatusKpis({ sql, asOf: addDays(asOf, 1), tenantId: t, importV2 })), /복사본 날짜/);
 });
 
-test('지난 달들의 같은 날을 기준일로: 재원생·강좌수 칸 = 따로 센 그날 값 · 퇴원·수업종료 칸과 점 = 같은 SQL', { skip: SKIP }, async () => {
+test('지난 달들의 같은 날을 기준일로: 재원생·강좌수 칸 = 따로 센 그날 값 · 퇴원&수업종료 칸과 점 = 같은 SQL', { skip: SKIP }, async () => {
   // 장부 정리 청구 판정의 '오늘'이 복사본 날짜여야 같은 선의 그날 점과 같다(기준일을 '오늘'로 넘기면 청구가 살아 있는 달에 갈린다).
   const on = await enrolledOnPast();
   for (const m of monthsBack(4).slice(0, 3)) {
     const day = sameDay(m), p = await ro((sql) => studentStatusKpis({ sql, asOf: day, tenantId: t, importV2 }));
     assert.deepEqual({ students: p.cards.students, courses: p.cards.courses }, on(day), `${day}: 재원생·강좌수`);
-    const ex = p.kpis.find((x) => x.label === '퇴원·수업종료');
+    const ex = p.kpis.find((x) => x.label === '퇴원&수업종료');
     assert.equal(ex.value, (await exitCount(day, false)).total, `${day}: 퇴원 칸`);
     assert.equal(ex.points.at(-1).value, (await exitCount(day, true)).total, `${day}: 퇴원 점`);
   }
@@ -318,7 +318,7 @@ test('그날 뒤에 퇴원한 단체 장부 정리 학생: 그날 칸의 수업�
   let shown = false;
   for (const r of rows.slice(0, 4)) {
     const p = await ro((sql) => studentStatusKpis({ sql, asOf: r.day, tenantId: t, importV2 }));
-    const ex = p.kpis.find((x) => x.label === '퇴원·수업종료'), [cardN, trendN] = [await exitCount(r.day, false), await exitCount(r.day, true)];
+    const ex = p.kpis.find((x) => x.label === '퇴원&수업종료'), [cardN, trendN] = [await exitCount(r.day, false), await exitCount(r.day, true)];
     assert.equal(ex.value, cardN.total, `${r.day}: 칸`); assert.equal(ex.points.at(-1).value, trendN.total, `${r.day}: 점`);
     if (cardN.total - trendN.total > trendN.cleanup) shown = true;
   }
@@ -327,7 +327,7 @@ test('그날 뒤에 퇴원한 단체 장부 정리 학생: 그날 칸의 수업�
 
 test('화면 문구: 이름·기간·설명·점 라벨에 2.0·영문 없음 · 다섯 칸 순서와 단위', { skip: SKIP }, () => {
   assert.deepEqual(out.kpis.map((k) => [k.label, k.unit, k.span, k.period]),
-    [['재원생', '명', '오늘 기준', 'month'], ['강좌수', '개', '오늘 기준', 'month'], ['퇴원·수업종료', '명', '이번 달', 'month'], ['신규문의', '건', '최근 7일', 'week'], ['신규 등록', '명', '최근 7일', 'week']]);
+    [['재원생', '명', '오늘 기준', 'month'], ['강좌수', '개', '오늘 기준', 'month'], ['퇴원&수업종료', '명', '이번 달', 'month'], ['신규문의', '건', '최근 7일', 'week'], ['신규 등록', '명', '최근 7일', 'week']]);
   for (const k of out.kpis) {
     const text = [k.label, k.span, k.basis, ...k.points.map((p) => p.label)].join(' ');
     assert.doesNotMatch(text, /2\.0/, k.label);

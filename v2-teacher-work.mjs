@@ -358,7 +358,7 @@ async function weekly({ sql, asOf, tenantId: t, importV2, n }) {
   const kpis = TEACHER_WORK_METRICS.map((m) => kpi(m.label, '%', (m.attendance ? attendanceWindows : windows).map((w, i) => ({ label: w.label,
     value: m.attendance ? attendance.total[i] ? rate(...attendance.total[i]) : null
       : m.video && (!videoFrom || w.to < videoFrom) ? null : rate(...m.part(totals[i], lessonTotals[i])) })), { id: m.id, better: 'up', span: SPAN[m.id] ?? '최근 7일', basis: m.basis(graceHours) }));
-  return { windows, totals, lessonTotals, kpis, basis: '변화 = 7일 전 값과 비교 · 날마다 같은 시각까지 셈' };
+  return { windows, totals, lessonTotals, kpis, basis: '변화 = 7일 전 값과 비교 · 날마다 같은 시각까지 집계' };
 }
 
 /**
@@ -369,12 +369,12 @@ async function weekly({ sql, asOf, tenantId: t, importV2, n }) {
 export const TEACHER_WORK_METRICS = Object.freeze([
   { id: 'report-written', label: '수업보고서 작성률', part: (a) => [a.reports, a.reportTarget], basis: () => '써야 할 수업보고서 중 쓴 것' },
   { id: 'report-sent', label: '수업보고서 발송률', part: (a, l) => [l.sent, l.reports - l.recalled], basis: () => '쓴 수업보고서 중 학부모에게 보낸 것(회수한 보고서 제외)' },
-  { id: 'parent-read', label: '학부모 보고서 열람률', part: (a, l) => [l.unreadJudged - l.unread, l.unreadJudged], basis: (g) => `보낸 수업보고서 중 학부모가 읽은 것 · 보낸 지 ${g}시간이 안 된 것은 빼고 셈` },
+  { id: 'parent-read', label: '학부모 보고서 열람률', part: (a, l) => [l.unreadJudged - l.unread, l.unreadJudged], basis: (g) => `보낸 수업보고서 중 학부모가 읽은 것 · 보낸 지 ${g}시간이 안 된 것은 제외하고 집계` },
   // 학생 기준 없음(byStudent:false) — 2.0 판정 단위가 '반 × 수업한 날'(그날 명단 중 한 명이라도 비면 미입력)이라 학생으로 나눌 행이 없다.
   { id: 'attendance-input', label: '출결 입력률', part: (a) => [a.attendanceDays - a.attendanceUnrecorded, a.attendanceDays], basis: () => '수업한 날 출결 칸 중 입력된 것', attendance: true, byStudent: false },
   { id: 'video-issued', label: '영상 숙제 출제율', part: (a, l) => [l.videoIssuedReports, l.reportsWritten], basis: () => '쓴 수업보고서 중 영상 숙제를 낸 것', video: true },
   // 원장 10-28: '영상 업로드가 숙제 출제에 비해 잘되고 있냐 안되고 있냐'
-  { id: 'video-submitted', label: '영상 숙제 제출률', part: (a) => [a.videoSubmitted, a.videoAssigned], basis: () => '낸 영상 숙제 중 학생이 영상을 올린 것', video: true },
+  { id: 'video-submitted', label: '영상 숙제 제출률', part: (a) => [a.videoSubmitted, a.videoAssigned], basis: () => '낸 영상 숙제 중 원생이 영상을 올린 것', video: true },
 ]);
 
 /**

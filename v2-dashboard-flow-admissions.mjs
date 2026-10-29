@@ -169,7 +169,7 @@ export const ADMISSIONS_TREND_METRICS = Object.freeze([Object.freeze({
   },
 })]);
 
-const BASIS = '학원 일정에 잡힌 입학테스트 중 취소되지 않은 것 · 일정 날짜로 셈';
+const BASIS = '학원 일정에 잡힌 입학테스트 중 취소되지 않은 것 · 일정 날짜로 집계';
 const cardMemo = new WeakMap();
 /**
  * 운영실 KPI 카드 [레벨테스트] — 어제까지 7일 창 8개(점 = 확장 추세 주별과 같은 값 · 큰 숫자 = 마지막 창). 같은 트랜잭션 안에서는 한 번만 센다.

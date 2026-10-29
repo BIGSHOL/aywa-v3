@@ -366,20 +366,20 @@ async function compute({ sql: tx, asOf, tenantId: t, importV2 }) {
   };
   const exitsKpi = kpi(metric('exits').label, '명', await trendPoints('exits', 'month', months.length),
     { id: 'exits', better: 'down', period: 'month', span: '이번 달',
-      basis: '그 달 퇴원한 학생과 한 과목을 모두 끝낸 학생(과목마다 한 번) · 큰 숫자는 단체 장부 정리 퇴원도 셈 · 추세선과 전월 대비는 빼고 셈 · 지난달은 말일까지, 이번 달은 오늘까지' });
+      basis: '그 달 퇴원한 원생과 한 과목을 모두 끝낸 원생(과목마다 한 번) · 카드 수치는 단체 장부 정리 퇴원도 집계 · 추세선과 전월 대비에서는 제외하고 집계 · 지난달은 말일까지, 이번 달은 오늘까지' });
   const cleanupCount = exitCleanupCount(R, withdrawn, asOf, subjects);
   const cleanup = exitCleanupPolicy(exitsKpi.points.at(-1).value, cleanupCount);
   const kpis = [
     kpi(metric('enrolled-students').label, '명', withToday(trends.students, studentsCard),
-      { id: 'enrolled-students', better: 'up', period: 'month', span: '오늘 기준', basis: '재원 학생(반 수업이 모두 아직 시작 전인 학생은 뺌) · 지난달까지는 그 달 말일 기준' }),
+      { id: 'enrolled-students', better: 'up', period: 'month', span: '오늘 기준', basis: '재원 원생(반 수업이 모두 아직 시작 전인 원생은 제외) · 지난달까지는 그 달 말일 기준' }),
     kpi(metric('courses').label, '개', withToday(trends.courses, coursesCard),
-      { id: 'courses', better: 'up', period: 'month', span: '오늘 기준', basis: '재원생이 듣는 과목 수(한 학생이 같은 과목 반을 여럿 들어도 하나) · 지난달까지는 그 달 말일 기준' }),
+      { id: 'courses', better: 'up', period: 'month', span: '오늘 기준', basis: '재원생이 듣는 과목 수(한 원생이 같은 과목 반을 여럿 들어도 하나) · 지난달까지는 그 달 말일 기준' }),
     // 큰 숫자만 칸 값 — 전월 대비(previous·delta)는 kpi()가 센 추세 점끼리 그대로(선의 점 팝오버와 같은 비교).
     { ...exitsKpi, value: withdrawalsCard, cleanupCount, cleanupNote: cleanup.note },
     kpi(metric('intake').label, '건', await trendPoints('intake', 'week', weeks.length),
-      { id: 'intake', better: 'up', period: 'week', span: '최근 7일', basis: '상담일이 그 7일 안인 신규 콜&상담 · 지난 창은 그날 끝까지, 지금 창은 복사본을 뜬 시각까지 셈' }),
+      { id: 'intake', better: 'up', period: 'week', span: '최근 7일', basis: '상담일이 그 7일 안인 신규 콜&상담 · 지난 기간은 그날 끝까지, 이번 기간은 복사본을 뜬 시각까지 집계' }),
     kpi(metric('new-enrollments').label, '명', await trendPoints('new-enrollments', 'week', weeks.length),
-      { id: 'new-enrollments', better: 'up', period: 'week', span: '최근 7일', basis: '그 7일 동안 등록 완료가 된 신규 콜&상담(반 배정으로 등록된 것 포함) · 지난 창은 그날 끝까지, 지금 창은 복사본을 뜬 시각까지 셈' }),
+      { id: 'new-enrollments', better: 'up', period: 'week', span: '최근 7일', basis: '그 7일 동안 등록 완료가 된 신규 콜&상담(반 배정으로 등록된 것 포함) · 지난 기간은 그날 끝까지, 이번 기간은 복사본을 뜬 시각까지 집계' }),
   ];
   return { asOf, kpis, months, weeks, trustFrom,
     // 추이가 스스로 센 기준일 점(시험·대조용) — 2.0 규약은 '오늘 점 = 칸'이고, 둘이 갈리면 2.0이 아는 드문 경우다.

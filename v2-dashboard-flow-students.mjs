@@ -1,9 +1,9 @@
-// 운영실 '흐름'(확장 추세) — 원생 쪽 지표(원장 10-28 *"기존 2.0 kpi들을 전부 흐름으로"*). 상단 칸 다섯(재원생 · 강좌수 · 퇴원·수업종료 · 신규문의 ·
+// 운영실 '흐름'(확장 추세) — 원생 쪽 지표(원장 10-28 *"기존 2.0 kpi들을 전부 흐름으로"*). 상단 칸 다섯(재원생 · 강좌수 · 퇴원&수업종료 · 신규문의 ·
 // 신규 등록)과 위젯 셋(등록·퇴원 추이의 등록 · 퇴원 · 등록 후 3개월 내 퇴원). 계산은 원생 현황 KPI(v2-student-kpis.mjs)·운영실 영역과 같은 2.0 판정이다
 // (같은 데이터는 같은 원본) — 여기는 그 판정을 화면이 고른 창(일 31 · 주 13 · 월 12 · 연 3)마다 돌릴 뿐이다.
 // · 재고 지표(재원생 · 강좌수) = 창 끝 날의 값(오늘을 넘으면 오늘). 흐름 지표 = 창 안에 생긴 것의 수.
 // · 시각이 있는 기록(상담일 · 등록 전환 · 수업종료의 수강 생성)은 지난 창이면 그 창 마지막 날이 끝날 때까지, 지금 창(마지막 날 = 오늘)이면 복사본을 뜬
-//   순간까지 센다 — 선생님 수업보고서 확장 추세와 같은 규칙. 지금 창은 카드의 큰 숫자와 같다(퇴원·수업종료의 장부 정리 제외 예외는 안내한다).
+//   순간까지 센다 — 선생님 수업보고서 확장 추세와 같은 규칙. 지금 창은 카드의 큰 숫자와 같다(퇴원&수업종료의 장부 정리 제외 예외는 안내한다).
 // · 기록 범위: 흐름 지표는 창이 기록 시작 전에 시작하면 '기록 없음'(앞쪽이 비어 덜 센 값을 그리지 않는다) · 재고 지표는 창 끝 날이 기록 시작 전이면.
 //   등록·퇴원 계열의 기록 시작 = 2.0 원생 통계 flowBounds(퇴원 기록이 시작된 달과 에이와 수강 기록이 갖춰진 달 중 늦은 달 · 과목으로 좁히거나
 //   수업종료를 세면 수강 종료가 처음 기록된 달도 — 그 전 달은 실제보다 낮게 나온다).
@@ -220,7 +220,7 @@ async function coursesSeries({ sql, tenantId: t = COPY_TENANT, importV2, windows
   return { since, total, rows };
 }
 
-// ── 퇴원·수업종료 · 퇴원 · 등록 후 3개월 내 퇴원(흐름) ─────────────────────────────────────────────────────────────────
+// ── 퇴원&수업종료 · 퇴원 · 등록 후 3개월 내 퇴원(흐름) ─────────────────────────────────────────────────────────────────
 /** 창 전체를 덮는 퇴원 행·수업종료 재료(가장 이른 창 첫날부터). */
 async function exitInputs(b, windows) {
   const from = windows[0].from;
@@ -272,7 +272,7 @@ async function withExitTeachers(b, lists, out, { perSubject = false } = {}) {
     })) };
   } catch (e) { console.error(`trend.exitTeacherNames: ${e?.message || ''}`); return fallback(); }
 }
-/** 퇴원·수업종료 — 2.0 칸 판정(퇴원은 과목마다 한 줄 + 과목 전체 종료) · 프로그램별 = 2.0 countWithdrawalPrograms(EiE를 안 쓰는 학원은 그 줄 없음). */
+/** 퇴원&수업종료 — 2.0 칸 판정(퇴원은 과목마다 한 줄 + 과목 전체 종료) · 프로그램별 = 2.0 countWithdrawalPrograms(EiE를 안 쓰는 학원은 그 줄 없음). */
 async function exitsSeries({ sql, tenantId: t = COPY_TENANT, importV2, windows, by, filter }) {
   const b = await prep(sql, t, importV2), P = b.X.program;
   const inputs = await exitInputs(b, windows), since = flowSince(b, true);
@@ -437,7 +437,7 @@ const CONSULT_DIMS = [{ id: 'combo', label: '과목 조합별' }, SUBJECT_DIM];
 export const STUDENT_TREND_METRICS = Object.freeze([
   { id: 'enrolled-students', label: '재원생', group: '운영실', unit: '명', better: 'up', dims: [{ id: 'mix', label: '수강 구성별' }, SUBJECT_DIM], series: enrolledSeries },
   { id: 'courses', label: '강좌수', group: '운영실', unit: '개', better: 'up', dims: [SUBJECT_DIM], series: coursesSeries },
-  { id: 'exits', label: '퇴원·수업종료', group: '운영실', unit: '명', better: 'down', dims: [{ id: 'program', label: '프로그램별' }], series: exitsSeries },
+  { id: 'exits', label: '퇴원&수업종료', group: '운영실', unit: '명', better: 'down', dims: [{ id: 'program', label: '프로그램별' }], series: exitsSeries },
   { id: 'intake', label: '신규문의', group: '운영실', unit: '건', better: 'up', dims: CONSULT_DIMS, series: intakeSeries },
   { id: 'new-enrollments', label: '신규 등록', group: '운영실', unit: '명', better: 'up', dims: CONSULT_DIMS, series: newEnrollmentSeries },
   { id: 'joins', label: '등록(수업 시작)', group: '운영실', unit: '명', better: 'up', dims: [SUBJECT_DIM], series: joinsSeries },

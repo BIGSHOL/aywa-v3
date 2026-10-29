@@ -170,7 +170,7 @@ async function absentSeries({ sql, asOf, tenantId: t = COPY_TENANT, importV2, wi
   const total = lists.map((l) => one(l?.length));
   const rows = keysOf[by] ? tally(lists, (x) => [...new Set(x.abs.flatMap(keysOf[by]))], labelOf[by]) : [];
   // '자세히 보기' 아래 목록(원장 10-28) — 필터를 걸었을 때만 · 창마다 결석한 학생(그 기준에 든 결석만).
-  const records = filter ? lists.map((l) => l && l.map((x) => ({ id: x.s.studentId, key: x.s.studentId, name: x.s.name, date: x.abs.at(-1).date, dateLabel: '마지막 결석일',
+  const records = filter ? lists.map((l) => l && l.map((x) => ({ id: x.s.studentId, key: x.s.studentId, name: x.s.name, date: x.abs.at(-1).date, dateLabel: '최종 결석일',
     note: [`결석 ${x.abs.length}회`, ...new Set(x.abs.map((a) => a.className).filter(Boolean))].join(' · ') }))) : null;
   return { since, ...await namedRecords(b.gate, t, b.load, { total, rows, ...(records ? { records } : {}) }) };
 }
@@ -297,10 +297,10 @@ export async function attendanceKpiCards({ sql, asOf, tenantId = COPY_TENANT, im
   const points = (ws, s) => ws.map((w, i) => ({ label: w.label, value: s.total[i]?.[0] ?? null }));
   return [
     first && kpi(ATTENDANCE_TREND_METRICS.find(m => m.id === 'first-classes').label, '명', points(weeks, first), { id: 'first-classes', better: 'up', period: 'week', span: '최근 7일',
-      basis: '그 7일 동안 날마다 센 첫 수업 학생의 합 · 첫 등원과 처음 듣는 과목의 첫 수업 · 반 이동과 듣던 과목의 반 추가는 뺌' }),
+      basis: '그 7일 동안 날마다 집계한 첫 수업 원생의 합 · 첫 등원과 처음 듣는 과목의 첫 수업 · 반 이동과 듣던 과목의 반 추가는 제외' }),
     absent && kpi(ATTENDANCE_TREND_METRICS.find(m => m.id === 'recent-absent').label, '명', points(untilYesterday, absent), { id: 'recent-absent', better: 'down', period: 'week', span: '어제까지 7일',
-      basis: '그 7일 동안 한 번이라도 결석한 학생(한 학생은 한 번) · 같은 칸을 고쳐 찍었으면 마지막 기록' }),
+      basis: '그 7일 동안 한 번이라도 결석한 원생(한 원생은 한 번) · 같은 칸을 고쳐 찍었으면 최종 기록' }),
     makeups && kpi(ATTENDANCE_TREND_METRICS.find(m => m.id === 'makeups').label, '건', points(weeks, makeups), { id: 'makeups', better: 'down', period: 'week', span: '오늘부터 한 달',
-      basis: '그날 예약 상태인 보강(그날부터 한 달 안 + 지난 60일 안 아직 안 한 것) · 지난 주 점은 그 주 마지막 날 같은 시각의 예약 상태' }),
+      basis: '그날 예약 상태인 보강(그날부터 한 달 안 + 지난 60일 안 아직 안 한 것) · 지난 주 점은 그 주의 끝 날 같은 시각의 예약 상태' }),
   ].filter(Boolean);
 }
