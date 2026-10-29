@@ -3,7 +3,7 @@ import { basename, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { openStore, namespaceDir, StoreError } from './flow-store.mjs';
 import { changedCount, reconcileSource } from './flow-reconcile.mjs';
-import { buildView } from './flow-view.mjs';
+import { buildView, buildSummaryView } from './flow-view.mjs';
 import { entityRef } from './flow-engine.mjs';
 import { failedDecision, recordDecision, runCommand } from './flow-commands.mjs';
 import { createHierarchyRuntime, openOverlay } from './flow-hierarchy-runtime.mjs';
@@ -85,6 +85,7 @@ export async function createFlowService({ source, dir, ai, tenantName = '', lock
       return { ...summary, applied: true, revision: store.state.revision };
     },
     view: (params = {}) => buildView(store.state, source, { aiStatus: ai.status(), tenantName, inFlight: jobs, ...params }),
+    summary: () => buildSummaryView(store.state, source, { aiStatus: ai.status(), tenantName, inFlight: jobs }),
     recordPage: (caseId, page) => {
       const c = store.state.cases[caseId];
       if (!c?.signalId) return null;

@@ -1,7 +1,7 @@
 // GET /api/flow body (flow_contract v1.1). Read-only over the in-memory state; never calls AI.
 import { actorsOf } from './flow-engine.mjs';
 import { isFactSignal } from './flow-reconcile-signals.mjs';
-import { flowCaseFlags } from './flow-case-flags.mjs';
+import { activeFlowSteps, flowCaseFlags } from './flow-case-flags.mjs';
 
 export const LIMITS = Object.freeze({ cases: 500, events: 200, entities: 3000, candidates: 100 });
 const PRIORITY_ORDER = { high: 0, normal: 1, low: 2 }, STATE_ORDER = { review: 0, open: 1, working: 2, done: 3 };
@@ -112,5 +112,39 @@ export function buildView(state, source, { aiStatus, tenantName = '', casePage =
     // Newest events (chronological); older ones via ?eventsBefore=<event number>.
     events: (eventsBefore ? state.events.filter(e => Number(e.id.slice(4)) < eventsBefore) : state.events).slice(-LIMITS.events), eventsTotal: state.events.length,
     metrics, aiStatus: aiStatus || { providers: [] },
+  };
+}
+
+// The first screen needs counts and a few owner/request cards. Project them from
+// buildView so deadline and unassigned decisions stay identical to the full board.
+export function buildSummaryView(state, source, options = {}) {
+  const head = buildView(state, source, options);
+  const cases = [...head.cases];
+  for (let page = 2; page <= head.casePageCount; page += 1) {
+    cases.push(...buildView(state, source, { ...options, casePage: page }).cases);
+  }
+  return summarizeFlowView(head, cases);
+}
+
+export function summarizeFlowView(head, cases = head.cases) {
+  const active = activeFlowSteps;
+  const ownerIds = new Set(head.actors.filter(a => a.role === 'owner').map(a => a.id));
+  const request = c => (c.kind === 'request' || c.origin === 'dev' && c.closure === 'manual' && !c.kind) && !(c.linkedCaseIds || []).length;
+  const chosen = cases.filter(c => request(c) || active(c).some(s => (s.assigneeIds || []).some(id => ownerIds.has(id))));
+  const stages = Object.fromEntries(['open', 'working', 'review', 'done'].map(state => [state, cases.filter(c => c.origin !== 'dev' && c.state === state).length]));
+  const inboxByActor = Object.fromEntries(head.actors.map(actor => [actor.id, cases.filter(c => {
+    const steps = active(c);
+    const mine = steps.some(s => (s.assigneeIds || []).includes(actor.id) || ['owner', 'manager'].includes(actor.role) && s.queue === 'manager' && !(s.assigneeIds || []).length);
+    return mine || actor.role === 'manager' && c.caseFlags?.unassigned;
+  }).length]));
+  const eventIds = new Set(chosen.flatMap(c => c.history || []));
+  const recent = head.events.filter(e => e.origin !== 'snapshot').at(-1);
+  if (recent) eventIds.add(recent.id);
+  return {
+    schemaVersion: head.schemaVersion, asOf: head.asOf, revision: head.revision, mode: head.mode, summary: true,
+    source: head.source, actors: head.actors, cases: chosen, casesTotal: head.casesTotal,
+    casePage: 1, casePageSize: chosen.length, casePageCount: 1,
+    events: head.events.filter(e => eventIds.has(e.id)), eventsTotal: head.eventsTotal,
+    metrics: head.metrics, firstScreen: { stages, inboxByActor },
   };
 }

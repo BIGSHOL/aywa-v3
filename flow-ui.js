@@ -29,7 +29,7 @@ window.createFlowUI = function createFlowUI(api) {
   const BILLING_HINT='수납 반영은 메이크에듀 동기화로 들어옵니다 — 학부모 안내 등 처리 뒤 보고로 닫기';
   const ROLE_ORDER=['owner','manager','teacher','staff'],ROLE_GROUP={owner:'원장',manager:'관리자',teacher:'선생님',staff:'직원'};
   // 보드 보기 상태: q = 검색어 · sort = 정렬 열과 방향 · cols = 열별 값 필터(열 → 선택한 값들, 없으면 전부) · pages = 목록별 쪽.
-  const store={status:'idle',flow:null,error:'',controller:null,pending:new Set(),actorId:'',filter:'',q:'',sort:{col:'',dir:''},cols:{},pages:{},sel:new Set(),selView:'',deferred:false,retry:0,etag:'',older:new Map(),partial:false};
+  const store={status:'idle',flow:null,error:'',controller:null,pending:new Set(),actorId:'',filter:'',q:'',sort:{col:'',dir:''},cols:{},pages:{},sel:new Set(),selView:'',deferred:false,retry:0,etag:'',older:new Map(),partial:false,wantFull:false,fullPromise:null,fullError:''};
   const PEEK=document.documentElement.classList.contains('peek');
   try{store.actorId=localStorage.getItem(ACTOR_KEY)||'';}catch{/* storage unavailable: first owner actor is used */}
   const pill=(text,tone='')=>`<span class="ax-chip ${tone}">${h(text)}</span>`;
@@ -81,27 +81,37 @@ window.createFlowUI = function createFlowUI(api) {
   const assignable=a=>a&&!a.preview&&a.assignable!==false;
   const editing=()=>{const a=document.activeElement;return Boolean(a&&a.closest('#main')&&a.matches('input,textarea,select,[contenteditable="true"]'));};
   // Reads never call AI. An unchanged revision leaves the screen exactly as it is (no re-render, scroll and focus kept).
-  async function load({quiet=false}={}){
+  async function load({quiet=false,full=false}={}){
+    if(store.fullPromise&&!full)return store.fullPromise;
+    if(full)store.wantFull=true;
     store.controller?.abort();const controller=new AbortController();store.controller=controller;
     if(!store.flow)store.status='loading';
     try{
-      const response=await fetch(ENDPOINT,{headers:{Accept:'application/json',...(store.etag&&store.flow&&!store.partial?{'If-None-Match':store.etag}:{})},signal:controller.signal});
-      if(response.status===304&&store.flow)return;
+      const response=await fetch(store.wantFull?ENDPOINT:`${ENDPOINT}?summary=1`,{headers:{Accept:'application/json',...(store.etag&&store.flow&&!store.partial?{'If-None-Match':store.etag}:{})},signal:controller.signal});
+      if(response.status===304&&store.flow)return !store.flow.summary;
       let json=null;try{json=await response.json();}catch{/* not JSON: no flow endpoint on this server */}
       if(response.ok)store.etag=response.headers.get('ETag')||'';
       if(response.ok&&json&&Array.isArray(json.cases)){
         const prev=store.flow,wasReady=store.status==='ready';
-        if(wasReady&&!store.partial&&prev&&prev.revision===json.revision&&prev.eventsTotal===json.eventsTotal&&prev.asOf===json.asOf)return;
-        json=await allPages(json,controller.signal);if(!json)return;
-        const before=prev?new Set(cases().filter(c=>mine(c)).map(c=>c.id)):null;
-        store.flow=json;store.status='ready';store.error='';store.retry=0;
+        if(wasReady&&!store.partial&&prev&&Boolean(prev.summary)===Boolean(json.summary)&&prev.revision===json.revision&&prev.eventsTotal===json.eventsTotal&&prev.asOf===json.asOf)return !prev.summary;
+        if(!json.summary){json=await allPages(json,controller.signal);if(!json)return false;}
+        const before=prev&&!prev.summary?new Set(cases().filter(c=>mine(c)).map(c=>c.id)):null;
+        store.flow=json;store.status='ready';store.error='';store.fullError='';store.retry=0;
         if(before&&!quiet)announce(before);
       }
-      else if(response.status===503&&json){store.status=store.flow?'ready':'starting';store.error=message(json,503);if(store.retry++<5)setTimeout(()=>load({quiet}),3000);}
-      else if(!json||[404,405,501].includes(response.status)){store.status='unavailable';store.flow=null;}
+      else if(response.status===503&&json){store.status=store.flow?'ready':'starting';store.error=message(json,503);if(store.flow?.summary&&store.wantFull)store.fullError=store.error;if(store.retry++<5)setTimeout(()=>load({quiet}),3000);}
+      else if(!json||[404,405,501].includes(response.status)){if(store.flow?.summary&&store.wantFull)store.fullError='업무 목록을 불러오지 못했습니다.';else{store.status='unavailable';store.flow=null;}}
+      else if(store.flow?.summary&&store.wantFull){store.fullError=message(json,response.status);}
       else{store.status='error';store.error=message(json,response.status);}
-    }catch{if(controller.signal.aborted)return;store.status=store.flow?'ready':'error';store.error='업무 흐름 서버에 연결하지 못했습니다.';}
+    }catch{if(controller.signal.aborted)return;store.status=store.flow?'ready':'error';store.error='업무 흐름 서버에 연결하지 못했습니다.';if(store.flow?.summary&&store.wantFull)store.fullError=store.error;}
     paint();
+    return Boolean(ready()&&!store.flow.summary);
+  }
+  function ensureFull(){
+    if(ready()&&!store.flow.summary)return Promise.resolve(true);
+    store.fullError='';
+    if(!store.fullPromise)store.fullPromise=load({full:true}).finally(()=>{store.fullPromise=null;});
+    return store.fullPromise;
   }
   // Cases come in pages of casePageSize. Every page must answer with the head's revision and page count (a change in
   // between restarts the read with a fresh head, up to three times). Reading stops at 40 pages; anything short of the
@@ -313,6 +323,7 @@ window.createFlowUI = function createFlowUI(api) {
   }
   function inboxCount(){
     if(!ready())return 0;const r=role();
+    if(flow().summary)return Number(flow().firstScreen?.inboxByActor?.[actor()?.id]||0);
     if(r==='manager')return cases().filter(c=>mine(c)||unassigned(c)).length;
     return cases().filter(c=>mine(c)).length;
   }
@@ -373,7 +384,8 @@ window.createFlowUI = function createFlowUI(api) {
   function ownerStageCell(){
     if(!ready())return '';
     const real=cases().filter(c=>!local(c)),recent=events().filter(e=>e.origin!=='snapshot').slice(-1)[0];
-    return `<div class="ax-change-cell"><button type="button" class="ax-change-link" data-fl="filter" data-id="moving"><span>업무 흐름</span><strong>남은 업무 ${fmt(real.filter(c=>c.state!=='done').length)}건</strong><span class="ax-stages">${stageCounts(real).map(([k,n])=>`<span><b>${fmt(n)}</b>${STATE[k]}</span>`).join('')}</span><span class="ax-recent"><small>${recent?`최근 변화: ${h(recent.label||'')} · ${h(when(recent.at))}`:'아직 변화가 없습니다.'}</small></span></button></div>`;
+    const stages=flow().summary?Object.entries(flow().firstScreen.stages):stageCounts(real);
+    return `<div class="ax-change-cell"><button type="button" class="ax-change-link" data-fl="filter" data-id="moving"><span>업무 흐름</span><strong>남은 업무 ${fmt(stages.filter(([k])=>k!=='done').reduce((n,[,v])=>n+v,0))}건</strong><span class="ax-stages">${stages.map(([k,n])=>`<span><b>${fmt(n)}</b>${STATE[k]}</span>`).join('')}</span><span class="ax-recent"><small>${recent?`최근 변화: ${h(recent.label||'')} · ${h(when(recent.at))}`:'아직 변화가 없습니다.'}</small></span></button></div>`;
   }
   // 업무 흐름 검색(원장 10-28 "당연히 각종 내용에 대해 검색가능해야함") — 제목 · 요약(원생·날짜·내용) · 상태 · 관련 기록 · 할 차례 · 기한 · 생긴 때 · 영역 · 종류.
   // 띄어쓰기로 나눈 낱말이 모두 들어 있어야 맞음 · 공백·대소문자는 무시.
@@ -438,6 +450,16 @@ window.createFlowUI = function createFlowUI(api) {
   }
   function ownerBelow({heading=true}={}){
     if(!ready())return stateNote();
+    if(flow().summary){
+      requestAnimationFrame(()=>{
+        const target=document.getElementById('fl-detail');if(!target||target.dataset.flObserved)return;
+        target.dataset.flObserved='1';
+        if(store.fullError)return;
+        const observer=new IntersectionObserver(entries=>{if(entries.some(e=>e.isIntersecting)){observer.disconnect();ensureFull();}});
+        observer.observe(target);
+      });
+      return `<section class="fl-section" id="fl-detail" aria-labelledby="fl-detail-title"><h2 id="fl-detail-title" tabindex="-1" ${heading?'':'class="ax-visually-hidden"'}>업무 흐름</h2><p class="ax-note" role="status">${h(store.fullError||'업무 목록을 불러오는 중입니다.')}</p><button type="button" class="button" data-fl="load-full">업무 목록 불러오기</button></section>`;
+    }
     const p=boardParts();hideTip();
     // 화면 전체를 다시 그려도 검색칸의 글자와 커서를 지킨다(8초 갱신·담당 변경 뒤). 열 머리 메뉴는 새 머리 칸 아래로 옮긴다.
     if(document.activeElement?.matches?.('[data-fl-search]'))queueMicrotask(()=>{const i=document.querySelector('[data-fl-search]');if(i){i.focus({preventScroll:true});i.setSelectionRange(i.value.length,i.value.length);}});
@@ -446,7 +468,8 @@ window.createFlowUI = function createFlowUI(api) {
     return `<section class="fl-section" id="fl-detail" aria-labelledby="fl-detail-title">${heading?'<div class="ax-section-head"><h2 id="fl-detail-title" tabindex="-1">업무 흐름</h2></div>':'<h2 id="fl-detail-title" class="ax-visually-hidden" tabindex="-1">업무 흐름</h2>'}<div class="fl-board"><div class="fl-board-head"><h3 class="fl-board-title">${h(p.label)}<span id="fl-board-count">${p.count}</span></h3><div class="fl-bulk" id="fl-bulk" role="group" aria-label="선택한 업무" ${store.sel.size?"":"hidden"}>${bulkHtml()}</div><input type="search" class="fl-search" data-fl-search value="${h(p.q)}" placeholder="이름·내용·담당·기록으로 찾기" aria-label="업무 흐름에서 찾기" autocomplete="off"></div><nav class="fl-nav" aria-label="보기">${navList(p.f,'상태',p.states)}${navList(p.f,'종류',p.byKind)}</nav><div id="fl-board-list" class="fl-board-list">${p.listHtml}</div></div>${scenarioPanel()}${stageOverview()}</section>`;
   }
   // 제목만 — 설명 줄은 두지 않는다(원장 10-28 "이런 자질구리한 멘트 필요없을듯").
-  function fullView(){return role()==='owner'?`<div class="page-heading"><div><h1>업무 흐름</h1></div></div>${ownerBelow({heading:false})}`:role()==='manager'?managerView():staffView();}
+  function fullView(){if(ready()&&flow().summary){if(!store.fullError)queueMicrotask(ensureFull);return `<p class="ax-note" role="status">${h(store.fullError||'업무 흐름을 불러오는 중입니다.')}</p>${store.fullError?btn('다시 불러오기','load-full'):''}`;}
+    return role()==='owner'?`<div class="page-heading"><div><h1>업무 흐름</h1></div></div>${ownerBelow({heading:false})}`:role()==='manager'?managerView():staffView();}
 
   /* ---------- local scenarios (clearly local, tied to real copied records, not counted as history) ---------- */
   // The shared context picker (context-picker.js) when it is loaded; otherwise, or if it fails, the plain control.
@@ -723,6 +746,7 @@ window.createFlowUI = function createFlowUI(api) {
     el.focus({preventScroll:true});el.scrollIntoView({block:'nearest',behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth'});
   }
   function showCase(id){
+    if(flow().summary){ensureFull().then(ok=>{if(ok)showCase(id);else toast('업무 자료를 불러오지 못했습니다. 다시 시도해 주세요.');});return;}
     const c=caseById(id);if(!c)return;
     const timeline=(c.history||[]).map(eventById).filter(Boolean),missing=(c.history||[]).length-timeline.length;
     const links=(c.linkedCaseIds||[]).map(caseById).filter(Boolean);
@@ -759,6 +783,7 @@ window.createFlowUI = function createFlowUI(api) {
   // Notifications for the previewed person: events addressed to them, else events on cases they take part in.
   function notices(){
     if(!ready())return '';
+    if(flow().summary){if(!store.fullError)queueMicrotask(ensureFull);return `<p class="ax-note" role="status">${h(store.fullError||'업무 알림을 불러오는 중입니다.')}</p>${store.fullError?btn('다시 불러오기','load-full'):''}`;}
     const me=actor()?.id,involved=c=>(c.steps||[]).some(s=>(s.assigneeIds||[]).includes(me))||c.trigger?.actorId===me||(c.evidence||[]).some(e=>e.actorId===me);
     const list=events().filter(e=>e.origin!=='snapshot'&&(Array.isArray(e.targetActorIds)?e.targetActorIds.includes(me):role()==='owner'||involved(caseById(e.caseId)||{}))).slice(-20).reverse();
     return `<section class="fl-notices" aria-label="업무 흐름 알림"><h2>업무 흐름 알림 ${list.length}건</h2>${list.map(e=>{const c=caseById(e.caseId);return `<article><div class="ax-issue-meta"><span>${h(when(e.at))}</span></div><h3>${h(e.label||'기록')}</h3><p>${h(e.actorId?nameOf(e.actorId):'자동 처리')}${c?` · ${h(c.title)}`:''}</p>${c?`<div class="ax-actions">${btn('근거와 흐름','open',`data-id="${h(c.id)}"`)}</div>`:''}</article>`;}).join('')||'<p class="live-empty">이 사람에게 온 흐름 알림이 없습니다.</p>'}</section>`;
@@ -775,6 +800,7 @@ window.createFlowUI = function createFlowUI(api) {
   const REF_TYPE={students:'student',classes:'class',attendance:'attendance',billing:'invoice',consultations:'consultation',enrollment:'lead',approvals:'approval','withdrawal-reports':'withdrawal_report','lesson-reports':'report','textbook-requests':'textbook_order',inventory:'asset','video-homework':'video'};
   const ALWAYS_KNOWN=new Set(['student','class']);
   async function createRequest(v){
+    if(!await ensureFull()){toast('업무 자료를 불러오지 못했습니다. 다시 시도해 주세요.');return null;}
     const people=(v.owners||[]).map(actorById);
     if(people.some(a=>!assignable(a))){toast('업무 흐름에서 배정할 수 없는 사람이 있습니다. 담당자를 다시 선택해 주세요.');return null;}
     if(String(v.title).length>80){toast('업무 흐름 요청의 제목은 80자까지입니다.');return null;}
@@ -786,7 +812,7 @@ window.createFlowUI = function createFlowUI(api) {
     const result=await command('request.create',{payload,key:`request.create:${v.draftKey||'direct'}`});
     return result?result.caseId||'':null;
   }
-  const actAs=(kind,caseId,actorId,payload={})=>{const c=caseById(caseId),s=c&&myStep(c,actorId);return command(kind,{caseId,payload:{...(s?{stepId:s.id}:{}),...payload},actorId,key:`${kind}:${caseId}`});};
+  const actAs=async(kind,caseId,actorId,payload={})=>{if(!await ensureFull())return null;const c=caseById(caseId),s=c&&myStep(c,actorId);return command(kind,{caseId,payload:{...(s?{stepId:s.id}:{}),...payload},actorId,key:`${kind}:${caseId}`});};
 
   /* ---------- 열 머리 메뉴: 정렬 · 값 필터(원장 10-28 "전부 필터 및 검색, 오름/내림차순 정렬 가능하게") ---------- */
   // 엑셀처럼 열 머리를 누르면 그 아래 작은 창 — 오름·내림차순, 그 열의 값 목록(건수와 함께 · 찾기 칸으로 좁힘)을 골라 거른다.
@@ -1135,6 +1161,7 @@ window.createFlowUI = function createFlowUI(api) {
     const {fl:action,id}=el.dataset;
     if(el.closest('#sidebar'))api.closeMenu?.(false);
     if(action==='reload'){load();return;}
+    if(action==='load-full'){ensureFull();return;}
     if(action==='attach-open'){api.showWorkspaceRecord?.(id,el.dataset.record);return;}
     // 처리 화면('전자결재' 등): 2.0 화면이 있으면 그 화면, 없으면 작업 공간을 신호의 걸러 보기로 — 이 화면 위 엿보기 창에 연다(원장 10-28).
     if(action==='goto'){const c=caseById(id);if(!c)return;const facet=(db.workspaces?.families?.[c.familyId]?.signals||[]).find(x=>x.id===c.signalId)?.facet||'',own=refsOf(c).filter(r=>r.familyId===c.familyId&&r.type!=='task'&&(r.recordId||r.id)),record=own.length===1?String(own[0].recordId||own[0].id):'',route=(r=>r&&(!r.use||r.use(c))?r:null)(V2_ROUTE[c.familyId]),v2=(route||!facet)&&window.V2Screens?.target(route?.screen||c.familyId);
@@ -1154,7 +1181,7 @@ window.createFlowUI = function createFlowUI(api) {
     if(action==='col'){const key=el.dataset.col;if(colMenu.key===key)closeColMenu();else openColMenu(key);return;}
     if(action==='col-clear'){const key=el.dataset.col;if(key)delete store.cols[key];else store.cols={};store.pages.board=1;paintBoardList();if(colMenu.el)paintColMenu();document.querySelector('[data-fl-search]')?.focus({preventScroll:true});return;}
     // From another page the jump waits for the home render (the hash change) and lands at once.
-    if(action==='filter'){store.filter=id;store.pages.board=1;store.pages[id]=1;closeColMenu(false);const routed=api.getPage()!=='home'&&api.getPage()!=='flow',go=()=>requestAnimationFrame(()=>{api.scrollToSection('#fl-detail',{instant:routed});$('#fl-detail-title,#fl-detail h2')?.focus?.({preventScroll:true});});if(routed&&location.hash!=='#home'){addEventListener('hashchange',go,{once:true});navigate('home');}else{if(routed)navigate('home');else api.render();go();}return;}
+    if(action==='filter'){store.filter=id;store.pages.board=1;store.pages[id]=1;closeColMenu(false);const routed=api.getPage()!=='home'&&api.getPage()!=='flow',go=()=>requestAnimationFrame(()=>{api.scrollToSection('#fl-detail',{instant:routed});$('#fl-detail-title,#fl-detail h2')?.focus?.({preventScroll:true});});if(flow().summary){ensureFull().then(ok=>{if(ok&&['home','flow'].includes(api.getPage()))go();else if(!ok)toast('업무 목록을 불러오지 못했습니다. 다시 시도해 주세요.');});return;}if(routed&&location.hash!=='#home'){addEventListener('hashchange',go,{once:true});navigate('home');}else{if(routed)navigate('home');else api.render();go();}return;}
     if(action==='node'||action==='pick'){if(action==='pick'&&caseById(treeCase)?.signalId==='attendance-repeat-absence'){const student=trees.get(treeCase)?.index.get(el.dataset.node)?.entityRef?.id;if(student){api.showAbsences(student);return;}}toggleNode(el);return;}
     if(action==='tree-go'){treeGo(el.dataset.node);return;}
     if(action==='tree-reload'){const e=treeEntry(id);e.retry=0;if(!e.data)e.status='loading';paintTree(id);fetchTree(id);return;}

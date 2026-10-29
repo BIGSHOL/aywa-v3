@@ -68,9 +68,10 @@ export function createFlowRoute({ flow, origins, headers = {}, enabled = true })
         if (!['GET', 'HEAD'].includes(req.method)) return send(res, 405, { error: 'method_not_allowed', message: '조회만 할 수 있습니다.' }, { Allow: 'GET, HEAD' });
         if (!flow.service) return unavailable(res);
         const q = new URL(req.url, 'http://127.0.0.1').searchParams, int = v => /^[1-9]\d{0,6}$/.test(v || '') ? Number(v) : null;
-        for (const k of q.keys()) if (!['casePage', 'eventsBefore'].includes(k)) return send(res, 400, { error: 'invalid_request', message: '허용하지 않는 조회 조건입니다.' });
-        if ((q.has('casePage') && !int(q.get('casePage'))) || (q.has('eventsBefore') && !int(q.get('eventsBefore')))) return send(res, 400, { error: 'invalid_request', message: '조회 조건이 올바르지 않습니다.' });
-        const body = Buffer.from(JSON.stringify(flow.service.view({ casePage: int(q.get('casePage')) || 1, eventsBefore: int(q.get('eventsBefore')) })));
+        for (const k of q.keys()) if (!['casePage', 'eventsBefore', 'summary'].includes(k)) return send(res, 400, { error: 'invalid_request', message: '허용하지 않는 조회 조건입니다.' });
+        if ((q.has('casePage') && !int(q.get('casePage'))) || (q.has('eventsBefore') && !int(q.get('eventsBefore')))
+          || (q.has('summary') && (q.getAll('summary').length !== 1 || q.get('summary') !== '1' || q.has('casePage') || q.has('eventsBefore')))) return send(res, 400, { error: 'invalid_request', message: '조회 조건이 올바르지 않습니다.' });
+        const body = Buffer.from(JSON.stringify(q.has('summary') ? flow.service.summary() : flow.service.view({ casePage: int(q.get('casePage')) || 1, eventsBefore: int(q.get('eventsBefore')) })));
         res.writeHead(200, { ...headers, 'Content-Type': 'application/json; charset=utf-8', 'Content-Length': body.length });
         return res.end(req.method === 'HEAD' ? undefined : body);
       }
