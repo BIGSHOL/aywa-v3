@@ -344,7 +344,7 @@ window.createFlowUI = function createFlowUI(api) {
   function managerView(){
     const open=cases().filter(c=>c.state!=='done'),my=newest(open.filter(c=>mine(c))),queue=open.filter(unassigned),overdue=open.filter(late),review=open.filter(inReview),back=open.filter(returned),chain=open.filter(c=>new Set((c.steps||[]).flatMap(s=>s.assigneeIds||[])).size>1);
     // A manager can also hold a step (e.g. teaches the class); their own turn comes first when there is one.
-    const lists={mine:[my,'지금 내 차례인 일이 없습니다.'],queue:[queue,'담당자가 없는 일이 없습니다.'],late:[overdue,'늦은 일이 없습니다.'],review:[review,'검토를 기다리는 일이 없습니다.'],returned:[back,'되돌린 일이 없습니다.'],chain:[chain,'여러 사람을 거치는 일이 없습니다.'],all:[open,'남은 일이 없습니다.']};
+    const lists={mine:[my,'지금 내 차례인 일이 없습니다.'],queue:[queue,'담당 미지정 업무가 없습니다.'],late:[overdue,'지난 업무가 없습니다.'],review:[review,'검토를 기다리는 일이 없습니다.'],returned:[back,'되돌린 일이 없습니다.'],chain:[chain,'여러 사람을 거치는 일이 없습니다.'],all:[open,'남은 일이 없습니다.']};
     const f=lists[store.filter]?store.filter:my.length?'mine':'queue',[items,empty]=lists[f];
     return `<div class="fl-fold"><div class="page-heading"><div><h1>업무 조율</h1><p>${h(actor()?.name||'')} · ${h(actor()?.roleLabel||'')}</p></div></div>${sourceLine()}${stateNote()}<section class="ax-first" aria-label="조율할 일"><div class="ax-signals">${my.length?countCard('내 차례',my.length,'내가 맡은 단계','mine','urgent'):''}${countCard('담당 없음',queue.length,'담당을 지정해야 다음 단계가 시작됩니다','queue','urgent')}${countCard('늦음',overdue.length,'기한이 지났고 아직 끝나지 않은 일','late')}${countCard('검토 대기',review.length,'보고가 들어와 확인이 필요한 일','review')}${countCard('되돌림',back.length,'보완하라고 돌려보낸 일','returned')}</div>${scenarioPanel()}</section></div><section class="fl-section" id="fl-detail">${filterBar(f,[['mine','내 차례',my.length],['queue','담당 없음',queue.length],['late','늦음',overdue.length],['review','검토 대기',review.length],['returned','되돌림',back.length],['chain','여러 사람 거침',chain.length],['all','남은 일 전체',open.length]])}${list(items,empty,f)}${stageOverview()}</section>`;
   }
@@ -413,7 +413,7 @@ window.createFlowUI = function createFlowUI(api) {
     board.items=items;
     // 보기는 왼쪽 세로 목록(상태 · 종류 많은 순), 일은 오른쪽 표 — 칩 20여 개를 가로로 늘어놓지 않는다(원장 10-28 "너무 가로로 나열되어있고 공간 낭비 최악").
     // '내 차례' = 사이드바 '업무 흐름' 배지와 같은 수(검수 10-28 L8 — 배지와 맞는 보기가 없었다).
-    const states=[['decide','원장 결정 대기',lists.decide.length],['mine','내 차례',lists.mine.length],['moving','남은 일 전체',lists.moving.length],['blocked','늦은 일·담당 없는 일',lists.blocked.length],['local','직접 만든 일',lists.local.length],['done','끝난 일',lists.done.length]];
+    const states=[['decide','원장 결정 대기',lists.decide.length],['mine','내 차례',lists.mine.length],['moving','남은 일 전체',lists.moving.length],['blocked','지난 업무 · 담당 미지정 업무',lists.blocked.length],['local','직접 만든 일',lists.local.length],['done','끝난 일',lists.done.length]];
     const byKind=[...kinds].sort((a,b)=>b.items.length-a.items.length).map(k=>[k.key,k.label,k.items.length]),label=[...states,...byKind].find(([id])=>id===f)?.[1]||'';
     // 제목 옆 건수는 걸러 볼 때만(찾은 수) — 보기 전체 건수는 왼쪽 목록에 있다(원장 10-28 "왼쪽에도 있으므로 전체개수는 숨겨줘 상단은").
     return {f,q,states,byKind,label,count:narrowed?`찾은 일 ${fmt(items.length)}건`:'',listHtml:boardTable(items,f,narrowed?'조건과 맞는 일이 없습니다.':'이 조건의 일이 없습니다.')};
@@ -425,7 +425,7 @@ window.createFlowUI = function createFlowUI(api) {
       const dir=store.sort.col===key?store.sort.dir:'',filtered=Array.isArray(store.cols[key]);
       return `<th class="c-${key}" scope="col" aria-sort="${dir==='asc'?'ascending':dir==='desc'?'descending':'none'}"><button type="button" class="fl-th${dir||filtered?' on':''}" data-fl="col" data-col="${key}" aria-haspopup="dialog" aria-expanded="${colMenu.key===key}" aria-label="${label} — 정렬·필터${dir?` (${dir==='asc'?'오름차순':'내림차순'})`:''}${filtered?' (필터 켜짐)':''}"><span>${label}</span>${dir?`<b class="fl-th-mark" aria-hidden="true">${dir==='asc'?'▲':'▼'}</b>`:''}${filtered?'<b class="fl-th-mark" aria-hidden="true">●</b>':''}<i class="fl-th-caret" aria-hidden="true">${icon('down')}</i></button></th>`;
     };
-    const pickAll=lead()?'<th class="c-sel" scope="col"><input type="checkbox" data-fl-pick-page aria-label="이 쪽의 일 모두 고르기"></th>':'';
+    const pickAll=lead()?'<th class="c-sel" scope="col"><input type="checkbox" data-fl-pick-page aria-label="이 쪽의 업무 모두 선택"></th>':'';
     return `${activeFilters()}<div class="fl-tablewrap"><table class="fl-table"><thead><tr>${pickAll}${COLS.map(th).join('')}</tr></thead><tbody class="fl-tbody" data-list="${h(f)}">${shown.map(caseRow).join('')}</tbody></table>${items.length?'':`<p class="live-empty">${h(empty)}</p>`}</div>${pager('board',page,pages)}`;
   }
   // 걸러 보는 조건을 표 위에 칩으로 — 칩을 누르면 그 열의 필터만 지운다.
@@ -892,7 +892,7 @@ window.createFlowUI = function createFlowUI(api) {
   // 제목 줄 가운데 막대: 고른 수 · (이 조건의 일을 다 고르기) · 담당 바꾸기 · 고르기 해제. 체크를 바꿀 때는 표를 다시 그리지 않고 막대와 머리 칸만 맞춘다.
   function bulkHtml(){
     const n=store.sel.size,pickable=board.items.filter(canPick).length;
-    return `<strong>${fmt(n)}건 고름</strong>${pickable>n?`<button type="button" class="ax-text-link" data-fl="bulk-all">이 조건의 일 ${fmt(pickable)}건 모두 고르기</button>`:''}<button type="button" class="button primary" data-fl="bulk-reassign">담당 바꾸기</button><button type="button" class="button" data-fl="bulk-clear">고르기 해제</button>`;
+    return `<strong>${fmt(n)}건 선택</strong>${pickable>n?`<button type="button" class="ax-text-link" data-fl="bulk-all">선택한 업무 ${fmt(pickable)}건 모두 선택</button>`:''}<button type="button" class="button primary" data-fl="bulk-reassign">담당 바꾸기</button><button type="button" class="button" data-fl="bulk-clear">선택 해제</button>`;
   }
   function syncBulk(){
     const bar=document.getElementById('fl-bulk');if(bar){bar.hidden=!store.sel.size;bar.innerHTML=bulkHtml();}
