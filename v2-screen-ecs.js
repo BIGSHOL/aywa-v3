@@ -60,13 +60,16 @@
       if (d.type === 'v2-host-nav' && d.screen === ID) {
         const query = queryOf(new URLSearchParams(String(d.query || '')));
         requested = query; // iframe은 이미 그 주소다 — 3.0이 다시 그려도 다시 읽지 않게 먼저 맞춘다
-        const page = `#v2-${ID}${query ? `?${query}` : ''}`;
+        const current = new URLSearchParams(location.hash.split('?')[1] || '');
+        const out = new URLSearchParams(query);
+        if (current.get('teacherHome') === '1' && current.get('actor')) { out.set('actor', current.get('actor')); out.set('teacherHome', '1'); }
+        const page = `#v2-${ID}${out.size ? `?${out}` : ''}`;
         if (location.hash !== page) location.replace(page);
       } else if (d.type === 'v2-host-open' || d.type === 'eywa-open-window') openFromHost(String(d.href || ''));
       else if (d.type === 'v2-host-editors' && d.screen === ID && Array.isArray(d.editors)) {
         editors = d.editors.filter(x => x && typeof x.id === 'string' && typeof x.name === 'string').map(x => ({ id: x.id, name: x.name, role: typeof x.role === 'string' ? x.role : '' }));
         const at = document.querySelector(`${SEL} [data-v2h-actor-slot]`);
-        if (at) at.innerHTML = actorPicker();
+        if (at && new URLSearchParams(location.hash.split('?')[1] || '').get('teacherHome') !== '1') at.innerHTML = actorPicker();
         tellHost();
       }
     });
@@ -86,11 +89,15 @@
     id: ID, label: '강사 시트',
     render(ctx) {
       api = ctx.api; wire();
+      const requestedActor = ctx.query.get('actor');
+      const teacherMode = ctx.query.get('teacherHome') === '1' && /^[0-9a-f-]{36}$/i.test(requestedActor || '');
+      if (teacherMode) { actor = requestedActor; try { localStorage.setItem(ACTOR_KEY, actor); } catch { /* 저장소 없이도 이 창에서 유지 */ } }
+      const teacherStrip = teacherMode ? window.TeacherHome?.strip(ctx, requestedActor, 'ecs') || '' : '';
       const query = queryOf(ctx.query);
       if (hostOk === null) fetch(HOST, { method: 'HEAD' }).then(r => r.ok, () => false).then(ok => { if (hostOk === null) { hostOk = ok; api?.render?.(); } });
       else if (hostOk) requestAnimationFrame(() => { ensureFrame(query); place(); });
       const wait = hostOk === false ? '강사 시트를 열지 못했습니다. 잠시 후 새로고침해 주세요.' : hostOk === null ? '강사 시트를 여는 중…' : '';
-      return `<div class="v2h-note" role="note"><p><b>연습 화면</b> ${S.practiceCopy.selectedPerson}의 화면(권한·담당 반·보기 설정)으로 열립니다. 여기서 저장한 내용은 이 PC의 연습 자료에만 남고, 실제 발송은 없습니다. 계획 칸·원생 기록·출결·목표·메모·샤우팅·월간 계획서·원생 영어 이름·보강 추가·교재 배정(삭제·되돌리기 포함)·회차 미룸/당김·오늘 화면의 반 순서를 저장할 수 있고, 단어 수 가져오기·요약 카드의 출결(출석·지각·결석·전원 출석)은 아직 지원하지 않습니다.</p><span data-v2h-actor-slot>${actorPicker()}</span></div>
+      return `${teacherStrip}<div class="v2h-note" role="note"><p><b>연습 화면</b> ${S.practiceCopy.selectedPerson}의 화면(권한·담당 반·보기 설정)으로 열립니다. 여기서 저장한 내용은 이 PC의 연습 자료에만 남고, 실제 발송은 없습니다. 계획 칸·원생 기록·출결·목표·메모·샤우팅·월간 계획서·원생 영어 이름·보강 추가·교재 배정(삭제·되돌리기 포함)·회차 미룸/당김·오늘 화면의 반 순서를 저장할 수 있고, 단어 수 가져오기·요약 카드의 출결(출석·지각·결석·전원 출석)은 아직 지원하지 않습니다.</p><span data-v2h-actor-slot>${teacherMode ? '' : actorPicker()}</span></div>
         <div class="v2h-slot" data-v2-host-slot style="position:relative;min-height:420px">${wait ? `<p class="v2h-wait">${esc(wait)}</p>` : ''}</div>`;
     },
   });

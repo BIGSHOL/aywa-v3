@@ -25,7 +25,7 @@ type Sp = Record<string, string | undefined>;
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export type LessonReportsData = { viewer: any; gates: Record<"canReportSettings" | "canAiMent" | "canEditReportSettings" | "canEditAiMent" | "canSendReports" | "canReports", boolean>;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  settings: any; aiOn: boolean; queue: any; tabData: any; tab: string; faceMissing?: boolean; today: string };
+  settings: any; aiOn: boolean; queue: any; tabData: any; tab: string; faceMissing?: boolean; today: string; teacherHome?: boolean };
 
 export function LessonReportsPage({ data, searchParams }: { data: LessonReportsData; searchParams: Sp }) {
   const sp = searchParams;
@@ -61,17 +61,17 @@ export function LessonReportsPage({ data, searchParams }: { data: LessonReportsD
     <div className="w-full min-w-0 space-y-3">
       {/* 수제 헤더 → PageHeader 수렴(2026-07-19) — 창(embed)에선 컴팩트 1행으로 접힌다(제목은 창 타이틀바). */}
       <PageHeader
-        eyebrow={classnoteOn ? "발송 관리" : "보고서 관리"}
-        title="수업보고서"
+        eyebrow={data.teacherHome ? "선생님" : classnoteOn ? "발송 관리" : "보고서 관리"}
+        title={data.teacherHome ? "학부모 글·답글" : "수업보고서"}
         description={
-          classnoteOn
+          data.teacherHome ? "내 원생과 내 반의 글을 확인합니다." : classnoteOn
             ? "발송 현황과 보고서 작성률을 확인합니다. 강사 작성은 원스크린에서 진행합니다."
             : "보고서 작성률과 목록을 확인합니다. 강사 작성은 원스크린에서 진행하고, 학부모에게는 보고서 링크를 보냅니다."
         }
       />
 
-      <FaceTabs faces={faces} active={inClassnote ? "classnote" : tab} ariaLabel="수업보고서 면" />
-      {inClassnote ? <FaceTabs faces={classnoteFaces} active={tab} ariaLabel="클래스노트 기능" level="secondary" /> : null}
+      {data.teacherHome ? null : <FaceTabs faces={faces} active={inClassnote ? "classnote" : tab} ariaLabel="수업보고서 면" />}
+      {data.teacherHome || !inClassnote ? null : <FaceTabs faces={classnoteFaces} active={tab} ariaLabel="클래스노트 기능" level="secondary" />}
 
       {tab === "queue" ? (
         queue ? <ClassnoteQueueCard view={queue} /> :

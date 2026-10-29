@@ -9,6 +9,7 @@ export const FLOW_PATH = '/api/flow', ACTIONS_PATH = '/api/flow/actions', HIERAR
 export const CARD_RECORDS_PATH = '/api/flow/card-attendance/records', CARD_SAVE_PATH = '/api/flow/card-attendance/save';
 export const CARD_REPORT_PATH = '/api/flow/card-report/send';
 export const CARD_CONSULT_RECORDS_PATH = '/api/flow/card-consultation/records', CARD_CONSULT_SAVE_PATH = '/api/flow/card-consultation/save';
+export const TEACHER_INBOX_PATH = '/api/flow/teacher-inbox';
 const BODY_LIMIT = 16 * 1024;
 const JSON_TYPE = /^application\/json\s*(?:;\s*charset\s*=\s*"?utf-8"?\s*)?$/i;
 
@@ -39,11 +40,19 @@ export function createFlowRoute({ flow, origins, headers = {}, enabled = true, c
   };
   const unavailable = res => { const f = flow.failure; send(res, 503, f ? { error: f.code, message: f.message } : { error: 'flow_starting', message: '업무 흐름을 준비하는 중입니다.' }, { 'Retry-After': '2' }); };
   return {
-    handles: path => path === FLOW_PATH || path === ACTIONS_PATH || path === HIERARCHY_PATH || path === RECORDS_PATH || path === CARD_RECORDS_PATH || path === CARD_SAVE_PATH || path === CARD_REPORT_PATH || path === CARD_CONSULT_RECORDS_PATH || path === CARD_CONSULT_SAVE_PATH,
+    handles: path => path === FLOW_PATH || path === ACTIONS_PATH || path === HIERARCHY_PATH || path === RECORDS_PATH || path === CARD_RECORDS_PATH || path === CARD_SAVE_PATH || path === CARD_REPORT_PATH || path === CARD_CONSULT_RECORDS_PATH || path === CARD_CONSULT_SAVE_PATH || path === TEACHER_INBOX_PATH,
     async handle(req, res, path) {
       if (!enabled) return send(res, 404, { error: 'not_found', message: '사용할 수 없는 주소입니다.' });
       const site = req.headers['sec-fetch-site'];
       if (site && site !== 'same-origin' && site !== 'none') return send(res, 403, { error: 'forbidden_origin', message: '이 화면에서만 요청할 수 있습니다.' });
+      if (path === TEACHER_INBOX_PATH) {
+        if (req.method !== 'GET') return send(res, 405, { error: 'method_not_allowed', message: '조회만 할 수 있습니다.' }, { Allow: 'GET' });
+        const q = new URL(req.url, 'http://127.0.0.1').searchParams, actor = q.get('actor');
+        if ([...q.keys()].some(k => k !== 'actor') || q.getAll('actor').length !== 1 || !/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(actor || '')) return send(res, 400, { error: 'invalid_request', message: '선생님을 확인해 주세요.' });
+        if (!flow.service) return unavailable(res);
+        try { const data = flow.service.teacherInbox(actor); return data ? send(res, 200, data, { 'Cache-Control': 'no-store' }) : send(res, 404, { error: 'not_found', message: '선생님을 찾지 못했습니다.' }); }
+        catch (error) { return fail(res, error); }
+      }
       if (path === CARD_RECORDS_PATH || path === CARD_CONSULT_RECORDS_PATH) {
         const card = path === CARD_RECORDS_PATH ? cardAttendance : cardConsultation;
         if (!card) return send(res, 404, { error: 'not_found', message: '사용할 수 없는 주소입니다.' });

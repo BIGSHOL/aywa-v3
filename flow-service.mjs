@@ -4,7 +4,8 @@ import { fileURLToPath } from 'node:url';
 import { openStore, namespaceDir, StoreError } from './flow-store.mjs';
 import { changedCount, reconcileSource } from './flow-reconcile.mjs';
 import { buildView, buildSummaryView } from './flow-view.mjs';
-import { entityRef } from './flow-engine.mjs';
+import { actorsOf, entityRef } from './flow-engine.mjs';
+import { activeFlowSteps, flowFirstScreen } from './flow-case-flags.mjs';
 import { failedDecision, recordDecision, runCommand } from './flow-commands.mjs';
 import { createHierarchyRuntime, openOverlay } from './flow-hierarchy-runtime.mjs';
 import { createHierarchyProviders } from './flow-hierarchy-providers.mjs';
@@ -86,6 +87,16 @@ export async function createFlowService({ source, dir, ai, tenantName = '', lock
     },
     view: (params = {}) => buildView(store.state, source, { aiStatus: ai.status(), tenantName, inFlight: jobs, ...params }),
     summary: () => buildSummaryView(store.state, source, { aiStatus: ai.status(), tenantName, inFlight: jobs }),
+    teacherInbox: actorId => {
+      const actor = actorsOf(source).find(a => a.id === actorId && a.role === 'teacher' && !a.preview);
+      if (!actor) return null;
+      const all = Object.values(store.state.cases);
+      const rows = all.filter(c => activeFlowSteps(c).some(s => (s.assigneeIds || []).includes(actorId)))
+        .map(c => ({ id: c.id, title: c.title, state: c.state, kind: c.kind || null }));
+      const expected = flowFirstScreen(all, [actor], source.identity.asOf).inboxByActor[actorId];
+      if (rows.length !== expected) throw new Error('teacher inbox count mismatch');
+      return { rows, total: rows.length, revision: store.state.revision };
+    },
     recordPage: (caseId, page) => {
       const c = store.state.cases[caseId];
       if (!c?.signalId) return null;

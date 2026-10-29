@@ -23,6 +23,7 @@
 // · 저장 = v2-lesson-reports-save.mjs(2.0 서버 함수 그대로 · 공용 러너 write) — 저장하는 사람 고르기 목록(editors)을 화면 자료에 싣는다.
 import { studentsBase } from './v2-students-common.mjs';
 import { lessonReportsActions, readLessonEditors } from './v2-lesson-reports-save.mjs';
+import { readPeople } from './v2-proc-people.mjs';
 
 const ID = 'lesson-reports';
 const SUB = /^\/lesson-reports(?:\/(stats))?$/;
@@ -48,8 +49,16 @@ async function aiLicensed(base) {
 }
 
 export async function buildLessonReports({ sql: tx, tenantId: t, importV2, sp = {}, viewerId = null }) {
-  const base = await studentsBase({ sql: tx, tenantId: t, importV2, viewerId });
+  let base = await studentsBase({ sql: tx, tenantId: t, importV2, viewerId: sp.teacherHome === '1' ? null : viewerId });
+  if (sp.teacherHome === '1') {
+    const people = await readPeople(base.sql, t, base.load, 'teacher_onescreen');
+    const actor = people.users.find(u => u.id === viewerId && u.role === 'teacher');
+    if (!actor) return { notFound: true };
+    base = { ...base, viewer: { id: actor.id, name: actor.display_name, systemRole: 'teacher', tenantId: t, isSuperAdmin: false },
+      level: menu => people.level(actor, menu) };
+  }
   if (!base.viewer) return { notFound: true };
+  if (sp.teacherHome === '1' && (base.viewer.systemRole !== 'teacher' || sp.tab !== 'parent_replies')) return { notFound: true };
   const R = await rules(base.load), lvl = base.level, can = (m) => lvl(m) !== 'none', write = (m) => ['full', 'scoped'].includes(lvl(m));
   const gates = { canReportSettings: can('report_settings'), canAiMent: can('ai_ment'), canEditReportSettings: write('report_settings'),
     canEditAiMent: write('ai_ment'), canSendReports: write('lesson_reports'), canReports: can('lesson_reports') };
@@ -61,7 +70,8 @@ export async function buildLessonReports({ sql: tx, tenantId: t, importV2, sp = 
   const ctx = { base, sql: base.sql, t, sp, tab, gates, settings, classnoteOn, replyMode, today: base.today, importV2: base.load };
   const face = mod ? await mod.loadFace(ctx) : null;
   return {
-    viewer: base.viewer, gates, aiOn, tab, today: base.today, editors: await readLessonEditors(base),
+    viewer: base.viewer, gates, aiOn, tab, today: base.today, teacherHome: sp.teacherHome === '1', editors: sp.teacherHome === '1'
+      ? [{ id: base.viewer.id, name: base.viewer.name, role: '선생님' }] : await readLessonEditors(base),
     // 부품이 읽는 학원 설정 칸만(모듈 · 보고서 · 운영 — 공급자 OperationsProvider 포함).
     settings: { modules: settings.modules, report: settings.report, operations: settings.operations },
     queue: face?.queue ?? null,
@@ -74,6 +84,7 @@ export const screen = {
   id: ID, label: '수업보고서', order: 7,
   params: {
     v2path: SUB, viewer: /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/,
+    teacherHome: /^1$/,
     tab: /^[a-z_]{1,20}$/, section: /^[a-z_]{1,20}$/, status: /^[a-z_]{1,20}$/, rmonth: /^\d{4}-\d{2}$/, page: /^\d{1,4}$/,
     // 면 안 부품이 다시 읽는 2.0 서버 함수(GET) — list = listReports(필터 JSON) · cnread = refreshClassnoteQueue(days) · listClassNotices ·
     // listClassWideNotices · promptHistory = getPromptHistory(유형) · testReports = getRecentReportsForTest.
@@ -103,7 +114,8 @@ export const screen = {
     }
     // 2.0 page.tsx 첫 판정: ?tab=video_homework → 영상 제출 현황으로 옮긴다(면 조회 없이 — 호스트가 3.0 그 화면으로 넘긴다).
     if (params.tab === 'video_homework') return { redirect: '/lesson-reports/video-homework' };
-    const sp = Object.fromEntries(KEYS.flatMap((k) => (params[k] !== undefined ? [[k, params[k]]] : [])));
+    const sp = Object.fromEntries([...KEYS, 'teacherHome'].flatMap((k) => (params[k] !== undefined ? [[k, params[k]]] : [])));
+    if (params.teacherHome === '1' && (!viewerId || params.tab !== 'parent_replies')) return { notFound: true };
     return buildLessonReports({ sql, tenantId, importV2, sp, viewerId });
   },
 };

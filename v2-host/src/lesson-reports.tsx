@@ -21,6 +21,8 @@ export const HOST_ROUTE = "/lesson-reports";
 
 /** page.tsx searchParams(v2-screen-lesson-reports.mjs KEYS와 같다 — 시험이 대조). */
 const KEYS = ["tab", "section", "status", "rmonth", "page"] as const;
+const teacherQuery = new URLSearchParams(location.search);
+const teacherViewer = teacherQuery.get('teacherHome') === '1' ? teacherQuery.get('viewer') : null;
 
 /** 면 안 부품이 다시 읽는 2.0 서버 함수(읽기) — 같은 화면의 GET 열쇠로 묻는다(v2-screen-lesson-reports.mjs params). 답은 2.0 반환 모양. */
 async function ask(query: Record<string, string>): Promise<Record<string, unknown> | null> {
@@ -163,7 +165,9 @@ function Page() {
   const search = useSearchParams();
   const { sp, query } = useMemo(() => {
     const sp = Object.fromEntries(KEYS.flatMap((k) => (search.has(k) ? [[k, search.get(k) ?? ""]] : []))) as Record<string, string>;
-    return { sp, query: new URLSearchParams(sp).toString() };
+    const query = new URLSearchParams(sp);
+    if (teacherViewer) { query.set('viewer', teacherViewer); query.set('teacherHome', '1'); }
+    return { sp, query: query.toString() };
   }, [search]);
   const [state, setState] = useState<Loaded>({});
   const [tick, setTick] = useState(0);

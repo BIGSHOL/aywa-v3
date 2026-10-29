@@ -344,12 +344,13 @@ async function uniqueClassBoardNames(sql, t, boardNames) {
 }
 
 /** 2.0 listParentThreads({ mode, user, page }) — 최근 14일 학부모 글(사본) + 답글 상태 · 답글 가능 · 공감 · 영상/사진 수. 조회 실패는 throw(화면이 null로 그린다). */
-export async function parentThreads(base, { mode, page: pageParam }) {
+export async function parentThreads(base, { mode, page: pageParam, scopedMessageIds = null }) {
   const { sql, t, viewer } = base;
   const M = await mods(base.load);
   const nowMs = base.clock.at.getTime();
   const since = new Date(nowMs - PARENT_THREAD_DAYS * 86_400_000).toISOString();
-  const [{ n: count }] = await sql`select count(*)::int n from public.classnote_parent_messages where tenant_id=${t} and posted_at >= ${since}`;
+  const [{ n: count }] = await sql`select count(*)::int n from public.classnote_parent_messages where tenant_id=${t} and posted_at >= ${since}
+    and (${scopedMessageIds}::uuid[] is null or id = any(${scopedMessageIds}::uuid[]))`;
   const totalPages = Math.max(1, Math.ceil((count ?? 0) / PARENT_THREAD_LIMIT));
   const requested = Number(pageParam);
   const page = Math.min(totalPages, Number.isSafeInteger(requested) && requested > 0 ? requested : 1);
@@ -357,6 +358,7 @@ export async function parentThreads(base, { mode, page: pageParam }) {
   const data = await sql`select id::text id, source, classnote_post_id, classnote_comment_id, child_id, student_id::text student_id, class_name, content,
       ${raw(sql, TS('posted_at'))} posted_at
     from public.classnote_parent_messages where tenant_id=${t} and posted_at >= ${since}
+      and (${scopedMessageIds}::uuid[] is null or id = any(${scopedMessageIds}::uuid[]))
     order by posted_at desc, id desc limit ${PARENT_THREAD_LIMIT} offset ${from}`;
   const messages = data.map(toMessage), ids = messages.map((m) => m.id);
   const studentIds = [...new Set(messages.map((m) => m.studentId).filter(Boolean))];

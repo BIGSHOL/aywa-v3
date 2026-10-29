@@ -25,13 +25,13 @@ test('주소 열쇠 = 2.0 page.tsx의 sp 칸 + section(resolveLessonReportTab) �
   assert.deepEqual([...KEYS].sort(), [...new Set([...used, 'section'])].sort());
   // + 면 안 부품의 다시 읽기(list · cnread · days · promptHistory · testReports) + 통계 열쇠(v2-lesson-reports-stats.mjs STATS_KEYS).
   const { STATS_KEYS } = await import('./v2-lesson-reports-stats.mjs');
-  assert.deepEqual(Object.keys(screen.params).sort(), ['v2path', 'viewer', ...KEYS, 'list', 'cnread', 'days', 'promptHistory', 'testReports', ...STATS_KEYS].sort());
+  assert.deepEqual(Object.keys(screen.params).sort(), ['v2path', 'viewer', 'teacherHome', ...KEYS, 'list', 'cnread', 'days', 'promptHistory', 'testReports', ...STATS_KEYS].sort());
   assert.equal(screen.paramMax.list, 2000);
   const entry = await here('./v2-host/src/lesson-reports.tsx'), wrap = await here('./v2-screen-lesson-reports.js');
   const arr = (re, s) => JSON.parse(re.exec(s)[1].replace(/'/g, '"').replace(/,\s*\]/, ']'));
   assert.deepEqual(arr(/const KEYS = (\[[^\]]*\])/, entry), [...KEYS]);
   // 감싸개는 통계 기간 열쇠도 3.0 주소에 남긴다(/lesson-reports/stats?grain=…).
-  assert.deepEqual(arr(/const KEEP = (\[[^\]]*\])/, wrap).sort(), [...new Set(['v2path', ...KEYS, ...STATS_KEYS])].sort());
+  assert.deepEqual(arr(/const KEEP = (\[[^\]]*\])/, wrap).sort(), [...new Set(['v2path', 'viewer', 'teacherHome', ...KEYS, ...STATS_KEYS])].sort());
   for (const ok of ['/lesson-reports', '/lesson-reports/stats']) assert.ok(screen.params.v2path.test(ok), ok);
   for (const no of ['/lesson-reports/', '/lesson-reports/video-homework', '/students']) assert.ok(!screen.params.v2path.test(no), no);
   assert.ok(screen.params.rmonth.test('2026-09') && !screen.params.rmonth.test('2026-9'));
@@ -42,7 +42,15 @@ test('그리기 = 2.0 page.tsx 본문 그대로(서버 호출 자리만 lesson-r
   const swaps = JSON.parse(await here('./v2-host/src/lesson-reports-page.swaps.json'));
   let body = orig.slice(orig.indexOf('export default async function LessonReportsPage('));
   for (const [from, to] of swaps.page) { assert.equal(body.split(from).length, 2, from); body = body.replace(from, to); }
-  assert.equal(mine.slice(mine.indexOf('export function LessonReportsPage(')), body);
+  const teacherFace = mine.slice(mine.indexOf('export function LessonReportsPage('));
+  const defaultFace = teacherFace
+    .replace('eyebrow={data.teacherHome ? "선생님" : classnoteOn ? "발송 관리" : "보고서 관리"}', 'eyebrow={classnoteOn ? "발송 관리" : "보고서 관리"}')
+    .replace('title={data.teacherHome ? "학부모 글·답글" : "수업보고서"}', 'title="수업보고서"')
+    .replace('data.teacherHome ? "내 원생과 내 반의 글을 확인합니다." : classnoteOn', 'classnoteOn')
+    .replace('{data.teacherHome ? null : <FaceTabs faces={faces} active={inClassnote ? "classnote" : tab} ariaLabel="수업보고서 면" />}', '<FaceTabs faces={faces} active={inClassnote ? "classnote" : tab} ariaLabel="수업보고서 면" />')
+    .replace('{data.teacherHome || !inClassnote ? null : <FaceTabs faces={classnoteFaces} active={tab} ariaLabel="클래스노트 기능" level="secondary" />}', '{inClassnote ? <FaceTabs faces={classnoteFaces} active={tab} ariaLabel="클래스노트 기능" level="secondary" /> : null}');
+  assert.equal(defaultFace, body, '기본 면의 2.0 본문은 그대로');
+  assert.match(teacherFace, /data\.teacherHome \? null : <FaceTabs/, '강사 답글 면에는 관리 탭이 없다');
   assert.ok(!/\bawait\b/.test(body.split('\n').map((l) => l.replace(/\/\/.*$/, '')).join('\n')), '본문 코드에 await가 남았다');
 });
 
@@ -140,12 +148,13 @@ test('다시 읽기 GET = 면 모듈 읽기 함수로(목록 · 큐 · 공지 �
   });
 });
 
-test('진입점 = 직접 발송·답글 읽기 넷은 원본 읽기로 · 동기화 요청(저장)은 보내지 않고 거절', async () => {
+test('진입점 = 직접 발송·답글 읽기 넷은 원본 읽기로 · 동기화 요청은 연습 복사본에만', async () => {
   const entry = lf(await here('./v2-host/src/lesson-reports.tsx'));
   for (const fn of ['getAdminComposeContext', 'getAdminSendClassOptions', 'getParentReplyContext', 'getNotificationReplyContext'])
     assert.ok(!entry.includes(`, "${fn}", async () =>`), `${fn} 읽기 거절 금지`);
   assert.ok(!entry.includes('const NOT_YET_OPEN'), '직접 발송·답글 읽기 거절을 없앴다');
-  assert.match(entry, /"requestClassnoteBoardSync", async \(\) => \(\{ ok: false, error: VIEW_ONLY \}\)/);
+  assert.match(entry, /"requestClassnoteBoardSync", async \(\.\.\.args\) => \{/);
+  assert.match(entry, /요청을 복사본 대기열에 남겼습니다/);
   // 통계 보기 기억(saveReportStatsMode)은 이제 실제 저장 — 진입점이 거절하지 않는다(저장 시험 = verify-v2-lesson-reports-save.mjs).
   assert.ok(!entry.includes('"saveReportStatsMode", async () =>'));
   assert.match(entry, /"getClassnoteSyncStatus", async \(\) =>\s*\(\(await ask\(\{ cnread: "sync" \}\)\)/);
@@ -162,8 +171,7 @@ test('화면 글자에 "2.0"·개발자용 말이 없다(주석 뺀 코드)', as
     const code = lf(await here(f)).split('\n').filter((l) => !/^\s*(\/\/|\/\*|\*)/.test(l)).join('\n').replace(/\/\*[\s\S]*?\*\//g, '');
     const strings = [...code.matchAll(/(["'`])((?:(?!\1)[^\\\n]|\\.)*)\1/g)].map((m) => m[2]).filter((x) => /[가-힣]/.test(x));
     for (const s of strings) {
-      const allowedCopy = s.replaceAll('연습 복사본이라 실제로 보내지지 않습니다 — 발송 대기로만 남습니다', '')
-        .replaceAll('연습 복사본에서는 실제로 보내지지 않습니다.', '');
+      const allowedCopy = s.replaceAll('연습 복사본', '연습 자료').replaceAll('복사본 대기열', '연습 대기열');
       assert.ok(!/2\.0|(^|[^\w-])v2([^\w-]|$)|복사본|Docker|API|tenant|함수/.test(allowedCopy.replace(/<[^>]*>/g, ' ')), `${f}: ${s}`);
     }
   }

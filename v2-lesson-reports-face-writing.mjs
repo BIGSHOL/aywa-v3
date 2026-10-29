@@ -179,6 +179,7 @@ export async function writingRates(ctx, month) {
   const todayPendings = [...pendingByTeacher].map(([teacher, v]) => ({ teacher, ...v }));
 
   let todayTargets = [];
+  const teacherHomeRows = new Map();
   if (classIds.length > 0) {
     const enr = (await sql`select e.student_id::text student_id, e.class_id::text class_id, e.start_date::text start_date, e.end_date::text end_date, e.on_hold, e.is_transferred, e.attendance_days from public.enrollments e where e.tenant_id=${t} and e.class_id = any(${classIds}::uuid[])
         and e.start_date <= ${today} and (e.end_date is null or e.end_date >= ${today}) order by e.id`).filter((e) => attendsOn(M, e, today));
@@ -208,7 +209,9 @@ export async function writingRates(ctx, month) {
     todayTargets = [...studentsByTeacher.keys()].map((teacher) => {
       const mine = (p) => p.classIds.some((c) => teacherOfClass.get(c) === teacher);
       const due = [...new Set(judged.due.filter(mine).map((p) => p.studentId))];
-      const missingIds = [...new Set(judged.missing.filter(mine).map((p) => p.studentId))];
+      const missingPairs = judged.missing.filter(mine);
+      const missingIds = [...new Set(missingPairs.map((p) => p.studentId))];
+      if (ctx.teacherHome) teacherHomeRows.set(teacher, { rows: missingIds.map((id) => ({ studentId: id, name: nameById.get(id) ?? '(원생)' })), pairs: missingPairs.length });
       return { teacher, target: due.length, written: due.length - missingIds.length, missing: missingIds.map((id) => nameById.get(id) ?? '(학생)').slice(0, 20) };
     });
   }
@@ -258,7 +261,7 @@ export async function writingRates(ctx, month) {
   const rates = M.rate.computeWritingRates(dates, reports, todayTargets, dailyTargets, today, todayPendings, settings.operations.holidays)
     .map((r) => ({ ...r, subjects: [...(subjectsOfTeacher.get(r.teacher) ?? [])], source: 'aywa' }));
   const english = await englishRates(ctx, M, since, until, dates);
-  return { dates, rates: [...rates, ...english], range };
+  return { dates, rates: [...rates, ...english], range, ...(ctx.teacherHome ? { teacherHomeRows: [...teacherHomeRows] } : {}) };
 }
 
 /** 면 모듈 계약 — page.tsx: `getWeeklyWritingRates(/^\d{4}-\d{2}$/.test(sp.rmonth ?? "") ? sp.rmonth : undefined).then((rates) => ({ rates }))`. */

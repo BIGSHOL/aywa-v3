@@ -66,7 +66,10 @@
         if (!nq.get('teacher') && cur) nq.set('teacher', cur); // 2.0의 날짜 이동은 teacher를 빼고 주소를 다시 쓴다 — 고른 선생님은 그대로
         const query = queryOf(nq);
         requested = query; // iframe은 이미 그 주소다 — 3.0이 다시 그려도 다시 읽지 않게 먼저 맞춘다
-        const page = `#v2-${ID}${query ? `?${query}` : ''}`;
+        const current = new URLSearchParams(location.hash.split('?')[1] || '');
+        const out = new URLSearchParams(query);
+        if (current.get('teacherHome') === '1') out.set('teacherHome', '1');
+        const page = `#v2-${ID}${out.size ? `?${out}` : ''}`;
         if (location.hash !== page) location.replace(page);
       } else if (d.type === 'v2-host-open' || d.type === 'eywa-open-window') openFromHost(String(d.href || ''));
       else if (d.type === 'v2-host-editors' && d.screen === ID && Array.isArray(d.editors)) hostTeacher = typeof d.editors[0]?.id === 'string' ? d.editors[0].id : null;
@@ -88,12 +91,14 @@
       if (!ctx.query.toString() && requested) { location.replace(`#v2-${ID}?${requested}`); return ''; }
       const q = ctx.query, list = ctx.load({ list: 'teachers' }), teachers = list.status === 'ready' ? list.data.teachers : [];
       const pick = q.get('teacher') || '';
+      const teacherMode = q.get('teacherHome') === '1' && /^[0-9a-f-]{36}$/i.test(pick);
+      const teacherStrip = teacherMode ? window.TeacherHome?.strip(ctx, pick, 'onescreen') || '' : '';
       // One check of the host page — renders before its answer do not ask again.
       if (hostOk === null) { if (!checking) { checking = true; fetch(HOST, { method: 'HEAD' }).then(r => r.ok, () => false).then(ok => { if (hostOk === null) { hostOk = ok; api?.render?.(); } }); } }
       else if (hostOk) { const query = queryOf(q); requestAnimationFrame(() => { ensureFrame(query); place(); }); }
       const wait = hostOk === false ? '이 화면이 이 서버에 아직 연결되지 않았습니다.' : hostOk === null ? '선생님 수업보고서를 여는 중…' : '';
       const picker = `<label class="osh-pick"><span>보는 선생님</span><select data-osh="teacher" aria-label="보는 선생님">${pick ? '' : '<option value="" selected>최근 보고서가 가장 많은 선생님</option>'}${teachers.map(t => `<option value="${h(t.id)}" ${t.id === pick ? 'selected' : ''}>${h(t.name)} · 반 ${h(t.classes)}</option>`).join('')}</select></label>`;
-      return `<div class="osh-bar"><p class="osh-note" role="note"><b>연습 화면</b> 선택한 선생님의 수업보고서 화면입니다. 보고서 저장·ClassNote 발송·출결은 그 선생님 이름으로 연습 데이터에만 남고 실제 발송은 없습니다. 아직 지원하지 않는 기능은 눌러도 저장되지 않습니다.</p>${picker}</div>
+      return `${teacherStrip}<div class="osh-bar"><p class="osh-note" role="note"><b>연습 화면</b> 선택한 선생님의 수업보고서 화면입니다. 보고서 저장·ClassNote 발송·출결은 그 선생님 이름으로 연습 데이터에만 남고 실제 발송은 없습니다. 아직 지원하지 않는 기능은 눌러도 저장되지 않습니다.</p>${teacherMode ? '' : picker}</div>
         <div class="osh-slot" data-v2-host-slot>${wait ? `<p class="osh-wait">${wait}</p>` : ''}</div>`;
     },
   });

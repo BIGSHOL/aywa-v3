@@ -8,7 +8,7 @@
   'use strict';
   const ID = 'lesson-reports', HOST = `/v2-host/${ID}.html`, S = window.V2Screens; if (!S) return;
   // 2.0 page.tsx가 읽는 주소 열쇠 그대로 + v2path(2.0 하위 경로 /lesson-reports/stats) + 통계 기간 열쇠(2.0 PERIOD_KEYS + subject).
-  const KEEP = ['v2path', 'tab', 'section', 'status', 'rmonth', 'page', 'grain', 'month', 'from', 'to', 'span', 'subject'];
+  const KEEP = ['v2path', 'tab', 'section', 'status', 'rmonth', 'page', 'grain', 'month', 'from', 'to', 'span', 'subject', 'viewer', 'teacherHome'];
   // 영상 제출 현황 화면(#v2-video-homework)이 받는 2.0 열쇠(그 화면의 KEEP과 같다).
   const VIDEO_KEYS = ['date', 'class', 'subject', 'grade', 'school', 'sort', 'from', 'to', 'q', 'status'];
   let api = null, frame = null, requested = null, hostOk = null, wired = false, editors = [], actor = null;
@@ -61,6 +61,8 @@
     }
     if (OWN.test(path)) {
       if (path !== '/lesson-reports') q.set('v2path', path);
+      const current = new URLSearchParams(location.hash.split('?')[1] || '');
+      if (current.get('teacherHome') === '1') { q.set('teacherHome', '1'); q.set('viewer', current.get('viewer')); }
       location.hash = `#v2-${ID}${q.toString() ? `?${queryOf(q)}` : ''}`;
       return;
     }
@@ -86,9 +88,12 @@
         return;
       }
       if (d.type === 'v2-host-nav' && d.screen === ID) {
-        const query = queryOf(new URLSearchParams(String(d.query || '')));
+        const next = new URLSearchParams(String(d.query || ''));
+        const current = new URLSearchParams(location.hash.split('?')[1] || '');
+        if (current.get('teacherHome') === '1') { next.set('teacherHome', '1'); next.set('viewer', current.get('viewer')); }
+        const query = queryOf(next);
         requested = query; // iframe은 이미 그 주소다 — 3.0이 다시 그려도 다시 읽지 않게 먼저 맞춘다
-        const page = `#v2-${ID}${query ? `?${query}` : ''}`;
+        const page = `#v2-${ID}${query ? `?${query}${current.get('home') ? `&home=${current.get('home')}` : ''}` : ''}`;
         if (location.hash !== page) location.replace(page);
       } else if (d.type === 'v2-host-open' || d.type === 'eywa-open-window') openFromHost(String(d.href || ''));
       else if (d.type === 'v2-host-editors' && d.screen === ID && Array.isArray(d.editors)) {
@@ -115,8 +120,10 @@
     id: ID, label: '수업보고서',
     render(ctx) {
       api = ctx.api; wire();
+      const teacherMode = ctx.query.get('teacherHome') === '1' && /^[0-9a-f-]{36}$/i.test(ctx.query.get('viewer') || '');
+      const teacherActor = teacherMode ? ctx.query.get('viewer') : null;
       // 업무 흐름이 '이 직원으로' 열 때(&actor=<직원 id>) — 저장하는 사람으로 미리 고른다(목록에 없는 사람이면 저장 때 첫 사람). 주소에는 남기지 않는다.
-      const asked = ctx.query.get('actor');
+      const asked = teacherActor || ctx.query.get('actor');
       if (asked && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(asked) && asked !== actor) {
         actor = asked;
         try { localStorage.setItem(ACTOR_KEY, asked); } catch { /* 이 창에서만 기억 */ }
@@ -126,7 +133,8 @@
       if (hostOk === null) fetch(HOST, { method: 'HEAD' }).then(r => r.ok, () => false).then(ok => { if (hostOk === null) { hostOk = ok; api?.render?.(); } });
       else if (hostOk) requestAnimationFrame(() => { ensureFrame(query); place(); });
       const wait = hostOk === false ? '수업보고서를 열지 못했습니다. 잠시 후 새로고침해 주세요.' : hostOk === null ? '수업보고서를 여는 중…' : '';
-      return `<div class="v2h-note" role="note"><p><b>연습 화면</b> 이 PC의 연습 자료로 보는 수업보고서 관리입니다. 저장은 연습 자료에만 남고, 발송은 대기로만 남아 실제로 보내지지 않습니다.</p><span data-v2h-actor-slot>${actorPicker()}</span></div>
+      const strip = teacherMode ? window.TeacherHome?.strip(ctx, teacherActor, ctx.query.get('home') === 'ecs' ? 'ecs' : 'onescreen') || '' : '';
+      return `${strip}<div class="v2h-note" role="note"><p><b>연습 화면</b> 이 PC의 연습 자료로 보는 수업보고서 관리입니다. 저장은 연습 자료에만 남고, 발송은 대기로만 남아 실제로 보내지지 않습니다.</p><span data-v2h-actor-slot>${teacherMode ? '' : actorPicker()}</span></div>
         <div class="v2h-slot" data-v2-host-slot>${wait ? `<p class="v2h-wait">${wait}</p>` : ''}</div>`;
     },
   });

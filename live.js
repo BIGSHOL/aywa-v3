@@ -254,7 +254,8 @@
   }
   function shell(){
     const offset=$('.nav-scroll')?.scrollTop||0;
-    $('#sidebar').innerHTML=`<a href="#home" class="brand"><span class="brand-mark">${icon('trend')}</span><div><div class="brand-name">aywa</div><div class="brand-caption">학원을 잇는 경영 공간</div></div></a><div class="academy-box"><span class="academy-symbol">${icon('building')}</span><div class="grow"><strong>${h(db.meta.tenant)}</strong><small>원장 · 경영자</small></div>${icon('down')}</div><nav class="nav-scroll" aria-label="학원 업무">${pages.filter(p=>p[0]!=='settings').map(([id,label,symbol,section])=>`${section?`<div class="nav-group">${section}</div>`:''}<a class="nav-item ${state.page===id?'active':''}" href="#${id}" ${state.page===id?'aria-current="page"':''}>${icon(symbol)}<span>${label}</span>${id==='approvals'?`<span class="nav-count">${db.approvals.filter(a=>a.status==='pending').length}</span>`:''}</a>`).join('')}${window.V2Screens?.sidebar(state.page)||''}</nav><div class="sidebar-bottom"><a class="nav-item ${state.page==='settings'?'active':''}" href="#settings">${icon('settings')}학원 설정</a><div class="profile">${avatar('원장')}<div class="grow"><strong>원장님</strong><small>${h(db.meta.tenant)} · 원장실</small></div>${icon('chevron')}</div></div>`;
+    const teacherActor=flowUI?.actor?.(),teacherLink=teacherActor?.role==='teacher'?`<a class="nav-item" href="#v2-teacher-home?actor=${h(teacherActor.id)}">${icon('book')}<span>선생님 화면</span></a>`:'';
+    $('#sidebar').innerHTML=`<a href="#home" class="brand"><span class="brand-mark">${icon('trend')}</span><div><div class="brand-name">aywa</div><div class="brand-caption">학원을 잇는 경영 공간</div></div></a><div class="academy-box"><span class="academy-symbol">${icon('building')}</span><div class="grow"><strong>${h(db.meta.tenant)}</strong><small>원장 · 경영자</small></div>${icon('down')}</div><nav class="nav-scroll" aria-label="학원 업무">${teacherLink}${pages.filter(p=>p[0]!=='settings').map(([id,label,symbol,section])=>`${section?`<div class="nav-group">${section}</div>`:''}<a class="nav-item ${state.page===id?'active':''}" href="#${id}" ${state.page===id?'aria-current="page"':''}>${icon(symbol)}<span>${label}</span>${id==='approvals'?`<span class="nav-count">${db.approvals.filter(a=>a.status==='pending').length}</span>`:''}</a>`).join('')}${window.V2Screens?.sidebar(state.page)||''}</nav><div class="sidebar-bottom"><a class="nav-item ${state.page==='settings'?'active':''}" href="#settings">${icon('settings')}학원 설정</a><div class="profile">${avatar('원장')}<div class="grow"><strong>원장님</strong><small>${h(db.meta.tenant)} · 원장실</small></div>${icon('chevron')}</div></div>`;
     $('.nav-scroll').scrollTop=offset;
     // Desktop has no header band: search, notes and channels live in the sidebar. Phones keep a menu bar (decorated by ax.js).
     $('#topbar').innerHTML=`<button class="icon-button mobile-menu" data-action="menu" aria-controls="sidebar" aria-label="메뉴 열기" aria-expanded="false">${icon('menu')}</button><strong>${pages.find(p=>p[0]===state.page)?.[1]||'브리핑'}</strong>`;
@@ -474,8 +475,10 @@
   const views={home,students,admissions,classes,learning,finance,staff,parents,shuttle,approvals,resources,calendar,settings,inbox:ax.inbox,requests:ax.requests,automation:ax.automation,...(flowUI?{flow:()=>flowUI.fullView()}:{})};
   // 업무 흐름과 작업 공간은 첫 자료의 집계·미리보기와 각 영역의 기록 GET으로 그린다.
   // 원생·청구 등 옛 상세 화면을 열 때에만 전체 상세를 읽는다.
-  const needsFull=page=>page!=='home'&&page!=='flow'&&!page.startsWith('workspace-');
+  const teacherRoute=page=>page.startsWith('v2-teacher-home')||/^v2-(?:ecs|onescreen|lesson-reports)\?/.test(page)&&new URLSearchParams(page.split('?')[1]||'').get('teacherHome')==='1';
+  const needsFull=page=>page!=='home'&&page!=='flow'&&!page.startsWith('workspace-')&&!teacherRoute(page);
   function render(){
+    document.body.classList.toggle('teacher-mode',teacherRoute(state.page)&&!state.page.startsWith('v2-teacher-home'));
     if(state.page&&needsFull(state.page)&&!fullReady){shell();ax.decorateShell();$('#main').innerHTML='<p class="live-note" role="status">상세 자료를 불러오는 중입니다.</p>';ensureFull().then(()=>render(),()=>{$('#main').innerHTML='<p class="live-note" role="alert">상세 자료를 불러오지 못했습니다. 화면을 다시 열어 주세요.</p>';});return;}
     clearSpotlight();
     const focused=document.activeElement,focusId=focused?.id,selection=typeof focused?.selectionStart==='number'?focused.selectionStart:null;
