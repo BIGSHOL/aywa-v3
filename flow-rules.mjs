@@ -83,7 +83,7 @@ export const TEMPLATES = {
     ],
   },
   consultation: {
-    familyId: 'consultations', title: '상담 후속 조치', trigger: 'consultation.followup_requested',
+    familyId: 'consultations', title: '상담 후속조치', trigger: 'consultation.followup_requested',
     steps: [
       { key: 'counselor_followup', label: '상담 담당 후속 연락', role: 'counselor', evidenceRequired: true },
       { key: 'manager_review', label: '관리자 검토', role: 'manager', review: true, when: 'needsReview' },
@@ -106,7 +106,7 @@ export const COMMAND_ROLES = {
 };
 export const COMMAND_KINDS = Object.keys(COMMAND_ROLES);
 export const PRIORITIES = ['high', 'normal', 'low'];
-export const REPORT_OUTCOMES = { done: '처리함', needs_review: '검토 필요', unreachable: '연락 안 됨', not_needed: '해당 없음' };
+export const REPORT_OUTCOMES = { done: '처리됨', needs_review: '검토 필요', unreachable: '연락 안 됨', not_needed: '해당 없음' };
 
 // 원본 신호 업무가 닫히는 법(AX-H1·H4). 보통 신호는 원본에서 그 상태가 풀릴 때(근거 기록이 신호에서 빠질 때) 닫힌다.
 export const SIGNAL_DONE_RULE = '원본에서 이 상태가 풀리면(근거 기록이 신호에서 빠지면) 자동으로 닫힙니다.';

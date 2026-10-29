@@ -27,7 +27,7 @@ export function modelLabel(model) {
   const cl = /^claude-(opus|sonnet|haiku|fable)-(\d+)(?:-(\d{1,2}))?(?:-|$)/.exec(model || '');
   return cl ? `Claude ${cl[1][0].toUpperCase()}${cl[1].slice(1)} ${cl[2]}${cl[3] ? `.${cl[3]}` : ''}` : null;
 }
-const DEADLINE_LABEL = { overdue: '지난 업무', today: '오늘', tomorrow: '내일', this_week: '7일 안', future: '8일 이후', unknown: '기한 모름' };
+const DEADLINE_LABEL = { overdue: '지난 업무', today: '오늘', tomorrow: '내일', this_week: '7일 안', future: '8일 이후', unknown: '기한 미상' };
 const DRAFT_STATE = { drafted: 'ok', busy: 'unavailable', unavailable: 'unavailable', cancelled: 'skipped', not_applicable: 'skipped' };
 function friendlyDecision(r) {
   const codes = String(r.reason || '').split(',').filter(Boolean);

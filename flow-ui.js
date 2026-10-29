@@ -9,7 +9,7 @@ window.createFlowUI = function createFlowUI(api) {
   const ENDPOINT='/api/flow',ACTIONS='/api/flow/actions',ACTOR_KEY='ax-flow-preview-actor';
   const STATE={open:'처리 전',working:'진행 중',review:'검토 대기',done:'완료'};
   const STEP={waiting:'대기',ready:'할 차례',working:'진행 중',review:'검토 차례',done:'완료'};
-  const OUTCOME={done:'처리함',needs_review:'검토 필요',unreachable:'연락 안 됨',not_needed:'해당 없음'};
+  const OUTCOME={done:'처리됨',needs_review:'검토 필요',unreachable:'연락 안 됨',not_needed:'해당 없음'};
   const OUTCOME_NOTE={done:'맡은 업무를 끝냈습니다',needs_review:'다른 사람의 확인이 더 필요합니다',unreachable:'연락했지만 닿지 않았습니다',not_needed:'처리할 업무가 아니었습니다'};
   // Judgment codes from the server's decision modules are translated here; unknown codes are never shown.
   const ROUTE={auto_route:'정해진 담당자에게 바로 배정',no_action:'업무 없음으로 판단',manager_review:'관리자 검토로 보냄',human_review:'사람이 판단하도록 보냄',insufficient_context:'정보가 부족해 사람이 되묻도록 보냄'};
@@ -182,7 +182,7 @@ window.createFlowUI = function createFlowUI(api) {
         try{response=await fetch(ACTIONS,{method:'POST',headers:{'Content-Type':'application/json',Accept:'application/json'},body:JSON.stringify(body)});}
         catch{if(tries.net++<1)continue;toast('업무 흐름 서버에 연결하지 못했습니다. 다시 시도해 주세요.');return null;}
         let json=null;try{json=await response.json();}catch{/* error without body */}
-        // quiet = 여러 건을 차례로 보낼 때(한꺼번에 담당 바꾸기) — 새 판만 받아 두고 다 끝난 뒤 한 번 그린다.
+        // quiet = 여러 건을 차례로 보낼 때(담당자 일괄 변경) — 새 판만 받아 두고 다 끝난 뒤 한 번 그린다.
         if(response.ok){if(json?.flow&&Array.isArray(json.flow.cases)){store.flow=json.flow;store.status='ready';if(!quiet)paint();}else await load({quiet:true});return json||{};}
         if(response.status===503&&json?.error==='store_locked'&&tries.lock++<1){await new Promise(r=>setTimeout(r,600));continue;}
         if(response.status===409&&json?.error==='revision_conflict'){
@@ -277,14 +277,14 @@ window.createFlowUI = function createFlowUI(api) {
     const id=h(c.id),s=myStep(c),sk=s?h(s.id):'';
     if(c.state==='done')return `<div class="ax-actions">${lead()&&c.closure!=='fact'?btn('다시 열기','reopen-open',`data-id="${id}"`):''}${compact||drawer?'':btn('근거와 흐름','open',`data-id="${id}"`)}</div>`;
     if(compact){
-      const first=s&&!isReview(s)&&s.status==='ready'?btn('확인','ack',`data-id="${id}" data-step="${sk}" data-fl-key="case.ack:${id}"`,true):s&&isReview(s)&&lead()?btn('검토','review-open',`data-id="${id}" data-step="${sk}"`,true):lead()&&activeSteps(c).length?btn(unassigned(c)?'담당 지정':'담당 바꾸기','reassign-open',`data-id="${id}"`):'';
+      const first=s&&!isReview(s)&&s.status==='ready'?btn('확인','ack',`data-id="${id}" data-step="${sk}" data-fl-key="case.ack:${id}"`,true):s&&isReview(s)&&lead()?btn('검토','review-open',`data-id="${id}" data-step="${sk}"`,true):lead()&&activeSteps(c).length?btn(unassigned(c)?'담당 지정':'담당자 변경','reassign-open',`data-id="${id}"`):'';
       return `<div class="ax-actions">${first||'<span class="fl-dim">—</span>'}</div>`;
     }
     const out=[];
     if(s&&!isReview(s)&&s.status==='ready')out.push(btn('확인','ack',`data-id="${id}" data-step="${sk}" data-fl-key="case.ack:${id}"`,true));
     if(s&&!isReview(s))out.push(btn(c.closure==='fact'?'후속 보고 작성':'보고 작성','report-open',`data-id="${id}" data-step="${sk}"`,s.status==='working'));
     if(s&&isReview(s)&&lead())out.push(btn('검토','review-open',`data-id="${id}" data-step="${sk}"`,true));
-    if(lead()&&activeSteps(c).length)out.push(btn(unassigned(c)?'담당 지정':'담당 바꾸기','reassign-open',`data-id="${id}"`));
+    if(lead()&&activeSteps(c).length)out.push(btn(unassigned(c)?'담당 지정':'담당자 변경','reassign-open',`data-id="${id}"`));
     if(!drawer)out.push(btn('근거와 흐름','open',`data-id="${id}"`));
     // 일을 처리하는 화면으로 가는 길(원장 10-28 "만족도를 확인하러 가고 싶은데 어디로 가야하는지 배선 같은게 없음").
     const where=c.familyId&&api.familyLabel?.(c.familyId);if(where)out.push(btn(`${where} 열기`,'goto',`data-id="${id}"`));
@@ -511,7 +511,7 @@ window.createFlowUI = function createFlowUI(api) {
   const AI_WAIT={not_started:'아직 AI 정리를 하지 않았습니다.',queued:'AI 정리를 기다리고 있습니다.',running:'AI가 정리하고 있습니다.',error:'AI 정리를 하지 못했습니다.',stale:'기록이 바뀌어 AI 정리를 다시 해야 합니다.',review_needed:'사람이 판단할 업무로 넘겼습니다.',skipped:'AI 정리를 하지 않고 넘겼습니다.'};
   const FLOW_STATE={open:['처리 전',''],working:['진행 중','blue'],reported:['보고됨','green'],not_needed:['해당 없음','green'],needs_review:['검토 필요','amber'],unreachable:['연락 안 됨','amber'],partial:['일부 처리','blue']};
   // Facts the server computed in code (origin 'code'); keys without a label here are not shown.
-  const FACTS=[['absencesInClass','이 반 결석','건'],['absencesAllClasses','모든 반 결석','건'],['classesWithAbsences','결석한 반','개'],['absencesLast7Days','최근 7일 결석','건'],['daysSinceLast','마지막 결석 뒤','일'],['firstDate','처음',''],['lastDate','마지막',''],['studentsAlsoInOtherClasses','다른 반에도 있는 원생','명'],['managerQueueRecords','관리자 대기열 기록','건'],['managerQueueTeachers','대기열로 간 담임','명']];
+  const FACTS=[['absencesInClass','이 반 결석','건'],['absencesAllClasses','모든 반 결석','건'],['classesWithAbsences','결석한 반','개'],['absencesLast7Days','최근 7일 결석','건'],['daysSinceLast','최종 결석 후','일'],['firstDate','처음',''],['lastDate','최종',''],['studentsAlsoInOtherClasses','다른 반에도 있는 원생','명'],['managerQueueRecords','관리자 대기열 기록','건'],['managerQueueTeachers','대기열로 간 담임','명']];
   const REC_STATUS={absent:'결석',late:'지각',present:'출석',early_leave:'조퇴',makeup:'보강'};
   const trees=new Map();let treeCase='',treeUid=0;
   const kidsOf=n=>(Array.isArray(n?.children)?n.children:[]).filter(k=>k&&typeof k==='object'&&k.id);
@@ -592,7 +592,7 @@ window.createFlowUI = function createFlowUI(api) {
     if(mine&&!isReview(s)&&s.status==='ready')out.push(btn('확인','ack',`data-id="${id}" data-step="${sk}" data-fl-key="case.ack:${id}"`,true));
     if(mine&&!isReview(s))out.push(btn(relational(c)?(fact?'단계 전체 후속 보고':'단계 전체 보고 작성'):fact?'후속 보고 작성':'보고 작성','report-open',`data-id="${id}" data-step="${sk}"`,s.status==='working'));
     if(isReview(s)&&lead())out.push(btn('검토','review-open',`data-id="${id}" data-step="${sk}"`,true));
-    if(lead())out.push(btn((s.assigneeIds||[]).length?'담당 바꾸기':'담당 지정','reassign-open',`data-id="${id}" data-step="${sk}"`));
+    if(lead())out.push(btn((s.assigneeIds||[]).length?'담당자 변경':'담당 지정','reassign-open',`data-id="${id}" data-step="${sk}"`));
     return out.length?`<div class="ax-actions">${out.join('')}</div>`:'';
   }
   const stepLines=(c,n,scoped=null)=>stepsOf(c,n).map(s=>`<div class="fl-node-step"><p><strong>담당 단계</strong> ${h(whoOf(s))} · ${h(stepState(s))}${s.evidenceRequired?' · 근거 필요':''}</p>${stepActions(c,s,scoped)}</div>`).join('');
@@ -609,7 +609,7 @@ window.createFlowUI = function createFlowUI(api) {
   function paneHtml(c,e,n){
     const recs=(Array.isArray(n.records)?n.records:[]).filter(r=>r&&typeof r==='object'),total=num(n.counts?.records);
     const dates=recs.map(r=>String(r.date||'').slice(0,10)).filter(d=>/^\d{4}-\d{2}-\d{2}$/.test(d)).sort();
-    const facts=factsText(n.facts)||(recs.length?`${recordWord(e.data)} ${fmt(recs.length)}건${dates.length?` · 처음 ${md(dates[0])} · 마지막 ${md(dates.at(-1))}`:''}`:'');
+    const facts=factsText(n.facts)||(recs.length?`${recordWord(e.data)} ${fmt(recs.length)}건${dates.length?` · 처음 ${md(dates[0])} · 최종 ${md(dates.at(-1))}`:''}`:'');
     const sid=n.level==='student'&&n.entityRef?.id,other=sid?cases().filter(x=>x.id!==c.id&&x.state!=='done'&&(x.entityRefs||[]).some(r=>r.type==='student'&&r.id===sid)):[];
     const open=r=>{const rec=r.recordId||'';return Boolean(r.familyId&&rec&&api.hasView(`workspace-${r.familyId}`))||Boolean(rec&&api.canOpenRecord?.(rec));};
     return `${sid?`<div class="ax-actions">${btn('원생 기록 열기','entity',`data-family="students" data-record="${h(sid)}"`)}</div>`:''}${aiBlock(n.ai,{facts,e,self:n.id})}${total!==null&&total>recs.length?`<p class="fl-tree-warn">${h(recordWord(e.data))} ${fmt(total)}건 중 ${fmt(recs.length)}건만 받았습니다.</p>`:''}${recs.length?`<ol class="fl-records" aria-label="${h(recordWord(e.data))} ${fmt(recs.length)}건">${recs.map(r=>`<li><span class="fl-rec-date">${h(md(String(r.date||'날짜 미입력').slice(0,10)))}</span><span>${h(recLabel(r))}</span><button type="button" class="fl-rec-open" data-fl="entity" data-family="${h(r.familyId||'')}" data-record="${h(r.recordId||'')}" ${open(r)?'':'disabled'}>기록 보기</button></li>`).join('')}</ol>`:'<p class="live-empty">이 묶음에 받은 기록이 없습니다.</p>'}${flowLine(n)}${stepLines(c,n,n.level==='student'?n:null)}${otherWork(other)}`;
@@ -637,7 +637,7 @@ window.createFlowUI = function createFlowUI(api) {
     const steps=lv==='teacher'?stepsOf(c,n):[],step=steps.find(s=>['ready','working','review'].includes(s.status))||steps[0];
     const a=n.ai||{},judged=!a.summary&&korean(a.priorityLabel);
     const aiTags=judged?`${pill(a.priorityLabel,a.priority==='first'?'amber':'')}${a.status==='review_needed'||a.uncertain?pill('사람 확인 필요','amber'):''}${busy(a.status)||['error','stale'].includes(a.status)?pill(AI_STATE[a.status][0],AI_STATE[a.status][1]):''}`:`${AI_STATE[a.status]?pill(AI_STATE[a.status][0],AI_STATE[a.status][1]):''}${korean(a.priorityLabel)?pill(a.priorityLabel,a.priority==='first'?'amber':''):''}`;
-    const tags=`${n.unassigned?pill('관계 모름','amber'):''}${n.status==='inactive'?pill('재직 아님','amber'):''}${step?pill((step.assigneeIds||[]).length?stepState(step):'담당 미지정',(step.assigneeIds||[]).length?'':'amber'):''}${lv==='student'?n.flow?.scope==='record'&&n.flow.state!=='open'?flowPill(n.flow):'':['partial','needs_review'].includes(n.flow?.state)?flowPill(n.flow,'원생 '):''}${aiTags}`;
+    const tags=`${n.unassigned?pill('배정 미상','amber'):''}${n.status==='inactive'?pill('재직 아님','amber'):''}${step?pill((step.assigneeIds||[]).length?stepState(step):'담당 미지정',(step.assigneeIds||[]).length?'':'amber'):''}${lv==='student'?n.flow?.scope==='record'&&n.flow.state!=='open'?flowPill(n.flow):'':['partial','needs_review'].includes(n.flow?.state)?flowPill(n.flow,'원생 '):''}${aiTags}`;
     const row=`<div class="fl-node-row"><button type="button" class="fl-node-btn" data-fl="${leaf?'pick':'node'}" data-node="${h(n.id)}" aria-expanded="${open}" aria-controls="${dom}"><span class="fl-chev" aria-hidden="true">${icon('chevron')}</span><span class="fl-node-name">${h(label)}${detail?`<small>${h(detail)}</small>`:''}${mineNode(n)?'<small class="fl-mine">내 담당</small>':''}${same>1?'<small>같은 이름 있음</small>':''}</span><span class="fl-node-count">${h(countText(n.counts,lv,q.word))}</span></button>${tags?`<span class="fl-node-tags">${tags}</span>`:''}</div>`;
     if(leaf)return `<li class="fl-node" data-level="${h(lv||'')}">${row}<div class="fl-pane" id="${dom}" ${open?'':'hidden'}>${open?paneHtml(c,e,n):''}</div></li>`;
     const facts=factsText(n.facts),note=`${byStateLine(n)}${n.ai&&n.ai.status!=='not_started'||facts?aiBlock(n.ai,{facts,e,self:n.id}):''}`;
@@ -660,11 +660,11 @@ window.createFlowUI = function createFlowUI(api) {
   }
   function treeHtml(c,e){
     const d=e.data,k=d.counts||d.root.counts||{},cov=d.coverage||{},b=d.basis||{},r=role(),word=recordWord(d);
-    const cells=[['원생',num(k.students),'명'],['반',num(k.classes),'개'],['선생님',num(k.teachers),'명'],[word,num(k.records),'건'],...(num(k.unmappedRecords)?[['관계 모름 기록',num(k.unmappedRecords),'건']]:[])].filter(x=>x[1]!==null);
+    const cells=[['원생',num(k.students),'명'],['반',num(k.classes),'개'],['선생님',num(k.teachers),'명'],[word,num(k.records),'건'],...(num(k.unmappedRecords)?[['배정 미상 기록',num(k.unmappedRecords),'건']]:[])].filter(x=>x[1]!==null);
     const teacherSum=kidsOf(d.root).reduce((s,t)=>s+(num(t.counts?.students)||0),0);
     const unknown=cov.unknown||{},cohort=cov.cohortCheck;
     const total=num(cov.totalRecords),returned=num(cov.returnedRecords),short=total!==null&&returned!==null&&returned<total;
-    const warn=[...(Array.isArray(d.warnings)?d.warnings:[]).map(w=>typeof w==='string'?w:w?.message).filter(korean),cov.complete===false?short?`${word} ${fmt(total)}건 중 ${fmt(returned)}건만 나왔습니다. 빠진 기록이 있으니 아래 숫자를 전부로 보지 마세요.`:cohort&&cohort.ok===false?'':'이 정리는 완전하지 않습니다. 아래 숫자를 전부로 보지 마세요.':'',num(unknown.teacherRecords)||num(unknown.classRecords)?`담임을 모르는 기록 ${fmt(num(unknown.teacherRecords)||0)}건 · 반을 모르는 기록 ${fmt(num(unknown.classRecords)||0)}건은 '관계 모름' 묶음에 있습니다.`:'',cohort&&cohort.ok===false?`대상 확인이 맞지 않아 이 정리를 완전한 것으로 보지 마세요${['belowThreshold','outsideWindow','notEnrolled'].some(x=>num(cohort[x]))?`: ${[['belowThreshold','기준 미달 원생','명'],['outsideWindow','기간 밖 기록','건'],['notEnrolled','재원 아닌 원생','명']].filter(([x])=>num(cohort[x])).map(([x,l,u])=>`${l} ${fmt(num(cohort[x]))}${u}`).join(' · ')}`:''}.`:'',...(cov.complete===false&&Array.isArray(cov.notes)?cov.notes:[]).filter(korean)].filter((x,i,all)=>x&&all.indexOf(x)===i);
+    const warn=[...(Array.isArray(d.warnings)?d.warnings:[]).map(w=>typeof w==='string'?w:w?.message).filter(korean),cov.complete===false?short?`${word} ${fmt(total)}건 중 ${fmt(returned)}건만 나왔습니다. 빠진 기록이 있으니 아래 숫자를 전부로 보지 마세요.`:cohort&&cohort.ok===false?'':'이 정리는 완전하지 않습니다. 아래 숫자를 전부로 보지 마세요.':'',num(unknown.teacherRecords)||num(unknown.classRecords)?`담임이 미상인 기록 ${fmt(num(unknown.teacherRecords)||0)}건 · 반이 미상인 기록 ${fmt(num(unknown.classRecords)||0)}건은 '배정 미상' 묶음에 있습니다.`:'',cohort&&cohort.ok===false?`대상 확인이 맞지 않아 이 정리를 완전한 것으로 보지 마세요${['belowThreshold','outsideWindow','notEnrolled'].some(x=>num(cohort[x]))?`: ${[['belowThreshold','기준 미달 원생','명'],['outsideWindow','기간 밖 기록','건'],['notEnrolled','재원 아닌 원생','명']].filter(([x])=>num(cohort[x])).map(([x,l,u])=>`${l} ${fmt(num(cohort[x]))}${u}`).join(' · ')}`:''}.`:'',...(cov.complete===false&&Array.isArray(cov.notes)?cov.notes:[]).filter(korean)].filter((x,i,all)=>x&&all.indexOf(x)===i);
     const info=cov.complete===false?[]:(Array.isArray(cov.notes)?cov.notes:[]).filter(korean);
     const summary=r==='owner'?(d.ownerSummary?synth('원장용 정리',d.ownerSummary,e):synth('관리자용 정리',d.managerSummary,e)):r==='manager'?synth('관리자용 정리',d.managerSummary,e):'';
     return `<section class="fl-tree" aria-labelledby="fl-tree-title"><div class="fl-tree-head"><h3 id="fl-tree-title">선생님별 반·원생</h3><p>${korean(b.label)?h(b.label):(d0=>`${Number(d0.slice(5,7))}/${Number(d0.slice(8,10))} 기준`)(String(b.asOf||asOf()))}</p></div>${korean(b.interpretation)?`<p class="fl-tree-note">${h(b.interpretation)}</p>`:''}${cells.length?`<dl class="fl-tree-counts">${cells.map(([t,v,u])=>`<div><dt>${h(t)}</dt><dd>${fmt(v)}<small>${u}</small></dd></div>`).join('')}</dl>`:''}${num(k.students)!==null&&teacherSum>num(k.students)?'<p class="fl-tree-note">여러 반을 다니는 원생은 한 번만 셉니다. 선생님·반마다 나오는 원생 수를 더하면 이보다 많습니다.</p>':''}${info.length?`<details class="fl-tree-more"><summary>집계 기준</summary>${info.map(x=>`<p>${h(x)}</p>`).join('')}</details>`:''}${warn.map(x=>`<p class="fl-tree-warn" role="note">${h(x)}</p>`).join('')}${e.stale?`<p class="fl-tree-warn" role="status">정리를 새로 불러오지 못해 ${h(when(e.at))}에 받은 내용을 보여 줍니다. ${btn('다시 불러오기','tree-reload',`data-id="${h(c.id)}"`)}</p>`:''}${summary}${progressLine(d.analysis)}<div class="fl-tree-find"><label for="fl-tree-q">찾기</label><input id="fl-tree-q" type="search" data-fl-tree-q="${h(c.id)}" value="${h(e.query)}" placeholder="선생님·반·원생 이름" autocomplete="off" spellcheck="false"><span class="fl-tree-hits" aria-live="polite">${h(hitsText(e))}</span></div><div class="fl-tree-body" data-fl-tree-body>${bodyHtml(c,e)}</div></section>`;
@@ -751,8 +751,8 @@ window.createFlowUI = function createFlowUI(api) {
     if(kind==='review')dialog('modal','검토',c.title,`<div class="fl-review-evidence">${(c.evidence||[]).slice(-2).map(e=>`<p><strong>${h(nameOf(e.actorId))}</strong> · ${h(e.note||'')}</p>`).join('')||'<p>보고 내용이 없습니다.</p>'}</div><form class="ws-form" data-fl-form="review" data-id="${h(id)}" data-step="${sk}" novalidate><fieldset class="ws-multi"><legend>결정</legend><label><input type="radio" name="decision" value="accept" required> 승인하고 다음 단계로</label><label><input type="radio" name="decision" value="return"> 보완 요청</label></fieldset><label>메모(보완 요청 시 필수)<textarea name="note" rows="3" maxlength="2000"></textarea></label><p class="ax-form-error" role="alert"></p><div class="ws-form-foot"><span class="ax-note">결정은 사건 기록에 남습니다.</span><button class="button primary" type="submit" data-fl-key="case.review:${h(id)}">결정 보내기</button></div></form>`);
     // A step chosen from the tree (a teacher's own step) wins; otherwise an unassigned step first, as before.
     const open=activeSteps(c),target=(step&&open.find(x=>x.id===step))||open.find(x=>!(x.assigneeIds||[]).length)||s;
-    if(kind==='reassign')dialog('modal',unassigned(c)?'담당 지정':'담당 바꾸기',[c.title,sumOf(c)].filter(Boolean).join(' — '),`<form class="ws-form" data-fl-form="reassign" data-id="${h(id)}" novalidate>${open.length>1?`${picker(()=>({id:'fl-reassign-step',name:'step',label:'바꿀 단계',clearable:false,selected:target?[target.id]:[],...window.ContextPicker.lists.choices({noun:'단계',columns:[{key:'name',label:'단계'},{key:'who',label:'지금 담당'}],items:open.map(x=>({value:x.id,title:x.label,cells:{who:whoOf(x)}}))})}),`<label>바꿀 단계<select name="step">${open.map(x=>`<option value="${h(x.id)}" ${x===target?'selected':''}>${h(x.label)} · ${h(whoOf(x))}</option>`).join('')}</select></label>`)}`:`<p>지금 담당: ${h(target?whoOf(target):'없음')}</p><input type="hidden" name="step" value="${h(target?.id||'')}">`}${pickerHtml(target?.queue?[]:target?.assigneeIds||[])}<p class="ax-form-error" role="alert"></p><div class="ws-form-foot"><span class="ax-note">바꾼 기록이 사건 기록에 남습니다.</span><button class="button primary" type="submit" data-fl-key="case.reassign:${h(id)}">담당 저장</button></div></form>`);
-    if(kind==='reopen')dialog('modal','다시 열기',c.title,`<form class="ws-form" data-fl-form="reopen" data-id="${h(id)}" novalidate><label>다시 여는 이유 <em aria-hidden="true">*</em><textarea name="note" rows="3" maxlength="2000" required></textarea></label><p class="ax-form-error" role="alert"></p><div class="ws-form-foot"><span class="ax-note">마지막 단계 담당자의 업무로 돌아갑니다.</span><button class="button primary" type="submit" data-fl-key="case.reopen:${h(id)}">다시 열기</button></div></form>`);
+    if(kind==='reassign')dialog('modal',unassigned(c)?'담당 지정':'담당자 변경',[c.title,sumOf(c)].filter(Boolean).join(' — '),`<form class="ws-form" data-fl-form="reassign" data-id="${h(id)}" novalidate>${open.length>1?`${picker(()=>({id:'fl-reassign-step',name:'step',label:'변경할 단계',clearable:false,selected:target?[target.id]:[],...window.ContextPicker.lists.choices({noun:'단계',columns:[{key:'name',label:'단계'},{key:'who',label:'현재 담당자'}],items:open.map(x=>({value:x.id,title:x.label,cells:{who:whoOf(x)}}))})}),`<label>변경할 단계<select name="step">${open.map(x=>`<option value="${h(x.id)}" ${x===target?'selected':''}>${h(x.label)} · ${h(whoOf(x))}</option>`).join('')}</select></label>`)}`:`<p>현재 담당자: ${h(target?whoOf(target):'없음')}</p><input type="hidden" name="step" value="${h(target?.id||'')}">`}${pickerHtml(target?.queue?[]:target?.assigneeIds||[])}<p class="ax-form-error" role="alert"></p><div class="ws-form-foot"><span class="ax-note">변경 내역은 업무 이력에 기록됩니다.</span><button class="button primary" type="submit" data-fl-key="case.reassign:${h(id)}">담당 저장</button></div></form>`);
+    if(kind==='reopen')dialog('modal','다시 열기',c.title,`<form class="ws-form" data-fl-form="reopen" data-id="${h(id)}" novalidate><label>다시 여는 이유 <em aria-hidden="true">*</em><textarea name="note" rows="3" maxlength="2000" required></textarea></label><p class="ax-form-error" role="alert"></p><div class="ws-form-foot"><span class="ax-note">최종 단계 담당자의 업무로 돌아갑니다.</span><button class="button primary" type="submit" data-fl-key="case.reopen:${h(id)}">다시 열기</button></div></form>`);
     $('#modal form :is(textarea,select,input:not([type=hidden]))')?.focus();
   }
 
@@ -889,10 +889,10 @@ window.createFlowUI = function createFlowUI(api) {
   }
 
   /* ---------- 선택한 업무 한꺼번에(원장 10-28 "토글로 전체 선택같은거 해서 한번에 담당바꾸기 처리도 가능하게") ---------- */
-  // 제목 줄 가운데 막대: 선택한 수 · (이 조건의 일을 다 선택) · 담당 바꾸기 · 선택 해제. 체크를 바꿀 때는 표를 다시 그리지 않고 막대와 머리 칸만 맞춘다.
+  // 제목 줄 가운데 막대: 선택한 수 · (이 조건의 일을 다 선택) · 담당자 변경 · 선택 해제. 체크를 바꿀 때는 표를 다시 그리지 않고 막대와 머리 칸만 맞춘다.
   function bulkHtml(){
     const n=store.sel.size,pickable=board.items.filter(canPick).length;
-    return `<strong>${fmt(n)}건 선택</strong>${pickable>n?`<button type="button" class="ax-text-link" data-fl="bulk-all">이 조건의 업무 ${fmt(pickable)}건 모두 선택</button>`:''}<button type="button" class="button primary" data-fl="bulk-reassign">담당 바꾸기</button><button type="button" class="button" data-fl="bulk-clear">선택 해제</button>`;
+    return `<strong>${fmt(n)}건 선택</strong>${pickable>n?`<button type="button" class="ax-text-link" data-fl="bulk-all">이 조건의 업무 ${fmt(pickable)}건 모두 선택</button>`:''}<button type="button" class="button primary" data-fl="bulk-reassign">담당자 일괄 변경</button><button type="button" class="button" data-fl="bulk-clear">선택 해제</button>`;
   }
   function syncBulk(){
     const bar=document.getElementById('fl-bulk');if(bar){bar.hidden=!store.sel.size;bar.innerHTML=bulkHtml();}
@@ -905,10 +905,10 @@ window.createFlowUI = function createFlowUI(api) {
     if(t.matches?.('[data-fl-pick]')){if(t.checked)store.sel.add(t.dataset.flPick);else store.sel.delete(t.dataset.flPick);syncBulk();return;}
     if(t.matches?.('[data-fl-pick-page]')){document.querySelectorAll('#fl-board-list [data-fl-pick]').forEach(b=>{b.checked=t.checked;if(t.checked)store.sel.add(b.dataset.flPick);else store.sel.delete(b.dataset.flPick);});syncBulk();}
   });
-  // 한꺼번에 담당 바꾸기 — 업무마다 담당이 빈 단계(없으면 지금 단계)를 선택한 사람에게. 한 건씩 차례로 보내고(서버가 건마다 검사) 끝에 한 번 그린다.
+  // 담당자 일괄 변경 — 업무마다 담당이 빈 단계(없으면 지금 단계)를 선택한 사람에게. 한 건씩 차례로 보내고(서버가 건마다 검사) 끝에 한 번 그린다.
   function openBulkReassign(){
-    const list=[...store.sel].map(caseById).filter(c=>c&&canPick(c));if(!list.length){toast('담당을 바꿀 업무를 선택해 주세요.');return;}
-    dialog('modal','담당 한꺼번에 바꾸기',`${fmt(list.length)}건 · ${kindGroups(list).map(k=>`${k.label} ${fmt(k.items.length)}`).join(' · ')}`,`<form class="ws-form" data-fl-form="bulk-reassign" novalidate>${pickerHtml([])}<p class="ax-form-error" role="alert"></p><div class="ws-form-foot"><span class="ax-note">바꾼 기록이 업무마다 사건 기록에 남습니다.</span><button class="button primary" type="submit">담당 저장</button></div></form>`);
+    const list=[...store.sel].map(caseById).filter(c=>c&&canPick(c));if(!list.length){toast('담당자를 변경할 업무를 선택해 주세요.');return;}
+    dialog('modal','담당자 일괄 변경',`${fmt(list.length)}건 · ${kindGroups(list).map(k=>`${k.label} ${fmt(k.items.length)}`).join(' · ')}`,`<form class="ws-form" data-fl-form="bulk-reassign" novalidate>${pickerHtml([])}<p class="ax-form-error" role="alert"></p><div class="ws-form-foot"><span class="ax-note">변경 내역은 각 업무 이력에 기록됩니다.</span><button class="button primary" type="submit">담당 저장</button></div></form>`);
     $('#modal form :is(input:not([type=hidden]),button.cpick-trigger)')?.focus();
   }
   const bulkTarget=c=>{const open=activeSteps(c);return open.find(x=>!(x.assigneeIds||[]).length)||myStep(c)||open[0]||null;};

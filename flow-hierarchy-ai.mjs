@@ -109,7 +109,7 @@ export const ACADEMY_SCHEMA = Object.freeze({ type: 'object', additionalProperti
  * name and failed the no-number check for the two largest teachers. Counts stay as values for ordering only.
  */
 export const sharedInput = () => ({ 기준: '이번 달 첫날부터 기준일까지 결석 기록이 세 번 이상인 재원생', 설명: '수업별 결석 기록 건수입니다. 결석 사유는 기록에 없습니다.' });
-const recency = days => (days == null ? '모름' : days <= 6 ? '최근 일주일 안' : days <= 13 ? '지난주' : '두 주 넘음');
+const recency = days => (days == null ? '미상' : days <= 6 ? '최근 일주일 안' : days <= 13 ? '지난주' : '두 주 넘음');
 
 /** One teacher's compact pseudonymous input + the ids it may cite. leafOf(studentId) → leaf result | null. */
 export function teacherInput(tn, { alias, leafOf }) {

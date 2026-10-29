@@ -195,7 +195,7 @@ export function buildHierarchy(source, state, caseId) {
   const truncated = { entityRefs: c.entityRefs.filter(r => r.type === adapter.recordType).length, stepRefs: c.steps.reduce((n, s) => n + (s.refs || []).length, 0) };
   if (truncated.stepRefs < rows.length) notes.push(`단계 목록에는 근거가 ${truncated.stepRefs}건만 보이지만, 이 정리는 근거 ${rows.length}건 전부를 반의 담임 기준으로 묶었습니다.`);
   if (unmapped) notes.push(`신호 근거 ${unmapped}건은 원생 기록으로 이어지지 않아 이 화면에서 빠졌습니다.`);
-  if (unknown.teacherRecords || unknown.classRecords) notes.push(`반 또는 담임을 알 수 없는 기록 ${Math.max(unknown.teacherRecords, unknown.classRecords)}건은 '관계 모름' 묶음에 따로 둡니다.`);
+  if (unknown.teacherRecords || unknown.classRecords) notes.push(`반 또는 담임이 미상인 기록 ${Math.max(unknown.teacherRecords, unknown.classRecords)}건은 '배정 미상' 묶음에 따로 둡니다.`);
   if (root.facts.managerQueueRecords) notes.push(`재직 중이 아닌 담임의 기록 ${root.facts.managerQueueRecords}건은 원본 업무에서 관리자 대기열 단계에 있습니다.`);
   const warnings = [];
   if (cohortCheck.ok === false) warnings.push({ code: 'cohort_mismatch', message: `신호 기준과 맞지 않는 근거가 있습니다: 3회 미만 원생 ${cohortCheck.belowThreshold}명 · 기간 밖 기록 ${cohortCheck.outsideWindow}건 · 재원 아닌 원생 ${cohortCheck.notEnrolled ?? 0}명.` });

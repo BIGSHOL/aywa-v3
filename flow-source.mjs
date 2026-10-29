@@ -14,7 +14,7 @@ export const TYPE_OF_TABLE = { students: 'student', users: 'staff', classes: 'cl
 // A signal missing here falls back to a single-table recordSource; anything else is a wiring gap (signalWiring).
 export const SIGNAL_RECORD_TABLE = Object.freeze({ 'onescreen-notice-failed': 'classnote_notices', 'video-upload-failed': 'student_homework_videos', 'attendance-repeat-absence': 'attendance_records', 'makeup-overdue': 'makeup_reservations', 'report-send-failed': 'lesson_reports', 'satisfaction-pending': 'teacher_satisfaction_judgments', 'inventory-loan-overdue': 'inventory_assets', 'approval-pending': 'approval_documents', 'billing-remaining': 'invoices', 'textbook-waiting': 'textbook_orders', 'consultation-followup-overdue': 'student_consultations', 'enrollment-followup': 'enrollment_consultations', 'withdrawal-report-pending': 'withdrawal_reports', 'makeedu-sync-problem': 'makeedu_sync_runs', 'sheet-sync-error': 'user_integrations' });
 const recordTable = (f, s) => SIGNAL_RECORD_TABLE[s.id] || ((f.recordSource || '').includes(',') ? null : f.recordSource || null);
-export const WIRING_LABEL = { ok: '연결됨', partial: '일부만 연결', unlinked: '연결 0건(배선 누락)', unwired: '기록 종류 모름(배선 누락)', no_record_ids: '근거 기록 번호 없음(배선 누락)' };
+export const WIRING_LABEL = { ok: '연결됨', partial: '일부만 연결', unlinked: '연결 0건(배선 누락)', unwired: '기록 종류 미상(배선 누락)', no_record_ids: '근거 기록 번호 없음(배선 누락)' };
 /** Per signal: how many of its records became case refs. Anything but 'ok' is shown, never silently dropped. */
 export function signalWiring(signals) {
   return signals.map(({ familyId, signal: s, table, refs }) => {
