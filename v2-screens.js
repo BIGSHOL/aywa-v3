@@ -35,7 +35,7 @@ window.V2Screens = (() => {
         const raw = row.cells?.[column.key], value = raw && typeof raw === 'object' ? raw.text : raw;
         const tone = raw && typeof raw === 'object' && ['low', 'high', 'muted'].includes(raw.tone) ? ` data-tone="${raw.tone}"` : '';
         const content = i === 0 && href ? `<a href="${href}">${esc(value ?? '—')}<span class="v2o-enter">들어가기 ›</span></a>` : esc(value ?? '—');
-        return `<${i === 0 ? 'th scope="row"' : 'td'}${tone}>${content}</${i === 0 ? 'th' : 'td'}>`;
+        return `<${i === 0 ? 'th scope="row"' : 'td'} data-col="${esc(column.key)}"${tone}>${content}</${i === 0 ? 'th' : 'td'}>`;
       }).join('');
       const action = hasAction ? `<td>${row.action ? `<button type="button" class="button" data-v2-overview-action="${esc(row.action.kind)}" data-key="${esc(row.action.key ?? '')}" ${row.action.disabled ? 'disabled' : ''}>${esc(row.action.label)}</button>` : ''}</td>` : '';
       return `${group}<tr>${cells}${action}</tr>`;

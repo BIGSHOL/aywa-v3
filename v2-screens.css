@@ -31,5 +31,6 @@
 .v2o td[data-tone=low]{color:#a12b35;font-weight:700}
 .v2o td[data-tone=high]{color:#17684b;font-weight:700}
 .v2o td[data-tone=muted]{color:var(--muted,#5f6b7a)}
+.v2o td[data-col=rate]{font-size:1.18rem;font-weight:750}
 .v2o tbody a{color:inherit;text-decoration:underline;text-underline-offset:2px}
 .v2o-enter{margin-left:8px;font-size:.75rem;color:var(--muted,#5f6b7a);text-decoration:none}

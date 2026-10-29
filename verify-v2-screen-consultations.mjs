@@ -27,7 +27,7 @@ const SUNGWOO = '2be70c2e-3f72-4046-bbc8-7edea5841505'; // 담당 과목 하나(
 const SOHEE = '7ac89726-d36f-46e4-8174-6bbddbd7f378', VIEWER = '268b797c-d00a-4475-8f6d-68894e47ccac';
 
 const db = await openFullDatabase();
-const load = params => db.begin('isolation level repeatable read read only', sql => screen.load({ sql, params, tenantId, importV2 }));
+const load = params => db.begin('isolation level repeatable read read only', sql => screen.load({ sql, params: { v2path: '/consultations', ...params }, tenantId, importV2 }));
 const ROLL = new Error('rollback');
 const tx = async fn => {
   let out;
@@ -148,7 +148,7 @@ try {
     const out = await tx(async sql => {
       await run(sql, 'createStudentConsultation', SEOLHYUN, { studentId: HAKWONI, summary: '시험 상담 기록입니다', consultedAt: '2026-10-21T15:00', followUpAction: '통화', followUpDate: '2026-10-22' });
       const [c] = await sql`select id::text id from public.student_consultations where tenant_id=${tenantId} and student_id=${HAKWONI} and summary='시험 상담 기록입니다' order by created_at desc limit 1`;
-      const overdue = (await screen.load({ sql, params: { urg: 'overdue', q: '학원이' }, tenantId, importV2 })).items.map(i => i.id);
+      const overdue = (await screen.load({ sql, params: { v2path: '/consultations', urg: 'overdue', q: '학원이' }, tenantId, importV2 })).items.map(i => i.id);
       await sql`set local role none`; await sql`select set_config('request.jwt.claims', '', true)`;
       const foreign = await run(sql, 'toggleConsultationFollowUp', SOHEE, { id: c.id, done: 'true' });
       const toggled = await run(sql, 'toggleConsultationFollowUp', SEOLHYUN, { id: c.id, done: 'true' });

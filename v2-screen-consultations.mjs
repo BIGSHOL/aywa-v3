@@ -15,6 +15,8 @@ import {
   studentOptions, teacherIdOf, teacherOptions,
 } from './v2-consultations-read.mjs';
 import { consultationActions } from './v2-consultations-save.mjs';
+import { overviewPrograms } from './v2-overview-program.mjs';
+import { consultationOverview } from './v2-consultations-overview.mjs';
 
 const ID = 'consultations', MENU = 'consultations';
 const UUID_BODY = '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}';
@@ -27,10 +29,10 @@ function filtersOf(R, params, subjects) {
   const one = k => params[k] ?? '';
   const listParams = {
     range: one('range') || 'all', cat: one('cat') || 'all', urg: one('urg') || 'all', who: one('who'), subject: one('subject'), q: one('q'),
-    size: R.pageSize.clampPageSize(one('size') || undefined, R.listHref.CONSULT_DEFAULT_PAGE_SIZE), page: Math.max(1, Number(one('page')) || 1),
+    size: R.pageSize.clampPageSize(one('size') || undefined, R.listHref.CONSULT_DEFAULT_PAGE_SIZE), page: Math.max(1, Number(one('page')) || 1), studentId: one('studentId'),
   };
   const filters = { q: listParams.q, range: listParams.range, cat: listParams.cat, urg: listParams.urg, counselor: listParams.who || undefined,
-    subject: listParams.subject || undefined, subjectLabel: listParams.subject ? subjects.labelOf(listParams.subject) : null };
+    subject: listParams.subject || undefined, subjectLabel: listParams.subject ? subjects.labelOf(listParams.subject) : null, studentId: listParams.studentId || undefined };
   return { listParams, filters };
 }
 
@@ -43,6 +45,7 @@ async function build({ sql, params, tenantId: t, importV2 }) {
   const user = { id: u.id, displayName: u.display_name, systemRole: u.role, tenantId: t };
   const teacherId = teacherIdOf(u);
   const path = params.v2path ?? '/consultations';
+  const overview = !params.v2path;
   const subjects = R.subjects.buildSubjectMaps(settings.operations.subjects);
 
   // 반 칸 선택지(읽기) — 2.0 getConsultationClassOptions 반환 그대로.
@@ -55,11 +58,18 @@ async function build({ sql, params, tenantId: t, importV2 }) {
   // 2.0이 관리 키로 읽는 것 — 신분을 바꾸기 전에.
   const [prefs, history, syncState] = await Promise.all([
     stats ? statsPrefs(sql, R, t, u.id) : null,
-    stats ? homeroomHistory(sql, R, t) : null,
-    path === '/consultations' ? makeeduSyncState(sql, R, settings, t, 'consultations') : null,
+    stats || overview ? homeroomHistory(sql, R, t) : null,
+    path === '/consultations' && !overview ? makeeduSyncState(sql, R, settings, t, 'consultations') : null,
   ]);
   await actAsReader(sql, u); // 여기부터 2.0 세션 클라이언트와 같은 RLS
   const shared = { ...base, user, teacherId };
+
+  if (overview) {
+    const programs = await overviewPrograms(importV2, settings, R.modules);
+    const homeroom = await homeroomStats(sql, R, settings, teacherId, history, programs);
+    const model = consultationOverview(homeroom, { program: params.program, teacher: params.teacher, actor: u.id });
+    return { ...shared, page: 'overview', overview: model };
+  }
 
   const detail = DETAIL.exec(path), edit = EDIT.exec(path);
   if (detail) {
@@ -117,12 +127,15 @@ async function build({ sql, params, tenantId: t, importV2 }) {
 const EMPTY_OK = re => new RegExp(`^(?:${re.source.replace(/^\^|\$$/g, '')})?$`, re.flags);
 export const screen = {
   id: ID, label: '원생상담', order: 43,
+  overview: { purpose: '담임별 월간 상담 이행과 지도 대상을 판단합니다.', layers: [{ key: 'program', label: '프로그램' }, { key: 'teacher', label: '담임' }, { key: 'student', label: '원생 상담 목록' }],
+    columns: [{ key: 'name', label: '강사' }, { key: 'target', label: '상담 대상 원생' }, { key: 'rate', label: '이행률' }], listFilters: ['program', 'teacher', 'studentId'] },
   params: {
     actor: UUID,
     v2path: new RegExp(`^/consultations(?:/new|/stats|/${UUID_BODY}(?:/edit)?)?$`, 'i'),
     range: EMPTY_OK(/^(?:all|7d|30d)$/), cat: EMPTY_OK(/^[a-z_]{1,20}$/), urg: EMPTY_OK(/^[a-z]{1,10}$/), who: /^[\w-]{0,40}$/, subject: /^[\w-]{0,40}$/,
     q: /^[^\u0000-\u001f]{0,100}$/, page: /^\d{0,5}$/, size: /^\d{0,4}$/,
     studentId: EMPTY_OK(UUID), form: /^[\w-]{0,64}$/, recordStudent: EMPTY_OK(UUID),
+    program: /^(?:eie|injaewon|math)$/, teacher: UUID,
     op: /^classOptions$/, cStudent: /^[\w-]{0,40}$/, cAt: /^[\dT:.-]{0,30}$/, cCounselor: /^[\w-]{0,40}$/, cSubject: /^[^\u0000-\u001f]{0,60}$/,
   },
   actions: consultationActions,

@@ -10,7 +10,7 @@
   const ID = 'consultations', LABEL = '원생상담', HOST = `/v2-host/${ID}.html`, S = window.V2Screens; if (!S) return;
   // 2.0 page.tsx가 읽는 주소 열쇠 그대로(목록·통계 필터 · 새 상담의 학생) + v2path(2.0 하위 경로 — 상세 · 수정 · 작성 · 통계).
   const KEEP = ['v2path', 'range', 'cat', 'urg', 'who', 'subject', 'q', 'page', 'size', 'studentId', 'form', 'recordStudent'];
-  let api = null, frame = null, requested = null, hostOk = null, wired = false, editors = [], actor = null, urlActor = null;
+  let api = null, frame = null, requested = null, hostOk = null, wired = false, editors = [], actor = null, urlActor = null, lastOverview = null;
   const ACTOR_KEY = `v2-host-actor:${ID}`, SEL = `[data-v2-screen="${ID}"]`;
   const esc = s => S.esc(s);
   const queryOf = q => { const o = new URLSearchParams(); for (const k of KEEP) { const v = q.get(k); if (v) o.set(k, v); } return o.toString(); };
@@ -38,7 +38,7 @@
     const raw = String(href || ''), path = raw.split(/[?#]/)[0];
     if (OWN.test(path)) {
       const q = new URLSearchParams(raw.includes('?') ? raw.slice(raw.indexOf('?') + 1).split('#')[0] : '');
-      if (path !== '/consultations') q.set('v2path', path);
+      q.set('v2path', path);
       const query = queryOf(q);
       location.hash = `#v2-${ID}${query ? `?${query}` : ''}`;
       return;
@@ -72,7 +72,9 @@
       if (e.origin !== location.origin || !frame || e.source !== frame.contentWindow) return;
       const d = e.data || {};
       if (d.type === 'v2-host-nav' && d.screen === ID) {
-        const query = queryOf(new URLSearchParams(String(d.query || '')));
+        const hostQuery = new URLSearchParams(String(d.query || ''));
+        if (!hostQuery.has('v2path')) hostQuery.set('v2path', '/consultations');
+        const query = queryOf(hostQuery);
         requested = query;
         const page = `#v2-${ID}${query ? `?${query}` : ''}`;
         if (location.hash !== page) location.replace(page);
@@ -91,6 +93,23 @@
       actor = t.value;
       try { localStorage.setItem(ACTOR_KEY, t.value); } catch { /* 이 창에서만 기억 */ }
       tellHost();
+      api?.render?.();
+    });
+    document.addEventListener('click', e => {
+      const button = e.target.closest?.(`${SEL} [data-v2-overview-action]`);
+      if (!button || !lastOverview) return;
+      const row = lastOverview.rows.find(r => r.action?.key === button.dataset.key);
+      if (!row) return;
+      const factIds = [lastOverview.period, row.program, row.teacherId];
+      const linked = api?.cardRequestFor?.('consultations-homeroom', factIds);
+      if (linked) { api?.openFlowCase?.(linked.id); return; }
+      const names = row.missingNames || [], records = names.map((label, i) => ({ id: row.missingIds[i], label }));
+      api?.showCardRequest?.({ title: `${lastOverview.period} ${row.cells.name} 담임 상담 지도 요청`.slice(0, 80),
+        body: [`${lastOverview.period} ${row.group} · ${row.cells.name} 담임 상담 이행을 확인해 주세요.`,
+          `대상 ${row.cells.target}명 · 본인 상담 ${row.cells.self}명 · 다른 사람 상담 ${row.cells.other}명 · 미완료 ${row.cells.missing}명`,
+          '', '이번 달 본인 상담이 없는 원생', ...names.map(name => `- ${name}`)].join('\n').slice(0, 2000),
+        source: 'direct', draftKey: `consultation-guide:${factIds.join(':')}`, context: { family: 'consultations', familyLabel: '담임 상담 이행 현황',
+          records, card: { metric: 'consultations-homeroom', factIds, refs: (row.missingIds || []).map(id => ({ type: 'student', id })) } } });
     });
     const later = () => requestAnimationFrame(place);
     addEventListener('resize', later); addEventListener('scroll', place, { passive: true }); addEventListener('hashchange', later);
@@ -108,6 +127,22 @@
         urlActor = location.hash; pendingActor = asked; // 같은 주소로 다시 와도(그 사이 사람을 바꿨어도) 다시 이긴다
         applyPendingActor(); // 명단이 아직 없으면 명단이 올 때 판정한다
       }
+      if (!ctx.query.has('v2path')) {
+        const params = { program: ctx.query.get('program'), teacher: ctx.query.get('teacher'), actor: asked || currentActor() };
+        const entry = ctx.load(params);
+        if (entry.data?.editors && !editors.length) editors = entry.data.editors.map(e => ({ id: e.id, name: e.name, role: e.role || '' }));
+        const model = entry.data?.overview;
+        lastOverview = model || null;
+        const shown = model ? { ...model, rows: model.rows.map(row => {
+          if (!row.action) return row;
+          const linked = api?.cardRequestFor?.('consultations-homeroom', [model.period, row.program, row.teacherId]);
+          return linked ? { ...row, action: { ...row.action, label: '업무 열기' } } : row;
+        }) } : null;
+        requestAnimationFrame(place);
+        return `<div class="v2h-note" role="note"><p><b>연습 화면</b> 상담 기록은 이 PC의 연습 자료입니다. 담임 상담 대상·완료 수는 통계 보기와 같습니다.</p><span data-v2h-actor-slot>${actorPicker()}</span><a class="button" href="#v2-consultations?v2path=%2Fconsultations%2Fstats">통계 보기</a></div>`
+          + (shown ? S.renderOverview(shown) : `<p class="v2s-note">${entry.status === 'error' ? esc(entry.error || '담임 현황을 불러오지 못했습니다.') : '담임 현황을 불러오는 중…'}</p>`);
+      }
+      lastOverview = null;
       const query = queryOf(ctx.query);
       if (hostOk === null) fetch(HOST, { method: 'HEAD' }).then(r => r.ok, () => false).then(ok => { if (hostOk === null) { hostOk = ok; api?.render?.(); } });
       else if (hostOk) requestAnimationFrame(() => { ensureFrame(query); place(); });

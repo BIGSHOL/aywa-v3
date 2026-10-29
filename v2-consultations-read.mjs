@@ -196,7 +196,8 @@ export async function consultationsPage(sql, R, settings, f, teacherId, page, si
     const safe = term.replace(/[(),]/g, ' ');
     search = ids.length ? sql`(c.summary ilike ${`%${safe}%`} or c.student_id = any(${ids}::uuid[]))` : sql`c.summary ilike ${`%${safe}%`}`;
   }
-  const where = sql`${filterSql(sql, R, f, teacherId)} and ${search}`;
+  const student = f.studentId ? sql`c.student_id = ${f.studentId}::uuid` : sql`true`;
+  const where = sql`${filterSql(sql, R, f, teacherId)} and ${search} and ${student}`;
   const from = (page - 1) * size;
   const [rows, [{ n }]] = await Promise.all([
     sql`select ${ROW_COLUMNS(sql)} ${ROW_FROM(sql)} where ${where} order by c.consulted_at desc limit ${size} offset ${from}`,
@@ -328,7 +329,7 @@ export async function homeroomHistory(sql, R, t) {
   })).filter(x => !!x.classId && !!x.teacherId && !!x.date);
   return R.asOf.buildHomeroomHistoryIndex(transitions);
 }
-export async function homeroomStats(sql, R, settings, teacherId, history) {
+export async function homeroomStats(sql, R, settings, teacherId, history, programs = null) {
   const M = R.model, today = R.kst.kstToday(), months = M.homeroomMonths(today);
   const sinceIso = `${months[0]}-01T00:00:00+09:00`, prevMonth = M.recentMonths(today, 2)[0], prevFirst = `${prevMonth}-01`;
   const allClasses = await sql`select id::text id, class_name, subject, teacher_id::text teacher_id, is_special, math_learning_track, to_json(closed_at)#>>'{}' closed_at,
@@ -383,21 +384,38 @@ export async function homeroomStats(sql, R, settings, teacherId, history) {
     enrollments: enrollRows.map(e => ({ studentId: e.student_id, classId: e.class_id, startDate: e.start_date, endDate: e.end_date, isTransferred: !!e.is_transferred, live: isLive(e) })),
     students: new Map(students.filter(s => !s.is_test).map(s => [s.id, { name: s.name, withdrawn: s.status === 'withdrawn', withdrawnAt: s.withdrawn_at ? String(s.withdrawn_at).slice(0, 10) : null }])),
   });
-  const teachers = M.buildHomeroomTeachers({
+  const modelInput = {
     today, months,
     classes: rosterClasses.filter(c => active.has(c.teacher_id)).map(c => ({ id: c.id, name: c.class_name, subject: c.subject, teacherId: c.teacher_id })),
     staffNames: new Map([...users, ...counselors].map(u => [u.id, u.display_name?.trim() || '이름 없는 직원'])),
     enrollments: dutyLive.map(e => ({ studentId: e.student_id, classId: e.class_id, startDate: e.start_date })),
     students: enrolled,
     consults: consults.flatMap(c => { const date = R.kst.kstDateOf(c.consulted_at); return date ? [{ studentId: c.student_id, counselorId: c.counselor_id, date }] : []; }),
-  }).map(t => ({ ...t, prev: flow.get(t.id) ?? M.EMPTY_PREV_FLOW }));
+  };
+  const teachers = M.buildHomeroomTeachers(modelInput).map(t => ({ ...t, prev: flow.get(t.id) ?? M.EMPTY_PREV_FLOW }));
   const shown = new Set(teachers.map(t => t.id)), nameOf = new Map(users.map(u => [u.id, u.display_name?.trim() || '이름 없는 직원']));
   for (const [id, prev] of flow) {
     if (shown.has(id) || !active.has(id) || (teacherId && id !== teacherId)) continue;
     if (prev.withdrawn.length === 0) continue;
     teachers.push({ id, name: nameOf.get(id) ?? '이름 없는 직원', subjects: [], classNames: [], students: [], months: months.map(() => ({ target: 0, self: 0, other: 0, none: 0 })), prev });
   }
-  return { today, months, prevMonth, teachers, retired };
+  if (!programs) return { today, months, prevMonth, teachers, retired };
+  const rosterById = new Map(rosterClasses.map(c => [c.id, c]));
+  const classified = new Map(modelInput.classes.map(c => [c.id, programs.of(rosterById.get(c.id))]));
+  const programTeachers = programs.order.map(key => {
+    const classes = modelInput.classes.filter(c => classified.get(c.id) === key);
+    const ids = new Set(classes.map(c => c.id));
+    const grouped = M.buildHomeroomTeachers({ ...modelInput, classes, enrollments: modelInput.enrollments.filter(e => ids.has(e.classId)) });
+    return { key, label: programs.label(key), teachers: grouped.map(t => {
+      const studentIds = new Set(t.students.map(s => s.id));
+      const weekly = [0, 0, 0, 0, 0];
+      for (const c of modelInput.consults) if (c.date.slice(0, 7) === months.at(-1) && c.counselorId === t.id && studentIds.has(c.studentId)) {
+        weekly[Math.min(4, Math.floor((Number(c.date.slice(8, 10)) - 1) / 7))]++;
+      }
+      return { ...t, weekly };
+    }) };
+  });
+  return { today, months, prevMonth, teachers, retired, programTeachers };
 }
 
 /** loadConsultationStatsPrefs — 본인 ui_prefs.consultations(관리 키 · 신분 바꾸기 전). */
