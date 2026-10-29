@@ -285,12 +285,14 @@ window.createFlowUI = function createFlowUI(api) {
   // compact = 표 한 줄용 — 주 동작 하나(처리 화면은 옆 열, 근거와 흐름·후속 보고는 제목을 누르면 열리는 상세 창).
   function actionBar(c,{compact=false,drawer=false}={}){
     const id=h(c.id),s=myStep(c),sk=s?h(s.id):'';
+    const attendance=c.taskKind==='attendance_absent_desk'&&s&&!isReview(s)&&['ready','working'].includes(s.status);
     if(c.state==='done')return `<div class="ax-actions">${lead()&&c.closure!=='fact'?btn('다시 열기','reopen-open',`data-id="${id}"`):''}${compact||drawer?'':btn('근거와 흐름','open',`data-id="${id}"`)}</div>`;
     if(compact){
-      const first=s&&!isReview(s)&&s.status==='ready'?btn('확인','ack',`data-id="${id}" data-step="${sk}" data-fl-key="case.ack:${id}"`,true):s&&isReview(s)&&lead()?btn('검토','review-open',`data-id="${id}" data-step="${sk}"`,true):lead()&&activeSteps(c).length?btn(unassigned(c)?'담당 지정':'담당자 변경','reassign-open',`data-id="${id}"`):'';
+      const first=attendance?btn('연락 결과 기록','attendance-open',`data-id="${id}" data-step="${sk}"`,true):s&&!isReview(s)&&s.status==='ready'?btn('확인','ack',`data-id="${id}" data-step="${sk}" data-fl-key="case.ack:${id}"`,true):s&&isReview(s)&&lead()?btn('검토','review-open',`data-id="${id}" data-step="${sk}"`,true):lead()&&activeSteps(c).length?btn(unassigned(c)?'담당 지정':'담당자 변경','reassign-open',`data-id="${id}"`):'';
       return `<div class="ax-actions">${first||'<span class="fl-dim">—</span>'}</div>`;
     }
     const out=[];
+    if(attendance)out.push(btn('연락 결과 기록','attendance-open',`data-id="${id}" data-step="${sk}"`,true));
     if(s&&!isReview(s)&&s.status==='ready')out.push(btn('확인','ack',`data-id="${id}" data-step="${sk}" data-fl-key="case.ack:${id}"`,true));
     if(s&&!isReview(s))out.push(btn(c.closure==='fact'?'후속 보고 작성':'보고 작성','report-open',`data-id="${id}" data-step="${sk}"`,s.status==='working'));
     if(s&&isReview(s)&&lead())out.push(btn('검토','review-open',`data-id="${id}" data-step="${sk}"`,true));
@@ -769,6 +771,20 @@ window.createFlowUI = function createFlowUI(api) {
     const billing=c.signalId==='billing-remaining';
     return (c.entityRefs||[]).length?`<fieldset class="ws-multi"><legend>${billing?'처리한 청구 선택':'근거로 연결할 기록'}</legend>${c.entityRefs.map((r,i)=>`<label><input type="checkbox" name="ref" value="${i}" ${billing?'':'checked'}> ${h(refLabel(r))}</label>`).join('')}${billing?'<p class="ax-note">선택한 청구에만 처리 보고가 남습니다.</p>':''}</fieldset>`:'';
   }
+  async function openAttendanceForm(id,stepId){
+    const c=caseById(id),s=c&&myStep(c);
+    if(!c||c.taskKind!=='attendance_absent_desk'||!s||s.id!==stepId)return;
+    let response,body;
+    try{response=await fetch(`/api/flow/card-attendance/records?caseId=${encodeURIComponent(id)}`,{headers:{Accept:'application/json'}});body=await response.json();}
+    catch{toast('결석 기록을 불러오지 못했습니다. 다시 시도해 주세요.');return;}
+    if(!response.ok){toast(message(body,response.status));return;}
+    const records=Array.isArray(body.records)?body.records:[];
+    if(!records.length){toast('처리할 결석 기록이 없습니다. 업무를 새로 불러와 주세요.');return;}
+    const choices=records.map((r,i)=>`<label><input type="radio" name="recordRef" value="${h(r.recordRef)}" ${i===0?'checked':''} required> ${h([r.date,r.slotStart||'하루 전체',r.className].join(' · '))}</label>`).join('');
+    const radio=(name,items,selected)=>`<fieldset class="ws-multi"><legend>${h(name==='state'?'처리 상태':name==='outcome'?'연락 결과':'연락 방법')}</legend>${items.map(([value,label])=>`<label><input type="radio" name="${name}" value="${h(value)}" ${value===selected?'checked':''}> ${h(label)}</label>`).join('')}</fieldset>`;
+    dialog('modal','결석 연락 결과 기록',c.title,`<form class="ws-form" data-fl-form="attendance-card" data-id="${h(id)}" data-step="${h(stepId)}" novalidate><fieldset class="ws-multi"><legend>결석 기록 선택</legend>${choices}</fieldset><p class="ax-note">같은 날 다른 반 기록이 있으면 처리할 반과 교시를 확인해 주세요.</p>${radio('state',[['resolved','처리함'],['dismissed','확인 불필요']],'resolved')}${radio('outcome',[['','선택 안 함'],['coming','곧 옴'],['absent_today','오늘 안 옴'],['sick','아파서'],['already_here','이미 옴'],['no_answer','연락 안 됨'],['other','기타']],'')}${radio('contactedVia',[['','선택 안 함'],['phone','전화'],['kakao','카카오톡'],['in_person','직접 확인'],['other','기타']],'phone')}<label>메모<textarea name="note" rows="3" maxlength="2000"></textarea></label><p class="ax-note">연습 복사본에만 기록합니다. 저장 뒤 원본 업무 상태를 다시 확인합니다.</p><p class="ax-form-error" role="alert"></p><div class="ws-form-foot"><span class="ax-note">원본 반영 확인 중에는 완료로 표시하지 않습니다.</span><button class="button primary" type="submit">연락 결과 저장</button></div></form>`);
+    $('#modal input[name="recordRef"]')?.focus({preventScroll:true});
+  }
   function openForm(kind,id,step='',node=''){
     const c=caseById(id);if(!c)return;const s=(step&&(c.steps||[]).find(x=>x.id===step))||myStep(c)||stepOf(c),sk=s?h(s.id):'';
     if(kind==='report')dialog('modal',c.closure==='fact'&&!c.factSignal?'후속 보고 작성':'보고 작성',c.title,`<form class="ws-form" data-fl-form="report" data-id="${h(id)}" data-step="${sk}" novalidate>${c.factSignal?`<p class="ax-note">${h(c.doneRule||'완료·해당 없음으로 보고하면 이 단계의 기록이 처리된 것으로 남고, 모든 단계가 처리되면 이 업무가 닫힙니다.')}</p>`:c.closure==='fact'?`<p class="ax-note">${signalCase(c)?'이 업무는 원본 기록이 바뀌어야 닫힙니다. 이 보고는 따로 남는 후속 기록이 되고, 이 업무는 끝나지 않은 채로 남습니다.':'원본 업무는 원본 기록이 처리되어야 닫힙니다. 이 보고는 따로 남는 후속 기록이 되고, 원본 업무는 끝나지 않은 채로 남습니다.'}</p>`:''}${reportScope(c,s,node)}${picker(()=>({id:'fl-report-outcome',name:'outcome',label:'결과',clearable:false,selected:['done'],...window.ContextPicker.lists.choices({columns:[{key:'name',label:'결과'},{key:'note',label:'뜻',w:'minmax(0,1.6fr)'}],items:Object.entries(OUTCOME).map(([k,v])=>({value:k,title:v,cells:{note:OUTCOME_NOTE[k]||''}}))})}),`<label>결과<select name="outcome">${Object.entries(OUTCOME).map(([k,v])=>`<option value="${k}">${h(v)}</option>`).join('')}</select></label>`)}<label><span>보고 내용 <em aria-hidden="true">*</em></span><textarea name="note" rows="4" maxlength="2000" required></textarea></label>${api.attachField?.(`fl-report-${c.id}`.replace(/[^\w-]/g,'_'),c.familyId)||''}<p class="ax-form-error" role="alert"></p><div class="ws-form-foot"><span class="ax-note">보고는 이 업무의 근거로 남습니다.</span><button class="button primary" type="submit" data-fl-key="case.report:${h(id)}">보고 보내기</button></div></form>`);
@@ -1186,6 +1202,7 @@ window.createFlowUI = function createFlowUI(api) {
     if(action==='tree-go'){treeGo(el.dataset.node);return;}
     if(action==='tree-reload'){const e=treeEntry(id);e.retry=0;if(!e.data)e.status='loading';paintTree(id);fetchTree(id);return;}
     if(action==='open'){showCase(id);return;}
+    if(action==='attendance-open'){openAttendanceForm(id,el.dataset.step||'');return;}
     const stepId=el.dataset.step?{stepId:el.dataset.step}:{};
     if(action==='ack'){command('case.ack',{caseId:id,payload:stepId}).then(r=>{if(r)undoToast('확인했습니다. 진행 중으로 바뀌었습니다.',()=>command('case.unack',{caseId:id,payload:stepId}).then(x=>{if(x)toast('확인을 되돌렸습니다.');}));});return;}
     if(['report-open','review-open','reassign-open','reopen-open'].includes(action)){openForm(action.replace('-open',''),id,el.dataset.step||'',action==='report-open'?el.dataset.node||'':'');return;}
@@ -1198,6 +1215,35 @@ window.createFlowUI = function createFlowUI(api) {
   },true);
   // After a command the open drawer of the same case refreshes in place (scroll, branches and focus kept).
   function reopenCase(id){if(!$('#detail[open]')||!caseById(id))return;if(treeShown(id))refreshDetail();else showCase(id);}
+  async function submitAttendance(form,v,fail){
+    const id=form.dataset.id,recordRef=String(v.get('recordRef')||''),stepId=form.dataset.step,actorId=actor()?.id;
+    if(!recordRef){fail('처리할 결석 기록을 선택해 주세요.');return;}
+    if(!actorId||!stepId){fail('담당자를 확인한 뒤 다시 시도해 주세요.');return;}
+    if(form.dataset.busy)return;
+    form.dataset.busy='1';const button=form.querySelector('[type=submit]');if(button)button.disabled=true;
+    const revision=async()=>fetch('/api/data-revision',{cache:'no-store'}).then(r=>r.ok?r.json():null).catch(()=>null);
+    try{
+      const before=await revision();
+      const body={caseId:id,stepId,recordRef,expectedRevision:flow().revision,actorId,
+        state:String(v.get('state')||''),outcome:String(v.get('outcome')||'')||null,contactedVia:String(v.get('contactedVia')||'')||null,note:String(v.get('note')||'')};
+      const response=await fetch('/api/flow/card-attendance/save',{method:'POST',headers:{'Content-Type':'application/json',Accept:'application/json'},body:JSON.stringify(body)});
+      const result=await response.json().catch(()=>null);
+      if(!response.ok){if(response.status===409)await load({quiet:true});fail(message(result,response.status));return;}
+      if(result?.saved!==true){fail('저장 결과를 확인하지 못했습니다. 업무를 새로 불러와 주세요.');return;}
+      form.closest('dialog')?.close();toast('원본 반영 확인 중');
+      for(let i=0;i<16;i++){
+        await new Promise(resolve=>setTimeout(resolve,750));
+        const current=await revision();
+        if(before&&current&&current.revision===before.revision)continue;
+        await load({quiet:true});
+        if(caseById(id)?.factClosed){toast('연락 결과가 원본에 반영되어 업무가 닫혔습니다.');return;}
+        if(current&&before&&current.revision!==before.revision){toast('연락 결과를 기록했습니다. 남은 결석 기록을 확인해 주세요.');return;}
+      }
+      await load({quiet:true});
+      toast(caseById(id)?.factClosed?'연락 결과가 원본에 반영되어 업무가 닫혔습니다.':'연락 결과를 저장했습니다. 원본 반영 상태를 새로 확인해 주세요.');
+    }catch{fail('결석 처리 결과를 확인하지 못했습니다. 업무를 새로 불러와 주세요.');}
+    finally{delete form.dataset.busy;if(button)button.disabled=false;}
+  }
   // 업무 흐름 검색 — 목록과 건수만 다시 그린다(화면 전체를 다시 그리지 않아 글자 입력이 끊기지 않는다) · Esc = 지우기.
   const paintBoardList=()=>{const box=document.getElementById('fl-board-list'),cnt=document.getElementById('fl-board-count');if(!box||!ready())return;const p=boardParts();hideTip();box.innerHTML=p.listHtml;if(cnt)cnt.textContent=p.count;if(colMenu.el)placeColMenu();syncBulk();};
   document.addEventListener('input',event=>{if(!event.target.matches?.('[data-fl-search]'))return;store.q=event.target.value;store.pages.board=1;paintBoardList();});
@@ -1209,6 +1255,7 @@ window.createFlowUI = function createFlowUI(api) {
     const v=new FormData(form),error=form.querySelector('.ax-form-error'),id=form.dataset.id,fail=m=>{if(error)error.textContent=m;};
     const done=(r,msg)=>{if(!r)return;form.closest('dialog')?.close();toast(msg);if(id)reopenCase(id);};
     const step=form.dataset.step?{stepId:form.dataset.step}:{};
+    if(kind==='attendance-card'){submitAttendance(form,v,fail);return;}
     if(kind==='simulate'){const record=String(v.get('record')||''),scenario=form.dataset.scenario;command('event.simulate',{payload:{scenario,...(record?{recordRef:record}:{})},key:`event.simulate:${scenario}`}).then(r=>{if(!r)return;if(r.duplicate){toast('같은 기록으로 만든 시나리오가 아직 끝나지 않아 그 업무를 보여 드립니다. 새 업무는 만들지 않았습니다.');if(r.caseId)showCase(r.caseId);return;}toast(`연습 시나리오를 시작했습니다. 담당자의 업무에 생겼습니다.${r.decision==='pending'?' 판정 결과는 잠시 뒤 나타납니다.':''}`);});return;}
     if(kind==='report'){const c=caseById(id),note=String(v.get('note')||'').trim(),outcome=String(v.get('outcome')||'done');if(note.length<2){fail('보고 내용을 두 글자 이상 적어 주세요.');form.querySelector('textarea').focus();return;}const scope=String(v.get('scope')||''),node=scope?trees.get(id)?.index.get(scope):null;if(scope&&!node){fail('보고할 원생의 기록을 찾지 못했습니다. 창을 닫고 원생을 다시 선택해 주세요.');return;}const refs=node?(Array.isArray(node.records)?node.records:[]).map(r=>String(r?.id||'')).filter(Boolean):v.getAll('ref').map(Number).map(i=>c?.entityRefs?.[i]).filter(Boolean).map(r=>`${r.type}:${r.id}`);if(c?.signalId==='billing-remaining'&&!refs.length){fail('처리한 청구를 한 건 이상 선택해 주세요.');return;}if(node&&!refs.length){fail('이 원생에게 붙일 기록이 없습니다.');return;}command('case.report',{caseId:id,payload:{...step,note,outcome,...(refs.length?{recordRefs:refs}:{}),...(v.getAll('attach').filter(Boolean).length?{attachments:v.getAll('attach').filter(Boolean).slice(0,20)}:{})}}).then(r=>done(r,c?.factSignal?(caseById(id)?.state==='done'?'보고를 남겼습니다. 근거 기록이 모두 처리되어 이 업무가 닫혔습니다.':['done','not_needed'].includes(outcome)?`${node?`${nodeLabel(node)} 원생의 `:''}기록을 처리한 것으로 남겼습니다.`:'보고를 남겼습니다. 아직 남은 업무로 열려 있습니다.'):node?`${nodeLabel(node)} 원생의 ${c?.closure==='fact'?'후속 ':''}보고를 남겼습니다. 같은 단계의 다른 원생은 그대로입니다.`:c?.closure==='fact'?(signalCase(c)?'후속 보고를 남겼습니다. 이 업무는 원본 기록이 바뀌면 닫힙니다.':'후속 보고를 남겼습니다. 원본 업무는 원본 기록이 처리되면 닫힙니다.'):caseById(id)?.state==='done'?'보고를 남겼습니다. 이 업무는 끝났습니다.':'보고를 남겼습니다.'));return;}
     if(kind==='review'){const decision=String(v.get('decision')||''),note=String(v.get('note')||'').trim();if(!decision){fail('결정을 선택해 주세요.');return;}if(decision==='return'&&note.length<2){fail('보완 요청할 때는 보완할 내용을 적어 주세요.');form.querySelector('textarea').focus();return;}command('case.review',{caseId:id,payload:{...step,decision,...(note?{note}:{})}}).then(r=>done(r,decision==='accept'?'승인했습니다.':'보완 요청했습니다.'));return;}

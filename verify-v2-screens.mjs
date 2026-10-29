@@ -93,6 +93,18 @@ try {
     });
     assert.deepEqual(JSON.parse(last.result), { ok: true, id: studentId, note: { 글자수: note.length } });
   });
+  await check('shared write runner checks source inside the transaction and rolls back a refused result', async () => {
+    const before = state.committed.length;
+    let checked = false;
+    await assert.rejects(route.performWrite({
+      id: 'demo', name: 'save', raw: { name: '되돌릴 값' },
+      beforeRun: ({ body }) => { assert.equal(body.name, '되돌릴 값'); checked = true; },
+      afterRun: ({ result }) => { assert.equal(result.saved, '되돌릴 값'); throw new V2Error(409, 'source_changed', '원본 기록이 달라졌습니다.'); },
+    }), e => e instanceof V2Error && e.code === 'source_changed');
+    assert.equal(checked, true);
+    assert.equal(state.committed.length, before);
+    assert.equal(state.open, 0);
+  });
   await check('write refuses other sites, non-JSON, GET-only screens and unknown actions', async () => {
     assert.equal((await call('/api/v2/demo/save', { method: 'POST', body: { name: 'a' }, site: 'cross-site' })).status, 403);
     assert.equal((await call('/api/v2/demo/save', { method: 'POST', body: { name: 'a' }, site: null })).status, 403);

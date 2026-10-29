@@ -110,41 +110,52 @@ export function createV2ScreenRoute({ screens, headers = {}, open = openFullData
   const serial = fn => { const p = chain.then(fn, fn); chain = p.catch(() => {}); return p; };
   const record = entry => appendFile(journal, `${JSON.stringify(entry)}\n`).catch(error => console.error(`2.0 write journal failed: ${error.code || 'error'}`));
 
-  async function write(req, res, s, [id, name]) {
-    if (req.headers['sec-fetch-site'] !== 'same-origin') return fail(req, res, new V2Error(403, 'forbidden_origin', '이 화면에서만 저장할 수 있습니다.'));
-    if (!JSON_TYPE.test(req.headers['content-type'] || '')) return fail(req, res, new V2Error(415, 'unsupported_media_type', 'JSON 요청만 받을 수 있습니다.'));
+  async function performWrite({ id, name, raw, beforeRun = null, afterRun = null }) {
+    const s = await screens;
     const screen = s.get(id), action = screen?.actions && Object.hasOwn(screen.actions, name) ? screen.actions[name] : null;
-    if (!action) return fail(req, res, new V2Error(404, 'action_not_found', '없는 저장 동작입니다.'));
+    if (!action) throw new V2Error(404, 'action_not_found', '없는 저장 동작입니다.');
     let body;
-    try { body = action.validate(JSON.parse((await readBody(req)).toString('utf8') || '{}')); }
-    catch (e) { return fail(req, res, e instanceof V2Error ? e : new V2Error(400, 'invalid_request', '입력 값을 확인해 주세요.')); }
+    try { body = action.validate(raw); }
+    catch (e) { throw e instanceof V2Error ? e : new V2Error(400, 'invalid_request', '입력 값을 확인해 주세요.'); }
     const started = Date.now(), entry = { at: new Date().toISOString(), screen: id, action: name, body: clip(body, 4000) };
-    const db = await open();
+    let db;
     try {
+      db = await open();
       const result = await serial(() => db.begin(async sql => {
         await sql`set local statement_timeout = '20s'`;
+        if (beforeRun) await beforeRun({ sql, body, tenantId });
         const before = await queuedRequests(sql), out = await action.run({ sql, body, tenantId, importV2 });
         if (await queuedRequests(sql) > before) throw new V2Error(409, 'outbound_blocked', '이 저장이 바깥으로 요청을 보내려 해서 되돌렸습니다. 바뀐 것은 없습니다.');
+        if (afterRun) await afterRun({ sql, body, result: out, tenantId });
         return out;
       }));
       await record({ ...entry, ok: true, ms: Date.now() - started, result: clip(result, 1000) });
       try { onWrite?.({ screen: id, action: name }); } catch (error) { console.error(`2.0 write hook failed: ${error?.message || error}`); } // 저장은 이미 끝났다 — 알림 실패로 답을 바꾸지 않는다
-      return send(req, res, 200, { ok: true, result: publicResult(result ?? null) });
+      return result;
     } catch (error) {
       const r = refusal(error);
       await record({ ...entry, ok: false, ms: Date.now() - started, error: r?.code || error?.code || 'error' });
       if (!r) console.error(`2.0 screen ${id}.${name} failed: ${error?.code || ''} ${error?.message || ''}`);
-      return fail(req, res, r || new V2Error(500, 'write_failed', '저장하지 못했습니다. 바뀐 것은 없습니다.'));
-    } finally { await db.end(); }
+      throw r || new V2Error(500, 'write_failed', '저장하지 못했습니다. 바뀐 것은 없습니다.');
+    } finally { await db?.end(); }
   }
 
   return {
+    performWrite,
     handles: path => path === V2_API || path.startsWith(`${V2_API}/`),
     async handle(req, res, path) {
       const site = req.headers['sec-fetch-site'];
       if (site && site !== 'same-origin' && site !== 'none') return send(req, res, 403, { error: 'forbidden_origin', message: '이 화면에서만 요청할 수 있습니다.' });
       const s = await screens, parts = path === V2_API ? [] : path.slice(V2_API.length + 1).split('/');
-      if (req.method === 'POST' && parts.length === 2) return write(req, res, s, parts);
+      if (req.method === 'POST' && parts.length === 2) {
+        if (req.headers['sec-fetch-site'] !== 'same-origin') return fail(req, res, new V2Error(403, 'forbidden_origin', '이 화면에서만 저장할 수 있습니다.'));
+        if (!JSON_TYPE.test(req.headers['content-type'] || '')) return fail(req, res, new V2Error(415, 'unsupported_media_type', 'JSON 요청만 받을 수 있습니다.'));
+        let raw;
+        try { raw = JSON.parse((await readBody(req)).toString('utf8') || '{}'); }
+        catch (e) { return fail(req, res, e instanceof V2Error ? e : new V2Error(400, 'invalid_request', '입력 값을 확인해 주세요.')); }
+        try { return send(req, res, 200, { ok: true, result: publicResult(await performWrite({ id: parts[0], name: parts[1], raw }) ?? null) }); }
+        catch (e) { return fail(req, res, e); }
+      }
       if (!['GET', 'HEAD'].includes(req.method)) return send(req, res, 405, { error: 'method_not_allowed', message: '저장은 화면의 저장 동작으로만 할 수 있습니다.' });
       if (!parts.length) return send(req, res, 200, { screens: [...s.values()].sort((a, b) => (a.order ?? 99) - (b.order ?? 99)).map(x => ({ id: x.id, label: x.label, order: x.order ?? 99, writable: Object.keys(x.actions || {}).length > 0, script: `/v2-screen-${x.id}.js`, style: screenAsset(`/v2-screen-${x.id}.css`) ? `/v2-screen-${x.id}.css` : null })) });
       const screen = parts.length === 1 ? s.get(parts[0]) : null;
