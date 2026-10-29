@@ -43,10 +43,27 @@ registerHostHandler("features/onescreen/server/prompt-actions.ts", "getPromptHis
   typeof type === "string" && /^[a-z0-9_]{1,40}$/.test(type) ? okShape(await ask({ promptHistory: type }), "이력을 불러오지 못했습니다") : { ok: false, error: "알 수 없는 프롬프트 유형" });
 registerHostHandler("features/onescreen/server/prompt-actions.ts", "getRecentReportsForTest", async () =>
   okShape(await ask({ testReports: "1" }), "보고서를 불러오지 못했습니다"));
-// 지금 반 보드 동기화 버튼 상태 — 못 받으면 2.0 실패 모양(버튼 숨김). 요청(저장)은 연동 PC를 부르므로 보내지 않고 2.0 거절 모양으로.
+// 지금 반 보드 동기화 버튼 상태 — 못 받으면 2.0 실패 모양(버튼 숨김).
 registerHostHandler("features/report-admin/server/classnote-sync-actions.ts", "getClassnoteSyncStatus", async () =>
   ((await ask({ cnread: "sync" }))?.cnread ?? { available: false, workerReady: false, active: null, latest: null, report: null, nowMs: Date.now() }));
-registerHostHandler("features/report-admin/server/classnote-sync-actions.ts", "requestClassnoteBoardSync", async () => ({ ok: false, error: VIEW_ONLY }));
+// 원본은 생존 PC가 없으면 요청을 거절한다. 통과해도 복사본의 요청 행만 남기며 실제 동기화는 실행되지 않는다.
+const SYNC_MODULE = "features/report-admin/server/classnote-sync-actions.ts";
+registerHostHandler(SYNC_MODULE, "requestClassnoteBoardSync", async (...args) => {
+  try {
+    const response = await fetch("/api/v2/lesson-reports/requestClassnoteBoardSync", {
+      method: "POST", headers: { "Content-Type": "application/json", Accept: "application/json" },
+      body: JSON.stringify({ module: SYNC_MODULE, actor: hostActor(), args }),
+    });
+    const body = await response.json().catch(() => null) as { ok?: boolean; result?: unknown; message?: string } | null;
+    if (!response.ok || !body?.ok) return { ok: false, error: body?.message ?? "동기화 요청을 저장하지 못했습니다." };
+    const result = body.result as { ok?: boolean; message?: string; error?: string } | null;
+    if (result?.ok && typeof result.message === "string" && result.message.includes("연동 PC"))
+      return { ...result, message: "요청을 복사본 대기열에 남겼습니다. 연습 복사본이라 실제 동기화는 실행되지 않습니다." };
+    if (result && !result.ok && result.error?.startsWith("연동 PC가 꺼져 있거나"))
+      return { ...result, error: "연습 복사본에는 연동 PC가 없어 지금 동기화 요청을 받을 수 없습니다." };
+    return result;
+  } catch { return { ok: false, error: "동기화 요청을 저장하지 못했습니다." }; }
+});
 // 발송 요청은 2.0 함수를 Docker에서 실행한다. 대기열에 오른 뒤 2.0의 발송 PC 안내는 연습 복사본 안내로 바꾼다.
 const COPY_QUEUE_NOTICE = "연습 복사본이라 실제로 보내지지 않습니다 — 발송 대기로만 남습니다";
 let queuedToastCount = 0;

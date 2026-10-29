@@ -21,8 +21,9 @@
 //   · 원스크린 공지 작성·대기 공지 수정·삭제 — 원본 대상/작성자 게이트로 Docker 대기열만 관리한다.
 //   · 학부모 답글 작성·수정·삭제 — 원본 워커 생존·권한·대상 게이트를 그대로 거쳐 대기 행만 관리한다.
 //   · 학부모 공감 요청·풀기 — 원본 워커 생존·권한·확정 연결 게이트와 상태 전이를 그대로 쓴다.
+//   · 반 보드 동기화 요청 — 원본 워커 생존·쿨다운·중복 범위 합치기 게이트로 Docker 요청 행까지만 남긴다.
 //  계속 거절(진입점이 그 자리에서 2.0 거절 모양):
-//     동기화 요청 · AI 미리보기.
+//     AI 미리보기.
 // · 저장하는 사람 = readLessonEditors(보고서 관리 · 보고서 설정 · AI 멘트 중 하나라도 쓰기인 재직 직원 · 운영자 계정 제외 · 원장 먼저). 그 밖이면
 //   2.0 '로그인 없음' 자리(actor = null). 각 2.0 함수가 그 사람의 권한을 다시 본다.
 import { runV2Server, V2ServerError } from './v2-server-runner.mjs';
@@ -39,6 +40,7 @@ export const LR_WRITES = {
   'features/report-admin/server/recall-actions.ts': ['requestReportRecall', 'requestReportRecallByShareToken'],
   'features/report-admin/server/actions.ts': ['resetStuckClassnote', 'sendClassnoteForUnsent', 'retryClassnote'],
   'features/report-admin/server/classnote-sync-report-actions.ts': ['downloadClassnoteSyncReport'],
+  'features/report-admin/server/classnote-sync-actions.ts': ['requestClassnoteBoardSync'],
   'features/report-admin/server/notice-actions.ts': ['sendClassNotice'],
   'features/report-admin/server/class-notice-actions.ts': ['sendClassWideNotice'],
   'features/report-admin/server/compose-actions.ts': ['saveAdminReport', 'saveAndQueueAdminReport', 'sendBulkAdminReports'],

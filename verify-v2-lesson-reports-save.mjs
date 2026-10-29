@@ -77,7 +77,9 @@ test('대응표 = 2.0 서버 함수 이름 그대로(그 파일이 내보내는 
     assert.ok(n in lessonReportsActions, n);
     assert.ok(!refuse.includes(`"${n}"`), n);
   }
-  assert.match(entry, /"requestClassnoteBoardSync", async \(\) => \(\{ ok: false, error: VIEW_ONLY \}\)/);
+  assert.ok('requestClassnoteBoardSync' in lessonReportsActions);
+  assert.ok(!refuse.includes('"requestClassnoteBoardSync"'));
+  assert.match(entry, /registerHostHandler\(SYNC_MODULE, "requestClassnoteBoardSync"/);
   assert.match(entry, /"testPrompt", async \(\) =>/);
 });
 
