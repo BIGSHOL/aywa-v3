@@ -12,7 +12,9 @@ import { loadFlowSource } from './flow-source.mjs';
 import { createFlowAI } from './flow-decision.mjs';
 import { createFlowService, defaultStoreDir, startFlow } from './flow-service.mjs';
 import { createFlowRoute } from './flow-http.mjs';
-import { createExitRoute, startExitInsight } from './exit-http.mjs';
+import { createExitRoute, startExitInsight, exitProviders } from './exit-http.mjs';
+import { createCardInsight, openCardInsightStore } from './card-insight.mjs';
+import { createCardInsightRoute } from './card-insight-http.mjs';
 import { createV2ScreenRoute, loadScreens, screenAsset } from './v2-screens.mjs';
 import { createEnrollmentExcelRoute } from './v2-enrollment-excel.mjs';
 import { createV2HostRoute, ensureV2Host } from './v2-host-route.mjs';
@@ -74,6 +76,14 @@ const flowRoute=createFlowRoute({flow,origins,headers,enabled:flowEnabled});
 // '왜 줄었나' exit insight (INSIGHT-EXITS.md): code decomposition + case files; AI results beside the flow store, GET only.
 const insight=flowEnabled?startExitInsight({snapshot,dir:defaultStoreDir({dataRoot:fullDbRoot,identity:{tenantId,tenantSlug:'cs',capturedAt:snapshot.meta.importedAt}})}):{service:null,failure:null};
 const insightRoute=createExitRoute({insight,headers,enabled:flowEnabled});
+// 카드 문장은 버튼을 눌렀을 때만 생성한다. GET은 별도 로컬 저장소의 마지막 결과만 읽는다.
+const cardInsight=flowEnabled?(async()=>{
+ const dir=defaultStoreDir({dataRoot:fullDbRoot,identity:{tenantId,tenantSlug:'cs',capturedAt:snapshot.meta.importedAt}});
+ const store=await openCardInsightStore({dir,identity:{tenantId,tenantSlug:'cs',capturedAt:snapshot.meta.importedAt}});
+ const {providers}=exitProviders();
+ return createCardInsight({store,provider:providers?.claude||null,reserve:async()=>{await insight.ready;return await insight.service?.reserveClaude()||false;}});
+})().catch(error=>{console.error(`카드 문장 저장소: ${error.code||error.message}`);return null;}):Promise.resolve(null);
+const cardInsightRoute=createCardInsightRoute({store:cardInsight,headers});
 // 저장 뒤 자료 갱신(AX-H2, data-refresh.mjs): 2.0 화면 저장이 커밋되면 모아서 작업 스레드에서 다시 만들고, 첫 화면·기록·비서를 한 틱에,
 // 업무 흐름은 reloadSource로 맞춘다. 복사본이 시작 때와 다르면(복사 시각·기준일·지점) 바꾸지 않는다. 그동안 요청은 옛 자료로 답한다.
 const debounceMs=Math.min(60_000,Math.max(200,Number(process.env.OWNER_CONCEPT_REFRESH_DEBOUNCE_MS)||3000));
@@ -117,6 +127,7 @@ const server=createServer(async(req,res)=>{
  if(path===assistant.path){try{await assistant.handle(req,res);}catch{if(!res.headersSent)reject(500,'로컬 비서를 실행하지 못했습니다.');}return;}
  if(flowRoute.handles(path)){try{await flowRoute.handle(req,res,path);}catch{if(!res.headersSent)reject(500,'업무 흐름을 처리하지 못했습니다.');}return;}
  if(insightRoute.handles(path)){try{insightRoute.handle(req,res);}catch{if(!res.headersSent)reject(500,'이탈 분석을 처리하지 못했습니다.');}return;}
+ if(cardInsightRoute.handles(path)){try{await cardInsightRoute.handle(req,res);}catch(error){console.error(`카드 문장: ${error.code||error.message}`);if(!res.headersSent)reject(500,'카드 문장을 처리하지 못했습니다.');}return;}
  if(v2HostRoute.handles(path)){try{await v2HostRoute.handle(req,res,path);}catch{if(!res.headersSent)reject(500,'화면 파일을 읽지 못했습니다.');}return;}
  if(enrollmentExcelRoute.handles(path)){try{await enrollmentExcelRoute.handle(req,res);}catch{if(!res.headersSent)reject(500,'엑셀 파일을 처리하지 못했습니다.');}return;}
  if(v2ScreenRoute.handles(path)){try{await v2ScreenRoute.handle(req,res,path);}catch{if(!res.headersSent)reject(500,'화면을 불러오지 못했습니다.');}return;}

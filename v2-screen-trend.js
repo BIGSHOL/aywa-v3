@@ -15,6 +15,32 @@
     'report-written', 'report-sent', 'parent-read', 'attendance-input', 'video-issued', 'video-submitted']);
   const ANALYSIS_ITEMS = ['지금 값과 평소', '어디서 변했나', '누가', '열린 업무', '셈의 기준과 빠진 기록'];
   const analysisOpen = new Set();
+  const insightState = new Map();
+  function loadInsight(data) {
+    const metric = data.metric, signature = JSON.stringify(data.facts);
+    const old = insightState.get(metric);
+    if (old?.signature === signature) return old;
+    const state = { signature, status: 'loading', data: null };
+    insightState.set(metric, state);
+    fetch(`/api/insight/cards?metric=${encodeURIComponent(metric)}`, { headers: { Accept: 'application/json' } })
+      .then(async r => { const body = await r.json(); if (!r.ok) throw new Error(body.message || '저장된 문장을 불러오지 못했습니다.'); return body; })
+      .then(body => { if (insightState.get(metric) === state) { state.status = 'ready'; state.data = body; last?.api.render(); } })
+      .catch(error => { if (insightState.get(metric) === state) { state.status = 'error'; state.error = error.message; last?.api.render(); } });
+    return state;
+  }
+  function insightBox(data) {
+    const state = loadInsight(data), body = state.data;
+    const lines = (items, title) => items?.length ? `<div><h4>${title}</h4><ul>${items.map(x => `<li>${esc(x.text)}<small>근거: ${x.evidence.map(esc).join(' · ')}</small></li>`).join('')}</ul></div>` : '';
+    const result = body?.result;
+    const at = result?.createdAt ? new Intl.DateTimeFormat('ko-KR', { timeZone: 'Asia/Seoul', dateStyle: 'medium', timeStyle: 'short' }).format(new Date(result.createdAt)) : '';
+    return `<div class="tr-insight"><div class="tr-insight-head"><h3>분석 문장</h3><button type="button" class="button" data-ca-make="${esc(data.metric)}" ${body?.enabled === false || state.status === 'making' ? 'disabled' : ''}>${state.status === 'making' ? '만드는 중…' : '분석 문장 만들기'}</button></div>`
+      + (body?.note ? `<p class="v3s-note">${esc(body.note)}</p>` : '')
+      + (result ? `<small>${esc(result.modelLabel)} · ${esc(at)}</small><p>${esc(result.summary.text)}<small>근거: ${result.summary.evidence.map(esc).join(' · ')}</small></p>${lines(result.watch, '눈여겨볼 점')}${lines(result.checks, '확인할 것')}` : '')
+      + (state.status === 'loading' ? '<p class="v3s-note">저장된 문장을 확인하는 중…</p>' : '')
+      + (state.status === 'error' ? `<p class="v3s-note">${esc(state.error)}</p>` : '')
+      + (body?.enabled === false ? '<p class="v3s-note">이 서버에서는 분석 문장 만들기가 꺼져 있습니다.</p>' : '')
+      + '</div>';
+  }
   function analysisBox(entry) {
     if (!entry) return '';
     if (entry.status === 'error') return `<section class="tr-analysis" aria-label="카드 분석"><h2>카드 분석</h2><p class="v3s-note">${esc(entry.error || '분석을 불러오지 못했습니다.')}</p></section>`;
@@ -31,7 +57,7 @@
         return `<li data-fact="${esc(f.id)}">${open}</li>`;
       }).join('') || '<li>비교할 기록이 없습니다.</li>'}</ol>${records}${i === 3 && lines.some(f => f.kind === 'flow') ? '<button type="button" class="ax-text-link" data-ca-flow>업무 흐름 열기</button>' : ''}</section>`;
     }).join('');
-    return `<section class="tr-analysis" aria-label="카드 분석"><div class="tr-analysis-head"><h2>카드 분석</h2><small>${esc(entry.data.period === 'month' ? '월별 카드 기준' : '주별 카드 기준')} · ${esc(entry.data.asOf)}</small></div><div class="tr-analysis-grid">${groups}</div></section>`;
+    return `<section class="tr-analysis" aria-label="카드 분석"><div class="tr-analysis-head"><h2>카드 분석</h2><small>${esc(entry.data.period === 'month' ? '월별 카드 기준' : '주별 카드 기준')} · ${esc(entry.data.asOf)}</small></div><div class="tr-analysis-grid">${groups}</div>${insightBox(entry.data)}</section>`;
   }
   const changeOf = (p, q, unit, better) => {
     if (p?.value == null || q?.value == null) return { text: '—', tone: '' };
@@ -330,6 +356,17 @@
     const card = t.closest?.('.ws-kpi[data-trend]');
     if (card && !t.closest('a,button')) { location.hash = `v2-trend?metric=${encodeURIComponent(card.dataset.trend)}&grain=${encodeURIComponent(card.dataset.grain || 'week')}`; return; }
     if (!t.closest?.('[data-v2-screen="trend"]')) return;
+    const make = t.closest('[data-ca-make]');
+    if (make) {
+      const metric = make.dataset.caMake, state = insightState.get(metric);
+      if (!state || state.status === 'making') return;
+      state.status = 'making'; last?.api.render();
+      fetch(`/api/insight/cards?metric=${encodeURIComponent(metric)}`, { method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/json' }, body: '{}' })
+        .then(async r => { const body = await r.json(); if (!r.ok) throw new Error(body.message || '문장을 만들지 못했습니다.'); return body; })
+        .then(body => { state.status = 'ready'; state.data = body; last?.api.render(); })
+        .catch(error => { state.status = 'error'; state.error = error.message; last?.api.render(); });
+      return;
+    }
     const record = t.closest('[data-ca-record]');
     if (record) { if (record.dataset.caMetric === 'report-written' && record.dataset.caType === 'record') last.api.showWorkspaceRecord?.('lesson-reports', record.dataset.caRecord); else last.api.openRecord?.(record.dataset.caRecord); return; }
     if (t.closest('[data-ca-flow]')) { location.hash = 'flow'; return; }

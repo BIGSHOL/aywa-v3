@@ -112,6 +112,15 @@ ${AI.repairNote(plan.hint)}` : AI.COHORT_PROMPT, model, effort, timeoutMs: AI.ST
     return v.ok ? ok(r.output, r, { stage: 'cohort', provider: 'claude-cli', tier: plan.tier, effort }) : { status: 'error', code: 'invalid_output', issues: v.issues, numbers: v.numbers, samples: v.samples, model: r.model || null, stage: 'cohort', tier: plan.tier, effort };
   }
   const used = kind => { const t = clock(); starts[kind] = starts[kind].filter(x => t - x < HOUR); return starts[kind].length; };
+  // 카드 문장 생성도 이탈 분석과 같은 Claude 시간 장부를 쓴다. 호출 전에 한 칸을 예약한다.
+  async function reserveClaude() {
+    if (used('claude') >= budget.claudePerHour) return false;
+    starts.claude.push(clock());
+    try {
+      await overlay.transact(draft => { const d = (draft.exitInsight ??= fresh()); d.ledger = { jev: starts.jev.slice(-500), claude: starts.claude.slice(-500) }; return { next: draft, result: true }; });
+    } catch (error) { starts.claude.pop(); throw error; }
+    return true;
+  }
   function pump() {
     if (closed || !providers) return;
     for (const job of queue) {
@@ -176,6 +185,7 @@ ${AI.repairNote(plan.hint)}` : AI.COHORT_PROMPT, model, effort, timeoutMs: AI.ST
   }
   const total = m => [...(ix.monthly.get(m)?.values() || [])].reduce((n, s) => n + s.total, 0);
   return {
+    reserveClaude,
     start: reconcile, periods, scheduled,
     index: () => ({ schemaVersion: 1, asOf, months, periods, totals: periods.map(m => ({ month: m, billed: total(m), students: ix.monthly.get(m)?.size || 0 })), pairs: scheduled.map(([f, t]) => ({ from: f, to: t, delta: total(t) - total(f), status: analysis(pair(f, t)).status })), defaultPair: scheduled.find(([f, t]) => addMonths(f, 1) === t && t === months.at(-1)) || scheduled[0] || null }),
     view, has: m => periods.includes(m), stats: () => ({ queued: queue.filter(j => j.status === 'queued').length, running: { ...running }, version }),
