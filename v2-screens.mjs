@@ -76,7 +76,32 @@ async function queuedRequests(sql) {
   const [{ n }] = await sql`select count(*)::int as n from net.http_request_queue`;
   return n;
 }
-const clip = (v, n) => { const t = JSON.stringify(v ?? null) ?? 'null'; return t.length > n ? `${t.slice(0, n)}…` : t; };
+// The journal is for finding which practice write to undo, not for keeping the text people typed.
+// A validated action may still pass free text inside positional args or echo it in its result.
+const JOURNAL_ID = /^(?:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|\d{1,20})$/i;
+const JOURNAL_DATE = /^\d{4}-\d{2}(?:-\d{2})?(?:T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,3})?)?(?:Z|[+-]\d{2}:?\d{2})?)?$/;
+const JOURNAL_RECORD_REF = /^[a-z][a-z0-9_-]{0,40}:(?:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|\d{1,20})$/i;
+const JOURNAL_ENUM_KEYS = /^(?:status|state|signal|outcome|contactedVia|type|kind|mode|method|channel|category|role|direction|action)$/i;
+const JOURNAL_FIELD = /^(?:actor|module|args|input|value|id|recordRefs?|caseId|stepId|studentId|classId|teacherId|userId|lessonReportId|sessionDate|slotStart|status|state|signal|outcome|contactedVia|type|kind|mode|method|channel|category|role|direction|action|note|memo|reason|body|message|comment|content|text|saved|ok|data|result|[A-Za-z][A-Za-z0-9]*Ids?|[a-z_]+_(?:id|ids|ref|refs))$/;
+const journalText = value => ({ 글자수: value.length });
+function journalValue(value, key = '', depth = 0) {
+  if (value == null || typeof value === 'number' || typeof value === 'boolean') return value;
+  if (typeof value === 'string') {
+    if (JOURNAL_ID.test(value) || JOURNAL_DATE.test(value) || JOURNAL_RECORD_REF.test(value)) return value;
+    if (key === 'module' && /^features\/[a-z0-9/_-]+\.tsx?$/.test(value)) return value;
+    if (key === 'slotStart' && /^\d{1,2}:\d{2}$/.test(value)) return value;
+    if (JOURNAL_ENUM_KEYS.test(key) && /^[a-zA-Z0-9_-]{1,40}$/.test(value)) return value;
+    return journalText(value);
+  }
+  if (depth >= 16) return { 중첩: true };
+  if (Array.isArray(value)) return value.map(item => journalValue(item, '', depth + 1));
+  if (typeof value === 'object') return Object.fromEntries(Object.entries(value).map(([name, item], index) => [
+    JOURNAL_FIELD.test(name) || JOURNAL_ID.test(name) ? name : `항목_${index}`,
+    journalValue(item, name, depth + 1),
+  ]));
+  return { 종류: typeof value };
+}
+const clip = (v, n) => { const t = JSON.stringify(journalValue(v ?? null)) ?? 'null'; return t.length > n ? `${t.slice(0, n)}…` : t; };
 
 export function createV2ScreenRoute({ screens, headers = {}, open = openFullDatabase, journal = JOURNAL, onWrite = null }) {
   const send = (req, res, status, body) => { const data = Buffer.from(JSON.stringify(body)); res.writeHead(status, { ...headers, 'Content-Type': 'application/json; charset=utf-8', 'Content-Length': data.length, 'Cache-Control': 'no-store' }); res.end(req.method === 'HEAD' ? undefined : data); };

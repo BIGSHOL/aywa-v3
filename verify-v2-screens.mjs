@@ -36,6 +36,7 @@ const screens = Promise.resolve(new Map([
     actions: {
       save: { validate: raw => { if (typeof raw.name !== 'string' || !raw.name) throw new V2Error(400, 'invalid_request', '이름을 적어 주세요.'); return { name: raw.name }; },
         run: async ({ sql, body }) => { await tick(); await sql`insert into x values (${body.name})`; return { saved: body.name }; } },
+      sensitive: { validate: raw => raw, run: async ({ body }) => ({ ok: true, id: body.input.studentId, note: body.input.note }) },
       leak: { validate: raw => raw, run: async ({ sql }) => { await sql`insert into x values (${'leak'})`; await sql`queue-http`; return {}; } },
       dbRefuse: { validate: raw => raw, run: async () => { throw Object.assign(new Error('duplicate key value violates unique constraint "x_key"'), { code: '23505' }); } },
       crash: { validate: raw => raw, run: async () => { throw new Error('relation "secret_table" does not exist'); } },
@@ -72,7 +73,25 @@ try {
     assert.equal(r.status, 200); assert.deepEqual(r.body, { ok: true, result: { saved: '홍길동' } });
     assert.deepEqual(state.committed.at(-1), ['홍길동']);
     const last = JSON.parse((await readFile(journal, 'utf8')).trim().split('\n').at(-1));
-    assert.equal(last.ok, true); assert.equal(last.screen, 'demo'); assert.equal(last.action, 'save'); assert.match(last.body, /홍길동/);
+    assert.equal(last.ok, true); assert.equal(last.screen, 'demo'); assert.equal(last.action, 'save');
+    assert.deepEqual(JSON.parse(last.body), { 항목_0: { 글자수: 3 } });
+    assert.deepEqual(JSON.parse(last.result), { saved: { 글자수: 3 } });
+  });
+  await check('journal keeps record IDs and enum values but masks free text in objects and positional args', async () => {
+    const studentId = '123e4567-e89b-42d3-a456-426614174000';
+    const note = '가정 사정과 건강 정보';
+    const r = await call('/api/v2/demo/sensitive', { method: 'POST', body: {
+      actor: studentId, input: { studentId, sessionDate: '2026-10-29', signal: 'absent', state: 'resolved', note },
+      args: [studentId, '연락 사유 원문'], secretSensitiveToken: '비밀',
+    } });
+    assert.equal(r.status, 200); assert.equal(r.body.result.note, note, 'screen result stays unchanged');
+    const last = JSON.parse((await readFile(journal, 'utf8')).trim().split('\n').at(-1));
+    assert.doesNotMatch(JSON.stringify(last), /가정 사정|건강 정보|연락 사유 원문|secretSensitiveToken|비밀/);
+    assert.deepEqual(JSON.parse(last.body), {
+      actor: studentId, input: { studentId, sessionDate: '2026-10-29', signal: 'absent', state: 'resolved', note: { 글자수: note.length } },
+      args: [studentId, { 글자수: '연락 사유 원문'.length }], 항목_3: { 글자수: 2 },
+    });
+    assert.deepEqual(JSON.parse(last.result), { ok: true, id: studentId, note: { 글자수: note.length } });
   });
   await check('write refuses other sites, non-JSON, GET-only screens and unknown actions', async () => {
     assert.equal((await call('/api/v2/demo/save', { method: 'POST', body: { name: 'a' }, site: 'cross-site' })).status, 403);
