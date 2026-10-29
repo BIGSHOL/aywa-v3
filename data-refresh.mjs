@@ -46,11 +46,27 @@ export function encodeData(snapshot, records) {
 export function compactSnapshot(snapshot) {
   const pick = (rows, keys) => rows?.map(row => Object.fromEntries(keys.map(key => [key, row[key]]))) || [];
   const out = { ...snapshot };
-  for (const [name, keys] of Object.entries({
-    students: ['id', 'name', 'grade', 'school', 'status', 'attendance', 'classes', 'remaining'],
-    invoices: ['id', 'name', 'studentId', 'period', 'remaining', 'discount'],
-    textbooks: ['id', 'name', 'student', 'status'], calendar: ['id'], runs: ['id'],
-  })) if (name in out) out[name] = pick(out[name], keys);
+  const month = snapshot.meta?.month || '', asOf = snapshot.meta?.asOf || '';
+  // 브리핑 이슈와 첫 화면 아래의 선택창에 필요한 대상만 필드를 싣는다. 나머지
+  // 칸은 길이를 지켜 영역별 기록 수를 그대로 보이고, 상세는 /snapshot.json을 연다.
+  const homeRows = (name, test, keys, empty = row => ({ id: row.id })) => {
+    if (!Array.isArray(out[name])) return;
+    out[name] = out[name].map(row => test(row) ? Object.fromEntries(keys.map(key => [key, row[key]])) : empty(row));
+  };
+  homeRows('invoices', row => row.remaining > 0,
+    ['id', 'name', 'studentId', 'period', 'remaining', 'discount']);
+  homeRows('admissions', row => row.date?.startsWith(month) && ['scheduled', 'consulted', 'ai_done'].includes(row.outcome),
+    ['id', 'name', 'teacher', 'date', 'outcome'], row => ({ id: row.id, date: '' }));
+  homeRows('tasks', row => row.status === 'open' && row.due && row.due < asOf && !row.local,
+    ['id', 'title', 'owners', 'status', 'due', 'local']);
+  homeRows('textbooks', row => ['requested', 'ordered'].includes(row.status),
+    ['id', 'name', 'student', 'status']);
+  // 시나리오 선택창은 모든 원생 이름을 조회하므로 원생 요약은 유지한다.
+  if ('students' in out) out.students = pick(out.students, ['id', 'name', 'grade', 'school', 'status', 'attendance', 'classes', 'remaining']);
+  if ('classes' in out) out.classes = pick(out.classes, ['id', 'name', 'teacher', 'teacherId']);
+  for (const name of ['calendar', 'messages', 'runs', 'documents']) if (Array.isArray(out[name])) out[name] = out[name].map(row => ({ id: row.id }));
+  for (const name of ['legacyHistory', 'boardings', 'supplies']) if (Array.isArray(out[name])) out[name] = [];
+  delete out.finance;
   if ('students' in out && 'invoices' in out) out.meta = { ...out.meta, detailDeferred: true };
   return out;
 }
