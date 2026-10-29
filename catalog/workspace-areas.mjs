@@ -56,7 +56,7 @@ export const AREA_GROUPS = [
 export const AREAS = [
   // ───────── 홈 ─────────
   { id: 'dashboard', label: '대시보드', group: 'home', viewKind: 'report', summary: '역할별로 배치한 지표와 카드로 학원 현황을 봅니다.',
-    facets: [fc('kpi', '상단 지표', text(REG, 'enrolledToday')), fc('attendance', '출결·수업', text(REG, '출결·수업'), 'filter'), fc('students', '학생·재원', text(REG, '학생·재원'), 'filter'),
+    facets: [fc('kpi', '상단 지표', text(REG, 'enrolledToday')), fc('attendance', '출결·수업', text(REG, '출결·수업'), 'filter'), fc('students', '원생·재원', text(REG, '학생·재원'), 'filter'),
       fc('admissions', '상담·신입', text(REG, '상담·신입'), 'filter'), fc('billing', '수납·지출', text(REG, '수납·지출'), 'filter'), fc('operations', '학원 운영', text(REG, '학원 운영'), 'filter'),
       fc('announcements', '학원 공지', route('/dashboard/announcements'), 'face')],
     actions: [
@@ -85,7 +85,7 @@ export const AREAS = [
       req('onescreen.unwritten', '보고서 작성 요청', [cls(), date(), memo()], ['saveLessonReport', 'saveMyReportTemplate', 'issueReportAttachmentUploadTicket'], '수업보고서 작성 요청', '아래 반·날짜의 수업보고서를 작성해 주세요. 작성하면 발송 큐에 올라갑니다.'),
       pre('onescreen.ment', 'AI 멘트 미리보기', [student(), f('notes', '선생님 특이사항', 'textarea', { required: true })], ['generateReportComment', 'savePrompt'], 'AI 멘트 미리보기', '자동작성에 들어갈 원생과 선생님 특이사항을 확인합니다.', '입력 확인'),
       pre('onescreen.notice', '학부모 공지 초안', [cls(), f('body', '공지 내용', 'textarea', { required: true })], ['sendOnescreenNotice'], '학부모 공지 미리보기', '반 학부모에게 보낼 공지 문구를 미리 봅니다.'),
-      pre('onescreen.makeup', '보강 학생 등록', [student(), cls(), date('date', '보강일')], ['registerMakeupEntries'], '보강 학생 등록 미리보기', '보강 학생을 수업 명단에 올리는 내용을 확인합니다.'),
+      pre('onescreen.makeup', '보강 원생 등록', [student(), cls(), date('date', '보강일')], ['registerMakeupEntries'], '보강 원생 등록 미리보기', '보강 원생을 수업 명단에 올리는 내용을 확인합니다.'),
       req('onescreen.share', '공유 링크 재발급 요청', [student(), memo('사유', true)], ['reissueShareLink'], '보고서 공유 링크 재발급', '학부모 공유 링크를 다시 발급해 주세요.'),
     ] },
   { id: 'video-homework', label: '영상 숙제', group: 'class', viewKind: 'records', summary: '영상 숙제 제출·배정·확인을 장부로 봅니다.',
@@ -94,7 +94,7 @@ export const AREAS = [
       pre('video-homework.mark', '제출 확인 표시', [student(), cls(), date('date', '숙제일'), sel('status', '확인 결과', 'videoLedgerStatus')], ['setVideoHomeworkMark'], '제출 확인 미리보기', '장부 칸의 확인 결과를 바꾸는 내용을 미리 봅니다.'),
       req('video-homework.assign', '미배정 영상 배정 요청', [student(), memo('영상·숙제 정보', true)], ['assignHomeworkVideo'], '미배정 영상 배정', '숙제 칸에 붙지 않은 영상을 해당 숙제에 배정해 주세요.'),
       req('video-homework.review', 'AI 메모 다시 분석 요청', [student(), memo()], ['rerunVideoReview'], '영상 AI 참고 메모 다시 분석', '아래 원생 영상의 AI 참고 메모를 다시 분석해 주세요.'),
-      nav('video-homework.site', '올리기 사이트 미리보기', 'site', ['revokeVideoSubmitLinks', 'api-video-submit-start'], '학생이 휴대폰 뒷 4자리와 이름으로 영상을 올리는 공개 화면을 봅니다.'),
+      nav('video-homework.site', '올리기 사이트 미리보기', 'site', ['revokeVideoSubmitLinks', 'api-video-submit-start'], '원생이 휴대폰 뒷 4자리와 이름으로 영상을 올리는 공개 화면을 봅니다.'),
     ] },
   { id: 'timetable', label: '시간표', group: 'class', viewKind: 'sheet', summary: '과목별 수업 배치와 반 이동·시트 가져오기를 봅니다.',
     facets: [fc('board', '시간표', route('/timetable')), fc('editor', '시간표 편집기', route('/timetable/editor'), 'face'), fc('english-sheet', '영어 시트 반영', route('/timetable/english-sheet'), 'face')],
@@ -192,7 +192,7 @@ export const AREAS = [
       req('students.progress', '진도 이상 확인 요청', [student(), memo('확인할 내용', true)], ['setProgressAnomalyResolved'], '진도 기록 이상 확인', '진도 기록 이상을 확인하고 처리 결과를 알려 주세요.'),
     ] },
   { id: 'student-contribution', label: '원생 기여도', group: 'student', viewKind: 'records', summary: '원생별 운영 기여·학습 참여·연결 기록을 봅니다.',
-    facets: [fc('list', '원생 기여도', route('/student-contribution')), fc('ontology', '학생 기록의 연결', route('/student-contribution/ontology'), 'face'), fc('referrals', '지난 소개 확인', route('/student-contribution/referrals'), 'face'), fc('settings', '기여도 배점 설정', route('/student-contribution/settings'), 'face')],
+    facets: [fc('list', '원생 기여도', route('/student-contribution')), fc('ontology', '원생 기록의 연결', route('/student-contribution/ontology'), 'face'), fc('referrals', '지난 소개 확인', route('/student-contribution/referrals'), 'face'), fc('settings', '기여도 배점 설정', route('/student-contribution/settings'), 'face')],
     actions: [
       nav('student-contribution.list', '기여도 목록', 'list', ['refreshContribution'], '원생별 기여도와 최근 변화를 봅니다.'),
       pre('student-contribution.referral', '소개자 연결', [student(), f('referrer', '소개한 원생', 'student', { required: true })], ['searchReviewedReferrers'], '소개 연결 미리보기', '지난 소개 기록을 원생에게 잇는 내용을 확인합니다.'),
@@ -204,7 +204,7 @@ export const AREAS = [
     actions: [
       pre('exams.score', '점수 입력 미리보기', [cls(), student(), f('exam', '시험', 'text', { required: true }), f('score', '점수', 'number', { required: true })], ['saveGradeScores'], '점수 입력 미리보기', '격자에 들어갈 점수를 확인합니다.'),
       req('exams.excel', '엑셀 성적 반영 요청', [cls(), f('exam', '시험', 'text', { required: true }), memo()], ['importGradesExcel'], '성적 엑셀 반영', '서식에 맞춘 성적 엑셀을 반영해 주세요.'),
-      req('exams.ijw', '인재원 학생 연결 요청', [student(), memo()], ['linkIjwStudent'], '인재원 학생 연결', '원생과 인재원 학습 계정을 연결해 주세요.'),
+      req('exams.ijw', '인재원 원생 연결 요청', [student(), memo()], ['linkIjwStudent'], '인재원 원생 연결', '원생과 인재원 학습 계정을 연결해 주세요.'),
       nav('exams.learning', '학습·성과 보기', null, [], '학습·성과 화면을 엽니다.', 'learning'),
     ] },
   { id: 'consultations', label: '원생상담', group: 'student', viewKind: 'records', summary: '재원생 상담 기록과 후속조치를 봅니다.',
@@ -221,7 +221,7 @@ export const AREAS = [
       nav('enrollment.legacy', '신규 상담 보기', null, [], '신규 콜&상담 화면을 엽니다.', 'admissions'),
       pre('enrollment.write', '상담 접수 미리보기', [f('name', '원생 이름', 'text', { required: true }), f('grade', '학년', 'text'), sel('path', '상담 경로', 'consultationPath'), date('consulted', '상담일')], ['createEnrollmentConsultation'], '신규 상담 접수', '접수될 상담 카드를 확인합니다.'),
       pre('enrollment.outcome', '결과 지정', [f('name', '원생 이름', 'text', { required: true }), sel('outcome', '결과', 'enrollmentOutcome'), date('next', '다음 상담일', false)], ['setEnrollmentOutcome'], '상담 결과 미리보기', '칸반 단계가 바뀌는 내용을 확인합니다.'),
-      req('enrollment.convert', '원생 전환·반 배정 요청', [f('name', '원생 이름', 'text', { required: true }), cls()], ['convertConsultationToStudent'], '원생 전환', '아래 상담 학생을 원생으로 등록하고 반에 배정해 주세요.'),
+      req('enrollment.convert', '원생 전환·반 배정 요청', [f('name', '원생 이름', 'text', { required: true }), cls()], ['convertConsultationToStudent'], '원생 전환', '아래 상담 원생을 원생으로 등록하고 반에 배정해 주세요.'),
       pre('enrollment.brief', '상담 준비 보기', [f('name', '원생 이름', 'text', { required: true })], ['regenerateConsultationAnalysis'], '상담 준비', '이전 상담과 같은 사람의 기록을 모아 봅니다.', '기록 모음'),
       nav('enrollment.qr', 'QR 상담 접수', 'intake', ['createIntakeToken'], '학부모가 QR로 상담을 신청하는 공개 화면을 봅니다.'),
       req('enrollment.makeedu', '메이크에듀 전송 요청', [f('name', '원생 이름', 'text', { required: true })], ['enqueueConsultationPush'], '메이크에듀 상담 전송', 'QR 접수 상담을 메이크에듀로 보내 주세요(연동 PC 필요).'),
@@ -302,7 +302,7 @@ export const AREAS = [
     actions: [
       nav('shuttle.legacy', '셔틀 화면 열기', null, [], '차량·안전 화면을 엽니다.', 'shuttle'),
       pre('shuttle.run', '회차 편성 미리보기', [sel('season', '시즌', 'shuttleSeason'), sel('direction', '방향', 'shuttleDirection'), f('vehicle', '차량', 'text', { required: true })], ['createRun', 'createStop', 'saveVehicle'], '회차 편성 미리보기', '차량·시즌·방향별 회차를 확인합니다.'),
-      pre('shuttle.rider', '학생 배정', [student(), sel('direction', '방향', 'shuttleDirection'), f('weekdays', '요일', 'multiselect', { required: true, optionsFrom: 'weekday' })], ['assignRider'], '셔틀 배정 미리보기', '정류장에 학생을 요일별로 배정한 모습을 봅니다.'),
+      pre('shuttle.rider', '원생 배정', [student(), sel('direction', '방향', 'shuttleDirection'), f('weekdays', '요일', 'multiselect', { required: true, optionsFrom: 'weekday' })], ['assignRider'], '셔틀 배정 미리보기', '정류장에 원생을 요일별로 배정한 모습을 봅니다.'),
       pre('shuttle.boarding', '탑승 기록 미리보기', [student(), date(), sel('status', '탑승', 'boardingStatus')], ['recordBoarding', 'staffChangeRideStop'], '탑승 기록 미리보기', '운행 시작 뒤 탑승 기록을 남기는 내용을 확인합니다.'),
       req('shuttle.parent-account', '학부모 계정 발급 요청', [student(), memo()], ['createParentAccount'], '학부모 계정 발급', '아래 원생의 학부모 계정을 발급해 주세요.'),
     ] },
@@ -375,7 +375,7 @@ export const AREAS = [
     actions: [
       pre('integrations.status', '연동 상태 보기', [f('target', '연동', 'select', { required: true, optionsFrom: 'integrationSub', only: ['makeedu', 'sheets', 'video', 'agent', 'todaysMath'] })], ['setMakeeduSyncEnabled', 'setSheetsExportEnabled', 'loadTodaysMathMenus'], '연동 상태', '연동의 켜짐 여부와 최근 이력을 봅니다.'),
       req('integrations.agent', '연동 PC 점검 요청', [memo('증상', true)], ['issueAgentCode'], '연동 PC 점검', '연동 PC의 상태를 확인하고 필요하면 다시 연결해 주세요.'),
-      req('integrations.ijw', '인재원 연결 정리 요청', [memo()], ['linkIjwUniqueMatches'], '인재원 학생 한 번에 연결', '인재원 학생 가운데 이름이 양쪽 모두 하나뿐인 학생을 확인하고 원생과 연결해 주세요.'),
+      req('integrations.ijw', '인재원 연결 정리 요청', [memo()], ['linkIjwUniqueMatches'], '인재원 원생 한 번에 연결', '인재원 원생 가운데 이름이 양쪽 모두 하나뿐인 원생을 확인하고 원생과 연결해 주세요.'),
     ] },
   // ───────── 역할별 화면 ─────────
   { id: 'teacher-workspace', label: '강사 화면', group: 'roles', viewKind: 'records', summary: '선생님이 보는 내 메뉴·내 정보 화면을 미리 봅니다.',
@@ -390,10 +390,10 @@ export const AREAS = [
       pre('parent-portal.change', '학부모 변경 요청 미리보기', [student(), date(), f('kind', '변경', 'select', { required: true, options: [{ value: 'absent', label: '안 탐' }, { value: 'stop', label: '정류장 변경' }], evidence: { file: 'src/features/shuttle/ride-change/server/parent-ride-actions.ts', has: ['absentParentRide', 'changeParentRideStop'] } })], ['absentParentRide', 'changeRegularRide'], '학부모 변경 요청', '학부모가 등하원을 바꿨을 때 직원에게 보이는 내용을 확인합니다.'),
       req('parent-portal.ack', '변경 확인 요청', [student(), memo()], ['ackShuttleHistory'], '학부모 변경 확인', '학부모가 바꾼 등하원 내역을 확인해 주세요.'),
     ] },
-  { id: 'student-portal', label: '학생 화면', group: 'roles', viewKind: 'report', summary: '학생이 보는 내 학습 화면을 미리 봅니다(예시 데이터).',
+  { id: 'student-portal', label: '원생 화면', group: 'roles', viewKind: 'report', summary: '원생이 보는 내 학습 화면을 미리 봅니다(예시 데이터).',
     facets: [fc('summary', '내 학습 현황', route('/my-learning')), fc('report', '데일리 리포트', route('/my-learning/report'), 'face')],
     actions: [
-      nav('student-portal.preview', '학생 화면 미리보기', 'summary', ['page-my-learning'], '학생 화면 구성을 봅니다. 실제 학생 데이터가 아닌 예시 데이터로 그립니다.'),
+      nav('student-portal.preview', '원생 화면 미리보기', 'summary', ['page-my-learning'], '원생 화면 구성을 봅니다. 실제 원생 데이터가 아닌 예시 데이터로 그립니다.'),
     ] },
   { id: 'public-sites', label: '학원 공개 페이지', group: 'roles', viewKind: 'report', summary: '학부모에게 보이는 학원 공개 페이지를 미리 봅니다.',
     facets: [fc('academy', '학원 공개 페이지', route('/academy'))],

@@ -121,7 +121,7 @@ export const families = [
       { id: 'onescreen.saveLessonReport', op: '보고서 저장·ClassNote 발송 대기열 등록', fns: ['saveLessonReport', 'saveAndQueueClassnote', 'saveOnescreenSession'] },
       { id: 'onescreen.generateReportComment', op: 'AI 멘트 자동작성(수학·영어)', fns: ['generateReportComment', 'generateEnglishMent'] },
       { id: 'onescreen.sendOnescreenNotice', op: '학부모 공지 발송·수정·취소', fns: ['sendOnescreenNotice', 'editQueuedNotice', 'editPostedNotice', 'cancelOnescreenNotice', 'deleteQueuedNotice'] },
-      { id: 'onescreen.registerMakeupEntries', op: '보강 학생 등록·제거·반 지정', fns: ['registerMakeupEntries', 'removeMakeupEntry', 'setMakeupClass'] },
+      { id: 'onescreen.registerMakeupEntries', op: '보강 원생 등록·제거·반 지정', fns: ['registerMakeupEntries', 'removeMakeupEntry', 'setMakeupClass'] },
       { id: 'onescreen.reissueShareLink', op: '공유 링크 재발급·회수', fns: ['reissueShareLink', 'revokeShareLink'] },
       { id: 'onescreen.issueReportAttachmentUploadTicket', op: '첨부 업로드·등록', fns: ['issueReportAttachmentUploadTicket', 'registerReportAttachment', 'removeReportAttachment'] },
       { id: 'onescreen.saveMyReportTemplate', op: '보고서 템플릿 저장·삭제', fns: ['saveMyReportTemplate', 'deleteMyReportTemplate'] },
@@ -151,7 +151,7 @@ export const families = [
       { id: 'video-homework.assignHomeworkVideo', op: '영상 배정·반려·숙제 취소·추가 출제', fns: ['assignHomeworkVideo', 'rejectHomeworkVideos', 'cancelVideoHomework', 'issueExtraVideoHomework'] },
       { id: 'video-homework.rerunVideoReview', op: 'AI 영상 검토 다시 실행', fns: ['rerunVideoReview'] },
       { id: 'video-homework.revokeVideoSubmitLinks', op: '제출 링크 회수·드라이브 계정 설정', fns: ['revokeVideoSubmitLinks', 'saveVideoDriveSetting'] },
-      { id: 'video-homework.api-video-submit-start', op: '공개 업로드 시작·완료(학생)', fns: [], api: ['/api/video-submit/start', '/api/video-submit/complete'] },
+      { id: 'video-homework.api-video-submit-start', op: '공개 업로드 시작·완료(원생)', fns: [], api: ['/api/video-submit/start', '/api/video-submit/complete'] },
     ],
     primaryEntities: ['student_homework_videos', 'video_homework_marks', 'homework_video_reviews', 'homework_video_links', 'homework_video_assignments'],
     ax: {
@@ -170,7 +170,7 @@ export const families = [
     audience: ['master', 'admin', 'manager', 'teacher'],
     implementation: { status: 'partial', note: '기본·강사·통합·교실 뷰, 드래그 반 이동, 시트 가져오기(영어 마스터·수학 격자·구조), 메모 시트, 칸 메모. 수업 나누기(class-splits)는 CLASS_SPLIT_ENABLED=false로 꺼짐.' },
     keyOps: [
-      { id: 'timetable.moveClassSlots', op: '반 배치 이동·학생 일괄 반 이동', fns: ['moveClassSlots', 'moveEnrollmentsBatch'] },
+      { id: 'timetable.moveClassSlots', op: '반 배치 이동·원생 일괄 반 이동', fns: ['moveClassSlots', 'moveEnrollmentsBatch'] },
       { id: 'timetable.previewSheetImport', op: '시트 가져오기 미리보기·적용·예약 취소', fns: ['previewSheetImport', 'applySheetImport', 'previewTimetableImport', 'applyTimetableImport', 'cancelScheduledImport'] },
       { id: 'timetable.previewMathSheetBundle', op: '수학 격자·구조 가져오기·되돌리기', fns: ['previewMathSheetBundle', 'applyMathGridImport', 'previewStructureImport', 'applyStructureImport', 'rollbackStructureImport'] },
       { id: 'timetable.previewMasterSheet', op: '영어 마스터 시트 반영', fns: ['previewMasterSheet', 'applyMasterSheet'] },
@@ -182,7 +182,7 @@ export const families = [
     ax: {
       legacyViews: ['classes'], axViews: [], axIssues: [], level: 'read-only',
       shows: '요일별 수업 밀도·주간 시간표(읽기)', missing: '배치 편집·가져오기·충돌 판정·메모·연습본',
-      proposed: { kind: 'evidence', text: '시간표를 근거 패널로(학생·강사 충돌 근거), 편집은 2.0 편집기 딥링크' },
+      proposed: { kind: 'evidence', text: '시간표를 근거 패널로(원생·강사 충돌 근거), 편집은 2.0 편집기 딥링크' },
       priority: 'P1',
     },
     verification: 'source-read', sourceRead: ['src/app/api/cron/apply-timetable-lab/route.ts', 'src/app/(shell)/timetable/english-sheet/page.tsx', 'src/features/class-splits/access.ts'],
@@ -196,7 +196,7 @@ export const families = [
     implementation: { status: 'partial', note: 'ECS 주간·월간·월간계획서 인쇄·반 계획 보기·계획 대비 현황, MCS 월간·선생님별. 수학 학습 진도맵(/mcs/progress-map)은 숨은 시안(샘플 데이터·관리자 이상).' },
     keyOps: [
       { id: 'class-sheets.upsertGoal', op: '목표·수업계획 줄 작성·이동·삭제', fns: ['upsertGoal', 'createPlanLine', 'movePlanLine', 'deletePlanLine'] },
-      { id: 'class-sheets.upsertStudentMark', op: '학생 표시·시트 변경분 저장', fns: ['upsertStudentMark', 'flushSheetPatches', 'commitSheetEdits'] },
+      { id: 'class-sheets.upsertStudentMark', op: '원생 표시·시트 변경분 저장', fns: ['upsertStudentMark', 'flushSheetPatches', 'commitSheetEdits'] },
       { id: 'class-sheets.copyWeekFromPrevious', op: '지난주·지난 칸 복사', fns: ['copyWeekFromPrevious', 'copySlotFromPrevious'] },
       { id: 'class-sheets.saveMonthPlanCells', op: '월간 계획·월 메모 저장', fns: ['saveMonthPlanCells', 'saveMonthMemo'] },
       { id: 'class-sheets.pullEcsMemorizedWords', op: '외운 단어 가져오기(IJW)', fns: ['pullEcsMemorizedWords'] },
@@ -259,7 +259,7 @@ export const families = [
     primaryEntities: ['classes', 'enrollments', 'classrooms', 'class_delegations'],
     ax: {
       legacyViews: ['classes'], axViews: [], axIssues: [], level: 'read-only',
-      shows: '운영 반·수강 학생·주간 배치 수, 반 카드·반 상세(시간표·수강생)', missing: '반·수강 편집, 인수인계·위임',
+      shows: '운영 반·수강 원생·주간 배치 수, 반 카드·반 상세(시간표·수강생)', missing: '반·수강 편집, 인수인계·위임',
       proposed: { kind: 'evidence', text: '반 상세를 근거 패널로, 반 개설·이동은 요청/명령으로' },
       priority: 'P1',
     },
@@ -391,7 +391,7 @@ export const families = [
     menuKeys: ['student_contribution'], routes: ['/student-contribution'], api: [], crons: ['/api/cron/student-contribution'],
     featureDirs: ['student-contribution'],
     audience: ['master', 'admin'],
-    implementation: { status: 'implemented', note: '학생별 운영 기여·학습 참여·연결 기록, 긍정 신호(밤 판정), 지난 소개 확인, 배점 설정(학원 설정 > 원생 기여도).' },
+    implementation: { status: 'implemented', note: '원생별 운영 기여·학습 참여·연결 기록, 긍정 신호(밤 판정), 지난 소개 확인, 배점 설정(학원 설정 > 원생 기여도).' },
     keyOps: [
       { id: 'student-contribution.refreshContribution', op: '기여도 재계산·긍정 신호 변경', fns: ['refreshContribution', 'changePositiveSignal'] },
       { id: 'student-contribution.searchReviewedReferrers', op: '소개자 확인 연결', fns: ['searchReviewedReferrers', 'linkReviewedReferral'] },
@@ -417,12 +417,12 @@ export const families = [
     keyOps: [
       { id: 'exams.saveGradeScores', op: '점수 저장·통합 성적 생성', fns: ['saveGradeScores', 'saveUnifiedGrade', 'createUnifiedGrade'] },
       { id: 'exams.importGradesExcel', op: '엑셀 가져오기·내보내기', fns: ['importGradesExcel'], api: ['/api/exams/excel', '/api/exams/unified-export'] },
-      { id: 'exams.linkIjwStudent', op: 'IJW 학생 연결·프로필 보내기', fns: ['linkIjwStudent', 'pushIjwProfilesNow'] },
+      { id: 'exams.linkIjwStudent', op: 'IJW 원생 연결·프로필 보내기', fns: ['linkIjwStudent', 'pushIjwProfilesNow'] },
     ],
     primaryEntities: ['student_grades', 'exams'],
     ax: {
       legacyViews: ['learning'], axViews: [], axIssues: [], level: 'read-only',
-      shows: '월별 시험별 평균(만점 100 환산)·학생 학습 카드', missing: '입력·응시율·성적 급락(알림 grade_drop)',
+      shows: '월별 시험별 평균(만점 100 환산)·원생 학습 카드', missing: '입력·응시율·성적 급락(알림 grade_drop)',
       proposed: { kind: 'issue', text: '성적 급락·미응시를 이슈로, 시험별 결과를 근거로' },
       priority: 'P1',
     },
@@ -666,7 +666,7 @@ export const families = [
     keyOps: [
       { id: 'shuttle.createRun', op: '회차·정류장·순서 편성', fns: ['createRun', 'updateRun', 'deleteRun', 'addRunStop', 'removeRunStop', 'reorderRunStops', 'updateRunStopTime'] },
       { id: 'shuttle.createStop', op: '정류장 마스터·위치', fns: ['createStop', 'updateStop', 'archiveStop', 'saveStopLocation'] },
-      { id: 'shuttle.assignRider', op: '학생 배정·이동·요일', fns: ['assignRider', 'moveRider', 'removeRider', 'updateRiderWeekdays'] },
+      { id: 'shuttle.assignRider', op: '원생 배정·이동·요일', fns: ['assignRider', 'moveRider', 'removeRider', 'updateRiderWeekdays'] },
       { id: 'shuttle.recordBoarding', op: '탑승 기록·운행 시작/종료·예외', fns: ['recordBoarding', 'clearBoarding', 'startTrip', 'endTrip', 'reopenTrip', 'setRideException'] },
       { id: 'shuttle.staffChangeRideStop', op: '직원 측 승하차 변경·결석', fns: ['staffChangeRideStop', 'staffAbsentRide', 'staffSkipRide', 'staffResetRide'] },
       { id: 'shuttle.saveVehicle', op: '차량 저장·위치 보고', fns: ['saveVehicle', 'reportVehiclePosition'] },
@@ -855,7 +855,7 @@ export const families = [
     verification: 'source-read', sourceRead: ['src/lib/teacher-menu-links.ts'],
   },
   {
-    id: 'student-portal', label: '학생 내 학습', domain: '역할 셸',
+    id: 'student-portal', label: '원생 내 학습', domain: '역할 셸',
     menuKeys: ['my_learning'], routes: ['/my-learning'], api: [], crons: [],
     featureDirs: ['my-learning'],
     audience: ['student'],
@@ -864,7 +864,7 @@ export const families = [
     primaryEntities: [],
     ax: {
       legacyViews: [], axViews: [], axIssues: [], level: 'absent',
-      shows: '', missing: '학생 화면 미리보기(현재 데모 데이터)', proposed: { kind: 'evidence', text: '학생 화면 미리보기 — 2.0이 데모 데이터로 그린다는 사실을 함께 표시' }, priority: 'P2',
+      shows: '', missing: '원생 화면 미리보기(현재 데모 데이터)', proposed: { kind: 'evidence', text: '원생 화면 미리보기 — 2.0이 데모 데이터로 그린다는 사실을 함께 표시' }, priority: 'P2',
     },
     verification: 'reviewed',
   },
@@ -942,7 +942,7 @@ export const families = [
       { id: 'integrations.setSheetsExportEnabled', op: '구글 시트 내보내기 켜기·과목 시트 지정·지금 동기화', fns: ['setSheetsExportEnabled', 'setSubjectSheetTarget', 'syncSheetsNow'] },
       { id: 'integrations.issueAgentCode', op: '연동 PC 코드 발급·해지·설정', fns: ['issueAgentCode', 'revokeAgentDevice', 'saveAgentSettings'] },
       { id: 'integrations.loadTodaysMathMenus', op: '오늘 수학 사용 메뉴 저장', fns: ['loadTodaysMathMenus', 'saveTodaysMathMenus'] },
-      { id: 'integrations.linkIjwUniqueMatches', op: 'IJW 학생 연결·자동 매칭', fns: ['linkIjwUniqueMatches', 'unlinkIjwStudent'] },
+      { id: 'integrations.linkIjwUniqueMatches', op: 'IJW 원생 연결·자동 매칭', fns: ['linkIjwUniqueMatches', 'unlinkIjwStudent'] },
     ],
     primaryEntities: ['makeedu_sync_runs', 'makeedu_sync_requests', 'sync_agent_devices', 'sync_agent_events', 'user_integrations'],
     ax: {
@@ -1045,7 +1045,7 @@ const SESSION_OPS = {
 for (const f of families) f.ax.sessionOps = SESSION_OPS[f.id] || [];
 
 // 원장 작업 공간 표시(ownerVisible) — 모든 패밀리에 명시. false는 감사 전용이며 이유를 적는다(숨긴 것이 아니라 원장 화면 대상이 아님).
-// 다른 역할(강사·학부모·학생·기기·공개)의 화면은 원장이 관리·미리보기해야 하므로 true다.
+// 다른 역할(강사·학부모·원생·기기·공개)의 화면은 원장이 관리·미리보기해야 하므로 true다.
 const AUDIT_ONLY = {
   'auth-session': '로그인·세션·지점 보기 안내 — 화면이 아니라 인증 기반',
   'platform-console': '운영 콘솔 — 지점 화면에 운영자 설정을 노출하지 않는다',
@@ -1073,7 +1073,7 @@ export const routeClassRules = [
   { cls: 'device', why: '기기 화면((kiosk)·(seat)) — 사람이 아니라 단말이 연다' },
   { cls: 'auth', why: '로그인·세션 안내' },
   { cls: 'platform', why: '운영 콘솔((super-admin))' },
-  { cls: 'portal', why: '학부모·학생 전용 셸' },
+  { cls: 'portal', why: '학부모·원생 전용 셸' },
   { cls: 'dev', why: '개발 환경 전용' },
   { cls: 'form', why: '/new · /edit 작성 화면' },
   { cls: 'stats', why: '/stats 통계 화면' },

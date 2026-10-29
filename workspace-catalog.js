@@ -75,7 +75,7 @@ window.AxCatalog = {
     },
     {
      "id": "students",
-     "label": "학생·재원",
+     "label": "원생·재원",
      "kind": "filter"
     },
     {
@@ -684,11 +684,11 @@ window.AxCatalog = {
     },
     {
      "id": "onescreen.makeup",
-     "label": "보강 학생 등록",
+     "label": "보강 원생 등록",
      "mode": "preview",
      "draft": {
-      "title": "보강 학생 등록 미리보기",
-      "body": "보강 학생을 수업 명단에 올리는 내용을 확인합니다."
+      "title": "보강 원생 등록 미리보기",
+      "body": "보강 원생을 수업 명단에 올리는 내용을 확인합니다."
      },
      "fields": [
       {
@@ -923,7 +923,7 @@ window.AxCatalog = {
      },
      "draft": {
       "title": "올리기 사이트 미리보기",
-      "body": "학생이 휴대폰 뒷 4자리와 이름으로 영상을 올리는 공개 화면을 봅니다."
+      "body": "원생이 휴대폰 뒷 4자리와 이름으로 영상을 올리는 공개 화면을 봅니다."
      },
      "fields": [],
      "result": {
@@ -3199,7 +3199,7 @@ window.AxCatalog = {
         },
         {
          "value": "motivation",
-         "label": "학생 상태"
+         "label": "원생 상태"
         },
         {
          "value": "method",
@@ -3394,7 +3394,7 @@ window.AxCatalog = {
     },
     {
      "id": "ontology",
-     "label": "학생 기록의 연결",
+     "label": "원생 기록의 연결",
      "kind": "face"
     },
     {
@@ -3632,10 +3632,10 @@ window.AxCatalog = {
     },
     {
      "id": "exams.ijw",
-     "label": "인재원 학생 연결 요청",
+     "label": "인재원 원생 연결 요청",
      "mode": "request",
      "draft": {
-      "title": "인재원 학생 연결",
+      "title": "인재원 원생 연결",
       "body": "원생과 인재원 학습 계정을 연결해 주세요."
      },
      "fields": [
@@ -3779,11 +3779,11 @@ window.AxCatalog = {
         },
         {
          "value": "student",
-         "label": "학생"
+         "label": "원생"
         },
         {
          "value": "both",
-         "label": "학부모+학생"
+         "label": "학부모+원생"
         }
        ],
        "optionSource": "consultationAudience"
@@ -4101,7 +4101,7 @@ window.AxCatalog = {
      "mode": "request",
      "draft": {
       "title": "원생 전환",
-      "body": "아래 상담 학생을 원생으로 등록하고 반에 배정해 주세요."
+      "body": "아래 상담 원생을 원생으로 등록하고 반에 배정해 주세요."
      },
      "fields": [
       {
@@ -4584,7 +4584,7 @@ window.AxCatalog = {
         },
         {
          "value": "motivation",
-         "label": "학생 상태"
+         "label": "원생 상태"
         },
         {
          "value": "method",
@@ -5953,11 +5953,11 @@ window.AxCatalog = {
     },
     {
      "id": "shuttle.rider",
-     "label": "학생 배정",
+     "label": "원생 배정",
      "mode": "preview",
      "draft": {
       "title": "셔틀 배정 미리보기",
-      "body": "정류장에 학생을 요일별로 배정한 모습을 봅니다."
+      "body": "정류장에 원생을 요일별로 배정한 모습을 봅니다."
      },
      "fields": [
       {
@@ -7436,7 +7436,7 @@ window.AxCatalog = {
         },
         {
          "value": "consult",
-         "label": "신규 콜&상담·학생상담"
+         "label": "신규 콜&상담·원생상담"
         },
         {
          "value": "attendance",
@@ -7651,8 +7651,8 @@ window.AxCatalog = {
      "label": "인재원 연결 정리 요청",
      "mode": "request",
      "draft": {
-      "title": "인재원 학생 한 번에 연결",
-      "body": "인재원 학생 가운데 이름이 양쪽 모두 하나뿐인 학생을 확인하고 원생과 연결해 주세요."
+      "title": "인재원 원생 한 번에 연결",
+      "body": "인재원 원생 가운데 이름이 양쪽 모두 하나뿐인 원생을 확인하고 원생과 연결해 주세요."
      },
      "fields": [
       {
@@ -7917,11 +7917,11 @@ window.AxCatalog = {
   },
   {
    "id": "student-portal",
-   "label": "학생 화면",
+   "label": "원생 화면",
    "group": "역할별 화면",
    "groupId": "roles",
    "page": "workspace-student-portal",
-   "summary": "학생이 보는 내 학습 화면을 미리 봅니다(예시 데이터).",
+   "summary": "원생이 보는 내 학습 화면을 미리 봅니다(예시 데이터).",
    "viewKind": "report",
    "facets": [
     {
@@ -7938,15 +7938,15 @@ window.AxCatalog = {
    "actions": [
     {
      "id": "student-portal.preview",
-     "label": "학생 화면 미리보기",
+     "label": "원생 화면 미리보기",
      "mode": "navigate",
      "target": {
       "page": "workspace-student-portal",
       "facet": "summary"
      },
      "draft": {
-      "title": "학생 화면 미리보기",
-      "body": "학생 화면 구성을 봅니다. 실제 학생 데이터가 아닌 예시 데이터로 그립니다."
+      "title": "원생 화면 미리보기",
+      "body": "원생 화면 구성을 봅니다. 실제 원생 데이터가 아닌 예시 데이터로 그립니다."
      },
      "fields": [],
      "result": {
