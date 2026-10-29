@@ -17,7 +17,7 @@ export const LIMITS = Object.freeze({ evaluatePerMinute: 12, draftsPer10Min: 3, 
 const kstToday = () => new Date(Date.now() + 9 * 3600000).toISOString().slice(0, 10);
 const kstDate = iso => (iso && Number.isFinite(Date.parse(iso)) ? new Date(Date.parse(iso) + 9 * 3600000).toISOString().slice(0, 10) : null);
 
-/** Pseudonymous context (owner-decision/1). Names become 학생A·담임 etc.; facts are computed here. */
+/** Pseudonymous context (owner-decision/1). Names become 원생A·담임 etc.; facts are computed here. */
 export function buildContext(source, c, { today = kstToday() } = {}) {
   const key = c.scenarioKey || (c.entityRefs[0] ? `${c.entityRefs[0].type}:${c.entityRefs[0].id}` : null);
   const e = key ? source.entities.get(key) : null;
@@ -28,16 +28,16 @@ export function buildContext(source, c, { today = kstToday() } = {}) {
   if (c.scenario === 'absence') {
     sourceKind = 'staff_note';
     const count = [...source.entities.values()].filter(x => x.type === 'attendance' && x.studentId === e?.studentId).length;
-    text = `담임 선생님이 학생A의 ${e?.date || recordDate} 수업 결석을 알렸습니다. 학부모 연락과 이후 수업 안내가 필요한지 판단해야 합니다.`;
+    text = `담임 선생님이 원생A의 ${e?.date || recordDate} 수업 결석을 알렸습니다. 학부모 연락과 이후 수업 안내가 필요한지 판단해야 합니다.`;
     Object.assign(facts, { absence_date: e?.date || recordDate, absences_this_month: count, class_has_homeroom_teacher: !!source.entities.get(`class:${e?.classId}`)?.teacherId });
     knownOpenWork.push({ area: 'attendance', code: 'absence_recorded' });
   } else if (c.scenario === 'billing') {
-    text = '학생A의 이번 달 수강료 청구에 남은 금액이 있어 수납 내역 확인이 요청되었습니다.';
+    text = '원생A의 이번 달 수강료 청구에 남은 금액이 있어 수납 내역 확인이 요청되었습니다.';
     Object.assign(facts, { remaining_won: Math.round(e?.remaining || 0), invoice_period: e?.period || '' });
     knownOpenWork.push({ area: 'billing', code: 'invoice_balance_remaining' });
   } else if (c.scenario === 'consultation') {
     sourceKind = 'consultation_note';
-    text = `학생A 상담(${e?.date || recordDate}) 이후 후속 연락이 요청되었습니다.`;
+    text = `원생A 상담(${e?.date || recordDate}) 이후 후속 연락이 요청되었습니다.`;
     Object.assign(facts, { consulted_on: e?.date || recordDate });
     knownOpenWork.push({ area: 'counseling', code: 'consultation_followup' });
   } else if (c.kind === 'source') {
@@ -70,7 +70,7 @@ export function buildContext(source, c, { today = kstToday() } = {}) {
 export function pseudonymize(source, text) {
   // 연락처·주민번호·계좌/카드번호는 가린다(sensitive-text.mjs — 비서와 같은 판정).
   let out = maskSensitive(text || '');
-  const names = [...source.entities.values()].filter(e => ['student', 'staff', 'lead'].includes(e.type) && e.label && e.label.length >= 2).map(e => [e.label, e.type === 'staff' ? '직원' : '학생']).sort((a, b) => b[0].length - a[0].length);
+  const names = [...source.entities.values()].filter(e => ['student', 'staff', 'lead'].includes(e.type) && e.label && e.label.length >= 2).map(e => [e.label, e.type === 'staff' ? '직원' : '원생']).sort((a, b) => b[0].length - a[0].length);
   for (const [name, mask] of names) if (out.includes(name)) out = out.split(name).join(mask);
   return out;
 }

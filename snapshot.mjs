@@ -59,7 +59,7 @@ export function buildReadModel(r, info) {
   const userMap = new Map(r.users.map(s => [s.id, s]));
   const roomMap = new Map(r.classrooms.map(s => [s.id, s]));
   const classMap = new Map(r.classes.map(s => [s.id, s]));
-  const name = id => studentMap.get(id)?.name || '학생 정보 없음';
+  const name = id => studentMap.get(id)?.name || '원생 정보 없음';
   const teacher = id => userMap.get(id)?.display_name || '담당 미지정';
   const className = id => classMap.get(id)?.class_name || '수업 미지정';
   const activeEnrollment = row => actualStudent(row) && (!row.start_date || date(row.start_date) <= today) && (!row.end_date || date(row.end_date) >= today) && !row.on_hold;

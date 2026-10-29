@@ -271,7 +271,7 @@ test('AI context is pseudonymous and bounded; candidates come from relations onl
   assert.deepEqual(ctx.candidates.find(x => x.staffId === IDS.t1).roles, ['homeroom_teacher']);
   assert(ctx.candidates.some(x => x.staffId === IDS.t2 && x.roles.includes('subject_teacher')), 'teacher of another enrolled class');
   assert(!ctx.candidates.some(x => x.staffId === IDS.desk), 'non-assignable desk account is not an AI candidate');
-  assert.equal(pseudonymize(src, '홍길동 학부모 010-1234-5678 이담임 선생님'), '학생 학부모 연락처 가림 직원 선생님');
+  assert.equal(pseudonymize(src, '홍길동 학부모 010-1234-5678 이담임 선생님'), '원생 학부모 연락처 가림 직원 선생님');
   // 청구 이름에 원생 이름이 붙어도('홍길동 · 10월 청구') facts의 청구월은 period 칸에서만 — 이름 글자를 잘라 쓰지 않는다.
   const bill = buildContext(src, { id: 'loc-2', kind: 'scenario', scenario: 'billing', scenarioKey: 'invoice:i1', entityRefs: [{ type: 'invoice', id: 'i1' }, { type: 'student', id: 's1' }], createdAt: '2026-10-27T01:00:00Z', title: '수납 — 홍길동', summary: '홍길동 · 10월 청구 기록으로 만든 연습 시나리오입니다.' }, { today: '2026-10-27' });
   assert.equal(bill.facts.invoice_period, '2026-10');

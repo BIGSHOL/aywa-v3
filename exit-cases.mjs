@@ -11,7 +11,7 @@ const clip = (t, n = 300) => { const s = String(t ?? '').replace(/\s+/g, ' ').tr
 const REPORT_STATUS = { draft: '작성 중', submitted: '제출', approved: '승인', applied: '처리 완료', rejected: '반려', cancelled: '취소' };
 // Cause categories shared by code (recorded reason) and Jev (when the record does not say) — 2.0 reason keys underneath.
 export const CAUSES = Object.freeze({
-  teacher_change: '담당 교체·강사 퇴사', lesson: '수업 방식·관리 불만', grades: '성적', student_state: '학생 상태·의욕', method: '공부 방법 변경',
+  teacher_change: '담당 교체·강사 퇴사', lesson: '수업 방식·관리 불만', grades: '성적', student_state: '원생 상태·의욕', method: '공부 방법 변경',
   competitor: '타 학원 이동', schedule: '시간·일정·거리', money: '경제적 이유', career: '진로·진학·졸업', family: '가족·친구 동반',
   relocation: '이사', illness: '질병', advised: '권고퇴원', unknown: '기록으로 알 수 없음',
 });
@@ -26,13 +26,13 @@ export function makeMasker(src) {
   const names = new Map();
   const put = (n, role) => { const v = String(n ?? '').trim(); if (v.length >= 2 && !names.has(v)) names.set(v, role); };
   // Full name, the name without the namesake suffix (김준우A → 김준우) and the given name (준우) — text writes "준우가".
-  for (const s of src.students) { const bare = String(s.name ?? '').replace(/[A-Za-z]+$/, ''); put(s.name, '학생'); put(bare, '학생'); put(bare.slice(1), '학생'); put(s.english_name, '학생'); put(s.nickname, '학생'); put(s.parent_name, '보호자'); }
+  for (const s of src.students) { const bare = String(s.name ?? '').replace(/[A-Za-z]+$/, ''); put(s.name, '원생'); put(bare, '원생'); put(bare.slice(1), '원생'); put(s.english_name, '원생'); put(s.nickname, '원생'); put(s.parent_name, '보호자'); }
   for (const u of src.users) { put(u.display_name, '선생님'); put(u.english_name, '선생님'); }
   const list = [...names.keys()].sort((a, b) => b.length - a.length).map(n => n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
   const re = list.length ? new RegExp(list.join('|'), 'g') : null;
   const mask = (text, { digits = true, limit = 300 } = {}) => {
     let t = scrub(String(text ?? '')); if (re) t = t.replace(re, m => names.get(m));
-    // Unknown names before a title: a common surname + one or two syllables (not '다른 선생님', '남자 학생').
+    // Unknown names before a title: a common surname + one or two syllables (not '다른 선생님', '남자 원생').
     t = t.replace(/(?<![가-힣])[김이박최정강조윤장임한오서신권황안송류전홍고문양손배백허유심노하곽성차주우구민진엄채원천방공현함변염여추도소석설마길연위표명기왕금옥육인맹제모탁국은편용][가-힣]{1,2}(?=\s?(?:선생님|쌤|어머님|어머니|아버님|아버지|원장님))/g, '○○');
     if (!digits) t = t.replace(/\d+/g, '○');
     return clip(t, limit);
@@ -57,7 +57,7 @@ export function buildCaseFile(ix, v2, sid, { mask, at = null }) {
   // 2 recorded reason (bulk clean-up memos are not shown — the same as 2.0)
   if (ex.kind === 'withdrawn' && (meta.reason || meta.memo)) {
     const label = v2.reasonDisplay(meta.reason) || '미기재', d = detailKey ? v2.reasonDetailOf(detailKey)?.label : null, c = meta.consultation || {};
-    const talks = [c.adminCalledParent && '관리자 학부모 통화', c.teacherCalledParent && '담임 학부모 통화', c.talkedWithStudent && '학생 면담'].filter(Boolean);
+    const talks = [c.adminCalledParent && '관리자 학부모 통화', c.teacherCalledParent && '담임 학부모 통화', c.talkedWithStudent && '원생 면담'].filter(Boolean);
     push({ kind: 'reason', label: '퇴원 사유', text: [label, d, meta.memo && `메모: ${clip(scrub(meta.memo), 300)}`, talks.length && `상담: ${talks.join(', ')}`].filter(Boolean).join(' · '), source: { table: 'students', id: sid }, open: { family: 'withdrawals', id: sid },
       claude: `기록된 퇴원 사유: ${label}${d ? ` · ${d}` : ''}`, free: meta.memo ? mask(meta.memo) : null });
   }
