@@ -1,0 +1,28 @@
+.v2o-consultations .v2o-scroll{max-width:100%}
+.v2o-consultations table{table-layout:fixed;white-space:normal;font-size:14px}
+.v2o-consultations col[data-col=name]{width:6.5%}
+.v2o-consultations col[data-col=classes]{width:17%}
+.v2o-consultations col[data-col=target],.v2o-consultations col[data-col=self],.v2o-consultations col[data-col=other],.v2o-consultations col[data-col=missing]{width:7.5%}
+.v2o-consultations col[data-col=rate]{width:6%}
+.v2o-consultations col[data-col=w1],.v2o-consultations col[data-col=w2],.v2o-consultations col[data-col=w3],.v2o-consultations col[data-col=w4],.v2o-consultations col[data-col=w5]{width:4%}
+.v2o-consultations col[data-col=prev],.v2o-consultations col[data-col=three]{width:6.5%}
+.v2o-consultations col[data-col=action]{width:7.5%}
+.v2o-consultations th,.v2o-consultations td{padding:10px 4px;line-height:1.35}
+.v2o-consultations thead th{font-size:14px;text-align:center;overflow-wrap:normal;word-break:keep-all}
+.v2o-consultations thead th:first-child,.v2o-consultations thead th:nth-child(2){text-align:left}
+.v2o-consultations tbody td{text-align:center;white-space:nowrap}
+.v2o-consultations tbody td[data-col=classes]{text-align:left;overflow:hidden;text-overflow:ellipsis;cursor:help}
+.v2o-consultations .v2o-class-summary{display:flex;align-items:baseline;gap:3px;min-width:0}
+.v2o-consultations .v2o-class-leading{min-width:0;overflow:hidden;text-overflow:ellipsis}
+.v2o-consultations .v2o-class-extra{flex:none}
+.v2o-consultations tbody th{font-size:14px;white-space:nowrap}
+.v2o-consultations tbody th a{display:flex;align-items:center;justify-content:space-between;gap:2px;text-decoration:none}
+.v2o-consultations .v2o-name{text-decoration:underline;text-underline-offset:2px}
+.v2o-consultations .v2o-enter{margin:0;font-size:16px;line-height:1}
+.v2o-consultations tbody tr[data-v2-overview-href]{cursor:pointer}
+.v2o-consultations tbody tr[data-v2-overview-href]:hover{background:#f5f7fb}
+.v2o-consultations tbody tr[data-v2-overview-href]:focus-within{outline:2px solid #6078c8;outline-offset:-2px}
+.v2o-consultations td[data-col=rate][data-tone=muted]{color:#a45b08;font-weight:700}
+.v2o-consultations td:last-child .button{max-width:100%;white-space:nowrap;padding-inline:6px}
+.v2o-class-tip{position:fixed;z-index:1000;width:min(340px,calc(100vw - 16px));max-height:50vh;padding:10px 12px;border:1px solid #d5dce5;border-radius:9px;background:#fff;color:#26364c;box-shadow:0 8px 24px #26334b26;font-size:13px;line-height:1.6;overflow-wrap:anywhere;pointer-events:none}
+.v2o-class-tip[hidden]{display:none}

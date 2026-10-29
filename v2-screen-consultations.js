@@ -14,6 +14,72 @@
   const ACTOR_KEY = `v2-host-actor:${ID}`, SEL = `[data-v2-screen="${ID}"]`;
   const esc = s => S.esc(s);
   const queryOf = q => { const o = new URLSearchParams(); for (const k of KEEP) { const v = q.get(k); if (v) o.set(k, v); } return o.toString(); };
+  const RATE_LIMITS = Object.freeze({ danger: 50, caution: 90 });
+  let classTip = null;
+
+  function renderConsultOverview(model) {
+    if (!model.columns?.some(column => column.key === 'rate')) return S.renderOverview(model);
+    const rows = model.rows.map(row => {
+      const percent = Number.parseFloat(row.cells.rate?.text || '');
+      return { ...row, cells: { ...row.cells,
+        rate: { ...row.cells.rate, tone: !Number.isFinite(percent) ? '' : percent < RATE_LIMITS.danger ? 'low' : percent < RATE_LIMITS.caution ? 'muted' : 'high' },
+      } };
+    });
+    const noPrevious = model.period === '2026-10' && rows.every(row => row.cells.prev === '—');
+    const template = document.createElement('template');
+    template.innerHTML = S.renderOverview({ ...model, rows });
+    const section = template.content.querySelector('.v2o');
+    section.classList.add('v2o-consultations');
+    for (const line of [
+      noPrevious ? '지난달 기록 없음: 담임 상담 현황은 2026년 10월부터 집계합니다. 3개월 기록도 종료한 세 달이 모인 뒤 표시합니다.' : '',
+      `이행률 색: ${RATE_LIMITS.danger}% 미만 빨강 · ${RATE_LIMITS.caution}% 미만 주황`,
+    ]) {
+      if (!line) continue;
+      const note = document.createElement('p'); note.className = 'v2s-note'; note.textContent = line; section.append(note);
+    }
+    const table = section.querySelector('table');
+    const colgroup = document.createElement('colgroup');
+    for (const column of model.columns) {
+      const col = document.createElement('col'); col.dataset.col = column.key; colgroup.append(col);
+    }
+    if (model.rows.some(row => row.action)) { const col = document.createElement('col'); col.dataset.col = 'action'; colgroup.append(col); }
+    table.prepend(colgroup);
+    const renderedRows = table.querySelectorAll('tbody tr:not(.v2o-group)');
+    renderedRows.forEach((tr, i) => {
+      const row = model.rows[i], link = tr.querySelector('th a');
+      if (link) {
+        tr.dataset.v2OverviewHref = link.getAttribute('href');
+        const name = link.firstChild, label = document.createElement('span');
+        label.className = 'v2o-name'; label.textContent = name.textContent; link.replaceChild(label, name);
+        const enter = link.querySelector('.v2o-enter'); if (enter) enter.textContent = '›';
+      }
+      const classes = tr.querySelector('[data-col="classes"]');
+      if (classes && row.cells.classes) {
+        const names = String(row.cells.classes).split(', ').filter(Boolean);
+        classes.dataset.tip = String(row.cells.classes);
+        const summary = document.createElement('div'), leading = document.createElement('span');
+        summary.className = 'v2o-class-summary'; leading.className = 'v2o-class-leading';
+        leading.textContent = names.slice(0, 3).join(', '); summary.append(leading);
+        if (names.length > 3) {
+          const extra = document.createElement('span'); extra.className = 'v2o-class-extra';
+          extra.textContent = `외 ${names.length - 3}개`; summary.append(extra);
+        }
+        classes.replaceChildren(summary);
+      }
+    });
+    return template.innerHTML;
+  }
+
+  function hideClassTip() { if (classTip) classTip.hidden = true; }
+  function showClassTip(cell) {
+    classTip ??= Object.assign(document.createElement('div'), { className: 'v2o-class-tip', role: 'tooltip' });
+    if (!classTip.isConnected) document.body.append(classTip);
+    classTip.textContent = cell.dataset.tip;
+    classTip.hidden = false;
+    const r = cell.getBoundingClientRect(), width = classTip.offsetWidth, height = classTip.offsetHeight;
+    classTip.style.left = `${Math.max(8, Math.min(r.left, innerWidth - width - 8))}px`;
+    classTip.style.top = `${Math.max(8, Math.min(r.bottom + 6, innerHeight - height - 8))}px`;
+  }
 
   function ensureFrame(query) {
     if (!frame) {
@@ -111,6 +177,21 @@
         source: 'direct', draftKey: `consultation-guide:${factIds.join(':')}`, context: { family: 'consultations', familyLabel: '담임 상담 이행 현황',
           records, card: { metric: 'consultations-homeroom', factIds, refs: (row.missingIds || []).map(id => ({ type: 'student', id })) } } });
     });
+    document.addEventListener('click', e => {
+      const row = e.target.closest?.(`${SEL} .v2o-consultations tr[data-v2-overview-href]`);
+      if (row && !e.target.closest('a, button, input, select, textarea')) location.hash = row.dataset.v2OverviewHref;
+    });
+    document.addEventListener('pointerover', e => {
+      const cell = e.target.closest?.(`${SEL} .v2o-consultations [data-col="classes"][data-tip]`);
+      if (cell && !(e.relatedTarget instanceof Node && cell.contains(e.relatedTarget))) showClassTip(cell);
+    });
+    document.addEventListener('pointerout', e => {
+      const cell = e.target.closest?.(`${SEL} .v2o-consultations [data-col="classes"][data-tip]`);
+      if (cell && !(e.relatedTarget instanceof Node && cell.contains(e.relatedTarget))) hideClassTip();
+    });
+    document.addEventListener('scroll', hideClassTip, true);
+    addEventListener('resize', hideClassTip);
+    addEventListener('hashchange', hideClassTip);
     const later = () => requestAnimationFrame(place);
     addEventListener('resize', later); addEventListener('scroll', place, { passive: true }); addEventListener('hashchange', later);
     new MutationObserver(later).observe(document.body, { childList: true, subtree: true });
@@ -140,7 +221,7 @@
         }) } : null;
         requestAnimationFrame(place);
         return `<div class="v2h-note" role="note"><p><b>연습 화면</b> 상담 기록은 이 PC의 연습 자료입니다. 담임 상담 대상·완료 수는 통계 보기와 같습니다.</p><span data-v2h-actor-slot>${actorPicker()}</span><a class="button" href="#v2-consultations?v2path=%2Fconsultations%2Fstats">통계 보기</a></div>`
-          + (shown ? S.renderOverview(shown) : `<p class="v2s-note">${entry.status === 'error' ? esc(entry.error || '담임 현황을 불러오지 못했습니다.') : '담임 현황을 불러오는 중…'}</p>`);
+          + (shown ? renderConsultOverview(shown) : `<p class="v2s-note">${entry.status === 'error' ? esc(entry.error || '담임 현황을 불러오지 못했습니다.') : '담임 현황을 불러오는 중…'}</p>`);
       }
       lastOverview = null;
       const query = queryOf(ctx.query);
