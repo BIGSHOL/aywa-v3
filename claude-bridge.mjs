@@ -43,7 +43,7 @@ export const SYSTEM_PROMPT = [
   '- table = 여러 달·여러 항목을 견주는 것이 답의 핵심일 때만 {columns: 2~4개 머리, rows: 1~8줄(칸 수 = 머리 수)}, 아니면 null.',
   '- links = 답과 관련된 화면 0~4개. "이동할 수 있는 화면" 목록의 id만 그대로 쓴다.',
   '- issueIds = 답변이 다룬 이슈 ID(billing, admissions, attendance, approval, tasks, books, enrollment 중에서만).',
-  '- suggestedTask = 업무 요청 초안이 도움이 될 때만 {title: 40자 안팎의 요청 제목, body: 담당자에게 확인을 부탁하는 정중한 본문, area: 그 일을 볼 화면의 ws: id(목록에 없으면 ""), recordQueries: 질문에 원장이 직접 적은 학생·반 이름만(최대 5개, 없으면 [])}, 아니면 null.',
+  '- suggestedTask = 업무 요청 초안이 도움이 될 때만 {title: 40자 안팎의 요청 제목, body: 담당자에게 확인을 부탁하는 정중한 본문, area: 그 일을 볼 화면의 ws: id(목록에 없으면 ""), recordQueries: 질문에 원장이 직접 적은 원생·반 이름만(최대 5개, 없으면 [])}, 아니면 null.',
 ].join('\n');
 
 const LINK_ID = '^(ws|v2|trend):[a-z0-9-]{1,40}$';

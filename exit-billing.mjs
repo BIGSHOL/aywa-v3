@@ -59,9 +59,9 @@ const add = (p, sid, amount) => { p.students += 1; p.amount += amount; p.student
 export function decompose(monthly, from, to, { kindOf, isNew, subjectsOf, sessionsOf = () => null }) {
   const A = monthly.get(from) || new Map(), B = monthly.get(to) || new Map();
   const totalOf = m => [...m.values()].reduce((n, s) => n + s.total, 0);
-  const departed = part('departed', '빠진 학생', { groups: Object.fromEntries(Object.entries(DEPARTED_KINDS).map(([k, l]) => [k, part(k, l)])) });
-  const fresh = part('new', '새 학생', { groups: Object.fromEntries(Object.entries(NEW_KINDS).map(([k, l]) => [k, part(k, l)])) });
-  const retained = part('retained', '남은 학생 증감', { groups: {
+  const departed = part('departed', '빠진 원생', { groups: Object.fromEntries(Object.entries(DEPARTED_KINDS).map(([k, l]) => [k, part(k, l)])) });
+  const fresh = part('new', '새 원생', { groups: Object.fromEntries(Object.entries(NEW_KINDS).map(([k, l]) => [k, part(k, l)])) });
+  const retained = part('retained', '남은 원생 증감', { groups: {
     ...Object.fromEntries(Object.entries(ITEM_GROUPS).map(([k, l]) => [k, part(k, l, { estimateAmount: 0 })])),
     ...Object.fromEntries(Object.entries(REGULAR_BUCKETS).map(([k, l]) => [k, part(k, l, k === 'same_down' ? { sessionsChecked: 0, fewerSessions: 0 } : {})])) } });
   for (const [sid, a] of A) {

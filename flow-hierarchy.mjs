@@ -99,7 +99,7 @@ export function buildHierarchy(source, state, caseId) {
   const { asOf, capturedAt } = source.identity;
   const basis = adapter.basis({ asOf, capturedAt });
   const rows = refs.map(ref => { const e = source.entities.get(ref); return { ref, id: e.id, ...adapter.record(e) }; }).filter(r => r.studentId && source.entities.has(`student:${r.studentId}`));
-  if (!rows.length) throw new HierarchyError(422, 'hierarchy_no_relationships', '근거 기록이 학생·반과 이어지지 않아 선생님별로 묶지 못했습니다.');
+  if (!rows.length) throw new HierarchyError(422, 'hierarchy_no_relationships', '근거 기록이 원생·반과 이어지지 않아 선생님별로 묶지 못했습니다.');
   const steps = stepIndex(source, c, refs), flow = flowIndex(c), actors = new Set(source.actors.map(a => a.id));
 
   // Cohort check against the stated rule (window, threshold, enrolled) — reported, never "fixed".

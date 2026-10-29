@@ -55,7 +55,7 @@ export function decorate(p, opts) {
   }
   // Teachers and their classes: one Claude batch item per teacher (class lines come from the same item).
   for (const t of p.teachers.values()) {
-    const { shown, ai } = state(p, t, opts, '학생별 판정이 끝나면 시작합니다.');
+    const { shown, ai } = state(p, t, opts, '원생별 판정이 끝나면 시작합니다.');
     if (shown) {
       const o = shown.output, scope = t.tn.children.map(c => c.id).join(',');
       Object.assign(ai, block(o), { attention: o.attention, attentionLabel: o.attention === 'manager' ? '관리자도 확인' : '담임 확인', evidenceIds: evidence(o.evidenceIds, scope), ...meta(shown) });

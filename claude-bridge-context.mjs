@@ -115,9 +115,9 @@ function sections(db, s) {
     enrollment: {
       title: `청구 대상 ${n(Math.abs(delta))}명 ${delta < 0 ? '감소' : delta > 0 ? '증가' : '유지'}`,
       lines: [
-        `월별 수강료 청구 대상(고유 학생): ${s.trend.map(t => `${t.month} ${n(t.payingStudents)}명`).join(' → ')}. 전월 대비 ${signed(delta)}명.`,
-        `현재 학생 상태 기준 재원 ${n(enrolled)}명, 휴원 ${n(onHold)}명(테스트 학생 제외).${latestDaily ? ` 일별 기록 최근값 ${latestDaily.date}: 재원 ${n(latestDaily.enrolled)}명, 휴원 ${n(latestDaily.onHold)}명.` : ''}`,
-        '주의: 청구 대상 수는 그 달에 수강료가 청구된 학생 수(코호트)이며 현재 재원 수와 다른 지표임. 증감을 퇴원 인원으로 해석하지 않음. 원인은 기간별 수강·청구 대조가 필요함.',
+        `월별 수강료 청구 대상(고유 원생): ${s.trend.map(t => `${t.month} ${n(t.payingStudents)}명`).join(' → ')}. 전월 대비 ${signed(delta)}명.`,
+        `현재 원생 상태 기준 재원 ${n(enrolled)}명, 휴원 ${n(onHold)}명(테스트 원생 제외).${latestDaily ? ` 일별 기록 최근값 ${latestDaily.date}: 재원 ${n(latestDaily.enrolled)}명, 휴원 ${n(latestDaily.onHold)}명.` : ''}`,
+        '주의: 청구 대상 수는 그 달에 수강료가 청구된 원생 수(코호트)이며 현재 재원 수와 다른 지표임. 증감을 퇴원 인원으로 해석하지 않음. 원인은 기간별 수강·청구 대조가 필요함.',
       ],
     },
   };
@@ -128,7 +128,7 @@ export function buildAssistantContext(db) {
   const enrolled = db.students.filter(x => x.status === 'enrolled').length;
   const overview = [
     `기준일 ${s.asOf}(로컬 검증 복사본 · 원본 스냅샷 ${kst(db.meta.importedAt)}). 이번 달 = ${s.month}(1일~기준일).`,
-    `현재 재원 ${n(enrolled)}명(학생 상태 기준). ${s.month} 수강료 청구 대상 ${n(s.now.payingStudents)}명 — 두 수는 다른 지표.`,
+    `현재 재원 ${n(enrolled)}명(원생 상태 기준). ${s.month} 수강료 청구 대상 ${n(s.now.payingStudents)}명 — 두 수는 다른 지표.`,
     `확인할 이슈: ${ASSISTANT_ISSUE_IDS.map(id => `${id}=${parts[id].title}`).join(' · ')}.`,
   ];
   const issues = Object.fromEntries(ASSISTANT_ISSUE_IDS.map(id => [id, Object.freeze({ title: parts[id].title, text: [`[${id}] ${parts[id].title}`, ...parts[id].lines.map(l => `- ${l}`)].join('\n') })]));

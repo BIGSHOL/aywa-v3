@@ -12,7 +12,7 @@ window.createExitInsight = function createExitInsight(api) {
   const btn = (label, attrs, cls = '') => `<button type="button" class="xi-btn ${cls}" ${attrs}>${label}</button>`;
   const TABLE = { students: '원생', enrollments: '수강', attendance_records: '출결', student_consultations: '원생상담', withdrawal_reports: '퇴원보고서', withdrawal_report_archives: '퇴원보고서 시트', student_grades: '성적', invoices: '청구', classes: '반', class_schedules: '시간표 배치', audit_logs: '변경 기록', users: '직원' };
   const STATUS = { disabled: ['자동 분석 꺼짐', ''], not_scheduled: ['기록 집계만', ''], queued: ['AI 분석 대기', 'blue'], running: ['AI 분석 중', 'blue'], partial: ['AI 분석 일부 완료', 'amber'], complete: ['AI 분석 완료', 'green'], error: ['AI 분석 오류', 'amber'] };
-  const st = { index: null, data: null, ask: 0, timer: 0, from: null, to: null, stop: null, sort: { key: 'amount', dir: 0 } }; // 빠진 학생 기본 = 감소 금액 큰 순
+  const st = { index: null, data: null, ask: 0, timer: 0, from: null, to: null, stop: null, sort: { key: 'amount', dir: 0 } }; // 빠진 원생 기본 = 감소 금액 큰 순
 
   const loadIndex = () => (st.index ? Promise.resolve(st.index) : fetch(ENDPOINT, { headers: { Accept: 'application/json' } }).then(r => (r.ok ? r.json() : null)).catch(() => null).then(j => (st.index = j)));
   /** Entry button for a card. Pure HTML: nothing is fetched until it is pressed. */
@@ -20,7 +20,7 @@ window.createExitInsight = function createExitInsight(api) {
 
   function open(from, to) {
     st.from = from; st.to = to; const ask = ++st.ask; clearTimeout(st.timer);
-    const title = `${mlabel(from)} → ${mlabel(to)} 청구 변화와 원인`, desc = `${ym(from)}과 ${ym(to)}의 청구를 학생 단위로 대조했습니다.`;
+    const title = `${mlabel(from)} → ${mlabel(to)} 청구 변화와 원인`, desc = `${ym(from)}과 ${ym(to)}의 청구를 원생 단위로 대조했습니다.`;
     // 이미 열린 창에서 기간만 바꾸면 창을 비우지 않는다 — 제목만 바꾸고 지금 내용을 흐리게 둔 채 새 내용으로 갈아 끼운다
     // (원장 10-28 "선택시마다 작아졌다가 다시 커지는데, 작아지지말고 창 유지한 상태에서 변화했으면").
     const shown = $('#modal')?.open && $('#modal .live-detail-body > .xi[data-filter]');
@@ -65,13 +65,13 @@ window.createExitInsight = function createExitInsight(api) {
     const note = g => [g?.estimateAmount ? `설명 문구로 분류한 금액 ${signed(g.estimateAmount)}(추정)` : '', g?.sessionsChecked != null ? `회차 확정 기록 대조 ${fmt(g.sessionsChecked)}명 중 ${fmt(g.fewerSessions)}명은 예정 회차가 줄었음` : ''].filter(Boolean);
     return `<div class="xi-bars" data-chart data-axis="y" tabindex="0" role="group" aria-label="청구 변화 내역. 화살표 키로 항목을 옮기며 금액을 확인합니다">${rows.map(r => {
       const w = Math.abs(r.amount) / max * 50, side = r.amount < 0 ? `right:50%;width:${w}%` : `left:50%;width:${w}%`;
-      return `<div class="xi-bar ${r.head ? 'head' : ''} ${r.amount < 0 ? 'neg' : r.amount > 0 ? 'pos' : ''}" data-point data-tip="${tip(`${ym(d.from)} → ${ym(d.to)}`, [{ label: r.label, value: signed(r.amount), tone: 'primary' }], [`학생 ${fmt(r.students)}명`, share(r.amount), ...note(r.group)])}"><span class="xi-bar-label">${h(r.label)}${r.group?.estimateAmount ? ' ' + pill('추정', 'amber') : ''}</span><span class="xi-bar-track"><i data-anchor style="${side}"></i></span><strong>${signed(r.amount)}</strong>${r.students && (r.part === 'departed' || r.id === 'departed') ? btn(`학생 ${fmt(r.students)}명`, `data-xi="filter" data-filter="${h(r.id)}"`) : '<span></span>'}</div>`;
-    }).join('')}</div>${d.parts[2]?.groups.some(g => g.sessionsChecked != null) ? `<p class="xi-note">같은 과목 수인데 금액이 줄어든 학생 중 회차 확정 기록이 두 달 모두 있는 ${fmt(d.parts[2].groups.find(g => g.sessionsChecked != null).sessionsChecked)}명을 대조했고, ${fmt(d.parts[2].groups.find(g => g.sessionsChecked != null).fewerSessions)}명은 뒤 달 예정 회차가 적습니다. 나머지는 회차 차이를 확인하지 못했습니다.</p>` : ''}`;
+      return `<div class="xi-bar ${r.head ? 'head' : ''} ${r.amount < 0 ? 'neg' : r.amount > 0 ? 'pos' : ''}" data-point data-tip="${tip(`${ym(d.from)} → ${ym(d.to)}`, [{ label: r.label, value: signed(r.amount), tone: 'primary' }], [`원생 ${fmt(r.students)}명`, share(r.amount), ...note(r.group)])}"><span class="xi-bar-label">${h(r.label)}${r.group?.estimateAmount ? ' ' + pill('추정', 'amber') : ''}</span><span class="xi-bar-track"><i data-anchor style="${side}"></i></span><strong>${signed(r.amount)}</strong>${r.students && (r.part === 'departed' || r.id === 'departed') ? btn(`원생 ${fmt(r.students)}명`, `data-xi="filter" data-filter="${h(r.id)}"`) : '<span></span>'}</div>`;
+    }).join('')}</div>${d.parts[2]?.groups.some(g => g.sessionsChecked != null) ? `<p class="xi-note">같은 과목 수인데 금액이 줄어든 원생 중 회차 확정 기록이 두 달 모두 있는 ${fmt(d.parts[2].groups.find(g => g.sessionsChecked != null).sessionsChecked)}명을 대조했고, ${fmt(d.parts[2].groups.find(g => g.sessionsChecked != null).fewerSessions)}명은 뒤 달 예정 회차가 적습니다. 나머지는 회차 차이를 확인하지 못했습니다.</p>` : ''}`;
   }
   function aiLine(a) {
     const [label, tone] = STATUS[a.status] || ['상태 미상', ''], j = a.jev, c = a.claude;
     // 모델 이름·버전·호출 한도 같은 개발자용 정보는 싣지 않는다(원장 10-28 "개발자가 아닌 사람이 보지않아도 되는건 왜 보여주는 거지?").
-    const parts = [j && j.total ? `학생별 원인 분류 ${fmt(j.done)}/${fmt(j.total)}명${j.failed ? ` · 분류 못 함 ${fmt(j.failed)}` : ''}${j.review ? ` · 사람 확인 ${fmt(j.review)}` : ''}` : '', c?.status === 'error' ? '묶음 설명을 아직 만들지 못함' : '', a.claude?.blocked === 'budget' ? '묶음 설명은 잠시 뒤 이어서 만듦' : ''].filter(Boolean);
+    const parts = [j && j.total ? `원생별 원인 분류 ${fmt(j.done)}/${fmt(j.total)}명${j.failed ? ` · 분류 못 함 ${fmt(j.failed)}` : ''}${j.review ? ` · 사람 확인 ${fmt(j.review)}` : ''}` : '', c?.status === 'error' ? '묶음 설명을 아직 만들지 못함' : '', a.claude?.blocked === 'budget' ? '묶음 설명은 잠시 뒤 이어서 만듦' : ''].filter(Boolean);
     return `<div class="xi-ai-line">${pill(label, tone)}<span>${h(a.note || a.disabledReason || parts.join(' · ') || '')}</span></div>`;
   }
   // AI 글 서식(원장 10-28 "볼드나 밑줄 등의 서식도 적극적으로 활용"): 코드가 넣은 이름(⟦ ⟧)은 굵게, '다만 …' 단서 문장은 밑줄. 글자는 이스케이프한 뒤에만 서식을 입힌다.
@@ -93,13 +93,13 @@ window.createExitInsight = function createExitInsight(api) {
     for (const f of c.facts) number(c.id, f.key, f);
     const ai = c.ai ? `<div class="xi-ai">${pill('AI 초안', 'blue')}${c.ai.confidence === '사람 확인' ? pill('사람 확인', 'amber') : ''}<p>${rich(c.ai.summary)}</p><ol class="xi-chain">${chain}</ol></div>` : '';
     const facts = `<ol class="xi-notes" aria-label="근거">${notes.map((f, n) => `<li id="xi-n-${h(c.id)}-${n + 1}"><span class="xi-n-no">[${n + 1}]</span><span class="xi-n-text">${f.label && f.label !== f.text ? `<b>${h(f.label)}</b> ` : ''}${h(f.text || '')}</span>${factSource(f)}${factOpen(f)}</li>`).join('')}</ol>`;
-    return `<article class="xi-cluster" ${i >= 8 ? 'data-more hidden' : ''}><header><div>${pill(c.kindLabel)}<h4>${h(c.label)}</h4></div><strong>${fmt(c.members.length)}명 · ${signed(c.amount)}</strong></header>${ai}${facts}${btn(`이 묶음 학생 ${fmt(c.members.length)}명 보기`, `data-xi="filter" data-filter="cluster:${h(c.id)}"`, 'link')}</article>`;
+    return `<article class="xi-cluster" ${i >= 8 ? 'data-more hidden' : ''}><header><div>${pill(c.kindLabel)}<h4>${h(c.label)}</h4></div><strong>${fmt(c.members.length)}명 · ${signed(c.amount)}</strong></header>${ai}${facts}${btn(`이 묶음 원생 ${fmt(c.members.length)}명 보기`, `data-xi="filter" data-filter="cluster:${h(c.id)}"`, 'link')}</article>`;
   }
   function weeks(f) {
     const max = Math.max(1, ...f.weeks.map(w => w.attended + w.absent));
     return `<div class="xi-weeks" data-chart tabindex="0" role="group" aria-label="그만두기 전 8주 출결. 화살표 키로 주를 옮깁니다">${f.weeks.map(w => `<span data-point data-tip="${tip(`${w.from} 주`, [{ label: '출석', value: `${fmt(w.attended)}회`, tone: 'primary' }, { label: '결석', value: `${fmt(w.absent)}회`, tone: 'secondary' }])}"><i data-anchor style="height:${(w.attended + w.absent) / max * 100}%"><b style="height:${w.attended + w.absent ? w.absent / (w.attended + w.absent) * 100 : 0}%"></b></i></span>`).join('')}</div>`;
   }
-  // 빠진 학생 표 — 열을 고정해 줄마다 같은 자리에 같은 것(원장 10-28 "중구난방이 아닌 열정렬을 통해 깔끔하게"):
+  // 빠진 원생 표 — 열을 고정해 줄마다 같은 자리에 같은 것(원장 10-28 "중구난방이 아닌 열정렬을 통해 깔끔하게"):
   // 이름 · 학교 · 구분 · 시점 · 기록된 사유 · AI 추정 · 금액. 칸은 한 줄(넘치면 말줄임 — 전체는 펼친 상세에).
   const ymd = d => (/^\d{4}-\d{2}-\d{2}/.test(String(d ?? '')) ? `${d.slice(2, 4)}.${d.slice(5, 7)}.${d.slice(8, 10)}` : '');
   const dates = t => String(t ?? '').replace(/\b20(\d{2})-(\d{2})-(\d{2})\b/g, '$1.$2.$3').replace(/\b20(\d{2})-(\d{2})\b/g, '$1.$2'); // 상세 글의 날짜 yy.mm.dd · 연월 yy.mm
@@ -132,8 +132,8 @@ window.createExitInsight = function createExitInsight(api) {
     const a = d.analysis, more = d.clusters.length - 8;
     return `<div class="xi" data-filter="">${pairs(d)}<div class="xi-totals"><div><span>${ym(d.from)} 청구</span><strong>${won(d.totals.from)}</strong></div><div><span>${ym(d.to)} 청구</span><strong>${won(d.totals.to)}</strong></div><div><span>차이</span><strong class="${d.totals.delta < 0 ? 'neg' : d.totals.delta > 0 ? 'pos' : ''}">${signed(d.totals.delta)}</strong></div></div>
       <section><h3>① 청구 변화 내역</h3><p class="xi-note">${h(d.basis.billing)}.${d.check.exact ? '' : ` <strong>나눈 금액의 합이 차이와 다릅니다(합 ${signed(d.check.sum)}).</strong>`} ${h(d.basis.special)}.</p>${bars(d)}</section>
-      <section><h3>② 원인 묶음</h3>${aiLine(a)}${overall(d)}<p class="xi-note">묶음은 빠진 학생의 기록을 이어 만든 후보입니다(한 학생이 여러 묶음에 들 수 있음). ${h(d.basis.teacher)}.</p><div class="xi-clusters">${d.clusters.map((c, i) => cluster(c, i, d)).join('')}</div>${more > 0 ? btn(`나머지 묶음 ${fmt(more)}개 보기`, 'data-xi="more"', 'link') : ''}</section>
-      <section id="xi-students"><h3>③ 빠진 학생별 기록 <span class="xi-count">${fmt(d.students.length)}명</span></h3><div class="xi-filter-line" hidden><span></span>${btn('전체 보기', 'data-xi="filter" data-filter=""', 'link')}</div><p class="xi-note">${h(d.basis.cleanup)}. ‘기록’은 퇴원 기록에 적힌 사유, ‘AI 추정’은 사유가 비어 있어 다른 기록으로 짐작한 것입니다.</p>${studentHead()}<ul class="xi-students">${[...d.students].sort((a, b) => SORT[st.sort.key](a, b) * (st.sort.dir ? -1 : 1)).map(student).join('')}</ul></section></div>`;
+      <section><h3>② 원인 묶음</h3>${aiLine(a)}${overall(d)}<p class="xi-note">묶음은 빠진 원생의 기록을 이어 만든 후보입니다(한 원생이 여러 묶음에 들 수 있음). ${h(d.basis.teacher)}.</p><div class="xi-clusters">${d.clusters.map((c, i) => cluster(c, i, d)).join('')}</div>${more > 0 ? btn(`나머지 묶음 ${fmt(more)}개 보기`, 'data-xi="more"', 'link') : ''}</section>
+      <section id="xi-students"><h3>③ 빠진 원생별 기록 <span class="xi-count">${fmt(d.students.length)}명</span></h3><div class="xi-filter-line" hidden><span></span>${btn('전체 보기', 'data-xi="filter" data-filter=""', 'link')}</div><p class="xi-note">${h(d.basis.cleanup)}. ‘기록’은 퇴원 기록에 적힌 사유, ‘AI 추정’은 사유가 비어 있어 다른 기록으로 짐작한 것입니다.</p>${studentHead()}<ul class="xi-students">${[...d.students].sort((a, b) => SORT[st.sort.key](a, b) * (st.sort.dir ? -1 : 1)).map(student).join('')}</ul></section></div>`;
   }
   // In-dialog jumps glide inside the dialog body and brake into place (AGENTS.md scroll rule); any input stops them.
   function glide(node) {
@@ -154,7 +154,7 @@ window.createExitInsight = function createExitInsight(api) {
     const root = $('#modal .xi'); if (!root) return; root.dataset.filter = f;
     let n = 0; root.querySelectorAll('.xi-student').forEach(li => { const on = !f || li.dataset.groups.split('|').includes(f); li.hidden = !on; if (on) n += 1; });
     const line = root.querySelector('.xi-filter-line'); line.hidden = !f;
-    const label = f.startsWith('cluster:') ? st.data.clusters.find(c => `cluster:${c.id}` === f)?.label : (st.data.parts[0].groups.find(g => `departed.${g.id}` === f)?.label || (f === 'departed' ? '빠진 학생 전체' : ''));
+    const label = f.startsWith('cluster:') ? st.data.clusters.find(c => `cluster:${c.id}` === f)?.label : (st.data.parts[0].groups.find(g => `departed.${g.id}` === f)?.label || (f === 'departed' ? '빠진 원생 전체' : ''));
     line.querySelector('span').textContent = f ? `${label || '선택한 묶음'} · ${fmt(n)}명` : '';
     if (scroll) glide(root.querySelector('#xi-students'));
   }
