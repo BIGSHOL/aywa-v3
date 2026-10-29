@@ -55,7 +55,7 @@ export const AREA_GROUPS = [
 
 export const AREAS = [
   // ───────── 홈 ─────────
-  { id: 'dashboard', label: '대시보드', group: 'home', viewKind: 'report', summary: '역할별로 배치한 지표와 카드로 학원 현황을 봅니다.',
+  { id: 'dashboard', label: '운영실', group: 'home', viewKind: 'report', summary: '역할별로 배치한 지표와 카드로 학원 현황을 봅니다.',
     facets: [fc('kpi', '상단 지표', text(REG, 'enrolledToday')), fc('attendance', '출결·수업', text(REG, '출결·수업'), 'filter'), fc('students', '원생·재원', text(REG, '학생·재원'), 'filter'),
       fc('admissions', '상담·신입', text(REG, '상담·신입'), 'filter'), fc('billing', '수납·지출', text(REG, '수납·지출'), 'filter'), fc('operations', '학원 운영', text(REG, '학원 운영'), 'filter'),
       fc('announcements', '학원 공지', route('/dashboard/announcements'), 'face')],

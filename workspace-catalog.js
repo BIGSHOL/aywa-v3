@@ -56,7 +56,7 @@ window.AxCatalog = {
  "areas": [
   {
    "id": "dashboard",
-   "label": "대시보드",
+   "label": "운영실",
    "group": "홈",
    "groupId": "home",
    "page": "workspace-dashboard",
