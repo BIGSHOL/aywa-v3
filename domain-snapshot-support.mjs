@@ -58,9 +58,9 @@ export async function supportFamilies({ sql, t, asOf, month, monthStart, subject
     sources: [{ table: 'users', rows: teachers.length }, { table: 'class_delegations', rows: tw.delegations }],
   });
 
-  out['student-portal'] = family('student-portal', '학생 내 학습', {
-    summary: '학생 화면은 예시 데이터로 그려지며 이 지점 기록과는 연결되지 않았습니다.', dataState: 'unavailable', sourceLabel: '예시 데이터',
-    coverageNote: '학생 계정과 학습 열람 기록이 없어 볼 수치가 없습니다.',
+  out['student-portal'] = family('student-portal', '원생 내 학습', {
+    summary: '원생 화면은 예시 데이터로 그려지며 이 지점 기록과는 연결되지 않았습니다.', dataState: 'unavailable', sourceLabel: '예시 데이터',
+    coverageNote: '원생 계정과 학습 열람 기록이 없어 볼 수치가 없습니다.',
   });
 
   // 학부모 포털 — 계정·학부모가 낸 등하원 변경.

@@ -2,7 +2,7 @@
 import { PRIORITY, family, field, latest, metric, monthlyTrend, record, signal, yymm } from './domain-snapshot-core.mjs';
 
 // src/lib/auth/role-hierarchy.ts ROLE_LABEL과 같은 표.
-export const ROLE_LABEL = { master: '원장', admin: '관리자', manager: '매니저', accountant: '회계', counselor: '상담사', teacher: '강사', viewer: '참관', student: '학생' };
+export const ROLE_LABEL = { master: '원장', admin: '관리자', manager: '매니저', accountant: '회계', counselor: '상담사', teacher: '강사', viewer: '참관', student: '원생' };
 // 2.0 청구 상태 원문(src/features/billing/status-color.ts).
 const INVOICE = { paid: '납부완료', partial: '부분납부', unpaid: '미납', void: '무효', refunded: '환불' };
 const BOOK = { requested: '요청', ordered: '주문', delivered: '전달', billed: '청구', paid: '납부 완료' };
@@ -11,14 +11,14 @@ const won = n => `${new Intl.NumberFormat('ko-KR').format(Math.round(n))}원`;
 
 export async function peopleFamilies({ sql, t, asOf, month, monthStart }) {
   const out = {};
-  // 직원관리 — 2.0 getStaffList와 같은 모집단: 지점 사용자 중 학생 계정 제외, 퇴사자 포함(기본 보기 = 재직).
+  // 직원관리 — 2.0 getStaffList와 같은 모집단: 지점 사용자 중 원생 계정 제외, 퇴사자 포함(기본 보기 = 재직).
   // 운영 지원 계정(super_admins)은 2.0 직원 목록처럼 '관리자'로 표시만 바꾼다(displayRoleFor) — 권한·집계 대상은 그대로.
   const users = await sql`select u.id, u.display_name, case when exists (select 1 from public.super_admins sa where sa.id=u.id) then 'admin' else u.system_role::text end role, u.status::text st, u.job_title, u.employment_type, u.hire_date::text hired from public.users u where u.tenant_id=${t} and u.system_role::text <> 'student' order by (u.status='active') desc, u.display_name`;
   const [sf] = await sql`select (select count(*)::int from public.staff_contracts c join public.users u on u.id=c.user_id and u.tenant_id=${t} where c.tenant_id=${t} and c.kind='contract' and u.status='active' and (c.start_date is null or c.start_date <= ${asOf}) and (c.end_date is null or c.end_date >= ${asOf})) contracts, (select count(*)::int from public.staff_contracts where tenant_id=${t}) contracts_all, (select count(*)::int from public.staff_attendance_days where tenant_id=${t} and work_date between ${monthStart} and ${asOf}) work_days, (select count(*)::int from public.staff_attendance_days where tenant_id=${t} and work_date between ${monthStart} and ${asOf} and coalesce(late_minutes,0) > 0) late_days, (select count(*)::int from public.staff_attendance_days where tenant_id=${t}) attendance_all, (select count(*)::int from public.leave_forms where tenant_id=${t}) leaves, (select count(*)::int from public.leave_forms where tenant_id=${t} and end_date >= ${asOf}) upcoming_leaves`;
   const active = users.filter(u => u.st === 'active');
   out.staff = family('staff', '직원관리(명부·계약·이력서·휴가·연차)', {
     summary: `이번 달 지각 기록 ${sf.late_days}건 · 아직 끝나지 않은 휴가 ${sf.upcoming_leaves}건.`,
-    metrics: [metric('전체 명부', users.length, '명', '퇴사자 포함 · 학생 계정 제외'), metric('현재 재직', active.length, '명'), metric('유효한 계약', sf.contracts, '건', '재직 직원 기준'), metric('이번 달 출근 기록', sf.work_days, '건', '메이크에듀 출퇴근 기록'), metric('이번 달 지각 기록', sf.late_days, '건'), metric('전체 휴가 신청', sf.leaves, '건', `아직 끝나지 않은 휴가 ${sf.upcoming_leaves}건`)],
+    metrics: [metric('전체 명부', users.length, '명', '퇴사자 포함 · 원생 계정 제외'), metric('현재 재직', active.length, '명'), metric('유효한 계약', sf.contracts, '건', '재직 직원 기준'), metric('이번 달 출근 기록', sf.work_days, '건', '메이크에듀 출퇴근 기록'), metric('이번 달 지각 기록', sf.late_days, '건'), metric('전체 휴가 신청', sf.leaves, '건', `아직 끝나지 않은 휴가 ${sf.upcoming_leaves}건`)],
     trend: monthlyTrend('월별 직원 출근 기록', '건', await sql`select to_char(work_date,'YYYY-MM') as month, count(*)::int as value from public.staff_attendance_days where tenant_id=${t} and work_date <= ${asOf} group by 1`, asOf),
     evidence: users.map(u => record({ id: u.id, label: u.display_name, detail: u.job_title || '', date: u.hired, status: u.st === 'active' ? '재직' : '퇴사', fields: [field('역할', ROLE_LABEL[u.role] || '기타'), field('고용 형태', u.employment_type)], facets: [`status:${u.st}`, `role:${u.role}`, u.employment_type && `type:${u.employment_type}`] })),
     facetLabels: { 'status:active': '재직', 'status:inactive': '퇴사', ...pre('role', ROLE_LABEL), ...Object.fromEntries([...new Set(users.map(u => u.employment_type).filter(Boolean))].map(k => [`type:${k}`, k])) }, recordSource: 'users',

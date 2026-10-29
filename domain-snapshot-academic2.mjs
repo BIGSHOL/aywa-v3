@@ -8,7 +8,7 @@ const status = (prefix, labels) => Object.fromEntries(Object.entries(labels).map
 export async function attendanceFamilies(ctx) {
   const { sql, t, asOf, month, monthStart, subjectLabel, subjectFacets } = ctx;
   const out = {};
-  // 정정된 출결은 최신 줄만(supersedes_id), 기준일까지, 테스트 학생 제외 — snapshot.mjs와 같은 규칙.
+  // 정정된 출결은 최신 줄만(supersedes_id), 기준일까지, 테스트 원생 제외 — snapshot.mjs와 같은 규칙.
   const valid = sql`(select a.* from public.attendance_records a where a.tenant_id=${t} and a.session_date <= ${asOf} and not exists (select 1 from public.attendance_records b where b.tenant_id=${t} and b.supersedes_id=a.id) and a.student_id not in (select id from public.students where tenant_id=${t} and coalesce(is_test,false)))`;
   // 시간 = 그 칸의 교시(시작 시각)와 같은 날 유효한 반 배치의 끝 시각. 시작 시각이 없는 칸은 그 요일 반 배치 전부(배치 이력 #88 — 그날 유효한 행만).
   const rows = await sql`select v.id, v.student_id, s.name, s.status student_status, c.class_name, v.session_date::text d, v.status::text st, v.seat_label seat, left(v.note, 100) note,
@@ -21,7 +21,7 @@ export async function attendanceFamilies(ctx) {
   const repeat = new Set([...absentBy].filter(([, n]) => n >= 3).map(([id]) => id));
   const attended = rows.filter(r => ['present', 'late'].includes(r.st)).length;
   const rate = rows.length ? Math.round(attended / rows.length * 1000) / 10 : null;
-  // 이름 칸 = 원생, 내용 = 반, 날짜 = 수업일(원장 10-28 "학생이면 학생에게서 알아야할 정보들이 있잖아") — 날짜를 이름에 다시 적지 않는다.
+  // 이름 칸 = 원생, 내용 = 반, 날짜 = 수업일(원장 10-28 "원생이면 원생에게서 알아야할 정보들이 있잖아") — 날짜를 이름에 다시 적지 않는다.
   const repeatAbsent = r => r.st === 'absent' && repeat.has(r.student_id);
   const evidence = rows.map(r => record({ id: r.id, label: r.name, detail: r.class_name || '반 없음', date: r.d, status: ATT[r.st] || '기타', fields: [field('시간', r.slot), field('자리', r.seat), field('메모', r.note)], facets: [`status:${r.st}`, repeat.has(r.student_id) && 'repeat-absence', repeatAbsent(r) && 'repeat-absence-absent'] }));
   const nameOf = id => rows.find(r => r.student_id === id)?.name || '이름 모름';
@@ -33,7 +33,7 @@ export async function attendanceFamilies(ctx) {
     trend: monthlyTrend('월별 출석률', '%', monthly, asOf), evidence, detailLabel: '반', dateLabel: '수업일',
     facetOrder: [...Object.keys(ATT).map(k => `status:${k}`), 'repeat-absence', 'repeat-absence-absent'], facetLabels: { ...status('status', ATT), 'repeat-absence': '이번 달 결석 3회 이상 원생의 출결', 'repeat-absence-absent': '이번 달 결석 3회 이상 원생의 결석' }, recordSource: 'attendance_records',
     signals: repeat.size ? [signal({ id: 'attendance-repeat-absence', title: `이번 달 결석 3회 이상 ${repeat.size}명`, summary: `많은 순: ${most.slice(0, 3).map(([id, n]) => `${nameOf(id)} ${n}회`).join(' · ')}${most.length > 3 ? ` 외 ${most.length - 3}명` : ''}. 결석은 수업마다 따로 셉니다.`, priority: PRIORITY.check, source: '출석부 · 정정 반영 출결', recordIds: repeatRows.map(r => r.id), facet: 'repeat-absence-absent', at: latest(repeatRows.map(r => r.d)), draft: { title: '결석 사유 및 보강 계획 확인', body: '이번 달 결석이 3회 이상인 원생의 결석 사유와 보호자 연락 여부, 보강 계획을 확인해 주세요.' } })] : [],
-    sourceLabel: '출석부 · 결석 후속 · 키오스크', coverageNote: '목록은 이번 달 출결 칸입니다(결석 먼저 · 정정 전 기록과 테스트 학생 제외).',
+    sourceLabel: '출석부 · 결석 후속 · 키오스크', coverageNote: '목록은 이번 달 출결 칸입니다(결석 먼저 · 정정 전 기록과 테스트 원생 제외).',
     sources: [{ table: 'attendance_records', rows: aux.raw }, { table: 'attendance_followups', rows: aux.followups }, { table: 'kiosk_devices', rows: aux.kiosks }],
   });
 
@@ -127,12 +127,12 @@ export async function classReviewFamily({ sql, t }) {
   const judgments = await sql`select state as key, count(*)::int count from public.teacher_satisfaction_judgments where tenant_id=${t} group by 1`;
   const [cr] = await sql`select count(*)::int reviews, max(to_char(created_at at time zone 'Asia/Seoul','YYYY-MM-DD')) last_review from public.academy_documents where tenant_id=${t} and form_type='class_review'`;
   const pending = countOf(judgments, 'pending');
-  // 만족도 확인 대기 글 = 신호의 근거(원장 10-28 "만족도를 확인하러 가고 싶은데 어디로 가야하는지 배선 같은게 없음"). 학생·반·담임·날짜로 이름을 붙인다.
+  // 만족도 확인 대기 글 = 신호의 근거(원장 10-28 "만족도를 확인하러 가고 싶은데 어디로 가야하는지 배선 같은게 없음"). 원생·반·담임·날짜로 이름을 붙인다.
   // 판정할 글 본문(앞 200자 · 연락처는 field()가 가린다)도 함께 — 확인 대기 글은 본문을 봐야 판정할 수 있다.
   const satisfaction = pending ? await sql`select j.id, s.name student, c.class_name, u.display_name teacher, j.posted_on::text d, j.verdict, j.method, j.reason, j.phrase, left(m.content, 200) content from public.teacher_satisfaction_judgments j left join public.students s on s.id=j.student_id and s.tenant_id=${t} left join public.classes c on c.id=j.class_id and c.tenant_id=${t} left join public.users u on u.id=c.teacher_id and u.tenant_id=${t} left join public.classnote_parent_messages m on m.id=j.message_id and m.tenant_id=${t} where j.tenant_id=${t} and j.state='pending' order by j.posted_on desc, j.id` : [];
   const VERDICT = { plus: '만족 쪽', minus: '불만 쪽' };
   // 이름 칸 = 원생, 내용 = 반, 날짜 = 글 쓴 날.
-  const satisfactionRecords = satisfaction.map(r => record({ id: r.id, label: r.student || '학생 모름', detail: r.class_name || '반 모름', date: r.d, status: '확인 대기', fields: [field('담임', r.teacher), field('학부모 글', r.content), field('판정 이유', r.reason || r.phrase), field('판정 방식', r.method === 'ai' ? 'AI 판정' : '문구 규칙'), field('잠정 판정', VERDICT[r.verdict] || '판정 못 함')], facets: ['satisfaction:pending'] }));
+  const satisfactionRecords = satisfaction.map(r => record({ id: r.id, label: r.student || '원생 모름', detail: r.class_name || '반 모름', date: r.d, status: '확인 대기', fields: [field('담임', r.teacher), field('학부모 글', r.content), field('판정 이유', r.reason || r.phrase), field('판정 방식', r.method === 'ai' ? 'AI 판정' : '문구 규칙'), field('잠정 판정', VERDICT[r.verdict] || '판정 못 함')], facets: ['satisfaction:pending'] }));
   out['class-review'] = family('class-review', '직원 평가·직원 포트폴리오', {
     summary: portfolio.length ? `직원 포트폴리오 ${yymm(portfolio.at(-1).month)}~${yymm(portfolio[0].month)}.` : '직원 포트폴리오 기록이 없습니다.',
     metrics: [metric('수업 평가 문서', cr.reviews, '건', `최근 ${cr.last_review ? md(cr.last_review) : '기록 없음'}`), metric('포트폴리오 대상 직원', new Set(portfolio.map(p => p.display_name)).size, '명'), metric('포트폴리오 월 기록', portfolio.length, '건', `마감 ${portfolio.filter(p => p.closed).length}건`), metric('만족도 확인 대기', pending, '건', `학부모 글 · 반영 ${countOf(judgments, 'applied')} · 제외 ${countOf(judgments, 'dismissed')}`)],

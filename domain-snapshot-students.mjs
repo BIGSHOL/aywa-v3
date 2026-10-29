@@ -16,7 +16,7 @@ export async function studentFamilies(ctx) {
   const { sql, t, asOf, month, monthStart, subjectLabel, subjectText, subjectFacets } = ctx;
   const out = {};
 
-  // 원생목록 — 학생 상태가 단일 기준(테스트 학생 제외).
+  // 원생목록 — 원생 상태가 단일 기준(테스트 원생 제외).
   const students = await sql`select id, name, school, grade, status::text st, enrolled_at::text enrolled, withdrawn_at::text withdrawn from public.students where tenant_id=${t} and not coalesce(is_test,false) order by (status='enrolled') desc, enrolled_at desc nulls last, name`;
   const daily = await sql`select stat_date::text as date, (data->>'enrolled')::int as value from public.student_daily_stats where tenant_id=${t} and data ? 'enrolled'`;
   const [aux] = await sql`select (select count(*)::int from public.student_siblings where tenant_id=${t}) siblings, (select count(*)::int from public.student_memos where tenant_id=${t}) memos`;
@@ -24,7 +24,7 @@ export async function studentFamilies(ctx) {
   const fresh = students.filter(s => s.enrolled >= monthStart && s.enrolled <= asOf && s.st !== 'prospect');
   out.students = family('students', '원생목록·원생 상세·원생 통계', {
     summary: `이번 달 등록 ${fresh.length}명(등록일 기준).`,
-    metrics: [metric('재원', by('enrolled'), '명', '테스트 학생 제외'), metric('휴원', by('on_hold'), '명'), metric('예비', by('prospect'), '명'), metric('퇴원', by('withdrawn'), '명', '전체 기간'), metric('이번 달 등록', fresh.length, '명', '등록일 기준'), metric('직접 정한 형제 관계', aux.siblings, '쌍', '형제 지정 · 형제 아님 지정')],
+    metrics: [metric('재원', by('enrolled'), '명', '테스트 원생 제외'), metric('휴원', by('on_hold'), '명'), metric('예비', by('prospect'), '명'), metric('퇴원', by('withdrawn'), '명', '전체 기간'), metric('이번 달 등록', fresh.length, '명', '등록일 기준'), metric('직접 정한 형제 관계', aux.siblings, '쌍', '형제 지정 · 형제 아님 지정')],
     trend: dailyTrend('일별 재원생', '명', daily, asOf),
     evidence: students.map(s => record({ id: s.id, label: s.name, detail: [s.school, s.grade].filter(Boolean).join(' '), date: s.enrolled, status: STUDENT_STATUS[s.st] || '기타', fields: [field('학교', s.school), field('학년', s.grade), field('퇴원일', s.withdrawn)], facets: [`status:${s.st}`, fresh.includes(s) && 'new-this-month'] })),
     facetOrder: [...Object.keys(STUDENT_STATUS).map(k => `status:${k}`), 'new-this-month'], facetLabels: { ...pre('status', STUDENT_STATUS), 'new-this-month': '이번 달 등록' }, recordSource: 'students',
@@ -78,7 +78,7 @@ export async function studentFamilies(ctx) {
   const leads = await sql`select c.id, c.student_id, c.prospect_name, c.prospect_grade, c.prospect_school, c.outcome::text oc, coalesce(c.received_date::text, c.consultation_date::text, to_char(c.consulted_at at time zone 'Asia/Seoul','YYYY-MM-DD'), to_char(c.created_at at time zone 'Asia/Seoul','YYYY-MM-DD')) d, c.subject, u.display_name consultant, c.consultation_path, c.prep_brief_at is not null brief from public.enrollment_consultations c left join public.users u on u.id=c.consultant_id and u.tenant_id=${t} where c.tenant_id=${t} and (c.student_id is null or c.student_id not in (select id from public.students where tenant_id=${t} and coalesce(is_test,false)))`;
   const [{ stageOfCard }, { consultClassKeysOf }] = await Promise.all([importV2('features/enrollment/board-stages.ts'), importV2('features/enrollment/consult-subject.ts')]);
   const classKeysOf = consultClassKeysOf(ctx.subjectSettings || []), today = new Date(Date.now() + 9 * 3600_000).toISOString().slice(0, 10);
-  // 2.0 칸반과 같은 연결 학생·해당 과목의 미종료 수강. 결과 코드는 DB 원값 그대로 둔다.
+  // 2.0 칸반과 같은 연결 원생·해당 과목의 미종료 수강. 결과 코드는 DB 원값 그대로 둔다.
   const assigned = await sql`select c.id, cl.subject from public.enrollment_consultations c join public.enrollments e on e.student_id=c.student_id and e.tenant_id=${t} join public.classes cl on cl.id=e.class_id and cl.tenant_id=${t} where c.tenant_id=${t} and (e.end_date is null or e.end_date >= ${today})`;
   const assignedByLead = new Map();
   for (const row of assigned) { if (!assignedByLead.has(row.id)) assignedByLead.set(row.id, []); assignedByLead.get(row.id).push(row.subject); }

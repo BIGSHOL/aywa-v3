@@ -2,7 +2,7 @@
 import { ISO_AT, PRIORITY, family, field, latest, metric, monthlyTrend, record, signal } from './domain-snapshot-core.mjs';
 
 // src/features/withdrawals/types.ts REASON_LABEL·REASON_ALIAS와 같은 표(verify-domain-snapshot.mjs가 원본과 대조).
-export const REASON_LABEL = { dissatisfaction: '수업·강사', grades: '성적', motivation: '학생 상태', method: '공부 방법 변경', competitor: '타 학원으로 이동', schedule: '시간/일정', financial: '경제적 이유', career: '진로·진학', peers: '가족·친구', illness: '질병', advised: '권고퇴원', relocation: '이사', graduated: '졸업', other: '기타' };
+export const REASON_LABEL = { dissatisfaction: '수업·강사', grades: '성적', motivation: '원생 상태', method: '공부 방법 변경', competitor: '타 학원으로 이동', schedule: '시간/일정', financial: '경제적 이유', career: '진로·진학', peers: '가족·친구', illness: '질병', advised: '권고퇴원', relocation: '이사', graduated: '졸업', other: '기타' };
 const REASON_ALIAS = { dissatisfied: 'dissatisfaction', unsatisfied: 'dissatisfaction', moved: 'relocation', graduate: 'graduated', cost: 'financial', money: 'financial' };
 export const normalizeReason = raw => !raw ? null : raw in REASON_LABEL ? raw : REASON_ALIAS[raw] ?? 'other';
 // src/features/withdrawals/system-bulk.ts — 수업 기록 없는 장부 정리 퇴원은 어디서도 세지 않는다.
@@ -43,7 +43,7 @@ export async function lifecycleFamilies({ sql, t, asOf, month, monthStart, stude
     sources: [{ table: 'students', rows: newcomers.length }, { table: 'student_onboarding_checks', rows: checks.reduce((n, c) => n + c.rows_all, 0) }],
   });
 
-  // 퇴원관리 — 학생 상태 퇴원. 장부 정리(수업 기록 없음)는 빼고, 날짜 미상 시스템 정리는 따로 표시.
+  // 퇴원관리 — 원생 상태 퇴원. 장부 정리(수업 기록 없음)는 빼고, 날짜 미상 시스템 정리는 따로 표시.
   const rows = await sql`select s.id, s.name, s.withdrawn_at::text d, s.withdrawal_metadata->>'reason' reason, s.withdrawal_metadata->>'memo' memo, exists(select 1 from public.enrollments e where e.tenant_id=${t} and e.student_id=s.id) hist from public.students s where s.tenant_id=${t} and s.status='withdrawn' and not coalesce(s.is_test,false) order by s.withdrawn_at desc nulls last`;
   const exits = rows.filter(r => !isBookkeepingOnlyExit(r.reason, r.memo, r.hist)).map(r => ({ ...r, key: normalizeReason(r.reason), bulk: SYSTEM_BULK_WITHDRAWAL_DATES.includes(r.d) && !r.hist }));
   const [ex] = await sql`select (select count(*)::int from public.students where tenant_id=${t} and withdrawn_at > ${asOf} and status <> 'withdrawn' and not coalesce(is_test,false)) scheduled, (select count(*)::int from public.enrollments e where e.tenant_id=${t} and e.end_date between ${monthStart} and ${asOf} and not coalesce(e.is_transferred,false) and e.student_id not in (select id from public.students where tenant_id=${t} and coalesce(is_test,false))) ended`;
