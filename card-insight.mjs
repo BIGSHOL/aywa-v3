@@ -32,8 +32,8 @@ export function cardInput(analysis) {
     const values = Object.fromEntries(Object.entries(f.values || {}).filter(([k, v]) =>
       !['key', 'name', 'basis', 'note'].includes(k) && (typeof v === 'number' || typeof v === 'boolean' || v === null || k === 'dimension' || k === 'field' || k === 'band')));
     const safe = f.item === 2 && !f.kind.endsWith('empty') ? `${f.values?.dimension === 'teacher' ? '담당 선생님' : f.values?.dimension === 'class' ? '반' : f.values?.dimension || '기준'} 한 항목의 ${f.kind === 'increase' ? '증가' : '감소'}`
-      : f.item === 3 && f.kind === 'cluster' ? `${{ className: '반', teacher: '담당 선생님', school: '학교', grade: '학년' }[f.values?.field] || '기준'} 한곳에 몰림`
-      : f.item === 5 && f.kind === 'difference' ? '큰 숫자와 추세선의 셈 기준 비교'
+      : f.item === 3 && f.kind === 'cluster' ? `${{ className: '반', teacher: '담당 선생님', school: '학교', grade: '학년' }[f.values?.field] || '기준'} 한곳에 집중`
+      : f.item === 5 && f.kind === 'difference' ? '카드 수치와 추세선의 집계 기준 비교'
       : f.text;
     return { id, text: safe, values };
   });
@@ -67,21 +67,21 @@ export function createCardInsight({ store, provider = null, reserve = async () =
     const record = state().results[metric], saved = record?.byFingerprint?.[record.latest] || null;
     const stale = !!saved && saved.fingerprint !== fingerprint;
     return { metric, fingerprint, status: !saved ? 'empty' : stale ? 'stale' : 'ready',
-      note: stale ? '자료가 바뀌었습니다. 분석 문장을 다시 만들려면 버튼을 누르세요.' : null,
+      note: stale ? "자료가 바뀌었습니다. 다시 만들려면 '분석 문장 만들기'를 누르세요." : null,
       result: saved ? { ...displayCardOutput(saved.output, saved.facts),
         modelLabel: modelLabel(saved.model) || 'Claude', createdAt: saved.createdAt } : null,
       enabled: !!provider };
   };
   const view = analysis => viewFingerprint(analysis.metric, cardInput(analysis).fingerprint);
   async function make(analysis) {
-    if (!provider) return { status: 503, error: 'ai_disabled', message: '이 서버에서는 분석 문장 만들기를 켜지 않았습니다.' };
+    if (!provider) return { status: 503, error: 'ai_disabled', message: '이 서버에서는 분석 문장 만들기가 꺼져 있습니다.' };
     const built = cardInput(analysis);
     if (busy.has(built.metric)) return { status: 409, error: 'busy', message: '이 카드의 문장을 만드는 중입니다.' };
     busy.add(built.metric);
     try {
       let checked, answer;
       for (let attempt = 0; attempt < 2; attempt++) {
-        if (!await reserve()) return { status: 429, error: 'hourly_cap', message: '한 시간 동안 만들 수 있는 문장 수를 채웠습니다. 잠시 뒤 다시 눌러 주세요.' };
+        if (!await reserve()) return { status: 429, error: 'hourly_cap', message: '시간당 생성 한도를 넘었습니다. 잠시 뒤 다시 눌러 주세요.' };
         const fragments = attempt ? [...new Set(Object.values(checked.samples || {}).flat())].slice(0, 8) : [];
         answer = await provider.ask({ schema: CARD_SCHEMA, prompt: attempt ? `${CARD_PROMPT}\n${repairNote(fragments)}` : CARD_PROMPT,
           model: 'sonnet', effort: attempt ? 'medium' : 'low', timeoutMs: 240_000,

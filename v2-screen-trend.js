@@ -13,7 +13,7 @@
   const shown = (v, unit) => (v === null || v === undefined ? '기록 없음' : unit === '%' ? `${v.toFixed(1)}%` : `${fmt(v)}${unit}`);
   const CARD_IDS = new Set(['enrolled-students', 'courses', 'exits', 'intake', 'level-tests', 'new-enrollments', 'first-classes', 'recent-absent', 'makeups',
     'report-written', 'report-sent', 'parent-read', 'attendance-input', 'video-issued', 'video-submitted']);
-  const ANALYSIS_ITEMS = ['지금 값과 평소', '어디서 변했나', '누가', '열린 업무', '셈의 기준과 빠진 기록'];
+  const ANALYSIS_ITEMS = ['지금 값과 평소', '어디서 변했나', '누가', '이어진 업무', '집계 기준과 빠진 기록'];
   const analysisOpen = new Set();
   const insightState = new Map();
   const factKey = ids => [...(ids || [])].sort().join('|');

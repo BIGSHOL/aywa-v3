@@ -33,13 +33,13 @@ try {
       assert.equal(one.values.current, trend.total.at(-1)?.value ?? null, `${card.id}: 추세 마지막 점`);
       if (card.id === 'exits') {
         const policy = exitCleanupPolicy(one.values.current, card.cleanupCount);
-        assert.equal(card.value, policy.cardValue, '퇴원·수업종료 큰 숫자');
+        assert.equal(card.value, policy.cardValue, '퇴원·수업종료 카드 수치');
         assert.equal(card.cleanupNote, policy.note, '카드의 장부 정리 안내');
         assert.equal(trend.cleanupNotes?.at(-1), policy.note, '추세의 장부 정리 안내');
         const difference = a.facts.find(f => f.kind === 'difference');
         assert.equal(difference.values.note, policy.note, '분석의 장부 정리 안내');
-        assert.match(difference.text, new RegExp(`큰 숫자 .* · 추세선 .*${policy.note ? ' · 장부 정리 ' : ''}`));
-      } else assert.equal(one.values.current, card.value, `${card.id}: 카드 큰 숫자`);
+        assert.match(difference.text, new RegExp(`카드 수치 .* · 추세선 .*${policy.note ? ' · 장부 정리 ' : ''}`));
+      } else assert.equal(one.values.current, card.value, `${card.id}: 카드 수치`);
       for (const f of a.facts.filter(f => f.item === 2 && f.values.dimension && f.values.key)) {
         const d = await loadTrend({ metric: card.id, grain: card.period, by: f.values.dimension });
         const row = d.rows.find(r => r.key === f.values.key);
@@ -51,7 +51,7 @@ try {
       if (roster) {
         assert.equal(roster.values.count, a.records.length, `${card.id}: 추세 명단 건수`);
         assert.equal(a.facts.filter(f => f.item === 3 && f.kind === 'record').length, 0, `${card.id}: 사실에 명단 이름을 싣지 않음`);
-        for (const field of ['className', 'teacher', 'school', 'grade']) assert(a.facts.some(f => f.item === 3 && f.values.field === field), `${card.id}: ${field} 몰림 판정`);
+        for (const field of ['className', 'teacher', 'school', 'grade']) assert(a.facts.some(f => f.item === 3 && f.values.field === field), `${card.id}: ${field} 집중 판정`);
       }
       const actualFlow = a.facts.find(f => f.item === 4), link = CARD_FLOW_LINKS[card.id];
       const selected = link ? flow.filter(c => c.state !== 'done' && (link.tasks.includes(c.taskKind) || link.signals.includes(c.signalId))) : [];

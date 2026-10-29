@@ -60,7 +60,7 @@ export function buildCardAnalysis({ trend, byDimension = {}, card, flowCases = n
     const pick = (sign) => changed.filter(r => sign * r.delta > 0).sort((a, b) => sign * (b.delta - a.delta) || a.label.localeCompare(b.label, 'ko') || a.key.localeCompare(b.key)).slice(0, 3);
     for (const [kind, rows] of [['increase', pick(1)], ['decrease', pick(-1)]]) for (const r of rows) {
       const type = REF_DIM[dim.id];
-      facts.push(fact(2, kind, `${dim.label} ${r.label} · ${shown(r.previous, unit)} → ${shown(r.current, unit)} (${kind === 'increase' ? '+' : '−'}${shown(Math.abs(r.delta), unit === '%' ? '퍼센트포인트' : unit)})${OVERLAP.has(dim.id) ? ' · 겹쳐 셈' : ''}`,
+      facts.push(fact(2, kind, `${dim.label} ${r.label} · ${shown(r.previous, unit)} → ${shown(r.current, unit)} (${kind === 'increase' ? '+' : '−'}${shown(Math.abs(r.delta), unit === '%' ? '%p' : unit)})${OVERLAP.has(dim.id) ? ' · 중복 포함' : ''}`,
         { dimension: dim.id, key: r.key, current: r.current, previous: r.previous, delta: r.delta, overlapping: OVERLAP.has(dim.id) }, type ? [{ type, id: r.key }] : []));
     }
     if (!pick(1).length && !pick(-1).length) facts.push(fact(2, 'dimension-empty', `${dim.label} · 비교할 변화 없음`, { dimension: dim.id, count: 0 }));
@@ -68,16 +68,16 @@ export function buildCardAnalysis({ trend, byDimension = {}, card, flowCases = n
 
   if (Array.isArray(records)) {
     const rows = [...records].sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')) || String(a.name || '').localeCompare(String(b.name || ''), 'ko') || String(a.key || a.id).localeCompare(String(b.key || b.id)));
-    facts.push(fact(3, 'roster-count', `지금 창 명단 ${fmt(rows.length)}건`, { count: rows.length }));
+    facts.push(fact(3, 'roster-count', `이번 기간 명단 ${fmt(rows.length)}건`, { count: rows.length }));
     const schoolGrade = r => { const m = /^(.*?)(초|중|고)(\d{1,2})$/.exec(r.sub || ''); return m ? { school: m[1], grade: `${m[2]}${m[3]}` } : { school: r.sub || '', grade: '' }; };
     for (const [field, label] of [['className', '반'], ['teacher', '담당 선생님'], ['school', '학교'], ['grade', '학년']]) {
       const counts = new Map();
       for (const r of rows) { const name = field === 'school' || field === 'grade' ? schoolGrade(r)[field] : r[field]; if (name && name !== '—') counts.set(name, (counts.get(name) || 0) + 1); }
       const clustered = [...counts].filter(([, n]) => n >= 3 && n / rows.length >= 0.4).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], 'ko'));
       for (const [name, count] of clustered) {
-        facts.push(fact(3, 'cluster', `${label} ${name} ${fmt(count)}건 · 명단의 ${fmt(count / rows.length * 100)}% 몰림`, { field, name, count, share: count / rows.length }));
+        facts.push(fact(3, 'cluster', `${label} ${name} ${fmt(count)}건 · 명단의 ${fmt(count / rows.length * 100)}% 집중`, { field, name, count, share: count / rows.length }));
       }
-      if (!clustered.length) facts.push(fact(3, 'cluster-empty', `${label} · 몰림 없음`, { field, count: 0 }));
+      if (!clustered.length) facts.push(fact(3, 'cluster-empty', `${label} · 집중 없음`, { field, count: 0 }));
     }
     for (const r of rows) {
       const type = r.reportId ? 'record' : r.student === false ? 'record' : 'student', id = r.reportId || r.id || r.studentId;
@@ -88,13 +88,13 @@ export function buildCardAnalysis({ trend, byDimension = {}, card, flowCases = n
 
   facts.push(...flowFacts(metric, flowCases, trend.asOf));
   const missing = points.filter(p => value(p) == null).length;
-  facts.push(fact(5, 'basis', `셈의 기준 · ${card?.basis || '확장 추세의 같은 창과 같은 조건으로 셈'}`, { basis: card?.basis ?? null }));
-  facts.push(fact(5, 'coverage', `기록 시작 ${trend.since || '확인할 기록 없음'} · 기록 없음 ${fmt(missing)}창${trend.endsYesterday ? ' · 어제까지 셈' : ''}`,
+  facts.push(fact(5, 'basis', `집계 기준 · ${card?.basis || '확장 추세의 같은 기간과 같은 조건으로 집계'}`, { basis: card?.basis ?? null }));
+  facts.push(fact(5, 'coverage', `기록 시작 ${trend.since || '확인할 기록 없음'} · 기록 없는 기간 ${fmt(missing)}개${trend.endsYesterday ? ' · 어제까지 집계' : ''}`,
     { since: trend.since ?? null, missingWindows: missing, endsYesterday: !!trend.endsYesterday }));
   if (metric === 'exits' && card) {
     const policy = exitCleanupPolicy(current, card.cleanupCount ?? 0);
-    facts.push(fact(5, 'difference', `큰 숫자 ${shown(card.value, unit)} · 추세선 ${shown(current, unit)}${policy.note ? ` · ${policy.note}` : ''}`,
+    facts.push(fact(5, 'difference', `카드 수치 ${shown(card.value, unit)} · 추세선 ${shown(current, unit)}${policy.note ? ` · ${policy.note}` : ''}`,
       { cardValue: card.value, trendValue: current, cleanupCount: card.cleanupCount ?? 0, note: policy.note }));
-  } else if (card && current != null && card.value != null && card.value !== current) facts.push(fact(5, 'difference', `큰 숫자 ${shown(card.value, unit)} · 추세선 ${shown(current, unit)} · 셈 기준을 확인해 주세요.`, { cardValue: card.value, trendValue: current }));
+  } else if (card && current != null && card.value != null && card.value !== current) facts.push(fact(5, 'difference', `카드 수치 ${shown(card.value, unit)} · 추세선 ${shown(current, unit)} · 집계 기준을 확인해 주세요.`, { cardValue: card.value, trendValue: current }));
   return { metric, period: card?.period || trend.grain, asOf: trend.asOf, facts: facts.map((f, i) => ({ id: `F${i + 1}`, ...f })), records: roster };
 }
