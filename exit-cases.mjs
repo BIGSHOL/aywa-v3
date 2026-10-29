@@ -50,7 +50,7 @@ export function buildCaseFile(ix, v2, sid, { mask, at = null }) {
   // 1 timing
   if (ex.kind === 'withdrawn') push({ kind: 'timing', label: '퇴원일', text: `퇴원일 ${ex.date}`, date: ex.date, source: { table: 'students', id: sid }, open: { family: 'withdrawals', id: sid }, claude: '퇴원 기록이 있음' });
   else if (ex.kind === 'cleanup') {
-    const b = ex.basis, basis = [b.lastBilled && `마지막 청구 ${b.lastBilled}`, b.lastAttended && `마지막 출석 ${b.lastAttended}`, b.rule === 'enrollment_end' && `마지막 수강 종료 ${b.lastEnded}(장부 날짜일 수 있음)`].filter(Boolean).join(' · ');
+    const b = ex.basis, basis = [b.lastBilled && `최종 청구 ${b.lastBilled}`, b.lastAttended && `최종 출석 ${b.lastAttended}`, b.rule === 'enrollment_end' && `최종 수강 종료 ${b.lastEnded}(장부 날짜일 수 있음)`].filter(Boolean).join(' · ');
     push({ kind: 'timing', label: '이탈 시점(추정)', text: `${ex.month ? `${ex.month} 이탈로 추정` : '이탈 시점 미상'} · 일괄 정리(장부 퇴원일 ${ex.ledgerDate || '없음'})${basis ? ` · ${basis}` : ''}`, estimate: true, source: { table: 'students', id: sid }, open: { family: 'students', id: sid }, claude: '일괄 정리로 퇴원 처리되어 실제로 그만둔 때는 청구와 출석으로 추정함' });
     if (ex.v2BookkeepingOnly) push({ kind: 'timing', label: '퇴원 통계', text: '수업 기록이 없는 장부 정리라 퇴원 통계에서 빠짐 — 청구·출석 기록은 있음', source: { table: 'students', id: sid }, open: null });
   } else push({ kind: 'timing', label: '현재 상태', text: ex.kind === 'on_hold' ? '현재 휴원 · 뒤 달 청구 없음' : ex.kind === 'enrolled' ? '현재 재원 · 뒤 달 청구 없음' : '퇴원·휴원·재원이 아닌 상태', source: { table: 'students', id: sid }, open: { family: 'students', id: sid }, claude: ex.kind === 'on_hold' ? '현재 휴원 중' : ex.kind === 'enrolled' ? '현재 재원 중이지만 뒤 달 청구가 없음' : null });
@@ -139,7 +139,7 @@ export function buildCaseFile(ix, v2, sid, { mask, at = null }) {
   const going = rows.filter(r => !r.endDate || r.endDate > (ref || ix.asOf)).filter(r => ix.regular(ix.classById.get(r.classId)) && !classes.some(c => c.classId === r.classId));
   if (ex.kind !== 'withdrawn' || going.length) push({ kind: 'continuing', label: '계속 수강', text: going.length ? going.map(r => `${ix.subjectLabel(ix.classById.get(r.classId)?.subject)} ${ix.classById.get(r.classId)?.class_name}${r.on_hold ? '(휴원)' : ''}`).join(', ') : '계속 수강 중인 반 없음', source: { table: 'enrollments', id: going[0]?.id || sid }, open: null, claude: going.length ? '다른 반 수강은 계속됨' : null });
   if (rows.some(r => r.on_hold)) push({ kind: 'hold', label: '휴원 기록', text: `휴원 표시된 수강 ${rows.filter(r => r.on_hold).length}건`, source: { table: 'enrollments', id: rows.find(r => r.on_hold).id }, open: null, claude: '휴원 기록이 있음' });
-  const lb = ix.lastBilled.get(sid); if (lb) { const b = ix.monthly.get(lb).get(sid); push({ kind: 'billing', label: '마지막 청구', text: `${lb} ${won(b.total)}`, source: { table: 'invoices', id: b.invoiceIds.at(-1) }, open: { family: 'billing', id: b.invoiceIds.at(-1) }, claude: null }); }
+  const lb = ix.lastBilled.get(sid); if (lb) { const b = ix.monthly.get(lb).get(sid); push({ kind: 'billing', label: '최종 청구', text: `${lb} ${won(b.total)}`, source: { table: 'invoices', id: b.invoiceIds.at(-1) }, open: { family: 'billing', id: b.invoiceIds.at(-1) }, claude: null }); }
 
   const cause = ex.kind === 'withdrawn' ? causeOfReason(reasonKey, detailKey) : 'unknown';
   return { studentId: sid, name: s.name, label: [s.school, s.grade].filter(Boolean).join(' '), grade: s.grade || null, exit: ex, ref, reasonKey, detailKey,

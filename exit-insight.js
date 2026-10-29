@@ -71,7 +71,7 @@ window.createExitInsight = function createExitInsight(api) {
   function aiLine(a) {
     const [label, tone] = STATUS[a.status] || ['상태 미상', ''], j = a.jev, c = a.claude;
     // 모델 이름·버전·호출 한도 같은 개발자용 정보는 싣지 않는다(원장 10-28 "개발자가 아닌 사람이 보지않아도 되는건 왜 보여주는 거지?").
-    const parts = [j && j.total ? `원생별 원인 분류 ${fmt(j.done)}/${fmt(j.total)}명${j.failed ? ` · 분류 못 함 ${fmt(j.failed)}` : ''}${j.review ? ` · 사람 확인 ${fmt(j.review)}` : ''}` : '', c?.status === 'error' ? '묶음 설명을 아직 만들지 못함' : '', a.claude?.blocked === 'budget' ? '묶음 설명은 잠시 뒤 이어서 만듦' : ''].filter(Boolean);
+    const parts = [j && j.total ? `원생별 원인 분류 ${fmt(j.done)}/${fmt(j.total)}명${j.failed ? ` · 분류 못 함 ${fmt(j.failed)}` : ''}${j.review ? ` · 사람 확인 ${fmt(j.review)}` : ''}` : '', c?.status === 'error' ? '분석 요약 생성 대기' : '', a.claude?.blocked === 'budget' ? '잠시 후 분석 요약이 생성됩니다.' : ''].filter(Boolean);
     return `<div class="xi-ai-line">${pill(label, tone)}<span>${h(a.note || a.disabledReason || parts.join(' · ') || '')}</span></div>`;
   }
   // AI 글 서식(원장 10-28 "볼드나 밑줄 등의 서식도 적극적으로 활용"): 코드가 넣은 이름(⟦ ⟧)은 굵게, '다만 …' 단서 문장은 밑줄. 글자는 이스케이프한 뒤에만 서식을 입힌다.

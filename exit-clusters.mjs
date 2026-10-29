@@ -23,7 +23,7 @@ export function buildClusters(cases, ix, { amountOf = () => 0 } = {}) {
   for (const [tid, closedClasses] of byTeacher) {
     const members = left.filter(c => c.classes.some(k => closedClasses.has(k.classId))), facts = [];
     const lastSlot = [...ix.schedulesBy.values()].flat().filter(s => s.teacher_id === tid).map(s => s.valid_to || s.valid_from).filter(Boolean).sort().at(-1);
-    facts.push(fact(`teacher:${tid}`, `${name(tid)} 선생님 현재 재직 아님${lastSlot ? ` · 마지막 수업 배치 ${lastSlot}` : ''}`, '이 선생님은 현재 재직 중이 아님', { source: { table: 'users', id: tid }, open: { family: 'staff', id: tid }, ids: { teacherId: tid } }));
+    facts.push(fact(`teacher:${tid}`, `${name(tid)} 선생님 현재 재직 아님${lastSlot ? ` · 최종 수업 배치 ${lastSlot}` : ''}`, '이 선생님은 현재 재직 중이 아님', { source: { table: 'users', id: tid }, open: { family: 'staff', id: tid }, ids: { teacherId: tid } }));
     const allRoster = new Set(), allGone = new Set();
     for (const [cid, closed] of closedClasses) {
       const roster = uniq((ix.enrollmentsByClass.get(cid) || []).filter(e => ix.real(e.student_id) && e.start_date && e.start_date <= closed && (!e.end_date || e.end_date >= shift(closed, -30))).map(e => e.student_id));
@@ -74,7 +74,7 @@ export function buildClusters(cases, ix, { amountOf = () => 0 } = {}) {
     add('reason', key, `같은 사유 집중 · ${ix.reasonLabel(key)}`, list, [fact(`reason:${key}`, `사유 '${ix.reasonLabel(key)}' 퇴원 ${list.length}명 · ${list.map(c => c.exit.date).sort()[0]} ~ ${list.map(c => c.exit.date).sort().at(-1)}${days.length ? ` · 같은 날 ${days.map(([d, l]) => `${d} ${l.length}명`).join(', ')}` : ''}`, `같은 사유의 퇴원이 몰림${days.length ? ' · 같은 날 처리된 퇴원이 있음' : ''}`, { counts: { students: list.length } })]);
   }
   for (const [day, list] of Object.entries(Object.groupBy(real, c => c.exit.date)).filter(([, l]) => l.length >= 4))
-    add('same_day', day, `같은 날 퇴원 ${day}`, list, [fact(`day:${day}`, `${day} 하루 퇴원 ${list.length}명 · 사유 ${Object.entries(Object.groupBy(list, c => c.reasonKey || 'none')).map(([k, l]) => `${k === 'none' ? '미기재' : ix.reasonLabel(k)} ${l.length}`).join(' · ')}`, '같은 날 여러 원생의 퇴원이 처리됨', { counts: { students: list.length } })]);
+    add('same_day', day, `같은 날 퇴원 ${day}`, list, [fact(`day:${day}`, `${day} 일일 퇴원 ${list.length}명 · 사유 ${Object.entries(Object.groupBy(list, c => c.reasonKey || 'none')).map(([k, l]) => `${k === 'none' ? '미기재' : ix.reasonLabel(k)} ${l.length}`).join(' · ')}`, '같은 날 여러 원생의 퇴원이 처리됨', { counts: { students: list.length } })]);
   // 5 grade · 6 siblings · 7 classmates · 8 moves · 9 other academies
   for (const [grade, list] of Object.entries(Object.groupBy(left.filter(c => c.grade), c => c.grade)).filter(([, l]) => l.length >= 3 && l.length >= left.length * 0.2))
     add('grade', grade, `${grade} 학년 집중`, list, [fact(`grade:${grade}`, `${grade} ${list.length}명(이 비교의 퇴원 ${left.length}명 중) · 진로·졸업 사유 ${list.filter(c => ['career', 'graduated'].includes(c.reasonKey)).length}명`, '같은 학년 원생의 퇴원이 몰림', { counts: { students: list.length, cohort: left.length } })]);
@@ -91,7 +91,7 @@ export function buildClusters(cases, ix, { amountOf = () => 0 } = {}) {
     const facts = named.map((rows, i) => {
       const dates = rows.map(r => r.date).filter(Boolean), gap = dates.length > 1 ? Math.round((Date.parse(dates.at(-1)) - Date.parse(dates[0])) / 86_400_000) : 0;
       return fact(`siblings:${[...groups.keys()][i]}`, `${rows.map(r => `${r.name} ${day(r.date)} 퇴원 · ${r.reason}`).join(' / ')}`,
-        `형제 ${rows.length}명이 ${gap ? `${gap}일 사이에` : '같은 날'} 함께 퇴원함 · 기록된 퇴원 사유: ${uniq(rows.map(r => r.reason)).join(', ')}`, { counts: { students: rows.length } });
+        `형제 ${rows.length}명 동반 퇴원(${gap ? `${gap}일 이내` : '동시'}) · 기록된 퇴원 사유: ${uniq(rows.map(r => r.reason)).join(', ')}`, { counts: { students: rows.length } });
     });
     add('siblings', 'all', named.length === 1 ? `${named[0].map(r => r.name).join('·')} 형제 함께 퇴원` : `형제가 함께 퇴원한 가족 ${named.length}곳`, sib, facts);
   }
