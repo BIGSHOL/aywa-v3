@@ -185,6 +185,6 @@ async function cards({ sql, asOf, tenantId, importV2 }) {
   if (!DAY.test(asOf ?? '')) throw new Error(`기준일 형식이 아닙니다: ${asOf}`);
   const windows = weekWindows(addDays(asOf, -1), 8);
   const { total } = await levelTests({ sql, asOf, tenantId, importV2, windows, bySubject: false });
-  return [kpi('입학테스트', '건', windows.map((w, i) => ({ label: w.label, value: total[i]?.[0] ?? null })),
+  return [kpi(ADMISSIONS_TREND_METRICS[0].label, '건', windows.map((w, i) => ({ label: w.label, value: total[i]?.[0] ?? null })),
     { id: 'level-tests', better: 'up', period: 'week', span: '어제까지 7일', basis: BASIS })];
 }

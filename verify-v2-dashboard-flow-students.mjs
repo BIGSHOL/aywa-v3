@@ -1,5 +1,5 @@
 // 운영실 흐름(원생 쪽 확장 추세) 시험 — node --test experiments/owner-concept/verify-v2-dashboard-flow-students.mjs
-// 카드와의 관계(재원생·강좌수 지난 달 점 = 같은 값 · 신규문의·신규 등록·퇴원·수업종료는 지금 창 = 카드 마지막 점, 지난 창은 카드 ≤ 확장 추세) ·
+// 카드와의 관계(재원생·강좌수 지난 달 점 = 같은 값 · 신규문의·신규 등록·퇴원·수업종료는 같은 창의 추세 점과 일치) ·
 // 나뉘는 기준이면 줄의 합 = 전체 · 등록·퇴원 월 값 = 운영실 '등록·퇴원 추이' 영역 값 · 퇴원·3개월 내 퇴원·신규문의가 독립 SQL과 같은지 ·
 // 필터를 걸면 전체 = 그 줄이고 줄을 다시 가르는지 · 줄 키가 화면 필터 규칙을 지키고 이름에 원문 글자(연락처 등)가 없는지 · 카드 묶음이 DB 오류에도
 // 트랜잭션을 살려 두는지를 본다. 복사본 DB가 없으면 건너뛴다. 모두 읽기 전용.
@@ -31,7 +31,7 @@ if (db) {
   var MERGE = '^\\s*중복 병합:\\s*\\S+와 통합됨';
 }
 
-test('카드와의 관계: 재원생·강좌수 지난 달 점 = 같은 값 · 지금 창 = 카드 마지막 점 · 지난 창은 카드(같은 시각까지) ≤ 확장 추세(하루 끝까지)', { skip: SKIP }, async () => {
+test('카드와의 관계: 재원생·강좌수 지난 달 점 = 같은 값 · 신규문의와 신규 등록은 모든 주간 점이 확장 추세와 일치', { skip: SKIP }, async () => {
   await run(async (sql) => {
     const k = await studentStatusKpis({ sql, asOf, tenantId: t, importV2 }), K = Object.fromEntries(k.kpis.map((x) => [x.id, x]));
     assert.deepEqual(k.kpis.map((x) => x.id), ['enrolled-students', 'courses', 'exits', 'intake', 'new-enrollments'], '카드 id = 지표 id');
@@ -43,8 +43,7 @@ test('카드와의 관계: 재원생·강좌수 지난 달 점 = 같은 값 · �
     }
     for (const id of ['intake', 'new-enrollments']) {
       const trend = vals((await series(sql, id, weekWindows(asOf, 8))).total), card = K[id].points.map((p) => p.value);
-      assert.equal(trend.at(-1), card.at(-1), `${id}: 지금 창 = 카드 큰 숫자`);
-      card.forEach((v, i) => { if (v !== null) assert(trend[i] !== null && v <= trend[i], `${id} ${i}: 카드 ${v} ≤ 확장 추세 ${trend[i]}`); });
+      assert.deepEqual(card, trend, `${id}: 카드 점 = 확장 추세의 같은 주간 점`);
     }
     // 퇴원·수업종료: 이번 달 점(장부 정리 퇴원 뺀 값) = 확장 추세 월별 마지막 창(1일 ~ 오늘).
     assert.equal(vals((await series(sql, 'exits', windowsFor('month', asOf))).total).at(-1), K.exits.points.at(-1).value, '퇴원·수업종료 이번 달');

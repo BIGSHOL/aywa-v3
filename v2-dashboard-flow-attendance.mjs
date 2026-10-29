@@ -275,7 +275,7 @@ const SUBJECT_DIM = { id: 'subject', label: '과목별' };
 /** 확장 추세 지표(trend-metrics.mjs가 싣는다) — id는 운영 상태 카드의 id와 같다. */
 export const ATTENDANCE_TREND_METRICS = Object.freeze([
   { id: 'first-classes', label: '첫 수업', group: '운영실', unit: '명', better: 'up', dims: [{ id: 'kind', label: '종류별' }, SUBJECT_DIM], series: firstClassSeries },
-  { id: 'recent-absent', label: '결석한 학생', group: '운영실', unit: '명', better: 'down', endsYesterday: true,
+  { id: 'recent-absent', label: '최근 결석', group: '운영실', unit: '명', better: 'down', endsYesterday: true,
     dims: [SUBJECT_DIM, { id: 'teacher', label: '담당 선생님별' }, { id: 'class', label: '반별' }], series: absentSeries },
   { id: 'makeups', label: '보강예정', group: '운영실', unit: '건', better: 'down', dims: [SUBJECT_DIM, { id: 'class', label: '반별' }], series: makeupSeries },
   { id: 'attendance-rate', label: '등원율', group: '운영실', unit: '%', better: 'up', dims: [SUBJECT_DIM], series: attendanceRateSeries },
@@ -296,11 +296,11 @@ export async function attendanceKpiCards({ sql, asOf, tenantId = COPY_TENANT, im
   const makeups = await card('보강예정', (sp) => makeupSeries({ ...args, sql: sp, windows: weeks }));
   const points = (ws, s) => ws.map((w, i) => ({ label: w.label, value: s.total[i]?.[0] ?? null }));
   return [
-    first && kpi('첫 수업', '명', points(weeks, first), { id: 'first-classes', better: 'up', period: 'week', span: '최근 7일',
+    first && kpi(ATTENDANCE_TREND_METRICS.find(m => m.id === 'first-classes').label, '명', points(weeks, first), { id: 'first-classes', better: 'up', period: 'week', span: '최근 7일',
       basis: '그 7일 동안 날마다 센 첫 수업 학생의 합 · 첫 등원과 처음 듣는 과목의 첫 수업 · 반 이동과 듣던 과목의 반 추가는 뺌' }),
-    absent && kpi('최근 결석', '명', points(untilYesterday, absent), { id: 'recent-absent', better: 'down', period: 'week', span: '어제까지 7일',
+    absent && kpi(ATTENDANCE_TREND_METRICS.find(m => m.id === 'recent-absent').label, '명', points(untilYesterday, absent), { id: 'recent-absent', better: 'down', period: 'week', span: '어제까지 7일',
       basis: '그 7일 동안 한 번이라도 결석한 학생(한 학생은 한 번) · 같은 칸을 고쳐 찍었으면 마지막 기록' }),
-    makeups && kpi('보강예정', '건', points(weeks, makeups), { id: 'makeups', better: 'down', period: 'week', span: '오늘부터 한 달',
+    makeups && kpi(ATTENDANCE_TREND_METRICS.find(m => m.id === 'makeups').label, '건', points(weeks, makeups), { id: 'makeups', better: 'down', period: 'week', span: '오늘부터 한 달',
       basis: '그날 예약 상태인 보강(그날부터 한 달 안 + 지난 60일 안 아직 안 한 것) · 지난 주 점은 그 주 마지막 날 같은 시각의 예약 상태' }),
   ].filter(Boolean);
 }

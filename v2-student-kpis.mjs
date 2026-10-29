@@ -318,12 +318,8 @@ async function compute({ sql: tx, asOf, tenantId: t, importV2 }) {
     subjectEndedInputs(sql, R, t, `${months[0].month}-01`),
     // 재료 = 첫 주 창과 이번 달 1일 중 이른 날 ~ 기준일 끝(2.0 칸은 그날 하루 전체 · 창은 아래에서 같은 시각까지 자른다).
     enrolledInputs(sql, R, t, dayStart(weeks[0].from < `${asOf.slice(0, 7)}-01` ? weeks[0].from : `${asOf.slice(0, 7)}-01`), today.endIso, subjects),
-    // 신규문의 점 = 상담일(2.0 '신규 문의 추이'와 같은 축 — 7월·8월에 옮겨 넣은 옛 상담 2천여 건이 입력한 날로 몰리지 않게 · 앱에서 넣은 상담은
-    // 상담일 = 입력 시각) · 2.0 칸 '오늘 접수'만 입력 시각(그날 들어온 것)으로 따로 센다.
-    Promise.all([sql`select to_json(min(consulted_at))#>>'{}' first from public.enrollment_consultations where tenant_id=${t}`,
-      sql`select to_json(consulted_at)#>>'{}' consulted_at from public.enrollment_consultations where tenant_id=${t}
-        and consulted_at >= ${dayStart(weeks[0].from)} and consulted_at < ${today.endIso} order by consulted_at, id`,
-      sql`select count(*)::int n from public.enrollment_consultations where tenant_id=${t} and created_at >= ${today.startIso} and created_at < ${today.endIso}`]),
+    // 2.0 칸 '오늘 접수'만 입력 시각으로 별도 집계한다. 카드 주간 점은 연결된 확장 추세의 상담일 판정을 그대로 쓴다.
+    sql`select count(*)::int n from public.enrollment_consultations where tenant_id=${t} and created_at >= ${today.startIso} and created_at < ${today.endIso}`,
   ]);
   const trends = enrolledTrends(R, raw, billing, trustFrom, asOf, clock.day, sliceSubjects);
   // 칸 숫자 = 2.0 칸 그대로 · 추세 점 = 사유 없는 단체 장부 정리 퇴원을 뺀다(2.0 추세선 규칙, 원장 2026-10-20 *"단체로 장부 정리한 건에 대해서는 추세선에서
@@ -336,9 +332,7 @@ async function compute({ sql: tx, asOf, tenantId: t, importV2 }) {
     return monthWithdrawalRows(R, trend ? withdrawn.filter((row) => !row.cleanup) : withdrawn, ended, day, subjects);
   };
   const exitRows = exitsOf(asOf);
-  const [[{ first: intakeFirst }], intakeRows, [{ n: intakeToday }]] = intake;
-  const intakeMs = intakeRows.map((r) => Date.parse(r.consulted_at));
-  const countIn = (lo, hi) => intakeMs.filter((x) => x >= Date.parse(lo) && x < Date.parse(hi)).length;
+  const [{ n: intakeToday }] = intake;
   // 2.0 칸 값: 신규문의 '오늘 접수'(위 — 그날 입력된 상담) · 이달 신규(이번 달 1일 ~ 오늘).
   const enrolledMonth = enrolledIn(R, enrolled, dayStart(`${asOf.slice(0, 7)}-01`), today.endIso, asOf);
 
@@ -349,26 +343,28 @@ async function compute({ sql: tx, asOf, tenantId: t, importV2 }) {
   const todayOf = (pts) => pts.find((p) => p.key === thisMonth)?.count ?? null;
   const studentsCard = pastDay ? todayOf(trends.students) : cards.students, coursesCard = pastDay ? todayOf(trends.courses) : cards.courses;
   const withdrawalsCard = R.win.countWithdrawalPrograms(exitRows).total;
-  const exitsKpi = kpi('퇴원·수업종료', '명', months.map((w) => point(w.label, R.win.countWithdrawalPrograms(exitsOf(w.day, true)).total)),
+  const { STUDENT_TREND_METRICS } = await import('./v2-dashboard-flow-students.mjs');
+  const { windowsFor } = await import('./v2-screen-trend.mjs');
+  const metric = id => STUDENT_TREND_METRICS.find(m => m.id === id);
+  const trendPoints = async (id, grain, count) => {
+    const windows = windowsFor(grain, asOf).slice(-count);
+    const result = await metric(id).series({ sql: tx, asOf, tenantId: t, importV2: load, windows, by: metric(id).dims[0].id, filter: null });
+    return windows.map((w, i) => point(w.label, result.total[i]?.[0] ?? null));
+  };
+  const exitsKpi = kpi(metric('exits').label, '명', await trendPoints('exits', 'month', months.length),
     { id: 'exits', better: 'down', period: 'month', span: '이번 달',
-      basis: '그 달 퇴원한 학생과 한 과목을 모두 끝낸 학생(과목마다 한 번) · 큰 숫자는 단체 장부 정리 퇴원도 셈 · 추세선과 전월 대비는 빼고 셈 · 달마다 1일부터 같은 날까지' });
+      basis: '그 달 퇴원한 학생과 한 과목을 모두 끝낸 학생(과목마다 한 번) · 큰 숫자는 단체 장부 정리 퇴원도 셈 · 추세선과 전월 대비는 빼고 셈 · 지난달은 말일까지, 이번 달은 오늘까지' });
   const kpis = [
-    kpi('재원생', '명', withToday(trends.students, studentsCard),
+    kpi(metric('enrolled-students').label, '명', withToday(trends.students, studentsCard),
       { id: 'enrolled-students', better: 'up', period: 'month', span: '오늘 기준', basis: '재원 학생(반 수업이 모두 아직 시작 전인 학생은 뺌) · 지난달까지는 그 달 말일 기준' }),
-    kpi('강좌수', '개', withToday(trends.courses, coursesCard),
+    kpi(metric('courses').label, '개', withToday(trends.courses, coursesCard),
       { id: 'courses', better: 'up', period: 'month', span: '오늘 기준', basis: '재원생이 듣는 과목 수(한 학생이 같은 과목 반을 여럿 들어도 하나) · 지난달까지는 그 달 말일 기준' }),
     // 큰 숫자만 칸 값 — 전월 대비(previous·delta)는 kpi()가 센 추세 점끼리 그대로(선의 점 팝오버와 같은 비교).
     { ...exitsKpi, value: withdrawalsCard },
-    kpi('신규문의', '건', weeks.map((w) => {
-      const lo = dayStart(w.from);
-      // 콜&상담 기록이 시작되기 전에 시작한 창은 '기록 없음'.
-      return point(w.label, !intakeFirst || Date.parse(lo) < Date.parse(intakeFirst) ? null : countIn(lo, at(w.to)));
-    }), { id: 'intake', better: 'up', period: 'week', span: '최근 7일', basis: '상담일이 그 7일 안인 신규 콜&상담 · 날마다 같은 시각까지 셈' }),
-    kpi('신규 등록', '명', weeks.map((w) => {
-      const lo = dayStart(w.from);
-      // 상태 변경 기록이 남기 전에 시작한 창은 '기록 없음'.
-      return point(w.label, !enrolled.firstLog || Date.parse(lo) < Date.parse(enrolled.firstLog) ? null : enrolledIn(R, enrolled, lo, at(w.to), w.to));
-    }), { id: 'new-enrollments', better: 'up', period: 'week', span: '최근 7일', basis: '그 7일 동안 등록 완료가 된 신규 콜&상담(반 배정으로 등록된 것 포함) · 날마다 같은 시각까지 셈' }),
+    kpi(metric('intake').label, '건', await trendPoints('intake', 'week', weeks.length),
+      { id: 'intake', better: 'up', period: 'week', span: '최근 7일', basis: '상담일이 그 7일 안인 신규 콜&상담 · 지난 창은 그날 끝까지, 지금 창은 복사본을 뜬 시각까지 셈' }),
+    kpi(metric('new-enrollments').label, '명', await trendPoints('new-enrollments', 'week', weeks.length),
+      { id: 'new-enrollments', better: 'up', period: 'week', span: '최근 7일', basis: '그 7일 동안 등록 완료가 된 신규 콜&상담(반 배정으로 등록된 것 포함) · 지난 창은 그날 끝까지, 지금 창은 복사본을 뜬 시각까지 셈' }),
   ];
   return { asOf, kpis, months, weeks, trustFrom,
     // 추이가 스스로 센 기준일 점(시험·대조용) — 2.0 규약은 '오늘 점 = 칸'이고, 둘이 갈리면 2.0이 아는 드문 경우다.

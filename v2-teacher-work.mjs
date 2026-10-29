@@ -342,19 +342,22 @@ export function teacherWorkWeekly({ sql, asOf, tenantId = COPY_TENANT, importV2,
   return memo.get(key);
 }
 async function weekly({ sql, asOf, tenantId: t, importV2, n }) {
-  const [{ kpi, rate, weekWindows }, load] = await Promise.all([import('./domain-snapshot-core.mjs'), importV2 ?? import('./v2-bridge.mjs').then((m) => m.importV2)]);
-  const windows = weekWindows(asOf, n), works = await loadTeacherWorkWindows({ sql, tenantId: t, todays: windows.map((w) => w.to), importV2: load, asOfCut: false, period: true });
+  const [{ addDays, kpi, rate, weekWindows }, load] = await Promise.all([import('./domain-snapshot-core.mjs'), importV2 ?? import('./v2-bridge.mjs').then((m) => m.importV2)]);
+  const windows = weekWindows(asOf, n), attendanceWindows = weekWindows(addDays(asOf, -1), n);
+  const works = await loadTeacherWorkWindows({ sql, tenantId: t, todays: windows.map((w) => w.to), spans: windows.map(() => 7), importV2: load, asOfCut: false, period: true });
+  const attendance = await teacherWorkTrend({ sql, asOf, tenantId: t, importV2: load, metric: 'attendance-input', windows: attendanceWindows, by: 'teacher' });
   // 영상 숙제 값이 처음 생긴 날 — 그 전에 끝난 창은 영상 지표가 '기록 없음'(0%가 아니다).
   const [{ first: videoFrom }] = await sql`select min(report_date)::text first from public.lesson_reports where tenant_id=${t} and video_homework is not null`;
   const sum = (rows) => Object.fromEntries(SUMS.map((k) => [k, rows.reduce((s, r) => s + (Number(r[k]) || 0), 0)]));
   // 발송·학부모 확인·영상 출제는 2.0 카드처럼 수업보고서 줄(reportSource 'lesson')만 — 알림장(영어)·작성 제외 줄은 그 칸이 '—'(teacher-work-card.tsx).
   const totals = works.map((w) => sum(w.rows)), lessonTotals = works.map((w) => sum(w.rows.filter((r) => r.reportSource === 'lesson')));
   // 학부모 열람률의 기간·유예 = 판정이 쓰는 그 값(UNREAD_WINDOW_DAYS · UNREAD_GRACE_HOURS) — 문구가 계산과 어긋나지 않게.
-  const [{ UNREAD_GRACE_HOURS: graceHours }, unreadDays] = await Promise.all([rules(load), unreadWindowDays()]);
+  const { UNREAD_GRACE_HOURS: graceHours } = await rules(load);
   // 화면 문구에 '2.0'을 적지 않는다(원장 10-28 "2.0과 관련된 멘트는 일단 제거") — 판정이 2.0 함수라는 것은 이 파일의 주석이 말한다.
-  const SPAN = { 'parent-read': `최근 ${unreadDays}일`, 'attendance-input': '어제까지 7일' };
-  const kpis = TEACHER_WORK_METRICS.map((m) => kpi(m.label, '%', windows.map((w, i) => ({ label: w.label,
-    value: m.video && (!videoFrom || w.to < videoFrom) ? null : rate(...m.part(totals[i], lessonTotals[i])) })), { id: m.id, better: 'up', span: SPAN[m.id] ?? '최근 7일', basis: m.basis(graceHours) }));
+  const SPAN = { 'attendance-input': '어제까지 7일' };
+  const kpis = TEACHER_WORK_METRICS.map((m) => kpi(m.label, '%', (m.attendance ? attendanceWindows : windows).map((w, i) => ({ label: w.label,
+    value: m.attendance ? attendance.total[i] ? rate(...attendance.total[i]) : null
+      : m.video && (!videoFrom || w.to < videoFrom) ? null : rate(...m.part(totals[i], lessonTotals[i])) })), { id: m.id, better: 'up', span: SPAN[m.id] ?? '최근 7일', basis: m.basis(graceHours) }));
   return { windows, totals, lessonTotals, kpis, basis: '변화 = 7일 전 값과 비교 · 날마다 같은 시각까지 셈' };
 }
 
