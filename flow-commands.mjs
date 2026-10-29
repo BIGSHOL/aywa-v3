@@ -251,7 +251,7 @@ export async function applyCommand(state, source, cmd, { now, inFlight = new Map
       keys(payload, ['stepId', 'assigneeIds']);
       const c = getCase(), who = assignable(actors, payload.assigneeIds);
       const s = c.steps.find(x => (payload.stepId ? x.id === payload.stepId : true) && (x.status === 'ready' || x.status === 'working'));
-      if (!s) throw new CommandError(409, 'step_not_ready', '담당을 바꿀 남은 단계가 없습니다.');
+      if (!s) throw new CommandError(409, 'step_not_ready', '담당을 변경할 남은 단계가 없습니다.');
       const from = s.assigneeIds; s.assigneeIds = who; s.queue = null; delete s.ack; s.unassignedReason = null; s.status = 'ready'; s.rule = '관리자가 직접 다시 지정'; s.ruleSource = 'case.reassign';
       emit({ caseId: c.id, type: 'step.reassigned', stepId: s.id, targetActorIds: who, causeId: c.history.at(-1), data: { from, to: who } });
       refreshCase(c, at); return { caseId: c.id, eventIds: ids };

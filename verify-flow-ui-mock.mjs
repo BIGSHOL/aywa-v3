@@ -153,7 +153,7 @@ export function createFlowMock(db){
       }
       case 'case.reassign':{
         if(!okAssignees(p.assigneeIds))return fail(400,'assignee_not_allowed','배정할 수 없는 사람이 있습니다.');
-        const s=c.steps.find(x=>(p.stepId?x.id===p.stepId:true)&&(x.status==='ready'||x.status==='working'));if(!s)return fail(409,'step_not_ready','담당을 바꿀 진행 중 단계가 없습니다.');
+        const s=c.steps.find(x=>(p.stepId?x.id===p.stepId:true)&&(x.status==='ready'||x.status==='working'));if(!s)return fail(409,'step_not_ready','담당을 변경할 진행 중 단계가 없습니다.');
         s.assigneeIds=p.assigneeIds;s.queue=null;s.unassignedReason=null;s.status='ready';s.rule='관리자가 직접 지정(재배정)';
         evt(c,'step.reassigned','담당 변경',actor.id,{stepId:s.id,targetActorIds:p.assigneeIds});refresh(c);return {caseId:c.id};
       }

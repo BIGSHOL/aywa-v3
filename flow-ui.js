@@ -365,7 +365,7 @@ window.createFlowUI = function createFlowUI(api) {
     // A manager can also hold a step (e.g. teaches the class); their own turn comes first when there is one.
     const lists={mine:[my,'지금 내 차례인 업무가 없습니다.'],queue:[queue,'담당 미지정 업무가 없습니다.'],late:[overdue,'지난 업무가 없습니다.'],review:[review,'검토를 기다리는 업무가 없습니다.'],returned:[back,'보완 요청 업무가 없습니다.'],chain:[chain,'여러 사람을 거치는 업무가 없습니다.'],all:[open,'남은 업무가 없습니다.']};
     const f=lists[store.filter]?store.filter:my.length?'mine':'queue',[items,empty]=lists[f];
-    return `<div class="fl-fold"><div class="page-heading"><div><h1>업무 조율</h1><p>${h(actor()?.name||'')} · ${h(actor()?.roleLabel||'')}</p></div></div>${sourceLine()}${stateNote()}<section class="ax-first" aria-label="조율할 업무"><div class="ax-signals">${my.length?countCard('내 차례',my.length,'내가 맡은 단계','mine','urgent'):''}${countCard('담당 미지정',queue.length,'담당을 지정해야 다음 단계가 시작됩니다','queue','urgent')}${countCard('지난 업무',overdue.length,'기한이 지났고 아직 끝나지 않은 업무','late')}${countCard('검토 대기',review.length,'보고가 들어와 확인이 필요한 일','review')}${countCard('보완 요청',back.length,'보완 요청 업무','returned')}</div>${scenarioPanel()}</section></div><section class="fl-section" id="fl-detail">${filterBar(f,[['mine','내 차례',my.length],['queue','담당 미지정',queue.length],['late','지난 업무',overdue.length],['review','검토 대기',review.length],['returned','보완 요청',back.length],['chain','여러 사람 거침',chain.length],['all','남은 업무 전체',open.length]])}${list(items,empty,f)}${stageOverview()}</section>`;
+    return `<div class="fl-fold"><div class="page-heading"><div><h1>업무 조율</h1><p>${h(actor()?.name||'')} · ${h(actor()?.roleLabel||'')}</p></div></div>${sourceLine()}${stateNote()}<section class="ax-first" aria-label="조율할 업무"><div class="ax-signals">${my.length?countCard('내 차례',my.length,'내가 맡은 단계','mine','urgent'):''}${countCard('담당 미지정',queue.length,'담당을 지정해야 다음 단계가 시작됩니다','queue','urgent')}${countCard('지난 업무',overdue.length,'기한이 지났고 아직 끝나지 않은 업무','late')}${countCard('검토 대기',review.length,'보고가 들어와 확인이 필요한 업무','review')}${countCard('보완 요청',back.length,'보완 요청 업무','returned')}</div>${scenarioPanel()}</section></div><section class="fl-section" id="fl-detail">${filterBar(f,[['mine','내 차례',my.length],['queue','담당 미지정',queue.length],['late','지난 업무',overdue.length],['review','검토 대기',review.length],['returned','보완 요청',back.length],['chain','여러 사람 거침',chain.length],['all','남은 업무 전체',open.length]])}${list(items,empty,f)}${stageOverview()}</section>`;
   }
   function stageOverview(){
     const stages=Object.entries(flow().firstScreen?.stages||{}),total=Number(flow().casesTotal)||cases().length;
@@ -500,7 +500,7 @@ window.createFlowUI = function createFlowUI(api) {
     const CP=window.ContextPicker,auto='자동 선택 · 이번 달 기록';
     const absentField=picker(()=>({id:'fl-scn-absence',name:'record',label:'결석 기록',empty:auto,...(absent.length?CP.lists.absences({db,items:absent,cases:cases(),total:total('absence')}):CP.lists.absencesFromFlow({db,flow:flow()}))}),`<label>결석 기록<select name="record">${options(absentOpts)}</select></label>`);
     const billField=picker(()=>({id:'fl-scn-billing',name:'record',label:'청구',empty:auto,...CP.lists.invoices({db,items:billItems,cases:cases(),total:billRows.length?total('billing'):null})}),`<label>청구<select name="record">${options(bills)}</select></label>`);
-    return `<section class="fl-scenarios" aria-labelledby="fl-scn-title"><h2 id="fl-scn-title">연습 시나리오</h2><p class="ax-note">실제 기록으로 연습 업무를 만듭니다. 원본 기록은 바뀌지 않고 집계에도 들어가지 않습니다.</p><div class="fl-scn-grid"><form class="fl-scn" data-fl-form="simulate" data-scenario="absence" novalidate><h3>결석 원생 연락</h3><p>보호자 연락 → (필요하면) 관리자 검토 → 담임 후속으로 넘어갑니다.</p>${absentField}<button class="button primary" type="submit" data-fl-key="event.simulate:absence">시나리오 시작</button></form><form class="fl-scn" data-fl-form="simulate" data-scenario="billing" novalidate><h3>수납 확인</h3><p>납부 내역 대조 → 관리자·원장 결정으로 넘어갑니다.</p>${billField}<button class="button primary" type="submit" data-fl-key="event.simulate:billing">시나리오 시작</button></form><div class="fl-scn"><h3>여러 담당자에게 요청</h3><p>담당자를 여러 명 고르고 기한을 정해 보냅니다. 받은 사람의 화면에 바로 보입니다.</p>${btn('요청 작성','request')}</div></div></section>`;
+    return `<section class="fl-scenarios" aria-labelledby="fl-scn-title"><h2 id="fl-scn-title">연습 시나리오</h2><p class="ax-note">실제 기록으로 연습 업무를 만듭니다. 원본 기록은 바뀌지 않고 집계에도 들어가지 않습니다.</p><div class="fl-scn-grid"><form class="fl-scn" data-fl-form="simulate" data-scenario="absence" novalidate><h3>결석 원생 연락</h3><p>보호자 연락 → (필요하면) 관리자 검토 → 담임 후속으로 넘어갑니다.</p>${absentField}<button class="button primary" type="submit" data-fl-key="event.simulate:absence">시나리오 시작</button></form><form class="fl-scn" data-fl-form="simulate" data-scenario="billing" novalidate><h3>수납 확인</h3><p>납부 내역 대조 → 관리자·원장 결정으로 넘어갑니다.</p>${billField}<button class="button primary" type="submit" data-fl-key="event.simulate:billing">시나리오 시작</button></form><div class="fl-scn"><h3>여러 담당자에게 요청</h3><p>담당자를 여러 명 선택하고 기한을 정해 보냅니다. 받은 사람의 화면에 바로 보입니다.</p>${btn('요청 작성','request')}</div></div></section>`;
   }
 
   /* ---------- case detail: trigger → decision → steps → evidence → events, related records ---------- */
@@ -877,7 +877,7 @@ window.createFlowUI = function createFlowUI(api) {
 
   /* ---------- 열 머리 메뉴: 정렬 · 값 필터(원장 10-28 "전부 필터 및 검색, 오름/내림차순 정렬 가능하게") ---------- */
   // 엑셀처럼 열 머리를 누르면 그 아래 작은 창 — 오름·내림차순, 그 열의 값 목록(건수와 함께 · 찾기 칸으로 좁힘)을 골라 거른다.
-  // 고르는 즉시 표에 반영하고 창은 열어 둔다. 값 목록은 검색어와 다른 열의 필터를 거친 일에서 뽑는다(그 열 자신의 필터는 빼고).
+  // 선택하는 즉시 표에 반영하고 창은 열어 둔다. 값 목록은 검색어와 다른 열의 필터를 거친 일에서 뽑는다(그 열 자신의 필터는 빼고).
   const colMenu={key:'',el:null,q:''};
   const COLRAW={due:c=>c.dueAt?kstDate(c.dueAt):'',at:c=>kstDate(atOf(c))};
   function colValues(key){
@@ -888,7 +888,7 @@ window.createFlowUI = function createFlowUI(api) {
   const colLabel=key=>COLS.find(c=>c[0]===key)?.[1]||'';
   function colListHtml(key){
     const sel=store.cols[key],on=v=>!Array.isArray(sel)||sel.includes(v),q=fold(colMenu.q),vals=colValues(key),shown=q?vals.filter(([v])=>fold(v).includes(q)):vals;
-    if(!shown.length)return `<p class="fl-dim">${vals.length?'맞는 값이 없습니다.':'고를 값이 없습니다.'}</p>`;
+    if(!shown.length)return `<p class="fl-dim">${vals.length?'맞는 값이 없습니다.':'선택할 값이 없습니다.'}</p>`;
     return `<label class="fl-colpop-all"><input type="checkbox" data-flc="all"><span>${q?'찾은 값 모두':'모두'}</span></label>${shown.map(([v,n])=>`<label><input type="checkbox" data-flc="val" value="${h(v)}" ${on(v)?'checked':''}><span>${h(v)}</span><b>${fmt(n)}</b></label>`).join('')}`;
   }
   // '모두' 칸 = 보이는 값이 다 골라졌으면 체크, 일부면 반만(indeterminate).
@@ -916,7 +916,7 @@ window.createFlowUI = function createFlowUI(api) {
     const w=el.offsetWidth,hh=el.offsetHeight;let top=r.bottom+4;if(top+hh>innerHeight-8)top=Math.max(8,r.top-hh-4);
     el.style.left=`${Math.min(Math.max(8,r.left),innerWidth-w-8)}px`;el.style.top=`${top}px`;
   }
-  // 값 선택 — 다 고르면 그 열 필터를 지운다(전부와 같다). 하나도 안 고르면 맞는 일이 없다.
+  // 값 선택 — 모두 선택하면 그 열 필터를 지운다(전부와 같다). 하나도 선택하지 않으면 맞는 일이 없다.
   function setColValues(key,values,on){
     const all=colValues(key).map(([v])=>v),sel=new Set(Array.isArray(store.cols[key])?store.cols[key]:all);
     values.forEach(v=>on?sel.add(v):sel.delete(v));
@@ -1004,7 +1004,7 @@ window.createFlowUI = function createFlowUI(api) {
     btn.disabled=true;let ok=0,bad=0;
     for(const c of list){const s=bulkTarget(caseById(c.id)||c);if(note)note.textContent=`${fmt(ok+bad+1)} / ${fmt(list.length)}건 바꾸는 중`;if(!s){bad++;continue;}const r=await command('case.reassign',{caseId:c.id,payload:{stepId:s.id,assigneeIds:ids},quiet:true});if(r)ok++;else bad++;}
     store.sel.clear();paint();form.closest('dialog')?.close();
-    toast(bad?`${fmt(ok)}건 담당을 바꿨습니다. ${fmt(bad)}건은 바꾸지 못했습니다.`:`${fmt(ok)}건 담당을 바꿨습니다.`);
+    toast(bad?`${fmt(ok)}건의 담당을 변경했습니다. ${fmt(bad)}건은 변경하지 못했습니다.`:`${fmt(ok)}건의 담당을 변경했습니다.`);
   }
 
   /* ---------- 관련 기록 목록(원장 10-28 "[기록보기] 라벨로 바꾸고 마우스 올리면 리스트 깔끔하게 정리해서 보여주는것도 · 혹은 눌렀을때도 오버레이로 깔끔하게") ---------- */
@@ -1167,7 +1167,7 @@ window.createFlowUI = function createFlowUI(api) {
     // 원생상담 후속조치 = 그 상담 상세('완료 표시'가 처리 자리) · 여럿이면 기한 지난 후속 목록.
     consultations:{record:id=>({v2path:`/consultations/${id}`}),list:{urg:'overdue'}}};
   // 2.0 화면의 '보는 사람'(= 저장하는 사람, 주소 actor가 화면에서 선택한 사람보다 이긴다) — 지금 보는 사람이 그 단계 담당이면 그대로, 아니면 그 단계 담당(승인·결재 차례인 사람).
-  // 화면이 고를 수 없는 사람이면 화면이 무시하고 제 규칙(원장 먼저)으로 돈다.
+  // 화면에서 선택할 수 없는 사람이면 화면이 무시하고 제 규칙(원장 먼저)으로 돈다.
   const v2Actor=c=>{const me=actor()?.id,ids=activeSteps(c).flatMap(s=>s.assigneeIds||[]);return ids.includes(me)?me:ids[0]||me||'';};
   async function processRecord(c,family,type,id,opener){
     const fallback=()=>{if(api.hasView(`workspace-${family}`))openPeek({page:`workspace-${family}`,family,record:id},opener);else toast('이 기록을 처리할 화면을 찾지 못했습니다.');};
@@ -1364,8 +1364,8 @@ window.createFlowUI = function createFlowUI(api) {
     if(kind==='simulate'){const record=String(v.get('record')||''),scenario=form.dataset.scenario;command('event.simulate',{payload:{scenario,...(record?{recordRef:record}:{})},key:`event.simulate:${scenario}`}).then(r=>{if(!r)return;if(r.duplicate){toast('같은 기록으로 만든 시나리오가 아직 끝나지 않아 그 업무를 보여 드립니다. 새 업무는 만들지 않았습니다.');if(r.caseId)showCase(r.caseId);return;}toast(`연습 시나리오를 시작했습니다. 담당자의 업무에 생겼습니다.${r.decision==='pending'?' 판정 결과는 잠시 뒤 나타납니다.':''}`);});return;}
     if(kind==='report'){const c=caseById(id),note=String(v.get('note')||'').trim(),outcome=String(v.get('outcome')||'done');if(note.length<2){fail('보고 내용을 두 글자 이상 적어 주세요.');form.querySelector('textarea').focus();return;}const scope=String(v.get('scope')||''),node=scope?trees.get(id)?.index.get(scope):null;if(scope&&!node){fail('보고할 원생의 기록을 찾지 못했습니다. 창을 닫고 원생을 다시 선택해 주세요.');return;}const refs=node?(Array.isArray(node.records)?node.records:[]).map(r=>String(r?.id||'')).filter(Boolean):v.getAll('ref').map(Number).map(i=>c?.entityRefs?.[i]).filter(Boolean).map(r=>`${r.type}:${r.id}`);if(c?.signalId==='billing-remaining'&&!refs.length){fail('처리한 청구를 한 건 이상 선택해 주세요.');return;}if(node&&!refs.length){fail('이 원생에게 붙일 기록이 없습니다.');return;}command('case.report',{caseId:id,payload:{...step,note,outcome,...(refs.length?{recordRefs:refs}:{}),...(v.getAll('attach').filter(Boolean).length?{attachments:v.getAll('attach').filter(Boolean).slice(0,20)}:{})}}).then(r=>done(r,c?.factSignal?(caseById(id)?.state==='done'?'보고를 남겼습니다. 근거 기록이 모두 처리되어 이 업무가 닫혔습니다.':['done','not_needed'].includes(outcome)?`${node?`${nodeLabel(node)} 원생의 `:''}기록을 처리한 것으로 남겼습니다.`:'보고를 남겼습니다. 아직 남은 업무로 열려 있습니다.'):node?`${nodeLabel(node)} 원생의 ${c?.closure==='fact'?'후속 ':''}보고를 남겼습니다. 같은 단계의 다른 원생은 그대로입니다.`:c?.closure==='fact'?(signalCase(c)?'후속 보고를 남겼습니다. 이 업무는 원본 기록이 바뀌면 닫힙니다.':'후속 보고를 남겼습니다. 원본 업무는 원본 기록이 처리되면 닫힙니다.'):caseById(id)?.state==='done'?'보고를 남겼습니다. 이 업무는 끝났습니다.':'보고를 남겼습니다.'));return;}
     if(kind==='review'){const decision=String(v.get('decision')||''),note=String(v.get('note')||'').trim();if(!decision){fail('결정을 선택해 주세요.');return;}if(decision==='return'&&note.length<2){fail('보완 요청할 때는 보완할 내용을 적어 주세요.');form.querySelector('textarea').focus();return;}command('case.review',{caseId:id,payload:{...step,decision,...(note?{note}:{})}}).then(r=>done(r,decision==='accept'?'승인했습니다.':'보완 요청했습니다.'));return;}
-    if(kind==='reassign'){const ids=v.getAll('assignee').map(String),stepId=String(v.get('step')||'');if(!ids.length){fail('담당자를 한 명 이상 선택해 주세요.');form.querySelector('[data-cpick-name="assignee"] .cpick-trigger,[name="assignee"]')?.focus();return;}if(ids.length>10){fail('담당자는 10명까지 고를 수 있습니다.');return;}command('case.reassign',{caseId:id,payload:{...(stepId?{stepId}:{}),assigneeIds:ids}}).then(r=>done(r,'담당을 저장했습니다.'));return;}
-    if(kind==='bulk-reassign'){const ids=v.getAll('assignee').map(String);if(!ids.length){fail('담당자를 한 명 이상 선택해 주세요.');return;}if(ids.length>10){fail('담당자는 10명까지 고를 수 있습니다.');return;}if(form.dataset.busy)return;form.dataset.busy='1';bulkReassign(form,ids).finally(()=>{delete form.dataset.busy;});return;}
+    if(kind==='reassign'){const ids=v.getAll('assignee').map(String),stepId=String(v.get('step')||'');if(!ids.length){fail('담당자를 한 명 이상 선택해 주세요.');form.querySelector('[data-cpick-name="assignee"] .cpick-trigger,[name="assignee"]')?.focus();return;}if(ids.length>10){fail('담당자는 10명까지 선택할 수 있습니다.');return;}command('case.reassign',{caseId:id,payload:{...(stepId?{stepId}:{}),assigneeIds:ids}}).then(r=>done(r,'담당을 저장했습니다.'));return;}
+    if(kind==='bulk-reassign'){const ids=v.getAll('assignee').map(String);if(!ids.length){fail('담당자를 한 명 이상 선택해 주세요.');return;}if(ids.length>10){fail('담당자는 10명까지 선택할 수 있습니다.');return;}if(form.dataset.busy)return;form.dataset.busy='1';bulkReassign(form,ids).finally(()=>{delete form.dataset.busy;});return;}
     if(kind==='reopen'){const note=String(v.get('note')||'').trim();if(note.length<2){fail('다시 여는 이유를 적어 주세요.');form.querySelector('textarea').focus();return;}command('case.reopen',{caseId:id,payload:{note}}).then(r=>done(r,'다시 열었습니다.'));}
   },true);
 
