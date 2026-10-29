@@ -118,4 +118,7 @@
 .tr-analysis-item li+li{border-top:1px solid var(--ax-line);padding-top:5px}
 .tr-analysis-item .ax-text-link{font:inherit;text-align:left;padding:0;min-height:0;line-height:inherit}
 .tr-analysis-item [data-ca-flow]{margin-top:9px}
+.tr-analysis-records{margin-top:10px;border-top:1px solid var(--ax-line);padding-top:8px}
+.tr-analysis-records summary{cursor:pointer;font-size:var(--ax-xs);font-weight:650;color:var(--ax-primary)}
+.tr-analysis-records ol{margin-top:8px}
 @media(max-width:760px){.tr-analysis-grid{grid-template-columns:1fr}.tr-analysis-item:last-child{grid-column:auto}.tr-analysis-head{display:block}.tr-analysis-head small{display:block;margin-top:4px}}

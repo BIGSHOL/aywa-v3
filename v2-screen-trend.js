@@ -14,6 +14,7 @@
   const CARD_IDS = new Set(['enrolled-students', 'courses', 'exits', 'intake', 'level-tests', 'new-enrollments', 'first-classes', 'recent-absent', 'makeups',
     'report-written', 'report-sent', 'parent-read', 'attendance-input', 'video-issued', 'video-submitted']);
   const ANALYSIS_ITEMS = ['지금 값과 평소', '어디서 변했나', '누가', '열린 업무', '셈의 기준과 빠진 기록'];
+  const analysisOpen = new Set();
   function analysisBox(entry) {
     if (!entry) return '';
     if (entry.status === 'error') return `<section class="tr-analysis" aria-label="카드 분석"><h2>카드 분석</h2><p class="v3s-note">${esc(entry.error || '분석을 불러오지 못했습니다.')}</p></section>`;
@@ -21,10 +22,14 @@
     const facts = entry.data.facts || [];
     const groups = ANALYSIS_ITEMS.map((title, i) => {
       const lines = facts.filter(f => f.item === i + 1);
+      const records = i === 2 && entry.data.records?.length ? `<details class="tr-analysis-records" data-ca-roster="${esc(entry.data.metric)}" ${analysisOpen.has(entry.data.metric) ? 'open' : ''}><summary>명단 ${fmt(entry.data.records.length)}건 보기</summary><ol>${entry.data.records.map(r => {
+        const ref = r.refs?.[0];
+        return `<li>${ref ? `<button type="button" class="ax-text-link" data-ca-record="${esc(ref.id)}" data-ca-type="${esc(ref.type)}" data-ca-metric="${esc(entry.data.metric)}">${esc(r.text)}</button>` : esc(r.text)}</li>`;
+      }).join('')}</ol></details>` : '';
       return `<section class="tr-analysis-item"><h3>${i + 1}. ${title}</h3><ol>${lines.map(f => {
         const ref = f.kind === 'record' && f.refs?.[0], open = ref ? `<button type="button" class="ax-text-link" data-ca-record="${esc(ref.id)}" data-ca-type="${esc(ref.type)}" data-ca-metric="${esc(entry.data.metric)}">${esc(f.text)}</button>` : esc(f.text);
         return `<li data-fact="${esc(f.id)}">${open}</li>`;
-      }).join('') || '<li>비교할 기록이 없습니다.</li>'}</ol>${i === 3 && lines.some(f => f.kind === 'flow') ? '<button type="button" class="ax-text-link" data-ca-flow>업무 흐름 열기</button>' : ''}</section>`;
+      }).join('') || '<li>비교할 기록이 없습니다.</li>'}</ol>${records}${i === 3 && lines.some(f => f.kind === 'flow') ? '<button type="button" class="ax-text-link" data-ca-flow>업무 흐름 열기</button>' : ''}</section>`;
     }).join('');
     return `<section class="tr-analysis" aria-label="카드 분석"><div class="tr-analysis-head"><h2>카드 분석</h2><small>${esc(entry.data.period === 'month' ? '월별 카드 기준' : '주별 카드 기준')} · ${esc(entry.data.asOf)}</small></div><div class="tr-analysis-grid">${groups}</div></section>`;
   }
@@ -344,6 +349,7 @@
     else if (b.dataset.trSort) { sort.dir = sort.key === b.dataset.trSort ? 1 - sort.dir : 0; sort.key = b.dataset.trSort; last.api.render(); }
     else if (b.hasAttribute('data-tr-more')) { showAll = true; last.api.render(); }
   });
+  document.addEventListener('toggle', ev => { const id = ev.target?.dataset?.caRoster; if (id) { if (ev.target.open) analysisOpen.add(id); else analysisOpen.delete(id); } }, true);
   // 이름 찾기 — 글자마다 바로 거른다(화면 안에서만). 한글은 조합이 끝났을 때(조합 중에 다시 그리면 글자가 깨진다). 초점·커서는 live.js render가 id로 되살린다.
   const onFind = ev => { const el = ev.target; if (!last || el?.id !== 'tr-find' || ev.isComposing || finder.q === el.value) return; finder.q = el.value; showAll = false; last.api.render(); };
   document.addEventListener('input', onFind); document.addEventListener('compositionend', onFind);
