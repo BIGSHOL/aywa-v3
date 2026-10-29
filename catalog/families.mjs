@@ -65,7 +65,7 @@ export const families = [
     uncertainties: ['CLAUDE.md 결정 로그는 구글 → aywa 전체 동기화를 "하루 2회 안전망"이라 적지만 vercel.json에는 google-calendar-import 일정이 하루 1회뿐 — 다른 트리거가 있는지 미확인'],
   },
   {
-    id: 'tasks-notifications', label: '할 일·알림(벨·푸시)', domain: '홈',
+    id: 'tasks-notifications', label: '업무·알림(벨·푸시)', domain: '홈',
     menuKeys: [], routes: [], api: ['/api/notifications', '/api/staff-tasks', '/api/push'], crons: ['/api/cron/staff-tasks', '/api/cron/notification-maintenance'],
     featureDirs: ['staff-tasks', 'notifications'],
     audience: ['master', 'admin', 'manager', 'teacher', 'accountant', 'counselor'],

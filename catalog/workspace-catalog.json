@@ -317,26 +317,26 @@
   },
   {
    "id": "tasks-notifications",
-   "label": "할 일·알림",
+   "label": "업무·알림",
    "group": "홈",
    "groupId": "home",
    "page": "workspace-tasks-notifications",
-   "summary": "기록에서 자동으로 생긴 할 일과 알림을 처리 상태로 봅니다.",
+   "summary": "기록에서 자동으로 생긴 업무와 알림을 처리 상태로 봅니다.",
    "viewKind": "flow",
    "facets": [
     {
      "id": "open",
-     "label": "남은 일",
+     "label": "남은 업무",
      "kind": "filter"
     },
     {
      "id": "late",
-     "label": "늦음",
+     "label": "지난 업무",
      "kind": "filter"
     },
     {
      "id": "closed",
-     "label": "끝난 일",
+     "label": "완료된 업무",
      "kind": "filter"
     },
     {
@@ -368,16 +368,16 @@
     },
     {
      "id": "tasks-notifications.kind",
-     "label": "할 일 종류별 보기",
+     "label": "업무 종류별 보기",
      "mode": "preview",
      "draft": {
-      "title": "할 일 목록",
-      "body": "종류와 상태로 거른 할 일 목록을 봅니다."
+      "title": "업무 목록",
+      "body": "종류와 상태로 거른 업무 목록을 봅니다."
      },
      "fields": [
       {
        "id": "kind",
-       "label": "할 일 종류",
+       "label": "업무 종류",
        "type": "select",
        "required": true,
        "options": [
@@ -436,15 +436,15 @@
        "options": [
         {
          "value": "open",
-         "label": "열린 일"
+         "label": "남은 업무"
         },
         {
          "value": "late",
-         "label": "늦음"
+         "label": "지난 업무"
         },
         {
          "value": "closed",
-         "label": "끝난 일"
+         "label": "완료된 업무"
         },
         {
          "value": "all",
@@ -464,16 +464,16 @@
     },
     {
      "id": "tasks-notifications.follow",
-     "label": "할 일 후속 요청",
+     "label": "업무 후속 요청",
      "mode": "request",
      "draft": {
-      "title": "할 일 처리 확인 요청",
-      "body": "아래 종류의 할 일이 어떻게 처리되고 있는지 확인해 알려 주세요. 할 일은 원래 기록이 바뀌어야 닫힙니다."
+      "title": "업무 처리 확인 요청",
+      "body": "아래 종류의 업무가 어떻게 처리되고 있는지 확인해 알려 주세요. 업무는 원래 기록이 바뀌어야 닫힙니다."
      },
      "fields": [
       {
        "id": "kind",
-       "label": "할 일 종류",
+       "label": "업무 종류",
        "type": "select",
        "required": true,
        "options": [
@@ -7065,7 +7065,7 @@
      "mode": "preview",
      "draft": {
       "title": "학원 설정 면",
-      "body": "고른 설정 면의 항목을 봅니다."
+      "body": "선택한 설정 면의 항목을 봅니다."
      },
      "fields": [
       {
@@ -7419,7 +7419,7 @@
      "mode": "preview",
      "draft": {
       "title": "슬랙 규칙 미리보기",
-      "body": "고른 범주의 알림이 어디로 가는지 확인합니다."
+      "body": "선택한 범주의 알림이 어디로 가는지 확인합니다."
      },
      "fields": [
       {

@@ -31,6 +31,7 @@ export const BANNED_ANYWHERE = [/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}
 export const displayOptions = (id, options) => options.map(option => ({
   ...option,
   label: id === 'assetStatus' ? ({ in_use: '사용 중', on_loan: '대여 중', repair: '수리 중' }[option.value] || option.label)
+    : id === 'staffTaskFilter' ? ({ open: '남은 업무', late: '지난 업무', closed: '완료된 업무' }[option.value] || option.label)
     : id === 'integrationSub' && option.value === 'makeedu' ? '메이크에듀 동기화' : option.label,
 }));
 

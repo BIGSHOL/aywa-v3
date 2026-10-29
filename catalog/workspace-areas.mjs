@@ -71,12 +71,12 @@ export const AREAS = [
       pre('calendar.event', '일정 추가', [f('title', '일정 제목', 'text', { required: true }), date('start', '시작일'), date('end', '종료일', false), f('time', '시작 시각', 'time')], ['saveCalendarEvent'], '일정 미리보기', '학원 일정에 추가될 모습을 미리 봅니다.'),
       pre('calendar.tag', '태그 만들기', [f('name', '태그 이름', 'text', { required: true })], ['saveCalendarTag'], '일정 태그', '일정을 묶어 볼 태그 이름을 정합니다.'),
     ] },
-  { id: 'tasks-notifications', label: '할 일·알림', group: 'home', viewKind: 'flow', summary: '기록에서 자동으로 생긴 할 일과 알림을 처리 상태로 봅니다.',
-    facets: [fc('open', '남은 일', text(KINDS, '열린 일'), 'filter'), fc('late', '늦음', text(KINDS, '늦음'), 'filter'), fc('closed', '끝난 일', text(KINDS, '끝난 일'), 'filter'), fc('inbox', '알림함', route('/dashboard'), 'face')],
+  { id: 'tasks-notifications', label: '업무·알림', group: 'home', viewKind: 'flow', summary: '기록에서 자동으로 생긴 업무와 알림을 처리 상태로 봅니다.',
+    facets: [fc('open', '남은 업무', text(KINDS, '열린 일'), 'filter'), fc('late', '지난 업무', text(KINDS, '늦음'), 'filter'), fc('closed', '완료된 업무', text(KINDS, '끝난 일'), 'filter'), fc('inbox', '알림함', route('/dashboard'), 'face')],
     actions: [
       nav('tasks-notifications.inbox', '알림함 열기', null, ['markNotificationsRead'], '안 읽은 알림과 보관함을 봅니다.', 'inbox'),
-      pre('tasks-notifications.kind', '할 일 종류별 보기', [sel('kind', '할 일 종류', 'staffTaskKind'), sel('filter', '상태', 'staffTaskFilter')], ['api-staff-tasks'], '할 일 목록', '종류와 상태로 거른 할 일 목록을 봅니다.'),
-      req('tasks-notifications.follow', '할 일 후속 요청', [sel('kind', '할 일 종류', 'staffTaskKind'), memo('요청 내용', true)], ['api-staff-tasks'], '할 일 처리 확인 요청', '아래 종류의 할 일이 어떻게 처리되고 있는지 확인해 알려 주세요. 할 일은 원래 기록이 바뀌어야 닫힙니다.'),
+      pre('tasks-notifications.kind', '업무 종류별 보기', [sel('kind', '업무 종류', 'staffTaskKind'), sel('filter', '상태', 'staffTaskFilter')], ['api-staff-tasks'], '업무 목록', '종류와 상태로 거른 업무 목록을 봅니다.'),
+      req('tasks-notifications.follow', '업무 후속 요청', [sel('kind', '업무 종류', 'staffTaskKind'), memo('요청 내용', true)], ['api-staff-tasks'], '업무 처리 확인 요청', '아래 종류의 업무가 어떻게 처리되고 있는지 확인해 알려 주세요. 업무는 원래 기록이 바뀌어야 닫힙니다.'),
     ] },
   // ───────── 수업 ─────────
   { id: 'onescreen', label: '선생님 수업보고서', group: 'class', viewKind: 'sheet', summary: '선생님이 수업보고서를 쓰고 보내며 출결·공지·보강까지 한곳에서 마감하는 화면을 봅니다.',
@@ -351,7 +351,7 @@ export const AREAS = [
       fc('audit', '감사로그', text(OWN, '감사로그'), 'face'), fc('sheets', '연동', text(OWN, '"연동"'), 'face')],
     actions: [
       nav('owner-settings.legacy', '설정 화면 열기', null, [], '학원 설정 화면을 엽니다.', 'settings'),
-      pre('owner-settings.face', '설정 면 미리보기', [sel('face', '설정 면', 'ownerFace')], ['saveOwnerSection', 'saveSettingRoles'], '학원 설정 면', '고른 설정 면의 항목을 봅니다.'),
+      pre('owner-settings.face', '설정 면 미리보기', [sel('face', '설정 면', 'ownerFace')], ['saveOwnerSection', 'saveSettingRoles'], '학원 설정 면', '선택한 설정 면의 항목을 봅니다.'),
       pre('owner-settings.classroom', '강의실 추가', [f('name', '강의실 이름', 'text', { required: true }), f('capacity', '정원', 'number')], ['createClassroom'], '강의실 미리보기', '강의실 목록에 추가될 내용을 확인합니다.'),
       req('owner-settings.subject', '과목 정리 요청', [f('from', '정리할 과목', 'text', { required: true }), f('to', '옮겨 갈 과목', 'text', { required: true })], ['absorbSubject', 'savePeriodsForSubject'], '과목 정리', '아래 과목을 다른 과목으로 흡수하고 세션 기간을 맞춰 주세요.'),
       pre('owner-settings.popup', '팝업 공지 미리보기', [f('title', '제목', 'text', { required: true }), f('body', '내용', 'textarea', { required: true })], ['createNoticePopup'], '팝업 공지 미리보기', '직원 화면에 뜰 팝업 공지를 확인합니다.'),
@@ -367,7 +367,7 @@ export const AREAS = [
     facets: [fc('rules', '규칙', text(SLK, 'ACTIVITY_CATEGORIES')), fc('settings', '슬랙 연결', text(INTEG, '"슬랙"'), 'face')],
     actions: [
       nav('slack.automation', '자동화 설정', null, ['saveSlackSchedule'], '자동화 화면을 엽니다.', 'automation'),
-      pre('slack.rule', '규칙 미리보기', [f('categories', '활동 범주', 'multiselect', { required: true, optionsFrom: 'slackCategory' }), f('target', '보낼 곳', 'text', { required: true })], ['saveSlackRule'], '슬랙 규칙 미리보기', '고른 범주의 알림이 어디로 가는지 확인합니다.'),
+      pre('slack.rule', '규칙 미리보기', [f('categories', '활동 범주', 'multiselect', { required: true, optionsFrom: 'slackCategory' }), f('target', '보낼 곳', 'text', { required: true })], ['saveSlackRule'], '슬랙 규칙 미리보기', '선택한 범주의 알림이 어디로 가는지 확인합니다.'),
       req('slack.connect', '슬랙 연결 요청', [memo('연결할 워크스페이스·사람')], ['saveSlackToken', 'linkSlackByEmail'], '슬랙 연결', '학원 슬랙 워크스페이스를 연결하고 직원 계정을 이어 주세요.'),
     ] },
   { id: 'integrations', label: '외부 연동', group: 'integration', viewKind: 'settings', summary: '메이크에듀·구글 시트·숙제영상 드라이브·연동 PC·오늘 수학 연결을 봅니다.',
