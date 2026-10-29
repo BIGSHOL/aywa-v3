@@ -49,7 +49,7 @@ export async function loadAbsenceDetail({ studentId, attendanceId, asOf }) {
         const matched = followups.filter(f => f.class_id === row.class_id && f.date === row.session_date && (!f.slot || !row.slot_start || f.slot === row.slot_start));
         const teacher = teachers.get(row.id);
         return { id: row.id, date: row.session_date, classId: row.class_id, className: row.className, time: row.time,
-          teacher: teacher?.source === 'seat' ? `자리 수업${teacher.seatLabel ? ` · ${teacher.seatLabel}` : ''}` : teacher?.label || '담당 기록 없음', teacherSource: teacher?.source || 'none', memo: row.memo,
+          teacher: teacher?.label || '담당 기록 없음', teacherSource: teacher?.source || 'none', memo: row.memo,
           followup: matched.length ? matched.map(f => [stateLabel[f.state] || '후속 기록', queue.OUTCOME_LABEL[f.outcome] || '', f.note].filter(Boolean).join(' · ')).join(' / ') : '후속 기록 없음' };
       }) };
     });
