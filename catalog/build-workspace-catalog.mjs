@@ -27,6 +27,13 @@ export const BANNED_VISIBLE = [/super[_ ]?admin/i, /슈퍼관리자/, /슈퍼어
 /** 카탈로그 파일 전체(메타 포함)에 들어가면 안 되는 것 — 비밀·식별자. */
 export const BANNED_ANYWHERE = [/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i, /Bearer\s/i, /\b(CRON_SECRET|SERVICE_ROLE|API_KEY|_SECRET|_TOKEN)\b/, /postgres(ql)?:\/\//i, /sk-[A-Za-z0-9]{8,}/, /[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[a-z]{2,}/, /\b01[016789]-?\d{3,4}-?\d{4}\b/, /\bsrc\//, /\bC:\\|\bD:\\|\bF:\\/];
 
+// 2.0 열거값은 읽기만 하고, 3.0 카탈로그의 화면 표기만 바로잡는다.
+export const displayOptions = (id, options) => options.map(option => ({
+  ...option,
+  label: id === 'assetStatus' ? ({ in_use: '사용 중', on_loan: '대여 중', repair: '수리 중' }[option.value] || option.label)
+    : id === 'integrationSub' && option.value === 'makeedu' ? '메이크에듀 동기화' : option.label,
+}));
+
 function fileHas(file, has) {
   const p = join(repoRoot, file);
   return existsSync(p) && readFileSync(p, 'utf8').includes(has);
@@ -40,7 +47,7 @@ export function buildWorkspaceCatalog({ pages = scanPages(), inventoryText = rea
   const visible = families.filter(f => f.ownerVisible);
   const groupLabel = Object.fromEntries(AREA_GROUPS.map(g => [g.id, g.label]));
   const optionCache = {};
-  const optionsOf = id => (optionCache[id] ||= extractOptions(id));
+  const optionsOf = id => (optionCache[id] ||= displayOptions(id, extractOptions(id)));
 
   // 영역 ↔ 원장 표시 패밀리 일대일
   for (const f of visible) if (!AREAS.some(a => a.id === f.id)) problems.push(`원장 표시 패밀리에 영역이 없음: ${f.id}`);

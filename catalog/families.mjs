@@ -930,7 +930,7 @@ export const families = [
 
   // ───────────────────────────── 백그라운드·연동·기반 ─────────────────────────────
   {
-    id: 'integrations', label: '외부 연동(makeedu·구글 시트·오늘 수학·IJW)', domain: '연동',
+    id: 'integrations', label: '외부 연동(메이크에듀·구글 시트·오늘 수학·IJW)', domain: '연동',
     menuKeys: ['integrations', 'sheet_sync'],
     routes: [], api: ['/api/sync-agent', '/api/integrations/todays-math', '/api/connected-apps'],
     crons: ['/api/cron/todays-math-sync', '/api/cron/todays-math-results', '/api/cron/sheets-sync', '/api/cron/ijw-memorized-words', '/api/cron/ijw-profile-sync'],

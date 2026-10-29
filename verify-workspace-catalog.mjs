@@ -6,7 +6,7 @@ import { readFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import vm from 'node:vm';
-import { buildWorkspaceCatalog, renderCatalogJs, catalogJsPath, catalogJsonPath, FIELD_TYPES, VIEW_KINDS, MODES, BANNED_VISIBLE, BANNED_ANYWHERE } from './catalog/build-workspace-catalog.mjs';
+import { buildWorkspaceCatalog, renderCatalogJs, catalogJsPath, catalogJsonPath, FIELD_TYPES, VIEW_KINDS, MODES, BANNED_VISIBLE, BANNED_ANYWHERE, displayOptions } from './catalog/build-workspace-catalog.mjs';
 import { extractOptions } from './catalog/option-sources.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -82,11 +82,11 @@ check(`원장 표시 패밀리 ${visible.length}개·핵심 동작 ${visible.red
 const opts = [];
 for (const a of C.areas) for (const act of a.actions) for (const fd of act.fields) {
   if (!fd.optionSource || fd.optionSource === 'inline-verified') continue;
-  const src = extractOptions(fd.optionSource);
+  const src = displayOptions(fd.optionSource, extractOptions(fd.optionSource));
   for (const o of fd.options) if (!src.some(s => s.value === o.value && s.label === o.label)) opts.push(`${act.id}.${fd.id}: ${o.value}=${o.label}가 ${fd.optionSource}에 없다`);
   if (fd.options.length > src.length) opts.push(`${act.id}.${fd.id}: 선택지가 원본보다 많다`);
 }
-check('필드 선택지가 2.0 코드의 열거값과 같다', opts);
+check('필드 선택지의 값은 2.0 코드와 같고 화면 라벨은 3.0 표기와 같다', opts);
 
 // 6) 문구·비밀 — 금지어 검사 자체도 시험한다(가드가 실제로 걸리는지)
 const guard = [];

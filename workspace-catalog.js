@@ -6177,12 +6177,12 @@ window.AxCatalog = {
      "mode": "preview",
      "draft": {
       "title": "자산 등록 미리보기",
-      "body": "자산 대장 줄을 확인합니다(대여중은 대여 시작으로만)."
+      "body": "자산 대장 줄을 확인합니다(대여 중은 대여 시작으로만)."
      },
      "fields": [
       {
        "id": "code",
-       "label": "자산ID",
+       "label": "자산 번호",
        "type": "text",
        "required": true
       },
@@ -6199,15 +6199,15 @@ window.AxCatalog = {
        "options": [
         {
          "value": "in_use",
-         "label": "사용중"
+         "label": "사용 중"
         },
         {
          "value": "on_loan",
-         "label": "대여중"
+         "label": "대여 중"
         },
         {
          "value": "repair",
-         "label": "수리중"
+         "label": "수리 중"
         },
         {
          "value": "lost",
@@ -6249,7 +6249,7 @@ window.AxCatalog = {
      "fields": [
       {
        "id": "asset",
-       "label": "자산ID",
+       "label": "자산 번호",
        "type": "text",
        "required": true
       },
@@ -6284,7 +6284,7 @@ window.AxCatalog = {
      "fields": [
       {
        "id": "asset",
-       "label": "자산ID",
+       "label": "자산 번호",
        "type": "text",
        "required": true
       },
@@ -7590,7 +7590,7 @@ window.AxCatalog = {
        "options": [
         {
          "value": "makeedu",
-         "label": "makeedu 동기화"
+         "label": "메이크에듀 동기화"
         },
         {
          "value": "sheets",

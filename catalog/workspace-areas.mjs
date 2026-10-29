@@ -309,9 +309,9 @@ export const AREAS = [
   { id: 'inventory', label: '재고관리', group: 'operation', viewKind: 'records', summary: '전자기기 자산·대여·실사·소모품·업체를 봅니다.',
     facets: [fc('assets', '자산', text(INV, '"자산"')), fc('loans', '대여', text(INV, '"대여"')), fc('audits', '실사', text(INV, '"실사"')), fc('supplies', '소모품', text(INV, '"소모품"')), fc('vendors', '업체리스트', text(INV, '업체리스트')), fc('qr', '자산 QR 라벨', route('/inventory/qr/print'), 'face')],
     actions: [
-      pre('inventory.asset', '자산 등록 미리보기', [f('code', '자산ID', 'text', { required: true }), f('model', '모델', 'text'), sel('status', '상태', 'assetStatus')], ['createAsset', 'importInventoryExcel'], '자산 등록 미리보기', '자산 대장 줄을 확인합니다(대여중은 대여 시작으로만).'),
-      pre('inventory.loan', '대여 시작', [f('asset', '자산ID', 'text', { required: true }), f('borrower', '대여자', 'text', { required: true }), date('due', '반납 예정일', false)], ['startLoan'], '대여 미리보기', '자산 대여 기록을 확인합니다.'),
-      pre('inventory.audit', '실사 기록', [f('asset', '자산ID', 'text', { required: true }), sel('result', '실사 결과', 'auditResult'), date('audited', '실사일')], ['recordAudit'], '실사 미리보기', '실사 결과를 확인합니다.'),
+      pre('inventory.asset', '자산 등록 미리보기', [f('code', '자산 번호', 'text', { required: true }), f('model', '모델', 'text'), sel('status', '상태', 'assetStatus')], ['createAsset', 'importInventoryExcel'], '자산 등록 미리보기', '자산 대장 줄을 확인합니다(대여 중은 대여 시작으로만).'),
+      pre('inventory.loan', '대여 시작', [f('asset', '자산 번호', 'text', { required: true }), f('borrower', '대여자', 'text', { required: true }), date('due', '반납 예정일', false)], ['startLoan'], '대여 미리보기', '자산 대여 기록을 확인합니다.'),
+      pre('inventory.audit', '실사 기록', [f('asset', '자산 번호', 'text', { required: true }), sel('result', '실사 결과', 'auditResult'), date('audited', '실사일')], ['recordAudit'], '실사 미리보기', '실사 결과를 확인합니다.'),
       req('inventory.supply', '소모품 보충 요청', [f('item', '품목', 'text', { required: true }), f('qty', '수량', 'number')], ['createSupply', 'createVendor'], '소모품 보충', '아래 소모품을 보충하고 업체 연락처를 확인해 주세요.'),
     ] },
   { id: 'meetings', label: '회의록', group: 'operation', viewKind: 'timeline', summary: '회의록과 녹음 분석 결과를 봅니다.',
