@@ -2,9 +2,9 @@
   'use strict';
   const S = window.V2Screens; if (!S) return;
   const esc = S.esc, CARD = ['lessons', 'attendance', 'reports', 'tasks', 'parents'];
-  const LABEL = { lessons: '오늘 수업', attendance: '출결 미입력', reports: '미작성 보고서', tasks: '내 차례 업무', parents: '학부모 글' };
+  const LABEL = { lessons: '오늘 수업', attendance: '출결 미입력', reports: '미작성 보고서', tasks: '내 차례 업무', parents: '안 읽은 학부모 글' };
   const cache = new Map();
-  let api = null, currentActor = null, currentHome = null, drawer = null;
+  let api = null, currentActor = null, drawer = null;
   const key = (actor, card) => `${actor}:${card}`;
   const url = (actor, card) => card === 'tasks' ? `/api/flow/teacher-inbox?actor=${encodeURIComponent(actor)}`
     : `/api/v2/teacher-home?actor=${encodeURIComponent(actor)}&card=${card}`;
@@ -19,9 +19,9 @@
     const hit = cache.get(key(actor, card));
     if (!hit || hit.state === 'loading') return `<span class="th-chip th-loading" data-th-card="${card}">${LABEL[card]} <span>불러오는 중…</span></span>`;
     if (hit.state === 'error') return `<button type="button" class="th-chip th-error" data-th-retry="${card}">${LABEL[card]} 확인하지 못했습니다 · 다시</button>`;
-    if (hit.data.hidden) return `<span data-th-card="${card}" hidden></span>`;
     const total = hit.data.rows?.length ?? 0;
-    return `<button type="button" class="th-chip ${total ? 'th-alert' : 'th-zero'}" data-th-open="${card}">${esc(count(card, hit.data))}</button>`;
+    const tone = card === 'lessons' ? 'th-regular' : total ? 'th-alert' : 'th-zero';
+    return `<button type="button" class="th-chip ${tone}" data-th-open="${card}">${esc(count(card, hit.data))}</button>`;
   };
   const update = (actor, card) => {
     const node = document.querySelector(`[data-th-strip="${actor}"] [data-th-card="${card}"], [data-th-strip="${actor}"] [data-th-open="${card}"], [data-th-strip="${actor}"] [data-th-retry="${card}"]`);
@@ -38,11 +38,26 @@
   };
   function strip(ctx, actor, home) {
     if (!actor || !/^[0-9a-f-]{36}$/i.test(actor)) return '';
-    api = ctx.api; currentActor = actor; currentHome = home;
+    api = ctx.api; currentActor = actor;
     requestAnimationFrame(() => CARD.forEach(card => fetchCard(actor, card)));
     const other = home === 'ecs' ? 'onescreen' : 'ecs';
     return `<section class="th-shell" data-th-strip="${esc(actor)}"><header class="th-head"><div><strong>선생님 오늘</strong><span>내 수업과 지금 처리할 일을 봅니다.</span></div><nav aria-label="선생님 메뉴"><a href="#v2-${home}?${home === 'ecs' ? `actor=${actor}` : `teacher=${actor}`}&teacherHome=1">내 수업</a><a href="#v2-${other}?${other === 'ecs' ? `actor=${actor}` : `teacher=${actor}`}&teacherHome=1">${other === 'ecs' ? '강사 시트' : '수업보고서'}</a><a href="#v2-teacher-home?actor=${actor}">오늘</a></nav></header><div class="th-summary" aria-label="오늘 할 일">${CARD.map(card => chip(actor, card)).join('')}</div></section>`;
   }
+  const parentLink = link => {
+    try {
+      const url = new URL(link);
+      return url.protocol === 'https:' && (url.hostname === 'www.classnote.com' || url.hostname === 'classnote.com') && /^\/service\/report\/\d+\/?$/.test(url.pathname) ? url.href : null;
+    } catch { return null; }
+  };
+  const shownAt = value => {
+    const date = new Date(value);
+    return Number.isNaN(date.getTime()) ? '시각 확인 불가' : new Intl.DateTimeFormat('ko-KR', { timeZone: 'Asia/Seoul', dateStyle: 'short', timeStyle: 'short' }).format(date);
+  };
+  const updateDrawerFade = () => {
+    const box = drawer?.querySelector('[data-th-detail]'); if (!box) return;
+    box.classList.toggle('th-fade-top', box.scrollTop > 1);
+    box.classList.toggle('th-fade-bottom', box.scrollTop + box.clientHeight < box.scrollHeight - 1);
+  };
   const detail = (card, data, actor) => {
     const rows = data.rows || [];
     const line = row => {
@@ -50,7 +65,8 @@
       if (card === 'attendance') return `<li><a href="#v2-attendance?v2path=${encodeURIComponent(`/attendance/${data.today}/${row.classId}`)}&viewer=${actor}">${esc(row.className)} · ${fmt(row.missing)}칸</a></li>`;
       if (card === 'reports') return `<li><a href="#v2-onescreen?teacher=${actor}&student=${row.studentId}&teacherHome=1">${esc(row.name)}</a></li>`;
       if (card === 'tasks') return `<li><button type="button" data-th-case="${esc(row.id)}">${esc(row.title)}</button></li>`;
-      return `<li><strong>${esc(row.boardName || '학부모 글')}</strong><p>${esc(row.content || '')}</p></li>`;
+      const link = parentLink(row.link);
+      return `<li><strong>${esc(row.studentName || row.title || '학부모 글')}</strong>${row.boardName ? `<span> · ${esc(row.boardName)}</span>` : ''}<time>${esc(shownAt(row.createdAt))}</time><p>${esc(row.content || '')}</p>${link ? `<a href="${esc(link)}" target="_blank" rel="noopener noreferrer">원래 글 열기</a>` : ''}</li>`;
     };
     const note = card === 'reports' && data.pairs > rows.length ? `<p>원생 ${rows.length}명 · 학생×과목 ${data.pairs}건</p>` : '';
     return `<h2>${LABEL[card]}</h2>${note}<ol>${rows.map(line).join('') || '<li>지금 확인할 항목이 없습니다.</li>'}</ol>`;
@@ -58,10 +74,11 @@
   function openDrawer(card) {
     const actor = currentActor, data = cache.get(key(actor, card))?.data;
     if (!data) return;
-    if (card === 'parents') { location.hash = `#v2-lesson-reports?tab=parent_replies&viewer=${actor}&teacherHome=1&home=${currentHome}`; return; }
-    if (!drawer) { drawer = document.createElement('dialog'); drawer.className = 'th-drawer'; drawer.innerHTML = '<button type="button" data-th-close aria-label="닫기">닫기</button><div data-th-detail></div>'; document.body.append(drawer); }
+    if (!drawer) { drawer = document.createElement('dialog'); drawer.className = 'th-drawer'; drawer.innerHTML = '<button type="button" data-th-close aria-label="닫기">닫기</button><div data-th-detail></div>'; document.body.append(drawer); drawer.querySelector('[data-th-detail]').addEventListener('scroll', updateDrawerFade, { passive: true }); addEventListener('resize', updateDrawerFade); }
     drawer.querySelector('[data-th-detail]').innerHTML = detail(card, data, actor);
+    drawer.setAttribute('aria-label', LABEL[card]);
     drawer.showModal();
+    requestAnimationFrame(updateDrawerFade);
   }
   document.addEventListener('click', e => {
     const retry = e.target.closest?.('[data-th-retry]'); if (retry) return fetchCard(currentActor, retry.dataset.thRetry, true);

@@ -4,6 +4,7 @@ import { copyClock } from './v2-onescreen-roster.mjs';
 import { studentsBase } from './v2-students-common.mjs';
 import { writingRates } from './v2-lesson-reports-face-writing.mjs';
 import { screen as attendanceScreen } from './v2-screen-attendance.mjs';
+import { runV2Server } from './v2-server-runner.mjs';
 
 const UUID = /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i;
 const DOW = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
@@ -131,12 +132,46 @@ export async function teacherParentMessages(c) {
   return { rows, total: rows.length };
 }
 
+async function parentNotifications(c) {
+  // 벨의 본인·비보관·미열람 판정을 먼저 그대로 실행한다. 벨 목록은 최대 100건이라
+  // 학부모 알림 명단은 같은 판정으로 모두 읽고, 별도 count 없이 그 행 수를 쓴다.
+  const [{ results: [bell] }, match] = await Promise.all([
+    runV2Server({ actorId: c.actor.id, tenantId: c.t, mode: 'read', steps: [
+      { module: 'features/notifications/server/queries.ts', fn: 'getMyNotifications', args: ['active', 100] },
+    ] }),
+    c.importV2('features/classnote-reply/notification-match.ts'),
+  ]);
+  if (!Number.isSafeInteger(bell?.value?.unread)) throw new Error('notification bell unavailable');
+  const notes = await c.sql`select id::text id, type, title, body, link, to_json(created_at)#>>'{}' created_at
+    from public.notifications where tenant_id=${c.t} and recipient_id=${c.actor.id}
+      and type = any(${match.PARENT_MESSAGE_NOTIFICATION_TYPES}::text[])
+      and read_at is null and archived_at is null order by created_at desc,id desc`;
+  if (notes.length > bell.value.unread) throw new Error('notification bell count mismatch');
+  const postIds = unique(notes.map(n => match.postIdFromClassnoteLink(n.link)).filter(Number.isInteger));
+  const messages = postIds.length ? await c.sql`select m.id::text id, m.source, m.classnote_post_id::text classnote_post_id,
+      m.classnote_comment_id::text classnote_comment_id, m.class_name board_name, m.content,
+      to_json(m.posted_at)#>>'{}' posted_at, s.name student_name
+    from public.classnote_parent_messages m left join public.students s on s.id=m.student_id and s.tenant_id=${c.t}
+    where m.tenant_id=${c.t} and m.classnote_post_id = any(${postIds}::bigint[])` : [];
+  const candidates = messages.map(m => ({ id: m.id, source: m.source, classnotePostId: Number(m.classnote_post_id),
+    classnoteCommentId: m.classnote_comment_id == null ? null : Number(m.classnote_comment_id),
+    content: String(m.content ?? ''), postedAt: m.posted_at }));
+  const byId = new Map(messages.map(m => [m.id, m]));
+  const rows = notes.filter(n => match.isParentMessageNotification(n.type)).map(n => {
+    const messageId = match.pickMessageForNotification({ type: n.type, link: n.link, body: n.body, createdAt: n.created_at }, candidates);
+    const message = messageId ? byId.get(messageId) : null;
+    return { id: n.id, title: n.title, studentName: message?.student_name ?? null, boardName: message?.board_name ?? null,
+      content: String(message?.content ?? n.body ?? '').slice(0, 200), createdAt: n.created_at, link: n.link, messageId };
+  });
+  return { rows, total: rows.length };
+}
+
 export const screen = { id: 'teacher-home', label: '선생님 오늘', order: 2,
   params: { actor: UUID, card: /^(?:landing|lessons|attendance|reports|parents)$/ },
   async load(args) {
     const c = await context(args);
     if (!c) return { error: '선생님을 찾지 못했습니다.' };
     const card = args.params.card || 'landing';
-    return card === 'landing' ? landing(c) : card === 'lessons' ? lessons(c) : card === 'attendance' ? attendance(c) : card === 'reports' ? reports(c) : teacherParentMessages(c);
+    return card === 'landing' ? landing(c) : card === 'lessons' ? lessons(c) : card === 'attendance' ? attendance(c) : card === 'reports' ? reports(c) : parentNotifications(c);
   },
 };

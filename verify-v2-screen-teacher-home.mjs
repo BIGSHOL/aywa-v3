@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { openFullDatabase, sandbox, tenantId } from './full-db.mjs';
 import { importV2 } from './v2-bridge.mjs';
 import { screen } from './v2-screen-teacher-home.mjs';
-import { screen as reportsScreen } from './v2-screen-lesson-reports.mjs';
+import { runV2Server, stopV2Server } from './v2-server-runner.mjs';
 
 assert.ok(sandbox, '4311 시험 복사본(OWNER_CONCEPT_DB=sandbox)에서만 실행');
 const db = await openFullDatabase();
@@ -14,18 +14,17 @@ try {
     from public.users u join public.classes c on c.teacher_id=u.id and c.tenant_id=${tenantId} and c.is_active
     where u.tenant_id=${tenantId} and u.system_role='teacher' and u.status='active'
     group by u.id,u.display_name`;
-  const samples = [
-    people.find(p => p.display_name === '김은정' && p.subjects.includes('math')),
-    people.find(p => p.subjects.length === 1 && p.subjects[0] === 'english' && p.english_slot),
-  ];
-  const kinds = ['수학 전담', '영어 전담'];
+  const samples = ['김은정', '추민아', '남정화'].map(name => people.find(p => p.display_name === name));
+  const kinds = ['수학 전담', '영어 전담', '학부모 알림 0건'];
+  const allParentNotifications = await db`select id::text id, recipient_id::text recipient_id from public.notifications
+    where tenant_id=${tenantId} and type in ('classnote_parent_post','classnote_parent_comment') and read_at is null and archived_at is null`;
   const load = (actor, card) => db.begin('isolation level repeatable read read only', sql => screen.load({ sql, tenantId, importV2, params: { actor, card } }));
   for (let i = 0; i < samples.length; i++) {
     const person = samples[i];
     assert.ok(person, `${kinds[i]} 시험 강사 있음`);
     const landing = await load(person.id, 'landing');
     assert.equal(landing.actor.id, person.id);
-    assert.equal(landing.home, i === 1 ? 'ecs' : 'onescreen', `${kinds[i]} 착지`);
+    if (i < 2) assert.equal(landing.home, i === 1 ? 'ecs' : 'onescreen', `${kinds[i]} 착지`);
     console.log(`${kinds[i]} ${person.display_name}: ${landing.home}`);
     let parentValue = null;
     for (const card of ['lessons', 'attendance', 'reports', 'parents']) {
@@ -34,15 +33,16 @@ try {
       if (card === 'parents') parentValue = value;
       console.log(`  ${card}: ${value.total}`);
     }
-    if (!parentValue.hidden) {
-      const face = await db.begin('isolation level repeatable read read only', sql => reportsScreen.load({ sql, tenantId, importV2,
-        params: { viewer: person.id, tab: 'parent_replies', teacherHome: '1' } }));
-      assert.equal(face.tab, 'parent_replies', `${kinds[i]} 학부모 글·답글 면`);
-      assert.equal(face.gates.canReports, true, `${kinds[i]} 답글 면 열람 권한`);
-      assert.equal(face.tabData.parentThreads.total, parentValue.total, `${kinds[i]} 학부모 글 면 숫자=요약`);
-      assert.equal(face.tabData.parentThreads.rows.length, parentValue.rows.length, `${kinds[i]} 학부모 글 면 명단`);
-      assert.deepEqual(new Set(face.tabData.parentThreads.rows.map(row => row.messageId)), new Set(parentValue.rows.map(row => row.id)), `${kinds[i]} 강사 범위 글만 표시`);
-    }
+    const { results: [bell] } = await runV2Server({ actorId: person.id, tenantId, mode: 'read', steps: [
+      { module: 'features/notifications/server/queries.ts', fn: 'getMyNotifications', args: ['active', 100] },
+    ] });
+    const expected = allParentNotifications.filter(n => n.recipient_id === person.id).map(n => n.id).sort();
+    assert.deepEqual(parentValue.rows.map(row => row.id).sort(), expected, `${kinds[i]} 벨 판정과 같은 학부모 알림`);
+    assert.equal(parentValue.total, expected.length, `${kinds[i]} 칸 숫자=명단 행 수`);
+    assert.ok(parentValue.total <= bell.value.unread, `${kinds[i]} 학부모 알림은 벨 안 읽음 수 안에 포함`);
+    assert.ok(parentValue.rows.every(row => !allParentNotifications.some(n => n.id === row.id && n.recipient_id !== person.id)), `${kinds[i]} 다른 선생님 알림 없음`);
+    if (i === 2) assert.equal(parentValue.total, 0, '남정화 학부모 알림 0건');
+    console.log(`  벨 전체 안 읽음 ${bell.value.unread} · 학부모 칸 ${parentValue.total} · 명단 ${parentValue.rows.length}`);
     const inboxResponse = await fetch(`http://127.0.0.1:4311/api/flow/teacher-inbox?actor=${person.id}`);
     assert.equal(inboxResponse.status, 200, `${kinds[i]} 내 차례 업무 GET`);
     const inbox = await inboxResponse.json();
@@ -77,4 +77,4 @@ try {
       throw rollback;
     });
   } catch (error) { if (error !== rollback) throw error; }
-} finally { await db.end(); }
+} finally { await stopV2Server(); await db.end(); }
