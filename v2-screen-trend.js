@@ -1,4 +1,4 @@
-/* 확장 추세 — 화면(원장 10-28 "추세를 눌렀을때 확장 추세로 이동 … 일별 월별 연별 추세를 자세하게 … 학생별, 선생님별, 반별, 과목별 등 다양한 기준"
+/* 확장 추세 — 화면(원장 10-28 "추세를 눌렀을때 확장 추세로 이동 … 일별 월별 연별 추세를 자세하게 … 원생별, 선생님별, 반별, 과목별 등 다양한 기준"
    · "완전한 확장 추세 툴을 하나 만들고, 거기서 선택한 공통적으로 사용할 수 있는건 공통적으로 사용하면서 기준만 바꿔서 필터링").
    틀은 하나다: 지표 고르기 · 기간 단위(일·주·월·연) · 기준(지표가 아는 것만) · 필터(표의 줄을 눌러 그 줄만) · 큰 추세 · 기준별 표.
    지표마다 다른 것은 서버(trend-metrics.mjs)가 준다. 주소 = #v2-trend?metric=&grain=&by=&f= · KPI 카드를 누르면 여기로 온다. */
@@ -129,12 +129,12 @@
     return `<div class="chart-box tr-chart${many ? ' has-series' : ''}" data-chart tabindex="0" role="group" aria-label="${esc(name)} 추세 — 화살표 키로 기간을 옮기며 수치를 확인합니다${sub ? `. Enter로 그 기간을 ${sub}로 나눠 봅니다` : ''}"><svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(name)} ${d.windows.map((w, i) => `${w.label} ${shown(d.total[i]?.value, d.metric.unit)}`).join(', ')}">${grid}${vlines}${base ? `<g class="tr-line base">${path(base.total)}</g>` : ''}${lines}<g class="tr-line">${path(d.total)}</g>${cols}</svg></div>${legend}`;
   }
 
-  // 기준별 표의 정보 칸(원장 10-28 "각 선생님의 과목, 담당 반 수, 담당 학생 수 표시") — 서버가 줄마다 meta로 준다(화면에 보이는 범위에 운영된 반 · 수강이 겹친 학생 기준).
-  // [열쇠, 제목, 맞춤] — 제목과 값은 같은 쪽(원장 10-28 "각 항목별로 가운데정렬할지 왼쪽 혹은 오른쪽 정렬할지는 알아서"): 수(반 수·학생 수) 오른쪽 · 짧은 글(과목·담임·학교학년) 가운데 · 긴 글(학생의 반 목록) 왼쪽.
+  // 기준별 표의 정보 칸(원장 10-28 "각 선생님의 과목, 담당 반 수, 담당 원생 수 표시") — 서버가 줄마다 meta로 준다(화면에 보이는 범위에 운영된 반 · 수강이 겹친 원생 기준).
+  // [열쇠, 제목, 맞춤] — 제목과 값은 같은 쪽(원장 10-28 "각 항목별로 가운데정렬할지 왼쪽 혹은 오른쪽 정렬할지는 알아서"): 수(반 수·원생 수) 오른쪽 · 짧은 글(과목·담임·학교학년) 가운데 · 긴 글(원생의 반 목록) 왼쪽.
   const META_COLS = {
-    teacher: [['subjects', '과목', 'c'], ['classes', '담당 반', 'r'], ['students', '담당 학생', 'r']],
-    class: [['subjects', '과목', 'c'], ['teacher', '담임', 'c'], ['students', '학생', 'r']],
-    subject: [['classes', '반', 'r'], ['students', '학생', 'r']],
+    teacher: [['subjects', '과목', 'c'], ['classes', '담당 반', 'r'], ['students', '담당 원생', 'r']],
+    class: [['subjects', '과목', 'c'], ['teacher', '담임', 'c'], ['students', '원생', 'r']],
+    subject: [['classes', '반', 'r'], ['students', '원생', 'r']],
     student: [['school', '학교·학년', 'c'], ['classes', '반', 'l']],
   };
   const metaCell = (k, v) => (v == null || v === '' ? '' : typeof v !== 'number' ? String(v) : k === 'classes' ? `${fmt(v)}개` : k === 'students' ? `${fmt(v)}명` : fmt(v));
@@ -209,7 +209,7 @@
     return `<section class="tr-break tr-roster tr-report-roster"><h3>작성 의무 명단 <span>${esc(d.filter.label)} · ${fmt(ordered.length)}건</span></h3>`
       + `<div class="tr-report-controls"><label>기간 <select data-tr-report-window aria-label="보고서 명단 기간">${d.windows.map((w, i) => `<option value="${i}"${i === wi ? ' selected' : ''}>${esc(dayName(w))}</option>`).join('')}</select></label>`
       + `<span>작성 ${fmt(written)}건 · 미작성 ${fmt(rows.length - written)}건${aligned ? '' : ' · 집계 확인 필요'}</span></div>`
-      + `<div class="tr-table-wrap"><table class="tr-roster-table"><thead><tr><th scope="col">수업일</th><th scope="col">반</th><th scope="col">학생</th><th scope="col">작성</th><th scope="col">기록</th></tr></thead>`
+      + `<div class="tr-table-wrap"><table class="tr-roster-table"><thead><tr><th scope="col">수업일</th><th scope="col">반</th><th scope="col">원생</th><th scope="col">작성</th><th scope="col">기록</th></tr></thead>`
       + `<tbody>${shown.map(r => `<tr><td>${esc(r.date)}</td><td>${esc(r.className)}</td><td>${esc(r.name)}</td><td>${r.written ? '작성' : '미작성'}</td><td>${r.reportId ? `<button type="button" class="ax-text-link" data-tr-report="${esc(r.reportId)}">보고서 열기</button>` : r.source === 'classnote' && r.written ? '알림장 게시' : '—'}</td></tr>`).join('') || '<tr><td colspan="5">이 기간의 작성 의무가 없습니다.</td></tr>'}</tbody></table></div>`
       + (pages > 1 ? `<div class="tr-report-pages"><button type="button" data-tr-report-page="prev"${reportState.page === 1 ? ' disabled' : ''}>이전</button><span>${reportState.page} / ${pages}</span><button type="button" data-tr-report-page="next"${reportState.page === pages ? ' disabled' : ''}>다음</button></div>` : '')
       + '</section>';
