@@ -1,6 +1,7 @@
 // GET /api/flow body (flow_contract v1.1). Read-only over the in-memory state; never calls AI.
 import { actorsOf } from './flow-engine.mjs';
 import { isFactSignal } from './flow-reconcile-signals.mjs';
+import { flowCaseFlags } from './flow-case-flags.mjs';
 
 export const LIMITS = Object.freeze({ cases: 500, events: 200, entities: 3000, candidates: 100 });
 const PRIORITY_ORDER = { high: 0, normal: 1, low: 2 }, STATE_ORDER = { review: 0, open: 1, working: 2, done: 3 };
@@ -57,10 +58,11 @@ export function decisionView(c, inFlight) {
 // re-judging (flow-reconcile.mjs); the view carries counts only, so /api/flow does not grow with them.
 const evidenceView = e => { if (!Array.isArray(e.coveredRefs)) return e; const { coveredRefs, ...rest } = e; return { ...rest, coveredCount: coveredRefs.length }; };
 // factSignal = 사실이 남는 신호(반복 결석 등, flow-rules FACT_SIGNALS) — 보고가 그 업무 안에 처리 완료로 남고 모두 처리하면 닫힌다(화면 안내 문구가 갈린다).
-const caseView = (c, inFlight) => { const { pendingDecision, sourceRecords, ...rest } = c; return { ...rest, ...(isFactSignal(c) ? { factSignal: true } : {}), evidence: (c.evidence || []).map(evidenceView), decision: decisionView(c, inFlight), decisionPending: !!pendingDecision }; };
+const caseView = (c, inFlight, flags) => { const { pendingDecision, sourceRecords, ...rest } = c; return { ...rest, caseFlags: flags, ...(isFactSignal(c) ? { factSignal: true } : {}), evidence: (c.evidence || []).map(evidenceView), decision: decisionView(c, inFlight), decisionPending: !!pendingDecision }; };
 
-export function buildView(state, source, { aiStatus, now = new Date().toISOString(), tenantName = '', casePage = 1, eventsBefore = null, inFlight = null } = {}) {
+export function buildView(state, source, { aiStatus, tenantName = '', casePage = 1, eventsBefore = null, inFlight = null } = {}) {
   const all = Object.values(state.cases).sort((a, b) => STATE_ORDER[a.state] - STATE_ORDER[b.state] || PRIORITY_ORDER[a.priority] - PRIORITY_ORDER[b.priority] || (a.dueAt || '9').localeCompare(b.dueAt || '9') || b.updatedAt.localeCompare(a.updatedAt));
+  const caseFlags = new Map(all.map(c => [c.id, flowCaseFlags(c, source.identity.asOf)]));
   const cases = all.slice((casePage - 1) * LIMITS.cases, casePage * LIMITS.cases);
   // assignable = may be chosen as an assignee (request.create / case.reassign); viewers and the preview owner may not.
   const actors = actorsOf(source).map(a => ({ id: a.id, name: a.name, role: a.role, roleLabel: a.roleLabel, ...(a.preview ? { preview: true } : {}), assignable: !a.preview && !!a.assignable, duties: a.desk ? ['desk'] : [] }));
@@ -76,11 +78,11 @@ export function buildView(state, source, { aiStatus, now = new Date().toISOStrin
   // Supervision metrics: dev actions are counted apart from copied historical facts.
   const tally = list => ({ total: list.length, open: list.filter(c => c.state === 'open').length, working: list.filter(c => c.state === 'working').length, review: list.filter(c => c.state === 'review').length, done: list.filter(c => c.state === 'done').length });
   const byActor = {}, roleWaiting = new Map();
-  let managerQueue = 0, unassigned = 0;
+  let managerQueue = 0;
   for (const c of all) for (const s of c.steps) {
     if (s.status !== 'ready' && s.status !== 'working') continue;
     for (const id of s.assigneeIds) { byActor[id] ??= { ready: 0, working: 0, review: 0 }; byActor[id][s.review ? 'review' : s.status] += 1; }
-    if (!s.assigneeIds.length) { managerQueue += 1; if (s.unassignedReason) unassigned += 1; }
+    if (!s.assigneeIds.length) managerQueue += 1;
     const role = s.queue && !s.assigneeIds.length ? 'manager-queue' : s.role;
     const w = roleWaiting.get(role) || { role, label: role === 'manager-queue' ? '관리자 대기열' : s.roleLabel, waiting: 0, oldestAt: null };
     w.waiting += 1; const since = c.updatedAt; if (!w.oldestAt || since < w.oldestAt) w.oldestAt = since; roleWaiting.set(role, w);
@@ -88,7 +90,7 @@ export function buildView(state, source, { aiStatus, now = new Date().toISOStrin
   const open = all.filter(c => c.state !== 'done');
   const metrics = {
     cases: { ...tally(all), snapshot: tally(all.filter(c => c.origin === 'snapshot')), dev: tally(all.filter(c => c.origin === 'dev')) },
-    managerQueue, unassigned, overdue: open.filter(c => c.dueAt && c.dueAt < now).length,
+    managerQueue, unassigned: open.filter(c => caseFlags.get(c.id).unassigned).length, overdue: open.filter(c => caseFlags.get(c.id).late).length,
     byActor, bottlenecks: [...roleWaiting.values()].sort((a, b) => b.waiting - a.waiting).slice(0, 6),
     devActions: state.events.filter(e => e.origin === 'dev').length, snapshotEvents: state.events.filter(e => e.origin === 'snapshot').length,
   };
@@ -106,7 +108,7 @@ export function buildView(state, source, { aiStatus, now = new Date().toISOStrin
   return {
     schemaVersion: 1, asOf: source.identity.asOf, revision: state.revision, mode: 'local-preview', scenarioCandidates,
     source: { tenant: tenantName, capturedAt: source.identity.capturedAt, asOf: source.identity.asOf, note: '원본은 기준일의 학원 기록이며, 이 화면에서 만든 처리·요청은 따로 남습니다.' },
-    actors, entities, relations, cases: cases.map(c => caseView(c, inFlight)), casesTotal: all.length, casePage, casePageSize: LIMITS.cases, casePageCount: Math.max(1, Math.ceil(all.length / LIMITS.cases)),
+    actors, entities, relations, cases: cases.map(c => caseView(c, inFlight, caseFlags.get(c.id))), casesTotal: all.length, casePage, casePageSize: LIMITS.cases, casePageCount: Math.max(1, Math.ceil(all.length / LIMITS.cases)),
     // Newest events (chronological); older ones via ?eventsBefore=<event number>.
     events: (eventsBefore ? state.events.filter(e => Number(e.id.slice(4)) < eventsBefore) : state.events).slice(-LIMITS.events), eventsTotal: state.events.length,
     metrics, aiStatus: aiStatus || { providers: [] },

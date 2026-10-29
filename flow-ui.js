@@ -68,9 +68,9 @@ window.createFlowUI = function createFlowUI(api) {
   // 요약 글의 날짜를 화면 표기(M/D)로 — 원본 업무의 글은 '10-21 15:40'·'2026-10-21'처럼 적혀 온다(검수 10-28 L2). 올해가 아니면 연도를 남긴다.
   const dateWords=t=>String(t||'').replace(/(?<![\d-])(\d{4})-(\d{2})-(\d{2})(?![\d-])/g,(m,y,mo,d)=>`${y===asOf().slice(0,4)?'':`${y}. `}${+mo}/${+d}`).replace(/(?<![\d-])(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])(?![\d-])/g,(m,mo,d)=>`${+mo}/${+d}`);
   const sumOf=c=>dateWords(c.summary);
-  const late=c=>c.state!=='done'&&c.dueAt&&kstDate(c.dueAt)<asOf();
+  const late=c=>c.caseFlags?.late??(c.state!=='done'&&c.dueAt&&kstDate(c.dueAt)<asOf());
   // Nobody resolved for an open step (the manager queue by design, e.g. a review, is not "no one").
-  const unassigned=c=>activeSteps(c).some(s=>!(s.assigneeIds||[]).length&&(!s.queue||Boolean(s.unassignedReason)));
+  const unassigned=c=>c.caseFlags?.unassigned??activeSteps(c).some(s=>!(s.assigneeIds||[]).length&&(!s.queue||Boolean(s.unassignedReason)));
   const mine=(c,id)=>Boolean(myStep(c,id));
   const inReview=c=>c.state==='review'||activeSteps(c).some(isReview);
   const returned=c=>{if(c.state==='done')return false;const last=(c.history||[]).map(eventById).filter(e=>e&&/\.(returned|reported|reviewed|accepted)$/.test(e.type)).at(-1);return Boolean(last&&/returned$/.test(last.type));};
