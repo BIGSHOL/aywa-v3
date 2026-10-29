@@ -290,15 +290,17 @@ window.createFlowUI = function createFlowUI(api) {
     const attendance=c.taskKind==='attendance_absent_desk'&&s&&!isReview(s)&&['ready','working'].includes(s.status);
     const unsent=c.taskKind==='unsent_report'&&s&&!isReview(s)&&['ready','working'].includes(s.status);
     const billing=c.signalId==='billing-remaining'&&c.factSignal&&s&&!isReview(s)&&['ready','working'].includes(s.status);
+    const consultation=(c.taskKind==='followup_due'||c.signalId==='consultation-followup-overdue')&&s&&!isReview(s)&&['ready','working'].includes(s.status);
     if(c.state==='done')return `<div class="ax-actions">${lead()&&c.closure!=='fact'?btn('다시 열기','reopen-open',`data-id="${id}"`):''}${compact||drawer?'':btn('근거와 흐름','open',`data-id="${id}"`)}</div>`;
     if(compact){
-      const first=attendance?btn('연락 결과 기록','attendance-open',`data-id="${id}" data-step="${sk}"`,true):unsent?btn('발송 요청','unsent-open',`data-id="${id}" data-step="${sk}"`,true):billing?btn('미수 안내 처리 보고','billing-open',`data-id="${id}" data-step="${sk}"`,true):s&&!isReview(s)&&s.status==='ready'?btn('확인','ack',`data-id="${id}" data-step="${sk}" data-fl-key="case.ack:${id}"`,true):s&&isReview(s)&&lead()?btn('검토','review-open',`data-id="${id}" data-step="${sk}"`,true):lead()&&activeSteps(c).length?btn(unassigned(c)?'담당 지정':'담당자 변경','reassign-open',`data-id="${id}"`):'';
+      const first=attendance?btn('연락 결과 기록','attendance-open',`data-id="${id}" data-step="${sk}"`,true):unsent?btn('발송 요청','unsent-open',`data-id="${id}" data-step="${sk}"`,true):billing?btn('미수 안내 처리 보고','billing-open',`data-id="${id}" data-step="${sk}"`,true):consultation?btn('상담 후속조치 완료','consultation-open',`data-id="${id}" data-step="${sk}"`,true):s&&!isReview(s)&&s.status==='ready'?btn('확인','ack',`data-id="${id}" data-step="${sk}" data-fl-key="case.ack:${id}"`,true):s&&isReview(s)&&lead()?btn('검토','review-open',`data-id="${id}" data-step="${sk}"`,true):lead()&&activeSteps(c).length?btn(unassigned(c)?'담당 지정':'담당자 변경','reassign-open',`data-id="${id}"`):'';
       return `<div class="ax-actions">${first||'<span class="fl-dim">—</span>'}</div>`;
     }
     const out=[];
     if(attendance)out.push(btn('연락 결과 기록','attendance-open',`data-id="${id}" data-step="${sk}"`,true));
     if(unsent)out.push(btn('발송 요청','unsent-open',`data-id="${id}" data-step="${sk}"`,true));
     if(billing)out.push(btn('미수 안내 처리 보고','billing-open',`data-id="${id}" data-step="${sk}"`,true));
+    if(consultation)out.push(btn('상담 후속조치 완료','consultation-open',`data-id="${id}" data-step="${sk}"`,true));
     if(s&&!isReview(s)&&s.status==='ready')out.push(btn('확인','ack',`data-id="${id}" data-step="${sk}" data-fl-key="case.ack:${id}"`,true));
     if(s&&!isReview(s)&&!billing)out.push(btn(c.closure==='fact'?'후속 보고 작성':'보고 작성','report-open',`data-id="${id}" data-step="${sk}"`,s.status==='working'));
     if(s&&isReview(s)&&lead())out.push(btn('검토','review-open',`data-id="${id}" data-step="${sk}"`,true));
@@ -801,6 +803,19 @@ window.createFlowUI = function createFlowUI(api) {
     dialog('modal','미발송 보고서 발송 요청',c.title,`<form class="ws-form" data-fl-form="unsent-card" data-id="${h(id)}" data-step="${h(stepId)}" novalidate><fieldset class="ws-multi"><legend>수업보고서 선택</legend>${options}</fieldset><p class="ax-note">발송 요청은 연습 복사본의 대기 상태까지만 저장됩니다. 실제로 학부모에게 보내지지 않습니다.</p><p class="ax-form-error" role="alert"></p><div class="ws-form-foot"><span class="ax-note">원본 반영 확인 뒤 업무 상태를 갱신합니다.</span><button class="button primary" type="submit">발송 요청 저장</button></div></form>`);
     $('#modal input[name="recordRef"]')?.focus({preventScroll:true});
   }
+  async function openConsultationForm(id,stepId){
+    const c=caseById(id),s=c&&myStep(c);
+    if(!c||!(c.taskKind==='followup_due'||c.signalId==='consultation-followup-overdue')||!s||s.id!==stepId)return;
+    let response,body;
+    try{response=await fetch(`/api/flow/card-consultation/records?caseId=${encodeURIComponent(id)}`,{headers:{Accept:'application/json'}});body=await response.json();}
+    catch{toast('상담 기록을 불러오지 못했습니다. 다시 시도해 주세요.');return;}
+    if(!response.ok){toast(message(body,response.status));return;}
+    const records=Array.isArray(body.records)?body.records:[];
+    if(!records.length){toast('완료할 상담 후속조치 기록이 없습니다. 업무를 새로 불러와 주세요.');return;}
+    const choices=records.map((r,i)=>`<label><input type="radio" name="recordRef" value="${h(r.recordRef)}" ${i===0?'checked':''} required> ${h([r.label,r.due].filter(Boolean).join(' · '))}</label>`).join('');
+    dialog('modal','상담 후속조치 완료',c.title,`<form class="ws-form" data-fl-form="consultation-card" data-id="${h(id)}" data-step="${h(stepId)}" novalidate><fieldset class="ws-multi"><legend>상담 기록 선택</legend>${choices}</fieldset><p class="ax-note">실제로 후속조치를 마친 상담만 선택해 주세요. 연습 복사본에 완료 표시를 저장한 뒤 원본 업무 상태를 다시 확인합니다.</p><p class="ax-form-error" role="alert"></p><div class="ws-form-foot"><span class="ax-note">원본 반영 확인 중에는 완료로 표시하지 않습니다.</span><button class="button primary" type="submit">후속조치 완료 저장</button></div></form>`);
+    $('#modal input[name="recordRef"]')?.focus({preventScroll:true});
+  }
   function openForm(kind,id,step='',node=''){
     const c=caseById(id);if(!c)return;const s=(step&&(c.steps||[]).find(x=>x.id===step))||myStep(c)||stepOf(c),sk=s?h(s.id):'';
     const billingTitle=c.signalId==='billing-remaining'?'미수 안내 처리 보고':null;
@@ -1235,6 +1250,7 @@ window.createFlowUI = function createFlowUI(api) {
     if(action==='attendance-open'){openAttendanceForm(id,el.dataset.step||'');return;}
     if(action==='unsent-open'){openUnsentForm(id,el.dataset.step||'');return;}
     if(action==='billing-open'){openForm('report',id,el.dataset.step||'');return;}
+    if(action==='consultation-open'){openConsultationForm(id,el.dataset.step||'');return;}
     const stepId=el.dataset.step?{stepId:el.dataset.step}:{};
     if(action==='ack'){command('case.ack',{caseId:id,payload:stepId}).then(r=>{if(r)undoToast('확인했습니다. 진행 중으로 바뀌었습니다.',()=>command('case.unack',{caseId:id,payload:stepId}).then(x=>{if(x)toast('확인을 되돌렸습니다.');}));});return;}
     if(['report-open','review-open','reassign-open','reopen-open'].includes(action)){openForm(action.replace('-open',''),id,el.dataset.step||'',action==='report-open'?el.dataset.node||'':'');return;}
@@ -1302,6 +1318,35 @@ window.createFlowUI = function createFlowUI(api) {
     }catch{fail('발송 요청 결과를 확인하지 못했습니다. 업무를 새로 불러와 주세요.');}
     finally{delete form.dataset.busy;if(button)button.disabled=false;}
   }
+  async function submitConsultation(form,v,fail){
+    const id=form.dataset.id,recordRef=String(v.get('recordRef')||''),actorId=actor()?.id;
+    if(!recordRef||!actorId||!form.dataset.step){fail('상담 기록과 담당자를 확인해 주세요.');return;}
+    if(form.dataset.busy)return;
+    form.dataset.busy='1';const button=form.querySelector('[type=submit]');if(button)button.disabled=true;
+    const revision=async()=>fetch('/api/data-revision',{cache:'no-store'}).then(r=>r.ok?r.json():null).catch(()=>null);
+    try{
+      const before=await revision();
+      const body={caseId:id,stepId:form.dataset.step,recordRef,expectedRevision:flow().revision,actorId};
+      const response=await fetch('/api/flow/card-consultation/save',{method:'POST',headers:{'Content-Type':'application/json',Accept:'application/json'},body:JSON.stringify(body)});
+      const result=await response.json().catch(()=>null);
+      if(!response.ok){if(response.status===409)await load({quiet:true});fail(message(result,response.status));return;}
+      if(result?.saved!==true){fail('저장 결과를 확인하지 못했습니다. 업무를 새로 불러와 주세요.');return;}
+      form.closest('dialog')?.close();toast('원본 반영 확인 중');
+      for(let i=0;i<16;i++){
+        await new Promise(resolve=>setTimeout(resolve,750));
+        const current=await revision();
+        if(before&&current&&current.revision===before.revision)continue;
+        await load({quiet:true});
+        const c=caseById(id);
+        if(c?.factClosed||c?.state==='done'){toast('후속조치 완료가 원본에 반영되어 업무가 닫혔습니다.');return;}
+        if(current&&before&&current.revision!==before.revision){toast('후속조치 완료를 기록했습니다. 남은 상담 기록을 확인해 주세요.');return;}
+      }
+      await load({quiet:true});
+      const c=caseById(id);
+      toast(c?.factClosed||c?.state==='done'?'후속조치 완료가 원본에 반영되어 업무가 닫혔습니다.':'후속조치를 저장했습니다. 원본 반영 상태를 새로 확인해 주세요.');
+    }catch{fail('상담 후속조치 결과를 확인하지 못했습니다. 업무를 새로 불러와 주세요.');}
+    finally{delete form.dataset.busy;if(button)button.disabled=false;}
+  }
   // 업무 흐름 검색 — 목록과 건수만 다시 그린다(화면 전체를 다시 그리지 않아 글자 입력이 끊기지 않는다) · Esc = 지우기.
   const paintBoardList=()=>{const box=document.getElementById('fl-board-list'),cnt=document.getElementById('fl-board-count');if(!box||!ready())return;const p=boardParts();hideTip();box.innerHTML=p.listHtml;if(cnt)cnt.textContent=p.count;if(colMenu.el)placeColMenu();syncBulk();};
   document.addEventListener('input',event=>{if(!event.target.matches?.('[data-fl-search]'))return;store.q=event.target.value;store.pages.board=1;paintBoardList();});
@@ -1315,6 +1360,7 @@ window.createFlowUI = function createFlowUI(api) {
     const step=form.dataset.step?{stepId:form.dataset.step}:{};
     if(kind==='attendance-card'){submitAttendance(form,v,fail);return;}
     if(kind==='unsent-card'){submitUnsent(form,v,fail);return;}
+    if(kind==='consultation-card'){submitConsultation(form,v,fail);return;}
     if(kind==='simulate'){const record=String(v.get('record')||''),scenario=form.dataset.scenario;command('event.simulate',{payload:{scenario,...(record?{recordRef:record}:{})},key:`event.simulate:${scenario}`}).then(r=>{if(!r)return;if(r.duplicate){toast('같은 기록으로 만든 시나리오가 아직 끝나지 않아 그 업무를 보여 드립니다. 새 업무는 만들지 않았습니다.');if(r.caseId)showCase(r.caseId);return;}toast(`연습 시나리오를 시작했습니다. 담당자의 업무에 생겼습니다.${r.decision==='pending'?' 판정 결과는 잠시 뒤 나타납니다.':''}`);});return;}
     if(kind==='report'){const c=caseById(id),note=String(v.get('note')||'').trim(),outcome=String(v.get('outcome')||'done');if(note.length<2){fail('보고 내용을 두 글자 이상 적어 주세요.');form.querySelector('textarea').focus();return;}const scope=String(v.get('scope')||''),node=scope?trees.get(id)?.index.get(scope):null;if(scope&&!node){fail('보고할 원생의 기록을 찾지 못했습니다. 창을 닫고 원생을 다시 선택해 주세요.');return;}const refs=node?(Array.isArray(node.records)?node.records:[]).map(r=>String(r?.id||'')).filter(Boolean):v.getAll('ref').map(Number).map(i=>c?.entityRefs?.[i]).filter(Boolean).map(r=>`${r.type}:${r.id}`);if(c?.signalId==='billing-remaining'&&!refs.length){fail('처리한 청구를 한 건 이상 선택해 주세요.');return;}if(node&&!refs.length){fail('이 원생에게 붙일 기록이 없습니다.');return;}command('case.report',{caseId:id,payload:{...step,note,outcome,...(refs.length?{recordRefs:refs}:{}),...(v.getAll('attach').filter(Boolean).length?{attachments:v.getAll('attach').filter(Boolean).slice(0,20)}:{})}}).then(r=>done(r,c?.factSignal?(caseById(id)?.state==='done'?'보고를 남겼습니다. 근거 기록이 모두 처리되어 이 업무가 닫혔습니다.':['done','not_needed'].includes(outcome)?`${node?`${nodeLabel(node)} 원생의 `:''}기록을 처리한 것으로 남겼습니다.`:'보고를 남겼습니다. 아직 남은 업무로 열려 있습니다.'):node?`${nodeLabel(node)} 원생의 ${c?.closure==='fact'?'후속 ':''}보고를 남겼습니다. 같은 단계의 다른 원생은 그대로입니다.`:c?.closure==='fact'?(signalCase(c)?'후속 보고를 남겼습니다. 이 업무는 원본 기록이 바뀌면 닫힙니다.':'후속 보고를 남겼습니다. 원본 업무는 원본 기록이 처리되면 닫힙니다.'):caseById(id)?.state==='done'?'보고를 남겼습니다. 이 업무는 끝났습니다.':'보고를 남겼습니다.'));return;}
     if(kind==='review'){const decision=String(v.get('decision')||''),note=String(v.get('note')||'').trim();if(!decision){fail('결정을 선택해 주세요.');return;}if(decision==='return'&&note.length<2){fail('보완 요청할 때는 보완할 내용을 적어 주세요.');form.querySelector('textarea').focus();return;}command('case.review',{caseId:id,payload:{...step,decision,...(note?{note}:{})}}).then(r=>done(r,decision==='accept'?'승인했습니다.':'보완 요청했습니다.'));return;}

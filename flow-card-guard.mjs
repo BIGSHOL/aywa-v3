@@ -22,3 +22,20 @@ export function sourceCardCase(service, caseId, taskKind, expectedRevision = nul
   return { case: c, taskId: c.sourceKey.slice(5) };
 }
 
+export function sourceSignalCase(service, caseId, signalId, expectedRevision = null, stepId = null, actorId = null) {
+  if (!service) throw bad(503, 'flow_starting', '업무 흐름을 준비하는 중입니다.');
+  const state = service.store.state;
+  if (expectedRevision !== null && state.revision !== expectedRevision) throw bad(409, 'revision_conflict', '다른 변경이 먼저 반영되었습니다. 업무를 새로 불러와 주세요.');
+  const c = state.cases[caseId];
+  if (!c || c.signalId !== signalId || c.closure !== 'fact' || c.factClosed || c.state === 'done'
+    || c.sourceKey !== `signal:consultations:${signalId}`) throw bad(409, 'case_not_ready', '이 상담 업무는 지금 처리할 수 없습니다.');
+  if (stepId !== null) {
+    const step = c.steps.find(s => s.id === stepId && !s.review && !s.retired && ['ready', 'working'].includes(s.status));
+    if (!step) throw bad(409, 'step_not_ready', '지금 처리할 단계가 없습니다.');
+    const actor = actorMap(service.source).get(actorId);
+    if (!actor || actor.preview || !UUID.test(actorId)) throw bad(403, 'actor_not_allowed', '처리할 직원을 확인해 주세요.');
+    if (!step.assigneeIds.includes(actorId) && !(step.queue === 'manager' && !step.assigneeIds.length && ['manager', 'owner'].includes(actor.role))) throw bad(403, 'not_assignee', '이 단계의 담당자가 아닙니다.');
+  }
+  return c;
+}
+

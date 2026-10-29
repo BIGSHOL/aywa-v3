@@ -15,6 +15,7 @@ import { createFlowService, defaultStoreDir, startFlow } from './flow-service.mj
 import { createFlowRoute } from './flow-http.mjs';
 import { createFlowCardAttendance } from './flow-card-attendance.mjs';
 import { createFlowCardReport } from './flow-card-report.mjs';
+import { createFlowCardConsultation } from './flow-card-consultation.mjs';
 import { createExitRoute, startExitInsight, exitProviders } from './exit-http.mjs';
 import { createCardInsight, openCardInsightStore } from './card-insight.mjs';
 import { createCardInsightRoute } from './card-insight-http.mjs';
@@ -92,7 +93,7 @@ const debounceMs=Math.min(60_000,Math.max(200,Number(process.env.OWNER_CONCEPT_R
 const refresh=process.env.OWNER_CONCEPT_DATA_REFRESH==='off'?null:createDataRefresh({data:served,assistant,flow:flowEnabled?flow:null,initialRecords:initialData.records,expect:{importedAt:snapshot.meta.importedAt,asOf:snapshot.meta.asOf,tenant:snapshot.meta.tenant},scheduler:{debounceMs}});
 // 2.0 화면 (V2-SCREENS.md): 2.0 형태의 새 3.0 페이지, 복사본 DB. v2-screen-<id>.mjs 파일마다 한 화면(공용 파일 수정 없음).
 const v2ScreenRoute=createV2ScreenRoute({screens:loadScreens(),headers,onWrite:write=>refresh?.scheduleWrite(write)});
-const flowRoute=createFlowRoute({flow,origins,headers,enabled:flowEnabled,cardAttendance:flowEnabled?createFlowCardAttendance({flow,v2ScreenRoute}):null,cardReport:flowEnabled?createFlowCardReport({flow,v2ScreenRoute}):null});
+const flowRoute=createFlowRoute({flow,origins,headers,enabled:flowEnabled,cardAttendance:flowEnabled?createFlowCardAttendance({flow,v2ScreenRoute}):null,cardReport:flowEnabled?createFlowCardReport({flow,v2ScreenRoute}):null,cardConsultation:flowEnabled?createFlowCardConsultation({flow,v2ScreenRoute}):null});
 // 신규 콜&상담 엑셀 가져오기(2.0 ExcelImportDialog) — 복사본 전용 작업 스레드의 2.0 importer · 같은 출처 POST만 · 바깥 요청 생기면 되돌림(v2-enrollment-excel.mjs).
 const enrollmentExcelRoute=createEnrollmentExcelRoute({headers,onWrite:write=>refresh?.scheduleWrite(write)});
 // GET = 지금 자료의 개정 번호(열린 첫 화면이 30초마다·포커스 때 묻는다). POST = 지금 다시 읽기(복사본을 화면 밖에서 바꿨을 때 — §2.11 되돌리기 뒤 등).
