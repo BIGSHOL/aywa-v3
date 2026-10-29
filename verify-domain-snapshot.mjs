@@ -55,7 +55,7 @@ check('same facts as the base model and the AX issues', () => {
   const completedOnBoard = new Set(F.enrollment[EVIDENCE].filter(r => r.status === '등록 완료').map(r => r.id));
   assert.equal(metric('enrollment', '이번 달 접수 중 상담·검토 단계'), unfinished.filter(a => !completedOnBoard.has(a.id)).length);
   assert.deepEqual(new Set(F.enrollment.signals.find(s => s.id === 'enrollment-followup')?.recordIds || []), new Set(unfinished.filter(a => !completedOnBoard.has(a.id)).map(a => a.id)));
-  assert.equal(metric('tasks-notifications', '늦은 할 일'), snapshot.tasks.filter(t => t.status === 'open' && t.due && t.due < asOf).length);
+  assert.equal(metric('tasks-notifications', '지난 업무'), snapshot.tasks.filter(t => t.status === 'open' && t.due && t.due < asOf).length);
   assert.equal(metric('textbook-requests', '요청·주문 단계'), snapshot.textbooks.filter(t => ['requested', 'ordered'].includes(t.status)).length);
   assert.equal(metric('approvals', '결재 대기'), snapshot.approvals.filter(a => a.status === 'pending').length);
   assert.equal(metric('classes', '운영 중인 반'), snapshot.classes.length);
