@@ -58,12 +58,19 @@
     return picked.get(k);
   }
   const seriesOf = d => { const on = shownKeys(d); return rowsOf(d).map((r, i) => ({ key: r.key, label: r.label, color: colorOf(d, r, i), points: r.points })).filter(s => on.has(s.key)); };
+  // 좁힌 그 줄 = 굵은 합계 선과 같은 값 — 따로 그리지 않는다(원장 10-29 "전체는 뭐고 학원 전체는 뭐야? 이상한데 헷갈림").
+  // 합계 선 색 = 다른 줄이 함께 그려지면 검정, 혼자면 기본 남색(.tr-line · .tr-chart.has-series) — 범례·표의 색 표시도 이 색.
+  const isFilterRow = (d, key) => !!d.filter && d.by === d.filter.dim && key === d.filter.key;
+  const sumColor = many => (many ? '#121212' : 'var(--ax-primary)');
 
   // 큰 추세: 비율은 0~100 고정, 건수는 딱 떨어지는 눈금 — 값이 0에서 멀면(가장 작은 값이 가장 큰 값의 30%를 넘으면) 값 범위에 맞춰
   // 변화가 보이게 한다(재원생 402→333이 0~600 축에선 평평했다). 기록이 없는 기간은 선을 잇지 않는다. 점마다 앱 팝오버(마우스·키보드·터치).
   // 그림 폭 = 화면에 놓일 실제 폭(글자가 화면 폭에 비례해 커지지 않게 — 760 폭을 1,400px로 늘리면 축 글자가 20px을 넘었다).
   const nice = raw => { const mag = 10 ** Math.floor(Math.log10(raw)), k = raw / mag; return Math.max((k <= 1 ? 1 : k <= 2 ? 2 : k <= 2.5 ? 2.5 : k <= 5 ? 5 : 10) * mag, 1); };
   function bigChart(d, base, series) {
+    // 굵은 선 = 지금 보는 범위의 합계 — 좁혔으면 그 범위 이름(인재원 영어), 아니면 '학원 전체'(좁힌 화면에서 '전체' · '학원 전체' · '인재원 영어'가 뜻이 겹쳐 보였다).
+    series = series.filter(s => !isFilterRow(d, s.key));
+    const sumName = d.filter ? d.filter.label : '학원 전체';
     const room = document.querySelector('[data-v2-screen="trend"] .tr-main')?.clientWidth || document.querySelector('#main')?.clientWidth || 800;
     // 오른쪽 여백 = 마지막 축 이름의 반 폭(가운데 맞춤이라 끝 이름이 그림 밖으로 잘렸다 — 주별 '10/21~10/27' 19px · 요일 붙인 '10/20(화)' 10px). 글자 폭은 어림(숫자·기호 7 · 한글 13).
     const n = d.windows.length, axisName = n <= 14 ? dayName : w => w.label, half = s => Math.ceil([...s].reduce((t, ch) => t + (ch.charCodeAt(0) > 0x3000 ? 13 : 7), 0) / 2);
@@ -88,7 +95,7 @@
     // 점은 그 기간의 칸(chart-col) 안에 그려 마우스·초점이 간 기간의 모든 줄 점이 함께 채워진다(같은 세로선).
     const cols = d.windows.map((w, i) => {
       const p = d.total[i], q = i ? d.total[i - 1] : null, b = base?.total?.[i], drill = sub && p?.value != null, u = d.metric.unit, bt = d.metric.better;
-      const rows = [{ label: many ? `${name} (전체)` : name, value: shown(p?.value, u), tone: 'primary', color: many ? '#121212' : '', delta: deltaOf(p, q, u, bt) },
+      const rows = [{ label: many && !d.filter ? `${name} (학원 전체)` : name, value: shown(p?.value, u), tone: 'primary', color: many ? '#121212' : '', delta: deltaOf(p, q, u, bt) },
         ...(base ? [{ label: '학원 전체', value: shown(b?.value, u), tone: 'secondary', delta: deltaOf(b, i ? base.total[i - 1] : null, u, bt) }] : []),
         ...series.map(s => ({ label: s.label, value: shown(s.points[i]?.value, u), color: s.color, delta: deltaOf(s.points[i], i ? s.points[i - 1] : null, u, bt) }))];
       const dots = series.map(s => (s.points[i]?.value == null ? '' : `<circle class="tr-sdot" style="--c:${s.color}" cx="${x(i)}" cy="${y(s.points[i].value)}" r="3.5"/>`)).join('');
@@ -98,7 +105,7 @@
         + (i % every === 0 || i === n - 1 ? `<text x="${x(i)}" y="${H - 10}" text-anchor="middle">${esc(axisName(w))}</text>` : '') + '</g>';
     }).join('');
     const lines = series.map(s => `<g class="tr-line series" style="--c:${s.color}">${path(s.points)}</g>`).join('');
-    const legend = many || base ? `<div class="tr-legend">${[`<span><i class="sum"></i>${esc(many ? '전체' : d.filter.label)}</span>`, ...(base ? ['<span><i class="alt"></i>학원 전체</span>'] : []),
+    const legend = many || base ? `<div class="tr-legend">${[`<span><i class="sum" style="background:${sumColor(many)}"></i>${esc(sumName)}</span>`, ...(base ? ['<span><i class="alt"></i>학원 전체</span>'] : []),
       ...series.map(s => `<span><i style="background:${s.color}"></i>${esc(s.label)}</span>`)].join('')}</div>` : '';
     return `<div class="chart-box tr-chart${many ? ' has-series' : ''}" data-chart tabindex="0" role="group" aria-label="${esc(name)} 추세 — 화살표 키로 기간을 옮기며 수치를 확인합니다${sub ? `. Enter로 그 기간을 ${sub}로 나눠 봅니다` : ''}"><svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(name)} ${d.windows.map((w, i) => `${w.label} ${shown(d.total[i]?.value, d.metric.unit)}`).join(', ')}">${grid}${vlines}${base ? `<g class="tr-line base">${path(base.total)}</g>` : ''}${lines}<g class="tr-line">${path(d.total)}</g>${cols}</svg></div>${legend}`;
   }
@@ -140,7 +147,8 @@
     const head = (key, label, a) => `<th class="${a}"><button type="button" data-tr-sort="${key}" aria-pressed="${sort.key === key}">${label}${sort.key === key ? `<i class="tr-arrow" aria-hidden="true">${sort.dir ? '↑' : '↓'}</i>` : ''}</button></th>`;
     const cut = showAll ? rows : rows.slice(0, 20), w = d.windows[li];
     // 전체 선택 = 거른 줄 모두(보이지 않는 '나머지'까지) — 그래프 선 켜고 끄기와 같은 picked. 일부만 켜졌으면 반쯤(indeterminate, 그린 뒤 render가 건다).
-    const keys = rows.map(r => r.key), lit = keys.filter(k => on.has(k)).length; last.visibleKeys = keys;
+    // 좁힌 그 줄은 합계 선이라 켜고 끄는 대상이 아니다(isFilterRow).
+    const keys = rows.filter(r => !isFilterRow(d, r.key)).map(r => r.key), lit = keys.filter(k => on.has(k)).length; last.visibleKeys = keys;
     const pickAll = `<input type="checkbox" data-tr-all ${keys.length && lit === keys.length ? 'checked' : ''} ${lit && lit < keys.length ? 'data-mixed' : ''} ${keys.length ? '' : 'disabled'} aria-label="보이는 ${esc(noun)} 모두 그래프에 표시">`;
     const tools = all.length >= 6 || f.q || f.chips.size
       ? `<div class="tr-tools"><input type="search" id="tr-find" class="tr-find" data-tr-find value="${esc(f.q)}" placeholder="${esc(noun)} 찾기" aria-label="${esc(noun)} 이름으로 거르기" autocomplete="off">`
@@ -150,8 +158,11 @@
     return `<section class="tr-break"><h3>${esc(dim?.label || '기준별')} <span>${esc(dayName(w))}</span></h3>${tools}`
       + `<div class="tr-table-wrap"><table class="tr-table"><thead><tr><th class="tr-pick c"><label>${pickAll}<i class="tr-pick-pad" aria-hidden="true"></i></label></th>${head('name', esc(noun), 'l')}${metaCols.map(([k, l, a]) => `<th class="tr-meta ${a}${a === 'l' ? ' wide' : ''}">${l}</th>`).join('')}`
       + `${head('value', '값', 'r num')}${head('change', '직전 대비', 'c num')}${unit === '%' ? head('den', '대상', 'c num') : ''}<th class="c">추세</th><th class="r"></th></tr></thead><tbody>`
-      + (cut.length ? cut.map(r => { const c = changeOf(r.now, r.prev, unit, better), color = colorOf(d, r, order.get(r.key));
-        return `<tr><td class="tr-pick c"><label><input type="checkbox" data-tr-line="${esc(r.key)}" ${on.has(r.key) ? 'checked' : ''} aria-label="${esc(r.label)} 그래프에 표시"><i style="background:${color}"></i></label></td><th scope="row" class="l">${esc(r.label)}</th>`
+      + (cut.length ? cut.map(r => { const c = changeOf(r.now, r.prev, unit, better);
+        // 좁힌 그 줄 = 그래프의 굵은 합계 선(따로 그리지 않는다 — bigChart) · 색도 합계 선 색, 체크는 켠 채 잠금.
+        const filterRow = isFilterRow(d, r.key), color = filterRow ? sumColor(seriesOf(d).some(s => !isFilterRow(d, s.key))) : colorOf(d, r, order.get(r.key));
+        const box = filterRow ? `checked disabled aria-label="${esc(r.label)} — 그래프의 굵은 선"` : `${on.has(r.key) ? 'checked' : ''} aria-label="${esc(r.label)} 그래프에 표시"`;
+        return `<tr><td class="tr-pick c"><label><input type="checkbox" data-tr-line="${esc(r.key)}" ${box}><i style="background:${color}"></i></label></td><th scope="row" class="l">${esc(r.label)}</th>`
           + metaCols.map(([k, , a]) => `<td class="tr-meta ${a}${a === 'r' ? ' num' : ''}${a === 'l' ? ' wide' : ''}">${esc(metaCell(k, r.meta?.[k]))}</td>`).join('')
           + `<td class="r num"><strong>${shown(r.now?.value, unit)}</strong></td><td class="c num ${c.tone}">${c.text}</td>${unit === '%' ? `<td class="c num">${ratio(r.now)}</td>` : ''}`
           + `<td class="tr-spark c">${api.lineChart(r.points.map((p, i) => ({ label: d.windows[i].label, value: p?.value ?? null })), { key: 'value', label: r.label, unit, compare: '직전', better })}</td>`
