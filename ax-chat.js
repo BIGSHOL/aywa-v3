@@ -90,6 +90,7 @@ window.createAxChat = function createAxChat(api) {
       const ws = api.workspaces?.();
       if (ws && !ws.has?.(key)) { api.toast?.('이 화면은 지금 열 수 없습니다.'); return; }
       document.querySelectorAll('dialog[open]').forEach(d => d.close());
+      if (record && window.RecordOpen?.supports(key, record)) { window.RecordOpen.open(key, record); return; } // 그 기록의 처리 화면으로 바로(원장 10-30)
       if (record && ws?.showRecord) { ws.showRecord(key, record); return; }
       if (!ws?.openFamily?.(key)) api.navigate?.(`workspace-${key}`);
       return;
