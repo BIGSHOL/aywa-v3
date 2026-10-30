@@ -518,7 +518,7 @@ window.createFlowUI = function createFlowUI(api) {
   }
   function decisionMemo(d,c,previous=false){
     const p=d.probabilities||{},route=dRoute(d),reasons=dReasons(d).filter(r=>r!==route),draft=d.draft,provider=dProvider(d);
-    const basis=`업무 ${c.title} · ${previous?'지금 선택과 다른 이전 판정 기준':'자료 기준일 '+asOf()}`;
+    const basis=`업무 ${c.title} · ${previous?'지금 선택과 다른 이전 판정 기준':`자료 시각 ${window.AIResultMeta.time(flow().source?.capturedAt)} · 기준일 ${asOf()}`}`;
     // 확률·모델 이름·걸린 시간은 개발자용이라 싣지 않는다(원장 10-28). 긴급도는 등급이라 남긴다.
     const facts=[URGENCY[p.urgency]&&`긴급도 ${URGENCY[p.urgency]}`].filter(Boolean);
     const people=(d.suggestedAssigneeIds||[]).map(nameOf).filter(n=>n!=='담당 미지정');
@@ -604,7 +604,7 @@ window.createFlowUI = function createFlowUI(api) {
   const flowPill=(f,prefix='')=>FLOW_STATE[f?.state]?pill(`${prefix}${FLOW_STATE[f.state][0]}`,FLOW_STATE[f.state][1]):'';
   // AI result with its state, or (no usable summary) an honest status line; code facts are a separate '기록 요약' line.
   const aiBasis=(e,target,ai)=>ai?.stale?`${target} · 지금 선택과 다른 이전 기록 기준`:
-    `${target} · ${e?.data?.basis?.label||'업무 흐름'} · 자료 기준일 ${e?.data?.basis?.asOf||asOf()}`;
+    `${target} · ${e?.data?.basis?.label||'업무 흐름'} · 자료 시각 ${window.AIResultMeta.time(e?.data?.basis?.capturedAt)} · 기준일 ${e?.data?.basis?.asOf||asOf()}`;
   function aiBlock(ai,{facts='',e=null,self='',target='업무'}={}){
     const s=ai?.status,text=typeof ai?.summary==='string'?ai.summary.trim():'';
     const factLine=facts?`<p class="fl-fact"><strong>기록 요약</strong> ${h(facts)}</p>`:'';
