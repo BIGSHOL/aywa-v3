@@ -6,6 +6,8 @@ import { fileURLToPath } from 'node:url';
 import { BridgeError, FAILURES, claudeArgs, cliAvailable, createClaudeRunner, defaultCliPath, prepareRuntimeDir } from './claude-bridge.mjs';
 import { areaDestinations, buildAssistantContext } from './claude-bridge-context.mjs';
 import { LIMITS, buildInput, normalizeAnswer, requestFacts, validateRequest } from './claude-bridge-prompt.mjs';
+import { createAiReader } from './ai-reader.mjs';
+import { reconcileReaderEvidence } from './ai-reader-evidence.mjs';
 import { modelLabel } from './flow-view.mjs';
 
 export const ASSISTANT_PATH = '/api/assistant';
@@ -43,7 +45,7 @@ function readBody(req, max, timeoutMs) {
 
 // destinations.list = 답 아래 바로 가기·요청 영역으로 고를 수 있는 곳(서버가 아는 목록), records() = 작업 영역 기록 저장소(요청안의 기록 확인).
 // context = 서버 컨텍스트, 또는 지금 것을 돌려주는 함수(저장 뒤 자료 갱신이 바꿔 끼운다 — 질문 하나는 시작할 때 잡은 것으로 끝까지).
-export function createAssistantRoute({ context, runner, readiness, origins, headers = {}, enabled = true, maxConcurrent = 1, rate = { max: 10, windowMs: 5 * 60_000 }, readTimeoutMs = 10_000, now = Date.now, log = () => {}, destinations = { list: [] }, records = null }) {
+export function createAssistantRoute({ context, runner, readiness, origins, headers = {}, enabled = true, maxConcurrent = 1, rate = { max: 10, windowMs: 5 * 60_000 }, readTimeoutMs = 10_000, now = Date.now, log = () => {}, destinations = { list: [] }, records = null, readerFactory = null }) {
   let active = 0;
   const stamps = [];
   const send = (res, status, body, extra = {}) => {
@@ -69,8 +71,19 @@ export function createAssistantRoute({ context, runner, readiness, origins, head
     active += 1; stamps.push(t);
     try {
       const ctx = typeof context === 'function' ? context() : context;
-      const facts = requestFacts(ctx, request), list = destinations.list;
-      const { output, meta } = await runner.ask({ input: buildInput(ctx, request, undefined, { facts, destinations: list }), signal });
+      let facts = requestFacts(ctx, request);
+      const list = destinations.list;
+      let { output, meta } = await runner.ask({ input: buildInput(ctx, request, undefined, { facts, destinations: list, allowReader: !!readerFactory }), signal });
+      if (readerFactory) {
+        const reader = await readerFactory();
+        try {
+          const checked = await reconcileReaderEvidence(output, facts, reader);
+          output = checked.output; facts = checked.facts;
+        } catch (error) {
+          if (error.code === 'unverified_fact') throw err('unverified_fact', 502, '조회 근거와 답변이 일치하지 않아 표시하지 않았습니다.');
+          throw error;
+        } finally { await reader.close(); }
+      }
       const reply = normalizeAnswer(output, { facts, destinations: list, records });
       reply.aiMeta = { modelLabel: modelLabel(meta.models?.[0]) || 'Claude', createdAt: new Date(now()).toISOString(),
         basis: `${request.contextIssueId ? `이슈 ${ctx.issues[request.contextIssueId]?.title || '선택한 이슈'}` : '원장실 전체'} · ${ctx.month} 업무 자료 · 기준일 ${ctx.asOf}` };
@@ -107,7 +120,7 @@ export function createAssistantFromEnv({ snapshot, origins, headers, runtimeDefa
   const enabled = env.NODE_ENV !== 'production' && !env.VERCEL && !env.VERCEL_ENV && env.OWNER_CONCEPT_ASSISTANT !== 'off';
   const command = env.OWNER_CONCEPT_CLAUDE_BIN || defaultCliPath(env);
   const runtime = env.OWNER_CONCEPT_CLAUDE_RUNTIME || (runtimeDefault ? fileURLToPath(runtimeDefault) : '');
-  const runner = createClaudeRunner({ command, cwd: runtime, args: claudeArgs({ model: env.OWNER_CONCEPT_CLAUDE_MODEL || 'sonnet', effort: env.OWNER_CONCEPT_CLAUDE_EFFORT || 'low' }) });
+  const runner = createClaudeRunner({ command, cwd: runtime, args: claudeArgs({ model: env.OWNER_CONCEPT_CLAUDE_MODEL || 'sonnet', effort: env.OWNER_CONCEPT_CLAUDE_EFFORT || 'low', aiReader: enabled }) });
   const readiness = createReadiness(async () => {
     if (!command || !(await cliAvailable(command))) throw FAILURES.missing();
     await prepareRuntimeDir(runtime);
@@ -122,7 +135,8 @@ export function createAssistantFromEnv({ snapshot, origins, headers, runtimeDefa
     extraDestinations().then(extra => { live.extra = extra; }).catch(e => log(`assistant destinations: ${e?.message || e}`));
     import('./workspace-store.mjs').then(m => { store = m.currentWorkspaceStore; }).catch(() => {});
   }
-  const route = createAssistantRoute({ context: () => live.context, runner, readiness, origins, headers, enabled, log, destinations, records: () => store?.() ?? null });
+  const route = createAssistantRoute({ context: () => live.context, runner, readiness, origins, headers, enabled, log, destinations,
+    records: () => store?.() ?? null, readerFactory: enabled ? () => createAiReader({ target: env.OWNER_CONCEPT_DB === 'sandbox' ? 'sandbox' : 'snapshot' }) : null });
   /** { context, area } — 같은 스냅숏에서 만든 새 비서 컨텍스트와 작업 영역 목록. */
   route.use = next => { if (next?.context) live.context = next.context; if (Array.isArray(next?.area)) live.area = next.area; };
   if (enabled) readiness.refresh().then(() => {

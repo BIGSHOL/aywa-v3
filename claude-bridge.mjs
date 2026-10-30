@@ -1,7 +1,7 @@
 // Runs one `claude -p` request on this PC's Claude subscription (local dev only).
 // The executable is spawned directly (shell:false) with a fixed argument list;
-// request text goes through stdin only. Tools, MCP, hooks, CLAUDE.md, plugins,
-// skills, slash commands and session files are all switched off, the child gets
+// request text goes through stdin only. The assistant's reader mode permits only
+// the local DB MCP; hooks, CLAUDE.md, plugins, skills, slash commands and sessions stay off. The child gets
 // an allowlisted environment without API keys or provider overrides, and it runs
 // in an empty directory outside the repository.
 import { spawn } from 'node:child_process';
@@ -9,6 +9,7 @@ import { mkdir, readdir, stat } from 'node:fs/promises';
 import { dirname, isAbsolute, join, parse, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { ASSISTANT_ISSUE_IDS } from './claude-bridge-context.mjs';
+import { REASON_RULES, readerCliFlags } from './ai-reader-cli.mjs';
 
 export class BridgeError extends Error {
   constructor(code, status, message) { super(message); this.code = code; this.status = status; }
@@ -46,6 +47,16 @@ export const SYSTEM_PROMPT = [
   '- suggestedTask = 업무 요청 초안이 도움이 될 때만 {title: 40자 안팎의 요청 제목, body: 담당자에게 확인을 부탁하는 정중한 본문, area: 그 일을 볼 화면의 ws: id(목록에 없으면 ""), recordQueries: 질문에 원장이 직접 적은 원생·반 이름만(최대 5개, 없으면 [])}, 아니면 null.',
 ].join('\n');
 
+export const READER_SYSTEM_PROMPT = `${SYSTEM_PROMPT
+  .replace('숫자와 사실은 입력의 "서버 검증 컨텍스트" 블록에 있는 것만 사용한다. 없는 내용은 "현재 기록으로는 확인할 수 없습니다"라고 말한다.',
+    '숫자와 사실은 서버 검증 컨텍스트와 ai_reader 조회 결과에서만 사용한다. 기록된 이유가 없으면 사유 미기재 인원과 이름을 밝힌다.')
+  .replace('당신은 아무것도 실행할 수 없다.', 'ai_reader 읽기 도구로 조회할 수 있다. 발송·업무 요청 전송·결재 처리·데이터 수정은 할 수 없다.')
+  .replace('개인 이름·연락처는 컨텍스트에 없다. 만들거나 추측하지 않으며, 질문받지 않았으면 언급하지 않는다.',
+    '이름은 읽기 도구의 결과에 있을 때만 사용한다. 연락처 원문을 만들거나 추측하지 않는다.')
+  .replace('번호가 없는 내용은 쓰지 않는다.', '서버 사실의 F번호 또는 조회 도구의 Q번호·행 번호가 없는 내용은 쓰지 않는다.')}
+${REASON_RULES}
+- queries = 조회 근거마다 {id: Q-조회번호, sql: 실행한 SQL}; 최대 여섯 개. 조회 결과를 쓴 points/keyFacts에 qrefs: ["Q-조회번호:행번호"]를 단다. refs는 서버 F번호에만 사용한다.`;
+
 const LINK_ID = '^(ws|v2|trend):[a-z0-9-]{1,40}$';
 export const ANSWER_SCHEMA = Object.freeze({
   type: 'object', additionalProperties: false, required: ['headline', 'keyFacts', 'points', 'checks', 'table', 'links', 'issueIds', 'suggestedTask'],
@@ -68,16 +79,26 @@ export const ANSWER_SCHEMA = Object.freeze({
   },
 });
 
+export function readerAnswerSchema() {
+  const schema = structuredClone(ANSWER_SCHEMA);
+  schema.required.push('queries');
+  schema.properties.queries = { type: 'array', maxItems: 6, items: { type: 'object', additionalProperties: false,
+    required: ['id', 'sql'], properties: { id: { type: 'string', pattern: '^Q-[0-9a-f]{12}$' }, sql: { type: 'string', minLength: 1, maxLength: 20_000 } } } };
+  schema.properties.points.items.properties.qrefs = { type: 'array', maxItems: 8, items: { type: 'string', pattern: '^Q-[0-9a-f]{12}:[1-9][0-9]{0,2}$' } };
+  schema.properties.keyFacts.items.properties.qrefs = { type: 'array', maxItems: 4, items: { type: 'string', pattern: '^Q-[0-9a-f]{12}:[1-9][0-9]{0,2}$' } };
+  return schema;
+}
+
 export const MODELS = new Set(['sonnet', 'opus', 'haiku']);
 export const EFFORTS = new Set(['low', 'medium', 'high']);
 
 // Fixed for the server's lifetime: nothing from a request reaches argv.
-export function claudeArgs({ model = 'sonnet', effort = 'low', maxBudgetUsd = 0.5 } = {}) {
+export function claudeArgs({ model = 'sonnet', effort = 'low', maxBudgetUsd = 0.5, aiReader = false } = {}) {
   if (!MODELS.has(model) || !EFFORTS.has(effort)) throw new Error('Unsupported Claude model settings');
   return [
-    '-p', '--output-format', 'json', '--json-schema', JSON.stringify(ANSWER_SCHEMA),
-    '--system-prompt', SYSTEM_PROMPT, '--model', model, '--effort', effort,
-    '--tools', '', '--disallowedTools', 'mcp__*', '--strict-mcp-config', '--mcp-config', '{"mcpServers":{}}',
+    '-p', '--output-format', 'json', '--json-schema', JSON.stringify(aiReader ? readerAnswerSchema() : ANSWER_SCHEMA),
+    '--system-prompt', aiReader ? READER_SYSTEM_PROMPT : SYSTEM_PROMPT, '--model', model, '--effort', effort,
+    ...(aiReader ? readerCliFlags() : ['--tools', '', '--disallowedTools', 'mcp__*', '--strict-mcp-config', '--mcp-config', '{"mcpServers":{}}']),
     '--safe-mode', '--restricted', '--no-chrome', '--no-session-persistence', '--disable-slash-commands',
     '--permission-mode', 'dontAsk', '--permission-prompts', 'none', '--max-budget-usd', String(maxBudgetUsd),
   ];
