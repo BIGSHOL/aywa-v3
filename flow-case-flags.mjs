@@ -12,7 +12,7 @@ export const flowCaseLate = (c, asOf) => !!(c.state !== 'done' && c.dueAt && flo
 export const flowCaseUnassigned = c => activeFlowSteps(c).some(s => !(s.assigneeIds || []).length && (!s.queue || Boolean(s.unassignedReason)));
 export const flowCaseFlags = (c, asOf) => ({ late: flowCaseLate(c, asOf), unassigned: flowCaseUnassigned(c) });
 
-// 첫 화면의 담당별 내 차례와 원본 업무 단계 수. 요약·전체 응답이 이 결과를 함께 쓴다.
+// 첫 화면의 담당별 내가 해야 할 업무와 학원 업무 단계 수. 요약·전체 응답이 이 결과를 함께 쓴다.
 export function flowFirstScreen(cases, actors, asOf, caseFlagsById = null) {
   const flags = c => caseFlagsById?.get(c.id) ?? flowCaseFlags(c, asOf);
   const stages = Object.fromEntries(['open', 'working', 'review', 'done'].map(state => [state, cases.filter(c => c.origin !== 'dev' && c.state === state).length]));

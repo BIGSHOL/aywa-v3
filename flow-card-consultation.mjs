@@ -1,4 +1,4 @@
-// 상담 후속조치 카드: 원본 상담을 고른 뒤 2.0 toggleConsultationFollowUp을 같은 쓰기 거래에서 실행한다.
+// 상담 후속조치 카드: 상담 기록을 고른 뒤 2.0 toggleConsultationFollowUp을 같은 쓰기 거래에서 실행한다.
 import { openFullDatabase, tenantId } from './full-db.mjs';
 import { sourceCardCase, sourceSignalCase } from './flow-card-guard.mjs';
 import { V2Error } from './v2-screens.mjs';
@@ -21,7 +21,7 @@ async function taskRow(sql, taskId, lock = false) {
   const [row] = lock
     ? await sql`select kind,status::text status,subject_id::text consultation_id from public.staff_tasks where tenant_id=${tenantId} and id=${taskId} for update`
     : await sql`select kind,status::text status,subject_id::text consultation_id from public.staff_tasks where tenant_id=${tenantId} and id=${taskId}`;
-  if (!row || row.kind !== 'followup_due' || row.status !== 'open' || !UUID.test(row.consultation_id || '')) throw bad(409, 'source_changed', '원본 상담 업무가 달라졌습니다. 새로 불러와 주세요.');
+  if (!row || row.kind !== 'followup_due' || row.status !== 'open' || !UUID.test(row.consultation_id || '')) throw bad(409, 'source_changed', '상담 후속조치 업무가 달라졌습니다. 새로 불러와 주세요.');
   return row;
 }
 
@@ -90,7 +90,7 @@ export function createFlowCardConsultation({ flow, v2ScreenRoute, open = openFul
           if (!(await consultationRow(sql, id))?.done) throw bad(409, 'save_refused', '상담 후속조치 완료를 확인하지 못했습니다.');
         },
       });
-      return { saved: true, recordRef: raw.recordRef, message: '원본 반영 확인 중' };
+      return { saved: true, recordRef: raw.recordRef, message: '상담 기록 저장 상태 확인 중' };
     },
   };
 }

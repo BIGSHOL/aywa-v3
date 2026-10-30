@@ -47,7 +47,7 @@ function reconcileTask(source, c, t, at) {
   if (closed && !c.factClosed) {
     for (const s of c.steps) if (s.status !== 'done') { s.status = 'done'; s.closedBy = 'source'; }
     Object.assign(c, { sourceStatus: status, sourceStatusLabel: TASK_STATE_LABEL[status], factClosed: true, closedReason: reasonOf(t), closedAt: t.closedAt, closedBy: 'source' });
-    out.push({ type: 'source.task_closed', label: `원본에서 ${TASK_STATE_LABEL[status]} — ${c.closedReason}`, at: t.closedAt || at, data: { status, closeReason: t.closeReason || null } });
+    out.push({ type: 'source.task_closed', label: `업무 ${TASK_STATE_LABEL[status]} — ${c.closedReason}`, at: t.closedAt || at, data: { status, closeReason: t.closeReason || null } });
   } else if (!closed && c.factClosed) {
     const reopenedAt = lastAt(t, 'reopened'); // the 2.0 reopen time when it is newer than the closing we knew
     for (const s of c.steps) if (s.status === 'done') { s.status = reopenStatus(s); delete s.closedBy; }
@@ -55,7 +55,7 @@ function reconcileTask(source, c, t, at) {
     out.push({ type: 'source.task_reopened', at: reopenedAt && (!prevClosedAt || reopenedAt > prevClosedAt) ? reopenedAt : at, reopen: true });
   } else if (closed && (c.sourceStatus !== status || c.closedReason !== reasonOf(t))) {
     Object.assign(c, { sourceStatus: status, sourceStatusLabel: TASK_STATE_LABEL[status], closedReason: reasonOf(t), closedAt: t.closedAt });
-    out.push({ type: 'source.task_closed', label: `원본 상태가 바뀜 — ${TASK_STATE_LABEL[status]}(${c.closedReason})`, at: t.closedAt || at, data: { status, closeReason: t.closeReason || null, changed: true } });
+    out.push({ type: 'source.task_closed', label: `업무 상태가 바뀜 — ${TASK_STATE_LABEL[status]}(${c.closedReason})`, at: t.closedAt || at, data: { status, closeReason: t.closeReason || null, changed: true } });
   }
   c.priority = taskPriority(source, t);
   const route = taskRoute(source, t);
@@ -171,8 +171,8 @@ export function reconcileSource(state, source, { at, mode = 'apply' } = {}) {
     const before = JSON.stringify(c);
     if (key.startsWith('task:') && source.tasks.length && !c.factClosed) {
       for (const s of c.steps) if (s.status !== 'done') { s.status = 'done'; s.closedBy = 'source'; }
-      Object.assign(c, { factClosed: true, closedReason: '원본에서 이 업무를 찾을 수 없음', closedAt: when, closedBy: 'source' });
-      commit(state, c, before, [{ type: 'source.task_closed', label: '원본에서 업무를 찾을 수 없어 닫음', at: when, data: { missing: true } }], when, summary);
+      Object.assign(c, { factClosed: true, closedReason: '학원 업무 목록에서 이 업무를 찾을 수 없음', closedAt: when, closedBy: 'source' });
+      commit(state, c, before, [{ type: 'source.task_closed', label: '학원 업무 목록에서 찾을 수 없어 닫음', at: when, data: { missing: true } }], when, summary);
     } else if (key.startsWith('signal:') && (!families || families.has(c.familyId))) commit(state, c, before, clearSignal(c, when), when, summary);
     else summary.unchanged += 1;
   }

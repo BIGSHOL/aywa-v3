@@ -125,7 +125,7 @@ export function buildView(state, source, { aiStatus, tenantName = '', casePage =
   };
   return {
     schemaVersion: 1, asOf: source.identity.asOf, revision: state.revision, mode: 'local-preview', scenarioCandidates,
-    source: { tenant: tenantName, capturedAt: source.identity.capturedAt, asOf: source.identity.asOf, note: '원본은 기준일의 학원 기록이며, 이 화면에서 만든 처리·요청은 따로 남습니다.' },
+    source: { tenant: tenantName, capturedAt: source.identity.capturedAt, asOf: source.identity.asOf, note: '기준일의 학원 기록을 보여 줍니다. 이 화면에서 남긴 처리·요청은 따로 기록됩니다.' },
     actors, entities, relations, cases: cases.map(c => caseView(c, inFlight, caseFlags.get(c.id), source, staffNames)), casesTotal: all.length, casePage, casePageSize: LIMITS.cases, casePageCount: Math.max(1, Math.ceil(all.length / LIMITS.cases)),
     // Newest events (chronological); older ones via ?eventsBefore=<event number>.
     events: (eventsBefore ? state.events.filter(e => Number(e.id.slice(4)) < eventsBefore) : state.events).slice(-LIMITS.events), eventsTotal: state.events.length,

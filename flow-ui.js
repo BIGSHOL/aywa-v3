@@ -1,7 +1,6 @@
-/* Flow UI: one durable work flow (GET /api/flow, POST /api/flow/actions) seen from a previewed person.
-   The server is the source of truth: cases, steps, evidence and the event chain come from it, and every change is a
-   command with a stable commandId and the last seen revision. Nothing here authenticates anyone, sends a message or
-   writes the copied records — the overlay is local and the preview selector only chooses whose work to show. */
+/* Flow UI: one durable work flow (GET /api/flow, POST /api/flow/actions) seen from the shell account.
+   The server is the source of truth: cases, steps, evidence and the event chain come from it. Flow commands use the
+   last seen revision; attendance, report and consultation cards update the practice records through their 2.0 actions. */
 window.createFlowUI = function createFlowUI(api) {
   'use strict';
   const {db,h,fmt,icon,dialog,navigate,ax}=api;
@@ -28,7 +27,7 @@ window.createFlowUI = function createFlowUI(api) {
   const ORIGIN={snapshot:'학원 기록',dev:'직접 등록한 업무'};
   const CLOSURE={manual:'사람이 확인하고 보고해 닫습니다'};
   const BILLING_HINT='수납 반영은 메이크에듀 동기화로 들어옵니다 — 학부모 안내 등 처리 뒤 보고로 닫기';
-  const ROLE_ORDER=['owner','manager','teacher','staff'],ROLE_GROUP={owner:'원장',manager:'관리자',teacher:'선생님',staff:'직원'};
+  const ROLE_GROUP={owner:'원장',manager:'관리자',teacher:'선생님',staff:'직원'};
   // 보드 보기 상태: q = 검색어 · sort = 정렬 열과 방향 · cols = 열별 값 필터(열 → 선택한 값들, 없으면 전부) · pages = 목록별 쪽.
   const store={status:'idle',flow:null,error:'',controller:null,pending:new Set(),actorId:'',filter:'',cardLink:null,q:'',sort:{col:'',dir:''},cols:{},pages:{},sel:new Set(),selView:'',deferred:false,retry:0,etag:'',older:new Map(),partial:false,wantFull:false,fullPromise:null,fullError:''};
   const PEEK=document.documentElement.classList.contains('peek');
@@ -50,7 +49,7 @@ window.createFlowUI = function createFlowUI(api) {
   /* ---------- store ---------- */
   const ready=()=>store.status==='ready'&&Boolean(store.flow);
   const flow=()=>store.flow||{actors:[],cases:[],events:[],entities:[],relations:[],metrics:{}};
-  const actors=()=>Array.isArray(flow().actors)?flow().actors:[];
+  const actors=()=>Array.isArray(flow().actors)?flow().actors.filter(a=>!a.preview):[];
   const actorById=id=>actors().find(a=>a.id===id);
   const nameOf=id=>actorById(id)?.name||db.staff.find(s=>s.id===id)?.name||'담당 미지정';
   const actor=()=>actorById(store.actorId)||actors().find(a=>a.role==='owner')||actors()[0]||null;
@@ -68,10 +67,10 @@ window.createFlowUI = function createFlowUI(api) {
   function myStep(c,id=actor()?.id){const list=activeSteps(c);return list.find(s=>(s.assigneeIds||[]).includes(id))||(id===actor()?.id&&lead()?list.find(queued):null)||null;}
   const stepOf=c=>(c.steps||[]).find(s=>s.id===c.currentStepId)||activeSteps(c)[0]||null;
   const asOf=()=>String(flow().asOf||db.meta.asOf).slice(0,10);
-  // 요약 글의 날짜를 화면 표기(M/D)로 — 원본 업무의 글은 '10-21 15:40'·'2026-10-21'처럼 적혀 온다(검수 10-28 L2). 올해가 아니면 연도를 남긴다.
+  // 요약 글의 날짜를 화면 표기(M/D)로 — 저장된 업무 글은 '10-21 15:40'·'2026-10-21'처럼 적혀 온다. 올해가 아니면 연도를 남긴다.
   const dateWords=t=>String(t||'').replace(/(?<![\d-])(\d{4})-(\d{2})-(\d{2})(?![\d-])/g,(m,y,mo,d)=>`${y===asOf().slice(0,4)?'':`${y}. `}${+mo}/${+d}`).replace(/(?<![\d-])(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])(?![\d-])/g,(m,mo,d)=>`${+mo}/${+d}`);
   const sumOf=c=>dateWords(c.summary);
-  const display=t=>String(t||'').replaceAll('원본 업무','업무').replaceAll('원본 담당','담당').replaceAll('원본 기록','학원 기록').replaceAll('원본에서','학원 기록에서').replaceAll('원본 반영','저장 반영').replaceAll('원본','학원 기록');
+  const display=t=>String(t||'').replaceAll('원본 업무','업무').replaceAll('원본 담당',LABEL.assignee).replaceAll('원본 기록','학원 기록').replaceAll('원본에서','학원 기록에서').replaceAll('원본 반영','저장 반영').replaceAll('원본','학원 기록');
   const closeRule=c=>display(c.doneRule||CLOSURE[c.closure]||'관련 기록의 처리가 끝나면 닫힙니다.');
   const toast=text=>api.toast(display(text));
   const late=c=>c.caseFlags?.late??(c.state!=='done'&&c.dueAt&&kstDate(c.dueAt)<asOf());
@@ -152,7 +151,7 @@ window.createFlowUI = function createFlowUI(api) {
     }catch{toast('이전 사건을 불러오지 못했습니다.');}
     if(caseById(id))showCase(id);
   }
-  // New work for the previewed person arrives without them looking around.
+  // New work for the shell account arrives without a reload.
   function announce(before){
     const fresh=cases().filter(c=>mine(c)&&!before.has(c.id));if(!fresh.length)return;
     toast(fresh.length===1?`새로 등록된 업무: ${fresh[0].title}`:`새로 등록된 업무 ${fresh.length}건 · ${fresh[0].title} 외`);
@@ -296,7 +295,7 @@ window.createFlowUI = function createFlowUI(api) {
     const fl=flags(c),closer=c.closeEvidence?.who||'—';
     return `<tr class="fl-row fl-done-row" data-case="${h(c.id)}"><td class="c-state"><span class="fl-cut fl-line" data-hint="${h(fl.map(([t,hint])=>hint?`${t} — ${hint}`:t).join('\n'))}">${chips(c)}</span></td><td class="c-title"><button type="button" class="fl-cut" data-fl="open" data-id="${h(c.id)}">${h(c.title)}</button>${c.summary?`<small class="fl-cut">${h(display(sumOf(c)))}</small>`:''}</td><td class="c-evidence"><span>${h(closeLine(c))}</span>${closeOpen(c)}</td><td class="c-closer">${h(closer)}</td><td class="c-act">${actionBar(c,{compact:true})}</td></tr>`;
   }
-  // What the previewed person can do on this case right now (the server still validates every command).
+  // What the shell account can do on this case right now (the server still validates every command).
   // 보고·요청에 붙인 기록(서버가 복사본 기록 저장소에서 확인한 값) — 누르면 그 기록을 연다.
   const attachList=list=>(list||[]).length?`<ul class="fl-attach">${list.map(a=>`<li><button type="button" class="ax-text-link" data-fl="attach-open" data-id="${h(a.familyId)}" data-record="${h(a.recordId)}">${h(a.label)}</button><small>${h([api.familyLabel?.(a.familyId),a.date,a.status,...(a.fields||[]).slice(0,3).map(f=>`${f.label} ${f.value}`)].filter(Boolean).join(' · '))}</small></li>`).join('')}</ul>`:'';
   // compact = 표 한 줄용 — 주 동작 하나(처리 화면은 옆 열, 근거와 흐름·후속 보고는 제목을 누르면 열리는 상세 창).
@@ -342,13 +341,12 @@ window.createFlowUI = function createFlowUI(api) {
   // 기준일만 적는다 — 저장 횟수·AI 연결 상태는 개발자용이라 싣지 않는다(원장 10-28). AI를 못 쓰면 판정 칸이 그때 알린다.
   function sourceLine(){return `<p class="fl-source"><span>${md(asOf())} 기준</span></p>`;}
 
-  /* ---------- left: whose work to preview ---------- */
+  /* ---------- shell navigation for the current account ---------- */
   function sidebar(page){
     if(!ready()||!actors().length)return '';
-    const me=actor(),count=inboxCount();
-    const groups=ROLE_ORDER.map(r=>[r,actors().filter(a=>a.role===r)]).filter(([,list])=>list.length);
+    const count=inboxCount();
     const flowLink=role()==='owner'?`<a class="nav-item ${page==='flow'?'active':''}" href="#flow" ${page==='flow'?'aria-current="page"':''}>${window.V2Screens?.sticker?.('flow')||icon('check')}<span>업무 흐름</span>${count?`<span class="nav-count" aria-label="${count}건">${count}</span>`:''}</a>`:'';
-    return `<div class="nav-group">보는 사람</div><div class="fl-actor-pick">${actorPicker(groups)}${flowLink}</div>`;
+    return flowLink;
   }
   function inboxCount(){
     if(!ready())return 0;
@@ -506,8 +504,6 @@ window.createFlowUI = function createFlowUI(api) {
   /* ---------- local scenarios (clearly local, tied to real copied records, not counted as history) ---------- */
   // The shared context picker (context-picker.js) when it is loaded; otherwise, or if it fails, the plain control.
   // Either way the form sends the same names (record, assignee).
-  // 보는 사람도 공용 직원 선택창(원장 10-28 "모든 드랍다운 … 서식 일치") — 이름·역할·직급·과목·담임 반으로 찾는다. 못 그리면 기존 칸.
-  function actorPicker(groups){const me=actor(),fallback=`<label class="ax-visually-hidden" for="fl-actor">보는 사람</label><select id="fl-actor" data-fl-actor>${groups.map(([r,list])=>`<optgroup label="${h(ROLE_GROUP[r])}">${list.map(a=>`<option value="${h(a.id)}" ${a.id===me?.id?'selected':''}>${h(a.name)}${a.preview?'':` · ${h(a.roleLabel||ROLE_GROUP[a.role])}`}${(a.duties||[]).includes('desk')?' · 데스크':''}</option>`).join('')}</optgroup>`).join('')}</select>`;return picker(()=>({id:'fl-actor',name:'actor',ariaLabel:'보는 사람',clearable:false,selected:me?[me.id]:[],attrs:{'data-fl-actor':''},...window.ContextPicker.lists.people({db,actors:groups.flatMap(([,list])=>list),subjectLabel:api.subjectLabel}),note:`${groups.flatMap(([,list])=>list).length}명`}),fallback);}
   function picker(config,fallback){try{return window.ContextPicker?window.ContextPicker.html(config()):fallback;}catch{return fallback;}}
   function scenarioPanel(){
     if(!ready()||!['owner','manager'].includes(role()))return '';
@@ -521,7 +517,7 @@ window.createFlowUI = function createFlowUI(api) {
     const CP=window.ContextPicker,auto='자동 선택 · 이번 달 기록';
     const absentField=picker(()=>({id:'fl-scn-absence',name:'record',label:'결석 기록',empty:auto,...(absent.length?CP.lists.absences({db,items:absent,cases:cases(),total:total('absence')}):CP.lists.absencesFromFlow({db,flow:flow()}))}),`<label>결석 기록<select name="record">${options(absentOpts)}</select></label>`);
     const billField=picker(()=>({id:'fl-scn-billing',name:'record',label:'청구',empty:auto,...CP.lists.invoices({db,items:billItems,cases:cases(),total:billRows.length?total('billing'):null})}),`<label>청구<select name="record">${options(bills)}</select></label>`);
-    return `<section class="fl-scenarios" aria-labelledby="fl-scn-title"><h2 id="fl-scn-title">연습 시나리오</h2><p class="ax-note">실제 기록으로 연습 업무를 만듭니다. 원본 기록은 바뀌지 않고 집계에도 들어가지 않습니다.</p><div class="fl-scn-grid"><form class="fl-scn" data-fl-form="simulate" data-scenario="absence" novalidate><h3>결석 원생 연락</h3><p>보호자 연락 → (필요하면) 관리자 검토 → 담임 후속으로 넘어갑니다.</p>${absentField}<button class="button primary" type="submit" data-fl-key="event.simulate:absence">시나리오 시작</button></form><form class="fl-scn" data-fl-form="simulate" data-scenario="billing" novalidate><h3>수납 확인</h3><p>납부 내역 대조 → 관리자·원장 결정으로 넘어갑니다.</p>${billField}<button class="button primary" type="submit" data-fl-key="event.simulate:billing">시나리오 시작</button></form><div class="fl-scn"><h3>여러 담당자에게 요청</h3><p>담당자를 여러 명 선택하고 기한을 정해 보냅니다. 받은 사람의 화면에 바로 보입니다.</p>${btn('요청 작성','request')}</div></div></section>`;
+    return `<section class="fl-scenarios" aria-labelledby="fl-scn-title"><h2 id="fl-scn-title">연습 시나리오</h2><p class="ax-note">학원 기록을 바꾸지 않고 연습 업무를 만듭니다. 연습 업무는 집계에 넣지 않습니다.</p><div class="fl-scn-grid"><form class="fl-scn" data-fl-form="simulate" data-scenario="absence" novalidate><h3>결석 원생 연락</h3><p>보호자 연락 → (필요하면) 관리자 검토 → 담임 후속으로 넘어갑니다.</p>${absentField}<button class="button primary" type="submit" data-fl-key="event.simulate:absence">시나리오 시작</button></form><form class="fl-scn" data-fl-form="simulate" data-scenario="billing" novalidate><h3>수납 확인</h3><p>납부 내역 대조 → 관리자·원장 결정으로 넘어갑니다.</p>${billField}<button class="button primary" type="submit" data-fl-key="event.simulate:billing">시나리오 시작</button></form><div class="fl-scn"><h3>여러 담당자에게 요청</h3><p>담당자를 여러 명 선택하고 기한을 정해 보냅니다. 받은 사람의 화면에 바로 보입니다.</p>${btn('요청 작성','request')}</div></div></section>`;
   }
 
   /* ---------- case detail: trigger → decision → steps → evidence → events, related records ---------- */
@@ -745,7 +741,7 @@ window.createFlowUI = function createFlowUI(api) {
     if(!treeable(c)){if(treeCase)stopTree(treeCase);treeCase='';return `<div class="fl-tree-slot">${chainHtml(c)}</div>`;}
     if(treeCase&&treeCase!==c.id)stopTree(treeCase);
     treeCase=c.id;const e=treeEntry(c.id);
-    // Read again (ETag) when the flow moved or AI was still working when this case was last shown; a newly previewed
+    // Read again (ETag) when the flow moved or AI was still working when this case was last shown; a newly selected
     // teacher gets their own branch opened on data already here.
     if(e.status==='idle'||(['ready','none','norel','unavailable','error'].includes(e.status)&&(e.rev!==flow().revision||(e.status==='ready'&&aiActive(e.data)&&!e.timer))))setTimeout(()=>{if(treeShown(c.id))fetchTree(c.id);},0);
     if(e.status==='ready'&&e.data)seedTree(e);
@@ -834,7 +830,7 @@ window.createFlowUI = function createFlowUI(api) {
     const records=(c.entityRefs||[]).filter(r=>r.type==='report'&&r.id);
     if(!records.length){toast('이 업무와 연결된 수업보고서를 찾지 못했습니다. 업무를 새로 불러와 주세요.');return;}
     const options=records.map((r,i)=>`<label><input type="radio" name="recordRef" value="report:${h(r.id)}" ${i===0?'checked':''} required> ${h(r.label||'수업보고서')}</label>`).join('');
-    dialog('modal','미발송 보고서 발송 요청',c.title,`<form class="ws-form" data-fl-form="unsent-card" data-id="${h(id)}" data-step="${h(stepId)}" novalidate><fieldset class="ws-multi"><legend>수업보고서 선택</legend>${options}</fieldset><p class="ax-note">발송 요청은 연습 복사본의 대기 상태까지만 저장됩니다. 실제로 학부모에게 보내지지 않습니다.</p><p class="ax-form-error" role="alert"></p><div class="ws-form-foot"><span class="ax-note">원본 반영 확인 뒤 업무 상태를 갱신합니다.</span><button class="button primary" type="submit">발송 요청 저장</button></div></form>`);
+    dialog('modal','미발송 보고서 발송 요청',c.title,`<form class="ws-form" data-fl-form="unsent-card" data-id="${h(id)}" data-step="${h(stepId)}" novalidate><fieldset class="ws-multi"><legend>수업보고서 선택</legend>${options}</fieldset><p class="ax-note">발송 요청은 연습 자료의 대기 상태로 저장됩니다. 학부모에게 발송되지 않습니다.</p><p class="ax-form-error" role="alert"></p><div class="ws-form-foot"><span class="ax-note">대기 상태를 확인한 뒤 업무 상태를 갱신합니다.</span><button class="button primary" type="submit">발송 요청 저장</button></div></form>`);
     $('#modal input[name="recordRef"]')?.focus({preventScroll:true});
   }
   async function openConsultationForm(id,stepId){
@@ -863,7 +859,7 @@ window.createFlowUI = function createFlowUI(api) {
     $('#modal form :is(textarea,select,input:not([type=hidden]))')?.focus();
   }
 
-  // Notifications for the previewed person: events addressed to them, else events on cases they take part in.
+  // Notifications for the shell account: events addressed to them, else events on cases they take part in.
   function notices(){
     if(!ready())return '';
     if(flow().summary){if(!store.fullError)queueMicrotask(ensureFull);return `<p class="ax-note" role="status">${h(store.fullError||'업무 알림을 불러오는 중입니다.')}</p>${store.fullError?btn('다시 불러오기','load-full'):''}`;}
@@ -1235,9 +1231,8 @@ window.createFlowUI = function createFlowUI(api) {
     enrollment:{record:id=>({v2path:`/enrollment/${id}`}),list:{}},
     // 원생상담 후속조치 = 그 상담 상세('완료 표시'가 처리 자리) · 여럿이면 기한 지난 후속 목록.
     consultations:{record:id=>({v2path:`/consultations/${id}`}),list:{urg:'overdue'}}};
-  // 2.0 화면의 '보는 사람'(= 저장하는 사람, 주소 actor가 화면에서 선택한 사람보다 이긴다) — 지금 보는 사람이 그 단계 담당이면 그대로, 아니면 그 단계 담당(승인·결재 차례인 사람).
-  // 화면에서 선택할 수 없는 사람이면 화면이 무시하고 제 규칙(원장 먼저)으로 돈다.
-  const v2Actor=c=>{const me=actor()?.id,ids=activeSteps(c).flatMap(s=>s.assigneeIds||[]);return ids.includes(me)?me:ids[0]||me||'';};
+  // 처리 화면은 셸 계정으로 연다. 다른 사람 차례면 화면이 계정 전환 안내를 표시한다.
+  const v2Actor=()=>actor()?.id||'';
   function processRecord(c,family,id,opener){
     const fallback=()=>{if(api.hasView(`workspace-${family}`))openPeek({page:`workspace-${family}`,family,record:id},opener);else toast('이 기록을 처리할 화면을 찾지 못했습니다.');};
     const recordOpen=window.RecordOpen;
@@ -1304,7 +1299,7 @@ window.createFlowUI = function createFlowUI(api) {
     if(action==='bulk-all'){board.items.filter(canPick).forEach(c=>store.sel.add(c.id));paintBoardList();return;}
     if(action==='bulk-clear'){store.sel.clear();paintBoardList();return;}
     if(action==='bulk-reassign'){openBulkReassign();return;}
-    // 관련 기록 한 줄 — 작업 공간이 있으면 엿보기 창에 그 기록, 없으면 이 화면의 기록 상세.
+    // 관련 기록 한 줄 — 처리 화면이 있으면 RecordOpen으로 열고, 없으면 작업 공간 기록 서랍을 연다.
     if(action==='rec-open'){const {family,record}=el.dataset,recordCase=el.closest('.fl-recs-modal')?.dataset.case||(recPop.el?.contains(el)?recPop.btn?.dataset.id:null);closeRecPop();if(family==='students'&&record&&el.closest('#ax-issue-attendance')){api.showAbsences(record);return;}if(family==='attendance'&&record&&caseById(recordCase)?.signalId==='attendance-repeat-absence'){api.showAbsences(null,{attendanceId:record});return;}if(family&&record&&window.RecordOpen?.supports(family,record)){const c=caseById(recordCase);openPeek({page:window.RecordOpen.href(family,record,c?v2Actor(c):'').slice(1)},el);return;}if(family&&api.hasView(`workspace-${family}`)){openPeek({page:`workspace-${family}`,family,record},el);return;}if(record&&api.canOpenRecord?.(record)){document.querySelectorAll('dialog[open]').forEach(d=>d.close());api.openRecord(record);}return;}
     if(action==='rec-process'){const {family,record}=el.dataset,c=caseById(el.dataset.case);if(!c||!family||!record)return;closeRecPop();processRecord(c,family,record,el);return;}
     if(action==='rec-page'){showRecordsPage(id,Number(el.dataset.page));return;}
@@ -1349,17 +1344,17 @@ window.createFlowUI = function createFlowUI(api) {
       const result=await response.json().catch(()=>null);
       if(!response.ok){if(response.status===409)await load({quiet:true});fail(message(result,response.status));return;}
       if(result?.saved!==true){fail('저장 결과를 확인하지 못했습니다. 업무를 새로 불러와 주세요.');return;}
-      form.closest('dialog')?.close();toast('원본 반영 확인 중');
+      form.closest('dialog')?.close();toast('출석부 저장 상태 확인 중');
       for(let i=0;i<16;i++){
         await new Promise(resolve=>setTimeout(resolve,750));
         const current=await revision();
         if(before&&current&&current.revision===before.revision)continue;
         await load({quiet:true});
-        if(caseById(id)?.factClosed){toast('연락 결과가 원본에 반영되어 업무가 닫혔습니다.');return;}
+        if(caseById(id)?.factClosed){toast('출석부에 연락 결과가 기록되어 업무가 닫혔습니다.');return;}
         if(current&&before&&current.revision!==before.revision){toast('연락 결과를 기록했습니다. 남은 결석 기록을 확인해 주세요.');return;}
       }
       await load({quiet:true});
-      toast(caseById(id)?.factClosed?'연락 결과가 원본에 반영되어 업무가 닫혔습니다.':'연락 결과를 저장했습니다. 원본 반영 상태를 새로 확인해 주세요.');
+      toast(caseById(id)?.factClosed?'출석부에 연락 결과가 기록되어 업무가 닫혔습니다.':'연락 결과를 저장했습니다. 출석부와 업무 상태를 새로 확인해 주세요.');
     }catch{fail('결석 처리 결과를 확인하지 못했습니다. 업무를 새로 불러와 주세요.');}
     finally{delete form.dataset.busy;if(button)button.disabled=false;}
   }
@@ -1376,7 +1371,7 @@ window.createFlowUI = function createFlowUI(api) {
       const result=await response.json().catch(()=>null);
       if(!response.ok){if(response.status===409)await load({quiet:true});fail(message(result,response.status));return;}
       if(result?.saved!==true||!(result.queued>0)){fail(result?.message||'발송 요청을 대기에 올리지 못했습니다. 보고서 내용을 확인해 주세요.');return;}
-      form.closest('dialog')?.close();toast('원본 반영 확인 중 — 연습 복사본이라 실제로 보내지지 않습니다.');
+      form.closest('dialog')?.close();toast('발송 요청 대기 상태 확인 중 · 연습 자료에서는 학부모에게 발송되지 않습니다.');
       for(let i=0;i<16;i++){
         await new Promise(resolve=>setTimeout(resolve,750));
         const current=await revision();
@@ -1385,7 +1380,7 @@ window.createFlowUI = function createFlowUI(api) {
         if(caseById(id)?.factClosed){toast('발송 요청이 대기에 올라 업무가 닫혔습니다. 실제로 보내지지 않습니다.');return;}
       }
       await load({quiet:true});
-      toast(caseById(id)?.factClosed?'발송 요청이 대기에 올라 업무가 닫혔습니다. 실제로 보내지지 않습니다.':'발송 요청을 저장했습니다. 원본 업무 상태를 새로 확인해 주세요.');
+      toast(caseById(id)?.factClosed?'발송 요청이 대기에 올라 업무가 닫혔습니다. 학부모에게 발송되지 않습니다.':'발송 요청을 저장했습니다. 업무 상태를 새로 확인해 주세요.');
     }catch{fail('발송 요청 결과를 확인하지 못했습니다. 업무를 새로 불러와 주세요.');}
     finally{delete form.dataset.busy;if(button)button.disabled=false;}
   }
@@ -1402,19 +1397,19 @@ window.createFlowUI = function createFlowUI(api) {
       const result=await response.json().catch(()=>null);
       if(!response.ok){if(response.status===409)await load({quiet:true});fail(message(result,response.status));return;}
       if(result?.saved!==true){fail('저장 결과를 확인하지 못했습니다. 업무를 새로 불러와 주세요.');return;}
-      form.closest('dialog')?.close();toast('원본 반영 확인 중');
+      form.closest('dialog')?.close();toast('상담 기록 저장 상태 확인 중');
       for(let i=0;i<16;i++){
         await new Promise(resolve=>setTimeout(resolve,750));
         const current=await revision();
         if(before&&current&&current.revision===before.revision)continue;
         await load({quiet:true});
         const c=caseById(id);
-        if(c?.factClosed||c?.state==='done'){toast('후속조치 완료가 원본에 반영되어 업무가 닫혔습니다.');return;}
+        if(c?.factClosed||c?.state==='done'){toast('상담 후속조치가 기록되어 업무가 닫혔습니다.');return;}
         if(current&&before&&current.revision!==before.revision){toast('후속조치 완료를 기록했습니다. 남은 상담 기록을 확인해 주세요.');return;}
       }
       await load({quiet:true});
       const c=caseById(id);
-      toast(c?.factClosed||c?.state==='done'?'후속조치 완료가 원본에 반영되어 업무가 닫혔습니다.':'후속조치를 저장했습니다. 원본 반영 상태를 새로 확인해 주세요.');
+      toast(c?.factClosed||c?.state==='done'?'상담 후속조치가 기록되어 업무가 닫혔습니다.':'후속조치를 저장했습니다. 상담 기록과 업무 상태를 새로 확인해 주세요.');
     }catch{fail('상담 후속조치 결과를 확인하지 못했습니다. 업무를 새로 불러와 주세요.');}
     finally{delete form.dataset.busy;if(button)button.disabled=false;}
   }
@@ -1439,7 +1434,7 @@ window.createFlowUI = function createFlowUI(api) {
     if(kind==='unsent-card'){submitUnsent(form,v,fail);return;}
     if(kind==='consultation-card'){submitConsultation(form,v,fail);return;}
     if(kind==='simulate'){const record=String(v.get('record')||''),scenario=form.dataset.scenario;command('event.simulate',{payload:{scenario,...(record?{recordRef:record}:{})},key:`event.simulate:${scenario}`}).then(r=>{if(!r)return;if(r.duplicate){toast('같은 기록으로 만든 시나리오가 아직 끝나지 않아 그 업무를 보여 드립니다. 새 업무는 만들지 않았습니다.');if(r.caseId)showCase(r.caseId);return;}toast(`연습 시나리오를 시작했습니다. 담당자의 업무에 생겼습니다.${r.decision==='pending'?' 판정 결과는 잠시 뒤 나타납니다.':''}`);});return;}
-    if(kind==='report'){const c=caseById(id),note=String(v.get('note')||'').trim(),outcome=String(v.get('outcome')||'done');if(note.length<2){fail('보고 내용을 두 글자 이상 적어 주세요.');form.querySelector('textarea').focus();return;}const scope=String(v.get('scope')||''),node=scope?trees.get(id)?.index.get(scope):null;if(scope&&!node){fail('보고할 원생의 기록을 찾지 못했습니다. 창을 닫고 원생을 다시 선택해 주세요.');return;}const refs=node?(Array.isArray(node.records)?node.records:[]).map(r=>String(r?.id||'')).filter(Boolean):v.getAll('ref').map(Number).map(i=>c?.entityRefs?.[i]).filter(Boolean).map(r=>`${r.type}:${r.id}`);if(c?.signalId==='billing-remaining'&&!refs.length){fail('처리한 청구를 한 건 이상 선택해 주세요.');return;}if(node&&!refs.length){fail('이 원생에게 붙일 기록이 없습니다.');return;}command('case.report',{caseId:id,payload:{...step,note,outcome,...(refs.length?{recordRefs:refs}:{}),...(v.getAll('attach').filter(Boolean).length?{attachments:v.getAll('attach').filter(Boolean).slice(0,20)}:{})}}).then(r=>done(r,c?.factSignal?(caseById(id)?.state==='done'?'보고를 남겼습니다. 근거 기록이 모두 처리되어 이 업무가 닫혔습니다.':['done','not_needed'].includes(outcome)?`${node?`${nodeLabel(node)} 원생의 `:''}기록을 처리한 것으로 남겼습니다.`:'보고를 남겼습니다. 아직 남은 업무로 열려 있습니다.'):node?`${nodeLabel(node)} 원생의 ${c?.closure==='fact'?'후속 ':''}보고를 남겼습니다. 같은 단계의 다른 원생은 그대로입니다.`:c?.closure==='fact'?(signalCase(c)?'후속 보고를 남겼습니다. 이 업무는 원본 기록이 바뀌면 닫힙니다.':'후속 보고를 남겼습니다. 원본 업무는 원본 기록이 처리되면 닫힙니다.'):caseById(id)?.state==='done'?'보고를 남겼습니다. 이 업무는 끝났습니다.':'보고를 남겼습니다.'));return;}
+    if(kind==='report'){const c=caseById(id),note=String(v.get('note')||'').trim(),outcome=String(v.get('outcome')||'done');if(note.length<2){fail('보고 내용을 두 글자 이상 적어 주세요.');form.querySelector('textarea').focus();return;}const scope=String(v.get('scope')||''),node=scope?trees.get(id)?.index.get(scope):null;if(scope&&!node){fail('보고할 원생의 기록을 찾지 못했습니다. 창을 닫고 원생을 다시 선택해 주세요.');return;}const refs=node?(Array.isArray(node.records)?node.records:[]).map(r=>String(r?.id||'')).filter(Boolean):v.getAll('ref').map(Number).map(i=>c?.entityRefs?.[i]).filter(Boolean).map(r=>`${r.type}:${r.id}`);if(c?.signalId==='billing-remaining'&&!refs.length){fail('처리한 청구를 한 건 이상 선택해 주세요.');return;}if(node&&!refs.length){fail('이 원생에게 붙일 기록이 없습니다.');return;}command('case.report',{caseId:id,payload:{...step,note,outcome,...(refs.length?{recordRefs:refs}:{}),...(v.getAll('attach').filter(Boolean).length?{attachments:v.getAll('attach').filter(Boolean).slice(0,20)}:{})}}).then(r=>done(r,c?.factSignal?(caseById(id)?.state==='done'?'보고를 남겼습니다. 근거 기록이 모두 처리되어 이 업무가 닫혔습니다.':['done','not_needed'].includes(outcome)?`${node?`${nodeLabel(node)} 원생의 `:''}기록을 처리한 것으로 남겼습니다.`:'보고를 남겼습니다. 아직 남은 업무로 열려 있습니다.'):node?`${nodeLabel(node)} 원생의 ${c?.closure==='fact'?'후속 ':''}보고를 남겼습니다. 같은 단계의 다른 원생은 그대로입니다.`:c?.closure==='fact'?`후속 보고를 남겼습니다. ${closeRule(c)}`:caseById(id)?.state==='done'?'보고를 남겼습니다. 이 업무는 끝났습니다.':'보고를 남겼습니다.'));return;}
     if(kind==='review'){const decision=String(v.get('decision')||''),note=String(v.get('note')||'').trim();if(!decision){fail('결정을 선택해 주세요.');return;}if(decision==='return'&&note.length<2){fail('보완 요청할 때는 보완할 내용을 적어 주세요.');form.querySelector('textarea').focus();return;}command('case.review',{caseId:id,payload:{...step,decision,...(note?{note}:{})}}).then(r=>done(r,decision==='accept'?'승인했습니다.':'보완 요청했습니다.'));return;}
     if(kind==='reassign'){const ids=v.getAll('assignee').map(String),stepId=String(v.get('step')||'');if(!ids.length){fail('담당자를 한 명 이상 선택해 주세요.');form.querySelector('[data-cpick-name="assignee"] .cpick-trigger,[name="assignee"]')?.focus();return;}if(ids.length>10){fail('담당자는 10명까지 선택할 수 있습니다.');return;}command('case.reassign',{caseId:id,payload:{...(stepId?{stepId}:{}),assigneeIds:ids}}).then(r=>done(r,'담당을 저장했습니다.'));return;}
     if(kind==='bulk-reassign'){const ids=v.getAll('assignee').map(String);if(!ids.length){fail('담당자를 한 명 이상 선택해 주세요.');return;}if(ids.length>10){fail('담당자는 10명까지 선택할 수 있습니다.');return;}if(form.dataset.busy)return;form.dataset.busy='1';bulkReassign(form,ids).finally(()=>{delete form.dataset.busy;});return;}

@@ -119,7 +119,7 @@ export function reconcileSignal(source, c, sg, at) {
 export function clearSignal(c, at) {
   if (c.factClosed) return [];
   for (const s of c.steps) if (s.status !== 'done') { s.status = 'done'; s.closedBy = 'source'; }
-  Object.assign(c, { factClosed: true, closedReason: '원본에서 이 상태가 풀림', closedAt: at, closedBy: 'source' });
+  Object.assign(c, { factClosed: true, closedReason: '확인 대상에서 빠짐', closedAt: at, closedBy: 'source' });
   return [{ type: 'source.signal_cleared', at }];
 }
 export function createSignal(state, source, sg, at) {

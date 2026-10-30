@@ -1,4 +1,4 @@
-// 보고서 카드의 원본 연결·2.0 발송 요청 결과 판정. 실제 DB나 바깥 발송을 사용하지 않는다.
+// 보고서 카드의 업무·기록 연결과 2.0 발송 요청 결과 판정. 실제 DB나 바깥 발송을 사용하지 않는다.
 import assert from 'node:assert/strict';
 import { createFlowCardReport } from './flow-card-report.mjs';
 
@@ -33,7 +33,7 @@ assert.deepEqual(await card.save(input), { saved: false, queued: 0, message: '�
 noQueue = { ok: true, queued: 0, noClass: 1 };
 assert.deepEqual(await card.save(input), { saved: false, queued: 0, message: '보낼 반과 원생의 ClassNote 연결을 확인해 주세요. 연결 전에는 발송 요청을 저장할 수 없습니다.' });
 noQueue = null;
-assert.deepEqual(await card.save(input), { saved: true, queued: 1, sourceClosed: true, message: '원본 반영 확인 중' });
+assert.deepEqual(await card.save(input), { saved: true, queued: 1, sourceClosed: true, message: '발송 요청 대기 상태 확인 중' });
 assert.deepEqual(lastRaw, { module: 'features/report-admin/server/actions.ts', actor: ACTOR, args: [[REPORT]] });
 await assert.rejects(card.save(input), e => e.code === 'source_changed');
 assert.equal(calls, 3);

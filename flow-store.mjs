@@ -65,7 +65,7 @@ export async function openStore({ dir, identity, lock = true }) {
       state = emptyState(identity);
     }
     if (state.schemaVersion !== SCHEMA_VERSION) throw new StoreError('flow_state_mismatch', '업무 기록 형식 버전이 다릅니다. 기존 파일을 보관한 뒤 다시 시작해 주세요.');
-    if (state.tenantId !== identity.tenantId || state.capturedAt !== identity.capturedAt) throw new StoreError('flow_state_mismatch', '다른 지점 또는 다른 복사본의 업무 기록입니다. 섞지 않고 멈췄습니다.');
+    if (state.tenantId !== identity.tenantId || state.capturedAt !== identity.capturedAt) throw new StoreError('flow_state_mismatch', '업무 기록의 지점이나 기준 시점이 달라 불러오기를 멈췄습니다.');
   } catch (error) { await releaseLock(lockFile, token); throw error; }
 
   let chain = Promise.resolve(), counter = 0, closed = false;

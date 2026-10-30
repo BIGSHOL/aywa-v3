@@ -56,8 +56,8 @@ export function createFlowCardReport({ flow, v2ScreenRoute, open = openFullDatab
       const post = await open();
       try {
         const row = await post.begin('isolation level repeatable read read only', sql => sourceRow(sql, taskId));
-        if (row?.report_id !== reportId || row.classnote_status !== 'queued') throw bad(409, 'source_changed', '발송 요청 뒤 원본 상태를 확인하지 못했습니다. 보고서를 새로 불러와 주세요.');
-        return { saved: true, queued: Number(result.queued), sourceClosed: row.task_status === 'done', message: '원본 반영 확인 중' };
+        if (row?.report_id !== reportId || row.classnote_status !== 'queued') throw bad(409, 'source_changed', '발송 요청의 대기 상태를 확인하지 못했습니다. 보고서를 새로 불러와 주세요.');
+        return { saved: true, queued: Number(result.queued), sourceClosed: row.task_status === 'done', message: '발송 요청 대기 상태 확인 중' };
       } finally { await post.end(); }
     },
   };

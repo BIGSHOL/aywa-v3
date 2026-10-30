@@ -31,7 +31,7 @@ export const ADAPTERS = Object.freeze({
       window: { from: `${asOf.slice(0, 7)}-01`, to: asOf }, threshold: { count: 3, unit: '결석 수업(반·날짜별, 정정 반영)' },
       cohort: '재원(enrolled) 원생 · 테스트 원생 제외 · 정정 전 기록 제외',
       interpretation: '결석은 같은 반의 같은 날짜에 한 번 셉니다.',
-      note2_0: '2.0 반복 결석 알림은 최근 14일 3/5/10회 단계로 기준이 다릅니다. 이 화면은 복사본 신호의 이번 달 기준을 그대로 씁니다.',
+      note2_0: '이 화면은 이번 달 결석 3회 이상을 셉니다. 반복 결석 알림은 최근 14일 3/5/10회 단계로 셉니다.',
     }),
   },
 });
@@ -198,7 +198,7 @@ export function buildHierarchy(source, state, caseId) {
   if (truncated.stepRefs < rows.length) notes.push(`단계 목록에는 근거가 ${truncated.stepRefs}건만 보이지만, 이 정리는 근거 ${rows.length}건 전부를 반의 담임 기준으로 묶었습니다.`);
   if (unmapped) notes.push(`신호 근거 ${unmapped}건은 원생 기록으로 이어지지 않아 이 화면에서 빠졌습니다.`);
   if (unknown.teacherRecords || unknown.classRecords) notes.push(`반 또는 담임이 미상인 기록 ${Math.max(unknown.teacherRecords, unknown.classRecords)}건은 '배정 미상' 묶음에 따로 둡니다.`);
-  if (root.facts.managerQueueRecords) notes.push(`재직 중이 아닌 담임의 결석 수업 ${root.facts.managerQueueRecords}회는 원본 업무에서 관리자 대기열 단계에 있습니다.`);
+  if (root.facts.managerQueueRecords) notes.push(`재직 중이 아닌 담임의 결석 수업 ${root.facts.managerQueueRecords}회는 관리자 대기열에 있습니다.`);
   const warnings = [];
   if (cohortCheck.ok === false) warnings.push({ code: 'cohort_mismatch', message: `신호 기준과 맞지 않는 근거가 있습니다: 3회 미만 원생 ${cohortCheck.belowThreshold}명 · 기간 밖 기록 ${cohortCheck.outsideWindow}건 · 재원 아닌 원생 ${cohortCheck.notEnrolled ?? 0}명.` });
   if (cohortCheck.ok === null) notes.push('원생의 재원 상태를 확인할 수 없어 재원 여부는 검증하지 못했습니다.');

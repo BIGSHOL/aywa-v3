@@ -78,7 +78,7 @@ export async function createFlowService({ source, dir, ai, tenantName = '', lock
      * nothing is written and the source is not swapped: the result is the preview, with applied:false.
      */
     reloadSource: async next => {
-      if (!next?.identity || next.identity.tenantId !== source.identity.tenantId || next.identity.capturedAt !== source.identity.capturedAt) throw new StoreError('flow_state_mismatch', '다른 지점 또는 다른 복사본의 원본입니다. 섞지 않고 멈췄습니다.');
+      if (!next?.identity || next.identity.tenantId !== source.identity.tenantId || next.identity.capturedAt !== source.identity.capturedAt) throw new StoreError('flow_state_mismatch', '학원 기록의 지점이나 기준 시점이 달라 업무 갱신을 멈췄습니다.');
       if (!apply) { reconcilePreview = preview(next); log(`Flow reconcile preview on reload (not written): ${counts(reconcilePreview)}`); return { ...reconcilePreview, applied: false, revision: store.state.revision }; }
       const summary = await write(next, 'apply');
       source = next;

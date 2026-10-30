@@ -1,4 +1,4 @@
-// 상담 카드의 원본 연결, 현재 단계, 2.0 저장 결과를 가짜 DB로 검증한다.
+// 상담 카드의 업무·기록 연결, 현재 단계, 2.0 저장 결과를 가짜 DB로 검증한다.
 import assert from 'node:assert/strict';
 import { createFlowCardConsultation } from './flow-card-consultation.mjs';
 
@@ -43,7 +43,7 @@ refused = true;
 await assert.rejects(card.save(input), e => e.code === 'save_refused');
 assert.equal(done, false);
 refused = false;
-assert.deepEqual(await card.save(input), { saved: true, recordRef: input.recordRef, message: '원본 반영 확인 중' });
+assert.deepEqual(await card.save(input), { saved: true, recordRef: input.recordRef, message: '상담 기록 저장 상태 확인 중' });
 assert.deepEqual(lastRaw, { module: 'features/consultations/server/actions.ts', actor: ACTOR, args: [null, { $formData: [['id', CONSULT], ['done', 'true']] }] });
 await assert.rejects(card.save(input), e => e.code === 'source_changed');
 assert.equal(calls, 2);

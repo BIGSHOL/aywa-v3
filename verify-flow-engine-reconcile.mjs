@@ -130,7 +130,7 @@ test('tasks: source assignee follows unless a person reassigned or confirmed the
   await svc.reloadSource(sourceWith({ tasks: { 't-orphan': { assigneeIds: [IDS.manager] }, 't-open': { assigneeIds: [IDS.t2] } } }));
   assert.deepEqual(stored(svc, 'src-task-t-orphan').steps[0].assigneeIds, [IDS.t2], 'a manager\'s reassignment is not overwritten');
   const gone = await svc.reloadSource(sourceWith({ dropTasks: ['t-orphan'], tasks: { 't-open': { assigneeIds: [IDS.t2] } } }));
-  assert.equal(gone.closed, 1); assert.deepEqual([stored(svc, 'src-task-t-orphan').factClosed, stored(svc, 'src-task-t-orphan').closedReason], [true, '원본에서 이 업무를 찾을 수 없음']);
+  assert.equal(gone.closed, 1); assert.deepEqual([stored(svc, 'src-task-t-orphan').factClosed, stored(svc, 'src-task-t-orphan').closedReason], [true, '학원 업무 목록에서 이 업무를 찾을 수 없음']);
   const empty = sourceWith(); empty.tasks = [];
   const none = await svc.reloadSource(empty);
   assert.equal(stored(svc, 'src-task-t-open').factClosed, false, 'an empty task list closes nothing');
@@ -144,7 +144,7 @@ test('signals: gone → cleared · back → reopened; a family that was not read
   assert.equal(stored(svc, BILL).factClosed, undefined, 'billing family not read → not cleared'); assert.equal(r.closed, 0);
   r = await svc.reloadSource(sourceWith({ signals: ['attendance-repeat-absence'], families: ['attendance', 'billing'] }));
   let c = stored(svc, BILL);
-  assert.deepEqual([r.closed, c.state, c.closedReason, c.steps[0].status, typesOf(svc, BILL).at(-1)], [1, 'done', '원본에서 이 상태가 풀림', 'done', 'source.signal_cleared']);
+  assert.deepEqual([r.closed, c.state, c.closedReason, c.steps[0].status, typesOf(svc, BILL).at(-1)], [1, 'done', '확인 대상에서 빠짐', 'done', 'source.signal_cleared']);
   r = await svc.reloadSource(fixtureSource());
   c = stored(svc, BILL);
   assert.deepEqual([r.reopened, c.state, c.factClosed, c.steps[0].status, typesOf(svc, BILL).at(-1)], [1, 'open', false, 'ready', 'source.signal_reopened']);

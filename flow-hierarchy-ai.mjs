@@ -121,7 +121,7 @@ export function teacherInput(tn, { alias, leafOf }) {
       return { 원생: sid, 이반결석: sn.facts.absencesInClass, 전체결석: sn.facts.absencesAllClasses, 결석반수: sn.facts.classesWithAbsences, 마지막결석: recency(sn.facts.daysSinceLast),
         최근일주일결석: sn.facts.absencesLast7Days, 처리상태: FLOW_LABEL[sn.flow.state], Jev확인순서: leaf ? ORDER_LABEL[leaf.priority] : '판정 없음',
         Jev관리자확인: leaf ? ATTENTION_LABEL[attentionOf(leaf.managerAttention)] : '판정 없음', 사람확인: leaf?.uncertain ? '필요' : '해당 없음' }; }) }; });
-  const input = { 강사: alias('T', tn.id), 재직: tn.facts.active ? '재직' : '재직 아님(원본 업무는 관리자 대기열)', 원생수: tn.counts.students, 반수: tn.counts.classes, 결석기록: tn.counts.records, 처리상태별_원생칸: followUp, 반: classes };
+  const input = { 강사: alias('T', tn.id), 재직: tn.facts.active ? '재직' : '재직 아님(업무는 관리자 대기열)', 원생수: tn.counts.students, 반수: tn.counts.classes, 결석기록: tn.counts.records, 처리상태별_원생칸: followUp, 반: classes };
   return { input, id: input.강사, classIds, citeable: new Set([...classIds, ...studentIds]) };
 }
 

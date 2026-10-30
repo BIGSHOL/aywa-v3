@@ -1,10 +1,5 @@
 /* Flow UI — same 2.0 tokens as ax.css (helper 14 · body 16 · control 18, #121212 ink, #153e75 primary, 8px controls). */
 .ax-visually-hidden{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
-.fl-actor-pick{position:relative;display:flex;flex-direction:column;gap:6px;margin-bottom:6px}
-.fl-actor-pick select{width:100%;height:38px;font-size:var(--ax-sm)}
-/* 보는 사람 고르개: 이름과 역할을 한 줄로(두 줄로 쌓이면 상자 밖으로 넘친다 — 검수 10-28 M17). */
-.fl-actor-pick .cpick-shown{flex-direction:row;align-items:baseline;gap:6px;min-width:0}
-.fl-actor-pick .cpick-shown>*{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .fl-source{display:flex;flex-wrap:wrap;align-items:center;gap:6px 12px;font-size:var(--ax-xs)}
 .fl-fold .page-heading{margin-bottom:12px}
 .fl-fold .fl-source{margin-bottom:14px}
@@ -153,8 +148,8 @@
 .fl-nav{position:sticky;top:12px;display:flex;flex-direction:column;gap:4px;padding:10px;border:1px solid var(--ax-line);border-radius:8px;background:#fff}
 .fl-nav-head{margin:6px 6px 2px;font-size:var(--ax-xs);font-weight:700;color:var(--ax-primary)}
 .fl-nav ul{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:1px}
-.fl-nav button{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:8px;width:100%;min-height:var(--ax-control-h);padding:0 8px;border-radius:6px;font-size:var(--ax-xs);text-align:left}
-.fl-nav button span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.fl-nav button{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:8px;width:100%;min-height:var(--ax-control-h);padding:6px 8px;border-radius:6px;font-size:var(--ax-xs);text-align:left}
+.fl-nav button span{white-space:normal;overflow:visible;text-overflow:clip;overflow-wrap:anywhere}
 .fl-nav button b{font-weight:600;font-variant-numeric:tabular-nums}
 .fl-nav button:hover{background:var(--ax-soft)}
 .fl-nav button[aria-pressed=true]{font-weight:700} /* 배경 강조 없음 — 오른쪽 제목이 고른 보기를 말한다(원장 10-28) */

@@ -18,9 +18,9 @@ async function taskAndRecords(sql, taskId, lock = false) {
     ? await sql`select kind, status::text status, subject_id::text student_id, cycle from public.staff_tasks where tenant_id=${tenantId} and id=${taskId} for update`
     : await sql`select kind, status::text status, subject_id::text student_id, cycle from public.staff_tasks where tenant_id=${tenantId} and id=${taskId}`;
   const task = rows[0];
-  if (!task || task.kind !== 'attendance_absent_desk' || task.status !== 'open' || !UUID.test(task.student_id || '')) throw bad(409, 'source_changed', '원본 결석 업무가 달라졌습니다. 새로 불러와 주세요.');
+  if (!task || task.kind !== 'attendance_absent_desk' || task.status !== 'open' || !UUID.test(task.student_id || '')) throw bad(409, 'source_changed', '결석 확인 업무가 달라졌습니다. 새로 불러와 주세요.');
   const [date] = String(task.cycle || '').split('|');
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) throw bad(409, 'source_changed', '원본 결석 업무를 확인하지 못했습니다.');
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) throw bad(409, 'source_changed', '결석 확인 업무의 날짜를 확인하지 못했습니다.');
   const records = await sql`select a.id::text id, a.student_id::text student_id, a.class_id::text class_id,
       a.session_date::text session_date, to_char(a.slot_start, 'HH24:MI') slot_start, c.class_name
     from public.attendance_records a left join public.classes c on c.tenant_id=a.tenant_id and c.id=a.class_id
@@ -86,7 +86,7 @@ export function createFlowCardAttendance({ flow, v2ScreenRoute, open = openFullD
           if (!result || result.ok !== true || !UUID.test(result.id || '')) throw bad(409, 'save_refused', typeof result?.error === 'string' && /[가-힣]/.test(result.error) ? result.error : '결석 처리 결과가 저장되지 않았습니다.');
         },
       });
-      return { saved: true, recordRef: raw.recordRef, followupId: result.id, message: '원본 반영 확인 중' };
+      return { saved: true, recordRef: raw.recordRef, followupId: result.id, message: '출석부 저장 상태 확인 중' };
     },
   };
 }
