@@ -19,17 +19,18 @@ replace('export async function TrendSection', 'export function TrendSection');
 replace('const [{ trend, bounds, countFrom, clipNote }, months] = await Promise.all([trendContext(props), historyMonths(props)]);',
   'const { trend, bounds, countFrom, clipNote } = trendContext(props), months = historyMonths(props);');
 replace('export async function CourseSection', 'export function CourseSection');
-replace('const [courses, ctx] = await Promise.all([parts.courses, trendContext(props)]);', 'const courses = parts.courses, ctx = trendContext(props);');
+replace('const [courses, ctx, months, tuition] = await Promise.all([parts.courses, trendContext(props), historyMonths(props), parts.tuition ?? Promise.resolve(null)]);',
+  'const courses = parts.courses, ctx = trendContext(props), months = historyMonths(props), tuition = parts.tuition ?? null;');
 replace('export async function FirstClassSection', 'export function FirstClassSection');
 replace('const firstClass = await parts.firstClass;', 'const firstClass = parts.firstClass;');
 replace('export async function FlowSection', 'export function FlowSection');
 replace('const [flow, ctx, months] = await Promise.all([parts.flow, trendContext(props), historyMonths(props)]);',
   'const flow = parts.flow, ctx = trendContext(props), months = historyMonths(props);');
-replace('export async function HistorySection', 'export function HistorySection');
-replace('const history = await parts.history;', 'const history = parts.history;');
-for (const name of ['stat-card', 'trend-board', 'course-board', 'flow-board', 'history-board', 'first-class-board']) {
+for (const name of ['stat-card', 'trend-board', 'course-board', 'course-revenue-card', 'flow-board', 'first-class-board']) {
   replace(`from "./${name}"`, `from "@/app/(shell)/students/stats/_components/${name}"`);
 }
+replace('원생 통계 **카드별 구역**(리뷰 2026-10-21 속도 — 화면이 카드마다 `<Suspense>`로 감싼다). 구역마다 제 조회만 기다린다 — 강좌수·월별 기록은\n * 재원생 추이의 경계(`bounds.ts`)를 쓰므로 그 조회도 함께 기다린다(같은 promise라 한 번만 돈다).',
+  '3.0 호스트의 원생 통계 구역. 서버에서 카드별 조회를 끝낸 값을 받는다.\n * 강좌수·등록·퇴원 추이는 재원생 추이의 경계(`bounds.ts`)를 함께 쓴다.');
 source = '// GENERATED from the 2.0 sections.tsx by v2-students-stats-sections-generate.mjs.\n' + source;
 if (process.argv.includes('--check')) {
   const saved = (await readFile(target, 'utf8')).replaceAll('\r\n', '\n');

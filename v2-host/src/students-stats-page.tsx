@@ -8,7 +8,7 @@ import { StatsWidthGate } from '@/app/(shell)/students/stats/_components/stats-w
 import { FIRST_CLASS_KEYS } from '@/features/students/stats/first-class-trend';
 import { TREND_KEYS, viewFromParam } from '@/features/students/stats/model';
 import {
-  TrendSection, CourseSection, FirstClassSection, FlowSection, HistorySection,
+  TrendSection, CourseSection, FirstClassSection, FlowSection,
   type ReadyStats,
 } from './students-stats-sections';
 
@@ -44,7 +44,6 @@ export function StudentsStatsPage({ data, sp }: { data: StudentStatsData; sp: Re
       <CourseSection {...ctx} boardKey={boardKey} />
       <FirstClassSection {...ctx} keep={keepAll} />
       <FlowSection {...ctx} boardKey={boardKey} />
-      <HistorySection {...ctx} />
     </StatsWidthGate>}
   </div>;
 }
