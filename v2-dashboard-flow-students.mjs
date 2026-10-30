@@ -203,18 +203,17 @@ async function coursesSeries({ sql, tenantId: t = COPY_TENANT, importV2, windows
   const groups = [...new Set(b.subjects.map((s) => b.groupOf(s.key)).filter(Boolean))];
   const rowGroup = (e) => b.groupOf(e.subject);
   const series = (arr) => arr.map((p, i) => (stockBefore(windows[i], since) ? null : one(p.count)));
-  const total = series(R.courseTrend.courseTrendOf(b.raw.students, b.en, b.raw.enrollments, pts, undefined, b.today, b.subjects));
+  const total = series(R.courseTrend.courseTrendOf(b.raw.students, b.en, b.raw.enrollments, pts, undefined, b.today, b.subjects, b.eieOn));
   const split = R.courseTrend.courseBreakdownOf(b.raw.students, b.en, b.raw.enrollments, pts, groups, rowGroup, b.today, undefined, b.subjects);
   const plainRows = groups.map((g) => ({ key: g, label: b.groupLabel(g), points: series(split.groups[g]) }));
-  // 과목이 비었거나 설정에 없는 과목의 강좌 = 어느 묶음에도 안 든다 — 남는 수를 '과목 모름' 줄로(묶음은 영어 한 덩어리로 센 2.0 값 기준).
-  const rest = total.map((p, i) => (p === null ? null : [p[0] - plainRows.reduce((n, r) => n + (r.points[i]?.[0] ?? 0), 0), 1]));
-  // 영어 = EiE · 인재원 영어(원장 10-28) — 같은 2.0 함수에 반 묶음만 'eie'로 갈라 넘긴다. EiE와 인재원 영어를 함께 듣는 학생은 2.0이 영어 강좌 하나로
-  // 세므로 두 줄에 하나씩 든다(그 학생 수만큼 줄의 합 > 전체 — 겹침).
+  // 영어 = EiE · 인재원 영어(원장 10-30) — 칸·전체·과목별 줄 모두 두 강좌로 센다.
   const rows = !b.eieOn || !groups.includes('english') ? plainRows : (() => {
     const eieGroups = groups.flatMap((g) => (g === 'english' ? ['english', 'eie'] : [g]));
     const s2 = R.courseTrend.courseBreakdownOf(b.raw.students, b.en, b.raw.enrollments, pts, eieGroups, (e) => b.classGroup(e.subject, e.englishTrack), b.today, undefined, b.subjects);
     return eieGroups.map((g) => ({ key: g, label: b.groupLabel(g), points: series(s2.groups[g]) }));
   })();
+  // 과목이 비었거나 설정에 없는 강좌는 어느 줄에도 안 든다.
+  const rest = total.map((p, i) => (p === null ? null : [p[0] - rows.reduce((n, r) => n + (r.points[i]?.[0] ?? 0), 0), 1]));
   if (rest.some((p) => p && p[0] > 0)) rows.push({ key: UNKNOWN, label: '과목 모름', points: rest });
   if (filter) return { since, ...filtered(rows, filter, windows) };
   return { since, total, rows };
@@ -224,7 +223,7 @@ async function coursesSeries({ sql, tenantId: t = COPY_TENANT, importV2, windows
 /** 창 전체를 덮는 퇴원 행·수업종료 재료(가장 이른 창 첫날부터). */
 async function exitInputs(b, windows) {
   const from = windows[0].from;
-  return once(b, `exits|${from}`, async () => ({ withdrawn: await windowWithdrawals(b.gate, b.R, b.t, from, b.today), endedIn: await subjectEndedInputs(b.gate, b.R, b.t, from) }));
+  return once(b, `exits|${from}`, async () => ({ withdrawn: await windowWithdrawals(b.gate, b.R, b.t, from, b.today), endedIn: await subjectEndedInputs(b.gate, b.R, b.t, from, b.today, b.subjects) }));
 }
 /** 2.0 monthWithdrawals를 창 [from, to]로(카드와 같은 함수) — 추세선 규칙(단체 장부 정리 퇴원 제외 · 지난 날짜 수업종료 = 그날 뒤 퇴원생 포함 · 수강 생성 시각 컷). */
 function exitRowsIn(b, inputs, from, to) {
@@ -296,7 +295,7 @@ const groupDim = (b, keysOf) => ({ keysOf: { subject: keysOf }, labelOf: { subje
 async function withdrawnSeries({ sql, tenantId: t = COPY_TENANT, importV2, windows, by, filter }) {
   const b = await prep(sql, t, importV2);
   const inputs = await exitInputs(b, windows), since = flowSince(b, !!filter), groupsOf = subjectGroups(b);
-  const lists = windows.map((w) => (flowOff(b, w, since) ? null : inputs.withdrawn.filter((r) => !r.cleanup && r.withdrawnAt >= w.from && r.withdrawnAt <= min(w.to, b.today))));
+  const lists = windows.map((w) => (flowOff(b, w, since) ? null : inputs.withdrawn.filter((r) => !r.cleanup && r.exitDate >= w.from && r.exitDate <= min(w.to, b.today))));
   const keyOf = (r) => groupsOf(r.exitClasses.length ? r.exitClasses.map((c) => ({ subject: c.subject, track: c.englishTrack }))
     : [{ subject: r.lastClassSubject, track: r.lastClassEnglishTrack }]);
   return { since, ...await namedRecords(b.gate, t, b.load, await withExitTeachers(b, lists, tallyItems(lists, { by, filter, ...groupDim(b, keyOf),
@@ -308,7 +307,7 @@ async function earlyExitsSeries({ sql, tenantId: t = COPY_TENANT, importV2, wind
   const inputs = await exitInputs(b, windows), since = flowSince(b);
   const spansOf = (r) => { const days = E.tenureDays(r.enrolledAt, r.withdrawnAt); return E.EARLY_SPANS.filter((s) => E.isEarlyWithin(days, s.key)).map((s) => s.key); };
   const lists = windows.map((w) => (flowOff(b, w, since) ? null
-    : inputs.withdrawn.filter((r) => !r.cleanup && r.withdrawnAt >= w.from && r.withdrawnAt <= min(w.to, b.today) && spansOf(r).length > 0)));
+    : inputs.withdrawn.filter((r) => !r.cleanup && r.exitDate >= w.from && r.exitDate <= min(w.to, b.today) && spansOf(r).length > 0)));
   return { since, ...await namedRecords(b.gate, t, b.load, await withExitTeachers(b, lists, tallyItems(lists, { by, filter, keysOf: { tenure: spansOf }, labelOf: { tenure: (k) => E.earlySpan(k).label },
     fixed: { tenure: E.EARLY_SPANS.map((s) => s.key) },
     record: (r) => ({ id: r.id, key: r.id, name: r.name, date: r.withdrawnAt, dateLabel: '퇴원일',
