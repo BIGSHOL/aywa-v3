@@ -20,10 +20,6 @@
 .axc-checks li::marker{content:'☐  '}
 
 /* 최대 4열 · 칸 40자 — 대화 폭 안에서 칸이 줄바꿈되게 해 가로 스크롤 자체를 만들지 않는다. */
-.axc-table{border-collapse:collapse;font-size:var(--ax-xs);width:100%;table-layout:auto}
-.axc-table th,.axc-table td{padding:5px 10px;border-bottom:1px solid var(--ax-line);text-align:left;word-break:keep-all;overflow-wrap:anywhere}
-.axc-table th{font-weight:700;background:var(--ax-soft)}
-.axc-table td:not(:first-child),.axc-table th:not(:first-child){text-align:right;font-variant-numeric:tabular-nums}
 
 .axc-notice{margin:0;font-size:var(--ax-xs);color:var(--ax-danger)}
 

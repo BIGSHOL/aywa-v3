@@ -48,12 +48,18 @@ window.createAxChat = function createAxChat(api) {
   const fnMark = (tid, n) => `<sup class="axc-fn"><a href="#axc-n-${h(tid)}-${n}" data-axc-fn aria-label="근거 ${n}">[${n}]</a></sup>`;
   const marks = (tid, list) => list.map(n => fnMark(tid, n)).join('');
 
+  // 수·금액·비율 칸(1,234 · 5회 · 24,000원 · 12.5% · −3명 · ▲2) — 이런 값만 있는 열은 오른쪽 정렬.
+  const NUMERIC_CELL = /^[▲▼+\-−±]?\s?[\d,]+(\.\d+)?\s?(%p?|원|만원|명|건|회|개|칸|점|시간|일|주|달|개월)?$/;
   /** 한 답 — t = ax.js의 대화 한 칸(t.rich = validate 결과, t.task = taskExtras 결과). issues = ax.js가 그린 '관련 이슈' 단추. */
   function answer(t, { issues = '' } = {}) {
     const r = t.rich, tid = t.id;
     const facts = r.keyFacts.length ? `<dl class="axc-facts">${r.keyFacts.map(f => `<div class="axc-fact"><dt>${h(f.label)}</dt><dd><strong>${h(f.value)}</strong>${f.change ? ` <span class="axc-change ${f.tone}">${h(f.change)}</span>` : ''}${f.note ? fnMark(tid, f.note) : ''}</dd></div>`).join('')}</dl>` : '';
     const points = r.points.length ? `<h4 class="axc-h">근거</h4><ul class="axc-points">${r.points.map(p => `<li class="air-rich">${rich(p.text)}${marks(tid, p.notes)}</li>`).join('')}</ul>` : '';
-    const table = r.table && r.table.columns.length >= 2 && r.table.rows.length ? `<div class="axc-table-wrap"><table class="axc-table"><thead><tr>${r.table.columns.map(c => `<th scope="col">${h(c)}</th>`).join('')}</tr></thead><tbody>${r.table.rows.map(row => `<tr>${r.table.columns.map((_, i) => `<td>${h(row[i] ?? '')}</td>`).join('')}</tr>`).join('')}</tbody></table></div>` : '';
+    // 목록 한 벌(fl-rectable · work/owner-concept/list-format-1030.md): 첫 열 = 줄 머리(굵게) · 값이 모두 수·금액인 열만 오른쪽 · 긴 글 열은 줄 바꿈. axc-table = 시험이 찾는 표식.
+    const cellsOf = i => (r.table?.rows || []).map(row => String(row[i] ?? '').trim()).filter(Boolean);
+    const colClass = i => { const v = cellsOf(i); if (!i) return ''; if (v.length && v.every(x => NUMERIC_CELL.test(x))) return 'al-r'; return v.some(x => x.length > 14) ? 'wrap' : ''; };
+    const cls = r.table ? r.table.columns.map((_, i) => colClass(i)) : [], at = i => cls[i] ? ` class="${cls[i]}"` : '';
+    const table = r.table && r.table.columns.length >= 2 && r.table.rows.length ? `<div class="fl-rectable-wrap"><table class="fl-rectable axc-table"><thead><tr>${r.table.columns.map((c, i) => `<th scope="col"${at(i)}>${h(c)}</th>`).join('')}</tr></thead><tbody>${r.table.rows.map(row => `<tr>${r.table.columns.map((_, i) => i ? `<td${at(i)}>${h(row[i] ?? '')}</td>` : `<th scope="row" class="wrap">${h(row[i] ?? '')}</th>`).join('')}</tr>`).join('')}</tbody></table></div>` : '';
     const checks = r.checks.length ? `<h4 class="axc-h">확인할 업무</h4><ul class="axc-checks">${r.checks.map(c => `<li class="air-rich">${rich(c)}</li>`).join('')}</ul>` : '';
     const notes = r.notes.length ? `<ol class="axc-notes" aria-label="근거 미주">${r.notes.map(n => `<li id="axc-n-${h(tid)}-${n.n}"><span class="axc-n-no">[${n.n}]</span><span class="axc-n-text">${h(n.text)}</span></li>`).join('')}</ol>` : '';
     // Stored replies may predate link normalization, so the view also removes repeated destinations.
