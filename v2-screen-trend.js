@@ -287,12 +287,12 @@
       + `<div class="tr-report-controls"><label>기간 <select data-tr-report-window aria-label="보고서 명단 기간">${d.windows.map((w, i) => `<option value="${i}"${i === wi ? ' selected' : ''}>${esc(dayName(w))}</option>`).join('')}</select></label>`
       + `<span>작성 ${fmt(written)}건 · 미작성 ${fmt(rows.length - written)}건${aligned ? '' : ' · 집계 확인 필요'}</span></div>`
       + `<div class="fl-rectable-wrap"><table class="fl-rectable"><thead><tr><th scope="col">원생</th><th scope="col">작성</th><th scope="col">수업일</th><th scope="col">반</th><th scope="col" class="fl-rec-go">처리</th></tr></thead>`
-      + `<tbody>${shown.map(r => `<tr${r.reportId ? ` class="can" data-tr-report="${esc(r.reportId)}"` : ''}><th scope="row"><span class="fl-cut">${esc(r.name)}</span></th><td>${r.written ? '작성' : '미작성'}</td><td>${esc(dateText(r.date, d.asOf) || r.date)}</td><td><span class="fl-cut">${esc(r.className)}</span></td><td class="fl-rec-go">${r.reportId ? `<button type="button" class="fl-rec-process" data-tr-report="${esc(r.reportId)}" aria-label="${esc(r.name)} 보고서 열기">보고서</button>` : r.source === 'classnote' && r.written ? '알림장 게시' : ''}</td></tr>`).join('') || '<tr><td colspan="5">이 기간의 작성 의무가 없습니다.</td></tr>'}</tbody></table></div>`
+      + `<tbody>${shown.map(r => `<tr${r.reportId ? ` class="can" data-tr-report="${esc(r.reportId)}"` : ''}><th scope="row"><span class="fl-cut">${esc(r.name)}</span></th><td>${r.written ? '작성' : '미작성'}</td><td>${esc(dateText(r.date, d.asOf) || r.date)}</td><td><span class="fl-cut">${esc(r.className)}</span></td><td class="fl-rec-go">${r.reportId ? `<button type="button" class="fl-rec-process" data-tr-report="${esc(r.reportId)}" aria-label="${esc(r.name)} 보고서 열기">처리 ›</button>` : r.source === 'classnote' && r.written ? '알림장 게시' : ''}</td></tr>`).join('') || '<tr><td colspan="5">이 기간의 작성 의무가 없습니다.</td></tr>'}</tbody></table></div>`
       + (pages > 1 ? `<div class="tr-report-pages"><button type="button" data-tr-report-page="prev"${reportState.page === 1 ? ' disabled' : ''}>이전</button><span>${reportState.page} / ${pages}</span><button type="button" data-tr-report-page="next"${reportState.page === pages ? ' disabled' : ''}>다음</button></div>` : '')
       + '</section>';
   }
   const dateText = (day, asOf) => (!/^\d{4}-\d{2}-\d{2}$/.test(String(day || '')) ? '' : day.slice(0, 4) === String(asOf || '').slice(0, 4)
-    ? `${Number(day.slice(5, 7))}/${Number(day.slice(8, 10))}` : `${day.slice(2, 4)}.${day.slice(5, 7)}.${day.slice(8, 10)}`);
+    ? `${day.slice(5, 7)}.${day.slice(8, 10)}` : `${day.slice(2, 4)}.${day.slice(5, 7)}.${day.slice(8, 10)}`); // 목록 날짜 = MM.DD · 다른 해 YY.MM.DD(list-format-1030.md 7)
   function roster(d, api) {
     if (!d.filter || !Array.isArray(d.records)) return '';
     if (d.metric.id === 'report-written') return reportRoster(d);
@@ -306,14 +306,15 @@
     const dateHead = mixedDates ? '날짜' : dateNames[0] || '날짜', dateCell = r => [mixedDates && !noteSaysKind && r.dateLabel ? kindOf(r) : '', dateText(r.date, d.asOf)].filter(Boolean).join(' ');
     const can = r => r.id != null && !!api.canOpenRecord?.(r.id), anyOpen = all.some(can);
     // 목록 한 벌(fl-rectable · work/owner-concept/list-format-1030.md): 기간은 묶음 머리 줄 · 이름은 굵은 글자 · 담당은 가운데 · 줄을 누르면 연다.
-    const cols = [['이름'], ...(hasDate ? [[dateHead]] : []), ...(hasSub ? [['학교·학년']] : []), ...(hasNote ? [['내용', 'wrap']] : []), ...(hasTeacher ? [['담당 선생님', 'al-c']] : []), ...(anyOpen ? [['', 'fl-rec-go']] : [])];
+    const cols = [['이름'], ...(hasDate ? [[dateHead]] : []), ...(hasSub ? [['학교·학년']] : []), ...(hasNote ? [['내용', 'wrap']] : []), ...(hasTeacher ? [['담당 선생님', 'al-c']] : []), ...(anyOpen ? [['처리', 'fl-rec-go']] : [])];
     let left = ROSTER_MAX; const body = [];
     for (const g of groups) {
       if (left <= 0) break;
       const list = [...g.list].sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')) || String(a.name).localeCompare(String(b.name), 'ko')).slice(0, left); left -= list.length;
-      body.push(`<tr><th scope="rowgroup" colspan="${cols.length}">${esc(dayName(g.w))}</th></tr>`);
+      const span = /^\d{4}-\d{2}-\d{2}$/.test(String(g.w.from || '')) && /^\d{4}-\d{2}-\d{2}$/.test(String(g.w.to || '')) ? (g.w.from === g.w.to ? dateText(g.w.from, d.asOf) : `${dateText(g.w.from, d.asOf)}~${dateText(g.w.to, d.asOf)}`) : dayName(g.w);
+      body.push(`<tr><th scope="rowgroup" colspan="${cols.length}">${esc(span)}</th></tr>`);
       list.forEach(r => body.push(`<tr${can(r) ? ` class="can" data-tr-open="${esc(r.id)}"` : ''}><th scope="row">${can(r) ? `<button type="button" class="fl-cut" data-tr-open="${esc(r.id)}">${esc(r.name)}</button>` : `<span class="fl-cut">${esc(r.name)}</span>`}</th>`
-        + `${hasDate ? `<td>${esc(dateCell(r))}</td>` : ''}${hasSub ? `<td>${esc(r.sub || '')}</td>` : ''}${hasNote ? `<td class="wrap">${esc(r.note || '')}</td>` : ''}${hasTeacher ? `<td class="al-c">${esc(r.teacher || '—')}</td>` : ''}${anyOpen ? `<td class="fl-rec-go">${can(r) ? (api.icon?.('chevron') || '›') : ''}</td>` : ''}</tr>`));
+        + `${hasDate ? `<td>${esc(dateCell(r))}</td>` : ''}${hasSub ? `<td>${esc(r.sub || '')}</td>` : ''}${hasNote ? `<td class="wrap">${esc(r.note || '')}</td>` : ''}${hasTeacher ? `<td class="al-c">${esc(r.teacher || '—')}</td>` : ''}${anyOpen ? `<td class="fl-rec-go">${can(r) ? `<button type="button" class="fl-rec-process" data-tr-open="${esc(r.id)}" aria-label="${esc(r.name)} 열기">처리 ›</button>` : ''}</td>` : ''}</tr>`));
     }
     const shownN = ROSTER_MAX - Math.max(left, 0);
     return `<section class="tr-break tr-roster"><h3>명단 <span>${esc(d.filter.label)} · ${fmt(total)}건</span></h3>`
