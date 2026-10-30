@@ -1,6 +1,7 @@
 // 원생 영역 두 번째 묶음 — 이탈 방어·신규생 관리·퇴원관리·퇴원보고서.
 import { ISO_AT, PRIORITY, family, field, latest, metric, monthlyTrend, record, signal } from './domain-snapshot-core.mjs';
 import { importV2 } from './v2-bridge.mjs';
+import { closeEvidence } from './task-close-evidence.mjs';
 
 // src/features/withdrawals/types.ts REASON_LABEL·REASON_ALIAS와 같은 표(verify-domain-snapshot.mjs가 원본과 대조).
 export const REASON_LABEL = { dissatisfaction: '수업·강사', grades: '성적', motivation: '학생 상태', method: '공부 방법 변경', competitor: '타 학원으로 이동', schedule: '시간/일정', financial: '경제적 이유', career: '진로·진학', peers: '가족·친구', illness: '질병', advised: '권고퇴원', relocation: '이사', graduated: '졸업', other: '기타' };
@@ -76,10 +77,19 @@ export async function lifecycleFamilies({ sql, t, asOf, monthStart, students, su
   const archives = await sql`select id, student_name, subject, exit_date::text d, mapping_kind from public.withdrawal_report_archives where tenant_id=${t} order by exit_date desc nulls last`;
   const pending = reports.filter(r => ['manager_pending', 'director_pending'].includes(r.status));
   const MAP = { auto: '자동 연결', manual: '직접 연결', unmapped: '연결 안 됨' };
+  // 승인이 끝난 보고서(처리 예약·처리 완료) = 그 상태로 넘긴 사건 한 줄(누가·언제) — 상태 낱말만 두지 않는다(task-close-evidence.mjs).
+  const finished = reports.filter(r => ['scheduled', 'completed'].includes(r.status));
+  const [events, people, { REPORT_ACTION_LABEL: ACTION = {} }] = finished.length ? await Promise.all([
+    sql`select report_id::text rid, actor_id::text actor, action, to_status, to_json(created_at)#>>'{}' ts from public.withdrawal_report_events where tenant_id=${t} and report_id::text = any(${finished.map(r => String(r.id))}) order by created_at`,
+    sql`select id::text id, display_name from public.users where tenant_id=${t}`, importV2('features/withdrawal-reports/model.ts')]) : [[], [], {}];
+  const names = new Map(people.map(p => [p.id, p.display_name]));
+  const reportEvidence = r => { if (!finished.includes(r)) return null;
+    const e = events.filter(x => x.rid === String(r.id) && x.to_status === r.status).at(-1), act = e && (ACTION[e.action] || '처리');
+    return closeEvidence({ status: 'done', closed_at: r.at }, e ? { what: act.startsWith('보고서') ? `퇴원${act}` : `퇴원보고서 ${act}`, by: e.actor, at: e.ts } : null, names); };
   out['withdrawal-reports'] = family('withdrawal-reports', '퇴원보고서(작성·순차 승인·옛 시트)', {
     summary: '퇴원보고서 진행 상황과 예전 스프레드시트 퇴원 기록입니다.',
     metrics: [metric('진행 중 퇴원보고서', reports.filter(r => r.status !== 'completed').length, '건'), metric('승인 대기', pending.length, '건'), metric('처리 완료', reports.filter(r => r.status === 'completed').length, '건'), metric('옛 시트 보관', archives.length, '건', `원생 연결 안 됨 ${archives.filter(a => a.mapping_kind === 'unmapped').length}건`)],
-    evidence: [...reports.map(r => record({ id: r.id, label: r.name, date: r.d, status: REPORT_STATUS[r.status] || '기타', detail: r.exit_kind === 'subject_end' ? '과목 수강 종료' : '퇴원', fields: [field('과목', r.subjects ? r.subjects.split(',').map(subjectLabel).join(', ') : null), field('담임', r.teacher)], facets: ['kind:report', `status:${r.status}`, pending.includes(r) && 'approval-pending'] })),
+    evidence: [...reports.map(r => record({ id: r.id, label: r.name, date: r.d, status: REPORT_STATUS[r.status] || '기타', detail: r.exit_kind === 'subject_end' ? '과목 수강 종료' : '퇴원', fields: [field('과목', r.subjects ? r.subjects.split(',').map(subjectLabel).join(', ') : null), field('담임', r.teacher), field('처리 근거', reportEvidence(r)?.line)], facets: ['kind:report', `status:${r.status}`, pending.includes(r) && 'approval-pending'] })),
       ...archives.map(a => record({ id: a.id, label: a.student_name, date: a.d, status: '스프레드시트 기록', detail: MAP[a.mapping_kind] || '', fields: [field('과목', a.subject ? subjectLabel(a.subject) : null)], facets: ['kind:archive', `map:${a.mapping_kind}`] }))],
     facetLabels: { 'kind:report': '퇴원보고서', 'kind:archive': '옛 시트', 'approval-pending': '승인 대기(관리자·원장)', ...Object.fromEntries(Object.entries(REPORT_STATUS).map(([k, v]) => [`status:${k}`, v])), ...Object.fromEntries(Object.entries(MAP).map(([k, v]) => [`map:${k}`, v])) }, recordSource: 'withdrawal_reports,withdrawal_report_archives', detailLabel: '구분', dateLabel: '퇴원일',
     signals: pending.length ? [signal({ id: 'withdrawal-report-pending', title: `퇴원보고서 승인 대기 ${pending.length}건`, summary: `${pending.slice(0, 3).map(r => `${r.name}(${REPORT_STATUS[r.status]})`).join(', ')}${pending.length > 3 ? ` 외 ${pending.length - 3}건` : ''}.`, priority: PRIORITY.decide, source: '퇴원보고서 상태', recordIds: pending.map(r => r.id), facet: 'approval-pending', at: latest(pending.map(r => r.at)), draft: { title: '퇴원보고서 승인 검토', body: '승인을 기다리는 퇴원보고서의 내용과 수강 상태를 확인하고 승인 여부를 정해 주세요.' } })] : [],

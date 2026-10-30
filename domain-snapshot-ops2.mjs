@@ -2,6 +2,8 @@
 import { PRIORITY, addDays, family, field, latest, md, metric, monthlyTrend, record, signal } from './domain-snapshot-core.mjs';
 import { dashboardKpiCards } from './v2-dashboard-flow.mjs';
 import { importV2 } from './v2-bridge.mjs';
+import { closeEvidence } from './task-close-evidence.mjs';
+import { OUTCOME as LEAD_OUTCOME } from './domain-snapshot-students.mjs';
 
 // live.js taskKind와 같은 라벨 = 2.0 staff_tasks 종류 원문(src/features/staff-tasks/kinds.ts). owner_review는 시안의 원장 개인 업무.
 const TASK_KIND = { report_send_failed: '보고서 발송 실패', followup_due: '상담 후속조치', enrollment_followup: '콜&상담 후속 조치', progress_anomaly: '진도 기록 이상', attendance_absent_desk: '결석 확인 전화', video_upload_check: '영상 업로드 확인', video_unassigned: '미배정 영상', unsent_report: '미발송 수업 보고서', approval_turn: '전자결재 차례', withdrawal_step: '퇴원보고서', help_question: '도움말 질문', owner_review: '원장 개인 업무' };
@@ -26,14 +28,17 @@ export async function opsFamilies2({ sql, t, asOf, month, monthStart }) {
   });
 
   // 업무·알림 — 업무는 기록의 사실로 자동 생성·종료된다(버튼 완료 아님).
-  const tasks = await sql`select k.id, k.title, k.detail, k.kind, k.status, to_char(k.opened_at at time zone 'Asia/Seoul','YYYY-MM-DD') opened, to_char(k.due_at at time zone 'Asia/Seoul','YYYY-MM-DD') due, (select string_agg(u.display_name, ', ' order by u.display_name) from public.staff_task_assignees a join public.users u on u.id=a.user_id and u.tenant_id=${t} where a.tenant_id=${t} and a.task_id=k.id) owners from public.staff_tasks k where k.tenant_id=${t} order by (k.status='open') desc, k.due_at asc nulls last`;
+  const tasks = await sql`select k.id, k.title, k.detail, k.kind, k.status, to_char(k.opened_at at time zone 'Asia/Seoul','YYYY-MM-DD') opened, to_char(k.due_at at time zone 'Asia/Seoul','YYYY-MM-DD') due, (select string_agg(u.display_name, ', ' order by u.display_name) from public.staff_task_assignees a join public.users u on u.id=a.user_id and u.tenant_id=${t} where a.tenant_id=${t} and a.task_id=k.id) owners, k.subject_id::text sid, k.cycle, k.close_reason, to_json(k.closed_at)#>>'{}' closed_at, k.closed_by::text closed_by, to_json(k.opened_at)#>>'{}' opened_at from public.staff_tasks k where k.tenant_id=${t} order by (k.status='open') desc, k.due_at asc nulls last`;
   const [nt] = await sql`select count(*) filter (where (created_at at time zone 'Asia/Seoul')::date between ${monthStart} and ${asOf})::int month_n, count(*) filter (where read_at is null and archived_at is null)::int unread, count(*)::int rows_all, (select count(*)::int from public.push_subscriptions where tenant_id=${t}) push from public.notifications where tenant_id=${t}`;
   const overdue = tasks.filter(k => k.status === 'open' && k.due && k.due < asOf);
+  const { subjectName, evidenceOf } = await taskEvidence({ sql, t, tasks });
   out['tasks-notifications'] = family('tasks-notifications', '업무·알림(벨·푸시)', {
     summary: `읽지 않은 알림 ${nt.unread}건(보관함 제외) · 폰 알림 받는 기기 ${nt.push}대.`,
     metrics: [metric('남은 업무', tasks.filter(k => k.status === 'open').length, '건', '지난 업무 포함'), metric('지난 업무', overdue.length, '건', '기한이 지났고 아직 처리 전'), metric('완료된 업무', tasks.filter(k => k.status === 'done').length, '건', '원래 기록이 처리되면 저절로 닫힘'), metric('이번 달 알림', nt.month_n, '건', '받는 사람마다 셈'), metric('읽지 않은 알림', nt.unread, '건', '보관함으로 옮긴 알림 제외'), metric('폰 알림 받는 기기', nt.push, '대')],
-    evidence: tasks.map(k => record({ id: k.id, label: k.title, date: k.due, status: overdue.includes(k) ? '지난 업무' : TASK_STATUS[k.status] || '기타', fields: [field('종류', TASK_KIND[k.kind] || '운영 업무'), field('내용', k.detail), field('담당', k.owners || '담당 미지정'), field('생성', k.opened)], facets: [`status:${k.status}`, `kind:${k.kind}`, overdue.includes(k) && 'overdue'] })),
-    facetOrder: ['overdue', ...Object.keys(TASK_STATUS).map(s => `status:${s}`), ...Object.keys(TASK_KIND).map(k => `kind:${k}`)], facetLabels: { overdue: '지난 업무', ...pre('status', { ...TASK_STATUS, open: '남은 업무' }), ...pre('kind', TASK_KIND) }, recordSource: 'staff_tasks',
+    // 이름 칸 = 대상 원생(업무 제목·종류를 이름에 두 번 쓰지 않는다 — 원장 10-30 R4C-3) · 닫힌 업무는 상태 옆에 처리 근거 한 줄(task-close-evidence.mjs).
+    evidence: tasks.map(k => { const who = subjectName.get(k.sid) || '', ev = evidenceOf(k), detail = who && String(k.detail || '').startsWith(`${who} · `) ? k.detail.slice(who.length + 3) : k.detail;
+      return record({ id: k.id, label: who || k.title, date: k.due, status: overdue.includes(k) ? '지난 업무' : TASK_STATUS[k.status] || '기타', fields: [field('업무', TASK_KIND[k.kind] || k.title || '운영 업무'), field('처리 근거', ev?.line), field('내용', detail), field('담당', k.owners || '담당 미지정'), field('생성', k.opened)], facets: [`status:${k.status}`, `kind:${k.kind}`, overdue.includes(k) && 'overdue', ev?.missing && 'no-evidence'] }); }),
+    facetOrder: ['overdue', ...Object.keys(TASK_STATUS).map(s => `status:${s}`), 'no-evidence', ...Object.keys(TASK_KIND).map(k => `kind:${k}`)], facetLabels: { overdue: '지난 업무', 'no-evidence': '처리됨 · 근거 기록 없음',...pre('status', { ...TASK_STATUS, open: '남은 업무' }), ...pre('kind', TASK_KIND) }, recordSource: 'staff_tasks',
     signals: overdue.length ? [signal({ id: 'tasks-overdue', title: `지난 업무 ${overdue.length}건`, summary: `종류별: ${Object.entries(Object.groupBy(overdue, k => TASK_KIND[k.kind] || '운영 업무')).sort((a, b) => b[1].length - a[1].length).map(([k, v]) => `${k} ${v.length}`).join(' · ')}. 원래 기록이 처리되면 저절로 닫힙니다.`, priority: PRIORITY.check, source: '업무 · 기한·처리 상태', recordIds: overdue.map(k => k.id), facet: 'overdue', at: latest(overdue.map(k => k.due)), draft: { title: '지난 업무 확인', body: '기한이 지난 아래 업무가 지금 어떻게 되어 있는지, 언제까지 처리할 수 있는지 알려 주세요. 이미 처리한 업무는 결과를 남겨 주세요.' } })] : [],
     sourceLabel: '업무 · 알림', coverageNote: '목록은 업무 전체입니다(남은 업무 먼저 · 기한 빠른 순). 알림은 건수만 셉니다.',
     sources: [{ table: 'staff_tasks', rows: tasks.length }, { table: 'notifications', rows: nt.rows_all }],
@@ -68,4 +73,43 @@ export async function opsFamilies2({ sql, t, asOf, month, monthStart }) {
     sources: [{ table: 'daily_briefings', rows: briefings.length }, { table: 'announcements', rows: db.announcements }, { table: 'student_daily_stats', rows: db.daily }],
   });
   return out;
+}
+
+// 업무의 대상 원생 이름과 닫힌 업무의 근거 기록(O 조사 task-close-evidence-1030.md) — 근거 표마다 한 번씩만 읽는다.
+// 대상 = subject_id가 가리키는 원생(원생 · 수업보고서 · 숙제 영상 · 콜&상담 · 퇴원보고서). 근거 = 업무 종류마다 그 일을 실제로 한 기록.
+async function taskEvidence({ sql, t, tasks }) {
+  const sids = [...new Set(tasks.map(k => k.sid).filter(Boolean))];
+  const named = sids.length ? await sql`select x.sid, coalesce(s.name, ls.name, vs.name, e.prospect_name, ws.name) as name from unnest(${sids}::text[]) as x(sid)
+    left join public.students s on s.tenant_id=${t} and s.id::text=x.sid
+    left join public.lesson_reports l on l.tenant_id=${t} and l.id::text=x.sid left join public.students ls on ls.tenant_id=${t} and ls.id=l.student_id
+    left join public.student_homework_videos v on v.tenant_id=${t} and v.id::text=x.sid left join public.students vs on vs.tenant_id=${t} and vs.id=v.student_id
+    left join public.enrollment_consultations e on e.tenant_id=${t} and e.id::text=x.sid
+    left join public.withdrawal_reports w on w.tenant_id=${t} and w.id::text=x.sid left join public.students ws on ws.tenant_id=${t} and ws.id=w.student_id` : [];
+  const subjectName = new Map(named.filter(r => r.name).map(r => [r.sid, r.name]));
+  const done = tasks.filter(k => k.status === 'done' && k.sid), ids = kind => [...new Set(done.filter(k => k.kind === kind).map(k => k.sid))];
+  const none = Promise.resolve([]);
+  const [people, desk, videos, leads, steps, uploads, queue, report] = await Promise.all([
+    sql`select id::text id, display_name from public.users where tenant_id=${t}`,
+    ids('attendance_absent_desk').length ? sql`select student_id::text sid, session_date::text d, outcome, contacted_via, handled_by::text actor, to_json(handled_at)#>>'{}' ts from public.attendance_followups where tenant_id=${t} and student_id::text = any(${ids('attendance_absent_desk')}) and signal='absent' and state='resolved' order by handled_at` : none,
+    ids('video_unassigned').length ? sql`select video_id::text sid, homework_date::text d, excluded, updated_by::text actor, to_json(updated_at)#>>'{}' ts from public.homework_video_assignments where tenant_id=${t} and video_id::text = any(${ids('video_unassigned')})` : none,
+    ids('enrollment_followup').length ? sql`select id::text sid, outcome from public.enrollment_consultations where tenant_id=${t} and id::text = any(${ids('enrollment_followup')})` : none,
+    ids('withdrawal_step').length ? sql`select report_id::text sid, actor_id::text actor, action, to_json(created_at)#>>'{}' ts from public.withdrawal_report_events where tenant_id=${t} and report_id::text = any(${ids('withdrawal_step')}) and action in ('submit','approve','reject','cancel') order by created_at` : none,
+    ids('video_upload_check').length ? sql`select student_id::text sid, to_json(uploaded_at)#>>'{}' ts from public.student_homework_videos where tenant_id=${t} and student_id::text = any(${ids('video_upload_check')}) and uploaded_at is not null` : none,
+    importV2('features/attendance/live/queue.ts'), importV2('features/withdrawal-reports/model.ts'),
+  ]);
+  const names = new Map(people.map(p => [p.id, p.display_name]));
+  const outcomes = queue.OUTCOME_LABEL, actions = report.REPORT_ACTION_LABEL || {};
+  const outcomeOf = v => (Array.isArray(outcomes) ? outcomes.find(o => o.value === v)?.label : outcomes?.[v]) || '기타';
+  const ms = v => (v ? Date.parse(v) : NaN), dayOf = k => String(k.cycle || '').split('|')[0];
+  // 업무가 닫힌 순간까지(10분 여유)의 기록만 근거로 — 닫힌 뒤에 생긴 기록을 원인처럼 쓰지 않는다.
+  const before = (k, at) => !Number.isFinite(ms(k.closed_at)) || !Number.isFinite(ms(at)) || ms(at) <= ms(k.closed_at) + 600000;
+  const find = {
+    attendance_absent_desk: k => { const f = desk.filter(r => r.sid === k.sid && r.d === dayOf(k) && before(k, r.ts)).at(-1); return f && { what: `출석부에 ${f.contacted_via === 'phone' ? '전화 ' : ''}확인 결과 ‘${outcomeOf(f.outcome)}’ 기록`, by: f.actor, at: f.ts }; },
+    video_unassigned: k => { const a = videos.find(r => r.sid === k.sid); return a && { what: a.excluded ? '숙제 아님으로 제외' : a.d ? `${md(a.d)} 숙제에 영상 연결` : '숙제에 영상 연결', by: a.actor, at: a.ts }; },
+    enrollment_followup: k => { const l = leads.find(r => r.sid === k.sid); return l && LEAD_OUTCOME[l.outcome] ? { what: `콜&상담 결과 ‘${LEAD_OUTCOME[l.outcome]}’` } : null; },
+    withdrawal_step: k => { const e = steps.filter(r => r.sid === k.sid && before(k, r.ts)).at(-1); const act = actions[e?.action] || '처리'; return e && { what: act.startsWith('보고서') ? `퇴원${act}` : `퇴원보고서 ${act}`, by: e.actor, at: e.ts }; },
+    video_upload_check: k => { const u = uploads.filter(r => r.sid === k.sid && before(k, r.ts) && (!Number.isFinite(ms(k.opened_at)) || ms(r.ts) >= ms(k.opened_at))).sort((a, b) => ms(a.ts) - ms(b.ts)).at(-1); return u && { what: '숙제 영상이 올라옴', at: u.ts }; },
+  };
+  const evidenceOf = k => closeEvidence({ status: k.status, close_reason: k.close_reason, closed_at: k.closed_at, closed_by: k.closed_by }, k.status === 'done' ? find[k.kind]?.(k) || null : null, names);
+  return { subjectName, evidenceOf };
 }

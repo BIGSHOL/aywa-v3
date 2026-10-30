@@ -4,7 +4,7 @@ import { lifecycleFamilies } from './domain-snapshot-students2.mjs';
 import { importV2 } from './v2-bridge.mjs';
 
 export const STUDENT_STATUS = { enrolled: '재원', on_hold: '휴원', prospect: '예비', withdrawn: '퇴원' };
-const OUTCOME = { scheduled: '상담 예약', consulted: '상담 완료', ai_done: '상담 검토', enrolled: '등록', declined: '미등록', no_show: '미방문' };
+export const OUTCOME = { scheduled: '상담 예약', consulted: '상담 완료', ai_done: '상담 검토', enrolled: '등록', declined: '미등록', no_show: '미방문' };
 const SLOT = { monthly: '월말평가', midterm: '중간고사', final: '기말고사' };
 const pre = (p, labels) => Object.fromEntries(Object.entries(labels).map(([k, v]) => [`${p}:${k}`, v]));
 export const enrollmentStageOf = (lead, assignedByLead, classKeysOf, stageOfCard) => {

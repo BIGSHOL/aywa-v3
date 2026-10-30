@@ -27,12 +27,12 @@ window.createWorkspaces = function createWorkspaces(api) {
   // 기록의 '내용'(detail) 칸 이름 — 영역마다 그 칸이 담는 것. 없으면 '내용'.
   const DETAIL_NAME={calendar:'시각',billing:'청구월',staff:'직책',inventory:'모델명',documents:'분류','expense-requests':'분류',textbooks:'분류',enrollment:'학교·학년',newcomers:'학교·학년',students:'학교·학년',exams:'시험',attendance:'반',makeups:'반','class-review':'반','withdrawal-reports':'구분',shuttle:'노선'};
   // 사람 이름이 아닌 첫 칸은 그 기록의 대상(반·문서·업무 등)으로 부른다.
-  const NAME_HEAD={calendar:'일정','tasks-notifications':'업무',classes:'반',timetable:'반',textbooks:'교재',meetings:'회의',documents:'문서',support:'요청',dashboard:'브리핑',integrations:'연동',slack:'규칙','owner-settings':'항목','class-sheets':'반',onescreen:'첫 원생',inventory:'자산ID',shuttle:'원생','expense-requests':'지출',approvals:'문서'};
+  const NAME_HEAD={calendar:'일정',classes:'반',timetable:'반',textbooks:'교재',meetings:'회의',documents:'문서',support:'요청',dashboard:'브리핑',integrations:'연동',slack:'규칙','owner-settings':'항목','class-sheets':'반',onescreen:'첫 원생',inventory:'자산ID',shuttle:'원생','expense-requests':'지출',approvals:'문서'};
   // 2.0 목록과 같은 열 순서. 자료에 있는 3.0 전용 칸은 이 순서 뒤에 둔다.
   const SUBJECT_FIRST=new Set(['video-homework','timetable','classes','textbooks','lesson-reports','exams','consultations','enrollment','withdrawal-reports']);
   const COLUMN_ORDER={
     dashboard:['date','f:요약','f:알림','status'],calendar:['date','detail','f:태그','status'],
-    'tasks-notifications':['f:종류','f:내용','f:담당','date','status'],onescreen:['f:보낸 선생님','f:대상 수','f:반','date','status'],
+    'tasks-notifications':['f:업무','f:내용','f:담당','date','status','f:처리 근거'],onescreen:['f:보낸 선생님','f:대상 수','f:반','date','status'],
     'video-homework':['detail','date','f:선생님','status'],timetable:['f:요일','f:시간','f:선생님','f:강의실'],
     'class-sheets':['date','f:교재','f:범위','status'],attendance:['detail','date','status','f:시간','f:자리','f:메모'],
     classes:['f:구분','subject','f:담임','f:강의실','f:요일','f:학생','status','f:메모'],makeups:['detail','f:결석일','date','f:보강 시간','status'],
@@ -41,7 +41,7 @@ window.createWorkspaces = function createWorkspaces(api) {
     'student-contribution':['date','f:출처','status'],exams:['date','detail','f:점수','status'],
     consultations:['date','f:상담자','f:후속조치','status'],enrollment:['detail','date','f:상담자','f:경로','f:상담 결과','status'],
     retention:['date','status'],newcomers:['detail','f:과목','date','f:첫 수업','f:사전 콜','f:첫 수업 안내','f:OJT','f:첫 수업 후 콜','f:1개월 콜','f:2개월 콜','f:3개월 콜','f:완료한 체크','status'],withdrawals:['date','status'],
-    'withdrawal-reports':['f:담임','date','detail','status'],staff:['detail','f:역할','status','f:고용 형태','date'],
+    'withdrawal-reports':['f:담임','date','detail','status','f:처리 근거'],staff:['detail','f:역할','status','f:고용 형태','date'],
     payroll:['detail','date','status'],billing:['detail','f:수납명','f:청구액','f:수납','f:남은 금액','status','date'],
     'textbook-requests':['f:교재','date','f:요청 선생님','f:가격','status'],
     'expense-requests':['f:작성','detail','date','f:금액','status'],shuttle:['detail','f:요일','f:시각','f:정류장','f:차량','status'],
