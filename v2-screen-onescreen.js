@@ -66,7 +66,9 @@
         const query = queryOf(nq);
         requested = query; // iframe은 이미 그 주소다 — 3.0이 다시 그려도 다시 읽지 않게 먼저 맞춘다
         const current = new URLSearchParams(location.hash.split('?')[1] || '');
-        const out = new URLSearchParams(query);
+        // iframe의 teacher 값은 현재 계정으로 채우되 화면 주소에는 싣지 않는다.
+        const out = new URLSearchParams();
+        for (const key of KEEP) { const value = nq.get(key); if (value) out.set(key, value); }
         if (current.get('teacherHome') === '1') out.set('teacherHome', '1');
         const page = `#v2-${ID}${out.size ? `?${out}` : ''}`;
         if (location.hash !== page) location.replace(page);

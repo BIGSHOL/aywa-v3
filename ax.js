@@ -361,7 +361,7 @@ window.createOwnerWorkspace = function createOwnerWorkspace(api) {
      window.AxCatalog={areas:[{id,label,group,page?,note?}]} and dispatch 'ax-catalog'. Areas whose page is
      not wired here are listed as not yet connected. Without a catalog only this prototype's screens are shown. */
   const builtInAreas=()=>Object.entries(labels).filter(([id])=>!['home','inbox','requests','automation'].includes(id)).map(([page,label])=>({id:page,label,group:'열 수 있는 화면',page}));
-  const catalogAreas=()=>Array.isArray(window.AxCatalog?.areas)&&window.AxCatalog.areas.length?window.AxCatalog.areas:builtInAreas();
+  const catalogAreas=()=>Array.isArray(window.AxCatalog?.areas)&&window.AxCatalog.areas.length?window.AxCatalog.areas.filter(a=>!a.menuHidden):builtInAreas();
   function launcherList(query=''){
     const q=norm(query),areas=catalogAreas().filter(a=>!q||norm(`${a.label} ${a.group||''}`).includes(q)),groups=[...new Set(areas.map(a=>a.group||'기타'))];
     return groups.map(g=>`<section><h3>${h(g)}</h3><div class="ax-launcher">${areas.filter(a=>(a.group||'기타')===g).map(a=>api.hasView(a.page)?button(a.label,'navigate',a.page):`<span class="button ax-unlinked">${h(a.label)} · 연결 전${a.note?`<small>${h(a.note)}</small>`:''}</span>`).join('')}</div></section>`).join('')||'<p class="live-empty">검색 결과가 없습니다.</p>';

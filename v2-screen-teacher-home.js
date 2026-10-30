@@ -37,11 +37,11 @@
       .catch(() => { cache.set(k, { state: 'error', data: null }); update(actor, card); });
   };
   function strip(ctx, actor, home) {
-    if (!actor || !/^[0-9a-f-]{36}$/i.test(actor)) return '';
+    if (!actor || actor !== S.accountId() || window.AywaAccount?.current?.()?.role !== 'teacher') return '';
     api = ctx.api; currentActor = actor;
     requestAnimationFrame(() => CARD.forEach(card => fetchCard(actor, card)));
     const other = home === 'ecs' ? 'onescreen' : 'ecs';
-    return `<section class="th-shell" data-th-strip="${esc(actor)}"><header class="th-head"><div><strong>선생님 오늘</strong><span>내 수업과 지금 처리할 일을 봅니다.</span></div><nav aria-label="선생님 메뉴"><a href="#v2-${home}?${home === 'ecs' ? `actor=${actor}` : `teacher=${actor}`}&teacherHome=1">내 수업</a><a href="#v2-${other}?${other === 'ecs' ? `actor=${actor}` : `teacher=${actor}`}&teacherHome=1">${other === 'ecs' ? '강사 시트' : '수업보고서'}</a><a href="#v2-teacher-home?actor=${actor}">오늘</a></nav></header><div class="th-summary" aria-label="오늘 할 일">${CARD.map(card => chip(actor, card)).join('')}</div></section>`;
+    return `<section class="th-shell" data-th-strip="${esc(actor)}"><header class="th-head"><div><strong>선생님 오늘</strong><span>내 수업과 지금 처리할 일을 봅니다.</span></div><nav aria-label="선생님 메뉴"><a href="#v2-${home}?teacherHome=1">내 수업</a><a href="#v2-${other}?teacherHome=1">${other === 'ecs' ? '강사 시트' : '수업보고서'}</a><a href="#v2-teacher-home">오늘</a></nav></header><div class="th-summary" aria-label="오늘 할 일">${CARD.map(card => chip(actor, card)).join('')}</div></section>`;
   }
   const parentLink = link => {
     try {
@@ -74,7 +74,7 @@
     const line = row => {
       if (card === 'lessons') return `<tr><th scope="row">${esc(row.start)}</th><td><span class="fl-cut">${esc(row.className)}</span></td><td class="fl-rec-go">${go('#v2-timetable', `${esc(row.className)} 시간표 열기`)}</td></tr>`;
       if (card === 'attendance') return `<tr><th scope="row"><span class="fl-cut">${esc(row.className)}</span></th><td class="al-r">${fmt(row.missing)}칸</td><td class="fl-rec-go">${go(`#v2-attendance?v2path=${encodeURIComponent(`/attendance/${data.today}/${row.classId}`)}&viewer=${actor}`, `${esc(row.className)} 출석부 열기`)}</td></tr>`;
-      if (card === 'reports') return `<tr><th scope="row"><span class="fl-cut">${esc(row.name)}</span></th><td class="fl-rec-go">${go(`#v2-onescreen?teacher=${actor}&student=${row.studentId}&teacherHome=1`, `${esc(row.name)} 수업보고서 열기`)}</td></tr>`;
+      if (card === 'reports') return `<tr><th scope="row"><span class="fl-cut">${esc(row.name)}</span></th><td class="fl-rec-go">${go(`#v2-onescreen?student=${row.studentId}&teacherHome=1`, `${esc(row.name)} 수업보고서 열기`)}</td></tr>`;
       if (card === 'tasks') return `<tr><th scope="row" class="wrap">${esc(row.title)}</th><td class="fl-rec-go"><button type="button" class="fl-rec-process" data-th-case="${esc(row.id)}" aria-label="${esc(row.title)} 처리">처리 ›</button></td></tr>`;
       const link = parentLink(row.link);
       return `<tr><th scope="row"><span class="fl-cut">${esc(row.studentName || row.title || '학부모 글')}</span></th><td>${esc(listDay(row.createdAt))}</td><td><span class="fl-cut">${esc(row.boardName || '—')}</span></td><td class="wrap">${esc(row.content || '')}</td><td class="fl-rec-go">${link ? `<a class="fl-rec-process" href="${esc(link)}" target="_blank" rel="noopener noreferrer" aria-label="원래 글 열기">처리 ›</a>` : ''}</td></tr>`;
@@ -99,28 +99,23 @@
     const task = e.target.closest?.('[data-th-case]'); if (task) { drawer?.close(); api?.openFlowCase?.(task.dataset.thCase); }
   });
   addEventListener('aywa:data-revision', () => { if (currentActor) CARD.forEach(card => fetchCard(currentActor, card, true)); });
-  // 보는 선생님이 없으면(원장이 메뉴로 연 경우) 왼쪽 '보는 사람'까지 가지 않고 여기서 고른다.
-  function pickView(ctx) {
-    const list = ctx.load({ card: 'pick' });
-    const head = '<header class="th-head"><div><strong>선생님 오늘</strong><span>볼 선생님을 고르면 그 선생님의 수업과 오늘 할 일이 열립니다.</span></div></header>';
-    if (list.status !== 'ready') return `${head}<p class="v2s-note">${list.status === 'error' ? '선생님 명단을 불러오지 못했습니다.' : '선생님 명단을 불러오는 중…'}</p>`;
-    if (list.data?.error || !Array.isArray(list.data?.teachers)) return `${head}<p class="v2s-note">선생님 명단을 불러오지 못했습니다.</p>`;
-    const rows = list.data.teachers;
-    if (!rows.length) return `${head}<p class="v2s-note">재직 중인 선생님이 없습니다.</p>`;
-    const subject = key => ctx.api?.subjectLabel?.(key) || '';
-    return `${head}<div class="fl-rectable-wrap"><table class="fl-rectable th-pick" aria-label="볼 선생님"><thead><tr><th scope="col">이름</th><th scope="col">담당 과목</th><th scope="col" class="fl-rec-go">처리</th></tr></thead><tbody>${rows.map(t => `<tr><th scope="row"><span class="fl-cut">${esc(t.name)}</span></th><td>${esc(t.subjects.map(subject).filter(Boolean).join(' · ') || '담당 과목 없음')}</td><td class="fl-rec-go">${go(`#v2-teacher-home?actor=${esc(t.id)}`, `${esc(t.name)} 선생님 화면 열기`)}</td></tr>`).join('')}</tbody></table></div>`;
-  }
   window.TeacherHome = { strip };
-  S.register({ id: 'teacher-home', label: '선생님 오늘', render(ctx) {
+  S.register({ id: 'teacher-home', label: '선생님 오늘', nav: false, render(ctx) {
     api = ctx.api;
-    const actor = ctx.query.get('actor');
-    if (!actor) return pickView(ctx);
+    const account = window.AywaAccount?.current?.();
+    if (account?.role !== 'teacher') return '<p class="v2s-note">선생님 계정에서 열 수 있습니다. <button type="button" class="ax-text-link" data-ax="account-switch">계정 전환</button></p>';
+    const actor = S.accountId();
     const entry = ctx.load({ actor, card: 'landing' });
     if (entry.status !== 'ready') return `<p class="v2s-note">${entry.status === 'error' ? '선생님 화면을 열지 못했습니다.' : '선생님 작업 화면을 여는 중…'}</p>`;
     if (entry.data?.error) return `<p class="v2s-note">${esc(entry.data.error)}</p>`;
     const home = entry.data.home;
-    if (entry.data.route) { requestAnimationFrame(() => location.replace(entry.data.route)); return '<p class="v2s-note">선생님 작업 화면을 여는 중…</p>'; }
-    requestAnimationFrame(() => location.replace(`#v2-${home}?${home === 'ecs' ? `actor=${actor}` : `teacher=${actor}`}&teacherHome=1`));
+    if (entry.data.route) {
+      const route = new URL(entry.data.route, location.href);
+      route.hash = route.hash.replace(/([?&])viewer=[^&]+&?/, '$1').replace(/[?&]$/, '');
+      requestAnimationFrame(() => location.replace(route.hash));
+      return '<p class="v2s-note">선생님 작업 화면을 여는 중…</p>';
+    }
+    requestAnimationFrame(() => location.replace(`#v2-${home}?teacherHome=1`));
     return '<p class="v2s-note">선생님 작업 화면을 여는 중…</p>';
   } });
 })();

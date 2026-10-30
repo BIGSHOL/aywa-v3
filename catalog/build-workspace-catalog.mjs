@@ -18,9 +18,9 @@ export const catalogJsonPath = join(here, 'workspace-catalog.json');
 
 export const FIELD_TYPES = ['text', 'textarea', 'number', 'money', 'date', 'month', 'time', 'select', 'multiselect', 'checkbox', 'student', 'staff', 'class', 'subject'];
 export const VIEW_KINDS = ['flow', 'sheet', 'records', 'report', 'settings', 'timeline'];
-export const MODES = ['request', 'preview', 'navigate'];
+export const MODES = ['request', 'navigate'];
 // 기존 시안 화면(live.js 13 + ax.js 4) — navigate가 이 화면으로 갈 수 있다.
-const LEGACY_PAGES = ['home', 'students', 'admissions', 'classes', 'learning', 'finance', 'staff', 'parents', 'shuttle', 'approvals', 'resources', 'calendar', 'settings', 'inbox', 'requests', 'automation'];
+const LEGACY_PAGES = ['home', 'students', 'admissions', 'classes', 'learning', 'finance', 'staff', 'parents', 'shuttle', 'approvals', 'resources', 'calendar', 'settings', 'inbox', 'requests', 'automation', 'flow'];
 
 /** 화면에 보이는 문구에 넣지 않는 말 — 플랫폼 내부 역할·원시 역할 키·내부 구현 용어. */
 export const BANNED_VISIBLE = [/super[_ ]?admin/i, /슈퍼관리자/, /슈퍼어드민/, /총괄/, /\bsystemRole\b/, /\b(master|admin|manager|teacher|counselor|accountant|viewer)\b/, /\bsrc\//, /\.(tsx?|mjs)\b/, /server action/i, /requireAccess|canWriteTenant/];
@@ -66,7 +66,10 @@ export function buildWorkspaceCatalog({ pages = scanPages(), inventoryText = rea
   const discoveredById = Object.fromEntries(DISCOVERED.map(g => [g.id, g]));
   const knownOp = id => famById[id.slice(0, id.indexOf('.'))]?.keyOps.some(o => o.id === id) || !!discoveredById[id];
   const extraOps = new Map();
-  for (const g of DISCOVERED) if (g.dest.action) (extraOps.get(g.dest.action) || extraOps.set(g.dest.action, []).get(g.dest.action)).push(g.id);
+  for (const g of DISCOVERED) if (g.dest.action) {
+    const id = g.dest.action;
+    (extraOps.get(id) || extraOps.set(id, []).get(id)).push(g.id);
+  }
   const covered = new Map();
   const actionIds = new Set();
   const drafts = new Set();
@@ -107,6 +110,8 @@ export function buildWorkspaceCatalog({ pages = scanPages(), inventoryText = rea
           const ta = AREAS.find(x => `workspace-${x.id}` === page);
           if (!ta) problems.push(`${act.id}: 없는 영역 ${page}`);
           else if (facet && !ta.facets.some(x => x.id === facet)) problems.push(`${act.id}: ${page}에 없는 facet ${facet}`);
+        } else if (page.startsWith('v2-')) {
+          if (!existsSync(join(here, '..', `v2-screen-${page.slice(3)}.js`))) problems.push(`${act.id}: 없는 처리 화면 ${page}`);
         } else if (!LEGACY_PAGES.includes(page)) problems.push(`${act.id}: 없는 시안 화면 ${page}`);
         target = facet ? { page, facet } : { page };
       }
@@ -136,7 +141,6 @@ export function buildWorkspaceCatalog({ pages = scanPages(), inventoryText = rea
         if ((fd.type === 'select' || fd.type === 'multiselect') && !out.options?.length) problems.push(`${act.id}.${fd.id}: 선택 필드에 선택지가 없음`);
         return out;
       });
-      if (act.mode !== 'navigate' && !fields.length && act.mode === 'request') problems.push(`${act.id}: 요청 초안에 맥락 필드가 없음`);
       return {
         id: act.id, label: act.label, mode: act.mode, ...(target ? { target } : {}),
         draft: { title: act.draft.title, body: act.draft.body }, fields,
@@ -144,7 +148,7 @@ export function buildWorkspaceCatalog({ pages = scanPages(), inventoryText = rea
       };
     });
     return {
-      id: a.id, label: a.label, group: groupLabel[a.group], groupId: a.group,
+      id: a.id, label: a.label, group: groupLabel[a.group], groupId: a.group, ...(a.menuHidden ? { menuHidden: true } : {}),
       page: `workspace-${a.id}`, summary: a.summary, viewKind: a.viewKind,
       facets: a.facets.map(fc => ({ id: fc.id, label: fc.label, kind: fc.kind })),
       actions, relations: [a.id, ...new Set(actions.flatMap(x => x.sourceOperationIds.map(id => id.slice(0, id.indexOf('.')))).filter(id => id !== a.id))],
@@ -212,7 +216,7 @@ export function buildWorkspaceCatalog({ pages = scanPages(), inventoryText = rea
 export function renderCatalogJs(catalog) {
   const json = JSON.stringify(catalog, null, 1).replaceAll('<', '\\u003c');
   return `/* 생성 파일 — experiments/owner-concept/catalog/build-workspace-catalog.mjs가 만든다. 손으로 고치지 말 것.
-   2.0 감사 인벤토리에서 파생한 원장 작업 공간 카탈로그. 모든 동작은 로컬 미리보기·요청 초안이며 실제 쓰기·발송은 없다(liveWrites: false). */
+   2.0 감사 인벤토리에서 파생한 원장 작업 공간 카탈로그. 처리 화면 이동과 업무 요청만 제공한다. */
 window.AxCatalog = ${json};
 window.dispatchEvent(new Event('ax-catalog'));
 `;

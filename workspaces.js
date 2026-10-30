@@ -1,7 +1,5 @@
-/* 3.0 owner workspaces: one reachable workspace per owner-visible 2.0 feature family.
-   Structure comes from window.AxCatalog (areas, facets, actions); facts come from window.AcademySnapshot.workspaces
-   (the verified local copy) and the read-only records endpoint. Actions are session-only previews, owner request
-   drafts or navigation — nothing is sent, paid or written. window.AxCoverage reports where every action lands. */
+/* 3.0 작업 공간: 카탈로그의 영역·처리 화면과 사본의 읽기 전용 기록을 보여 준다.
+   업무 요청은 공용 요청 창으로, 처리 동작은 실제 이식 화면으로 이어진다. */
 window.createWorkspaces = function createWorkspaces(api) {
   'use strict';
   const {db,h,fmt,icon,dialog,navigate,toast,ax}=api;
@@ -9,12 +7,12 @@ window.createWorkspaces = function createWorkspaces(api) {
   const VIEW_KINDS=['flow','sheet','records','report','settings','timeline'];
   const PRIORITY_ORDER=['결정 필요','확인 필요','진행 확인'];
   const STATE_LABEL={available:'기록 있음',empty:'기록 없음','not-applicable':'해당 없음',unavailable:'읽지 못함',missing:'집계 연결 전'};
-  const FACET_INTENT={flow:'이 단계에 있는 기록만 봅니다',sheet:'이 구분의 줄만 시트에 표시합니다',records:'이 구분의 기록만 봅니다',report:'이 구분의 문서만 목록에 표시합니다',settings:'이 설정 면의 현재 값과 미리보기 양식을 엽니다',timeline:'이 구분의 기록만 시간순으로 봅니다'};
-  const MODE={preview:{label:'미리보기 · 저장 안 됨',destination:'local-preview',status:'session-only'},request:{label:'요청 초안',destination:'owner-request-draft',status:'draft-only'},navigate:{label:'화면 이동',destination:'navigate',status:'navigation'}};
+  const FACET_INTENT={flow:'이 단계에 있는 기록만 봅니다',sheet:'이 구분의 줄만 시트에 표시합니다',records:'이 구분의 기록만 봅니다',report:'이 구분의 문서만 목록에 표시합니다',settings:'이 설정 면의 현재 값을 봅니다',timeline:'이 구분의 기록만 시간순으로 봅니다'};
+  const MODE={request:{label:'업무 요청',destination:'owner-request',status:'request-form'},navigate:{label:'처리 화면 열기',destination:'navigate',status:'navigation'}};
   const PAGE_SIZE=20,BOARD_SIZE=5;
   // pin = 업무 흐름·기록 링크로 연 기록(목록 맨 위에 세운다) · cur = 상세를 연 기록(줄에 은은한 바탕) · board = 칸반 단계별 첫 기록.
   // sort·cols = 목록 열 머리의 정렬·값 거르기 · full = 정렬·거르기용으로 전부 읽은 기록 · asList = 칸반 대신 목록 · colw·lcols = 목록 열 모양.
-  const state={screen:{},face:{},query:'',active:-1,open:new Set(),closed:new Set(),recent:[],facet:{},q:{},page:{},remote:{},local:{},edits:{},recipient:'',pin:{},cur:{},board:{},sort:{},cols:{},full:{},asList:{},colw:{},lcols:{},expanded:{}};
+  const state={screen:{},face:{},query:'',active:-1,open:new Set(),closed:new Set(),recent:[],facet:{},q:{},page:{},remote:{},pin:{},cur:{},board:{},sort:{},cols:{},full:{},asList:{},colw:{},lcols:{},expanded:{}};
   // 다른 화면이 그린 공통 리스트(listTable) — 목록 이름 → { rows(검색어로 거른 줄 전부) · repaint(그 화면 다시 그리기) · sig }.
   const LOCAL=new Map();
   const pill=(text,tone='')=>`<span class="ax-chip ${tone}">${h(text)}</span>`;
@@ -66,7 +64,7 @@ window.createWorkspaces = function createWorkspaces(api) {
   }
 
   /* ---------- catalog + data access ---------- */
-  const areas=()=>Array.isArray(window.AxCatalog?.areas)?window.AxCatalog.areas.filter(a=>a&&a.id&&a.label):[];
+  const areas=()=>Array.isArray(window.AxCatalog?.areas)?window.AxCatalog.areas.filter(a=>a&&a.id&&a.label&&!a.menuHidden):[];
   const area=id=>areas().find(a=>a.id===id);
   const has=id=>Boolean(area(id));
   const familyOf=page=>String(page||'').startsWith('workspace-')?String(page).slice(10):'';
@@ -75,7 +73,6 @@ window.createWorkspaces = function createWorkspaces(api) {
   const actionsOf=a=>(Array.isArray(a.actions)?a.actions:[]).filter(x=>x&&x.id&&x.label);
   const targetOf=x=>typeof x.target==='string'?{page:x.target,facet:''}:{page:String(x.target?.page||''),facet:String(x.target?.facet||'')};
   const resolvePage=page=>api.hasView(page)?page:has(familyOf(page)||page)?`workspace-${familyOf(page)||page}`:'';
-  const resultLabel=x=>String(x.result?.label||`‘${x.label}’ 미리보기`);
   function dataState(id){
     const d=data(id);if(!d)return {key:'missing',note:''};
     return {key:STATE_LABEL[d.dataState]?d.dataState:'unavailable',note:String(d.coverageNote||'')};
@@ -237,7 +234,7 @@ window.createWorkspaces = function createWorkspaces(api) {
     if(fullMode(id)&&!fullReady(id))queueMicrotask(()=>loadAll(id));
     const d=data(id),kind=viewKind(a);
     // 머리 = 영역 · 제목 · 지금 상태 한 줄. 출처·기준일·목록 설명 줄은 싣지 않는다(원장 10-28 "쓸데없는 문구들 … 없애거나 수정해").
-    return `<div class="ws" data-family="${h(id)}" data-view="${kind}"><div class="page-heading ws-heading"><div><p class="ws-group">${h(a.group||'')}</p><h1>${h(a.label)}</h1><p>${h(d?.summary||a.summary||'')}</p></div><div class="heading-actions">${btn('이 화면으로 대화','ask',`data-id="${h(id)}"`)}${btn('업무 요청','request',`data-id="${h(id)}"`,true)}</div></div>${critical(a)}${signalList(a)}<div class="ws-body"><section class="ws-main" id="ws-main" aria-label="${h(a.label)} 기록">${mainHtml(a)}</section><aside class="ws-side">${actionPanel(a)}<div id="ws-local">${localLog(a)}</div>${linkedRequests(a)}${relations(a)}</aside></div></div>`;
+    return `<div class="ws" data-family="${h(id)}" data-view="${kind}"><div class="page-heading ws-heading"><div><p class="ws-group">${h(a.group||'')}</p><h1>${h(a.label)}</h1><p>${h(d?.summary||a.summary||'')}</p></div><div class="heading-actions">${btn('이 화면으로 대화','ask',`data-id="${h(id)}"`)}</div></div>${critical(a)}${signalList(a)}<div class="ws-body"><section class="ws-main" id="ws-main" aria-label="${h(a.label)} 기록">${mainHtml(a)}</section><aside class="ws-side">${actionPanel(a)}${linkedRequests(a)}${relations(a)}</aside></div></div>`;
   }
   // KPI = 최근 변화(원장 10-28 "원하는건 추세"): 지금 값 · 직전 기간 대비(좋아짐/나빠짐 색) · 추세선(기간마다 값은 마우스·키보드로).
   // 작업 공간 카드와 원장 첫 화면 '운영 상태'가 같은 함수로 그린다. 기간(span)은 제목 오른쪽(원장 10-28 "제목 우측에 기한 적어놓을것").
@@ -314,36 +311,9 @@ window.createWorkspaces = function createWorkspaces(api) {
     else if(!ld.rows.length)body=`${colOn(id).length?recordsTable(a,ld):''}${emptyBody(st,filtered)}`;
     else body=recordsTable(a,ld);
     const pager=!board&&ld.pages>1?pagerHtml(id,ld.page,ld.pages):'';
-    return `${id==='teacher-workspace'?recipientPreview():''}${kind==='settings'?settingsView(a):screenRow}${kind==='settings'&&data(id)?`<h3 class="ws-records-title">현재 설정 값</h3>`:''}${tabs}${search}${board?'':colChips(id)}${note}${body}${pager}`;
+    return `${kind==='settings'?settingsView(a):screenRow}${kind==='settings'&&data(id)?`<h3 class="ws-records-title">현재 설정 값</h3>`:''}${tabs}${search}${board?'':colChips(id)}${note}${body}${pager}`;
   }
-  // Teacher workspace: what a selected staff member receives. Owner requests can be acknowledged and completion-reported
-  // here (session only); automatic 2.0 tasks are listed separately and only open their source record.
-  function recipientPicker(staffId,owners){
-    const CP=window.ContextPicker;
-    if(!CP)return `<label class="ws-recipient-pick">직원<select id="ws-recipient" data-ws-recipient>${db.staff.map(s=>`<option value="${h(s.id)}" ${s.id===staffId?'selected':''}>${h(s.name)} · ${h(s.title)}${owners.includes(s.id)?' · 요청 있음':''}</option>`).join('')}</select></label>`;
-    const list=CP.lists.staff({db,subjectLabel:api.subjectLabel});
-    list.options.forEach(o=>{if(owners.includes(o.value)){o.sub=[o.sub,'원장 요청 있음'].filter(Boolean).join(' · ');o.context=[o.context,'원장 요청 있음'].filter(Boolean).join(' · ');o.search=`${o.search||''} 요청`;}});
-    return `<div class="ws-recipient-pick">${CP.html({id:'ws-recipient',name:'recipient',label:'받는 직원',clearable:false,selected:staffId?[staffId]:[],attrs:{'data-ws-recipient':''},...list})}</div>`;
-  }
-  function recipientPreview(){
-    const owners=ax.recipient?.owners()||[],staffId=state.recipient||owners[0]||db.staff[0]?.id||'',person=db.staff.find(s=>s.id===staffId);
-    const list=ax.recipient?.list(staffId)||[],auto=person?db.tasks.filter(t=>t.status==='open'&&!t.local&&t.owners.includes(person.name)):[];
-    const status={requested:'확인 대기',working:'진행 중',done:'완료 보고'};
-    return `<section class="ws-recipient" aria-labelledby="ws-recipient-title"><div class="ax-section-head"><h2 id="ws-recipient-title">받는 사람 수신함 미리보기</h2>${recipientPicker(staffId,owners)}</div>${list.length?list.map(r=>`<article class="ws-inbox-item"><header>${pill(status[r.status],r.status==='done'?'green':'blue')}<strong>${h(r.title)}</strong><small>${h(r.due)}까지 · ${h(r.priority)}${r.context?.familyLabel?` · ${h(r.context.familyLabel)}`:''}</small></header><p class="live-pre">${h(r.body)}</p>${r.status==='requested'?btn('확인했습니다','recipient-ack',`data-request="${h(r.id)}"`,true):r.status==='working'?`<form class="ws-form" data-ws-form="recipient-report" data-request="${h(r.id)}" novalidate><label>완료 보고<textarea name="result" rows="2" maxlength="3000" required></textarea></label><p class="ax-form-error" role="alert"></p><div class="ws-form-foot"><button class="button primary" type="submit">완료 보고</button></div></form>`:`<p class="ax-note">보고 내용: ${h(r.result)}</p>`}</article>`).join(''):`<p class="live-empty">이 직원에게 보낸 원장 요청이 없습니다.</p>`}<section class="ws-auto"><h3>자동 업무 ${auto.length}건</h3>${autoTasks(auto.slice(0,6))}${auto.length>6?`<p class="ax-note">나머지 ${auto.length-6}건은 업무 목록에서 확인합니다.</p>`:''}</section></section>`;
-  }
-  // 자동 업무 = 공통 리스트(할 일 | 내용 | 기한). 줄을 누르면 그 할 일(원본 기록으로 가는 상세).
-  function autoTasks(list){
-    if(!list.length)return '';
-    const rows=list.map(t=>({...t,label:String(t.title||'')}));
-    const cols=[{key:'detail',label:'내용',text:t=>String(t.detail||'')},{key:'due',label:'기한',text:t=>t.due?`${dateText(t.due)}까지`:''}].filter(c=>rows.some(t=>c.text(t)));
-    return tableHtml({shape:sizeColumns('teacher-tasks',cols,rows,{nameLabel:'업무'}),rows,nameLabel:'업무',main:t=>`<button type="button" class="ws-rowmain ws-cut" data-task="${h(t.id)}">${h(t.label)}</button>`});
-  }
-  const localCount=(id,rid)=>(state.local[id]||[]).filter(e=>e.recordId===String(rid)).length;
-  /* ---------- 공통 리스트 ----------
-     업무 흐름 표(flow-ui)와 같은 규칙 한 벌 — 표 한 장(table-layout:fixed) · 열 머리 한 줄 · 열마다 정해진 너비 · 넘친 칸은 말줄임(기록 상세에서 확인).
-     금액은 오른쪽, 짧은 값은 가운데, 긴 글은 왼쪽(머리도 같은 쪽) · 열 머리를 누르면 정렬(오름·내림)·값 거르기 · 아래 쪽 번호.
-     줄 어디를 눌러도 그 줄의 이름 단추가 하는 일(기록이면 상세 서랍). 칸 값이 없으면 빈 칸(다음 값을 당기지 않는다).
-     작업 공간의 기록 목록(목록·날짜순·문서·설정 값·업무 단계 목록) · 칸반 칸 안의 줄 · 직원 수신함의 자동 업무를 모두 이 한 벌(tableHtml · sizeColumns)로 그린다. */
+  /* Shared table for workspace records. */
   const MONEY=/^-?[\d,]+원$/,collate=new Intl.Collator('ko',{numeric:true}).compare;
   // 글 폭 어림(em) — 한글 1 · 숫자 0.6 · 영문 0.62 · 빈칸 0.3 · 그 밖 0.4.
   const emOf=s=>{let n=0;for(const ch of String(s??''))n+=/[가-힣ㄱ-ㆎ一-鿿]/.test(ch)?1:/\d/.test(ch)?.6:/[A-Za-z]/.test(ch)?.62:/\s/.test(ch)?.3:.4;return n;};
@@ -426,7 +396,7 @@ window.createWorkspaces = function createWorkspaces(api) {
       return `${band}<tr${attrs(r)}>${lead.map(td).join('')}<th scope="row">${toggle}${main(r)}</th>${rest.map(td).join('')}${filler?'<td class="ws-fill"></td>':''}</tr>${expanded?`<tr class="ws-detail-row"><td colspan="${span}">${detail}</td></tr>`:''}`;}).join('');
     return `<div class="ws-tablewrap live-scroll"${key?` data-scroll-key="${h(key)}"`:''}><table class="ws-table${subject?' ws-has-subject':''}${kind?' ws-has-kind':''}${cls}"${shape.min?` style="min-width:${shape.min.toFixed(1)}em;--ws-subject-width:${subject?.w||'7em'};--ws-kind-width:${kind?.w||'7em'}"`:''}>${colgroup}${thead}<tbody>${body}</tbody></table></div>`;
   }
-  const rowMain=(id,r)=>{const n=localCount(id,r.id);return `<span class="ws-namecell"><button type="button" class="ws-rowmain ws-cut" data-ws="record" data-id="${h(id)}" data-record="${h(r.id)}">${h(r.label)}</button>${n?pill(`미리보기 ${n}`,'green'):''}</span>`;};
+  const rowMain=(id,r)=>`<span class="ws-namecell"><button type="button" class="ws-rowmain ws-cut" data-ws="record" data-id="${h(id)}" data-record="${h(r.id)}">${h(r.label)}</button></span>`;
   const rowAttrs=id=>r=>` data-record="${h(r.id)}"${curAttr(id,r.id)}`;
   function billingDetails(lines){
     if(!Array.isArray(lines)||!lines.length)return '';
@@ -493,12 +463,8 @@ window.createWorkspaces = function createWorkspaces(api) {
   }
   function sheetView(a,items){
     const cols=familyColumns(a,items),subject=cols.find(c=>c.key==='subject'),lead=cols.filter(c=>c.key==='subject'||(a.id==='classes'&&c.key==='f:구분')||(a.id==='inventory'&&c.key==='f:No')||(a.id==='shuttle'&&c.key==='detail')),rest=cols.filter(c=>!lead.includes(c));
-    const edits=state.edits[a.id]||{},changed=Object.values(edits).reduce((n,row)=>n+Object.keys(row).length,0);
-    const cell=(r,c)=>{if(!c.key.startsWith('f:'))return `<td>${c.key==='status'&&r.status?pill(r.status):h(c.text(r)||'—')}</td>`;
-      const label=c.label,original=(r.fields||[]).find(f=>f.label===label)?.value??'—',value=edits[r.id]?.[label];
-      return `<td><button type="button" class="ws-cell ${value!==undefined?'changed':''}" data-ws="cell" data-id="${h(a.id)}" data-record="${h(r.id)}" data-col="${h(label)}" aria-label="${h(r.label)} ${h(label)} ${h(value??original)} · Enter로 수정">${h(value??original)}</button></td>`;};
-    // 바꾼 칸은 저장되지 않는다는 것만 바꾼 뒤에 알린다(고치는 법 안내 줄은 싣지 않는다).
-    return `<div class="ws-sheet live-scroll" data-scroll-key="sheet-${h(a.id)}" tabindex="0"><table class="${subject?'ws-has-subject':''}${a.id==='classes'?' ws-has-kind':''}"><thead><tr>${lead.map(c=>`<th scope="col"${c.key==='subject'?' class="ws-subject-head"':''}>${h(c.label)}</th>`).join('')}<th scope="col">${h(NAME_HEAD[a.id]||'이름')}</th>${rest.map(c=>`<th scope="col">${h(c.label)}</th>`).join('')}</tr></thead><tbody>${items.map(r=>`<tr${curAttr(a.id,r.id)}>${lead.map(c=>c.key==='subject'?`<td class="ws-subject-cell">${h(c.text(r)||'—')}</td>`:cell(r,c)).join('')}<th scope="row"><button type="button" class="ws-row-head" data-ws="record" data-id="${h(a.id)}" data-record="${h(r.id)}">${h(r.label)}</button></th>${rest.map(c=>cell(r,c)).join('')}</tr>`).join('')}</tbody></table></div>${changed?`<div class="ws-sheet-bar"><span>바꾼 칸 ${changed}개 · 저장되지 않습니다</span>${btn('되돌리기','sheet-reset',`data-id="${h(a.id)}"`)}${btn('변경분 미리보기 저장','sheet-save',`data-id="${h(a.id)}"`,true)}</div>`:''}`;
+    const cell=(r,c)=>`<td>${c.key==='status'&&r.status?pill(r.status):h(c.text(r)||'—')}</td>`;
+    return `<div class="ws-sheet live-scroll" data-scroll-key="sheet-${h(a.id)}" tabindex="0"><table class="${subject?'ws-has-subject':''}${a.id==='classes'?' ws-has-kind':''}"><thead><tr>${lead.map(c=>`<th scope="col"${c.key==='subject'?' class="ws-subject-head"':''}>${h(c.label)}</th>`).join('')}<th scope="col">${h(NAME_HEAD[a.id]||'이름')}</th>${rest.map(c=>`<th scope="col">${h(c.label)}</th>`).join('')}</tr></thead><tbody>${items.map(r=>`<tr${curAttr(a.id,r.id)}>${lead.map(c=>c.key==='subject'?`<td class="ws-subject-cell">${h(c.text(r)||'—')}</td>`:cell(r,c)).join('')}<th scope="row"><button type="button" class="ws-row-head" data-ws="record" data-id="${h(a.id)}" data-record="${h(r.id)}">${h(r.label)}</button></th>${rest.map(c=>cell(r,c)).join('')}</tr>`).join('')}</tbody></table></div>`;
   }
   // 기록 한 건의 사실 = 칩(상태 · 걸러보기 구분) + 열 이름·값. 칩·칸이 같은 사실을 두 번 말하지 않는다(원장 10-28 '재원·재원' · '침산초 초5' + 학교/학년 줄).
   function studentClasses(id){
@@ -520,117 +486,35 @@ window.createWorkspaces = function createWorkspaces(api) {
     return [r.status?pill(r.status):'',...labels.map(l=>pill(l))].join('');
   }
   const factsHtml=(a,r)=>{const rows=recordFacts(a,r),chips=recordChips(a,r,rows);return `${chips?`<div class="ax-issue-meta">${chips}</div>`:''}${rows.length?`<dl>${rows.map(([l,v])=>`<dt>${h(l)}</dt><dd>${h(v)}</dd>`).join('')}</dl>`:''}`;};
-  // Settings faces are the catalog's faces (2.0 setting surfaces); their forms are the actions that target the face.
+  // 설정 면은 현재 값을 읽고 실제 저장은 이식된 학원 설정에서 한다.
   function settingsView(a){
     const faces=screensOf(a).length?screensOf(a):[{id:'',label:'설정'}],face=faces.find(f=>f.id===state.face[a.id])||faces[0];
-    const forms=actionsOf(a).filter(x=>x.mode==='preview'&&(face.id?targetOf(x).facet===face.id:!targetOf(x).facet));
-    const related=actionsOf(a).filter(x=>x.mode!=='preview'&&face.id&&targetOf(x).facet===face.id);
-    return `<div class="ws-settings"><nav class="ws-faces live-scroll" data-scroll-key="faces-${h(a.id)}" aria-label="설정 면">${faces.map(f=>`<button type="button" data-ws="face" data-id="${h(a.id)}" data-face="${h(f.id)}" aria-pressed="${f===face}">${h(f.label)}</button>`).join('')}</nav><div class="ws-face"><h3>${h(face.label)}</h3>${related.length?`<div class="ax-actions">${related.map(x=>`<button type="button" class="button" data-ws="action" data-id="${h(a.id)}" data-action="${h(x.id)}">${h(x.label)}</button>`).join('')}</div>`:''}${forms.length?forms.map(x=>`<section class="ws-inline-form"><h4>${h(x.label)}</h4>${previewForm(a,x,'',true)}</section>`).join(''):''}</div></div>`;
+    const tab=a.id==='owner-settings'?face.id:'sheets',sub=a.id==='integrations'?face.id:a.id==='slack'?'slack':'';
+    const href=`#v2-owner?tab=${encodeURIComponent(tab)}${sub?`&sub=${encodeURIComponent(sub)}`:''}`;
+    return `<div class="ws-settings"><nav class="ws-faces live-scroll" data-scroll-key="faces-${h(a.id)}" aria-label="설정 면">${faces.map(f=>`<button type="button" data-ws="face" data-id="${h(a.id)}" data-face="${h(f.id)}" aria-pressed="${f===face}">${h(f.label)}</button>`).join('')}</nav><div class="ws-face"><h3>${h(face.label)}</h3><a class="button" href="${h(href)}">이 설정 저장 화면 열기</a></div></div>`;
   }
 
-  /* ---------- actions: preview forms, owner request drafts, navigation ---------- */
-  // Preview and navigate actions carry their own one-line description in draft.body; a request's draft.body is the request text itself.
-  const actionIntent=x=>{
-    const note=x.mode!=='request'&&typeof x.draft?.body==='string'?x.draft.body.trim():'',fields=(Array.isArray(x.fields)?x.fields:[]).some(f=>f&&f.id&&f.label);
-    if(x.mode==='preview')return note||(fields?'입력 칸을 채워 기록합니다.':'메모로 기록합니다.');
-    return x.mode==='navigate'?note||'관련 화면으로 이동합니다.':'담당자에게 보낼 요청 초안을 엽니다.';
-  };
+  /* ---------- 실제 처리 화면과 업무 요청 ---------- */
+  const actionIntent=x=>x.mode==='navigate'?(x.draft?.body||'처리 화면을 엽니다.'):'담당자에게 보낼 업무 요청을 엽니다.';
   function actionPanel(a){
-    const list=actionsOf(a),screen=screensOf(a).find(sc=>sc.id===state.screen[a.id]),focus=screen?screenActions(a,screen.id):[];
-    const groups=['preview','request','navigate'].map(m=>[m,list.filter(x=>!focus.includes(x)&&(MODE[x.mode]?x.mode:'request')===m)]).filter(([,xs])=>xs.length);
-    const item=x=>`<button type="button" class="ws-action" data-ws="action" data-id="${h(a.id)}" data-action="${h(x.id)}"><strong>${h(x.label)}</strong><small>${h(actionIntent(x))}</small></button>`;
-    return `<section class="ws-actions" aria-label="이 화면에서 할 수 있는 일"><h2>할 수 있는 일 ${list.length}가지</h2>${focus.length?`<div class="ws-action-group focus"><h3>‘${h(screen.label)}’ 화면의 작업</h3>${focus.map(item).join('')}</div>`:''}${groups.map(([m,xs])=>`<div class="ws-action-group"><h3>${MODE[m].label}</h3>${xs.map(x=>`<button type="button" class="ws-action" data-ws="action" data-id="${h(a.id)}" data-action="${h(x.id)}"><strong>${h(x.label)}</strong><small>${h(actionIntent(x))}</small></button>`).join('')}</div>`).join('')||'<p class="ax-note">이 영역에 정의된 작업이 없습니다.</p>'}</section>`;
+    const list=actionsOf(a);
+    return `<section class="ws-actions" aria-label="이 화면에서 할 수 있는 일"><h2>할 수 있는 일</h2>${list.map(x=>`<button type="button" class="ws-action" data-ws="action" data-id="${h(a.id)}" data-action="${h(x.id)}"><strong>${h(x.label)}</strong><small>${h(actionIntent(x))}</small></button>`).join('')}</section>`;
   }
-  function fieldHtml(a,x,f,recordId,scope){
-    const id=`ws-f-${scope}-${a.id}-${x.id}-${f.id}`.replace(/[^\w-]/g,'_'),req=f.required?'required':'',label=`<span>${h(f.label)}${f.required?' <em aria-hidden="true">*</em>':''}</span>`;
-    const options=type=>type==='record'?visibleRecords(a.id).items.map(r=>({value:String(r.id),label:r.label})):type==='staff'?db.staff.map(s=>({value:s.id,label:`${s.name} · ${s.title}`})):type==='class'?db.classes.map(c=>({value:c.id,label:`${c.name} · ${c.teacher}`})):type==='subject'?[...new Set(db.classes.map(c=>c.subject).filter(Boolean))].map(v=>({value:v,label:api.subjectLabel?.(v)||v})):(f.options||[]).map(o=>typeof o==='object'?{value:String(o.value??o.id??o.label),label:String(o.label??o.value)}:{value:String(o),label:String(o)});
-    const t=f.type||'text';
-    if(window.ContextPicker&&['student','staff','class','record'].includes(t))return pickerField(a,f,t,id,recordId,scope);
-    if(t==='textarea')return `<label for="${id}">${label}<textarea id="${id}" name="${h(f.id)}" rows="3" maxlength="2000" ${req}></textarea></label>`;
-    if(t==='checkbox'||t==='boolean')return `<label class="ws-check" for="${id}"><input type="checkbox" id="${id}" name="${h(f.id)}" value="예"> ${h(f.label)}</label>`;
-    if(t==='student')return `<label for="${id}">${label}<input id="${id}" name="${h(f.id)}" list="ws-students" autocomplete="off" maxlength="60" placeholder="이름 입력 후 목록에서 선택" ${req}><small>재원생 목록에서 선택합니다.</small></label>`;
-    // 일반 고르기·과목·여러 개 고르기도 공용 선택창(원장 10-28 "모든 드랍다운 … 서식 일치"). 값과 이름(name)은 그대로라 저장 쪽은 바뀌지 않는다.
-    if(window.ContextPicker&&['select','subject','multiselect'].includes(t)){const CP=window.ContextPicker,opts=options(t==='multiselect'?'select':t);try{return CP.html({id,name:f.id,label:f.label,required:!!f.required,multiple:t==='multiselect',clearable:!f.required,...CP.lists.choices({items:opts.map(o=>({value:o.value,title:o.label})),columns:[{key:'name',label:f.label}]})});}catch{}}
-    if(['select','record','staff','class','subject'].includes(t)){const opts=options(t);return `<label for="${id}">${label}<select id="${id}" name="${h(f.id)}" ${req}><option value="">선택</option>${opts.map(o=>`<option value="${h(o.value)}" ${t==='record'&&String(recordId)===o.value?'selected':''}>${h(o.label)}</option>`).join('')}</select>${t==='record'&&!opts.length?'<small>선택할 기록이 없습니다.</small>':''}</label>`;}
-    if(t==='multiselect'){const opts=options('select');return `<fieldset class="ws-multi"><legend>${label}</legend>${opts.map(o=>`<label><input type="checkbox" name="${h(f.id)}" value="${h(o.value)}"> ${h(o.label)}</label>`).join('')}</fieldset>`;}
-    const html={number:'number',money:'number',amount:'number',date:'date',time:'time',month:'month'}[t]||'text';
-    const lo=Number.isFinite(Number(f.min))?Number(f.min):0,hi=Number.isFinite(Number(f.max))?Number(f.max):null;
-    return `<label for="${id}">${label}<input id="${id}" name="${h(f.id)}" type="${html}" ${html==='number'?`step="any" min="${lo}" ${hi!==null?`max="${hi}"`:''}`:''} ${html==='text'?'maxlength="200"':''} ${req}>${t==='money'||t==='amount'?'<small>원 단위</small>':hi!==null?`<small>${lo}~${hi}</small>`:''}</label>`;
-  }
-  // Decision fields (student · staff · class · record) use the shared ContextPicker (context-picker.js): the form value is
-  // the verified id and each row shows who or which it is. Inline settings forms keep their pick across a records
-  // refresh; a modal form starts from the record it was opened for.
-  function pickerField(a,f,t,id,recordId,scope){
-    const CP=window.ContextPicker,inline=scope==='i';
-    const list=t==='student'?CP.lists.students({db}):t==='staff'?CP.lists.staff({db,subjectLabel:api.subjectLabel}):t==='class'?CP.lists.classes({db,subjectLabel:api.subjectLabel}):recordList(a,recordId);
-    return CP.html({id,name:f.id,label:f.label,required:Boolean(f.required),empty:`${f.label} 선택`,persist:inline,...(inline?{}:{selected:t==='record'&&recordId?[String(recordId)]:[]}),...list});
-  }
-  // Record choices: the loaded page first (labeled as such), the whole family through the read-only records endpoint.
-  // Billing rows join the copy's invoice by id; otherwise the record's own amounts (청구액 · 수납 · 남은 금액) are shown.
-  const amount=v=>{const t=String(v??'').trim(),n=Number(t.replace(/[^\d.-]/g,''));return t&&t!=='—'&&Number.isFinite(n)?n:undefined;};
-  const invoiceRow=r=>{const fv=l=>(r.fields||[]).find(x=>x.label===l)?.value;return {id:r.id,name:r.label,period:r.detail||'',total:amount(fv('청구액')),paid:amount(fv('수납')),remaining:amount(fv('남은 금액'))};};
-  function recordList(a,recordId){
-    const CP=window.ContextPicker,vis=visibleRecords(a.id),picked=recordId?recordById(a.id,recordId):null;
-    const items=[...(picked&&!vis.items.some(r=>String(r.id)===String(recordId))?[picked]:[]),...vis.items],billing=a.id==='billing';
-    const out=billing?CP.lists.invoices({db,items:items.map(invoiceRow)}):CP.lists.records({items,familyLabel:a.label});
-    const toOptions=list=>billing?CP.lists.invoices({db,items:list.map(invoiceRow)}).options:list.map(out.option);
-    const total=Math.max(Number(vis.total)||0,items.length);
-    const remote=state.unsupported?null:{load:async(q,{signal})=>{
-      const params=new URLSearchParams({q:q.slice(0,100),page:'1',pageSize:'50'});
-      const res=await fetch(`/api/workspaces/${encodeURIComponent(a.id)}/records?${params}`,{headers:{Accept:'application/json'},signal});
-      let json=null;try{json=await res.json();}catch{/* not served here */}
-      if(!res.ok||!json||!Array.isArray(json.items))throw new Error('전체 기록을 불러오지 못했습니다. 불러온 목록에서만 찾습니다.');
-      return {options:toOptions(json.items),filtered:Number(json.filteredTotal)||json.items.length};
-    }};
-    return {...out,remote,note:total>items.length?`불러온 ${items.length}건 표시 · 전체 ${total.toLocaleString('ko-KR')}건은 검색어로 찾습니다`:`${items.length}건`};
-  }
-  function previewForm(a,x,recordId='',inline=false,kind='preview'){
-    const fields=Array.isArray(x.fields)?x.fields.filter(f=>f&&f.id&&f.label):[];
-    if(!window.ContextPicker&&fields.some(f=>f.type==='student')&&!document.getElementById('ws-students'))document.body.insertAdjacentHTML('beforeend',`<datalist id="ws-students">${db.students.filter(s=>s.status==='enrolled').map(s=>`<option value="${h(`${s.name} · ${s.school} ${s.grade}`)}"></option>`).join('')}</datalist>`);
-    return `<form class="ws-form" data-ws-form="${kind}" data-id="${h(a.id)}" data-action="${h(x.id)}" ${inline?'data-inline="1"':''} novalidate>${fields.map(f=>fieldHtml(a,x,f,recordId,inline?'i':'m')).join('')||'<label>메모<textarea name="__note" rows="2" maxlength="500"></textarea></label>'}<p class="ax-form-error" role="alert"></p><div class="ws-form-foot">${kind==='request'?'':'<span class="ax-note">저장되지 않습니다.</span>'}<button class="button primary" type="submit">${kind==='request'?'요청서로 이어 쓰기':'미리보기로 기록'}</button></div></form>`;
-  }
-  const FIRST_CONTROL='#modal .ws-form :is(input:not([type=hidden]):not([data-cpick-search]),select,textarea,.cpick-trigger)';
   function openAction(familyId,actionId,recordId=''){
     const a=area(familyId),x=a&&actionsOf(a).find(y=>y.id===actionId);if(!x)return;
-    if(x.mode==='navigate'){const {page,facet}=targetOf(x),dest=resolvePage(page);if(!dest){toast('이동할 화면을 찾지 못했습니다.');return;}const fam=familyOf(dest),tgt=fam&&area(fam);if(tgt&&facet){if(facetsOf(tgt).some(f=>f.id===facet)){state.facet[fam]=facet;state.page[fam]=1;}else if(screensOf(tgt).some(f=>f.id===facet)){if(viewKind(tgt)==='settings')state.face[fam]=facet;else state.screen[fam]=facet;}}navigate(dest);return;}
-    if(x.mode==='preview'){dialog('modal',x.label,`${a.label} · 미리보기`,`${recordId?`<p class="ws-context">기록: ${h(recordById(familyId,recordId)?.label||'')}</p>`:''}<p class="ax-note">${h(actionIntent(x))}</p>${previewForm(a,x,recordId)}`);$(FIRST_CONTROL)?.focus();return;}
+    if(x.mode==='navigate'){
+      const {page,facet}=targetOf(x),dest=resolvePage(page);
+      if(!dest){toast('이동할 화면을 찾지 못했습니다.');return;}
+      const fam=familyOf(dest),tgt=fam&&area(fam);
+      if(tgt&&facet){if(facetsOf(tgt).some(f=>f.id===facet)){state.facet[fam]=facet;state.page[fam]=1;}else if(screensOf(tgt).some(f=>f.id===facet)){if(viewKind(tgt)==='settings')state.face[fam]=facet;else state.screen[fam]=facet;}}
+      navigate(dest);return;
+    }
     const r=recordId?recordById(familyId,recordId):null;
-    if((x.fields||[]).some(f=>f&&f.id&&f.label)){dialog('modal',x.label,`${a.label} · 요청에 담을 내용`,`${r?`<p class="ws-context">기록: ${h(r.label)}</p>`:''}<p class="ax-note">${h(actionIntent(x))}</p>${previewForm(a,x,recordId,false,'request')}`);$(FIRST_CONTROL)?.focus();return;}
-    requestFrom(a,{title:x.draft?.title||x.label,body:x.draft?.body||`${a.label}에서 ‘${x.label}’ 작업을 처리하고 결과를 보고해 주세요.`,action:x.id,records:r?[r]:[]});
+    requestFrom(a,{title:x.draft?.title||x.label,body:x.draft?.body||`${a.label} 업무를 처리하고 결과를 알려 주세요.`,action:x.id,records:r?[r]:[]});
   }
   function requestFrom(a,{title,body,action='',signal='',records=[]}){
     const recordLines=records.length?`\n\n확인 대상: ${records.map(r=>r.label).join(', ')}`:'';
     ax.showRequest({title,body:`${body}${recordLines}`,source:'workspace',draftKey:`ws:${a.id}:${action||signal||(records[0]?.id||'direct')}`,context:{family:a.id,familyLabel:a.label,records:records.map(r=>({id:String(r.id),label:String(r.label)})),signal,action}});
-  }
-  const studentText=s=>`${s.name} · ${s.school} ${s.grade}`;
-  const studentFor=v=>db.students.find(s=>s.status==='enrolled'&&(s.id===v||studentText(s)===v));
-  function validate(form,fields){
-    const errors=[];
-    fields.forEach(f=>{
-      const values=new FormData(form).getAll(f.id).map(String).filter(v=>v.trim()),v=values[0]||'';
-      if(f.required&&!values.length)errors.push(`${f.label} 칸을 입력해 주세요.`);
-      const lo=Number.isFinite(Number(f.min))?Number(f.min):0,hi=Number.isFinite(Number(f.max))?Number(f.max):null;
-      if(v&&['number','money','amount'].includes(f.type)&&!(Number.isFinite(Number(v))&&Number(v)>=lo&&(hi===null||Number(v)<=hi)))errors.push(hi===null?`${f.label} 칸은 ${lo} 이상의 숫자로 입력해 주세요.`:`${f.label} 칸은 ${lo}~${hi} 사이의 숫자로 입력해 주세요.`);
-      if(v&&f.type==='date'&&!/^\d{4}-\d{2}-\d{2}$/.test(v))errors.push(`${f.label} 날짜 형식을 확인해 주세요.`);
-      if(v&&f.type==='student'&&!studentFor(v))errors.push(`${f.label} 칸은 재원생 목록에서 선택해 주세요.`);
-      if(v&&['select'].includes(f.type)&&Array.isArray(f.options)&&f.options.length&&!f.options.some(o=>String(typeof o==='object'?o.value??o.id??o.label:o)===v))errors.push(`${f.label} 선택지를 다시 선택해 주세요.`);
-    });
-    return errors;
-  }
-  function submitPreview(form,kind='preview'){
-    const a=area(form.dataset.id),x=a&&actionsOf(a).find(y=>y.id===form.dataset.action);if(!x)return;
-    const fields=Array.isArray(x.fields)?x.fields.filter(f=>f&&f.id&&f.label):[],errors=validate(form,fields),out=form.querySelector('.ax-form-error');
-    if(errors.length){out.textContent=errors[0];const first=fields.find(f=>f.required&&!new FormData(form).getAll(f.id).some(v=>String(v).trim()));if(!(first&&window.ContextPicker?.focus(form,first.id)))(first?form.querySelector(`[name="${CSS.escape(first.id)}"]:not([type=hidden])`):form.querySelector('input:not([type=hidden]),select,textarea'))?.focus();return;}
-    const values=new FormData(form),display=(f,v)=>f.type==='student'?(studentFor(v)?studentText(studentFor(v)):v):f.type==='subject'?api.subjectLabel?.(v)||v:f.type==='record'?recordById(a.id,v)?.label||window.ContextPicker?.label(form.querySelector(`[data-cpick-name="${CSS.escape(f.id)}"]`),v)||v:f.type==='staff'?db.staff.find(s=>s.id===v)?.name||v:f.type==='class'?db.classes.find(c=>c.id===v)?.name||v:f.type==='multiselect'||f.type==='select'?(f.options||[]).map(o=>typeof o==='object'?o:{value:o,label:o}).find(o=>String(o.value??o.id??o.label)===v)?.label||v:v;
-    const entry={id:crypto.randomUUID(),actionId:x.id,label:x.label,result:resultLabel(x),at:new Date().toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit'}),recordId:String(fields.filter(f=>f.type==='record').map(f=>values.get(f.id)).find(Boolean)||''),values:fields.length?fields.map(f=>({label:f.label,value:values.getAll(f.id).map(v=>display(f,String(v))).join(', ')||(f.type==='checkbox'?'아니요':'—')})):[{label:'메모',value:String(values.get('__note')||'—')}]};
-    if(kind==='request'){const r=entry.recordId?recordById(a.id,entry.recordId):null;form.closest('dialog')?.close();requestFrom(a,{title:x.draft?.title||x.label,body:`${x.draft?.body||`${a.label}에서 ‘${x.label}’ 작업을 처리하고 결과를 보고해 주세요.`}\n${entry.values.map(v=>`· ${v.label}: ${v.value}`).join('\n')}`,action:x.id,records:r?[r]:[]});return;}
-    (state.local[a.id]||(state.local[a.id]=[])).unshift(entry);
-    if(!form.dataset.inline)form.closest('dialog')?.close();else form.reset();
-    refreshSide(a.id);refreshMain(a.id);toast(`‘${x.label}’ 미리보기를 이 화면에 기록했습니다. 저장되지는 않았습니다.`);
-  }
-  function localLog(a){
-    const list=state.local[a.id]||[];if(!list.length)return '';
-    return `<section class="ws-local" aria-label="이 화면에서 만든 미리보기"><h2>이 화면에서 만든 미리보기 ${list.length}건</h2><p class="ax-note">새로고침하면 사라집니다.</p>${list.map(e=>`<article><header><strong>${h(e.label)}</strong><small>${h(e.at)}</small></header><dl>${e.values.map(v=>`<dt>${h(v.label)}</dt><dd>${h(v.value)}</dd>`).join('')}</dl><div class="ax-actions">${btn('이 내용으로 요청','local-request',`data-id="${h(a.id)}" data-entry="${e.id}"`)}${btn('지우기','local-remove',`data-id="${h(a.id)}" data-entry="${e.id}"`)}</div></article>`).join('')}</section>`;
   }
   function linkedRequests(a){
     const list=ax.requestsFor?.(a.id)||[];if(!list.length)return '';
@@ -656,10 +540,7 @@ window.createWorkspaces = function createWorkspaces(api) {
         return fail(res.status===404);})
       .catch(()=>same()?fail(false):'stale');
   }
-  // 기록 상세 서랍 = 그 기록의 사실 + 실제로 일이 되는 동작만(원장 10-28 — 저장되지 않는 미리보기·요청 초안은 해결 동작처럼 보여 헷갈린다).
-  // 남기는 것: '이 기록으로 요청'(업무 요청을 실제로 연다) · '상세 화면 열기'(이 기록을 바로 여는 화면) · '처리 화면 열기'(그 기록이 열린 처리 화면 · 없으면 이 영역의 업무 화면) ·
-  // 이 영역의 본래 화면으로 가는 '화면 이동'(기록을 바로 여는 화면이 없을 때만). 같은 작업 공간 안의 보조 면(키오스크 설정·실급여 비율 …)으로 가는
-  // 이동은 그 기록과 상관없어 뺀다. 미리보기·요청 초안은 본문 '할 수 있는 일'에 그대로 있다.
+  // 기록 상세에서는 해당 기록의 요청과 처리 화면을 바로 연다.
   // 근거 한 건 열기 = 처리 화면(record-open, v2-screen-record-open.js) · 처리 화면이 없는 영역은 기록 서랍.
   function openEvidence(familyId,recordId){
     document.querySelectorAll('dialog[open]').forEach(d=>d.close());
@@ -695,9 +576,9 @@ window.createWorkspaces = function createWorkspaces(api) {
     return `<section class="ws-textbook-plans"><h3>배정된 반 ${rows.length}건</h3>${rows.length?`<div class="ws-textbook-plan-list">${rows.map(p=>`<article><button type="button" class="ax-text-link" data-ws="textbook-class" data-record="${h(p.class_id)}">${h(p.class_name)}</button><dl><dt>배정 기록</dt><dd>${h(p.id)}</dd><dt>시작</dt><dd>${h(p.start_date||'미정')} · ${h(p.start_lesson_no||1)}차</dd><dt>자리</dt><dd>${p.slot_axis==='jj'?'JJ':'반 수업'}</dd><dt>진도 단위</dt><dd>${({period:'교시마다 한 차수',day:'수업일마다 한 차수',min25:'25분마다 한 차수'})[p.pace]||'교시마다 한 차수'}</dd><dt>구분</dt><dd>${p.term_mode==='exam'?'시험':'정규'}</dd><dt>시트 반영</dt><dd>${h(p.last_applied_at?String(p.last_applied_at).slice(0,10):'아직 없음')}</dd></dl></article>`).join('')}</div>`:'<p>배정된 반이 없습니다.</p>'}</section>`;
   }
   function renderRecord(a,familyId,r,pin=false){
-    const recordId=String(r.id),local=(state.local[familyId]||[]).filter(e=>e.recordId===recordId);
+    const recordId=String(r.id);
     state.cur[familyId]=recordId;
-    dialog('detail',r.label,a.label,`${factsHtml(a,r)}${familyId==='billing'?billingDetails(r.lines):''}${familyId==='textbooks'?textbookAssignments(r):''}${recordActions(a,r)}${local.length?`<section class="ax-evidence"><h3>이 기록의 미리보기 ${local.length}건</h3>${local.map(e=>`<p><strong>${h(e.label)}</strong> · ${h(e.values.map(v=>`${v.label} ${v.value}`).join(' · '))}</p>`).join('')}</section>`:''}`);
+    dialog('detail',r.label,a.label,`${factsHtml(a,r)}${familyId==='billing'?billingDetails(r.lines):''}${familyId==='textbooks'?textbookAssignments(r):''}${recordActions(a,r)}`);
     if(pin&&api.getPage()===`workspace-${familyId}`){state.pin[familyId]=recordId;refreshMain(familyId);}
     // 그 줄이 화면 안에 들어오게(경로를 옮겨 온 것이라 곧바로 — 스크롤 원칙의 '화면 전환'). 이미 보이면 움직이지 않는다.
     const row=markCurrent(familyId);
@@ -712,19 +593,7 @@ window.createWorkspaces = function createWorkspaces(api) {
     api.attachScroll();if(focus)document.getElementById(focus)?.focus({preventScroll:true});
     if(colMenu.el)placeColMenu();
   }
-  function refreshSide(id){const node=$('#ws-local');const a=area(id);if(node&&a)node.innerHTML=localLog(a);}
-
-  /* ---------- sheet edits ---------- */
-  function editCell(button){
-    const {id,record,col}=button.dataset,input=document.createElement('input');
-    input.value=button.textContent;input.className='ws-cell-input';input.setAttribute('aria-label',button.getAttribute('aria-label'));
-    const finish=save=>{if(save){const r=recordById(id,record),original=(r?.fields||[]).find(f=>f.label===col)?.value??'—',value=input.value.trim()||'—';const row=(state.edits[id]||(state.edits[id]={}))[record]||(state.edits[id][record]={});if(value===String(original))delete row[col];else row[col]=value;}refreshMain(id);$(`.ws-cell[data-record="${CSS.escape(record)}"][data-col="${CSS.escape(col)}"]`)?.focus();};
-    input.addEventListener('keydown',e=>{if(e.isComposing||e.keyCode===229)return;if(e.key==='Enter'){e.preventDefault();finish(true);}if(e.key==='Escape'){e.preventDefault();e.stopPropagation();finish(false);}});
-    input.addEventListener('blur',()=>{if(input.isConnected)finish(true);},{once:true});
-    button.replaceWith(input);input.focus();input.select();
-  }
-
-  /* ---------- discovery: left sidebar finder + grouped areas (collapsed), global search, launcher ---------- */
+  /* Sidebar discovery. */
   const groups=()=>[...new Set(areas().map(a=>a.group||'기타'))];
   function matches(query){
     const q=norm(query);if(!q)return [];
@@ -758,7 +627,7 @@ window.createWorkspaces = function createWorkspaces(api) {
       const ops=actionsOf(a).map(x=>{const mode=MODE[x.mode]?x.mode:'request',{page:target}=targetOf(x),dest=MODE[mode].destination;
         const reachable=mode!=='navigate'||Boolean(resolvePage(target));
         byDestination[dest]=(byDestination[dest]||0)+1;operations++;
-        return {id:x.id,label:x.label,mode,destination:dest,target:mode==='navigate'?target:mode==='preview'?'local-session-log':'request-form',status:reachable?MODE[mode].status:'broken-target',fields:Array.isArray(x.fields)?x.fields.length:0,result:mode==='preview'?resultLabel(x):'',sourceOperationIds:Array.isArray(x.sourceOperationIds)?x.sourceOperationIds:[],intent:actionIntent(x),production:'not-linked'};});
+        return {id:x.id,label:x.label,mode,destination:dest,target:mode==='navigate'?target:'request-form',status:reachable?MODE[mode].status:'broken-target',fields:0,sourceOperationIds:Array.isArray(x.sourceOperationIds)?x.sourceOperationIds:[],intent:actionIntent(x),production:'not-linked'};});
       families[a.id]={page:`workspace-${a.id}`,reachable:api.hasView(`workspace-${a.id}`),label:a.label,group:a.group||'',viewKind:kind,renderer:`${kind}View`,dataState:dataState(a.id).key,facets:[...facetData.map(f=>({id:f.id,label:f.label,kind:'record-filter',intent:FACET_INTENT[kind],status:recs.some(r=>(r.facetIds||[]).includes(f.id))?'filter':'count-only'})),...screensOf(a).map(sc=>({id:sc.id,label:sc.label,kind:sc.kind||'screen',intent:screenActions(a,sc.id).length?`‘${sc.label}’ 화면 — 관련 작업 ${screenActions(a,sc.id).length}가지로 이어집니다`:`‘${sc.label}’ 화면 이름을 보여 줍니다`,status:kind==='settings'?'face':screenActions(a,sc.id).length?'screen':'label-only'}))],operations:ops};
     }
     return {schemaVersion:1,local:true,families,totals:{families:Object.keys(families).length,operations,byDestination,sourceOperationIds:[...new Set(Object.values(families).flatMap(f=>f.operations.flatMap(o=>o.sourceOperationIds)))].length}};
@@ -904,23 +773,7 @@ window.createWorkspaces = function createWorkspaces(api) {
       requestAnimationFrame(()=>{$('#ws-main')?.scrollIntoView({block:'start',behavior:'auto'});toast('이 신호의 근거 기록은 작업 공간 목록에서 확인할 수 있습니다.');});
       return;
     }
-    if(action==='cell'){editCell(el);return;}
-    if(action==='recipient-ack'){const person=db.staff.find(s=>s.id===(state.recipient||ax.recipient?.owners()[0]));ax.recipient?.acknowledge(el.dataset.request,person?.name||'담당자',person?.id||'');return;}
-    if(action==='sheet-reset'){delete state.edits[id];refreshMain(id);return;}
-    if(action==='sheet-save'){
-      const rows=state.edits[id]||{},values=Object.entries(rows).flatMap(([rid,cols])=>Object.entries(cols).map(([c,v])=>({label:`${recordById(id,rid)?.label||rid} · ${c}`,value:v})));if(!values.length)return;
-      (state.local[id]||(state.local[id]=[])).unshift({id:crypto.randomUUID(),actionId:'sheet-edits',label:'시트 변경분',at:new Date().toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit'}),recordId:'',values});
-      delete state.edits[id];refreshMain(id);refreshSide(id);toast(`시트 변경 ${values.length}칸을 미리보기로 기록했습니다. 시트에 저장되지는 않았습니다.`);return;
-    }
-    if(action==='local-remove'){state.local[id]=(state.local[id]||[]).filter(e=>e.id!==el.dataset.entry);refreshSide(id);refreshMain(id);return;}
-    if(action==='local-request'){const a=area(id),e=(state.local[id]||[]).find(x=>x.id===el.dataset.entry);if(!e)return;const r=e.recordId?recordById(id,e.recordId):null;requestFrom(a,{title:`${e.label} 처리 요청`,body:`${a.label}에서 아래 내용대로 ‘${e.label}’ 작업을 처리하고 결과를 보고해 주세요.\n${e.values.map(v=>`· ${v.label}: ${v.value}`).join('\n')}`,action:e.actionId,records:r?[r]:[]});return;}
   },true);
-  document.addEventListener('submit',event=>{
-    const form=event.target;
-    if(form.dataset.wsForm==='recipient-report'){event.preventDefault();event.stopImmediatePropagation();const text=String(new FormData(form).get('result')||'').trim();if(!text){form.querySelector('.ax-form-error').textContent='완료 보고 내용을 입력해 주세요.';form.querySelector('textarea').focus();return;}const person=db.staff.find(s=>s.id===(state.recipient||ax.recipient?.owners()[0]));ax.recipient?.complete(form.dataset.request,person?.name||'담당자',text,person?.id||'');return;}
-    if(form.dataset.wsForm!=='preview'&&form.dataset.wsForm!=='request')return;event.preventDefault();event.stopImmediatePropagation();submitPreview(form,form.dataset.wsForm);
-  },true);
-  document.addEventListener('change',event=>{if(event.target.dataset?.wsRecipient!==undefined){state.recipient=event.target.matches('[data-cpick]')?window.ContextPicker.value(event.target)[0]||'':event.target.value;const id=familyOf(api.getPage());if(id)refreshMain(id);}});
   document.addEventListener('input',event=>{
     const el=event.target;
     if(el.id==='ws-find'){state.query=el.value;state.active=matches(el.value).length?0:-1;updateFinder();return;}
@@ -940,7 +793,6 @@ window.createWorkspaces = function createWorkspaces(api) {
       else if(event.key==='Escape'&&state.query){event.preventDefault();event.stopPropagation();state.query='';state.active=-1;el.value='';updateFinder();}
       return;
     }
-    if(el.classList?.contains('ws-cell')&&(event.key==='Enter'||event.key===' ')){event.preventDefault();editCell(el);}
   },true);
   document.addEventListener('click',event=>{const summary=event.target.closest?.('[data-ws-group]>summary');if(!summary)return;const d=summary.parentElement,g=d.dataset.wsGroup;if(d.open){state.open.delete(g);state.closed.add(g);}else{state.open.add(g);state.closed.delete(g);}},true);
   window.addEventListener('ax-catalog',()=>api.render());

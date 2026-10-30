@@ -34,7 +34,7 @@ if (C.schemaVersion !== 1) schema.push('schemaVersion');
 if (C.liveWrites !== false) schema.push('liveWrites는 false여야 한다');
 if (!Array.isArray(C.areas) || !C.areas.length) schema.push('areas 없음');
 const pages = new Set(C.areas.map(a => a.page));
-const legacy = new Set(['home', 'students', 'admissions', 'classes', 'learning', 'finance', 'staff', 'parents', 'shuttle', 'approvals', 'resources', 'calendar', 'settings', 'inbox', 'requests', 'automation']);
+const legacy = new Set(['home', 'students', 'admissions', 'classes', 'learning', 'finance', 'staff', 'parents', 'shuttle', 'approvals', 'resources', 'calendar', 'settings', 'inbox', 'requests', 'automation', 'flow']);
 for (const a of C.areas) {
   const where = `area ${a.id}`;
   for (const k of ['id', 'label', 'group', 'page', 'summary', 'viewKind']) if (typeof a[k] !== 'string' || !a[k]) schema.push(`${where}.${k}`);
@@ -53,7 +53,7 @@ for (const a of C.areas) {
     if (act.result?.liveWrite !== false) schema.push(`${w}.result.liveWrite`);
     if (act.mode === 'navigate') {
       if (!act.target?.page) schema.push(`${w}.target`);
-      else if (!pages.has(act.target.page) && !legacy.has(act.target.page)) schema.push(`${w}.target.page ${act.target.page}`);
+      else if (!pages.has(act.target.page) && !legacy.has(act.target.page) && !/^v2-[a-z][a-z0-9-]*$/.test(act.target.page)) schema.push(`${w}.target.page ${act.target.page}`);
     } else if (act.target) schema.push(`${w}: navigate가 아닌데 target이 있음`);
     for (const fd of act.fields || []) {
       if (!fd.id || !fd.label || !FIELD_TYPES.includes(fd.type)) schema.push(`${w}.${fd.id} 필드`);
@@ -62,6 +62,10 @@ for (const a of C.areas) {
     }
   }
 }
+for (const id of ['teacher-workspace', 'parent-portal', 'student-portal', 'public-sites']) {
+  if (!C.areas.find(a => a.id === id)?.menuHidden) schema.push(`${id}.menuHidden`);
+}
+if (C.areas.some(a => a.actions.some(act => act.mode === 'preview'))) schema.push('미리보기 동작이 남음');
 check('스키마가 계약과 맞다', schema);
 
 // 4) 커버리지 — 인벤토리의 원장 표시 패밀리·핵심 동작 전부

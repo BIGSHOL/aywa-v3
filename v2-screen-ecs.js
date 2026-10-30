@@ -57,7 +57,7 @@
         requested = query; // iframe은 이미 그 주소다 — 3.0이 다시 그려도 다시 읽지 않게 먼저 맞춘다
         const current = new URLSearchParams(location.hash.split('?')[1] || '');
         const out = new URLSearchParams(query);
-        if (current.get('teacherHome') === '1' && current.get('actor')) { out.set('actor', current.get('actor')); out.set('teacherHome', '1'); }
+        if (current.get('teacherHome') === '1') out.set('teacherHome', '1');
         const page = `#v2-${ID}${out.size ? `?${out}` : ''}`;
         if (location.hash !== page) location.replace(page);
       } else if (d.type === 'v2-host-open' || d.type === 'eywa-open-window') openFromHost(String(d.href || ''));
@@ -83,10 +83,8 @@
     id: ID, label: '강사 시트',
     render(ctx) {
       api = ctx.api; wire();
-      const requestedActor = ctx.query.get('actor');
-      const teacherMode = ctx.query.get('teacherHome') === '1' && /^[0-9a-f-]{36}$/i.test(requestedActor || '');
-      if (teacherMode) actor = requestedActor;
-      const teacherStrip = teacherMode ? window.TeacherHome?.strip(ctx, requestedActor, 'ecs') || '' : '';
+      const teacherMode = ctx.query.get('teacherHome') === '1' && window.AywaAccount?.current?.()?.role === 'teacher';
+      const teacherStrip = teacherMode ? window.TeacherHome?.strip(ctx, S.accountId(), 'ecs') || '' : '';
       const query = queryOf(ctx.query);
       if (hostOk === null) fetch(HOST, { method: 'HEAD' }).then(r => r.ok, () => false).then(ok => { if (hostOk === null) { hostOk = ok; api?.render?.(); } });
       else if (hostOk) requestAnimationFrame(() => { ensureFrame(query); place(); });
