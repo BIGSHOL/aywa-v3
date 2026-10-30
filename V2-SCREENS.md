@@ -61,6 +61,7 @@
 3. `node experiments/owner-concept/v2-host/build.mjs` → `dist/<id>.html`(4310은 새로고침으로 반영, 시작 때 `isBuilt()`가 거짓이면 스스로 짓는다). 3.0 화면 `v2-screen-<id>.js`는 같은 출처 iframe `/v2-host/<id>.html?…`을 자리 위에 한 번만 겹쳐 둔다(`v2-screen-timetable.js`). `shims/`·`host-frame.tsx`·`host.css`는 공용 — 더 필요하면 시간표 세션에 `[요청]`.
 
 ## 공용 도구: v2-server-runner (메인 결정 10-28 안 A · 주인 = 팀장 세션)
+- 읽기 동작(`mode: 'read'`)은 2.0 `cache()`를 요청 단위로 살리고 역할은 바뀔 때만 전환한다(`verify-v2-server-read.mjs`가 종전 길과 금액까지 대조). 쓰기 동작은 기억 없이 쿼리마다 역할을 바꾼다.
 
 - **언제**: 조립·산식이 커서 SQL로 손 이식하면 2.0과 어긋날 위험이 큰 화면(수납 회차 확정 · 강사 정산 …). 순수 함수만 필요하면 `importV2`로 충분하다. 첫 사용처 = `v2-billing-sessions.mjs`.
 - **쓰는 법**: `runV2Server({ steps: [{ module: 'features/…/server/x.ts', fn, args }], actorId, tenantId, mode: 'read' | 'write', rollback?, probes? })` → `{ results: [{ value } | { redirect } | { notFound }] }`. 동작 하나 = 복사본 트랜잭션 하나(읽기 = read only · 쓰기 = `net.http_request_queue`가 늘면 되돌림 · `rollback` = 시험용).
