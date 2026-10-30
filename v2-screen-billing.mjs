@@ -37,7 +37,6 @@
 //  · 서버 컴포넌트를 옮긴 것(교재 면): textbooks-face.tsx · textbooks-panel.tsx · catalog-panel.tsx(billing-textbooks.swaps.json).
 //  · 바깥 링크: 엑셀 내보내기 `/api/exports/billing` — 호스트 틀이 막는다(연습 자료 미지원).
 import { UUID } from './v2-mcs-core.mjs';
-import { V2Error } from './v2-screens.mjs';
 import { loadBillingRules, readSettings, readBillingViewers, billingEditorsOf, readSyncState, resolveBillingTab } from './v2-billing-common.mjs';
 import { readInvoicesForPeriod, readAvailablePeriods, readStudentOptions } from './v2-billing-invoices.mjs';
 import { readTextbooksFace, loadMyTextbookMent, textbookFaceActions } from './v2-billing-textbooks.mjs';
@@ -78,13 +77,14 @@ export const screen = {
     const R = await loadBillingRules(importV2);
     const env = await readSettings(sql, t, R), viewers = await readBillingViewers(sql, t, R, env);
     const viewer = viewers.find(v => v.id === sp.viewer) ?? null;
-    if (!viewer) throw new V2Error(403, 'viewer_not_allowed', '이 계정은 수납관리를 볼 수 없습니다.');
+    const common = { editors: billingEditorsOf(viewers), viewer: viewer && { id: viewer.id, name: viewer.name, role: viewer.roleLabel },
+      host: { operations: env.operations, disabledModules: env.disabled } };
+    if (!viewer) return { ...common, notAllowed: true, route: 'page', page: 'noAccess',
+      access: { billing: false, payrollMenu: false, readSalary: false, manageBilling: false, writeBilling: false, owner: false } };
     if (sp.ment) return { ment: await loadMyTextbookMent(sql, t, importV2, viewer) };
     if (sp.call) return { value: await readSessionCall(sql, t, importV2, viewer, sp.call, sp.args) };
     if (sp.refundOptions) return loadRefundStudentOptions(sql, viewer, await loadRefundRules(importV2));
     if (sp.prefill) return loadRefundPrefill(sql, viewer, await loadRefundRules(importV2), sp.prefill, sp.months === 'all' ? null : Number(sp.months ?? 3));
-    const common = { editors: billingEditorsOf(viewers), viewer: viewer && { id: viewer.id, name: viewer.name, role: viewer.roleLabel },
-      host: { operations: env.operations, disabledModules: env.disabled } };
     // page.tsx 게이트 — 화면(호스트)이 같은 순서로 판정한다(requireAccess · canReadSalary · canAccessTenant · canManageTenant).
     const access = {
       billing: viewer.billing !== 'none', payrollMenu: viewer.payroll !== 'none',

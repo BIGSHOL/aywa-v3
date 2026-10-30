@@ -5,6 +5,7 @@ import { snapshotTables } from './snapshot-tables.mjs';
 import { loadWorkspaces } from './domain-snapshot.mjs';
 import { loadKnownContacts, maskBaseModel } from './domain-snapshot-mask.mjs';
 import { billingName, loadBillingLines, projectBillingLines } from './billing-lines.mjs';
+import { groupAbsenceSessions } from './absence-sessions.mjs';
 
 const date = value => value ? (value instanceof Date ? new Date(value.getTime() + 9 * 3600000).toISOString() : String(value)).slice(0, 10) : '';
 const num = value => Number(value || 0);
@@ -72,9 +73,10 @@ export function buildReadModel(r, info, billingTools = null) {
   const attendance = r.attendance_records.filter(a => actualStudent(a) && !replaced.has(a.id) && date(a.session_date) <= today);
   const currentAttendance = attendance.filter(a => date(a.session_date).startsWith(month));
   const attendanceByStudent = group(currentAttendance, 'student_id'), allAttendanceByStudent = group(attendance, 'student_id');
+  const absenceSessions = groupAbsenceSessions(attendance.filter(a => a.status === 'absent').map(a => ({ ...a, session_date: date(a.session_date) })));
+  const absenceSessionsByStudentMonth = group(absenceSessions, a => `${a.studentId}|${a.date.slice(0, 7)}`);
   const validInvoices = r.invoices.filter(a => actualStudent(a) && !['void', 'refunded'].includes(a.status));
-  // amount_total is before discounts. In the copied October data all 319 paid
-  // invoices reconcile exactly after amount_discount; discounts are not debt.
+  // amount_total is before discounts; discounts are not debt.
   const invoices = validInvoices.map(i => { const lines=billingTools?projectBillingLines(i,billingTools):[];return { id: i.id, studentId: i.student_id, name: name(i.student_id), period: i.period, category: i.category, gross: num(i.amount_total), discount: num(i.amount_discount), total: Math.max(0, num(i.amount_total) - num(i.amount_discount)), paid: num(i.amount_paid), remaining: Math.max(0, num(i.amount_total) - num(i.amount_discount) - num(i.amount_paid)), status: i.status, due: date(i.due_date), billingName: billingName(lines), lines }; });
   const invoicesByStudent = group(invoices.filter(i => i.period === month), 'studentId');
   const lessons = r.lesson_reports.filter(actualStudent).filter(l => date(l.report_date) <= today);
@@ -90,9 +92,9 @@ export function buildReadModel(r, info, billingTools = null) {
       id: s.id, name: s.name, grade: s.grade || '학년 미입력', school: s.school || '학교 미입력', status: s.status,
       enrolled: date(s.enrolled_at), withdrawn: date(s.withdrawn_at),
       classes: [...new Set((studentEnrollments.get(s.id) || []).map(e => e.class_id))],
-      attendance: { total: at.length, present: at.filter(a => ['present', 'late', 'early_leave'].includes(a.status)).length, absent: at.filter(a => a.status === 'absent').length, late: at.filter(a => a.status === 'late').length, makeup: at.filter(a => a.status === 'makeup').length },
-      // 조회 월을 고르는 화면(성적관리·수업보고서 원생 카드)용 — 최근 6개월 달별 기록·결석. 기록이 있는 달만(전체 출결 표를 읽으므로 없는 달 = 0건).
-      attendanceMonths: Object.fromEntries(lastSix.map(m => { const rows = (allAttendanceByStudent.get(s.id) || []).filter(a => date(a.session_date).startsWith(m)); return [m, { total: rows.length, absent: rows.filter(a => a.status === 'absent').length }]; }).filter(([, v]) => v.total)),
+      attendance: { total: at.length, present: at.filter(a => ['present', 'late', 'early_leave'].includes(a.status)).length, absent: (absenceSessionsByStudentMonth.get(`${s.id}|${month}`) || []).length, late: at.filter(a => a.status === 'late').length, makeup: at.filter(a => a.status === 'makeup').length },
+      // 최근 6개월 원생 카드: 전체 기록은 교시 칸, 결석은 같은 반·날짜를 접은 수업 수.
+      attendanceMonths: Object.fromEntries(lastSix.map(m => { const rows = (allAttendanceByStudent.get(s.id) || []).filter(a => date(a.session_date).startsWith(m)); return [m, { total: rows.length, absent: (absenceSessionsByStudentMonth.get(`${s.id}|${m}`) || []).length }]; }).filter(([, v]) => v.total)),
       billed: sum(bills, 'total'), paid: sum(bills, 'paid'), remaining: sum(bills, 'remaining'),
       followups: consults.filter(c => c.follow_up_date && date(c.follow_up_date) <= today && !c.follow_up_done).length,
       lessons: recent(lessonByStudent.get(s.id) || [], 'report_date', 3).map(l => ({ date: date(l.report_date), subject: l.subject, progress: l.progress, teacher: l.teacher_name, read: Boolean(l.classnote_read_at) })),

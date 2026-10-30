@@ -101,7 +101,7 @@ function sections(db, s) {
         `기준: 재원 상태이며 ${s.month} 결석 기록이 3회 이상인 원생 ${n(s.absent.length)}명. 결석 횟수 분포: ${list(bucket(absences, [['3회', 3, 3], ['4~5회', 4, 5], ['6~9회', 6, 9], ['10회 이상', 10, Infinity]]))}.`,
         `${s.month} 1일~기준일 유효 출결 ${n(attendanceTotal)}건: 출석 ${n(statuses.get('present'))}, 결석 ${n(statuses.get('absent'))}, 지각 ${n(statuses.get('late'))}, 조퇴 ${n(statuses.get('early_leave'))}, 보강 ${n(statuses.get('makeup'))}.`,
         `최근 6개월(월: 결석 / 출결 기록): ${s.trend.map(t => `${t.month} ${n(t.absent)} / ${n(t.attendance)}`).join('; ')}.`,
-        '주의: 횟수는 수업별 출결 건수이며 연속 결석일이나 퇴원 위험 점수가 아님. 기록만으로 사유를 단정하지 않음. 수정된 출결은 최신 기록만 반영. 월별 출결 기록 수는 기록 방식 변화의 영향을 받을 수 있음.',
+        '주의: 원생별 결석은 같은 반·날짜를 한 번 세며, 같은 날 다른 반은 각각 셈. 월별 출결·결석 기록 수는 교시별 칸임. 연속 결석일이나 퇴원 위험 점수가 아니며 기록만으로 사유를 단정하지 않음. 수정된 출결은 최신 기록만 반영.',
       ],
     },
     approval: {

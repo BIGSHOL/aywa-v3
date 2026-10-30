@@ -36,8 +36,14 @@ try {
     const staffOwner = await load(staff, { actor: owner.id });
     assert.equal(staffOwner.user?.id, owner.id, '원장 직원관리');
     assert.ok(staffOwner.rows?.length > 0);
-    await assert.rejects(load(billing, { viewer: teacher, tab: 'payroll' }), e => e.status === 403, '강사 강사 정산 거절');
-    await assert.rejects(load(billing, { tab: 'payroll' }), e => e.status === 403, '계정 없는 강사 정산 거절');
+    for (const params of [{ viewer: teacher, tab: 'payroll' }, { tab: 'payroll' }, { viewer: invalid, tab: 'billing' }]) {
+      const deniedBilling = await load(billing, params);
+      assert.equal(deniedBilling.notAllowed, true, '수납 목록 밖 계정 거절');
+      assert.equal(deniedBilling.page, 'noAccess', '수납 권한 없음 화면');
+      assert.equal(deniedBilling.access?.billing, false, '수납 자료 접근 거절');
+      assert.equal(deniedBilling.access?.readSalary, false, '급여 자료 접근 거절');
+      assert.equal(deniedBilling.viewer, null, '원장 계정 대체 없음');
+    }
     const billingOwner = await load(billing, { viewer: owner.id, tab: 'payroll' });
     assert.equal(billingOwner.viewer?.id, owner.id, '원장 강사 정산');
     assert.equal(billingOwner.access?.readSalary, true);
