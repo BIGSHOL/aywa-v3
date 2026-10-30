@@ -52,8 +52,8 @@ export function buildInput(context, request, nonce = randomBytes(9).toString('he
   return [
     `<<<서버 검증 컨텍스트 ${nonce}`,
     allowReader
-      ? '아래는 서버가 검증된 로컬 복사본에서 계산한 집계입니다. 이 블록과 ai_reader 조회 결과만 사실 근거입니다. 줄 앞 [F번호]는 서버 근거 번호입니다.'
-      : '아래는 서버가 검증된 로컬 복사본에서 계산한 집계입니다. 사실 근거는 이 블록뿐입니다. 줄 앞 [F번호]는 근거 번호입니다.',
+      ? '아래는 서버가 검증된 복사본에서 계산한 집계와 선택 이슈의 원천 기록입니다. 이 블록과 ai_reader 조회 결과만 사실 근거입니다. 줄 앞 [F번호]는 서버 근거 번호입니다.'
+      : '아래는 서버가 검증된 복사본에서 계산한 집계와 선택 이슈의 원천 기록입니다. 사실 근거는 이 블록뿐입니다. 줄 앞 [F번호]는 근거 번호입니다.',
     focus,
     facts.text,
     ...(destinations.length ? ['', '이동할 수 있는 화면(links·suggestedTask.area에는 이 목록의 id만):', destinationText(destinations)] : []),

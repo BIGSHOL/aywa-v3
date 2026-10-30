@@ -1,7 +1,6 @@
-// Server-side business context for the local assistant. Built once from the
-// verified snapshot the server already loaded; the browser never supplies facts.
-// Only aggregates leave this module: no names, phone numbers, notes, titles,
-// auth rows or credentials.
+// 서버가 가진 Docker 검증 복사본만 AI 근거로 쓴다. 이슈를 고르면 화면에 보이는 해당 원천 기록도 싣는다.
+// 연락처·계좌·카드번호는 보내지 않고, 자유 글은 공통 민감 정보 가리기를 거친다.
+import { maskSensitive } from './sensitive-text.mjs';
 export const ASSISTANT_ISSUE_IDS = Object.freeze(['billing', 'admissions', 'attendance', 'approval', 'tasks', 'books', 'enrollment']);
 
 const nf = new Intl.NumberFormat('ko-KR');
@@ -43,8 +42,26 @@ function selections(db) {
     leads: db.admissions.filter(a => a.date.startsWith(month) && REVIEW_OUTCOMES.includes(a.outcome)),
     absent: db.students.filter(s => s.status === 'enrolled' && s.attendance.absent >= 3),
     pending: db.approvals.filter(a => a.status === 'pending'),
-    overdue: db.tasks.filter(t => t.status === 'open' && t.due && t.due < asOf),
+    overdue: db.tasks.filter(t => t.status === 'open' && t.due && t.due < asOf && !t.local),
     books: db.textbooks.filter(t => ['requested', 'ordered'].includes(t.status)),
+  };
+}
+
+const safe = value => maskSensitive(String(value ?? '').replace(/\s+/g, ' ').replace(/</g, '〈').replace(/>/g, '〉').trim().slice(0, 240));
+const detailLine = (kind, pairs) => `${kind}: ${pairs.filter(([, value]) => value !== '' && value != null).map(([label, value]) => `${label} ${safe(value)}`).join(' · ')}`;
+function issueDetails(db, s) {
+  const approvalRecords = new Map((db.workspaces?.families?.approvals?.records || []).map(r => [String(r.id), r]));
+  return {
+    billing: s.bills.map(b => detailLine('남은 청구', [['원생', b.name], ['청구월', b.period], ['상태', LABELS.invoiceStatus[b.status] || b.status], ['남은 금액', won(b.remaining)], ['납부 기한', b.due]])),
+    admissions: s.leads.map(a => detailLine('상담 후속', [['이름', a.name], ['학교', a.school], ['학년', a.grade], ['과목', a.subject], ['상태', LABELS.outcome[a.outcome] || a.outcome], ['접수일', a.date], ['다음 상담', a.followup], ['상담자', a.teacher], ['경로', a.channel]])),
+    attendance: s.absent.map(x => detailLine('결석 원생', [['이름', x.name], ['학교', x.school], ['학년', x.grade], ['이번 달 결석', `${n(x.attendance.absent)}회`]])),
+    approval: s.pending.map(a => {
+      const r = approvalRecords.get(String(a.id)), fields = new Map((r?.fields || []).map(f => [f.label, f.value]));
+      return detailLine('결재 문서', [['신청자', fields.get('신청자') || a.drafter], ['제목', a.title], ['종류', fields.get('종류') || LABELS.form[a.form] || a.form], ['기간', fields.get('기간')], ['일수', fields.get('일수')], ['상태', r?.status || LABELS.approval[a.status] || a.status], ['결재 차례', fields.get('결재 차례')], ['결재선', fields.get('결재선') || a.steps?.map(x => x.name).join(' → ')], ['사유', fields.get('사유') || '미기재'], ['기안일', a.date]]);
+    }),
+    tasks: s.overdue.slice(0, 40).map(t => detailLine('지난 업무', [['업무', t.title], ['상태', LABELS.taskStatus[t.status] || t.status], ['기한', t.due], ['담당', t.owners?.join(', ') || '미지정'], ['내용', t.detail]])),
+    books: s.books.map(t => detailLine('교재 요청', [['원생', t.student], ['교재', t.name], ['상태', LABELS.book[t.status] || t.status], ['요청일', t.date], ['요청 선생님', t.teacher], ['가격', won(t.price)]])),
+    enrollment: [],
   };
 }
 
@@ -92,7 +109,7 @@ function sections(db, s) {
       lines: [
         `대기 문서 양식별: ${list(count(s.pending, 'form', LABELS.form))}. 상신 후 경과일: ${s.pending.length ? s.pending.map(a => a.date ? `${days(a.date, s.asOf)}일` : '상신일 없음').join(', ') : '없음'}.`,
         `전체 결재 문서 ${n(db.approvals.length)}건: ${list(count(db.approvals, 'status', LABELS.approval))}.`,
-        '주의: 원장 검토와 담당자 보완 요청을 구분함. 문서 본문과 첨부는 이 요약에 없음.',
+        '주의: 원장 검토와 담당자 보완 요청을 구분함. 문서 원문·첨부는 싣지 않고 확인된 문서 칸만 사용함.',
       ],
     },
     tasks: {
@@ -124,14 +141,14 @@ function sections(db, s) {
 }
 
 export function buildAssistantContext(db) {
-  const s = selections(db), parts = sections(db, s);
+  const s = selections(db), parts = sections(db, s), details = issueDetails(db, s);
   const enrolled = db.students.filter(x => x.status === 'enrolled').length;
   const overview = [
     `기준일 ${s.asOf}(로컬 검증 복사본 · 원본 스냅샷 ${kst(db.meta.importedAt)}). 이번 달 = ${s.month}(1일~기준일).`,
     `현재 재원 ${n(enrolled)}명(원생 상태 기준). ${s.month} 수강료 청구 대상 ${n(s.now.payingStudents)}명 — 두 수는 다른 지표.`,
     `확인할 이슈: ${ASSISTANT_ISSUE_IDS.map(id => `${id}=${parts[id].title}`).join(' · ')}.`,
   ];
-  const issues = Object.fromEntries(ASSISTANT_ISSUE_IDS.map(id => [id, Object.freeze({ title: parts[id].title, text: [`[${id}] ${parts[id].title}`, ...parts[id].lines.map(l => `- ${l}`)].join('\n') })]));
+  const issues = Object.fromEntries(ASSISTANT_ISSUE_IDS.map(id => [id, Object.freeze({ title: parts[id].title, text: [`[${id}] ${parts[id].title}`, ...parts[id].lines.map(l => `- ${l}`)].join('\n'), details: details[id] })]));
   return Object.freeze({ asOf: s.asOf, month: s.month, overview: overview.join('\n'), issues: Object.freeze(issues), domain: domainContext(db.workspaces) });
 }
 
@@ -150,11 +167,11 @@ function domainContext(ws) {
   });
 }
 
-// A focused issue gets its full section; without one every aggregate section is relevant.
+// 선택 이슈에는 해당 기록의 확인된 칸을 더하고, 전체 질문에는 영역별 집계만 싣는다.
 export function contextText(context, issueId) {
   const ids = issueId ? [issueId] : ASSISTANT_ISSUE_IDS;
   const domain = context.domain ? (issueId ? context.domain.byIssue[issueId] : context.domain.all) : null;
-  return [context.overview, ...ids.map(id => context.issues[id].text), domain].filter(Boolean).join('\n\n');
+  return [context.overview, ...ids.map(id => context.issues[id].text), ...(issueId ? context.issues[issueId]?.details || [] : []), domain].filter(Boolean).join('\n\n');
 }
 
 // ── 근거 미주 · 이동 목적지(원장 10-28 "서식등을 동원해서 정리해서 나열", "실제로 해당 메뉴로 갈 수도 있게") ──────────────
@@ -164,13 +181,13 @@ const plainFact = text => text.replace(/\s*\((?:[^()]*?(?:복사본|스냅샷|�
 
 /**
  * 서버 컨텍스트를 줄마다 번호(F1…)로 — 모델은 이 번호로 근거를 단다. 미주에는 모델이 쓴 글이 아니라 **이 줄 그대로**를
- * 보인다(사실 원칙: 근거는 서버가 계산한 것뿐). text = 프롬프트에 넣는 번호 붙은 컨텍스트, facts = 번호 → 미주 글.
+ * 보인다(근거는 서버 집계와 선택 이슈의 확인된 기록만). text = 프롬프트에 넣는 번호 붙은 컨텍스트, facts = 번호 → 미주 글.
  */
 export function contextFacts(context, issueId) {
   const ids = issueId ? [issueId] : ASSISTANT_ISSUE_IDS;
   const domain = context.domain ? (issueId ? context.domain.byIssue[issueId] : context.domain.all) : null;
   const facts = [], lines = [];
-  for (const block of [context.overview, ...ids.map(id => context.issues[id].text), domain].filter(Boolean)) {
+  for (const block of [context.overview, ...ids.map(id => context.issues[id].text), ...(issueId ? context.issues[issueId]?.details || [] : []), domain].filter(Boolean)) {
     for (const raw of block.split('\n')) {
       const line = raw.replace(/^- /, '').trim();
       if (!line) continue;
