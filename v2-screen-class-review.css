@@ -6,6 +6,11 @@
 .v2o-review col[data-col=change],.v2o-review col[data-col=previous]{width:16%}
 .v2o-review col[data-col=missing]{width:13%}
 .v2o-review col[data-col=action]{width:18%}
+.v2o-review:has(col[data-col=guide]) col[data-col=name]{width:18%}
+.v2o-review:has(col[data-col=guide]) col[data-col=closed]{width:16%}
+.v2o-review:has(col[data-col=guide]) col[data-col=rate]{width:10%}
+.v2o-review:has(col[data-col=guide]) col[data-col=range]{width:26%}
+.v2o-review col[data-col=guide],.v2o-review col[data-col=excluded]{width:15%}
 .v2o-review th,.v2o-review td{padding:10px 8px;line-height:1.35;font-size:14px}
 .v2o-review thead th:not(:first-child),.v2o-review td{text-align:right}
 .v2o-review tbody th a{display:inline-flex;align-items:baseline;gap:6px;text-align:left}

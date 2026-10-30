@@ -24,6 +24,18 @@ function comparable(current, previous) {
   return JSON.stringify(current.evaluation) === JSON.stringify(previous.evaluation);
 }
 
+// 과목 첫 층의 인원과 강사 줄의 지도 단추는 같은 판정 한 곳을 쓴다.
+function guidanceOf(row) {
+  const p = row.payload ?? {}, items = Array.isArray(p.items) ? p.items : [];
+  const missing = items.filter(item => item.missing && !item.off);
+  const uncounted = items.filter(item => item.uncounted && !item.off);
+  const lowItems = items.filter(item => !item.off && !item.missing && !item.uncounted && Number.isFinite(item.value) && item.max > 0 && item.value / item.max < 0.7);
+  const excluded = !!row.closed_at && !!(missing.length || uncounted.length);
+  const low = !!row.closed_at && row.total !== null && row.total !== undefined && Number.isFinite(Number(row.total)) && Number(p.knownMax) > 0
+    && Number(row.total) / Number(p.knownMax) < 0.7 && !excluded;
+  return { low, excluded, missing, uncounted, lowItems };
+}
+
 export async function portfolioOverview({ sql, tenantId, settings, params }) {
   const [latest] = await sql`select max(month) as latest_month from public.teacher_portfolio_months where tenant_id=${tenantId} and closed_at is not null`;
   const month = latest?.latest_month ?? null;
@@ -52,12 +64,15 @@ export async function portfolioOverview({ sql, tenantId, settings, params }) {
     ...(selected ? [{ label: selected.name || '이름 없음' }] : [])];
   let columns, output;
   if (!chosenSubject) {
-    columns = [{ key: 'name', label: '과목' }, { key: 'closed', label: `${month} 마감 / 평가` }, { key: 'rate', label: '마감률' }, { key: 'range', label: '마감 점수 범위 / 만점' }];
+    columns = [{ key: 'name', label: '과목' }, { key: 'closed', label: `${month} 마감 / 평가` }, { key: 'rate', label: '마감률' },
+      { key: 'range', label: '마감 점수 범위 / 만점' }, { key: 'guide', label: '지도 대상' }, { key: 'excluded', label: '판단 제외' }];
     output = SUBJECTS.filter(s => groups.get(s.key).length).map(s => {
       const list = groups.get(s.key), closed = list.filter(r => r.closed_at), maxima = new Set(closed.map(r => r.payload?.knownMax));
       const values = closed.filter(r => r.total !== null).map(r => Number(r.total)).filter(Number.isFinite);
       const range = !values.length ? '—' : maxima.size !== 1 ? '만점이 달라 개별 확인' : `${shown(Math.min(...values))}~${shown(Math.max(...values))} / ${shown([...maxima][0])}점`;
-      return { href: href({ subject: s.key }), cells: { name: s.label, closed: `${closed.length} / ${list.length}명`, rate: percent(closed.length, list.length), range } };
+      const judgments = closed.map(guidanceOf), guide = judgments.filter(r => r.low).length, excluded = judgments.filter(r => r.excluded).length;
+      return { href: href({ subject: s.key }), cells: { name: s.label, closed: `${closed.length} / ${list.length}명`, rate: percent(closed.length, list.length), range,
+        guide: `${guide}명`, excluded: `${excluded}명` } };
     });
   } else if (!selected) {
     columns = [{ key: 'name', label: '강사' }, { key: 'status', label: '마감' }, { key: 'score', label: '총점 / 만점' },
@@ -65,10 +80,7 @@ export async function portfolioOverview({ sql, tenantId, settings, params }) {
     output = [...groups.get(chosenSubject.key)].sort((a, b) => Number(!!b.closed_at) - Number(!!a.closed_at) ||
       (a.closed_at && b.closed_at ? Number(a.total) / Number(a.payload?.knownMax || Infinity) - Number(b.total) / Number(b.payload?.knownMax || Infinity) : 0) ||
       String(a.name).localeCompare(String(b.name), 'ko')).map(r => {
-      const p = r.payload ?? {}, prev = prevById.get(r.id), items = Array.isArray(p.items) ? p.items : [];
-      const missing = items.filter(item => item.missing && !item.off), uncounted = items.filter(item => item.uncounted && !item.off);
-      const lowItems = items.filter(item => !item.off && !item.missing && !item.uncounted && Number.isFinite(item.value) && item.max > 0 && item.value / item.max < 0.7);
-      const low = !!r.closed_at && p.knownMax > 0 && r.total / p.knownMax < 0.7 && !missing.length && !uncounted.length;
+      const p = r.payload ?? {}, prev = prevById.get(r.id), { low, missing, lowItems } = guidanceOf(r);
       const delta = comparable(p, prev) && r.total !== null && prev?.total !== null && Number.isFinite(Number(r.total)) && Number.isFinite(Number(prev?.total)) ? shown(Number(r.total) - Number(prev.total)) : '—';
       return { teacherId: r.id, month, lowItems: lowItems.map(i => `${i.label || i.id} ${score(i.value, i.max)}`),
         href: href({ subject: chosenSubject.key, teacher: r.id }),
@@ -94,5 +106,5 @@ export async function portfolioOverview({ sql, tenantId, settings, params }) {
     summary: `마감 ${closedCount} / 평가 ${rows.length}명 · 마감 대기 ${rows.length - closedCount}명`,
     empty: selected && !selected.closed_at ? '평가가 마감된 뒤 항목을 볼 수 있습니다.' : undefined,
     note: selected ? selected.closed_at ? `전월 같은 항목은 설정과 배점이 같을 때만 표시합니다. 항목을 누르면 직원 포트폴리오가 열립니다. 열린 뒤 ${month}을 골라 같은 달의 근거를 확인해 주세요.` : '이 강사의 평가가 아직 마감되지 않았습니다.'
-      : '마감 전 점수는 순위와 범위에 넣지 않습니다. 총점과 만점의 70%를 비교하되 자료 없음·계산 전 항목이 있으면 지도 판단에서 제외합니다.' };
+      : '마감 전 점수는 순위와 범위에 넣지 않습니다. 점수 범위에는 판단 제외된 강사의 마감 점수도 포함됩니다. 지도 대상은 마감 총점이 만점의 70% 미만이고 자료 없음·계산 전 항목이 없는 강사입니다. 판단 제외는 마감했지만 자료 없음·계산 전 항목이 있는 강사입니다. 여러 과목 강사는 과목마다 표시됩니다.' };
 }

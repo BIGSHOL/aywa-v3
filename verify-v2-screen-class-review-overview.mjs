@@ -36,6 +36,12 @@ try {
       const detail = (await load({ subject: key })).overview;
       assert.equal(detail.rows.length, expected.length);
       assert.equal(detail.rows.filter(r => r.cells.status === '마감 대기').length, expected.filter(r => !r.closed_at).length);
+      const excluded = expected.filter(r => r.closed_at && (r.payload?.items ?? []).some(m => !m.off && (m.missing || m.uncounted)));
+      const guide = expected.filter(r => r.closed_at && r.total !== null && Number(r.payload.knownMax) > 0
+        && Number(r.total) / Number(r.payload.knownMax) < 0.7 && !excluded.includes(r));
+      assert.equal(summary.cells.guide, `${guide.length}명`, `${label} 지도 대상`);
+      assert.equal(summary.cells.excluded, `${excluded.length}명`, `${label} 판단 제외`);
+      assert.equal(detail.rows.filter(r => r.action?.kind === 'guide').length, guide.length, '첫 층과 강사별 지도 단추는 같은 인원');
       for (const item of detail.rows) {
         const record = expected.find(r => r.id === item.teacherId);
         assert.ok(record);
