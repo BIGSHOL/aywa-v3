@@ -12,7 +12,7 @@ export const TYPE_OF_TABLE = { students: 'student', users: 'staff', classes: 'cl
 // Signal → the 2.0 table its recordIds belong to (AX-H5). Stated per signal: a family's recordSource can name several
 // tables (직원 평가 = 포트폴리오 + 만족도 판정), and its first table is not always the one a signal points at.
 // A signal missing here falls back to a single-table recordSource; anything else is a wiring gap (signalWiring).
-export const SIGNAL_RECORD_TABLE = Object.freeze({ 'onescreen-notice-failed': 'classnote_notices', 'video-upload-failed': 'student_homework_videos', 'attendance-repeat-absence': 'attendance_records', 'makeup-overdue': 'makeup_reservations', 'report-send-failed': 'lesson_reports', 'satisfaction-pending': 'teacher_satisfaction_judgments', 'inventory-loan-overdue': 'inventory_assets', 'approval-pending': 'approval_documents', 'billing-remaining': 'invoices', 'textbook-waiting': 'textbook_orders', 'consultation-followup-overdue': 'student_consultations', 'enrollment-followup': 'enrollment_consultations', 'withdrawal-report-pending': 'withdrawal_reports', 'makeedu-sync-problem': 'makeedu_sync_runs', 'sheet-sync-error': 'user_integrations' });
+export const SIGNAL_RECORD_TABLE = Object.freeze({ 'onescreen-notice-failed': 'classnote_notices', 'video-upload-failed': 'student_homework_videos', 'attendance-repeat-absence': 'attendance_records', 'makeup-overdue': 'makeup_reservations', 'makeup-overdue-older': 'makeup_reservations', 'report-send-failed': 'lesson_reports', 'satisfaction-pending': 'teacher_satisfaction_judgments', 'inventory-loan-overdue': 'inventory_assets', 'approval-pending': 'approval_documents', 'billing-remaining': 'invoices', 'textbook-waiting': 'textbook_orders', 'consultation-followup-overdue': 'student_consultations', 'enrollment-followup': 'enrollment_consultations', 'withdrawal-report-pending': 'withdrawal_reports', 'makeedu-sync-problem': 'makeedu_sync_runs', 'sheet-sync-error': 'user_integrations' });
 const recordTable = (f, s) => SIGNAL_RECORD_TABLE[s.id] || ((f.recordSource || '').includes(',') ? null : f.recordSource || null);
 export const WIRING_LABEL = { ok: '연결됨', partial: '일부만 연결', unlinked: '연결 0건(배선 누락)', unwired: '기록 종류 미상(배선 누락)', no_record_ids: '근거 기록 번호 없음(배선 누락)' };
 /** Per signal: how many of its records became case refs. Anything but 'ok' is shown, never silently dropped. */
@@ -51,14 +51,14 @@ export function groupDeskTasks(tasks, absenceDays, entities, day) {
     const settled = group.find(t => t.close_reason === 'desk_settled');
     const open = group.find(t => t.status === 'open');
     const effective = settled || open || first;
-    const slots = [...new Set(rows.map(r => r.slot || '하루 전체'))];
     const student = entities.get(`student:${studentId}`)?.label || '원생';
+    const records = [...Map.groupBy(rows, r => r.class_id || `unknown:${r.id}`).values()].map(group => group[0]);
     result.push({ ...first, status: settled ? settled.status : open ? 'open' : effective.status,
-      close_reason: settled?.close_reason || (!open ? effective.close_reason : null), closed: settled?.closed || (!open ? effective.closed : null),
-      title: rows.length ? `${student} · ${day(date)} 결석 ${slots.length}교시(${slots.join(' · ')}) — 학부모 확인` : first.title,
+      close_reason: settled?.close_reason || (!open ? effective.close_reason : null), closed: settled?.closed || (!open ? effective.closed : null), closed_by: settled?.closed_by || (!open ? effective.closed_by : null),
+      title: `${student} · ${day(date)} 결석 — 학부모 확인`,
       // 담당 = 2.0 원래 담당(출결 알림을 켠 데스크 직원 — absent-notify.ts) 그대로. 반 담임은 근거 줄에 표시만 한다.
       assignees: [...new Set(group.flatMap(t => t.assignees || []))],
-      recordKeys: rows.map(r => `attendance:${r.id}`), studentKey: `student:${studentId}`,
+      recordKeys: records.map(r => `attendance:${r.id}`), studentKey: `student:${studentId}`,
       groupDate: date, actionTaskId: open?.id || null, settledTaskId: settled?.id || null, mergedTaskIds: group.slice(1).map(t => t.id) });
   }
   return result;
@@ -102,14 +102,29 @@ export async function loadFlowSource({ workspaces, capturedAt, asOf }) {
       for (const e of enrollments) { if (!studentKey(e.student_id) || !classKey(e.class_id)) continue; const k = put('enrollment', e.id, '수강', 'classes'); link('enrollment_of', k, studentKey(e.student_id), 'enrollments.student_id'); link('enrollment_in', k, classKey(e.class_id), 'enrollments.class_id'); }
 
       // 결석 업무의 원천 행은 업무 회차 날짜까지 읽는다. 이번 달 목록 후보와는 아래에서 따로 구분한다.
-      const absences = await sql`select a.id, a.student_id, a.class_id, a.session_date::text d, to_char(a.slot_start,'HH24:MI') slot, c.teacher_id, u.display_name teacher_name
+      const absences = await sql`select a.id, a.student_id, a.class_id, a.session_date::text d, to_char(a.slot_start,'HH24:MI') slot,
+        span.session_start, span.session_end, span.slot_end, c.teacher_id, u.display_name teacher_name
         from public.attendance_records a left join public.classes c on c.tenant_id=a.tenant_id and c.id=a.class_id
         left join public.users u on u.tenant_id=a.tenant_id and u.id=c.teacher_id
+        left join lateral (select to_char(min(s.start_time),'HH24:MI') session_start, to_char(max(s.end_time),'HH24:MI') session_end,
+          to_char(max(s.end_time) filter (where s.start_time=a.slot_start),'HH24:MI') slot_end
+          from public.class_schedules s where s.tenant_id=a.tenant_id and s.class_id=a.class_id
+            and s.day_of_week::text=lower(to_char(a.session_date,'Dy')) and s.valid_from<=a.session_date
+            and (s.valid_to is null or s.valid_to>=a.session_date)) span on true
         where a.tenant_id=${t} and a.status='absent' and (a.session_date between ${monthStart} and ${asOf}
           or exists (select 1 from public.staff_tasks k where k.tenant_id=${t} and k.kind='attendance_absent_desk' and k.subject_id=a.student_id and split_part(k.cycle,'|',1)=a.session_date::text))
           and not exists (select 1 from public.attendance_records b where b.tenant_id=${t} and b.supersedes_id=a.id)
         order by a.session_date desc, a.slot_start nulls first, a.class_id, a.id`;
-      for (const a of absences) { if (!studentKey(a.student_id)) continue; const k = put('attendance', a.id, ofStudent(a.student_id, `${day(a.d)} ${a.slot || '하루 전체'} 결석`, `${a.d} 결석`), 'attendance', { date: a.d, studentId: a.student_id, classId: a.class_id, slot: a.slot, teacherName: scrub(a.teacher_name) || null }); link('about_student', k, studentKey(a.student_id), 'attendance_records.student_id'); link('in_class', k, classKey(a.class_id), 'attendance_records.class_id'); }
+      const classSessions = Map.groupBy(absences, a => `${a.student_id}|${a.d}|${a.class_id || 'unknown'}`);
+      const sessionLabels = new Map();
+      for (const group of classSessions.values()) {
+        const first = group[0], student = entities.get(`student:${first.student_id}`)?.label || '원생', className = entities.get(`class:${first.class_id}`)?.label || '반 미상';
+        const starts = group.map(a => a.slot || a.session_start).filter(Boolean).sort(), ends = group.map(a => a.slot ? a.slot_end || a.session_end : a.session_end).filter(Boolean).sort();
+        const time = starts.length ? `${starts[0]}${ends.length ? `~${ends.at(-1)}` : ''}` : '시간 미상';
+        const label = `${student} · ${day(first.d)} 결석 · ${className} ${time}`;
+        for (const a of group) sessionLabels.set(a.id, label);
+      }
+      for (const a of absences) { if (!studentKey(a.student_id)) continue; const k = put('attendance', a.id, sessionLabels.get(a.id) || `${a.d} 결석`, 'attendance', { date: a.d, studentId: a.student_id, classId: a.class_id, slot: a.slot, teacherName: scrub(a.teacher_name) || null }); link('about_student', k, studentKey(a.student_id), 'attendance_records.student_id'); link('in_class', k, classKey(a.class_id), 'attendance_records.class_id'); }
       const invoices = await sql`select id, student_id, period, amount_total::float8 billed, coalesce(amount_discount,0)::float8 discount, coalesce(amount_paid,0)::float8 paid, greatest(0, amount_total - coalesce(amount_discount,0) - coalesce(amount_paid,0))::float8 remaining, due_date::text due, status::text st from public.invoices where tenant_id=${t} and period=${month} and status::text not in ('void','refunded')`;
       const putInvoice = i => { if (!studentKey(i.student_id)) return; const k = put('invoice', i.id, ofStudent(i.student_id, `${monthOf(i.period)} 청구`, `${i.period} 청구`), 'billing', { remaining: i.remaining, dueDate: i.due, period: i.period, billed: i.billed, discount: i.discount, paid: i.paid, studentId: i.student_id }); link('billed_to', k, studentKey(i.student_id), 'invoices.student_id'); };
       invoices.forEach(putInvoice);
@@ -141,7 +156,7 @@ export async function loadFlowSource({ workspaces, capturedAt, asOf }) {
       for (const v of videos) { const k = put('video', v.id, ofStudent(v.student_id, `${v.d ? `${day(v.d)} ` : ''}숙제 영상`, `${v.d || ''} 숙제 영상`), 'video-homework', { teacherId: v.teacher_id }); link('about_student', k, studentKey(v.student_id), 'student_homework_videos.student_id'); link('teacher', k, staffKey(v.teacher_id), 'student_homework_videos.teacher_id'); }
 
       // Every 2.0 staff_task (open and fact-closed) with its real assignees and audited history.
-      const tasks = await sql`select k.id, k.kind, k.status, k.close_reason, to_char(k.closed_at at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"') closed, k.subject_id, k.title, k.detail, k.cycle, to_char(k.opened_at at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"') opened, to_char(k.due_at at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"') due, (select array_agg(a.user_id::text order by a.user_id) from public.staff_task_assignees a where a.tenant_id=${t} and a.task_id=k.id) assignees from public.staff_tasks k where k.tenant_id=${t} order by k.opened_at, k.id`;
+      const tasks = await sql`select k.id, k.kind, k.status, k.close_reason, to_char(k.closed_at at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"') closed, k.closed_by::text closed_by, k.subject_id, k.title, k.detail, k.cycle, to_char(k.opened_at at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"') opened, to_char(k.due_at at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"') due, (select array_agg(a.user_id::text order by a.user_id) from public.staff_task_assignees a where a.tenant_id=${t} and a.task_id=k.id) assignees from public.staff_tasks k where k.tenant_id=${t} order by k.opened_at, k.id`;
       const deskResults = await sql`select k.id task_id, coalesce(to_char(f.slot_start, 'HH24:MI'), '') slot, f.state, f.outcome
         from public.staff_tasks k join public.attendance_followups f on f.tenant_id=k.tenant_id and f.student_id=k.subject_id
           and f.session_date::text=split_part(k.cycle, '|', 1) and f.signal='absent' and f.state in ('resolved','dismissed')
@@ -159,6 +174,7 @@ export async function loadFlowSource({ workspaces, capturedAt, asOf }) {
       const historyBy = new Map(); for (const h of history) { if (!historyBy.has(h.task)) historyBy.set(h.task, []); historyBy.get(h.task).push(h); }
       const enrollmentEvidence = new Map((workspaces?.families?.enrollment?.[EVIDENCE] || []).map(r => [String(r.id), r]));
       const taskDetail = k => {
+        if (k.kind === 'attendance_absent_desk' && k.groupDate) return '출석부에 학부모 확인 결과를 남겨 주세요.';
         const r = k.kind === 'enrollment_followup' && ['open', 'late'].includes(k.status) ? enrollmentEvidence.get(String(k.subject_id)) : null;
         const pendingResult = r?.status === '등록 완료' && r.fields?.some(f => f.label === '상담 결과');
         return scrub([k.detail, pendingResult && '수강 중이나 상담 결과 미확정. 신규 콜&상담에서 결과를 등록 완료로 변경해 주세요.'].filter(Boolean).join(' · '));
@@ -173,7 +189,7 @@ export async function loadFlowSource({ workspaces, capturedAt, asOf }) {
       const taskCycles = new Map(tasks.map(k => [k.id, k.cycle]));
       return {
         identity: { tenantId: t, tenantSlug: 'cs', capturedAt, asOf }, loadedAt: new Date().toISOString(), signalFamilies, actors, entities, relations, signals,
-        tasks: groupedTasks.map(k => ({ id: k.id, kind: k.kind, status: k.status, closeReason: k.close_reason, ...(k.kind === 'attendance_absent_desk' && k.close_reason === 'desk_settled' ? { closeResult: deskCloseResult(taskCycles.get(k.settledTaskId || k.id) || k.cycle, deskByTask.get(k.settledTaskId || k.id) || [], attendanceOutcomeLabel) } : {}), closedAt: k.closed, title: scrub(k.title), detail: taskDetail(k), openedAt: k.opened, dueAt: k.due, assigneeIds: k.assignees || [], subjectKey: k.kind === 'attendance_absent_desk' || k.kind === 'video_upload_check' ? null : TASK_SUBJECT[k.kind] && entities.has(`${TASK_SUBJECT[k.kind]}:${k.subject_id}`) ? `${TASK_SUBJECT[k.kind]}:${k.subject_id}` : null, recordKeys: k.recordKeys || null, studentKey: k.studentKey || null, groupDate: k.groupDate || null, actionTaskId: k.actionTaskId || null, mergedTaskIds: k.mergedTaskIds || [], history: historyBy.get(k.id) || [] })),
+        tasks: groupedTasks.map(k => ({ id: k.id, kind: k.kind, status: k.status, closeReason: k.close_reason, ...(k.kind === 'attendance_absent_desk' && k.close_reason === 'desk_settled' ? { closeResult: deskCloseResult(taskCycles.get(k.settledTaskId || k.id) || k.cycle, deskByTask.get(k.settledTaskId || k.id) || [], attendanceOutcomeLabel) } : {}), closedAt: k.closed, closedById: k.closed_by || null, title: scrub(k.title), detail: taskDetail(k), openedAt: k.opened, dueAt: k.due, assigneeIds: k.assignees || [], subjectKey: k.kind === 'attendance_absent_desk' || k.kind === 'video_upload_check' ? null : TASK_SUBJECT[k.kind] && entities.has(`${TASK_SUBJECT[k.kind]}:${k.subject_id}`) ? `${TASK_SUBJECT[k.kind]}:${k.subject_id}` : null, recordKeys: k.recordKeys || null, studentKey: k.studentKey || null, groupDate: k.groupDate || null, actionTaskId: k.actionTaskId || null, mergedTaskIds: k.mergedTaskIds || [], history: historyBy.get(k.id) || [] })),
         candidates: { absence: absences.filter(a => a.d >= monthStart && a.d <= asOf && studentKey(a.student_id)).map(a => a.id), billing: invoices.filter(i => i.remaining > 0 && studentKey(i.student_id)).map(i => i.id), consultation: consults.filter(c => studentKey(c.student_id)).map(c => c.id) },
       };
     });

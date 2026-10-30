@@ -42,7 +42,8 @@ function reconcileTask(source, c, t, at) {
   const out = [], s0 = c.steps[0], closed = closedOf(t), status = t.status || 'open', facts = taskFacts(source, t), prevClosedAt = c.closedAt;
   const changed = ['title', 'summary', 'dueAt'].filter(k => json(c[k]) !== json(facts[k]));
   Object.assign(c, facts);
-  if (changed.length) out.push({ type: 'source.task_changed', label: `원본 업무 내용이 바뀜(${changed.map(k => ({ title: '제목', summary: '내용', dueAt: '기한' })[k]).join('·')})`, at, data: { fields: changed } });
+  const reported = t.kind === 'attendance_absent_desk' ? changed.filter(k => k === 'dueAt') : changed;
+  if (reported.length) out.push({ type: 'source.task_changed', label: `업무 내용이 바뀜(${reported.map(k => ({ title: '제목', summary: '내용', dueAt: '기한' })[k]).join('·')})`, at, data: { fields: reported } });
   if (closed && !c.factClosed) {
     for (const s of c.steps) if (s.status !== 'done') { s.status = 'done'; s.closedBy = 'source'; }
     Object.assign(c, { sourceStatus: status, sourceStatusLabel: TASK_STATE_LABEL[status], factClosed: true, closedReason: reasonOf(t), closedAt: t.closedAt, closedBy: 'source' });
@@ -69,6 +70,28 @@ function reconcileTask(source, c, t, at) {
 
 // ── whole source ────────────────────────────────────────────────────────────────────────────────────
 const TAGS = { status: ['factClosed', 'closedBy', 'closedReason', 'sourceStatus', 'state'], wording: ['title', 'summary', 'dueAt', 'draft'], records: ['entityTotal', 'sourceRecords'], labels: ['entityRefs'], rule: ['doneRule', 'priority'] };
+function clearInternalGroupingEvents(state) {
+  const internal = e => {
+    const c = state.cases[e.caseId];
+    if (c?.taskKind !== 'attendance_absent_desk') return false;
+    if (e.label === '같은 날 결석 교시를 한 업무로 합침' || e.label === '같은 원생의 같은 날 결석 업무로 합침') return true;
+    if (e.type !== 'source.task_changed') return false;
+    const fields = e.data?.fields;
+    return Array.isArray(fields) && fields.length > 0 && fields.every(k => k === 'title' || k === 'summary');
+  };
+  const removed = new Map(state.events.filter(internal).map(e => [e.id, e.causeId]));
+  if (!removed.size) return { affected: [], count: 0 };
+  state.events = state.events.filter(e => !removed.has(e.id));
+  const cause = id => { while (removed.has(id)) id = removed.get(id); return id || null; };
+  for (const e of state.events) if (removed.has(e.causeId)) e.causeId = cause(e.causeId);
+  const affected = [];
+  for (const c of Object.values(state.cases)) {
+    const before = c.history.length;
+    c.history = c.history.filter(id => !removed.has(id));
+    if (c.history.length !== before) affected.push(c.id);
+  }
+  return { affected, count: removed.size };
+}
 function diffTags(a, b) {
   const tags = Object.entries(TAGS).filter(([, ks]) => ks.some(k => json(a[k]) !== json(b[k]))).map(([t]) => t);
   const sa = a.steps || [], sb = b.steps || [];
@@ -100,7 +123,8 @@ function commit(state, c, before, events, at, summary) {
  */
 export function reconcileSource(state, source, { at, mode = 'apply' } = {}) {
   const when = at || source.loadedAt || source.identity.capturedAt, seededAt = source.identity.capturedAt;
-  const summary = { created: 0, updated: 0, closed: 0, reopened: 0, unchanged: 0, changes: [] }, seen = new Set();
+  const summary = { created: 0, updated: 0, closed: 0, reopened: 0, unchanged: 0, cleaned: 0, changes: [] }, seen = new Set();
+  const cleaned = mode === 'apply' ? clearInternalGroupingEvents(state) : { affected: [], count: 0 };
   const run = (key, create, judge) => {
     seen.add(key);
     const id = state.seededKeys[key], c = id && state.cases[id];
@@ -134,9 +158,9 @@ export function reconcileSource(state, source, { at, mode = 'apply' } = {}) {
       const before = JSON.stringify(duplicate);
       for (const s of duplicate.steps) if (s.status !== 'done') { s.status = 'done'; s.closedBy = 'source'; }
       Object.assign(duplicate, { factClosed: true, closedReason: '묶음으로 합침', closedAt: when, closedBy: 'source' });
-      commit(state, duplicate, before, [{ type: 'source.task_closed', label: '같은 원생의 같은 날 결석 업무로 합침', at: when, data: { mergedInto: primary.id } }], when, summary);
+      commit(state, duplicate, before, [], when, summary);
     }
-    if (JSON.stringify(primary) !== beforePrimary) commit(state, primary, beforePrimary, mode === 'seed' ? [] : [{ type: 'source.task_changed', label: '같은 날 결석 교시를 한 업무로 합침', at: when }], when, summary);
+    if (JSON.stringify(primary) !== beforePrimary) commit(state, primary, beforePrimary, [], when, summary);
   }
   for (const sg of source.signals) run(`signal:${sg.familyId}:${sg.signal.id}`, () => { createSignal(state, source, sg, when); return `src-sig-${sg.familyId}-${sg.signal.id}`.replace(/[^a-z0-9-]/gi, '-'); }, c => reconcileSignal(source, c, sg, when));
   if (mode === 'seed') return summary;
@@ -152,6 +176,10 @@ export function reconcileSource(state, source, { at, mode = 'apply' } = {}) {
     } else if (key.startsWith('signal:') && (!families || families.has(c.familyId))) commit(state, c, before, clearSignal(c, when), when, summary);
     else summary.unchanged += 1;
   }
+  summary.cleaned = cleaned.count;
+  for (const id of cleaned.affected) if (!summary.changes.some(change => change.caseId === id)) {
+    summary.changes.push({ caseId: id, title: state.cases[id].title, outcome: 'cleaned', tags: ['사건 기록'], events: [] });
+  }
   return summary;
 }
-export const changedCount = s => s.created + s.updated + s.closed + s.reopened;
+export const changedCount = s => s.created + s.updated + s.closed + s.reopened + (s.cleaned || 0);

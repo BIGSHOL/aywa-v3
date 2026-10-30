@@ -7,7 +7,8 @@ import { IDS, fixtureSource, send, service } from './verify-flow-engine-fixture.
 import { CLOSE_REASON, FACT_SIGNALS, SIGNAL_DONE_RULE } from './flow-rules.mjs';
 import { SIGNAL_RECORD_TABLE, TYPE_OF_TABLE, deskCloseResult, groupDeskTasks, signalWiring } from './flow-source.mjs';
 import { importV2 } from './v2-bridge.mjs';
-import { signalOwner } from './flow-engine.mjs';
+import { newEvent, signalOwner } from './flow-engine.mjs';
+import { emptyState } from './flow-store.mjs';
 import { signalStepRefs } from './flow-hierarchy.mjs';
 import { coveredRefs } from './flow-reconcile.mjs';
 import { reconcileSource } from './flow-reconcile.mjs';
@@ -19,13 +20,13 @@ const eventsOf = (svc, id) => stored(svc, id).history.map(e => svc.store.state.e
 const typesOf = (svc, id) => eventsOf(svc, id).map(e => e.type);
 const stepOf = (svc, id, who) => stored(svc, id).steps.find(s => !s.retired && s.assigneeIds.includes(who));
 
-test('같은 원생·날짜의 결석 교시는 한 업무, 근거는 그날 출결만, 담당은 2.0 원래 담당', () => {
+test('같은 원생·날짜의 결석 업무에서 같은 반 교시는 한 근거, 다른 반은 별개 근거', () => {
   const base = { kind: 'attendance_absent_desk', subject_id: 's1', status: 'open', assignees: [IDS.desk] };
   const tasks = [{ ...base, id: 'a', cycle: '2026-10-21|15:00' }, { ...base, id: 'b', cycle: '2026-10-21|15:40' }, { ...base, id: 'c', cycle: '2026-10-22|15:00' }];
-  const days = new Map([['s1|2026-10-21', [{ id: 'r1', slot: '15:00', teacher_id: IDS.t1 }, { id: 'r2', slot: '15:40', teacher_id: IDS.t2 }]], ['s1|2026-10-22', [{ id: 'r3', slot: '15:00', teacher_id: IDS.t2 }]]]);
+  const days = new Map([['s1|2026-10-21', [{ id: 'r1', class_id: 'class-a', slot: '15:00', teacher_id: IDS.t1 }, { id: 'r2', class_id: 'class-a', slot: '15:40', teacher_id: IDS.t2 }, { id: 'r4', class_id: 'class-b', slot: '15:40', teacher_id: IDS.t2 }]], ['s1|2026-10-22', [{ id: 'r3', class_id: 'class-a', slot: '15:00', teacher_id: IDS.t2 }]]]);
   const grouped = groupDeskTasks(tasks, days, new Map([['student:s1', { label: '김수민' }]]), d => d.slice(5).replace('-', '/'));
   assert.equal(grouped.length, 2);
-  assert.deepEqual([grouped[0].title, grouped[0].recordKeys, grouped[0].assignees, grouped[0].mergedTaskIds], ['김수민 · 10/21 결석 2교시(15:00 · 15:40) — 학부모 확인', ['attendance:r1', 'attendance:r2'], [IDS.desk], ['b']]);
+  assert.deepEqual([grouped[0].title, grouped[0].recordKeys, grouped[0].assignees, grouped[0].mergedTaskIds], ['김수민 · 10/21 결석 — 학부모 확인', ['attendance:r1', 'attendance:r4'], [IDS.desk], ['b']]);
   assert.deepEqual(grouped[1].recordKeys, ['attendance:r3']);
 });
 
@@ -43,6 +44,22 @@ test('기존 중복 업무의 확인 상태·기록을 보존하고 묶음으로
   await svc.reloadSource(src);
   assert.equal(svc.view().revision, rev);
   await svc.close();
+});
+
+test('내부 결석 묶기 사건만 지우고 사람의 확인 사건·인과 연결은 보존한다', () => {
+  const source = fixtureSource(), state = emptyState(source.identity);
+  reconcileSource(state, source, { mode: 'seed' });
+  const id = 'src-task-t-open', before = state.cases[id].history.at(-1);
+  const grouped = newEvent(state, { caseId: id, type: 'source.task_changed', label: '같은 날 결석 교시를 한 업무로 합침', origin: 'snapshot', causeId: before });
+  const renamed = newEvent(state, { caseId: id, type: 'source.task_changed', label: '원본 업무 내용이 바뀜(제목)', data: { fields: ['title'] }, origin: 'snapshot', causeId: grouped.id });
+  const human = newEvent(state, { caseId: id, type: 'step.acknowledged', label: '확인함', origin: 'dev', actorId: IDS.desk, causeId: renamed.id });
+  const first = reconcileSource(state, source, { mode: 'apply' });
+  assert.equal(first.cleaned, 2);
+  assert.ok(state.cases[id].history.includes(human.id));
+  assert.ok(!state.cases[id].history.includes(grouped.id) && !state.cases[id].history.includes(renamed.id));
+  assert.equal(state.events.find(e => e.id === human.id).causeId, before);
+  const second = reconcileSource(state, source, { mode: 'apply' });
+  assert.equal(second.cleaned, 0);
 });
 /** Fixture source with edits: tasks by id, extra absences {id, student, class, at:'start'|'end'}, dropped absences, signal list. */
 function sourceWith({ tasks = {}, drop = [], add = [], dropTasks = [], signals, families } = {}) {
@@ -279,7 +296,7 @@ test('reloadSource contract: refuses another copy; the store folder never moves;
   const other = fixtureSource(); other.identity = { ...other.identity, capturedAt: '2026-11-01T00:00:00.000Z' };
   await assert.rejects(svc.reloadSource(other), e => e.code === 'flow_state_mismatch');
   const r = await svc.reloadSource(sourceWith({ tasks: { 't-open': { status: 'cancelled', closeReason: 'not_absent', closedAt: '2026-10-26T01:00:00Z' } } }));
-  assert.deepEqual(Object.keys(r).sort(), ['applied', 'changes', 'closed', 'created', 'reopened', 'revision', 'unchanged', 'updated']); assert.equal(r.applied, true);
+  assert.deepEqual(Object.keys(r).sort(), ['applied', 'changes', 'cleaned', 'closed', 'created', 'reopened', 'revision', 'unchanged', 'updated']); assert.equal(r.applied, true);
   assert.deepEqual(r.changes.map(x => [x.caseId, x.outcome, x.events]), [['src-task-t-open', 'closed', ['source.task_closed']]]);
   assert.equal(svc.store.dir, dir); assert.deepEqual((await readdir(dir)).filter(n => n.endsWith('.json')), ['state.json']);
   await svc.close();

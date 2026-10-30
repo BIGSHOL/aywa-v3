@@ -28,15 +28,15 @@ export const TASK_EVENT_LABEL = { opened: '업무 생김', reopened: '다시 열
 // Event registry: every event type the engine emits, with whether it is implemented now or
 // only declared for a future template (declared types are rejected by the command layer).
 export const EVENT_TYPES = {
-  'source.task_opened': { label: '업무 생김(원본 기록)', implemented: true },
-  'source.task_event': { label: '업무 이력(원본 기록)', implemented: true },
-  'source.signal': { label: '확인할 상태 발견(원본 기록)', implemented: true },
-  // 원본 재대조(AX-H1·H4 — flow-reconcile.mjs): 원본을 다시 읽을 때마다 저장된 원본 업무를 다시 판정한 결과.
-  'source.task_closed': { label: '원본에서 업무가 닫힘', implemented: true },
-  'source.task_reopened': { label: '원본에서 업무가 다시 열림', implemented: true },
-  'source.task_reassigned': { label: '원본 업무 담당이 바뀜', implemented: true },
-  'source.task_changed': { label: '원본 업무 내용이 바뀜', implemented: true },
-  'source.signal_cleared': { label: '원본에서 확인할 상태가 풀림', implemented: true },
+  'source.task_opened': { label: '업무 생김(학원 기록)', implemented: true },
+  'source.task_event': { label: '업무 이력(학원 기록)', implemented: true },
+  'source.signal': { label: '확인할 상태 발견(학원 기록)', implemented: true },
+  // 학원 기록을 다시 읽고 저장된 업무의 상태·담당·근거를 판정한 결과.
+  'source.task_closed': { label: '업무가 닫힘', implemented: true },
+  'source.task_reopened': { label: '업무가 다시 열림', implemented: true },
+  'source.task_reassigned': { label: '업무 담당이 바뀜', implemented: true },
+  'source.task_changed': { label: '업무 내용이 바뀜', implemented: true },
+  'source.signal_cleared': { label: '확인할 상태가 풀림', implemented: true },
   'source.signal_changed': { label: '확인할 근거 기록이 바뀜', implemented: true },
   'source.signal_reopened': { label: '확인할 상태가 다시 생김', implemented: true },
   'source.signal_handled': { label: '처리 완료(근거 기록 모두 처리 보고)', implemented: true },
@@ -64,7 +64,7 @@ export const EVENT_TYPES = {
 
 // Step roles resolve to actual people in flow-engine.mjs (resolveRole); 'manager' with no
 // person is the explicit manager queue.
-export const STEP_ROLE_LABEL = { desk: '데스크', homeroom: '담임', billing: '수납 담당', counselor: '상담 담당', manager: '관리자', owner: '원장', assignee: '요청받은 사람', source: '원본 담당' };
+export const STEP_ROLE_LABEL = { desk: '데스크', homeroom: '담임', billing: '수납 담당', counselor: '상담 담당', manager: '관리자', owner: '원장', assignee: '요청받은 사람', source: '담당' };
 
 export const TEMPLATES = {
   absence: {
@@ -108,8 +108,8 @@ export const COMMAND_KINDS = Object.keys(COMMAND_ROLES);
 export const PRIORITIES = ['high', 'normal', 'low'];
 export const REPORT_OUTCOMES = { done: '처리됨', needs_review: '검토 필요', unreachable: '연락 안 됨', not_needed: '해당 없음' };
 
-// 원본 신호 업무가 닫히는 법(AX-H1·H4). 보통 신호는 원본에서 그 상태가 풀릴 때(근거 기록이 신호에서 빠질 때) 닫힌다.
-export const SIGNAL_DONE_RULE = '원본에서 이 상태가 풀리면(근거 기록이 신호에서 빠지면) 자동으로 닫힙니다.';
+// 기록 신호 업무는 관련 상태가 해소되어 근거 목록에서 빠질 때 닫힌다.
+export const SIGNAL_DONE_RULE = '관련 기록의 확인할 상태가 해소되면 자동으로 닫힙니다.';
 // 처리해도 사실이 그대로 남는 신호(AX-H4) — 담당자가 처리 결과를 보고하면 그때의 근거 기록을 '처리한 기록'으로 남기고 닫는다.
 // 다시 읽을 때 처리한 기록에 없는 새 기록이 생길 때만 다시 연다. 원본 기록(결석 등)은 바꾸지 않는다. 여기 한 곳에서만 고른다.
 export const FACT_SIGNALS = Object.freeze({
