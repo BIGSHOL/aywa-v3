@@ -373,7 +373,7 @@ const cell = { studentId: STUDENT, classId: CLASS, sessionDate: '2026-10-26' };
 
 test('저장: 입력 검사는 복사본에 닿기 전에 거절한다', () => {
   const v = raw => screen.actions.setAttendanceCell.validate(raw), A1 = CLASS;
-  assert.throws(() => v(call('setAttendanceCell', 'x', cell)), /저장하는 사람을 먼저 고르세요/);
+  assert.throws(() => v(call('setAttendanceCell', 'x', cell)), /이 계정은 이 화면에서 저장할 수 없습니다 · 계정 전환/);
   assert.throws(() => v({ ...call('setAttendanceCell', A1, cell), module: PREFS }), /입력 값/, 'another 2.0 module');
   assert.throws(() => v(call('setAttendanceCell', A1, cell, {})), /입력 값/, 'one argument');
   assert.throws(() => v(call('setAttendanceCell', A1, { ...cell, sessionDate: '2026-10-26T00' })), /입력 값/);

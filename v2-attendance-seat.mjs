@@ -393,7 +393,7 @@ export async function seatDayProps({ sql, t, R, S, settings, seat, params, viewe
   const base = { seat, seatName: S.seat.SEAT_NAME[seat], seatRoom: S.seat.SEAT_ROOM[seat], date, today, dateLabel: dateLabel(date), prevDate: shiftDate(date, -1), nextDate: shiftDate(date, 1),
     usableSeats: S.seat.USABLE_SEAT_KEYS.map(k => ({ key: k, name: S.seat.SEAT_NAME[k] })), readOnly,
     // 인재원 단어수 가져오기 — 2.0은 연동 설정(IJW_*)이 이 학원이면 선다(이 복사본의 학원 = 침산 · 2.0 운영에선 켜져 있다 — ecs_memorized_pull 기록).
-    // 누르면 바깥(인재원)을 부르는 일이라 이 연습 자료은 2.0 실패 모양으로 답한다(actions.pullSeatMemorizedWords).
+    // 누르면 바깥(인재원)을 부르는 일이라 이 연습 자료는 2.0 실패 모양으로 답한다(actions.pullSeatMemorizedWords).
     ijwReady: true, textbookOptions,
     editors: editors.map(e => ({ id: e.id, name: e.name, role: R.roles.ROLE_LABEL?.[e.role] ?? '' })), viewer: viewer?.id ?? null };
   if (day.periods.length === 0 || !period) return { ...base, view: 'empty', props: null };

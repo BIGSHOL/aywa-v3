@@ -396,7 +396,7 @@ async function writer(ctx) {
   const level = m => (u ? people.level(u, m) : 'none');
   return { R, people, u, S: settingsOf(people), level, full: level('lesson_reports') === 'full', sql, t };
 }
-const NO_ACTOR = '저장하는 사람을 골라 주세요.';
+const NO_ACTOR = '이 계정은 이 화면에서 저장할 수 없습니다 · 계정 전환';
 const shapeOk = input => !!input && typeof input === 'object' && !Array.isArray(input);
 const label = target => [target.studentName, target.className].filter(Boolean).join(' · ') || null;
 const logAction = (w, action, targetLabel, metadata) => audit(w.sql, w.t, w.u, action, 'video_homework', targetLabel, metadata);
@@ -723,7 +723,7 @@ async function rejectHomeworkVideos(ctx) {
       ${'미확인으로 되돌림 — 영상 반려(Drive 휴지통)'}, ${observedAt}::timestamptz, ${legacyCheck}::date) r`);
     if (data === 'changed') return { ok: false, error: '그사이 영상 연결이 바뀌었습니다. 화면을 새로고침한 뒤 다시 시도해 주세요.' };
     if (data !== 'rejected') return { ok: false, error: '영상을 반려하지 못했습니다. 화면을 새로고침한 뒤 다시 시도해 주세요.' };
-    // 휴지통 — 연습 자료은 Drive를 부르지 않는다. 2.0 trashFiles의 셈 그대로: 다른 영상 줄이 같은 파일을 쓰면 남겨 둠(trashShared),
+    // 휴지통 — 연습 자료는 Drive를 부르지 않는다. 2.0 trashFiles의 셈 그대로: 다른 영상 줄이 같은 파일을 쓰면 남겨 둠(trashShared),
     // 나머지는 2.0이 자격을 못 읽었을 때처럼 '못 옮김'(trashFailed). 반려 자체는 그대로다(2.0도 못 옮겨도 반려는 남는다).
     let trashed = 0, trashFailed = 0, trashShared = 0;
     const ids = new Set(files.map(f => f.id));

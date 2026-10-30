@@ -78,7 +78,7 @@ export async function readPeople(sql, t, importV2, menu) {
 /** 저장 요청의 사람 — 목록에 없는 사람이면 거절(2.0의 '권한 없음'과 같은 자리). */
 export function requireActor(people, actorId) {
   const actor = typeof actorId === 'string' ? people.editors.find(e => e.id === actorId) : null;
-  if (!actor) throw new V2Error(403, 'actor_required', '저장하는 사람을 골라 주세요.');
+  if (!actor) throw new V2Error(403, 'actor_required', '이 계정은 이 화면에서 저장할 수 없습니다 · 계정 전환');
   return actor;
 }
 

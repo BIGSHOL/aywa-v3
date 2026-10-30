@@ -75,7 +75,7 @@ test('actions = 2.0 서버 액션과 1:1 — 같은 모듈("use server")의 같�
     assert.match(text, new RegExp(`export async function ${name}\\(`), `${a.module}에 ${name}이 있다`);
     const actor = '09705ab8-05cf-48ab-8f06-d54a3d990b5c';
     assert.throws(() => a.validate({ module: 'features/other/server/actions.ts', actor, args: [] }), /입력 값/, `${name}: 다른 모듈`);
-    assert.throws(() => a.validate({ module: a.module, args: [] }), /저장하는 사람/, `${name}: 사람 없음`);
+    assert.throws(() => a.validate({ module: a.module, args: [] }), /이 계정은 이 화면에서 저장할 수 없습니다 · 계정 전환/, `${name}: 사람 없음`);
     assert.throws(() => a.validate({ module: a.module, actor, args: Array.from({ length: a.arity + 1 }, (_, i) => i) }), /입력 값/, `${name}: 인자가 많다`);
     assert.deepEqual(a.validate({ module: a.module, actor, args: [{ x: 1 }] }), { actor, args: [{ x: 1 }] });
   }

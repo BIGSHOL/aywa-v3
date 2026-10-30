@@ -194,7 +194,7 @@ try {
     assert.throws(() => screen.actions.updateWithdrawalReason.validate({ module: PREFS, actor: SEOLHYUN, args: [null, form({})] }));
     assert.throws(() => screen.actions.toggleConsultationStep.validate({ module: ACTIONS, actor: 'x', args: [null, form({})] }));
     assert.throws(() => screen.actions.reactivateStudent.validate({ module: ACTIONS, actor: SEOLHYUN, args: [null, { $formData: 'x' }] }));
-    await assert.rejects(tx(sql => run(sql, 'reactivateStudent', '00000000-0000-4000-8000-000000000000', [null, form({ studentId: STU })])), /저장하는 사람/);
+    await assert.rejects(tx(sql => run(sql, 'reactivateStudent', '00000000-0000-4000-8000-000000000000', [null, form({ studentId: STU })])), /이 계정은 이 화면에서 저장할 수 없습니다 · 계정 전환/);
   });
 
   await check('시험 뒤 복사본은 그대로(감사로그 · 학원이 상태 · 수강 · 원장 보기 설정)', async () => {

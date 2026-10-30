@@ -854,7 +854,7 @@ const bad = () => new V2Error(400, 'invalid_request', '입력 값을 확인해 �
  */
 function hostCall(raw, module, arity) {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw) || raw.module !== module || !Array.isArray(raw.args) || raw.args.length > arity) throw bad();
-  if (typeof raw.actor !== 'string' || !UUID.test(raw.actor)) throw new V2Error(400, 'actor_missing', '저장하는 사람을 먼저 고르세요.');
+  if (typeof raw.actor !== 'string' || !UUID.test(raw.actor)) throw new V2Error(400, 'actor_missing', '이 계정은 이 화면에서 저장할 수 없습니다 · 계정 전환');
   return { actor: raw.actor, args: raw.args };
 }
 const ACTIONS_MODULE = 'features/attendance/server/actions.ts', PREFS_MODULE = 'features/attendance/server/prefs-actions.ts';

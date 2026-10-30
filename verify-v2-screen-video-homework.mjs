@@ -195,7 +195,7 @@ try {
     const r = await tx(async sql => ({ none: await run(sql, 'setVideoHomeworkRound', null, { classId: CLS, studentId: STU, roundKey: `h:${DAY}`, status: 'submitted' }),
       bad: await run(sql, 'setVideoHomeworkRound', SEOLHYUN, { classId: CLS, studentId: STU, roundKey: 'x:2026', status: 'submitted' }),
       missing: await run(sql, 'setVideoHomeworkRound', SEOLHYUN, { classId: CLS, studentId: STU, roundKey: `h:${DAY}`, status: 'submitted' }) }));
-    assert.equal(r.none.error, '저장하는 사람을 골라 주세요.'); assert.equal(r.bad.error, '회차를 확인할 수 없습니다.');
+    assert.equal(r.none.error, '이 계정은 이 화면에서 저장할 수 없습니다 · 계정 전환'); assert.equal(r.bad.error, '회차를 확인할 수 없습니다.');
     assert.equal(r.missing.error, '그날 이 학생에게 나간 영상 과제를 찾을 수 없습니다.');
   });
 
