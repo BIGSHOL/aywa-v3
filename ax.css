@@ -169,13 +169,7 @@
 .ax-records{min-width:0}
 .ax-records .ax-section-head{margin-bottom:8px}
 .ax-records .ax-section-head h4{margin:0}
-.ax-record-list{list-style:none;margin:0;padding:0;border-top:1px solid var(--ax-line)}
 .ax-record-list[data-collapsed=true] .ax-more{display:none}
-.ax-record-list button{width:100%;display:flex;align-items:center;gap:12px;padding:10px 2px;border-bottom:1px solid var(--ax-line);font-size:var(--ax-sm);text-align:left}
-.ax-record-list button:hover{background:var(--ax-soft)}
-.ax-record-list strong{flex:1;min-width:0;font-weight:500;overflow-wrap:anywhere}
-.ax-record-list span{max-width:55%;font-size:var(--ax-xs);overflow-wrap:anywhere}
-.ax-record-list .icon{width:16px;flex-shrink:0}
 .ax-records>.ax-text-link{margin-top:8px}
 .ax-issue-mini{display:grid;grid-template-columns:max-content minmax(160px,1fr) max-content;align-items:center;gap:18px;min-height:80px}
 .ax-issue-mini>div:first-child{display:flex;flex-direction:column;gap:4px;font-size:var(--ax-sm)}
