@@ -14,6 +14,7 @@
 import { readFile } from 'node:fs/promises';
 import { queryGate, rules as rosterRules, resolveSettings, copyClock } from './v2-onescreen-roster.mjs';
 import { tenantId as COPY_TENANT } from './full-db.mjs';
+import { kpiTip } from './kpi-tips.mjs';
 
 const MODULES = ['lib/date-kst.ts', 'features/dashboard/overview/teacher-work.ts', 'features/dashboard/overview/work-targets.ts', 'features/report-admin/unread-filter.ts',
   'features/dashboard/unrecorded-attendance.ts', 'features/dashboard/overview/counsel-period.ts', 'features/report-admin/english-writing.ts', 'features/dashboard/report-subjects.ts',
@@ -358,7 +359,7 @@ async function weekly({ sql, asOf, tenantId: t, importV2, n }) {
   const kpis = TEACHER_WORK_METRICS.map((m) => ({ ...kpi(m.label, '%', (m.attendance ? attendanceWindows : windows).map((w, i) => ({ label: w.label,
     value: m.attendance ? attendance.total[i] ? rate(...attendance.total[i]) : null
       : m.video && (!videoFrom || w.to < videoFrom) ? null : rate(...m.part(totals[i], lessonTotals[i])) })), { id: m.id, better: 'up', span: SPAN[m.id] ?? '최근 7일', basis: m.basis(graceHours) }),
-    detail: m.detail(graceHours) }));
+    detail: kpiTip(m.id, { graceHours }) }));
   return { windows, totals, lessonTotals, kpis, basis: '변화 = 직전 7일과 비교 · 최근 창은 복사 시각, 지난 창은 종료일 끝까지 판정' };
 }
 

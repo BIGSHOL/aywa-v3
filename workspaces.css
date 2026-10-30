@@ -18,7 +18,7 @@
 .ws-kpi-title>:is(span,a){font-weight:700}
 .ws-kpi-title>span{word-break:keep-all;overflow-wrap:anywhere;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden}
 .ws-kpi-title em{font-style:normal;font-size:var(--ax-xs);font-weight:600;white-space:nowrap}
-.ws-kpi-tip{position:fixed;z-index:1000;width:max-content;max-width:min(28rem,calc(100vw - 16px));padding:10px 12px;border:1px solid var(--ax-line);border-radius:9px;background:#fff;color:var(--ax-ink);box-shadow:0 8px 24px rgba(23,33,62,.16);font-size:14px;line-height:1.55;white-space:normal;overflow-wrap:anywhere;pointer-events:none}
+.ws-kpi-tip{position:fixed;z-index:1000;width:max-content;max-width:min(28rem,calc(100vw - 16px));padding:10px 12px;border:1px solid var(--ax-line);border-radius:9px;background:#fff;color:var(--ax-ink);box-shadow:0 8px 24px rgba(23,33,62,.16);font-size:14px;line-height:1.55;white-space:pre-line;overflow-wrap:anywhere;pointer-events:none}
 .ws-kpi-tip[hidden]{display:none}
 .ws-kpi>strong,.ws-kpi-change{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .ws-kpi-change{font-weight:600}.ws-kpi-change.good{color:var(--ax-good)}.ws-kpi-change.bad{color:var(--ax-bad)} /* 좋아짐 = 빨강 · 나빠짐 = 파랑(원장 10-28) */

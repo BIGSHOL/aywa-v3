@@ -12,6 +12,7 @@
 import { TEACHER_WORK_METRICS, subjectKeyOf, teacherWorkTrend } from './v2-teacher-work.mjs';
 // 운영실 — 2.0 상단 KPI 9칸(카드와 같은 id)과 추세가 있는 위젯(등록 · 퇴원 · 3개월 내 퇴원 · 등원율 · 청구·수납). 계산은 v2-dashboard-flow*.mjs.
 import { DASHBOARD_TREND_METRICS } from './v2-dashboard-flow.mjs';
+import { kpiTip } from './kpi-tips.mjs';
 
 // 수업보고서·출결·영상 — 2.0 강사별 업무 현황 판정. 선생님·반·과목·원생으로 묶고, 필터는 반 목록(scope)으로 좁힌다.
 // 원생별 = 같은 판정 재료를 원생으로 묶은 것(원장 10-28 "반 자세히 보기 … 각 원생별 보고서 작성률") — 반으로 거르면 기본. 출결 입력률은 판정이 반×날이라 없다(byStudent:false).
@@ -35,4 +36,4 @@ export const TREND_METRICS = Object.freeze([...TEACHER_WORK_METRICS.map((m) => O
   async series({ sql, asOf, tenantId, importV2, windows, by, filter }) {
     return teacherWorkTrend({ sql, asOf, tenantId, importV2, metric: m.id, windows, by, scope: await classScope(sql, tenantId, filter) });
   },
-})), ...DASHBOARD_TREND_METRICS]);
+})), ...DASHBOARD_TREND_METRICS.map((m) => (m.detail || !kpiTip(m.id) ? m : Object.freeze({ ...m, detail: () => kpiTip(m.id).replace(/\n/, '. ') })))]); // 운영실 지표 설명 = 카드 마우스 설명과 같은 문장

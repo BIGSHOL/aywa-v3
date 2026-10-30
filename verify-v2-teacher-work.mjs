@@ -173,7 +173,8 @@ test('teacherWorkWeekly: five KPIs over 8 weekly windows — 2.0 card scope (les
     assert(kpis.every((k) => k.kind === 'kpi' && k.unit === '%' && k.better === 'up' && k.points.length === 8));
     assert.equal(kpis[2].span, '어제까지 7일'); assert.match(kpis[1].span, /^최근 \d+일$/); assert.match(kpis[1].basis, /\d+시간이 안 된 것/);
     for (const k of kpis) {
-      assert.match(k.detail, /÷.*7일 전 대비/);
+      // 마우스 설명 = 두 줄(무엇을 세나 · 기준), 줄마다 짧게(원장 10-30 "아, 그렇구나. 정도 바로 알 수 있게") — kpi-tips.mjs
+      const lines = k.detail.split('\n'); assert.equal(lines.length, 2, `${k.label} 설명 두 줄`); assert(lines.every((l) => l.length > 0 && l.length <= 40), `${k.label} 줄마다 짧게`);
       assert.doesNotMatch(`${k.label} ${k.span} ${k.basis} ${k.detail}`, /2\.0/, '화면 문구에 2.0을 적지 않는다(원장 10-28)');
     }
     // Past windows are judged as they ended (no as-of cut), the last one at the capture — the same judgment as the expanded trend (원장 10-28).

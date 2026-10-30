@@ -1,5 +1,6 @@
 // Contract helpers for model.workspaces (DOMAIN-DATA.md). Pure functions only:
 // the domain loaders run read-only SQL and hand plain values here.
+import { kpiTip } from './kpi-tips.mjs';
 export const DATA_STATES = Object.freeze(['available', 'empty', 'not-applicable', 'unavailable']);
 export const PRIORITY = Object.freeze({ check: '확인 필요', decide: '결정 필요', progress: '진행 확인' });
 export const RECORD_LIMIT = 12;
@@ -81,7 +82,8 @@ export const addDays = (date, days) => { const d = new Date(`${date}T12:00:00Z`)
 export function kpi(label, unit, points, { id = '', better = null, period = 'week', span = '', basis = '' } = {}) {
   const series = points.map(p => ({ label: p.label, value: finite(p.value) }));
   const value = series.at(-1)?.value ?? null, previous = series.at(-2)?.value ?? null;
-  return { kind: 'kpi', ...(id ? { id } : {}), label, unit, period, span, basis, better, points: series, value, previous, delta: value === null || previous === null ? null : value - previous };
+  const tip = id ? kpiTip(id) : ''; // 마우스 설명 두 줄 — 지표마다 한 문장(kpi-tips.mjs)
+  return { kind: 'kpi', ...(id ? { id } : {}), label, unit, period, span, basis, ...(tip ? { detail: tip } : {}), better, points: series, value, previous, delta: value === null || previous === null ? null : value - previous };
 }
 // Rolling 7-day windows ending at asOf, oldest first: full weeks compare with full weeks (the current calendar week is partial).
 export function weekWindows(asOf, n = 8) {
