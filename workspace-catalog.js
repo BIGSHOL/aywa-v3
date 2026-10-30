@@ -328,17 +328,17 @@ window.AxCatalog = {
    "facets": [
     {
      "id": "open",
-     "label": "남은 업무",
+     "label": "미처리",
      "kind": "filter"
     },
     {
      "id": "late",
-     "label": "지난 업무",
+     "label": "기한 초과",
      "kind": "filter"
     },
     {
      "id": "closed",
-     "label": "완료된 업무",
+     "label": "처리 완료",
      "kind": "filter"
     },
     {
@@ -424,6 +424,10 @@ window.AxCatalog = {
          "label": "퇴원보고서"
         },
         {
+         "value": "refund_process",
+         "label": "환불 처리"
+        },
+        {
          "value": "help_question",
          "label": "도움말 질문"
         }
@@ -438,15 +442,15 @@ window.AxCatalog = {
        "options": [
         {
          "value": "open",
-         "label": "남은 업무"
+         "label": "미처리"
         },
         {
          "value": "late",
-         "label": "지난 업무"
+         "label": "기한 초과"
         },
         {
          "value": "closed",
-         "label": "완료된 업무"
+         "label": "처리 완료"
         },
         {
          "value": "all",
@@ -518,6 +522,10 @@ window.AxCatalog = {
         {
          "value": "withdrawal_step",
          "label": "퇴원보고서"
+        },
+        {
+         "value": "refund_process",
+         "label": "환불 처리"
         },
         {
          "value": "help_question",

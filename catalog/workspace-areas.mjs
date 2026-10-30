@@ -72,7 +72,7 @@ export const AREAS = [
       pre('calendar.tag', '태그 만들기', [f('name', '태그 이름', 'text', { required: true })], ['saveCalendarTag'], '일정 태그', '일정을 묶어 볼 태그 이름을 정합니다.'),
     ] },
   { id: 'tasks-notifications', label: '업무·알림', group: 'home', viewKind: 'flow', summary: '기록에서 자동으로 생긴 업무와 알림을 처리 상태로 봅니다.',
-    facets: [fc('open', '남은 업무', text(KINDS, '열린 일'), 'filter'), fc('late', '지난 업무', text(KINDS, '늦음'), 'filter'), fc('closed', '완료된 업무', text(KINDS, '끝난 일'), 'filter'), fc('inbox', '알림함', route('/dashboard'), 'face')],
+    facets: [fc('open', '미처리', text(KINDS, '미처리'), 'filter'), fc('late', '기한 초과', text(KINDS, '기한 초과'), 'filter'), fc('closed', '처리 완료', text(KINDS, '처리 완료'), 'filter'), fc('inbox', '알림함', route('/dashboard'), 'face')],
     actions: [
       nav('tasks-notifications.inbox', '알림함 열기', null, ['markNotificationsRead'], '안 읽은 알림과 보관함을 봅니다.', 'inbox'),
       pre('tasks-notifications.kind', '업무 종류별 보기', [sel('kind', '업무 종류', 'staffTaskKind'), sel('filter', '상태', 'staffTaskFilter')], ['api-staff-tasks'], '업무 목록', '종류와 상태로 거른 업무 목록을 봅니다.'),

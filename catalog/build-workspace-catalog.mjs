@@ -31,7 +31,7 @@ export const BANNED_ANYWHERE = [/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}
 export const displayOptions = (id, options) => options.map(option => ({
   ...option,
   label: id === 'assetStatus' ? ({ in_use: '사용 중', on_loan: '대여 중', repair: '수리 중' }[option.value] || option.label)
-    : id === 'staffTaskFilter' ? ({ open: '남은 업무', late: '지난 업무', closed: '완료된 업무' }[option.value] || option.label)
+    : id === 'staffTaskFilter' ? ({ open: '미처리', late: '기한 초과', closed: '처리 완료' }[option.value] || option.label)
     : id === 'withdrawalReason' && option.value === 'motivation' ? '원생 상태'
     : id === 'consultationAudience' ? ({ student: '원생', both: '학부모+원생' }[option.value] || option.label)
     : id === 'slackCategory' && option.value === 'consult' ? '신규 콜&상담·원생상담'
