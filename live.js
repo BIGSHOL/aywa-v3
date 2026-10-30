@@ -45,7 +45,7 @@
   const deltaText=(v,prev,unit,monthly)=>v==null||prev==null?'':`${monthly?'전월':'이전'} 대비 ${v>prev?'+':v<prev?'−':'±'}${exact(Math.abs(v-prev),unit)}`;
   function chart(items,key,unit='',options={}){
     if(!items.some(x=>x[key]!==null&&x[key]!==undefined))return empty('이 기간의 기록이 없습니다.','없는 기간을 추정값으로 채우지 않았습니다.');
-    const W=620,H=216,L=42,R=20,T=25,B=32,inner=W-L-R,secondary=options.secondary;
+    const W=620,H=options.compact?150:216,L=42,R=20,T=25,B=options.compact?26:32,inner=W-L-R,secondary=options.secondary; // compact = 합친 화면의 낮은 현황 띠(줄여도 글자가 읽히는 비율)
     const values=items.flatMap(x=>[x[key],...(secondary?[x[secondary]]:[])]).filter(x=>x!==null&&x!==undefined).map(Number);
     // 세로축 눈금은 딱 떨어지는 간격(1·2·2.5·5×10ⁿ, 표시 단위 기준 — 원장 10-28 "803, 1605, 2408 … 기준을 알 수 없으니 딱 떨어지는 숫자로").
     const scale=unit==='만원'?10000:1,top=Math.max(...values,1)/scale,raw=top/4,mag=10**Math.floor(Math.log10(raw)),n=raw/mag,tick=Math.max((n<=1?1:n<=2?2:n<=2.5?2.5:n<=5?5:10)*mag,1)*scale,ticks=Math.ceil(Math.max(...values,1)/tick);

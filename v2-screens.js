@@ -129,7 +129,8 @@ window.V2Screens = (() => {
         const screen = `<div class="${def.native ? 'v3s' : 'v2s'}" data-v2-screen="${esc(def.id)}">${template.innerHTML}</div>`;
         const family = workspaceFor(def.id), overview = family && window.AywaWorkspaces?.overview?.(family, signed);
         const classTabs = family === 'class-sheets' ? `<nav class="v2-class-tabs" aria-label="강사 시트 과목"><a href="#v2-ecs" ${def.id === 'ecs' ? 'aria-current="page"' : ''}>영어</a><a href="#v2-mcs" ${def.id === 'mcs' ? 'aria-current="page"' : ''}>수학</a></nav>` : '';
-        return overview ? `<div class="v2-combined">${overview}${classTabs}${screen}</div>` : screen;
+        // 강사 시트 과목 탭은 현황이 없는 계정(선생님)에게도 필요하다 — 수학 시트로 가는 길이 이것뿐이다.
+        return overview || classTabs ? `<div class="v2-combined">${overview || ''}${classTabs}${screen}</div>` : screen;
       }
       catch (error) { console.error(error); return `<div class="v2s"><p class="v2s-note">이 화면을 그리지 못했습니다.</p></div>`; }
     };

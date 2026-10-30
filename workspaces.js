@@ -240,10 +240,11 @@ window.createWorkspaces = function createWorkspaces(api) {
   }
   function overview(id,account){
     const a=area(id);if(!a)return '';
+    // 현황은 학원 전체 값이라 원장 계정에만 얹는다. 다른 계정은 거절 문구 없이 업무 화면만 본다.
+    if(!['master','owner'].includes(account?.role))return '';
     state.recent=[id,...state.recent.filter(x=>x!==id)].slice(0,4);
-    const allowed=['master','owner'].includes(account?.role);
     const d=data(id);
-    return `<section class="ws ws-combined-overview" data-family="${h(id)}" aria-label="${h(a.label)} 현황"><div class="page-heading ws-heading"><div><p class="ws-group">${h(a.group||'')}</p><h2>지금 상태</h2><p>${allowed?h(d?.summary||a.summary||''):'이 화면의 현황을 볼 수 없습니다.'}</p></div>${allowed?`<div class="heading-actions">${btn('이 화면으로 대화','ask',`data-id="${h(id)}"`)}${btn('업무 요청','request',`data-id="${h(id)}"`,true)}</div>`:''}</div>${allowed?`${critical(a)}${signalList(a)}`:''}</section>`;
+    return `<section class="ws ws-combined-overview" data-family="${h(id)}" aria-label="${h(a.label)} 현황"><div class="page-heading ws-heading"><div><p class="ws-group">${h(a.group||'')}</p><h1>${h(a.label)}</h1><p>${h(d?.summary||a.summary||'')}</p></div><div class="heading-actions">${btn('이 화면으로 대화','ask',`data-id="${h(id)}"`)}${btn('업무 요청','request',`data-id="${h(id)}"`,true)}</div></div>${critical(a,true)}${signalList(a,true)}</section>`;
   }
   // KPI = 최근 변화(원장 10-28 "원하는건 추세"): 지금 값 · 직전 기간 대비(좋아짐/나빠짐 색) · 추세선(기간마다 값은 마우스·키보드로).
   // 작업 공간 카드와 원장 첫 화면 '운영 상태'가 같은 함수로 그린다. 기간(span)은 제목 오른쪽(원장 10-28 "제목 우측에 기한 적어놓을것").
@@ -274,7 +275,7 @@ window.createWorkspaces = function createWorkspaces(api) {
   document.addEventListener('focusout',e=>{if(kpiTipFor===e.target)hideKpiTip();});
   document.addEventListener('keydown',e=>{if(e.key==='Escape')hideKpiTip();});
   document.addEventListener('scroll',hideKpiTip,true);addEventListener('resize',hideKpiTip);addEventListener('hashchange',hideKpiTip);
-  function critical(a){
+  function critical(a,combined=false){
     // KPI는 추세 카드(큰 숫자·비교·작은 추세선)를 먼저 — 서버가 실은 cards(운영실 카드·이번 달 카드)가 있으면 그것, 있으면 숫자 칸은 싣지 않는다(원장 10-28 "전체 몇건 … 아무 도움이 안됨"). 오른쪽 그래프는 기간·값 라벨과 함께 늘 둔다.
     const all=d0=>d0?.cards?.length?d0.cards:d0?.metrics||[],d=data(a.id),isKpi=all(d).some(m=>m.kind==='kpi'),metrics=isKpi?all(d).filter(m=>m.kind==='kpi'):all(d).slice(0,4),trend=d?.trend;
     if(!metrics.length&&!trend?.points?.length)return '';
@@ -284,16 +285,25 @@ window.createWorkspaces = function createWorkspaces(api) {
     const fid=state.facet[a.id]||'',fl=fid?facetsOf(a).find(f=>f.id===fid)?.label||'':'',months=points.map(p=>p.month).filter(Boolean),cur=db.meta.month;
     const active=(/^month:\d{4}-\d{2}$/.test(fid)?[fid.slice(6)]:fid==='this-year'||/올해/.test(fl)?months.filter(m=>m.slice(0,4)===cur.slice(0,4)):/this-month/.test(fid)||/이번 달/.test(fl)?[cur]:[]).filter(m=>months.includes(m));
     const basis=`${active.length?`${active.length>1?`${api.yymm(active[0])}~${api.yymm(active.at(-1))}`:api.yymm(active[0])} 강조 · `:''}전체 기록 · 아래 구분과 무관`;
-    const chartHtml=!points.length?'':trend.granularity==='day'?`<div class="ws-line">${api.lineChart(points,{key:'value',label:trend.label,unit:trend.unit||'',axis:true})}</div>`:api.chart(points.map(p=>({...p,label:api.yymm(p.month)})),'value',trend.unit==='원'?'만원':trend.unit||'',{label:trend.label,ends:true,...(active.length?{active}:{})});
-    return `<section class="ws-critical" aria-label="핵심 지표">${metrics.length?`<div class="ws-metrics"${isKpi?` style="--kpi-n:${metrics.length<=6?metrics.length:Math.ceil(metrics.length/2)};--kpi-half:${metrics.length<=6?Math.ceil(metrics.length/2):3}"`:''}>${metrics.map(m=>m.kind==='kpi'?kpiCard(m):`<div class="ws-metric"><span>${h(m.label)}</span><strong>${h(value(m))}</strong>${m.detail?`<small>${h(m.detail)}</small>`:''}</div>`).join('')}</div>`:''}${chartHtml?`<div class="ws-trend"><h2>${h(trend.label||'추이')}</h2><p class="ax-note ws-trend-basis">${h(basis)}</p>${chartHtml}</div>`:''}</section>`;
+    const chartHtml=!points.length?'':trend.granularity==='day'?`<div class="ws-line">${api.lineChart(points,{key:'value',label:trend.label,unit:trend.unit||'',axis:true})}</div>`:api.chart(points.map(p=>({...p,label:api.yymm(p.month)})),'value',trend.unit==='원'?'만원':trend.unit||'',{label:trend.label,ends:true,compact:combined,...(active.length?{active}:{})});
+    return `<section class="ws-critical" aria-label="핵심 지표">${metrics.length?`<div class="ws-metrics"${isKpi?` style="--kpi-n:${metrics.length<=6?metrics.length:Math.ceil(metrics.length/2)};--kpi-half:${metrics.length<=6?Math.ceil(metrics.length/2):3}"`:''}>${metrics.map(m=>m.kind==='kpi'?kpiCard(m):`<div class="ws-metric"><span>${h(m.label)}</span><strong>${h(value(m))}</strong>${m.detail?`<small>${h(m.detail)}</small>`:''}</div>`).join('')}</div>`:''}${chartHtml?`<div class="ws-trend"><h2>${h(trend.label||'추이')}</h2>${combined?'':`<p class="ax-note ws-trend-basis">${h(basis)}</p>`}${chartHtml}</div>`:''}</section>`;
   }
   const byPriority=(x,y)=>(PRIORITY_ORDER.indexOf(x.priority)+1||9)-(PRIORITY_ORDER.indexOf(y.priority)+1||9);
+  const signalPill=s=>pill(s.priority||'확인 필요',s.priority==='결정 필요'?'amber':'blue');
+  const signalCount=s=>s.recordIds?.length?`<span>근거 ${s.recordIds.length}건</span>`:'';
+  const signalNote=s=>s.id==='billing-remaining'?'<p class="ax-note">수납 반영은 메이크에듀 동기화로 들어옵니다 — 학부모 안내 등 처리 뒤 보고로 닫기</p>':'';
+  const signalActions=(id,s)=>`<div class="ax-actions">${btn('근거 보기','signal-evidence',`data-id="${h(id)}" data-signal="${h(s.id)}"`)}${btn('업무 요청','signal-request',`data-id="${h(id)}" data-signal="${h(s.id)}"`,true)}</div>`;
   function signalCard(id,s,withFamily=false){
     const a=area(id);
     // 출처 줄(s.source — '수납관리 · 청구·할인·수납 기록' 같은 집계 출처)은 싣지 않는다(원장 10-28).
-    return `<article class="ws-signal"><div class="ax-issue-meta">${pill(s.priority||'확인 필요',s.priority==='결정 필요'?'amber':'blue')}${withFamily?pill(a?.label||id):''}${s.recordIds?.length?`<span>근거 ${s.recordIds.length}건</span>`:''}</div><h3>${h(s.title)}</h3><p>${h(s.summary||'')}</p>${s.id==='billing-remaining'?'<p class="ax-note">수납 반영은 메이크에듀 동기화로 들어옵니다 — 학부모 안내 등 처리 뒤 보고로 닫기</p>':''}<div class="ax-actions">${btn('근거 보기','signal-evidence',`data-id="${h(id)}" data-signal="${h(s.id)}"`)}${btn('업무 요청','signal-request',`data-id="${h(id)}" data-signal="${h(s.id)}"`,true)}</div></article>`;
+    return `<article class="ws-signal"><div class="ax-issue-meta">${signalPill(s)}${withFamily?pill(a?.label||id):''}${signalCount(s)}</div><h3>${h(s.title)}</h3><p>${h(s.summary||'')}</p>${signalNote(s)}${signalActions(id,s)}</article>`;
   }
-  function signalList(a){const list=[...(data(a.id)?.signals||[])].sort(byPriority);return list.length?`<section class="ws-signals" aria-label="이 작업 공간의 신호"><h2>지금 올라온 신호 ${list.length}건</h2><div class="ws-signal-grid">${list.map(s=>signalCard(a.id,s)).join('')}</div></section>`:'';}
+  // 합친 화면의 신호 = 카드 대신 줄 — 아래 업무 화면이 첫 화면에 보이게 낮게 둔다.
+  const signalRow=(id,s)=>`<article class="ws-signal ws-signal-row"><div class="ws-signal-text"><div class="ws-signal-line">${signalPill(s)}<h3>${h(s.title)}</h3>${signalCount(s)}</div><p>${h(s.summary||'')}</p>${signalNote(s)}</div>${signalActions(id,s)}</article>`;
+  function signalList(a,combined=false){
+    const list=[...(data(a.id)?.signals||[])].sort(byPriority);if(!list.length)return '';
+    return combined?`<section class="ws-signals" aria-label="지금 올라온 신호 ${list.length}건"><div class="ws-signal-grid">${list.map(s=>signalRow(a.id,s)).join('')}</div></section>`:`<section class="ws-signals" aria-label="이 작업 공간의 신호"><h2>지금 올라온 신호 ${list.length}건</h2><div class="ws-signal-grid">${list.map(s=>signalCard(a.id,s)).join('')}</div></section>`;
+  }
 
   function mainHtml(a){
     const id=a.id,kind=viewKind(a),facets=facetsOf(a),board=boardMode(id),ld=board?null:listData(a),slot=state.remote[id],bslot=state.board[id],fslot=state.full[id];
