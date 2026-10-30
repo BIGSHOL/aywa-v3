@@ -19,13 +19,14 @@ const REFUND_MODULE = 'features/withdrawal-reports/server/refund-actions.ts';
 let rulesPromise = null;
 function loadRules(importV2) {
   rulesPromise ??= (async () => {
-    const [model, prefill, targets, auditMeta, reasonDetail, internalLink, dateKst, subjects] = await Promise.all([
+    const [model, prefill, targets, auditMeta, reasonDetail, internalLink, dateKst, subjects, requestOptions, optout] = await Promise.all([
       'features/withdrawal-reports/model.ts', 'features/withdrawal-reports/prefill.ts', 'features/withdrawal-reports/target-courses.ts',
       'features/withdrawal-reports/audit-meta.ts', 'features/withdrawals/reason-detail.ts', 'features/consultations/internal-link.ts',
-      'lib/date-kst.ts', 'features/owner/subjects.ts',
+      'lib/date-kst.ts', 'features/owner/subjects.ts', 'features/withdrawal-reports/request-options.ts', 'features/classes/report-optout.ts',
     ].map(p => importV2(p)));
     return { ...model, ...prefill, ...targets, ...auditMeta, checkReasonInput: reasonDetail.checkReasonInput,
-      visibleConsultationSummary: internalLink.visibleConsultationSummary, kstToday: dateKst.kstToday, subjectLabelRecord: subjects.subjectLabelRecord };
+      visibleConsultationSummary: internalLink.visibleConsultationSummary, kstToday: dateKst.kstToday, subjectLabelRecord: subjects.subjectLabelRecord,
+      narrowApprovalSubjects: requestOptions.narrowApprovalSubjects, isReportOptout: optout.isReportOptout };
   })().catch(error => { rulesPromise = null; throw error; });
   return rulesPromise;
 }
@@ -70,13 +71,13 @@ async function listReports(sql, t, R, viewer) {
   return { rows, available: true, completedLimited: completedLimited || completed.length > 200 };
 }
 
-/** reportStaff — 재직 강사·매니저·관리자·원장(표시 역할 = 운영자 계정은 관리자). */
-async function reportStaff(sql, t, people) {
+/** reportStaff — 재직 강사·매니저·관리자·원장(표시 역할 = 운영자 계정은 관리자 · 운영자는 승인자가 아니다 · 학원 설정 '퇴원보고서 승인자'가 과목 승인 후보를 좁힌다). */
+async function reportStaff(sql, t, R, people) {
   const rows = await sql`select id::text id, display_name, system_role::text role, subjects from public.users
     where tenant_id=${t} and status::text='active' and system_role::text in ('teacher','manager','admin','master') order by display_name`;
-  const scopes = people.settings.permissions?.specialAccess?.staffSubjectScopes;
-  return rows.map(u => ({ id: u.id, name: u.display_name, role: people.operators.has(u.id) && u.role === 'master' ? 'admin' : u.role, subjects: u.subjects ?? [],
-    approvalSubjects: people.P.scope.staffSubjectScopeOf(u.id, scopes) ?? u.subjects ?? [] }));
+  const access = people.settings.permissions?.specialAccess;
+  return R.narrowApprovalSubjects(rows.map(u => ({ id: u.id, name: u.display_name, role: people.operators.has(u.id) && u.role === 'master' ? 'admin' : u.role, subjects: u.subjects ?? [],
+    approvalSubjects: people.operators.has(u.id) ? [] : people.P.scope.staffSubjectScopeOf(u.id, access?.staffSubjectScopes) ?? u.subjects ?? [] })), access?.withdrawalApproverIds ?? []);
 }
 
 /** 학생의 지금 수강(2.0 currentCourses — 끝났거나 반이동으로 닫힌 수강 제외). */
@@ -84,7 +85,7 @@ async function coursesOf(sql, t, R, studentIds, onlyLiveClass) {
   if (!studentIds.length) return new Map();
   const today = R.kstToday();
   const rows = await sql`select e.student_id::text student_id, e.id::text id, e.start_date::text start_date, e.end_date::text end_date, e.on_hold, e.is_transferred,
-      c.id::text class_id, c.class_name, c.subject, c.is_active, c.closed_at, c.teacher_id::text teacher_id, u.display_name teacher_name
+      c.id::text class_id, c.class_name, c.subject, c.english_track, c.report_optout, c.is_active, c.closed_at, c.teacher_id::text teacher_id, u.display_name teacher_name
     from public.enrollments e join public.classes c on c.id = e.class_id and c.tenant_id = ${t}
       left join public.users u on u.id = c.teacher_id and u.tenant_id = ${t}
     where e.tenant_id = ${t} and e.student_id = any(${studentIds}::uuid[]) order by e.id`;
@@ -93,7 +94,8 @@ async function coursesOf(sql, t, R, studentIds, onlyLiveClass) {
     if (e.end_date && (e.end_date < today || e.is_transferred)) continue;
     if (onlyLiveClass && (!e.is_active || e.closed_at)) continue;
     (out.get(e.student_id) ?? out.set(e.student_id, []).get(e.student_id)).push({ id: e.id, classId: e.class_id, className: e.class_name, subject: e.subject,
-      teacherId: e.teacher_id, teacherName: e.teacher_name ?? null, startDate: e.start_date, endDate: e.end_date, onHold: e.on_hold });
+      teacherId: e.teacher_id, teacherName: e.teacher_name ?? null, startDate: e.start_date, endDate: e.end_date, onHold: e.on_hold,
+      ...(R.isReportOptout(e) ? { reportOptout: true } : {}), ...(e.english_track === 'eie' ? { eie: true } : {}) });
   }
   return out;
 }
@@ -133,6 +135,11 @@ async function getReport(sql, t, R, people, viewer, u, id) {
   const [row] = await sql`select ${REPORT_ROW(sql)} j from public.withdrawal_reports r where r.tenant_id=${t} and r.id=${id}`;
   const report = row?.j;
   if (!report || !canReadReport(R, report, viewer)) return null;
+  if (report.group_id && report.enrollment_ids) {
+    const [group] = await sql`select enrollment_ids::text[] enrollment_ids, teacher_ids::text[] teacher_ids from public.withdrawal_report_groups where tenant_id=${t} and id=${report.group_id}`
+      .catch(error => { console.error('[withdrawal-report-group]', error.message); return []; });
+    if (group) report.enrollment_ids = R.withUnassignedCourses(report, group);
+  }
   const live = !['completed', 'canceled'].includes(report.status);
   const [events, current] = await Promise.all([
     sql`select id::text id, actor_id::text actor_id, action, from_status, to_status, comment, to_json(created_at)#>>'{}' created_at
@@ -224,7 +231,7 @@ async function build({ sql, params, tenantId: t, importV2 }) {
     const students = viewer.request ? await sql`select id::text id, name, school, grade, status::text status from public.students where tenant_id=${t} order by name, id` : [];
     return { ...base, archive: row.j, students, withdrawalHref: await withdrawalHref(sql, t, people, u, row.j.mapped_student_id) };
   }
-  const staff = await reportStaff(sql, t, people);
+  const staff = await reportStaff(sql, t, R, people);
   if (sub?.[2]) {
     const record = await getReport(sql, t, R, people, viewer, u, sub[2]);
     if (!record) return { ...base, notFound: true };
@@ -364,7 +371,7 @@ export const screen = {
   params: {
     actor: UUID, v2path: new RegExp(`^/withdrawal-reports(?:/archive/${UUID_BODY}|/${UUID_BODY})?$`, 'i'),
     status: /^[a-z]{1,12}$/, range: /^[a-z0-9]{1,8}$/, from: /^\d{4}-\d{2}-\d{2}$/, to: /^\d{4}-\d{2}-\d{2}$/,
-    subject: /^[a-z0-9_]{1,40}$/, teacher: /^[^\u0000-\u001f]{1,80}$/, link: /^[a-z]{1,10}$/, q: /^[^\u0000-\u001f]{0,100}$/, page: /^\d{1,4}$/, request: UUID,
+    subject: /^[a-z0-9_]{1,40}$/, teacher: /^[^\u0000-\u001f]{1,80}$/, kind: /^(withdrawal|subject_end)$/, mine: /^approve$/, q: /^[^\u0000-\u001f]{0,100}$/, page: /^\d{1,4}$/, request: UUID,
   },
   actions,
   load: build,

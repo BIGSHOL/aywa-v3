@@ -10,7 +10,7 @@
   'use strict';
   const ID = 'withdrawal-reports', LABEL = '퇴원보고서', HOST = `/v2-host/${ID}.html`, S = window.V2Screens; if (!S) return;
   // 2.0 page.tsx가 읽는 주소 열쇠 그대로 + v2path(2.0 하위 경로 — 보고서 상세 · 원본 상세).
-  const KEEP = ['v2path', 'status', 'range', 'from', 'to', 'subject', 'teacher', 'link', 'q', 'page', 'request'];
+  const KEEP = ['v2path', 'status', 'range', 'from', 'to', 'subject', 'teacher', 'kind', 'mine', 'q', 'page', 'request'];
   let api = null, frame = null, requested = null, hostOk = null, wired = false, editors = [], actor = null, urlActor = null;
   const SEL = `[data-v2-screen="${ID}"]`;
   const esc = s => S.esc(s);

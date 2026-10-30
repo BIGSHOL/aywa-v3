@@ -20,7 +20,8 @@ const STU = '6219e442-aa57-455f-a5bc-834b222d9e1c'; // 학원이(테스트 학�
 const SEOLHYUN = '44626c09-22d9-445f-a350-b792d6afdf75', WONIL = '94007db7-12d3-4b5d-97f2-39071446536b', YUJIN = 'd3e9bcd1-f30e-4f5b-9e78-2ad509f1d06b', SOHEE = '7ac89726-d36f-46e4-8174-6bbddbd7f378';
 
 const db = await openFullDatabase();
-const load = params => db.begin('isolation level repeatable read read only', sql => screen.load({ sql, params, tenantId, importV2 }));
+// 셸은 늘 현재 계정을 넘긴다(계정이 없으면 자료를 내리지 않는다) — 시험의 기본 보는 사람은 원장.
+const load = params => db.begin('isolation level repeatable read read only', sql => screen.load({ sql, params: { actor: SEOLHYUN, ...params }, tenantId, importV2 }));
 const ROLL = new Error('rollback');
 /** 쓰기 트랜잭션 하나에서 돌리고 늘 되돌린다 — 바깥 요청이 쌓였는지도 공통 틀처럼 본다. */
 const tx = async fn => {
@@ -50,7 +51,7 @@ try {
     const a = await src(MODULE), b = await src(ARCHIVE_MODULE);
     for (const n of ['requestWithdrawalReport(input: unknown)', 'processWithdrawalDirectly(input: unknown)', 'changeWithdrawalReport(id: string, action: ReportAction, revision: number, input?: unknown)']) assert.ok(a.includes(`export async function ${n}`), n);
     assert.ok(b.includes('export async function mapArchive(input: unknown)'));
-    assert.deepEqual(Object.keys(screen.actions).sort(), ['changeWithdrawalReport', 'mapArchive', 'processWithdrawalDirectly', 'requestWithdrawalReport']);
+    assert.deepEqual(Object.keys(screen.actions).sort(), ['approveWithdrawalRefund', 'changeWithdrawalReport', 'mapArchive', 'processWithdrawalDirectly', 'requestWithdrawalReport']);
   });
 
   let list;

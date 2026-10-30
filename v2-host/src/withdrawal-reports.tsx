@@ -52,7 +52,7 @@ function useActor() {
 }
 
 /** 목록이 읽는 주소 열쇠(2.0 page.tsx searchParams). */
-const KEYS = ['status', 'range', 'from', 'to', 'subject', 'teacher', 'link', 'q', 'page', 'request'] as const;
+const KEYS = ['status', 'range', 'from', 'to', 'subject', 'teacher', 'kind', 'mine', 'q', 'page', 'request'] as const;
 function useScreenData<T extends Base>(path: string, sp: Record<string, string>) {
   const actor = useActor();
   const query = new URLSearchParams({ ...sp, ...(path !== HOST_ROUTE ? { v2path: path } : {}), ...(actor ? { actor } : {}) }).toString();
@@ -101,16 +101,16 @@ function ListPage({ data, sp }: { data: ListData; sp: Record<string, string | un
 
   const subjectMaps = buildSubjectMaps(data.operations.subjects);
   const canSeeArchive = !!viewer.teacherId || viewer.manage;
-  const items = buildListItems({ reports: list.rows, archives: archives ?? [], staff, labelOf: subjectMaps.labelOf, userId: viewer.user.id });
+  const items = buildListItems({ reports: list.rows, archives: archives ?? [], staff, labelOf: subjectMaps.labelOf, userId: viewer.user.id, writable: viewer.writable });
   const filters = parseListFilters(sp, canSeeArchive);
   const rangeWindow = listWindow(filters, kstToday());
   const found = filterListItems(items, filters, rangeWindow);
   const totalPages = Math.max(1, Math.ceil(found.length / LIST_PAGE_SIZE));
   const page = Math.min(totalPages, Math.max(1, Math.floor(Number(sp.page)) || 1));
   const shown = found.slice((page - 1) * LIST_PAGE_SIZE, page * LIST_PAGE_SIZE);
-  const unmappedCount = filterListItems(items, { ...filters, status: "all", unmapped: true }, rangeWindow).length;
+  const mineCount = filterListItems(items, { ...filters, status: "all", mine: true }, rangeWindow).length;
   const filterActive =
-    filters.status !== "all" || filters.range !== "all" || filters.subject !== "all" || filters.teacher !== "all" || filters.unmapped || !!filters.q;
+    filters.status !== "all" || filters.range !== "all" || filters.subject !== "all" || filters.teacher !== "all" || filters.kind !== "all" || filters.mine || !!filters.q;
   const subjects = viewer.scope ? subjectMaps.options.filter((o) => viewer.scope!.includes(o.value)) : subjectMaps.options;
 
   return (
@@ -120,12 +120,9 @@ function ListPage({ data, sp }: { data: ListData; sp: Record<string, string | un
         filters={filters}
         custom={"custom" in rangeWindow ? rangeWindow.custom : undefined}
         subjects={subjects}
-        teachers={teacherOptions(items)}
-        unmapped={
-          viewer.manage
-            ? { href: listHref(sp, filters.unmapped ? { link: null } : { link: "unmapped", status: null }), count: unmappedCount }
-            : null
-        }
+        teachers={teacherOptions(items, staff)}
+        archiveStatus={viewer.manage}
+        mine={mineCount > 0 || filters.mine ? { href: listHref(sp, filters.mine ? { mine: null } : { mine: "approve", status: null }), count: mineCount } : null}
         resultText={filterActive ? `${found.length}건 / 전체 ${items.length}건` : `전체 ${items.length}건`}
         resetHref={filterActive ? listHref(sp.embed ? { embed: sp.embed } : {}, {}) : null}
         request={viewer.request ? <RequestDialog key={requestFor ?? "none"} staff={staff} students={students} labels={labels} scope={viewer.scope} initialStudentId={requestFor} directReady={directReady} /> : null}
