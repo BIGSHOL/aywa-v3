@@ -44,7 +44,7 @@ export async function attendanceFamilies(ctx) {
   out.classes = family('classes', '수업목록(반·수강·인수인계)', {
     summary: `담임 변경 예약 ${classes.filter(c => c.pending).length}개 반 · 오늘 수업 위임 ${cl.delegations}건 · 올해 종강 ${cl.closed}개 반.`,
     metrics: [metric('운영 중인 반', classes.length, '개', '보강용 반 제외'), metric('운영 중인 특강 반', classes.filter(c => c.special).length, '개'), metric('현재 수강', cl.enrollments, '건', '시작 전·종료·휴원 제외'), metric('수강 중인 원생', cl.students, '명'), metric('담임 변경 예약', classes.filter(c => c.pending).length, '개 반'), metric('올해 종강한 반', cl.closed, '개'), metric('오늘 수업 위임', cl.delegations, '건'), metric('강의실', cl.rooms, '개')],
-    evidence: classes.map(r => record({ id: r.id, label: r.class_name, status: subjectLabel(r.subject), fields: [field('담임', r.teacher), field('수강', `${r.students}명`), field('강의실', r.room)], facets: [`subject:${r.subject || 'none'}`, r.special && 'special', r.pending && 'pending-teacher'] })),
+    evidence: classes.map(r => record({ id: r.id, label: r.class_name, subject: subjectLabel(r.subject), status: '운영 중', fields: [field('담임', r.teacher), field('수강', `${r.students}명`), field('강의실', r.room)], facets: [`subject:${r.subject || 'none'}`, r.special && 'special', r.pending && 'pending-teacher'] })),
     facetOrder: [...Object.keys(subjectFacets), 'special', 'pending-teacher'], facetLabels: { ...subjectFacets, special: '특강', 'pending-teacher': '담임 변경 예약' }, recordSource: 'classes',
     sourceLabel: '반 · 수강 · 강의실 · 수업 위임', coverageNote: '목록은 운영 중인 반입니다(수강 인원 많은 순 · 종강·보강용 반 제외).',
     sources: [{ table: 'classes', rows: cl.rows_all }, { table: 'enrollments', rows: cl.enrollments_all }, { table: 'classrooms', rows: cl.rooms }],
@@ -84,7 +84,7 @@ async function reportFamilies(ctx) {
   out.textbooks = family('textbooks', '교재목록(커리큘럼·반 배정)', {
     summary: `사용 중인 교재 중 반에 배정된 교재 ${books.filter(b => b.plans).length}권.`,
     metrics: [metric('사용 중인 교재', books.length, '권'), metric('교재 차수', books.reduce((n, b) => n + b.lessons, 0), '차', '사용 중인 교재'), metric('반 배정 계획', tb.plans, '건'), metric('영어 시트에 반영된 배정', tb.applied, '건'), metric('반에 배정된 교재', books.filter(b => b.plans).length, '권')],
-    evidence: books.map(r => ({ ...record({ id: r.id, label: r.title, status: subjectLabel(r.subject), detail: r.skill_area ? skillAreaLabel(r.subject, r.skill_area) : '',
+    evidence: books.map(r => ({ ...record({ id: r.id, label: r.title, subject: subjectLabel(r.subject), status: '사용 중', detail: r.skill_area ? skillAreaLabel(r.subject, r.skill_area) : '',
       fields: [field('차수', r.lessons), field('배정된 반', r.plans), ...(r.plans ? [field('반 이름', [...new Set((plansByBook.get(r.id) ?? []).map(p => p.class_name))].join(', '))] : [])],
       facets: [`subject:${r.subject || 'none'}`, r.plans ? 'assigned' : 'unassigned'] }),
       assignments: plansByBook.get(r.id) ?? [] })),

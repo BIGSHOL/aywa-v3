@@ -51,10 +51,15 @@
 .ws-search{display:flex;align-items:center;flex-wrap:wrap;gap:8px 12px;font-size:var(--ax-xs)}
 .ws-search input{flex:1 1 220px;height:38px}
 /* 공통 리스트(원장 10-28 "카드로 보여주지말고 리스트로 … 우리가 사용하는 리스트 서식을 공통으로") = 업무 흐름 표와 같은 규칙:
-   열마다 정해진 너비(table-layout:fixed · 너비는 그리는 쪽이 colgroup으로) · 칸 글은 한 줄, 넘치면 말줄임(마우스·초점이 오면 전부 — .ws-att-tip) ·
+   열마다 정해진 너비(table-layout:fixed · 너비는 그리는 쪽이 colgroup으로) · 칸 글은 한 줄, 넘치면 말줄임(기록 상세에서 전부 확인) ·
    금액 오른쪽 · 짧은 값 가운데 · 긴 글 왼쪽(머리도 같은 쪽) · 열 머리 = 정렬·값 거르기 단추. 창이 좁아 다 못 담으면 가로로 밀어 본다(스크롤바 없이 가장자리 흐림). */
 .ws-tablewrap{min-width:0;overflow-x:auto;overflow-y:hidden;-webkit-mask-image:linear-gradient(to right,transparent,#000 var(--fade-left,0px),#000 calc(100% - var(--fade-right,0px)),transparent);mask-image:linear-gradient(to right,transparent,#000 var(--fade-left,0px),#000 calc(100% - var(--fade-right,0px)),transparent)}
 .ws-table{width:100%;table-layout:fixed;border-collapse:collapse;font-size:var(--ax-xs)}
+.ws-table thead th:first-child,.ws-table tbody tr:not(.ws-band):not(.ws-detail-row)>th:first-child,.ws-table.ws-has-subject tbody tr:not(.ws-band):not(.ws-detail-row)>td:first-child{position:sticky;left:0;z-index:1;background:#fff}
+.ws-table.ws-has-subject thead th:nth-child(2),.ws-table.ws-has-subject tbody tr:not(.ws-band)>th:nth-child(2){position:sticky;left:var(--ws-subject-width,7em);z-index:1;background:#fff}
+.ws-table thead th:first-child,.ws-table.ws-has-subject thead th:nth-child(2){z-index:2}
+.ws-table tbody tr[aria-current=true]>:is(th,td):first-child,.ws-table.ws-has-subject tbody tr[aria-current=true]>th:nth-child(2){background:#f4f7fc}
+.ws-table tbody tr:hover>:is(th,td):first-child,.ws-table.ws-has-subject tbody tr:hover>th:nth-child(2){background:var(--ax-soft)}
 .ws-table th,.ws-table td{padding:7px 8px;border-bottom:1px solid var(--ax-line);background:transparent;color:var(--ax-ink);font-size:var(--ax-xs);font-weight:400;text-align:left;vertical-align:middle;overflow:hidden;white-space:nowrap}
 .ws-table thead th{padding:2px 2px;font-weight:650;border-top:1px solid var(--ax-line);border-bottom-color:rgba(29,29,31,.3)}
 .ws-table thead th>.ws-cut{padding:0 6px}
@@ -71,7 +76,19 @@
 .ws-namecell>.ax-chip{flex:none}
 .ws-rowmain{all:unset;box-sizing:border-box;flex:0 1 auto;min-width:0;max-width:100%;cursor:pointer;font-size:var(--ax-sm);font-weight:600;color:var(--ax-ink)}
 .ws-rowmain:focus-visible{outline:2px solid var(--ax-primary);outline-offset:1px}
+.ws-expand{display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;margin-right:4px;vertical-align:middle;border-radius:5px;color:var(--ax-primary)}
+.ws-expand:hover,.ws-expand:focus-visible{background:var(--ax-soft)}
+.ws-expand .icon{width:15px;height:15px}
 .ws-table tbody tr:hover .ws-rowmain{color:var(--ax-primary);text-decoration:underline;text-underline-offset:3px}
+.ws-table .ws-detail-row>td{padding:10px 12px;background:#f7f9fc;white-space:normal;overflow:visible}
+.ws-billing-detail>strong{display:block;margin-bottom:8px;font-size:var(--ax-sm)}
+.ws-billing-scroll{overflow-x:auto;max-width:100%;-webkit-mask-image:linear-gradient(to right,transparent,#000 var(--fade-left,0px),#000 calc(100% - var(--fade-right,0px)),transparent);mask-image:linear-gradient(to right,transparent,#000 var(--fade-left,0px),#000 calc(100% - var(--fade-right,0px)),transparent)}
+.ws-billing-detail table{width:100%;min-width:max-content;border-collapse:collapse;font-size:var(--ax-xs)}
+.ws-billing-detail th,.ws-billing-detail td{padding:6px 10px;border-bottom:1px solid var(--ax-line);white-space:nowrap;text-align:left}
+.ws-billing-detail td:nth-child(n+3){text-align:right;font-variant-numeric:tabular-nums}
+.ws-billing-detail .ws-billing-source th{padding-left:26px;color:var(--ax-muted,#718099)}
+.live-bill-mini{margin-top:10px;border-top:1px solid var(--ax-line)}
+.live-bill-mini>summary{padding:10px 2px;cursor:pointer;font-size:var(--ax-sm);font-weight:600}
 .ws-table .ws-band th{padding:12px 8px 4px;border-bottom-color:rgba(29,29,31,.3);font-size:var(--ax-sm);font-weight:700;background:transparent;cursor:default}
 .ws-table .ws-fill{padding:0}
 /* 열 머리 단추 = 이름 · 정렬 표시(▲▼) · 거르는 중(●) · 펼침 표시. 가운데·오른쪽 열은 머리도 그쪽. */
@@ -138,7 +155,13 @@ th:is(.al-c,.al-r) .ws-th-caret{margin-left:0}
 .ws-stage-more{align-self:flex-start;margin-top:6px;padding:4px 2px;color:var(--ax-primary);font-size:var(--ax-xs);font-weight:600}
 .ws-stage-more:hover{text-decoration:underline}
 .ws-sheet{overflow-x:auto;border:1px solid var(--ax-line);border-radius:8px;-webkit-mask-image:linear-gradient(to right,transparent,#000 var(--fade-left,0px),#000 calc(100% - var(--fade-right,0px)),transparent);mask-image:linear-gradient(to right,transparent,#000 var(--fade-left,0px),#000 calc(100% - var(--fade-right,0px)),transparent)}
-.ws-sheet table{width:100%;border-collapse:collapse;font-size:var(--ax-sm)}
+.ws-sheet table{width:100%;min-width:max-content;border-collapse:collapse;font-size:var(--ax-sm)}
+.ws-sheet thead th:first-child,.ws-sheet tbody tr>th:first-child,.ws-sheet .ws-has-subject tbody tr>td:first-child{position:sticky;left:0;z-index:1;background:#fff}
+.ws-sheet .ws-has-subject .ws-subject-head,.ws-sheet .ws-has-subject .ws-subject-cell{width:7em;min-width:7em;max-width:7em}
+.ws-sheet .ws-has-subject thead th:nth-child(2),.ws-sheet .ws-has-subject tbody tr>th:nth-child(2){position:sticky;left:7em;z-index:1;background:#fff}
+.ws-sheet thead th:first-child,.ws-sheet .ws-has-subject thead th:nth-child(2){z-index:2}
+.ws-sheet thead th:first-child,.ws-sheet .ws-has-subject thead th:nth-child(2){background:#f7f9fc}
+.ws-sheet tbody tr[aria-current=true]>:is(th,td):first-child,.ws-sheet .ws-has-subject tbody tr[aria-current=true]>th:nth-child(2){background:#f4f7fc}
 .ws-sheet th,.ws-sheet td{padding:0;border-bottom:1px solid var(--ax-line);background:#fff;color:var(--ax-ink);font-size:var(--ax-sm);font-weight:400;text-align:left;white-space:nowrap}
 .ws-sheet tbody tr:hover{background:transparent}
 .ws-sheet tr>*+*{border-left:1px solid rgba(29,29,31,.1)}

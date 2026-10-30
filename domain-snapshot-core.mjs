@@ -47,7 +47,11 @@ export function scrub(text) {
 }
 export const metric = (label, value, unit, detail = '') => ({ label, value: finite(value), unit, detail });
 export const field = (label, value) => ({ label, value: value === null || value === undefined || value === '' ? '—' : scrub(value) });
-export const record = ({ id, label, detail = '', date = '', status = '', fields = [], facets = [] }) => ({ id: String(id), label: scrub(label) || '—', detail: scrub(detail) || '', date: date || '', status: scrub(status) || '', fields: fields.map(f => ({ label: f.label, value: scrub(f.value) })), facetIds: facets.filter(Boolean).map(String) });
+export const record = ({ id, label, detail = '', date = '', subject = '', status = '', fields = [], facets = [] }) => {
+  const fromField = fields.find(f => f?.label === '과목')?.value;
+  const value = subject || (fromField === '—' ? '' : fromField) || '';
+  return { id: String(id), label: scrub(label) || '—', detail: scrub(detail) || '', date: date || '', subject: scrub(value) || '', status: scrub(status) || '', fields: fields.map(f => ({ label: f.label, value: scrub(f.value) })), facetIds: facets.filter(Boolean).map(String) };
+};
 // facet = 이 신호를 처리하는 목록의 걸러 보기(일 카드의 '○○ 열기'가 그 걸러 보기로 연다 — 원장 10-28 "어디로 가야하는지 배선 같은게 없음").
 // 걸러 보기의 기록 = 신호의 recordIds와 같은 집합(verify-domain-snapshot.mjs가 잠근다).
 // at = 신호가 묶은 기록 중 가장 늦게 생긴 것의 날짜('YYYY-MM-DD') 또는 시각(UTC ISO) — 업무 흐름 '발생 시간'(점검 시각이 아니다).

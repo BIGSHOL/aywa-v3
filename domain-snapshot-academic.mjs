@@ -19,19 +19,17 @@ export async function academicFamilies(ctx) {
   // 2.0 판정을 불러오지 못하면(모듈·원본 파일) 이 KPI만 비우고 나머지 영역은 그대로 뜬다.
   let windows = null, osKpis = [];
   try { ({ windows, kpis: osKpis } = await teacherWorkWeekly({ sql, asOf, tenantId: t, importV2 })); } catch (e) { console.error(`workspaces.onescreen KPI: ${e.message}`); }
-  // 공지마다 누가·어느 반·누구에게 보냈는지로 이름을 붙인다(원장 10-28 "전부 이름이 일치하는데 뭘 말하고 싶은건지 알 수가 없음"). 본문은 싣지 않는다.
+  // 공지의 첫 원생 이름과 보낸 선생님·반·대상 수를 각각 표시한다. 본문은 싣지 않는다.
   const notices = await sql`select n.id, n.status, to_char(n.created_at at time zone 'Asia/Seoul','YYYY-MM-DD') d, to_char(n.created_at at time zone 'UTC', ${ISO_AT}) at, case when jsonb_typeof(n.targets)='array' then jsonb_array_length(n.targets) end targets,
     u.display_name sender, case when jsonb_typeof(n.targets)='array' then (select array_agg(distinct e->>'className') from jsonb_array_elements(n.targets) e where e->>'className' is not null) end class_names,
     case when jsonb_typeof(n.targets)='array' then (select e->>'studentName' from jsonb_array_elements(n.targets) e where e->>'studentName' is not null limit 1) end first_student
     from public.classnote_notices n left join public.users u on u.id=n.created_by and u.tenant_id=n.tenant_id where n.tenant_id=${t} order by n.created_at desc`;
-  const noticeLabel = n => { const cls = n.class_names || [], who = n.first_student ? `${n.first_student}${n.targets > 1 ? ` 외 ${n.targets - 1}명` : ''}` : n.targets ? `${n.targets}명` : '대상 없음';
-    return `${n.sender || '발송자 미상'} → ${cls.length ? `${cls[0]}${cls.length > 1 ? ` 외 ${cls.length - 1}개 반` : ''} · ` : ''}${who}`; };
   const failedNotices = notices.filter(n => ['failed', 'partial'].includes(n.status) && n.d >= week);
   out.onescreen = family('onescreen', '선생님 수업보고서', {
     summary: `${windows ? '' : '수업보고서 지표를 계산하지 못했습니다. '}최근 7일${windows ? `(${windows.at(-1).label})` : ''} 학부모 공지 발송 실패 ${failedNotices.length}건.`,
     metrics: osKpis,
     trend: monthlyTrend('월별 수업보고서 원생 기록', '건', await sql`select to_char(session_date,'YYYY-MM') as month, count(*)::int as value from public.onescreen_daily_sessions where tenant_id=${t} and session_date <= ${asOf} ${notTest} group by 1`, asOf),
-    evidence: notices.map(n => record({ id: n.id, label: noticeLabel(n), date: n.d, status: NOTICE[n.status] || '기타', fields: [field('대상', n.targets === null ? null : `${n.targets}명`), field('반', (n.class_names || []).join(', ') || null)], facets: [`status:${n.status}`, failedNotices.includes(n) && 'failed-recent'] })),
+    evidence: notices.map(n => record({ id: n.id, label: n.first_student || '원생 이름 미확인', date: n.d, status: NOTICE[n.status] || '기타', fields: [field('보낸 선생님', n.sender), field('대상', n.targets === null ? null : `${n.targets}명`), field('반', (n.class_names || []).join(', ') || null)], facets: [`status:${n.status}`, failedNotices.includes(n) && 'failed-recent'] })),
     facetLabels: { ...prefixed('status', NOTICE), 'failed-recent': '최근 7일 발송 실패(일부 실패 포함)' }, recordSource: 'classnote_notices',
     signals: failedNotices.length ? [signal({ id: 'onescreen-notice-failed', title: `최근 7일 학부모 공지 발송 실패 ${failedNotices.length}건`, summary: `보낸 선생님: ${Object.entries(Object.groupBy(failedNotices, n => n.sender || '발송자 미상')).sort((a, b) => b[1].length - a[1].length).map(([k, v]) => `${k} ${v.length}`).join(' · ')}. 일부 실패 포함.`, priority: PRIORITY.check, source: 'ClassNote 공지 발송 결과', recordIds: failedNotices.map(n => n.id), facet: 'failed-recent', at: latest(failedNotices.map(n => n.at)), draft: { title: '학부모 공지 발송 실패 확인', body: '최근 7일 안에 발송에 실패한 공지가 있습니다. 대상과 결과를 확인하고 필요한 경우 다시 보내 주세요.' } })] : [],
     sourceLabel: '수업보고서 · 출결 · 영상 숙제 · 학부모 공지', coverageNote: `목록은 선생님이 보낸 학부모 공지입니다(최근 순).${!os.last ? ' 수업보고서 기록이 없습니다.' : os.last < asOf ? ` 수업보고서 기록은 ${md(os.last)}까지 있습니다.` : ''}`,
@@ -62,7 +60,7 @@ export async function academicFamilies(ctx) {
   out.timetable = family('timetable', '시간표(배치·가져오기·편집기·메모)', {
     summary: `${md(asOf)} 기준 시간표 · 편집기 연습본 ${tt.drafts}개(운영 반영 ${tt.applied}회).`,
     metrics: [metric('기준일 수업 배치', slots.length, '칸', '운영 중인 반만'), metric('배치된 반', new Set(slots.map(s => s.class_name)).size, '개'), metric('주간 수업 시간', hours, '시간'), metric('시간표 시트 가져오기', tt.imports, '회', `최종 ${tt.last_import ? md(tt.last_import) : '기록 없음'}`), metric('편집기 연습본', tt.drafts, '개'), metric('연습본 운영 반영', tt.applied, '회')],
-    evidence: slots.map(r => record({ id: r.id, label: `${r.class_name} · ${DAY[r.dow] || ''} ${r.st}~${r.et}`, status: subjectLabel(r.subject), fields: [field('선생님', r.teacher), field('강의실', r.room)], facets: [`day:${r.dow}`, `subject:${r.subject || 'none'}`] })),
+    evidence: slots.map(r => record({ id: r.id, label: r.class_name, subject: subjectLabel(r.subject), fields: [field('요일', DAY[r.dow]), field('시간', `${r.st}~${r.et}`), field('선생님', r.teacher), field('강의실', r.room)], facets: [`day:${r.dow}`, `subject:${r.subject || 'none'}`] })),
     facetOrder: [...Object.keys(DAY).map(d => `day:${d}`), ...Object.keys(subjectFacets)], facetLabels: { ...Object.fromEntries(Object.entries(DAY).map(([k, v]) => [`day:${k}`, `${v}요일`])), ...subjectFacets }, recordSource: 'class_schedules',
     sourceLabel: '반 배치 · 시트 가져오기 · 편집기', coverageNote: '목록은 기준일에 유효한 수업 배치입니다(끝난 배치·예약된 배치 제외).',
     sources: [{ table: 'class_schedules', rows: tt.rows_all }, { table: 'timetable_import_logs', rows: tt.imports }, { table: 'timetable_lab_drafts', rows: tt.drafts }],
@@ -71,7 +69,7 @@ export async function academicFamilies(ctx) {
   // 강사 시트 — 영어 시트 계획(근거)·원생 기록, 수학 학습 목표, 회차 미룸·당김.
   const lines = await sql`select p.id, c.class_name, p.plan_date::text d, p.textbook, p.page_range, p.term_mode from public.class_sheet_plan_lines p join public.classes c on c.id=p.class_id and c.tenant_id=${t} where p.tenant_id=${t} order by p.plan_date desc, c.class_name, p.line_no`;
   const [cs] = await sql`select (select count(*)::int from public.class_sheet_student_marks where tenant_id=${t}) marks, (select count(*)::int from public.class_sheet_student_marks where tenant_id=${t} and mark_date between ${monthStart} and ${asOf}) month_marks, (select count(*)::int from public.class_sheet_goals where tenant_id=${t}) goals, (select count(*)::int from public.math_learning_track_goals where tenant_id=${t}) track_goals, (select count(*)::int from public.math_month_goals where tenant_id=${t}) month_goals, (select count(*)::int from public.class_lesson_shifts where tenant_id=${t}) shifts`;
-  const evidence = lines.map(r => record({ id: r.id, label: `${r.class_name} · ${md(r.d)}${r.textbook ? ` · ${r.textbook}` : ''}`, date: r.d, status: r.term_mode === 'exam' ? '시험 기간' : '정규', fields: [field('교재', r.textbook), field('범위', r.page_range)], facets: [`term:${r.term_mode === 'exam' ? 'exam' : 'regular'}`, `when:${r.d > asOf ? 'planned' : 'done'}`] }));
+  const evidence = lines.map(r => record({ id: r.id, label: r.class_name, date: r.d, status: r.term_mode === 'exam' ? '시험 기간' : '정규', fields: [field('교재', r.textbook), field('범위', r.page_range)], facets: [`term:${r.term_mode === 'exam' ? 'exam' : 'regular'}`, `when:${r.d > asOf ? 'planned' : 'done'}`] }));
   out['class-sheets'] = family('class-sheets', '강사 시트(영어 ECS·수학 MCS)', {
     summary: `수학 월 학습 목표 ${cs.month_goals}건 · 회차 미룸·당김 ${cs.shifts}건(전체 기간).`,
     metrics: [metric('이번 달 영어 수업계획', lines.filter(l => l.d >= monthStart && l.d <= asOf).length, '줄', '수업일 기준'), metric('앞으로의 영어 수업계획', lines.filter(l => l.d > asOf).length, '줄', '기준일 다음 수업일부터'), metric('이번 달 영어 원생 기록', cs.month_marks, '칸'), metric('수학 전체 학습 목표', cs.track_goals, '건'), metric('수학 월 학습 목표', cs.month_goals, '건'), metric('회차 미룸·당김', cs.shifts, '건', '전체 기간')],

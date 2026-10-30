@@ -71,8 +71,7 @@ export async function opsFamilies(ctx) {
   });
 
   // 전자결재 — 결재 문서(근거)와 결재선.
-  // 휴가는 신청자·종류·기간·일수로 알아보는 문서라 이름 칸은 신청자, 그 밖의 양식은 문서 제목. 결재선은 '이름 역할 → …', 지금 차례는 대기 중 첫 칸
-  // (원장 10-28 "이름이 김예원이어야할거같은데, 항목 잘 정리해봐. 기간 이런걸 표현할 수 있을거같은데").
+  // 문서 칸은 모든 양식에서 문서 제목, 휴가 신청자는 별도 칸에 둔다. 결재선은 '이름 역할 → …', 지금 차례는 대기 중 첫 칸.
   const docs = await sql`select d.id, d.title, d.form_type, d.status, to_char(d.submitted_at at time zone 'Asia/Seoul','YYYY-MM-DD') d, to_char(d.submitted_at at time zone 'UTC', ${ISO_AT}) submitted, u.display_name drafter,
       (select count(*)::int from public.approval_steps s where s.tenant_id=${t} and s.document_id=d.id) steps,
       (select count(*)::int from public.approval_steps s where s.tenant_id=${t} and s.document_id=d.id and s.decision='pending') waiting,
@@ -88,7 +87,7 @@ export async function opsFamilies(ctx) {
   const turn = d => (d.status === 'pending' ? d.turn : null);
   const facets = d => [`status:${d.status}`, `form:${d.form_type}`];
   const docRecord = d => (isLeave(d)
-    ? record({ id: d.id, label: d.applicant || d.drafter || d.title, date: d.d, status: APPROVAL[d.status] || '기타', facets: facets(d), fields: filled([['종류', `${LEAVE_KIND[d.leave_kind] || ''} 휴가`.trim()], ['기간', dayRange(d.leave_from, d.leave_to)], ['일수', dayCount(d.leave_days)], ['사유', plain(d.leave_reason)], ['결재 차례', turn(d)], ['결재선', d.line], ['기안', d.drafter && d.drafter !== d.applicant ? d.drafter : null]]) })
+    ? record({ id: d.id, label: d.title || '휴가 신청', date: d.d, status: APPROVAL[d.status] || '기타', facets: facets(d), fields: filled([['신청자', d.applicant || d.drafter], ['종류', `${LEAVE_KIND[d.leave_kind] || ''} 휴가`.trim()], ['기간', dayRange(d.leave_from, d.leave_to)], ['일수', dayCount(d.leave_days)], ['사유', plain(d.leave_reason)], ['결재 차례', turn(d)], ['결재선', d.line], ['기안', d.drafter && d.drafter !== d.applicant ? d.drafter : null]]) })
     : record({ id: d.id, label: d.title || '제목 없음', date: d.d, status: APPROVAL[d.status] || '기타', facets: facets(d), fields: filled([['종류', FORM[d.form_type] || '기타 양식'], ['기안', d.drafter], ['금액', won(d.amount)], [d.form_type === 'income' ? '수입일' : '지출일', d.money_date ? md(d.money_date) : null], ['분류', d.category], ['결재 차례', turn(d)], ['결재선', d.line]]) }));
   const docLine = d => (isLeave(d) ? `${d.applicant || d.drafter || '신청자 미상'} ${LEAVE_KIND[d.leave_kind] || '휴가'} ${dayRange(d.leave_from, d.leave_to)}(${dayCount(d.leave_days)})` : `${d.title || '제목 없음'}(기안 ${d.drafter || '미상'})`);
   const pending = docs.filter(d => d.status === 'pending');

@@ -22,10 +22,10 @@ const SEARCH_ORDER = ['students', 'enrollment', 'consultations', 'attendance', '
 
 // 날짜는 저장 모양(2026-10-27 · 2026-10)과 화면 모양(10/27 · 26.10) 둘 다로 찾는다 — 이름 칸에서 날짜를 뺀 뒤에도 '10/27'로 찾히게.
 const shownDate = d => { const s = String(d || ''); return /^\d{4}-\d{2}-\d{2}/.test(s) ? `${Number(s.slice(5, 7))}/${Number(s.slice(8, 10))}` : /^\d{4}-\d{2}$/.test(s) ? `${s.slice(2, 4)}.${s.slice(5, 7)}` : ''; };
-const text = r => [r.label, r.detail, r.status, r.date, shownDate(r.date), ...r.fields.map(f => f.value)].join(' ').toLowerCase();
+const text = r => [r.label, r.subject, r.detail, r.status, r.date, shownDate(r.date), ...r.fields.map(f => f.value)].join(' ').toLowerCase();
 const textCache = new WeakMap();
 // 통합 검색은 칸 이름도 낱말로 찾는다("김성현 수납" — 수납 칸이 있는 기록). 영역별 목록 검색(queryRecords)은 그대로 값만.
-const searchText = r => [r.label, r.detail, r.status, r.date, shownDate(r.date), ...r.fields.flatMap(f => [f.label, f.value])].join(' ').toLowerCase();
+const searchText = r => [r.label, r.subject, r.detail, r.status, r.date, shownDate(r.date), ...r.fields.flatMap(f => [f.label, f.value])].join(' ').toLowerCase();
 // 영역 기록의 id 찾기표(기록 저장소는 불변이라 한 번 만들어 둔다).
 const indexCache = new WeakMap();
 // 같은 id가 둘이면 앞엣것(예전 find와 같은 결과).

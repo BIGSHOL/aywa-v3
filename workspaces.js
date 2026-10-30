@@ -14,7 +14,7 @@ window.createWorkspaces = function createWorkspaces(api) {
   const PAGE_SIZE=20,BOARD_SIZE=5;
   // pin = 업무 흐름·기록 링크로 연 기록(목록 맨 위에 세운다) · cur = 상세를 연 기록(줄에 은은한 바탕) · board = 칸반 단계별 첫 기록.
   // sort·cols = 목록 열 머리의 정렬·값 거르기 · full = 정렬·거르기용으로 전부 읽은 기록 · asList = 칸반 대신 목록 · colw·lcols = 목록 열 모양.
-  const state={screen:{},face:{},query:'',active:-1,open:new Set(),closed:new Set(),recent:[],facet:{},q:{},page:{},remote:{},local:{},edits:{},recipient:'',pin:{},cur:{},board:{},sort:{},cols:{},full:{},asList:{},colw:{},lcols:{}};
+  const state={screen:{},face:{},query:'',active:-1,open:new Set(),closed:new Set(),recent:[],facet:{},q:{},page:{},remote:{},local:{},edits:{},recipient:'',pin:{},cur:{},board:{},sort:{},cols:{},full:{},asList:{},colw:{},lcols:{},expanded:{}};
   // 다른 화면이 그린 공통 리스트(listTable) — 목록 이름 → { rows(검색어로 거른 줄 전부) · repaint(그 화면 다시 그리기) · sig }.
   const LOCAL=new Map();
   const pill=(text,tone='')=>`<span class="ax-chip ${tone}">${h(text)}</span>`;
@@ -26,16 +26,17 @@ window.createWorkspaces = function createWorkspaces(api) {
   const DATE_NAME={dashboard:'브리핑일',calendar:'일정일','tasks-notifications':'기한',onescreen:'발송일','video-homework':'올린 날','class-sheets':'수업일',attendance:'수업일',makeups:'보강일','lesson-reports':'수업일',students:'등록일','student-contribution':'기록일',exams:'시험일',consultations:'상담일',enrollment:'접수일',newcomers:'등록일',withdrawals:'퇴원일','withdrawal-reports':'퇴원일',staff:'입사일',payroll:'발급일',billing:'납부 기한','textbook-requests':'요청일','expense-requests':'지출일',inventory:'실사일',meetings:'회의일',approvals:'기안일',documents:'수정일',support:'요청일','owner-settings':'시작일',integrations:'실행일'};
   // 기록의 '내용'(detail) 칸 이름 — 영역마다 그 칸이 담는 것. 없으면 '내용'.
   const DETAIL_NAME={calendar:'시각',billing:'청구월',staff:'직책',inventory:'모델',documents:'분류','expense-requests':'분류',textbooks:'분류',enrollment:'학년·학교',newcomers:'학교학년',students:'학교학년',exams:'시험',attendance:'반',makeups:'반','class-review':'반','withdrawal-reports':'구분',shuttle:'노선'};
-  // 이름 칸 머리 — 사람이 아닌 것을 이름으로 쓰는 영역만. 나머지는 '이름'.
-  const NAME_HEAD={calendar:'일정',classes:'반',timetable:'수업',textbooks:'교재',meetings:'회의',documents:'문서',support:'요청',dashboard:'브리핑',integrations:'실행 기록',slack:'규칙','owner-settings':'항목','class-sheets':'수업',onescreen:'공지'};
+  // 사람 이름이 아닌 첫 칸은 그 기록의 대상(반·문서·업무 등)으로 부른다.
+  const NAME_HEAD={calendar:'일정','tasks-notifications':'업무',classes:'반',timetable:'반',textbooks:'교재',meetings:'회의',documents:'문서',support:'요청',dashboard:'브리핑',integrations:'연동',slack:'규칙','owner-settings':'항목','class-sheets':'반',onescreen:'첫 원생',inventory:'자산','expense-requests':'지출',approvals:'문서'};
   const dateName=id=>String(data(id)?.dateLabel||DATE_NAME[id]||'');
   const detailName=id=>String(data(id)?.detailLabel||DETAIL_NAME[id]||'내용');
   const blank=v=>{const s=String(v??'').trim();return !s||s==='—'||s==='-';};
+  const subjectOf=r=>{const v=r?.subject||(r?.fields||[]).find(f=>f?.label==='과목')?.value;return blank(v)?'':String(v);};
   const shownValue=v=>{const s=String(v??'');return /^\d{4}-\d{2}(-\d{2})?$/.test(s)?dateText(s):s;};
   // 내용 칸이 이름·상태·칸 값으로 이미 다 말한 것이면 싣지 않는다(예: '달성초 초6' = 학교·학년 칸).
   function detailOf(r){
     const d=String(r?.detail||'').trim();if(!d||d===r.label)return '';
-    const known=[r.label,r.status,...(r.fields||[]).map(f=>f?.value)].map(norm).filter(Boolean),parts=d.split(/[\s·,]+/).filter(Boolean);
+    const known=[r.label,subjectOf(r),r.status,...(r.fields||[]).map(f=>f?.value)].map(norm).filter(Boolean),parts=d.split(/[\s·,]+/).filter(Boolean);
     return parts.length&&parts.every(p=>known.some(k=>k.includes(norm(p))))?'':d;
   }
 
@@ -175,7 +176,7 @@ window.createWorkspaces = function createWorkspaces(api) {
   }
   function localMatches(id){
     const q=norm(state.q[id]),facet=state.facet[id];
-    return previews(id).filter(r=>(!facet||(r.facetIds||[]).includes(facet))&&(!q||norm([r.label,r.detail,r.status,r.date,...(r.fields||[]).map(f=>f.value)].join(' ')).includes(q)));
+    return previews(id).filter(r=>(!facet||(r.facetIds||[]).includes(facet))&&(!q||norm([r.label,subjectOf(r),r.detail,r.status,r.date,...(r.fields||[]).map(f=>f.value)].join(' ')).includes(q)));
   }
   // 지금 조건의 기록을 빠짐없이 가진 목록(없으면 null) — 정렬·거르기·열 머리 값 목록은 이것으로만 한다(한 쪽만 정렬하는 일이 없게).
   // 다른 화면의 목록(listTable · LOCAL)은 그 화면이 넘긴 줄이 전부다(검색어로 거른 뒤).
@@ -309,9 +310,9 @@ window.createWorkspaces = function createWorkspaces(api) {
     return tableHtml({shape:sizeColumns('teacher-tasks',cols,rows,{nameLabel:'업무'}),rows,nameLabel:'업무',main:t=>`<button type="button" class="ws-rowmain ws-cut" data-task="${h(t.id)}">${h(t.label)}</button>`});
   }
   const localCount=(id,rid)=>(state.local[id]||[]).filter(e=>e.recordId===String(rid)).length;
-  /* ---------- 공통 리스트(원장 10-28 "카드로 보여주지말고 리스트로. 우리가 사용하는 리스트 서식을 공통으로 활용해서") ----------
-     업무 흐름 표(flow-ui)와 같은 규칙 한 벌 — 표 한 장(table-layout:fixed) · 열 머리 한 줄 · 열마다 정해진 너비 · 넘친 칸은 말줄임, 마우스·초점이 오면
-     전부(.ws-att-tip) · 금액은 오른쪽, 짧은 값은 가운데, 긴 글은 왼쪽(머리도 같은 쪽) · 열 머리를 누르면 정렬(오름·내림)·값 거르기 · 아래 쪽 번호.
+  /* ---------- 공통 리스트 ----------
+     업무 흐름 표(flow-ui)와 같은 규칙 한 벌 — 표 한 장(table-layout:fixed) · 열 머리 한 줄 · 열마다 정해진 너비 · 넘친 칸은 말줄임(기록 상세에서 확인).
+     금액은 오른쪽, 짧은 값은 가운데, 긴 글은 왼쪽(머리도 같은 쪽) · 열 머리를 누르면 정렬(오름·내림)·값 거르기 · 아래 쪽 번호.
      줄 어디를 눌러도 그 줄의 이름 단추가 하는 일(기록이면 상세 서랍). 칸 값이 없으면 빈 칸(다음 값을 당기지 않는다).
      작업 공간의 기록 목록(목록·날짜순·문서·설정 값·업무 단계 목록) · 칸반 칸 안의 줄 · 직원 수신함의 자동 업무를 모두 이 한 벌(tableHtml · sizeColumns)로 그린다. */
   const MONEY=/^-?[\d,]+원$/,collate=new Intl.Collator('ko',{numeric:true}).compare;
@@ -319,6 +320,7 @@ window.createWorkspaces = function createWorkspaces(api) {
   const emOf=s=>{let n=0;for(const ch of String(s??''))n+=/[가-힣ㄱ-ㆎ一-鿿]/.test(ch)?1:/\d/.test(ch)?.6:/[A-Za-z]/.test(ch)?.62:/\s/.test(ch)?.3:.4;return n;};
   function cellText(r,key){
     if(key==='name')return String(r.label||'');
+    if(key==='subject')return subjectOf(r);
     if(key==='detail')return shownValue(detailOf(r));
     if(key==='status')return String(r.status||'');
     if(key==='date')return dateText(r.date);
@@ -327,7 +329,7 @@ window.createWorkspaces = function createWorkspaces(api) {
   // 정렬 값 = 원래 값: 날짜는 YYYY-MM-DD(화면의 M/D 글자 순서가 아니라) · 금액·건수·점수는 숫자 · 그 밖은 글(숫자는 크기 순). 빈 칸은 방향과 상관없이 맨 뒤.
   function sortValue(r,key){
     if(key==='date')return String(r.date||'');
-    return rawSort(key==='name'?r.label:key==='detail'?detailOf(r):key==='status'?r.status:(r.fields||[]).find(x=>x&&x.label===key.slice(2))?.value);
+    return rawSort(key==='name'?r.label:key==='subject'?subjectOf(r):key==='detail'?detailOf(r):key==='status'?r.status:(r.fields||[]).find(x=>x&&x.label===key.slice(2))?.value);
   }
   function rawSort(raw){
     const s=String(raw??'').trim();
@@ -349,20 +351,14 @@ window.createWorkspaces = function createWorkspaces(api) {
     return c?sortBy(out,c.sortv,dir):viewKind(a)==='timeline'?sortBy(out,r=>String(r.date||''),'desc'):out;
   }
   const nameColumn=id=>({key:'name',label:NAME_HEAD[id]||'이름',text:r=>String(r.label||''),sortv:r=>String(r.label||''),align:'l'});
-  // 열 = 그 목록 기록이 쓰는 칸만: 이름 | 내용 | 상태 | 날짜(머리에 무슨 날인지) | 칸들 | 금액 칸들(오른쪽 끝에 모은다). 칸은 여섯까지.
-  // 1440 화면의 목록 폭(약 54em) 안에 다 들어오게 — 넘치면 값이 덜 채워진 칸부터 목록에서 뺀다(상세 서랍에는 그대로 있다).
-  const LIST_EM=52;
+  // 있는 과목은 이름 앞, 날짜는 그 영역의 날짜 이름. 폭이 모자라도 열은 버리지 않고 가로로 넘긴다.
   function familyColumns(a,basis){
     const id=a.id,dn=dateName(id),labels=[],sample=[...previews(id),...basis.slice(0,300)];
-    for(const r of basis)for(const f of r.fields||[])if(f?.label&&f.label!==dn&&!labels.includes(f.label))labels.push(f.label);
-    const cols=[{key:'detail',label:detailName(id)},{key:'status',label:'상태',chip:true},...(dn?[{key:'date',label:dn}]:[]),...labels.slice(0,6).map(l=>({key:`f:${l}`,label:l}))]
+    for(const r of basis)for(const f of r.fields||[])if(f?.label&&f.label!==dn&&f.label!=='과목'&&!labels.includes(f.label))labels.push(f.label);
+    const cols=[...(basis.some(r=>subjectOf(r))?[{key:'subject',label:'과목'}]:[]),{key:'detail',label:detailName(id)},{key:'status',label:'상태',chip:true},...(dn?[{key:'date',label:dn}]:[]),...labels.map(l=>({key:`f:${l}`,label:l}))]
       .filter(c=>basis.some(r=>cellText(r,c.key)))
       .map(c=>{const vs=sample.map(r=>cellText(r,c.key)).filter(Boolean);return {...c,vs,money:vs.length>0&&vs.every(v=>MONEY.test(v)),text:r=>cellText(r,c.key),sortv:r=>sortValue(r,c.key),...(c.chip?{html:r=>r.status?`<span class="ax-chip ws-cut">${h(r.status)}</span>`:''}:{})};});
-    const wideOf=c=>c.vs.reduce((n,v)=>Math.max(n,emOf(v)),0),est=c=>wideOf(c)>12?7:Math.max(emOf(c.label)+3.6,wideOf(c)+(c.chip?2.2:1.4),3);
-    const nameWide=sample.reduce((n,r)=>Math.max(n,emOf(r.label)),0)+1.4,nameEm=list=>nameWide>13&&list.some(c=>wideOf(c)>12)?7:Math.max(emOf(NAME_HEAD[id]||'이름')+3.6,Math.min(22,nameWide),4);
-    const spare=cols.filter(c=>c.key.startsWith('f:')).sort((x,y)=>x.vs.length-y.vs.length);let keep=cols;
-    while(spare.length&&nameEm(keep)+keep.reduce((n,c)=>n+est(c),0)>LIST_EM){const d=spare.shift();keep=keep.filter(c=>c!==d);}
-    return [...keep.filter(c=>!c.money),...keep.filter(c=>c.money)];
+    return [...cols.filter(c=>!c.money),...cols.filter(c=>c.money)];
   }
   // 열 모양 = 값으로 정한다: 금액 오른쪽 · 짧은 값(8자 이하) 가운데 · 긴 글 왼쪽. 짧은 열은 가장 긴 값에 맞춰 고정(목록마다 기억 — 쪽을 넘겨도 줄지 않는다),
   // 긴 글 열은 남는 폭을 나눈다. 다 고정이면 남는 폭은 맨 끝 빈 열이 받는다(열이 오른쪽으로 흩어지지 않게). min = 표가 더 줄지 않는 폭(그보다 좁으면 가로로 민다).
@@ -372,7 +368,7 @@ window.createWorkspaces = function createWorkspaces(api) {
     const shaped=cols.map(c=>{
       const vs=sample.map(r=>c.text(r)).filter(Boolean),wide=vs.reduce((n,v)=>Math.max(n,emOf(v)),0);
       const align=memo[`a:${c.key}`]||(memo[`a:${c.key}`]=c.align||(c.money?'r':!vs.length?'':vs.every(v=>v.length<=8)?'c':'l'));
-      const em=fit(c.key,wide>12?-1:Math.max(headEm(c.label),wide+(c.chip?2.2:1.4),3));
+      const em=fit(c.key,c.key!=='subject'&&wide>12?-1:Math.max(headEm(c.label),wide+(c.chip?2.2:1.4),3));
       return {...c,align:align||'c',w:em===-1?'':`${em.toFixed(1)}em`};
     });
     // 이름이 길면: 다른 긴 글 열이 있으면 남는 폭을 함께 나누고, 없으면 22em까지만(짧은 열이 오른쪽 끝으로 밀려나지 않게 — 남는 폭은 끝 빈 열이).
@@ -382,27 +378,37 @@ window.createWorkspaces = function createWorkspaces(api) {
     return {cols:shaped,name,filler,min:[name.w,...shaped.map(c=>c.w)].reduce((n,w)=>n+(w?parseFloat(w):7),0)};
   }
   // menu = 정렬·거르기를 받는 목록(작업 공간 영역 id) — 없으면 머리는 이름만. group = 줄 묶음 띠(날짜순의 달).
-  function tableHtml({shape,rows,nameLabel='이름',main,attrs=()=>'',menu='',group=null,head=true,cls='',key=''}){
-    const {cols,name,filler}=shape,sort=menu?sortOf(menu):{col:'',dir:''},on=new Set(menu?colOn(menu).map(([k])=>k):[]),span=cols.length+1+(filler?1:0);
+  function tableHtml({shape,rows,nameLabel='이름',main,attrs=()=>'',menu='',group=null,head=true,cls='',key='',details=null}){
+    const {cols,name,filler}=shape,subject=cols.find(c=>c.key==='subject'),rest=cols.filter(c=>c.key!=='subject'),sort=menu?sortOf(menu):{col:'',dir:''},on=new Set(menu?colOn(menu).map(([k])=>k):[]),span=cols.length+1+(filler?1:0);
     const th=c=>{const al=c.align||'l';
       if(!menu)return `<th scope="col" class="al-${al}"><span class="ws-cut">${h(c.label)}</span></th>`;
       const dir=sort.col===c.key?sort.dir:'',f=on.has(c.key),open=colMenu.id===menu&&colMenu.col===c.key;
       return `<th scope="col" class="al-${al}" aria-sort="${dir==='asc'?'ascending':dir==='desc'?'descending':'none'}"><button type="button" class="ws-th${dir||f?' on':''}" data-ws="col" data-id="${h(menu)}" data-col="${h(c.key)}" aria-haspopup="dialog" aria-expanded="${open}" aria-label="${h(c.label)} 정렬·거르기${dir?` (${dir==='asc'?'오름차순':'내림차순'})`:''}${f?' (거르는 중)':''}"><span>${h(c.label)}</span>${dir?`<b class="ws-th-mark" aria-hidden="true">${dir==='asc'?'▲':'▼'}</b>`:''}${f?'<b class="ws-th-mark" aria-hidden="true">●</b>':''}<i class="ws-th-caret" aria-hidden="true">${icon('down')}</i></button></th>`;};
-    const colgroup=`<colgroup><col${name.w?` style="width:${name.w}"`:''}>${cols.map(c=>`<col${c.w?` style="width:${c.w}"`:''}>`).join('')}${filler?'<col>':''}</colgroup>`;
-    const thead=head?`<thead><tr>${th({key:'name',label:nameLabel,align:'l'})}${cols.map(th).join('')}${filler?'<th class="ws-fill" aria-hidden="true"></th>':''}</tr></thead>`:'';
+    const col=c=>`<col${c.w?` style="width:${c.w}"`:''}>`;
+    const colgroup=`<colgroup>${subject?col(subject):''}<col${name.w?` style="width:${name.w}"`:''}>${rest.map(col).join('')}${filler?'<col>':''}</colgroup>`;
+    const thead=head?`<thead><tr>${subject?th(subject):''}${th({key:'name',label:nameLabel,align:'l'})}${rest.map(th).join('')}${filler?'<th class="ws-fill" aria-hidden="true"></th>':''}</tr></thead>`:'';
     let last;
     const body=rows.map(r=>{const g=group?group(r):undefined,band=group&&g!==last?`<tr class="ws-band"><th scope="rowgroup" colspan="${span}">${h(g)}</th></tr>`:'';last=g;
-      return `${band}<tr${attrs(r)}><th scope="row">${main(r)}</th>${cols.map(c=>`<td class="al-${c.align}">${c.html?c.html(r):`<span class="ws-cut">${h(c.text(r))}</span>`}</td>`).join('')}${filler?'<td class="ws-fill"></td>':''}</tr>`;}).join('');
-    return `<div class="ws-tablewrap live-scroll"${key?` data-scroll-key="${h(key)}"`:''}><table class="ws-table${cls}"${shape.min?` style="min-width:${shape.min.toFixed(1)}em"`:''}>${colgroup}${thead}<tbody>${body}</tbody></table></div>`;
+      const td=c=>`<td class="al-${c.align}">${c.html?c.html(r):`<span class="ws-cut">${h(c.text(r))}</span>`}</td>`;
+      const detail=details?.(r)||'',expanded=Boolean(detail&&state.expanded[menu]?.has(String(r.id)));
+      const toggle=detail?`<button type="button" class="ws-expand" id="ws-expand-${h(menu)}-${h(r.id)}" data-ws="expand" data-id="${h(menu)}" data-record="${h(r.id)}" aria-expanded="${expanded}" aria-label="${h(r.label)} 상세 수납 ${expanded?'접기':'펼치기'}">${icon(expanded?'down':'chevron')}</button>`:'';
+      return `${band}<tr${attrs(r)}>${subject?td(subject):''}<th scope="row">${toggle}${main(r)}</th>${rest.map(td).join('')}${filler?'<td class="ws-fill"></td>':''}</tr>${expanded?`<tr class="ws-detail-row"><td colspan="${span}">${detail}</td></tr>`:''}`;}).join('');
+    return `<div class="ws-tablewrap live-scroll"${key?` data-scroll-key="${h(key)}"`:''}><table class="ws-table${subject?' ws-has-subject':''}${cls}"${shape.min?` style="min-width:${shape.min.toFixed(1)}em;--ws-subject-width:${subject?.w||'7em'}"`:''}>${colgroup}${thead}<tbody>${body}</tbody></table></div>`;
   }
   const rowMain=(id,r)=>{const n=localCount(id,r.id);return `<span class="ws-namecell"><button type="button" class="ws-rowmain ws-cut" data-ws="record" data-id="${h(id)}" data-record="${h(r.id)}">${h(r.label)}</button>${n?pill(`미리보기 ${n}`,'green'):''}</span>`;};
   const rowAttrs=id=>r=>` data-record="${h(r.id)}"${curAttr(id,r.id)}`;
+  function billingDetails(lines){
+    if(!Array.isArray(lines)||!lines.length)return '';
+    const exact=v=>v===null||v===undefined?'—':`${Number(v).toLocaleString('ko-KR')}원`;
+    const row=(line,source=false)=>`<tr${source?' class="ws-billing-source"':''}><th scope="row">${source?'합산 전 · ':''}${h(line.description||'수납명 없음')}</th><td>${h(line.kind||'기타')}</td><td>${exact(line.amount)}</td><td>${line.discount?exact(line.discount):'—'}</td><td>${line.points?exact(line.points):'—'}</td><td>${exact(line.paid)}</td><td>${exact(line.unpaid)}</td></tr>`;
+    return `<div class="ws-billing-detail"><strong>상세 수납</strong><div class="ws-billing-scroll live-scroll" tabindex="0"><table aria-label="상세 수납"><thead><tr><th>수납명</th><th>구분</th><th>청구액</th><th>할인액</th><th>적립금</th><th>수납</th><th>남은 금액</th></tr></thead><tbody>${lines.map(line=>row(line)+(line.sourceItems||[]).map(source=>row(source,true)).join('')).join('')}</tbody></table></div></div>`;
+  }
   function recordsTable(a,ld){
     const id=a.id,sort=sortOf(id),nameLabel=NAME_HEAD[id]||'이름',shape=sizeColumns(id,ld.cols,[...previews(id),...ld.rows],{nameLabel});
     // 날짜순 영역 = 날짜로 볼 때(기본) 달마다 띠 — 열은 모든 달이 같다. 날짜가 없는 목록은 묶지 않는다.
     const monthOf=r=>{const m=String(r.date||'').slice(0,7);return /^\d{4}-\d{2}$/.test(m)?api.yymm(m):'날짜 없음';};
     const group=viewKind(a)==='timeline'&&(!sort.col||sort.col==='date')&&ld.rows.some(r=>r.date)?monthOf:null;
-    return tableHtml({shape,rows:ld.rows,nameLabel,main:r=>rowMain(id,r),attrs:rowAttrs(id),menu:id,group,key:`list-${id}`});
+    return tableHtml({shape,rows:ld.rows,nameLabel,main:r=>rowMain(id,r),attrs:rowAttrs(id),menu:id,group,key:`list-${id}`,details:id==='billing'?r=>billingDetails(r.lines):null});
   }
   // 걸러 보는 조건 = 목록 위 칩. 누르면 그 열의 거르기만 지운다(값이 없어 줄이 다 사라져도 여기서 풀 수 있다).
   function colChips(id){
@@ -421,7 +427,7 @@ window.createWorkspaces = function createWorkspaces(api) {
       main(r) = 이름 칸 단추 HTML(class="ws-rowmain ws-cut" + 그 화면의 여는 속성 — 줄 어디를 눌러도 이 단추가 눌린다) ·
       sort = 처음 정렬({col,dir} · 머리에 ▲▼로 보인다) · repaint = 정렬·거르기·검색·쪽이 바뀌면 그 화면을 다시 그리는 함수 ·
       key = 이 목록의 이름(정렬·거르기·쪽·열 너비를 기억한다). 줄 묶음이 바뀌면(다른 달 등) 첫 쪽으로. */
-  function listTable({key,columns,rows,nameLabel='이름',main,sort=null,repaint,search=false,empty='조건에 맞는 기록이 없습니다.'}){
+  function listTable({key,columns,rows,nameLabel='이름',main,sort=null,repaint,search=false,empty='조건에 맞는 기록이 없습니다.',details=null}){
     const name={key:'name',label:nameLabel,text:r=>String(r.label||''),sortv:r=>String(r.label||''),align:'l'};
     const cols=columns.map(c=>{const vs=rows.map(r=>c.text(r)).filter(Boolean);return {...c,money:c.money??(vs.length>0&&vs.every(v=>MONEY.test(v))),sortv:c.sortv||(r=>rawSort(c.text(r))),...(c.chip&&!c.html?{html:r=>{const t=c.text(r);return t?`<span class="ax-chip ws-cut">${h(t)}</span>`:'';}}:{})};});
     const all=[name,...cols],q=norm(state.q[key]),found=q?rows.filter(r=>norm(all.map(c=>c.text(r)).join(' ')).includes(q)):rows,sig=`${rows.length}|${rows[0]?.id??''}|${rows.at(-1)?.id??''}`;
@@ -431,7 +437,7 @@ window.createWorkspaces = function createWorkspaces(api) {
     const out=arrange({id:key},found,all),pages=Math.max(1,Math.ceil(out.length/PAGE_SIZE)),page=Math.min(state.page[key]||1,pages),shown=out.slice((page-1)*PAGE_SIZE,page*PAGE_SIZE);
     const shape=sizeColumns(key,cols,rows.slice(0,300),{nameLabel}),narrowed=Boolean(q||colOn(key).length);
     const box=search?`<div class="ws-search"><input type="search" id="wsl-q-${h(key)}" data-wsl-q="${h(key)}" value="${h(state.q[key]||'')}" maxlength="100" aria-label="${h(nameLabel)}·내용 검색" placeholder="이름·내용·상태 검색" autocomplete="off"><span>${narrowed?`찾은 기록 ${fmt(out.length)}건`:''}</span></div>`:'';
-    const table=shown.length?tableHtml({shape,rows:shown,nameLabel,main,menu:key,key:`list-${key}`}):`${colOn(key).length?tableHtml({shape,rows:[],nameLabel,main,menu:key}):''}<div class="live-empty"><strong>${h(empty)}</strong></div>`;
+    const table=shown.length?tableHtml({shape,rows:shown,nameLabel,main,menu:key,key:`list-${key}`,details}):`${colOn(key).length?tableHtml({shape,rows:[],nameLabel,main,menu:key}):''}<div class="live-empty"><strong>${h(empty)}</strong></div>`;
     return `<div class="ws-locallist" data-list-key="${h(key)}">${box}${colChips(key)}${table}${pages>1?pagerHtml(key,page,pages):''}</div>`;
   }
   // 다른 화면 목록을 다시 그린다(그 화면의 repaint) — 열 머리 메뉴는 새 머리 칸을 따라간다.
@@ -455,10 +461,11 @@ window.createWorkspaces = function createWorkspaces(api) {
     return `<div class="ws-flow" aria-label="단계별 흐름">${stages.map(stage).join('')}${loose.length?`<section class="ws-stage"><header><span>·</span><h3>단계 미지정</h3><b>${fmt(looseCount)}</b></header>${rowsOf(loose)}</section>`:''}</div>`;
   }
   function sheetView(a,items){
-    const cols=[...new Set(items.flatMap(r=>(r.fields||[]).map(f=>f.label)))].slice(0,7),edits=state.edits[a.id]||{},changed=Object.values(edits).reduce((n,row)=>n+Object.keys(row).length,0);
+    const dn=dateName(a.id),hasSubject=items.some(r=>subjectOf(r)),hasDate=Boolean(dn&&items.some(r=>r.date)),hasStatus=items.some(r=>!blank(r.status));
+    const cols=[...new Set(items.flatMap(r=>(r.fields||[]).map(f=>f.label).filter(l=>l&&l!=='과목'&&l!==dn)))],edits=state.edits[a.id]||{},changed=Object.values(edits).reduce((n,row)=>n+Object.keys(row).length,0);
     const cell=(r,c)=>{const original=(r.fields||[]).find(f=>f.label===c)?.value??'—',value=edits[r.id]?.[c];return `<td><button type="button" class="ws-cell ${value!==undefined?'changed':''}" data-ws="cell" data-id="${h(a.id)}" data-record="${h(r.id)}" data-col="${h(c)}" aria-label="${h(r.label)} ${h(c)} ${h(value??original)} · Enter로 수정">${h(value??original)}</button></td>`;};
     // 바꾼 칸은 저장되지 않는다는 것만 바꾼 뒤에 알린다(고치는 법 안내 줄은 싣지 않는다).
-    return `<div class="ws-sheet live-scroll" data-scroll-key="sheet-${h(a.id)}" tabindex="0"><table><thead><tr><th scope="col">${h(NAME_HEAD[a.id]||'이름')}</th>${cols.map(c=>`<th scope="col">${h(c)}</th>`).join('')}<th scope="col">상태</th></tr></thead><tbody>${items.map(r=>`<tr${curAttr(a.id,r.id)}><th scope="row"><button type="button" class="ws-row-head" data-ws="record" data-id="${h(a.id)}" data-record="${h(r.id)}">${h(r.label)}</button></th>${cols.map(c=>cell(r,c)).join('')}<td>${r.status?pill(r.status):'—'}</td></tr>`).join('')}</tbody></table></div>${changed?`<div class="ws-sheet-bar"><span>바꾼 칸 ${changed}개 · 저장되지 않습니다</span>${btn('되돌리기','sheet-reset',`data-id="${h(a.id)}"`)}${btn('변경분 미리보기 저장','sheet-save',`data-id="${h(a.id)}"`,true)}</div>`:''}`;
+    return `<div class="ws-sheet live-scroll" data-scroll-key="sheet-${h(a.id)}" tabindex="0"><table class="${hasSubject?'ws-has-subject':''}"><thead><tr>${hasSubject?'<th scope="col" class="ws-subject-head">과목</th>':''}<th scope="col">${h(NAME_HEAD[a.id]||'이름')}</th>${hasDate?`<th scope="col">${h(dn)}</th>`:''}${cols.map(c=>`<th scope="col">${h(c)}</th>`).join('')}${hasStatus?'<th scope="col">상태</th>':''}</tr></thead><tbody>${items.map(r=>`<tr${curAttr(a.id,r.id)}>${hasSubject?`<td class="ws-subject-cell">${h(subjectOf(r)||'—')}</td>`:''}<th scope="row"><button type="button" class="ws-row-head" data-ws="record" data-id="${h(a.id)}" data-record="${h(r.id)}">${h(r.label)}</button></th>${hasDate?`<td>${h(dateText(r.date)||'—')}</td>`:''}${cols.map(c=>cell(r,c)).join('')}${hasStatus?`<td>${r.status?pill(r.status):'—'}</td>`:''}</tr>`).join('')}</tbody></table></div>${changed?`<div class="ws-sheet-bar"><span>바꾼 칸 ${changed}개 · 저장되지 않습니다</span>${btn('되돌리기','sheet-reset',`data-id="${h(a.id)}"`)}${btn('변경분 미리보기 저장','sheet-save',`data-id="${h(a.id)}"`,true)}</div>`:''}`;
   }
   // 기록 한 건의 사실 = 칩(상태 · 걸러보기 구분) + 열 이름·값. 칩·칸이 같은 사실을 두 번 말하지 않는다(원장 10-28 '재원·재원' · '침산초 초5' + 학교/학년 줄).
   function studentClasses(id){
@@ -467,9 +474,10 @@ window.createWorkspaces = function createWorkspaces(api) {
   }
   function recordFacts(a,r){
     const rows=[],dn=dateName(a.id),d=detailOf(r),fields=(r.fields||[]).filter(f=>f&&f.label&&!blank(f.value));
+    if(subjectOf(r))rows.push(['과목',shownValue(subjectOf(r))]);
     if(d)rows.push([detailName(a.id),shownValue(d)]);
     if(dn&&r.date&&!fields.some(f=>f.label===dn))rows.push([dn,dateText(r.date)]);
-    fields.forEach(f=>rows.push([String(f.label),shownValue(f.value)]));
+    fields.filter(f=>f.label!=='과목').forEach(f=>rows.push([String(f.label),shownValue(f.value)]));
     if(a.id==='students'&&!rows.some(([l])=>l==='반')){const cls=studentClasses(r.id);if(cls)rows.push(['반',cls]);}
     return rows;
   }
@@ -636,7 +644,7 @@ window.createWorkspaces = function createWorkspaces(api) {
   function renderRecord(a,familyId,r,pin=false){
     const recordId=String(r.id),local=(state.local[familyId]||[]).filter(e=>e.recordId===recordId);
     state.cur[familyId]=recordId;
-    dialog('detail',r.label,a.label,`${factsHtml(a,r)}${familyId==='textbooks'?textbookAssignments(r):''}${recordActions(a,r)}${local.length?`<section class="ax-evidence"><h3>이 기록의 미리보기 ${local.length}건</h3>${local.map(e=>`<p><strong>${h(e.label)}</strong> · ${h(e.values.map(v=>`${v.label} ${v.value}`).join(' · '))}</p>`).join('')}</section>`:''}`);
+    dialog('detail',r.label,a.label,`${factsHtml(a,r)}${familyId==='billing'?billingDetails(r.lines):''}${familyId==='textbooks'?textbookAssignments(r):''}${recordActions(a,r)}${local.length?`<section class="ax-evidence"><h3>이 기록의 미리보기 ${local.length}건</h3>${local.map(e=>`<p><strong>${h(e.label)}</strong> · ${h(e.values.map(v=>`${v.label} ${v.value}`).join(' · '))}</p>`).join('')}</section>`:''}`);
     if(pin&&api.getPage()===`workspace-${familyId}`){state.pin[familyId]=recordId;refreshMain(familyId);}
     // 그 줄이 화면 안에 들어오게(경로를 옮겨 온 것이라 곧바로 — 스크롤 원칙의 '화면 전환'). 이미 보이면 움직이지 않는다.
     const row=markCurrent(familyId);
@@ -813,6 +821,7 @@ window.createWorkspaces = function createWorkspaces(api) {
     if(action==='facet'){state.facet[id]=state.facet[id]===el.dataset.facet&&el.dataset.facet?'':el.dataset.facet;state.page[id]=1;delete state.pin[id];reloadList(id);return;}
     if(action==='as-list'){if(el.dataset.v==='list')state.asList[id]=true;else{delete state.asList[id];state.facet[id]='';state.q[id]='';}state.page[id]=1;delete state.pin[id];reloadList(id);return;}
     if(action==='col'){openColMenu(id,el.dataset.col);return;}
+    if(action==='expand'){const set=state.expanded[id]||(state.expanded[id]=new Set()),rid=String(record);if(set.has(rid))set.delete(rid);else set.add(rid);if(LOCAL.has(id))repaintLocal(id);else refreshMain(id);return;}
     if(action==='col-clear'){if(state.cols[id])delete state.cols[id][el.dataset.col];arrangeChanged(id);if(colMenu.id===id)paintColMenu();return;}
     if(action==='reload-full'){delete state.full[id];loadAll(id);refreshMain(id);return;}
     if(action==='screen'){state.screen[id]=state.screen[id]===el.dataset.screen?'':el.dataset.screen;refreshMain(id);const side=$('.ws-side .ws-actions');if(side){side.outerHTML=actionPanel(area(id));}return;}
@@ -1019,5 +1028,5 @@ window.createWorkspaces = function createWorkspaces(api) {
   }
   /** 다른 화면에서 기록 하나를 연다 — 상세 서랍을 열고, 그 작업 공간이 열려 있으면 목록 맨 위에 그 줄을 세워 화면 안으로 옮긴다. */
   const showRecordFrom=(familyId,recordId)=>showRecord(familyId,recordId,true);
-  return {has,familyOf,view,sidebar,homeSignals,searchItems,coverage,area,areas,showRecord:showRecordFrom,kpiCard,data,openFamily,attachField,listTable};
+  return {has,familyOf,view,sidebar,homeSignals,searchItems,coverage,area,areas,showRecord:showRecordFrom,kpiCard,data,openFamily,attachField,listTable,billingDetails};
 };
