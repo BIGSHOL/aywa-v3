@@ -17,6 +17,7 @@ export class UnsupportedShape extends Error {
 }
 const IDENT = /^[a-z_][a-z0-9_]*$/;
 const ident = (name, what = '이름') => { if (!IDENT.test(name)) throw new UnsupportedShape(`${what} '${name}'`); return name; };
+const aliasIdent = name => { if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(name)) throw new UnsupportedShape(`임베드 별칭 '${name}'`); return name; };
 
 // ── 표 정보(FK · 칸 형식) — 연결마다 한 번 ──────────────────────────────────────────────────────────────────────────────
 let metaPromise = null;
@@ -62,7 +63,7 @@ function parseSelect(text) {
       const [name, ...hints] = rest.split('!').map(s => s.trim());
       const inner2 = hints.includes('inner'), left = hints.includes('left'), hint = hints.filter(h => h !== 'inner' && h !== 'left');
       if (hint.length > 1 || (left && inner2)) throw new UnsupportedShape(`임베드 힌트 '${head}'`);
-      return { kind: 'embed', alias: alias ? ident(alias, '임베드 별칭') : null, name: ident(name, '임베드'), hint: hint[0] ? ident(hint[0], '임베드 힌트') : null, inner: inner2, select: parseSelect(inner) };
+      return { kind: 'embed', alias: alias ? aliasIdent(alias) : null, name: ident(name, '임베드'), hint: hint[0] ? ident(hint[0], '임베드 힌트') : null, inner: inner2, select: parseSelect(inner) };
     }
     if (item === '*') return { kind: 'star' };
     if (/\.\.\.|\(/.test(item)) throw new UnsupportedShape(`고르기 '${item}'`);
@@ -430,7 +431,7 @@ class Client {
     if (opts.head || opts.count || opts.get) throw new UnsupportedShape('rpc 옵션');
     const b = new Builder(this, 'invoices'); // 표 이름은 쓰지 않는다(아래에서 갈아 끼움)
     b.table = fn; b.rpcTable = fn;
-    const call = currentCall(), client = this;
+    const call = currentCall();
     const argList = async sql => {
       const info = await procInfo(call.metaSql ?? call.sql, fn);
       const named = Object.entries(args ?? {}).map(([k, v]) => {
@@ -446,7 +447,7 @@ class Client {
     // 집합 결과 = 표처럼(select · 거르기 · 정렬) · 하나짜리 = 값 그대로
     b.then = (resolve, reject) => (async () => {
       try {
-        return await enqueue(client.kind, async sql => {
+        return await enqueue(this.kind, async sql => {
           const { info, named } = await argList(sql);
           const callExpr = named.length ? sql`public.${sql(fn)}(${named.reduce((a, x) => sql`${a}, ${x}`)})` : sql`public.${sql(fn)}()`;
           if (info.retset) {
