@@ -35,7 +35,7 @@ window.createWorkspaces = function createWorkspaces(api) {
     'video-homework':['detail','date','f:선생님','status'],timetable:['f:요일','f:시간','f:선생님','f:강의실'],
     'class-sheets':['date','f:교재','f:범위','status'],attendance:['detail','date','status','f:시간','f:자리','f:메모'],
     classes:['f:구분','subject','f:담임','f:강의실','f:요일','f:학생','status','f:메모'],makeups:['detail','f:결석일','date','f:보강 시간','status'],
-    textbooks:['detail','f:차수','f:배정된 반','f:반 이름','status'],'lesson-reports':['f:반','f:작성','date','status','f:읽음'],
+    textbooks:['detail','f:페이지/시간','f:차수','f:배정된 반','f:반 이름'],'lesson-reports':['f:반','f:작성','date','status','f:읽음'],
     'class-review':['detail','f:담임','date','f:담당 반','f:계산된 항목','status'],students:['detail','status','f:과목','f:담임','f:보호자 연락처','date','f:퇴원일'],
     'student-contribution':['date','f:출처','status'],exams:['date','detail','f:점수','status'],
     consultations:['f:학년','f:상담자','f:반','f:요약','f:분류','f:후속조치','f:녹음·AI','date','f:시각','status'],enrollment:['detail','date','f:상담자','f:경로','f:상담 결과','f:후속 조치일','status'],
