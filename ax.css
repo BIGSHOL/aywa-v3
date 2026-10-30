@@ -441,3 +441,45 @@
 .ax-recs-box .fl-recgroup:only-child .fl-recgroup-head{display:none}
 /* 첫 화면 운영 상태: 1240px보다 좁으면 반씩 두 줄(1440 화면에서 6칸 한 줄은 칸이 181px라 '학부모 보고서 열람률' 같은 제목이 꺾인다). 작업 공간 KPI 줄(workspaces.css 1060px)은 그대로. */
 @container (max-width:1240px){.ax-first .ax-kpi .ax-kpi-row{grid-template-columns:repeat(var(--kpi-half,3),minmax(0,1fr))}}
+
+.sidebar-nav-tip{position:fixed;z-index:100;max-width:240px;padding:6px 10px;border:1px solid var(--ax-line);border-radius:7px;background:#fff;color:var(--ax-ink);box-shadow:0 6px 20px #153e7526;font-size:14px;font-weight:600;white-space:nowrap;pointer-events:none;transform:translateY(-50%)}
+.sidebar-nav-tip[hidden]{display:none}
+@property --sidebar{syntax:'<length>';inherits:true;initial-value:216px}
+@media(min-width:761px){
+  body{--sidebar:216px;transition:--sidebar .2s ease}
+  body.sidebar-collapsed{--sidebar:52px}
+  .ax-enabled .sidebar{transition:width .2s ease;overflow-x:hidden}
+  .workspace{transition:margin-left .2s ease;min-width:0}
+  #toast{left:calc(50% + var(--sidebar)/2);transition:left .2s ease,opacity .16s,transform .16s}
+  .ax-enabled .brand{height:43px;flex:0 0 43px;margin-right:44px;white-space:nowrap;overflow:hidden}
+  .ax-enabled .academy-box{max-height:80px;overflow:hidden;white-space:nowrap;transition:max-height .2s ease,margin .2s ease,padding .2s ease,opacity .16s ease,border-width .2s ease}
+  .ax-enabled .academy-box :is(strong,small){white-space:nowrap}
+  .ax-enabled .ax-search-trigger{max-height:40px;overflow:hidden;white-space:nowrap;transition:max-height .2s ease,margin .2s ease,padding .2s ease,opacity .16s ease,border-width .2s ease}
+  .ax-enabled .ax-search-trigger kbd{white-space:nowrap}
+  .ax-enabled .nav-item{padding-left:3px;white-space:nowrap}
+  .ax-enabled .ws-groups .ws-nav{padding-left:3px}
+  .ax-enabled .nav-item>span:not(.nav-count){max-width:170px;overflow:hidden;white-space:nowrap;opacity:1;transition:max-width .2s ease,opacity .16s ease}
+  .ax-enabled .nav-group{position:relative;display:flex;align-items:center;height:34px;margin:0;padding:0 13px;overflow:hidden;white-space:nowrap}
+  .ax-enabled .nav-group:first-child{margin-top:0}
+  .sidebar-toggle{position:absolute;top:25px;right:8px;z-index:2;display:grid;place-items:center;width:36px;height:36px;border-radius:8px;color:var(--ax-primary)}
+  .sidebar-toggle:hover{background:var(--ax-soft)}
+  .sidebar-toggle svg{fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+  .sidebar-collapsed .sidebar{padding-inline:0}
+  .sidebar-collapsed .brand{max-width:0;opacity:0;pointer-events:none}
+  .sidebar-collapsed .academy-box,.sidebar-collapsed .ax-search-trigger{max-height:0;min-height:0;margin:0;padding:0;border:0;opacity:0;overflow:hidden;pointer-events:none}
+  .sidebar-collapsed .nav-scroll{width:52px;overflow-x:hidden}
+  .ax-enabled.sidebar-collapsed .nav-item{width:52px;padding:0;gap:0;justify-content:center}
+  .ax-enabled.sidebar-collapsed .ws-groups .ws-nav{padding:0}
+  .ax-enabled.sidebar-collapsed .nav-item>span:not(.nav-count){flex:0 1 0;max-width:0;opacity:0;pointer-events:none}
+  .ax-enabled.sidebar-collapsed .nav-group{width:52px;color:transparent;font-size:0}
+  .ax-enabled.sidebar-collapsed .nav-group::after{content:'';position:absolute;top:50%;left:8px;right:8px;border-top:1px solid var(--ax-line)}
+  .sidebar-collapsed .ws-finder,.sidebar-collapsed .ws-recent,.sidebar-collapsed .ws-groups summary,.sidebar-collapsed .ax-sidebar-summary,.sidebar-collapsed .profile{display:none}
+  .sidebar-collapsed .fl-actor-pick>:not(.nav-item){display:none}
+  .sidebar-collapsed .fl-actor-pick{gap:0;margin:0}
+  .ax-enabled.sidebar-collapsed .nav-item>.nav-count{position:absolute;top:-2px;right:1px;z-index:2;min-width:15px;height:15px;margin:0;padding:0 2px;border:1px solid #fff;border-radius:8px;font-size:0;line-height:14px}
+  .ax-enabled.sidebar-collapsed .nav-item>.nav-count::after{content:attr(data-compact);font-size:9px}
+}
+@media (min-width:761px) and (max-width:1200px){body:not(.sidebar-collapsed){--sidebar:204px}}
+@media(max-width:760px){.sidebar-toggle{display:none}}
+.sidebar-initializing,.sidebar-initializing .sidebar,.sidebar-initializing .workspace,.sidebar-initializing #toast,.sidebar-initializing .academy-box,.sidebar-initializing .ax-search-trigger{transition:none!important}
+@media(prefers-reduced-motion:reduce){body,.ax-enabled .sidebar,.workspace,#toast,.ax-enabled .brand,.ax-enabled .academy-box,.ax-enabled .ax-search-trigger,.ax-enabled .nav-item>span:not(.nav-count){transition:none}}
