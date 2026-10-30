@@ -29,10 +29,9 @@ try{
  assert.equal(await page.evaluate(()=>window.AcademySnapshot.meta.tenant),'인재원 침산');
  assert.equal(await page.locator('body').getByText('가상 데이터',{exact:false}).count(),0);
 
- // 1. 옛 메뉴 주소를 치면 첫 화면으로 간다(주소도 바뀐다). 왼쪽 맨 아래 링크가 쓰는 #settings만 학원 설정으로.
- const OLD=['students','admissions','classes','learning','finance','staff','parents','shuttle','approvals','resources','calendar'];
+ // 1. 옛 메뉴 주소를 치면 첫 화면으로 간다(주소도 바뀐다).
+ const OLD=['students','admissions','classes','learning','finance','staff','parents','shuttle','approvals','resources','calendar','settings'];
  for(const id of OLD){await page.evaluate(id=>{location.hash=id;},id);await page.waitForFunction(()=>location.hash==='#home'&&document.body.dataset.page==='home');assert.equal(await page.locator('main h1').first().innerText(),'브리핑',`#${id} → 첫 화면`);await noSessionAction(`#${id}`);}
- await page.evaluate(()=>{location.hash='settings';});await page.waitForFunction(()=>location.hash==='#v2-owner'&&document.body.dataset.page==='v2-owner');
  await page.goto(`${base}/#finance`);await page.waitForFunction(()=>location.hash==='#home'&&document.body.dataset.page==='home');
 
  // 2. 첫 화면의 업무 영역 링크(옛 메뉴 이름)는 지금 메뉴로 간다.

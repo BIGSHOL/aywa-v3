@@ -431,11 +431,10 @@
   document.addEventListener('keydown',event=>{if((event.ctrlKey||event.metaKey)&&event.key.toLowerCase()==='k'){event.preventDefault();showSearch();}if(event.key==='Escape')actions['close-menu']();});
   // 2.0 화면의 iframe은 다른 메뉴로 가도 숨은 채 남는다. 숨은 화면이 뒤늦게 보내는 주소 알림(줄 수 다시 재기 등)이 사람을 그 화면으로 끌고 가지 않게 여기서 버린다.
   addEventListener('message',event=>{const d=event.data;if(event.origin===location.origin&&d?.type==='v2-host-nav'&&location.hash.split('?')[0]!==`#v2-${d.screen}`)event.stopImmediatePropagation();},true);
-  // 주소 → 화면. 옛 메뉴 주소는 첫 화면으로 보낸다(#settings만 왼쪽 맨 아래 링크가 아직 쓰고 있어 학원 설정으로). 2.0 화면은 늦게 등록되니 주소는 그대로 두고 v2-screens.js가 다시 부른다.
+  // 주소 → 화면. 옛 메뉴 주소는 첫 화면으로 보낸다. 2.0 화면은 늦게 등록되니 없는 주소는 그대로 두고 v2-screens.js가 다시 부른다.
   function pageFromHash(){
     let page=location.hash.slice(1)||'home';
-    if(page==='settings'){page=MOVED.settings;history.replaceState(null,'',`#${page}`);}
-    else if(MOVED[page]){page='home';history.replaceState(null,'','#home');}
+    if(MOVED[page]){page='home';history.replaceState(null,'','#home');}
     return viewFor(page)?page:PEEK?'':'home';
   }
   window.addEventListener('hashchange',()=>{state.page=pageFromHash();document.querySelectorAll('dialog[open]').forEach(d=>d.close());closeMenu(false);render();window.scrollTo(0,0);});
