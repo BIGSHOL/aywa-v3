@@ -27,8 +27,8 @@ window.createWorkspaces = function createWorkspaces(api) {
   const DATE_NAME={dashboard:'브리핑일',calendar:'일정일','tasks-notifications':'기한',onescreen:'발송일','video-homework':'올린 날','class-sheets':'수업일',attendance:'수업일',makeups:'보강일','lesson-reports':'수업일',students:'등록일','student-contribution':'기록일',exams:'시험일',consultations:'상담일',enrollment:'접수일',newcomers:'등록일',withdrawals:'퇴원일','withdrawal-reports':'퇴원일',staff:'입사일',payroll:'발급일',billing:'납부 기한','textbook-requests':'요청일','expense-requests':'지출일',inventory:'최종실사',meetings:'회의일',approvals:'기안일',documents:'수정일',support:'요청일','owner-settings':'시작일',integrations:'실행일'};
   // 기록의 '내용'(detail) 칸 이름 — 영역마다 그 칸이 담는 것. 없으면 '내용'.
   const DETAIL_NAME={calendar:'시각',billing:'청구월',staff:'직책',inventory:'모델명',documents:'분류','expense-requests':'분류',textbooks:'분류',enrollment:'학교·학년',newcomers:'학교·학년',students:'학교·학년',exams:'시험',attendance:'반',makeups:'반','class-review':'반','withdrawal-reports':'구분',shuttle:'노선'};
-  // 사람 이름이 아닌 첫 칸은 그 기록의 대상(반·문서·업무 등)으로 부른다.
-  const NAME_HEAD={calendar:'일정',classes:'반',timetable:'반',textbooks:'교재',meetings:'회의',documents:'문서',support:'요청',dashboard:'브리핑',integrations:'연동',slack:'규칙','owner-settings':'항목','class-sheets':'반',onescreen:'첫 원생',inventory:'자산ID',shuttle:'원생','expense-requests':'지출',approvals:'문서','public-sites':'항목'};
+  // 첫 칸은 영역별 목록 대상(학생·반·문서·업무 등)의 이름으로 부른다.
+  const NAME_HEAD={calendar:'일정',classes:'반',timetable:'반',textbooks:'교재',meetings:'회의',documents:'문서',support:'요청',dashboard:'브리핑',integrations:'연동',slack:'규칙','owner-settings':'항목','class-sheets':'반',onescreen:'첫 원생',inventory:'자산ID',shuttle:'원생',consultations:'학생','expense-requests':'지출',approvals:'문서','public-sites':'항목'};
   // 2.0 목록과 같은 열 순서. 자료에 있는 3.0 전용 칸은 이 순서 뒤에 둔다.
   const SUBJECT_FIRST=new Set(['video-homework','timetable','classes','textbooks','lesson-reports','exams','consultations','enrollment','withdrawal-reports']);
   const COLUMN_ORDER={
@@ -40,7 +40,7 @@ window.createWorkspaces = function createWorkspaces(api) {
     textbooks:['detail','f:차수','f:배정된 반','f:반 이름','status'],'lesson-reports':['f:반','f:작성','date','status','f:읽음'],
     'class-review':['detail','f:담임','date','f:담당 반','f:계산된 항목','status'],students:['detail','status','f:과목','f:담임','f:보호자 연락처','date','f:퇴원일'],
     'student-contribution':['date','f:출처','status'],exams:['date','detail','f:점수','status'],
-    consultations:['date','f:상담자','f:후속조치','status'],enrollment:['detail','date','f:상담자','f:경로','f:상담 결과','status'],
+    consultations:['f:학년','f:상담자','f:반','f:요약','f:분류','f:후속조치','f:녹음·AI','date','f:시각','status'],enrollment:['detail','date','f:상담자','f:경로','f:상담 결과','status'],
     retention:['date','status'],newcomers:['detail','f:과목','date','f:첫 수업','f:사전 콜','f:첫 수업 안내','f:OJT','f:첫 수업 후 콜','f:1개월 콜','f:2개월 콜','f:3개월 콜','f:완료한 체크','status'],withdrawals:['date','status'],
     'withdrawal-reports':['f:담임','date','detail','status','f:처리 근거'],staff:['detail','f:역할','status','f:고용 형태','date'],
     payroll:['detail','date','status'],billing:['detail','f:수납명','f:청구액','f:수납','f:남은 금액','status','date'],
