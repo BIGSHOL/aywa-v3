@@ -50,7 +50,7 @@ window.createExitInsight = function createExitInsight(api) {
 
   // 비교 달도 공용 선택창(원장 10-28 "모든 드랍다운 … 서식 일치") — 달마다 청구 원생·청구액을 함께. 못 그리면 기존 칸.
   function monthPick(id, label, value, fallback) { const CP = window.ContextPicker; if (!CP) return fallback;
-    try { return `<span class="xi-month">${CP.html({ id, name: id, label, clearable: false, selected: [value], ...CP.lists.months({ db: window.AcademySnapshot, months: st.index?.periods || [] }) })}</span>`; } catch { return fallback; } }
+    try { return `<span class="xi-month">${CP.html({ id, name: id, label, clearable: false, selected: [value], ...CP.lists.months({ db: window.AcademySnapshot, months: st.index?.periods || [], hint: 'billing' }) })}</span>`; } catch { return fallback; } }
   const pickedMonth = id => { const el = document.getElementById(id); return el?.matches?.('[data-cpick]') ? el.querySelector('input[type=hidden]')?.value || '' : el?.value || ''; };
   function pairs(d) {
     const list = st.index?.pairs || [], periods = st.index?.periods || [];

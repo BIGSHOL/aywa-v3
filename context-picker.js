@@ -377,13 +377,16 @@ window.ContextPicker = (function () {
       const options = (items || []).map(i => ({ value: String(i.value), title: i.title, sub: i.sub || '', context: i.context || '', cells: i.cells || {}, search: i.search || '' }));
       return { noun, unit, columns, options, note: `${options.length}${unit}` };
     },
-    /** Months, newest first, with what each month holds when the copy knows it (db.trend: 청구 원생 · 청구액). */
-    months({ db, months }) {
-      const trend = new Map((db?.trend || []).map(t => [t.month, t]));
+    /** Months, newest first. 달 옆 숫자는 그 메뉴의 값만(원장 10-30 "해당 메뉴에 맞는 드랍다운 리스트 내용을 보여주면 되는데" —
+     *  성적관리에 청구액이 뜨던 것). hint = 'billing'(청구 원생·청구액) · 'reports'(수업보고서·진도) · 'enrollment'(문의·등록) · 없으면 월만.
+     *  값은 그 화면 막대·칸이 쓰는 db.trend 같은 칸(같은 곳 같은 수치). */
+    months({ db, months, hint }) {
+      const trend = new Map((db?.trend || []).map(t => [t.month, t])), n = (v, u) => Number.isFinite(v) ? `${v.toLocaleString('ko-KR')}${u}` : '';
+      const preset = { billing: [['payingStudents', '청구 원생', '명'], ['billed', '청구액', null]], reports: [['reports', '수업보고서', '건'], ['progressEntries', '진도 기록', '건']], enrollment: [['inquiries', '문의', '건'], ['registered', '등록', '명']] }[hint] || [];
       const options = [...new Set(months || [])].sort().reverse().map(m => { const t = trend.get(m) || {};
-        return { value: m, title: `${m.slice(2, 4)}.${m.slice(5, 7)}`, cells: { students: Number.isFinite(t.payingStudents) ? `${t.payingStudents.toLocaleString('ko-KR')}명` : '', billed: Number.isFinite(t.billed) ? won(t.billed) : '' }, search: m }; });
+        return { value: m, title: `${m.slice(2, 4)}.${m.slice(5, 7)}`, cells: Object.fromEntries(preset.map(([k, , u]) => [k, u ? n(t[k], u) : Number.isFinite(t[k]) ? won(t[k]) : ''])), search: m }; });
       return { noun: '달', unit: '개월', options, note: `${options.length}개월`, clearable: false,
-        columns: [{ key: 'name', label: '월', w: 'minmax(0,1fr)' }, { key: 'students', label: '청구 원생', w: 'minmax(5em,.8fr)', align: 'end' }, { key: 'billed', label: '청구액', w: 'minmax(7em,1fr)', align: 'end' }] };
+        columns: [{ key: 'name', label: '월', w: 'minmax(0,1fr)' }, ...preset.map(([k, label, u]) => ({ key: k, label, w: u ? 'minmax(5em,.8fr)' : 'minmax(7em,1fr)', align: 'end' }))] };
     },
   };
 
