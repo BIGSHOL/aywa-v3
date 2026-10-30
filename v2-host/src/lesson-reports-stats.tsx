@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { OperationsProvider } from "@/features/owner/operations-context";
 import { setCopyDay } from "./students-shared";
 import { onHostRefresh } from "../shims/host-nav";
-import { setHostEditors } from "../shims/server-action";
+import { hostActor, setHostEditors } from "../shims/server-action";
 import { useSearchParams } from "../shims/next-navigation";
 import { HostMessage } from "./host-frame";
 import { PageHeader } from "@/components/page-header";
@@ -30,7 +30,9 @@ export function LessonReportsStats() {
   const search = useSearchParams();
   const { sp, query } = useMemo(() => {
     const sp = Object.fromEntries(STATS_KEYS.flatMap((k) => (search.has(k) ? [[k, search.get(k) ?? ""]] : []))) as Record<string, string>;
-    return { sp, query: new URLSearchParams({ v2path: "/lesson-reports/stats", ...sp }).toString() };
+    const query = new URLSearchParams({ v2path: "/lesson-reports/stats", ...sp });
+    const actor = hostActor(); if (actor) query.set('viewer', actor);
+    return { sp, query: query.toString() };
   }, [search]);
   const [state, setState] = useState<StatsLoaded>({});
   const [tick, setTick] = useState(0);
@@ -44,7 +46,7 @@ export function LessonReportsStats() {
       .catch((e: Error) => live && setState({ key: query, error: e.message }));
     return () => { live = false; };
   }, [query, tick]);
-  if (state.key !== query) return <HostMessage text="보고서 통계를 불러오는 중…" />;
+  if (!hostActor() || state.key !== query) return <HostMessage text="보고서 통계를 불러오는 중…" />;
   if (state.error) return <HostMessage text={state.error} error />;
   if (state.noAccess || !state.data) return <HostMessage text="현재 계정은 이 화면을 볼 수 없습니다." />;
   const data = state.data;

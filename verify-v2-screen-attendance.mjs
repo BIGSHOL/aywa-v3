@@ -545,7 +545,7 @@ test('저장(복사본, 되돌림): 보강 예약 이행 — 시수 자동값 ·
 test('보강 예약 창·취소: 입력은 2.0 인자 모양만 받고, 2.0 서버 전용 결석 칸 고르기를 옮긴 본문이 원문과 같은 답을 낸다', async () => {
   const Rv = await import('./v2-attendance-reserve.mjs'), MOD = Rv.RESERVE_MODULE;
   const v = (name, args, actor = CLASS) => screen.actions[name].validate({ module: MOD, actor, args });
-  assert.throws(() => v('reserveMakeup', [{}], 'x'), /저장하는 사람을 먼저 고르세요/);
+  assert.throws(() => v('reserveMakeup', [{}], 'x'), /이 계정은 이 화면에서 저장할 수 없습니다 · 계정 전환/);
   assert.throws(() => screen.actions.reserveMakeup.validate({ module: ACTIONS, actor: CLASS, args: [{}] }), /입력 값/, 'another 2.0 module');
   assert.throws(() => v('getMakeupPeriodOptions', [CLASS, '2026-10-30', STUDENT, null, 'x']), /입력 값/, 'four arguments at most');
   assert.throws(() => v('getMakeupPeriodOptions', [CLASS, '2026-10-30', 'not-a-uuid']), /입력 값/);
@@ -689,7 +689,7 @@ test('저장(복사본, 되돌림): 보강 예약 창·취소 — 교시 선택�
 test('범위 채우기: 입력은 2.0 인자 모양만 받고 빗금 칸 표식을 보존한다', () => {
   const v = (args, actor = CLASS, module = ACTIONS) => screen.actions.setAttendanceRange.validate({ module, actor, args });
   const cellsOf = (...xs) => xs.map(d => ({ studentId: STUDENT, classId: CLASS, sessionDate: d }));
-  assert.throws(() => v([{ cells: cellsOf('2026-10-26'), status: 'present' }], 'x'), /저장하는 사람을 먼저 고르세요/);
+  assert.throws(() => v([{ cells: cellsOf('2026-10-26'), status: 'present' }], 'x'), /이 계정은 이 화면에서 저장할 수 없습니다 · 계정 전환/);
   assert.throws(() => v([{ cells: cellsOf('2026-10-26'), status: 'present' }], CLASS, PREFS), /입력 값/);
   assert.throws(() => v([{ cells: cellsOf('2026-10-26'), status: 'present' }, {}]), /입력 값/);
   assert.throws(() => v([{ cells: cellsOf('2026-10-26'), status: 'gone' }]), /잘못된 상태/);

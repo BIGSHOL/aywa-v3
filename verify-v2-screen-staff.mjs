@@ -248,10 +248,12 @@ test('작업자 B의 하위 경로가 진입점에서 이어진다', { skip: SKI
   });
 });
 
-test('화면 글자에 개발자 말이 없다(3.0 감싸개 안내 · 호스트 안내 문구)', async () => {
+test('셸 계정 하나로 직원관리를 열고 화면 글자에 개발자 말이 없다', async () => {
   const wrap = await here('./v2-screen-staff.js'), entry = await here('./v2-host/src/staff.tsx');
   const waitLine = /const wait = ([^\n]+)/.exec(wrap)[1];
-  const visible = [/(<div class="v2h-note"[\s\S]*?<\/div>)/.exec(wrap)[1], ...[...waitLine.matchAll(/'([^']+)'/g)].map(m => m[1]), ...[...entry.matchAll(/text="([^"]+)"/g), ...entry.matchAll(/_REFUSED = "([^"]+)"/g)].map(m => m[1])];
+  assert.match(wrap, /S\.accountId\(\)/);
+  assert.doesNotMatch(wrap, /data-v2h-actor|currentActor|localStorage|v2h-note/);
+  const visible = [...[...waitLine.matchAll(/'([^']+)'/g)].map(m => m[1]), ...[...entry.matchAll(/text="([^"]+)"/g), ...entry.matchAll(/_REFUSED = "([^"]+)"/g)].map(m => m[1])];
   assert.ok(visible.length > 4);
   for (const s of visible) assert.ok(!/2\.0|Docker|docker|복사본|iframe|v2/.test(s.replace(/\$\{[^}]*\}/g, '').replace(/<[^>]*>/g, '')), s);
 });

@@ -1,6 +1,6 @@
 // 원생 상세 '숙제 영상' 탭 자료 — 2.0 homework-videos-tab.tsx(HomeworkVideosTab) · homework-video-links.tsx(HomeworkVideoLinks)가 서버에서 읽던 값을 Docker 복사본에서.
 // · videos = getStudentHomeworkVideos — 영상 원장 뷰(homework_video_ledger_videos — 없으면 student_homework_videos) · 게시 시각 내림차순(빈 값 뒤) + id ·
-//   2.0 dedupeHomeworkVideos(같은 영상 두 줄 접기). 🔴 연습 자료은 영상을 재생하지 않는다 — Drive 파일 번호를 비워 보낸다(재생 단추가 서지 않고
+//   2.0 dedupeHomeworkVideos(같은 영상 두 줄 접기). 🔴 연습 자료는 영상을 재생하지 않는다 — Drive 파일 번호를 비워 보낸다(재생 단추가 서지 않고
 //   Drive 미리보기·썸네일 주소를 부르지 않는다 · 목록·상태·출처는 그대로).
 // · uploadLog = getStudentUploadLog — 최근 30일(기준 = 복사본을 뜬 순간) · 30건 · 그 학생 링크의 업로드 시도. 진단 칸은 2.0 readUploadDiagnostics.
 // · links = HomeworkVideoLinks의 loadRows — 지금 다니는 반 중 살아 있는 제출 링크(끊지 않음 · 만료 전 · 보고서 링크는 그 보고서가 그대로일 때만)가 있는 반.
@@ -15,7 +15,7 @@ const mods = (load) => (modsP ??= Promise.all(Object.entries(MODULES).map(async 
 
 const exists = async (sql, name) => (await sql`select to_regclass(${`public.${name}`}) is not null yes`)[0].yes;
 
-/** getStudentHomeworkVideos — { ready, rows }(rows = HomeworkVideo · 연습 자료은 drive_file_id를 비운다). */
+/** getStudentHomeworkVideos — { ready, rows }(rows = HomeworkVideo · 연습 자료는 drive_file_id를 비운다). */
 export async function readHomeworkVideos(sql, t, id, M) {
   const source = (await exists(sql, 'homework_video_ledger_videos')) ? 'homework_video_ledger_videos' : (await exists(sql, 'student_homework_videos')) ? 'student_homework_videos' : null;
   if (!source) return { ready: false, rows: [] };

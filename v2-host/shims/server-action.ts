@@ -13,18 +13,27 @@ const UNREACHABLE = '연습 서버에 닿지 못했습니다 — 바뀐 것은 �
 const NOT_SAVED = '저장하지 못했습니다 — 바뀐 것은 없습니다';
 
 export type HostEditor = { id: string; name: string; role: string };
-let editors: HostEditor[] = [];
 
-/** 저장하는 사람은 부모 셸의 단일 계정을 따른다. 화면별 저장값이나 첫 직원으로 대체하지 않는다. */
-export function hostActor(): string | null {
+/** 호스트를 연 계정은 부모 셸의 단일 계정이다. */
+function shellActor(): string | null {
   if (window.parent === window) return null;
   try { return (window.parent as Window & { AywaAccount?: { current: () => { id: string } | null } }).AywaAccount?.current()?.id ?? null; }
   catch { return null; }
 }
+const openedActor = shellActor();
+let reloadingForAccount = false;
+/** 계정이 바뀐 뒤 옛 화면의 저장 함수가 새 계정 이름으로 쓰지 못하게 한다. */
+export function hostActor(): string | null { return shellActor() === openedActor ? openedActor : null; }
+window.addEventListener('message', (event: MessageEvent) => {
+  if (event.origin !== location.origin || event.source !== window.parent) return;
+  const data = event.data as { type?: string; id?: unknown } | null;
+  if (data?.type !== 'v2-host-actor' || typeof data.id !== 'string' || data.id === openedActor || reloadingForAccount) return;
+  reloadingForAccount = true;
+  location.reload();
+});
 
 /** 화면이 자료를 받으면 직원 목록을 부모에 알려 준다. 계정 전환은 셸에서만 한다. */
 export function setHostEditors(list: HostEditor[]) {
-  editors = list;
   if (window.parent !== window) window.parent.postMessage({ type: 'v2-host-editors', screen: currentScreen(), editors: list, actor: hostActor() }, location.origin);
 }
 
@@ -61,6 +70,7 @@ const encodeArg = (v: unknown) =>
 
 export function serverAction(module: string, name: string) {
   const fn = async (...args: unknown[]) => {
+    if (!hostActor()) return refuse(module, name, args, '이 계정은 이 화면에서 저장할 수 없습니다 · 계정 전환');
     const handler = handlers.get(keyOf(module, name));
     if (handler) return handler(...args);
     const screen = currentScreen();

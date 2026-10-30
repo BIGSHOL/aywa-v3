@@ -315,7 +315,7 @@ async function deleteStudentConsultation(c, fd) {
   await audit(c.sql, c.t, c.u, 'student_consultation_delete', 'student_consultation', null, {
     consultationId: id, studentId: before?.student_id ?? (studentId || null), consultedAt: c.R.kst.kstDateOf(before?.consulted_at),
     category: before?.category ?? null, audience: before?.audience ?? null, hasFollowUp: !!before?.follow_up_action });
-  // 2.0은 여기서 redirect(redirectTo) — 연습 자료은 화면(호스트)이 같은 주소로 옮긴다.
+  // 2.0은 여기서 redirect(redirectTo) — 연습 자료는 화면(호스트)이 같은 주소로 옮긴다.
   return undefined;
 }
 

@@ -162,6 +162,7 @@ function App() {
     return <HostMessage text={failed ? state.error! : '수납관리를 불러오는 중…'} error={failed} />;
   }
   const d = state.data, ops = d.host.operations;
+  if (d.viewer?.id !== hostActor()) return <HostMessage text="이 계정은 이 화면을 볼 수 없습니다 · 계정 전환" error />;
   if (d.route === 'none' || !d.access) return <HostMessage text="수납관리를 볼 수 있는 직원이 없습니다." />;
   if (d.page === 'noAccess') return <HostMessage text="현재 계정은 이 화면을 볼 수 없습니다." />;
   if (d.page === 'notFound') return <HostMessage text="이 주소의 화면이 없습니다." />;

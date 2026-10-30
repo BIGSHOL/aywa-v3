@@ -79,7 +79,7 @@ save('video-assignment.ts', 'assignHomeworkVideo', (r) => !!r.ok);
 registerHostHandler(`${VH}/reject-videos.ts`, 'rejectHomeworkVideos', async (...args: unknown[]) => {
   const result = await post(`${VH}/reject-videos.ts`, 'rejectHomeworkVideos', args);
   if (result.ok || result.rejected) hostRefresh();
-  // 연습 자료은 드라이브 파일을 옮기지 않는다 — 반려는 끝났고, 파일은 그대로 남는다(2.0이 못 옮겼을 때와 같은 결과).
+  // 연습 자료는 드라이브 파일을 옮기지 않는다 — 반려는 끝났고, 파일은 그대로 남는다(2.0이 못 옮겼을 때와 같은 결과).
   if (result.ok && result.trashFailed) toast.info('연습 자료에서는 드라이브 파일을 옮기지 않습니다. 반려 기록만 남았습니다.');
   return result;
 });

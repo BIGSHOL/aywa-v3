@@ -63,13 +63,17 @@ function App() {
     }).then(body => {
       if (!live) return;
       if (Array.isArray(body.editors)) setHostEditors(body.editors);
+      if (!actor || (body.loaded && !body.editors?.some((editor: { id: string }) => editor.id === actor))) {
+        setState({ key: query, error: '이 계정은 이 화면을 볼 수 없습니다 · 계정 전환' });
+        return;
+      }
       setState(body.notFound ? { key: query, error: '성적관리를 열 수 없습니다.' }
         : body.route === 'external-unavailable' ? { key: query, error: body.message }
           : { key: query, route: body.route, loaded: body.loaded });
     }).catch(e => { if (live) setState({ key: query, error: e.message }); });
     return () => { live = false; };
   }, [query, tick]);
-  if (state.key !== query) return <HostMessage text="성적관리를 불러오는 중…" />;
+  if (!hostActor() || state.key !== query) return <HostMessage text="성적관리를 불러오는 중…" />;
   if (state.error || !state.loaded) return <HostMessage text={state.error || '성적관리를 불러오지 못했습니다.'} error />;
   const ops = state.loaded.settings.operations;
   return <OperationsProvider subjects={ops.subjects} gradeLevels={ops.gradeLevels} jobTitles={ops.jobTitles}

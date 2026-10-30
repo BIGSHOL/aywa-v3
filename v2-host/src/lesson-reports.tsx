@@ -21,12 +21,12 @@ export const HOST_ROUTE = "/lesson-reports";
 
 /** page.tsx searchParams(v2-screen-lesson-reports.mjs KEYS와 같다 — 시험이 대조). */
 const KEYS = ["tab", "section", "status", "rmonth", "page"] as const;
-const teacherQuery = new URLSearchParams(location.search);
-const teacherViewer = teacherQuery.get('teacherHome') === '1' ? teacherQuery.get('viewer') : null;
+const teacherHome = new URLSearchParams(location.search).get('teacherHome') === '1';
 
 /** 면 안 부품이 다시 읽는 2.0 서버 함수(읽기) — 같은 화면의 GET 열쇠로 묻는다(v2-screen-lesson-reports.mjs params). 답은 2.0 반환 모양. */
 async function ask(query: Record<string, string>): Promise<Record<string, unknown> | null> {
-  const r = await fetch(`/api/v2/lesson-reports?${new URLSearchParams(query)}`, { headers: { Accept: "application/json" } }).catch(() => null);
+  const actor = hostActor(); if (!actor) return null;
+  const r = await fetch(`/api/v2/lesson-reports?${new URLSearchParams({ ...query, viewer: actor })}`, { headers: { Accept: "application/json" } }).catch(() => null);
   const body = r ? ((await r.json().catch(() => null)) as Record<string, unknown> | null) : null;
   return r?.ok && body && typeof body === "object" ? body : null;
 }
@@ -60,14 +60,14 @@ registerHostHandler(SYNC_MODULE, "requestClassnoteBoardSync", async (...args) =>
     if (!response.ok || !body?.ok) return { ok: false, error: body?.message ?? "동기화 요청을 저장하지 못했습니다." };
     const result = body.result as { ok?: boolean; message?: string; error?: string } | null;
     if (result?.ok && typeof result.message === "string" && result.message.includes("연동 PC"))
-      return { ...result, message: "요청을 복사본 대기열에 남겼습니다. 연습 자료이라 실제 동기화는 실행되지 않습니다." };
+      return { ...result, message: "요청을 복사본 대기열에 남겼습니다. 연습 자료라 실제 동기화는 실행되지 않습니다." };
     if (result && !result.ok && result.error?.startsWith("연동 PC가 꺼져 있거나"))
       return { ...result, error: "연습 자료에는 연동 PC가 없어 지금 동기화 요청을 받을 수 없습니다." };
     return result;
   } catch { return { ok: false, error: "동기화 요청을 저장하지 못했습니다." }; }
 });
 // 발송 요청은 2.0 함수를 Docker에서 실행한다. 대기열에 오른 뒤 2.0의 발송 PC 안내는 연습 자료 안내로 바꾼다.
-const COPY_QUEUE_NOTICE = "연습 자료이라 실제로 보내지지 않습니다 — 발송 대기로만 남습니다";
+const COPY_QUEUE_NOTICE = "연습 자료라 실제로 보내지지 않습니다 — 발송 대기로만 남습니다";
 let queuedToastCount = 0;
 const originalSuccess = toast.success;
 toast.success = ((message, data) => {
@@ -124,7 +124,7 @@ for (const name of ["requestParentReply", "requestParentReplyEdit", "requestPare
     if (!response.ok || !body?.ok) return { ok: false, error: body?.message ?? "답글 요청을 저장하지 못했습니다." };
     const result = body.result as { ok?: boolean; message?: string } | null;
     if (result?.ok && typeof result.message === "string" && result.message.includes(" — 연동 PC가"))
-      return { ...result, message: `${result.message.split(" — 연동 PC가")[0]} · 연습 자료이라 실제로 보내지지 않습니다` };
+      return { ...result, message: `${result.message.split(" — 연동 PC가")[0]} · 연습 자료라 실제로 보내지지 않습니다` };
     return result;
   } catch { return { ok: false, error: "답글 요청을 저장하지 못했습니다." }; }
 });
@@ -141,7 +141,7 @@ for (const name of ["requestParentReaction", "requestParentReactionRemove"]) reg
     if (!response.ok || !body?.ok) return { ok: false, error: body?.message ?? "공감 요청을 저장하지 못했습니다." };
     const result = body.result as { ok?: boolean; message?: string } | null;
     if (result?.ok && typeof result.message === "string" && result.message.includes(" — 연동 PC가"))
-      return { ...result, message: `${result.message.split(" — 연동 PC가")[0]} · 연습 자료이라 실제로 보내지지 않습니다` };
+      return { ...result, message: `${result.message.split(" — 연동 PC가")[0]} · 연습 자료라 실제로 보내지지 않습니다` };
     return result;
   } catch { return { ok: false, error: "공감 요청을 저장하지 못했습니다." }; }
 });
@@ -166,7 +166,9 @@ function Page() {
   const { sp, query } = useMemo(() => {
     const sp = Object.fromEntries(KEYS.flatMap((k) => (search.has(k) ? [[k, search.get(k) ?? ""]] : []))) as Record<string, string>;
     const query = new URLSearchParams(sp);
-    if (teacherViewer) { query.set('viewer', teacherViewer); query.set('teacherHome', '1'); }
+    const actor = hostActor();
+    if (actor) query.set('viewer', actor);
+    if (teacherHome) query.set('teacherHome', '1');
     return { sp, query: query.toString() };
   }, [search]);
   const [state, setState] = useState<Loaded>({});
@@ -180,13 +182,14 @@ function Page() {
         if (!live) return;
         if (Array.isArray(body?.editors)) setHostEditors(body.editors);
         setState(typeof body?.redirect === "string" ? { key: query, redirect: body.redirect }
-          : body?.missing || body?.notFound ? { key: query, missing: true } : { key: query, data: body as LessonReportsData });
+          : body?.noAccess || (!body?.missing && !body?.notFound && body?.viewer?.id !== hostActor()) ? { key: query, error: '이 계정은 이 화면을 볼 수 없습니다 · 계정 전환' }
+            : body?.missing || body?.notFound ? { key: query, missing: true } : { key: query, data: body as LessonReportsData });
       })
       .catch((e: Error) => live && setState({ key: query, error: e.message }));
     return () => { live = false; };
   }, [query, tick]);
   // 다른 조건의 자료로 새 주소를 그리지 않는다(면을 바꾼 직후 · 받기 실패).
-  if (state.key !== query || (!state.data && !state.missing && !state.error && !state.redirect)) return <HostMessage text="수업보고서를 불러오는 중…" />;
+  if (!hostActor() || state.key !== query || (!state.data && !state.missing && !state.error && !state.redirect)) return <HostMessage text="수업보고서를 불러오는 중…" />;
   if (state.error) return <HostMessage text={state.error} error />;
   // 2.0 page.tsx 첫 판정(?tab=video_homework → 영상 제출 현황) — 서버가 면 조회 없이 알려 준 주소를 다른 3.0 화면으로 넘긴다.
   if (state.redirect) return <Elsewhere path={state.redirect} />;

@@ -118,7 +118,7 @@
       const button = e.target.closest?.(`${SEL} [data-v2-overview-action="settings"], ${SEL} [data-v2-save-default]`);
       if (!button || !act) return;
       const owner = currentActor();
-      if (!owner) { api?.toast?.('저장하는 사람을 먼저 골라 주세요.'); return; }
+      if (!owner) { api?.toast?.('이 계정은 이 화면에서 저장할 수 없습니다 · 계정 전환'); return; }
       const key = button.dataset.v2SaveDefault;
       const body = key ? { type: 'default', actor: owner, program: key.split(':')[0], course: key.split(':')[1],
         capacity: document.querySelector(`${SEL} [data-v2-default-capacity="${key}"]`)?.value ?? '' }

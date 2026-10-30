@@ -1058,12 +1058,14 @@ await check('호스트: 2.0 부품을 고치지 않고 묶인다 — 서버 전�
   await rm(outdir, { recursive: true, force: true });
 });
 
-await check('3.0 쪽: 같은 출처 iframe 자리 · 보는 사람 고르기 · 안내 한 줄 — 운영 2.0 주소·외부 주소·저장 요청 없음 · 화면 문구에 내부 말 없음', async () => {
+await check('3.0 쪽: 같은 출처 iframe 자리 · 셸 계정 하나 · 총 청구액 기준 안내 — 운영 주소·외부 주소·저장 요청 없음', async () => {
   const js = await here('./v2-screen-billing.js');
   for (const bad of [/https?:\/\//, /aywa\.co\.kr/, /vercel\.app/, /ctx\.act\(/, /method:\s*'POST'/]) assert.doesNotMatch(js, bad, String(bad));
   assert.match(js, /HOST = `\/v2-host\/\$\{ID\}\.html`/); assert.match(js, /e\.origin !== location\.origin/); assert.match(js, /e\.source !== frame\.contentWindow/);
-  assert.match(js, /const ID = 'billing'/); assert.match(js, /\[data-v2h-actor\]`\)/);
-  const shown = [/<p><b>연습 화면<\/b>([^<]*)<\/p>/, /<span>(보는 사람)<\/span>/, /toast\?\.\('([^']*)'\)/, /frame\.title = '([^']*)'/, /const wait = ([^;]*);/]
+  assert.match(js, /const ID = 'billing'/); assert.match(js, /S\.accountId\(\)/);
+  assert.match(js, /‘총 청구액’ 기준:/);
+  assert.doesNotMatch(js, /data-v2h-actor|currentActor|localStorage|v2h-note/);
+  const shown = [/toast\?\.\('([^']*)'\)/, /frame\.title = '([^']*)'/, /const wait = ([^;]*);/]
     .map(re => { const m = re.exec(js); assert.ok(m, String(re)); return m[1]; }).join('\n');
   // 주석은 화면에 안 나간다 — 주석 줄 · 줄 끝 주석을 빼고 본다.
   const parts = (lf(await here('./v2-host/src/billing-host-parts.tsx')) + lf(await here('./v2-host/src/billing.tsx'))).split('\n')

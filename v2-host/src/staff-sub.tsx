@@ -69,7 +69,7 @@ export function StaffSubPage({ path, data }: { path: string; data: unknown }) {
   const d = (data ?? {}) as SubData;
   const route = path.split("?")[0];
   if (d.redirect) return <Redirect to={d.redirect} />;
-  if (d.notAllowed) return <HostMessage text="고른 사람은 직원관리 메뉴가 없습니다. 위에서 다른 사람을 골라 주세요." error />;
+  if (d.notAllowed) return <HostMessage text="이 계정은 이 화면을 볼 수 없습니다 · 계정 전환" error />;
   if (d.notFound) return <HostMessage text="이력서를 찾을 수 없습니다 — 이미 삭제되었을 수 있습니다." error />;
   if (d.unsupported || d.notReady || !d.operations) return <HostMessage text="이 화면은 연습 화면에서 아직 열 수 없습니다." />;
   const ops = d.operations as unknown as Parameters<typeof OperationsProvider>[0];

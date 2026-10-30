@@ -21,7 +21,7 @@ const bad = () => new V2Error(400, 'invalid_request', '입력 값을 확인해 �
 /** 2.0 `setAttendanceRange(input)`의 입력 — { cells: [{ studentId, classId, sessionDate, ghost? }], status, units?, quiet?, scopeTeacherId?, scopeClassIds? }. */
 export function rangeBody(raw) {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw) || raw.module !== RANGE_MODULE || !Array.isArray(raw.args) || raw.args.length > 1) throw bad();
-  if (typeof raw.actor !== 'string' || !UUID.test(raw.actor)) throw new V2Error(400, 'actor_missing', '저장하는 사람을 먼저 고르세요.');
+  if (typeof raw.actor !== 'string' || !UUID.test(raw.actor)) throw new V2Error(400, 'actor_missing', '이 계정은 이 화면에서 저장할 수 없습니다 · 계정 전환');
   const input = raw.args[0];
   if (!input || typeof input !== 'object' || Array.isArray(input) || !Array.isArray(input.cells) || input.cells.length > 2000) throw bad();
   if (input.status !== null && !STATUSES.includes(input.status)) throw new V2Error(400, 'invalid_status', '잘못된 상태입니다');

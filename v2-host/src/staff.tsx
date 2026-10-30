@@ -90,11 +90,10 @@ registerHostHandler("features/staff/server/account-actions.ts", "deleteStaff", a
   return new Promise(() => {});
 });
 
-// ── 보는 사람 ─────────────────────────────────────────────────────────────────────────────────────────────────────────
-const ACTOR_KEY = `v2-host-actor:${SCREEN}`;
-/** 3.0 띠가 고른 값(같은 출처 저장소 + v2-host-actor 알림). 바뀌면 다시 읽는다. */
+// ── 현재 계정 ─────────────────────────────────────────────────────────────────────────────────────────────────────────
+/** 셸 계정이 바뀌면 공통 호스트 경계가 다시 열고, 이 화면도 현재 계정으로 읽는다. */
 function useActor() {
-  const [actor, setActor] = useState<string | null>(() => { try { return localStorage.getItem(ACTOR_KEY); } catch { return null; } });
+  const [actor, setActor] = useState<string | null>(() => hostActor());
   useEffect(() => {
     const on = (e: MessageEvent) => {
       if (e.origin !== location.origin || e.source !== window.parent) return;
@@ -107,7 +106,7 @@ function useActor() {
   return actor;
 }
 
-type Common = { editors?: HostEditor[]; operations?: Record<string, unknown>; modules?: { disabled: unknown }; notAllowed?: boolean; notFound?: boolean; redirect?: string; unknown?: boolean };
+type Common = { editors?: HostEditor[]; user?: { id: string }; operations?: Record<string, unknown>; modules?: { disabled: unknown }; notAllowed?: boolean; notFound?: boolean; redirect?: string; unknown?: boolean };
 
 function Redirect({ to }: { to: string }) {
   useEffect(() => { hostNavigate(to, "replace"); }, [to]);
@@ -136,15 +135,15 @@ function Screen({ path, keys, render }: { path: string; keys: readonly string[];
     return () => { live = false; };
   }, [query, tick]);
   useEffect(() => { if (state.data?.editors) setHostEditors(state.data.editors); }, [state.data?.editors]);
-  if (state.query !== query || (!state.data && !state.error)) {
+  if (actor !== hostActor() || state.query !== query || (!state.data && !state.error)) {
     // 저장 뒤 다시 읽는 동안은 보던 화면을 그대로 둔다(같은 조건) — 2.0 revalidate처럼 화면이 깜빡이지 않게.
-    if (state.data && state.query === query) return <>{render(state.data)}</>;
+    if (actor === hostActor() && state.data && state.query === query) return <>{render(state.data)}</>;
     return <HostMessage text="직원관리를 불러오는 중…" />;
   }
   if (!state.data) return <HostMessage text={state.error!} error />;
   const data = state.data;
   if (data.redirect) return <Redirect to={data.redirect} />;
-  if (data.notAllowed) return <HostMessage text="고른 사람은 직원관리 메뉴가 없습니다. 위에서 다른 사람을 골라 주세요." error />;
+  if (data.notAllowed || (data.user && data.user.id !== actor)) return <HostMessage text="이 계정은 이 화면을 볼 수 없습니다 · 계정 전환" error />;
   if (data.notFound) return <HostMessage text="찾을 수 없는 직원입니다. 목록으로 돌아가 다시 골라 주세요." error />;
   if (data.unknown) return <HostMessage text="이 화면은 연습 화면에서 아직 열 수 없습니다." />;
   return <>{render(data)}</>;

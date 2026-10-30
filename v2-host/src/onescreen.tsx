@@ -28,7 +28,7 @@ export const HOST_ROUTE = '/onescreen';
 const noticeSuccess = toast.success;
 toast.success = ((message, data) => noticeSuccess(
   typeof message === 'string' && message.includes('발송 대기(연동 PC가 순차 게시)')
-    ? `${message.replace('(연동 PC가 순차 게시)', '')} · 연습 자료이라 실제로 보내지지 않습니다`
+    ? `${message.replace('(연동 PC가 순차 게시)', '')} · 연습 자료라 실제로 보내지지 않습니다`
     : message, data,
 )) as typeof toast.success;
 const noticeMessage = toast.message;

@@ -1,6 +1,6 @@
 // 원생 상세 '숙제 영상' 탭 — 2.0 _tabs/homework-videos-tab.tsx(HomeworkVideosTab)와 homework-video-links.tsx(HomeworkVideoLinks)는 서버 컴포넌트라
 // 본문을 **글자 그대로** 옮겼다. 바꾼 곳은 서버 조회 자리와 재생 안내 한 줄뿐이다(students-tab-homework-videos.swaps.json · verify-v2-students-tabs-b.mjs가 대조).
-// 두 부품은 같은 자료를 나눠 읽는다(v2-students-tab-homework-videos.mjs loadTab → useStudentTab). 연습 자료은 영상을 재생하지 않는다 —
+// 두 부품은 같은 자료를 나눠 읽는다(v2-students-tab-homework-videos.mjs loadTab → useStudentTab). 연습 자료는 영상을 재생하지 않는다 —
 // 서버가 Drive 파일 번호를 비워 보내 재생 단추가 서지 않는다(목록·상태·출처·업로드 기록은 그대로). 올리기 사이트 주소는 싣지 않는다.
 import { SheetClassName, SheetText } from "@/features/teacher-view/interface-label";
 import { subjectLabelRecord } from "@/features/owner/subjects";

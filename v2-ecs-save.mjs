@@ -34,7 +34,7 @@ const bad = () => new V2Error(400, 'invalid_request', '입력 값을 확인해 �
 /** 호스트(shims/server-action.ts)가 보내는 모양 — 그 2.0 모듈의 그 함수가 아니면 받지 않는다(같은 이름이 다른 모듈에 있어도 섞이지 않게). */
 function hostCall(raw, module, arity) {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw) || raw.module !== module || !Array.isArray(raw.args) || raw.args.length > arity) throw bad();
-  if (typeof raw.actor !== 'string' || !UUID.test(raw.actor)) throw new V2Error(400, 'actor_missing', '저장하는 사람을 먼저 고르세요.');
+  if (typeof raw.actor !== 'string' || !UUID.test(raw.actor)) throw new V2Error(400, 'actor_missing', '이 계정은 이 화면에서 저장할 수 없습니다 · 계정 전환');
   return { actor: raw.actor, args: raw.args };
 }
 /** 2.0 서버 액션 하나 — 인자 모양은 2.0 함수가 run 안에서 검사한다(같은 거절 문구를 같은 자리에서). */
@@ -44,7 +44,7 @@ export const serverFn = (module, arity, run) => ({
   async run({ sql, body, tenantId: t, importV2 }) {
     const R = await loadRules(importV2), env = await readSettings(sql, t, R);
     const user = (await readViewers(sql, t, R, env)).find(v => v.id === body.actor);
-    if (!user) throw new V2Error(403, 'actor_not_allowed', '저장하는 사람을 다시 골라 주세요(강사 시트를 쓸 수 있는 재직 직원).');
+    if (!user) throw new V2Error(403, 'actor_not_allowed', '이 계정은 이 화면에서 저장할 수 없습니다 · 계정 전환');
     return run({ sql, t, R, env, user, today: await copyDay(), importV2 }, ...body.args);
   },
 });
@@ -615,7 +615,7 @@ export const ACTIONS = {
     await audit(sql, t, user, 'student_english_name_update', 'student', student.name, { studentId, before: previousEnglishName, after: englishName });
     return { ok: true, englishName };
   }),
-  /** pullEcsMemorizedWords({ classId, date, slotStart }) — 2.0은 인재원 SRS(바깥 연동)에서 단어 수를 받아 적는다. 연습 자료은 바깥을 부르지 않으므로
+  /** pullEcsMemorizedWords({ classId, date, slotStart }) — 2.0은 인재원 SRS(바깥 연동)에서 단어 수를 받아 적는다. 연습 자료는 바깥을 부르지 않으므로
    *  2.0과 같은 입력 검사·반 게이트를 지난 뒤 2.0 실패 모양으로 알린다(출석부 자리 화면과 같은 문구). 쓰기·감사 없음. */
   pullEcsMemorizedWords: serverFn('features/class-sheets/server/memorized-actions.ts', 1, async ({ sql, t, R, env, user }, raw) => {
     const input = obj(raw);

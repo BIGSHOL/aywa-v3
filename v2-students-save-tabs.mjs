@@ -47,7 +47,7 @@ const str = (f, k, d = '') => String(f.get(k) ?? d).trim();
 async function actorOf(base, actorId) {
   const editors = await readStudentEditors(base);
   const picked = actorId ? editors.find((e) => e.id === actorId) : null;
-  if (!picked) throw new V2Error(403, 'actor_not_allowed', '저장하는 사람을 다시 골라 주세요. 학생 관리 권한이 있는 직원만 저장할 수 있습니다.');
+  if (!picked) throw new V2Error(403, 'actor_not_allowed', '이 계정은 이 화면에서 저장할 수 없습니다 · 계정 전환');
   const [row] = await base.sql`select system_role::text role from public.users where tenant_id=${base.t} and id=${picked.id}`;
   const { RR, settings } = base;
   const matrix = RR.applyUserOverrides(RR.resolveMatrix(settings.permissions.overrides ?? []), picked.id, row.role, settings.permissions.userOverrides ?? []);
