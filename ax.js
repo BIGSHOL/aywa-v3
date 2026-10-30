@@ -38,6 +38,33 @@ window.createOwnerWorkspace = function createOwnerWorkspace(api) {
   const names=ids=>ids.map(id=>staffById.get(id)?.name||'담당자').join(', ');
   const clip=(text,limit)=>String(text??'').slice(0,limit);
   const norm=text=>String(text??'').toLowerCase().replace(/\s+/g,'');
+  const attendanceRows={html:'',pending:null,error:'',seq:0};
+  const schoolGrade=s=>{const school=String(s?.school||''),grade=String(s?.grade||''),m=/^([초중고])(\d)$/.exec(grade);return m&&school.endsWith(m[1])?`${school}${m[2]}`:[school,grade].filter(Boolean).join(' ');};
+  function attendanceTable(root,classRecords=[]){
+    const people=new Map(),students=new Map(db.students.map(s=>[String(s.id),s])),classes=new Map([...(db.workspaces?.families?.classes?.records||[]),...classRecords].map(r=>[String(r.id),r]));
+    for(const teacher of root.children||[])for(const cls of teacher.children||[])for(const node of cls.children||[]){
+      const count=Number(node.facts?.absencesInClass||0),id=String(node.entityRef?.id||'');if(!count||!id)continue;
+      if(!people.has(id))people.set(id,{id,name:node.label,student:students.get(id),all:Number(node.facts?.absencesAllClasses||0),classes:[]});
+      people.get(id).classes.push({id:String(cls.entityRef?.id||''),name:cls.label,subject:classes.get(String(cls.entityRef?.id||''))?.subject||'과목 미지정',teacher:teacher.label||'담임 미지정',count});
+    }
+    const list=[...people.values()].sort((a,b)=>a.name.localeCompare(b.name,'ko'));
+    const rows=list.flatMap(p=>p.classes.sort((a,b)=>a.name.localeCompare(b.name,'ko')).map((c,i)=>`<tr><td>${h(c.subject)}</td>${i?'':`<th scope="row" rowspan="${p.classes.length}"><button type="button" class="button" data-ax="record" data-type="student" data-id="${h(p.id)}">${h(p.name)}</button><small class="ax-attendance-total">전체 ${fmt(p.all||p.classes.reduce((n,x)=>n+x.count,0))}회</small></th><td rowspan="${p.classes.length}">${h(schoolGrade(p.student))}</td><td rowspan="${p.classes.length}">재원</td>`}<td>${h(c.name)}</td><td>${h(c.teacher)}</td><td class="al-r">${fmt(c.count)}회</td>${i?'':`<td rowspan="${p.classes.length}" class="al-r">${p.student?.remaining>0?won(p.student.remaining):'—'}</td>`}</tr>`)).join('');
+    return `<p class="ax-note">이번 달 결석한 반만 표시합니다. 한 원생이 여러 반에서 결석했다면 반마다 한 줄입니다.</p><table class="fl-rectable ax-attendance-table"><thead><tr><th scope="col">과목</th><th scope="col">이름</th><th scope="col">학교·학년</th><th scope="col">상태</th><th scope="col">반</th><th scope="col">담임</th><th scope="col" class="al-r">결석</th><th scope="col" class="al-r">이번 달 미납</th></tr></thead><tbody>${rows}</tbody></table>`;
+  }
+  function fillAttendanceTable(){
+    const targets=()=>document.querySelectorAll('[data-ax-attendance]');if(!targets().length)return;
+    if(attendanceRows.html){let changed=false;targets().forEach(el=>{if(el.dataset.loaded==='1')return;el.innerHTML=attendanceRows.html;el.dataset.loaded='1';changed=true;});if(changed)api.attachScroll?.();return;}
+    if(attendanceRows.pending)return;
+    const seq=++attendanceRows.seq;
+    attendanceRows.pending=fetch('/api/flow/hierarchy?caseId=src-sig-attendance-attendance-repeat-absence',{headers:{Accept:'application/json'}})
+      .then(async res=>{if(!res.ok)throw new Error('hierarchy');const data=await res.json();if(!data?.root)throw new Error('shape');
+        const ids=[...new Set((data.root.children||[]).flatMap(t=>(t.children||[]).map(c=>String(c.entityRef?.id||'')).filter(Boolean)))];
+        const lookup=ids.length?await fetch(`/api/workspaces/classes/records?ids=${ids.map(encodeURIComponent).join(',')}`,{headers:{Accept:'application/json'}}).then(r=>r.ok?r.json():null).catch(()=>null):null;
+        if(seq!==attendanceRows.seq)return;attendanceRows.html=attendanceTable(data.root,Array.isArray(lookup?.items)?lookup.items:[]);targets().forEach(el=>{el.innerHTML=attendanceRows.html;el.dataset.loaded='1';});api.attachScroll?.();})
+      .catch(()=>{if(seq!==attendanceRows.seq)return;attendanceRows.error='반별 결석 기록을 불러오지 못했습니다.';targets().forEach(el=>{el.textContent=attendanceRows.error;});})
+      .finally(()=>{if(seq===attendanceRows.seq)attendanceRows.pending=null;});
+  }
+  window.addEventListener('aywa:data-revision',()=>{attendanceRows.seq++;attendanceRows.html='';attendanceRows.error='';attendanceRows.pending=null;document.querySelectorAll('[data-ax-attendance]').forEach(el=>{el.textContent='반별 결석 기록을 불러오는 중입니다.';delete el.dataset.loaded;});fillAttendanceTable();});
 
   function issues(){
     const now=current(),prev=db.trend.find(t=>t.month===db.trend.at(-2).month),delta=now.payingStudents-prev.payingStudents;
@@ -104,8 +131,8 @@ window.createOwnerWorkspace = function createOwnerWorkspace(api) {
   }
   function recordList(issue){
     if(!issue.records.length)return '';
-    // 확인 대상 = 업무 흐름 '기록 보기'와 같은 종류별 표(원장 10-28 "그냥 다 리스트로" · "원생이면 원생에게서 알아야할 정보들" · "항상 열정렬").
-    // 정보는 그 표가 채운다(flow-ui fillRecords — decorateView). 업무 흐름을 못 불러오면 예전 목록.
+    if(issue.id==='attendance')return `<section class="ax-records"><div class="ax-section-head"><h4>확인 대상 ${issue.records.length}${issue.unit}</h4>${button('원생목록 열기','navigate','students')}</div><div class="ax-recs-box live-scroll" data-ax-attendance>${attendanceRows.html||attendanceRows.error||'반별 결석 기록을 불러오는 중입니다.'}</div></section>`;
+    // 결석은 원생×결석한 반, 나머지 확인 대상은 업무 흐름과 같은 기록 표로 채운다.
     if(flowUI?.recordsHtml){
       const refs=issue.records.map(r=>{const [type,familyId]=REC_REF[r.type]||[r.type,''];return {type,familyId,id:String(r.id),recordId:String(r.id),label:r.name,detail:r.detail};});
       ui.recRefs.set(issue.id,refs);
@@ -406,6 +433,7 @@ window.createOwnerWorkspace = function createOwnerWorkspace(api) {
   },true);
   function decorateView(){
     const page=api.getPage();
+    fillAttendanceTable();
     if(flowUI?.fillRecords)document.querySelectorAll('[data-ax-recs]').forEach(el=>{const refs=ui.recRefs.get(el.dataset.axRecs);if(refs)flowUI.fillRecords(el,refs);});
     if(page==='home'&&ui.focusIssue){const id=ui.focusIssue,instant=ui.focusRouted;ui.focusIssue=null;requestAnimationFrame(()=>focusIssue(id,{instant}));}
     else if(!['home','flow','inbox','requests','automation'].includes(page)&&!page.startsWith('workspace-')&&$('main h1'))$('main h1').textContent=labels[page]||$('main h1').textContent;
