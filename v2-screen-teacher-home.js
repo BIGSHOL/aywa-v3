@@ -49,27 +49,39 @@
       return url.protocol === 'https:' && (url.hostname === 'www.classnote.com' || url.hostname === 'classnote.com') && /^\/service\/report\/\d+\/?$/.test(url.pathname) ? url.href : null;
     } catch { return null; }
   };
-  const shownAt = value => {
-    const date = new Date(value);
-    return Number.isNaN(date.getTime()) ? '시각 확인 불가' : new Intl.DateTimeFormat('ko-KR', { timeZone: 'Asia/Seoul', dateStyle: 'short', timeStyle: 'short' }).format(date);
+  // 목록 날짜 = 한국 시각 기준 올해 MM.DD · 다른 해 YY.MM.DD(시각은 목록에 두지 않는다 — work/owner-concept/list-format-1030.md 7).
+  const listDay = value => {
+    const date = new Date(value); if (Number.isNaN(date.getTime())) return '날짜 확인 불가';
+    const part = d => Object.fromEntries(new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Seoul', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(d).map(x => [x.type, x.value]));
+    const p = part(date), now = part(new Date());
+    return p.year === now.year ? `${p.month}.${p.day}` : `${p.year.slice(2)}.${p.month}.${p.day}`;
   };
   const updateDrawerFade = () => {
     const box = drawer?.querySelector('[data-th-detail]'); if (!box) return;
     box.classList.toggle('th-fade-top', box.scrollTop > 1);
     box.classList.toggle('th-fade-bottom', box.scrollTop + box.clientHeight < box.scrollHeight - 1);
   };
+  // 서랍 목록 = 목록 한 벌(fl-rectable · list-format-1030.md): 종류마다 열을 정하고 동작은 '처리 ›' 하나.
+  const go = (href, label) => `<a class="fl-rec-process" href="${href}" aria-label="${label}">처리 ›</a>`;
   const detail = (card, data, actor) => {
     const rows = data.rows || [];
+    const spec = {
+      lessons: [['시작'], ['반']],
+      attendance: [['반'], ['미입력', 'al-r']],
+      reports: [['원생']],
+      tasks: [['업무', 'wrap']],
+    }[card] || [['원생'], ['날짜'], ['보드'], ['내용', 'wrap']];
     const line = row => {
-      if (card === 'lessons') return `<li><a href="#v2-timetable">${esc(row.start)} · ${esc(row.className)}</a></li>`;
-      if (card === 'attendance') return `<li><a href="#v2-attendance?v2path=${encodeURIComponent(`/attendance/${data.today}/${row.classId}`)}&viewer=${actor}">${esc(row.className)} · ${fmt(row.missing)}칸</a></li>`;
-      if (card === 'reports') return `<li><a href="#v2-onescreen?teacher=${actor}&student=${row.studentId}&teacherHome=1">${esc(row.name)}</a></li>`;
-      if (card === 'tasks') return `<li><button type="button" data-th-case="${esc(row.id)}">${esc(row.title)}</button></li>`;
+      if (card === 'lessons') return `<tr><th scope="row">${esc(row.start)}</th><td><span class="fl-cut">${esc(row.className)}</span></td><td class="fl-rec-go">${go('#v2-timetable', `${esc(row.className)} 시간표 열기`)}</td></tr>`;
+      if (card === 'attendance') return `<tr><th scope="row"><span class="fl-cut">${esc(row.className)}</span></th><td class="al-r">${fmt(row.missing)}칸</td><td class="fl-rec-go">${go(`#v2-attendance?v2path=${encodeURIComponent(`/attendance/${data.today}/${row.classId}`)}&viewer=${actor}`, `${esc(row.className)} 출석부 열기`)}</td></tr>`;
+      if (card === 'reports') return `<tr><th scope="row"><span class="fl-cut">${esc(row.name)}</span></th><td class="fl-rec-go">${go(`#v2-onescreen?teacher=${actor}&student=${row.studentId}&teacherHome=1`, `${esc(row.name)} 수업보고서 열기`)}</td></tr>`;
+      if (card === 'tasks') return `<tr><th scope="row" class="wrap">${esc(row.title)}</th><td class="fl-rec-go"><button type="button" class="fl-rec-process" data-th-case="${esc(row.id)}" aria-label="${esc(row.title)} 처리">처리 ›</button></td></tr>`;
       const link = parentLink(row.link);
-      return `<li><strong>${esc(row.studentName || row.title || '학부모 글')}</strong>${row.boardName ? `<span> · ${esc(row.boardName)}</span>` : ''}<time>${esc(shownAt(row.createdAt))}</time><p>${esc(row.content || '')}</p>${link ? `<a href="${esc(link)}" target="_blank" rel="noopener noreferrer">원래 글 열기</a>` : ''}</li>`;
+      return `<tr><th scope="row"><span class="fl-cut">${esc(row.studentName || row.title || '학부모 글')}</span></th><td>${esc(listDay(row.createdAt))}</td><td><span class="fl-cut">${esc(row.boardName || '—')}</span></td><td class="wrap">${esc(row.content || '')}</td><td class="fl-rec-go">${link ? `<a class="fl-rec-process" href="${esc(link)}" target="_blank" rel="noopener noreferrer" aria-label="원래 글 열기">처리 ›</a>` : ''}</td></tr>`;
     };
     const note = card === 'reports' && data.pairs > rows.length ? `<p>원생 ${rows.length}명 · 학생×과목 ${data.pairs}건</p>` : '';
-    return `<h2>${LABEL[card]}</h2>${note}<ol>${rows.map(line).join('') || '<li>지금 확인할 항목이 없습니다.</li>'}</ol>`;
+    const head = `<thead><tr>${spec.map(([l, c]) => `<th scope="col"${c ? ` class="${c}"` : ''}>${l}</th>`).join('')}<th scope="col" class="fl-rec-go">처리</th></tr></thead>`;
+    return `<h2>${LABEL[card]}</h2>${note}${rows.length ? `<div class="fl-rectable-wrap"><table class="fl-rectable">${head}<tbody>${rows.map(line).join('')}</tbody></table></div>` : '<p class="v2s-note">지금 확인할 항목이 없습니다.</p>'}`;
   };
   function openDrawer(card) {
     const actor = currentActor, data = cache.get(key(actor, card))?.data;
@@ -96,7 +108,7 @@
     const rows = list.data.teachers;
     if (!rows.length) return `${head}<p class="v2s-note">재직 중인 선생님이 없습니다.</p>`;
     const subject = key => ctx.api?.subjectLabel?.(key) || '';
-    return `${head}<ul class="th-pick" aria-label="볼 선생님">${rows.map(t => `<li><a href="#v2-teacher-home?actor=${esc(t.id)}"><strong>${esc(t.name)}</strong><span>${esc(t.subjects.map(subject).filter(Boolean).join(' · ') || '담당 과목 없음')}</span></a></li>`).join('')}</ul>`;
+    return `${head}<div class="fl-rectable-wrap"><table class="fl-rectable th-pick" aria-label="볼 선생님"><thead><tr><th scope="col">이름</th><th scope="col">담당 과목</th><th scope="col" class="fl-rec-go">처리</th></tr></thead><tbody>${rows.map(t => `<tr><th scope="row"><span class="fl-cut">${esc(t.name)}</span></th><td>${esc(t.subjects.map(subject).filter(Boolean).join(' · ') || '담당 과목 없음')}</td><td class="fl-rec-go">${go(`#v2-teacher-home?actor=${esc(t.id)}`, `${esc(t.name)} 선생님 화면 열기`)}</td></tr>`).join('')}</tbody></table></div>`;
   }
   window.TeacherHome = { strip };
   S.register({ id: 'teacher-home', label: '선생님 오늘', render(ctx) {
