@@ -11,6 +11,7 @@ let SRC = null, STUBS = null, ts = null;
 const FILE_STUBS = {
   'lib/supabase/server.ts': 'supabase-server.mjs', 'lib/supabase/admin.ts': 'supabase-admin.mjs', 'lib/supabase/client.ts': 'supabase-browser.mjs',
   'lib/auth/current-user.ts': 'current-user.mjs', 'features/audit/server/log.ts': 'audit-log.mjs',
+  'features/slack/server/poke.ts': 'slack-poke.mjs',
   // 학원 설정(getTenantSettings) · 권한 표(perm-matrix) · 지점 보기 · 다른 강사 보기는 흉내 내지 않는다 — 2.0 코드 그대로 위 흉내 위에서 돈다.
 };
 const PKG_STUBS = { 'server-only': 'empty.mjs', 'next/cache': 'next-cache.mjs', 'next/headers': 'next-headers.mjs', 'next/navigation': 'next-navigation.mjs', 'next/server': 'next-server.mjs' };
