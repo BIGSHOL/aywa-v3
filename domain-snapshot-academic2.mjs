@@ -6,7 +6,7 @@ const SEND = { success: '발송 완료', failed: '발송 실패', recalled: '회
 const status = (prefix, labels) => Object.fromEntries(Object.entries(labels).map(([k, v]) => [`${prefix}:${k}`, v]));
 
 export async function attendanceFamilies(ctx) {
-  const { sql, t, asOf, month, monthStart, subjectLabel, subjectFacets } = ctx;
+  const { sql, t, asOf, monthStart, subjectLabel, subjectFacets } = ctx;
   const out = {};
   // 정정된 출결은 최신 줄만(supersedes_id), 기준일까지, 테스트 원생 제외 — snapshot.mjs와 같은 규칙.
   const valid = sql`(select a.* from public.attendance_records a where a.tenant_id=${t} and a.session_date <= ${asOf} and not exists (select 1 from public.attendance_records b where b.tenant_id=${t} and b.supersedes_id=a.id) and a.student_id not in (select id from public.students where tenant_id=${t} and coalesce(is_test,false)))`;
@@ -50,18 +50,27 @@ export async function attendanceFamilies(ctx) {
     sources: [{ table: 'classes', rows: cl.rows_all }, { table: 'enrollments', rows: cl.enrollments_all }, { table: 'classrooms', rows: cl.rooms }],
   });
 
-  // 보강 — 보강 예약(근거)과 이번 달 보강 출결.
-  const res = await sql`select m.id, s.name, c.class_name, m.absence_date::text absence, m.makeup_date::text makeup, m.status, coalesce(to_char(m.slot_start,'HH24:MI') || coalesce('~' || to_char(m.slot_end,'HH24:MI'), ''), m.period_label) slot from public.makeup_reservations m join public.students s on s.id=m.student_id and s.tenant_id=${t} left join public.classes c on c.id=m.class_id and c.tenant_id=${t} where m.tenant_id=${t} and not coalesce(s.is_test,false) order by m.makeup_date desc`;
+  // 보강 — 진행률은 어제까지 30일 보강일의 활성 반 예약, 목록에는 전체 예약 이력도 남긴다.
+  const res = await sql`select m.id, s.name, c.class_name, c.is_active active, u.display_name creator, m.absence_date::text absence, m.makeup_date::text makeup, m.status, coalesce(to_char(m.slot_start,'HH24:MI') || coalesce('~' || to_char(m.slot_end,'HH24:MI'), ''), m.period_label) slot from public.makeup_reservations m join public.students s on s.id=m.student_id and s.tenant_id=${t} left join public.classes c on c.id=m.class_id and c.tenant_id=${t} left join public.users u on u.id=m.created_by and u.tenant_id=${t} where m.tenant_id=${t} and not coalesce(s.is_test,false) order by m.makeup_date desc`;
   const [mk] = await sql`select (select count(*)::int from public.makeup_cases where tenant_id=${t}) cases, (select count(*)::int from ${valid} v where status='makeup' and session_date >= ${monthStart}) month_makeup`;
   const overdue = res.filter(r => r.status === 'reserved' && r.makeup < asOf), upcoming = res.filter(r => r.status === 'reserved' && r.makeup >= asOf);
+  const progressFrom = addDays(asOf, -30), progressTo = addDays(asOf, -1);
+  const progress = res.filter(r => r.active && r.makeup >= progressFrom && r.makeup <= progressTo && ['reserved', 'done'].includes(r.status));
+  const done = progress.filter(r => r.status === 'done').length, pending = progress.filter(r => r.status === 'reserved');
+  const older = overdue.filter(r => r.makeup < progressFrom);
   out.makeups = family('makeups', '보강관리', {
-    summary: `보강 예약 중 완료 ${res.filter(r => r.status === 'done').length}건 · 보강 처리 기록 ${mk.cases}건.`,
-    metrics: [metric('전체 보강 예약', res.length, '건'), metric('다가오는 보강 예약', upcoming.length, '건', '보강일이 기준일부터'), metric('보강일이 지난 예약', overdue.length, '건', '보강 출결이 아직 없는 예약'), metric('이번 달 보강 출결', mk.month_makeup, '칸'), metric('보강 처리 기록', mk.cases, '건')],
+    summary: `${progress.length ? `보강 진행률 ${Math.round(done / progress.length * 1000) / 10}%` : '보강 진행률 집계할 예약 없음'} · 지난 30일 보강 ${progress.length}건 중 ${done}건 진행 · 미진행 ${pending.length}건.`,
+    metrics: [metric('보강 진행률', progress.length ? Math.round(done / progress.length * 1000) / 10 : null, '%', `어제까지 30일 보강일 · ${progress.length}건 중 ${done}건 진행 · 미진행 ${pending.length}건`),
+      metric('다가오는 보강 예약', upcoming.filter(r => r.active).length, '건', '보강일이 오늘부터'), metric('전체 보강 예약', res.length, '건'),
+      metric('보강일이 지난 예약', overdue.length, '건', '전체 기간 · 보강 출결이 아직 없는 예약'), metric('이번 달 보강 출결', mk.month_makeup, '칸'), metric('보강 처리 기록', mk.cases, '건')],
     // 이름 칸 = 원생, 내용 = 반, 날짜 = 보강일. 결석일·보강 시간은 칸으로.
-    evidence: res.map(r => record({ id: r.id, label: r.name, detail: r.class_name || '반 없음', date: r.makeup, status: r.status === 'done' ? '완료' : '예약', fields: [field('결석일', md(r.absence)), field('보강 시간', r.slot)], facets: [`status:${r.status}`, overdue.includes(r) && 'overdue'] })),
-    facetLabels: { 'status:reserved': '예약', 'status:done': '완료', overdue: '보강일 지남' }, recordSource: 'makeup_reservations', detailLabel: '반', dateLabel: '보강일',
-    signals: overdue.length ? [signal({ id: 'makeup-overdue', title: `보강일이 지난 보강 예약 ${overdue.length}건`, summary: `보강 출결이 아직 없습니다: ${overdue.slice(0, 3).map(r => `${r.name} ${md(r.makeup)}`).join(' · ')}${overdue.length > 3 ? ` 외 ${overdue.length - 3}건` : ''}.`, priority: PRIORITY.check, source: '보강 예약', recordIds: overdue.map(r => r.id), facet: 'overdue', at: latest(overdue.map(r => r.makeup)), draft: { title: '지난 보강 예약 확인', body: '보강일이 지난 예약의 실제 보강 여부를 확인하고 출결을 정리해 주세요.' } })] : [],
-    sourceLabel: '보강 예약 · 보강 출결', coverageNote: '목록은 보강 예약입니다(보강일 늦은 순). 예약 없이 바로 기록한 보강은 보강 출결 칸 수에만 들어갑니다.',
+    evidence: res.map(r => record({ id: r.id, label: r.name, detail: r.class_name || '반 없음', date: r.makeup, status: r.status === 'done' ? '완료' : '예약', fields: [field('결석일', md(r.absence)), field('보강 시간', r.slot), field('세운 사람', r.creator || '기록 없음')], facets: [`status:${r.status}`, overdue.includes(r) && 'overdue', pending.includes(r) && 'progress-pending', older.includes(r) && 'older-pending'] })),
+    facetLabels: { 'status:reserved': '예약', 'status:done': '완료', overdue: '보강일 지남', 'progress-pending': '최근 30일 미진행', 'older-pending': '30일보다 오래된 미진행' }, recordSource: 'makeup_reservations', detailLabel: '반', dateLabel: '보강일',
+    signals: [
+      ...(pending.length ? [signal({ id: 'makeup-overdue', title: `지난 30일 보강 미진행 ${pending.length}건`, summary: `보강일이 지났지만 출결로 진행을 확인하지 못했습니다: ${pending.slice(0, 3).map(r => `${r.name} ${md(r.makeup)}`).join(' · ')}${pending.length > 3 ? ` 외 ${pending.length - 3}건` : ''}.`, priority: PRIORITY.check, source: '보강 예약', recordIds: pending.map(r => r.id), facet: 'progress-pending', at: latest(pending.map(r => r.makeup)), draft: { title: '지난 보강 예약 확인', body: '보강일이 지난 예약의 실제 보강 여부를 확인하고 출결을 정리해 주세요.' } })] : []),
+      ...(older.length ? [signal({ id: 'makeup-overdue-older', title: `30일보다 오래된 보강 미진행 ${older.length}건`, summary: '보강일이 지난 예약의 출결을 확인해 주세요.', priority: PRIORITY.check, source: '보강 예약', recordIds: older.map(r => r.id), facet: 'older-pending', at: latest(older.map(r => r.makeup)), draft: { title: '오래된 보강 예약 확인', body: '오래된 미진행 보강 예약의 실제 진행 여부를 확인하고 출결을 정리해 주세요.' } })] : []),
+    ],
+    sourceLabel: '보강 예약 · 보강 출결', coverageNote: '진행률은 활성 반의 어제까지 30일 보강일 기준입니다. 목록은 전체 예약 이력(보강일 늦은 순)이며 테스트 원생은 제외합니다.',
     sources: [{ table: 'makeup_reservations', rows: res.length }, { table: 'makeup_cases', rows: mk.cases }],
   });
 
@@ -70,7 +79,7 @@ export async function attendanceFamilies(ctx) {
 }
 
 async function reportFamilies(ctx) {
-  const { sql, t, asOf, month, monthStart, notTest, subjectLabel, subjectFacets, skillAreaLabel } = ctx;
+  const { sql, t, asOf, monthStart, notTest, subjectLabel, subjectFacets, skillAreaLabel } = ctx;
   const out = {};
   // 교재목록 — 사용 중인 교재(근거)·차수·반 배정 계획.
   const books = await sql`select b.id, b.title, b.subject, b.skill_area, b.session_count, (select count(*)::int from public.textbook_lessons l where l.tenant_id=${t} and l.textbook_id=b.id) lessons, (select count(*)::int from public.class_textbook_plans p where p.tenant_id=${t} and p.textbook_id=b.id and p.is_active) plans from public.textbooks b where b.tenant_id=${t} and b.is_active order by plans desc, b.subject, b.title`;

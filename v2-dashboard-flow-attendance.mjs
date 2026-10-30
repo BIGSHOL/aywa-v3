@@ -1,11 +1,11 @@
-// 운영실 '흐름'(확장 추세) — 출결·수업 쪽 지표(원장 10-28 *"기존 2.0 kpi들을 전부 흐름으로"*). 상단 칸 셋(오늘첫수업 · 최근 결석 · 보강예정)과
+// 운영실 '흐름'(확장 추세) — 출결·수업 쪽 지표. 상단 칸 셋(오늘첫수업 · 최근 결석 · 보강 진행률)과
 // 위젯 하나(최근 14일 등원율). 판정은 운영실 영역(v2-dashboard-attendance.mjs)과 2.0 통계 화면이 쓰는 것과 같다(같은 데이터는 같은 원본) —
 // 여기는 그 판정을 화면이 고른 창(일 31 · 주 13 · 월 12 · 연 3)마다 돌릴 뿐이다.
 //   first-classes   2.0 firstClassTrend(students/stats/first-class-trend.ts — 원생 통계 '첫 수업 추이')를 날마다 → 창 안 날의 합. 재료 = 2.0
 //                   loadRangeEnrollmentRows(그 기간에 시작한 수강이 있는 학생의 수강 전건). 에이와 수강 기록이 갖춰진 달(trustFrom) 전 날은 세지 않는다.
 //   recent-absent   운영실 '최근 결석'(getScopedRecentAbsences → foldRecentAbsences)을 창 범위로 — 창 안에 결석한 학생 수(한 학생은 한 번). 오늘은 세지 않는다.
-//   makeups         운영실 '보강예정'(loadUpcomingMakeup — 그날부터 한 달 + 지난 60일 미이행)을 창 끝 날 기준으로. 지난 날짜는 그날 복사본을 뜬 시각과
-//                   같은 시각의 예약 상태로 되감는다: 예약 표(생성 시각 · 이행 시각) + 감사로그(예약 · 취소 · 이행 · 되돌림 — 취소하면 표에서 줄이 지워진다).
+//   makeups         운영실 '보강 진행률' — 창 끝 날 전 30일 보강 예약 중 그 시점까지 이행(done)된 비율. 오늘 보강일은 제외한다.
+//                   지난 날짜는 그날 복사본을 뜬 시각의 상태로 되감는다: 예약 표 + 감사로그(예약 · 취소 · 이행 · 되돌림).
 //   attendance-rate 2.0 등원율((출석 + 지각) ÷ 유효 출결 칸 — 운영실 '최근 14일 등원율' · 출결 통계 '등원율 추이')을 창마다. 날마다 묶는 것은 2.0 DB 함수
 //                   attendance_rate_buckets 본문 그대로(지점 조건만 바꿈) — 창 = 그 날들의 합. 오늘도 센다(2.0 카드의 마지막 점이 오늘이다 · 분모가 기록 칸이라
 //                   수업 전이면 그날은 '기록 없음'이지 0%가 아니다).
@@ -14,13 +14,13 @@
 //   결석 과목별·반별·담당별(두 반·두 과목·두 선생님 수업을 빠지면 양쪽).
 // · 필터를 걸면 전체가 그 기준 값이 되고, 다른 기준의 줄은 같은 판정으로 그 안에서 다시 가른다(첫 수업 종류 × 과목 · 결석은 결석 한 번마다 · 보강은 예약마다).
 // · 지난 기간: 첫 수업·결석·등원율은 지금 기록으로 그 날짜를 다시 센다(2.0 통계 화면과 같다 — 늦게 들어온·고친 기록이 그 날짜에 든다).
-//   보강예정만 그날 알던 예약으로 되감는다. 반 활성 여부·학생 존재는 지금 값이다(2.0 카드도 지금 활성 반만 본다).
-// · 기록 범위: 첫 수업·결석(흐름)은 창이 기록 시작 전에 시작하면 '기록 없음' · 보강예정(그날의 예약 상태)·등원율(비율)은 창 끝 날이 기록 시작 전이면.
-// · 새 보강 체계(makeups.mode)가 켜진 학원이면 보강예정은 실패로 알린다(운영실 영역과 같다 — 그 참여 조회를 옮기지 않았다).
+//   보강 진행률은 그날 알던 상태로 되감는다. 반 활성 여부·학생 존재는 지금 값이다.
+// · 기록 범위: 첫 수업·결석(흐름)은 창이 기록 시작 전에 시작하면 '기록 없음' · 보강 진행률·등원율(비율)은 창 끝 날이 기록 시작 전이면.
+// · 새 보강 체계(makeups.mode)가 켜진 학원이면 보강 진행률은 실패로 알린다(운영실 영역과 같다 — 그 참여 조회를 옮기지 않았다).
 // · 읽기 전용 · 쓰기 없음 · 바깥 호출 없음.
 import { queryGate, copyClock } from './v2-onescreen-roster.mjs';
 import { rules as kpiRules, consts, tenantSettings, recordTrustFrom } from './v2-student-kpis.mjs';
-import { rules as attendanceRules, byChunks, OVERDUE_LOOKBACK_DAYS, recentAbsenceRows, cellAxes } from './v2-dashboard-attendance.mjs';
+import { rules as attendanceRules, byChunks, recentAbsenceRows, cellAxes } from './v2-dashboard-attendance.mjs';
 import { kpi, weekWindows, addDays } from './domain-snapshot-core.mjs';
 import { tenantId as COPY_TENANT } from './full-db.mjs';
 import { isolated } from './v2-dashboard-isolate.mjs';
@@ -175,7 +175,7 @@ async function absentSeries({ sql, asOf, tenantId: t = COPY_TENANT, importV2, wi
   return { since, ...await namedRecords(b.gate, t, b.load, { total, rows, ...(records ? { records } : {}) }) };
 }
 
-// ── 보강예정 ──────────────────────────────────────────────────────────────────────────────────────────────────────────
+// ── 보강 진행률 ───────────────────────────────────────────────────────────────────────────────────────────────────────
 const LIFE_STATUS = { makeup_reserve: 'reserved', makeup_reserve_cancel: 'gone', makeup_reserve_done: 'done', makeup_reserve_revert: 'reserved' };
 /**
  * 보강 예약마다 생애(생성 → 이행·되돌림·취소) — 표(지금 상태 · 생성 시각 · 이행 시각)와 감사로그(예약 · 취소 · 이행 · 되돌림, 예약 id가 실린 것).
@@ -185,8 +185,10 @@ const LIFE_STATUS = { makeup_reserve: 'reserved', makeup_reserve_cancel: 'gone',
 async function makeupLives(b) {
   const t = b.t;
   const [rows, logs, classes] = await Promise.all([
-    b.gate`select id::text id, student_id::text student_id, class_id::text class_id, makeup_date::text makeup_date, status,
-        to_json(created_at)#>>'{}' created_at, to_json(done_at)#>>'{}' done_at from public.makeup_reservations where tenant_id=${t} order by id`,
+    b.gate`select m.id::text id, m.student_id::text student_id, m.class_id::text class_id, m.absence_date::text absence_date,
+        m.makeup_date::text makeup_date, m.status, m.slot_start::text slot_start, m.created_by::text created_by,
+        to_json(m.created_at)#>>'{}' created_at, to_json(m.done_at)#>>'{}' done_at
+      from public.makeup_reservations m where m.tenant_id=${t} order by m.id`,
     b.gate`select action, metadata, to_json(created_at)#>>'{}' created_at from public.audit_logs where tenant_id=${t}
       and action in ('makeup_reserve', 'makeup_reserve_cancel', 'makeup_reserve_done', 'makeup_reserve_revert') and metadata->>'reservationId' is not null order by created_at, id`,
     b.gate`select id::text id, class_name, subject from public.classes where tenant_id=${t} and is_active = true order by id`]);
@@ -199,7 +201,8 @@ async function makeupLives(b) {
   }
   for (const r of rows) {
     const x = life(r.id);
-    x.info = { studentId: r.student_id, classId: r.class_id, makeupDate: r.makeup_date };
+    x.info = { studentId: r.student_id, classId: r.class_id, makeupDate: r.makeup_date, absenceDate: r.absence_date,
+      slotStart: r.slot_start, createdBy: r.created_by };
     x.final = r.status === 'done' ? 'done' : 'reserved';
     x.events.push({ ms: Date.parse(r.created_at), status: 'reserved' });
     if (x.final === 'done' && r.done_at && !x.events.some((e) => e.status === 'done')) x.events.push({ ms: Date.parse(r.done_at), status: 'done' });
@@ -209,11 +212,14 @@ async function makeupLives(b) {
   const classById = new Map(classes.map((c) => [c.id, c]));
   const known = [...lives.values()].filter((x) => x.info && classById.has(x.info.classId));
   const studentIds = [...new Set(known.map((x) => x.info.studentId).filter(Boolean))];
-  const students = new Set(studentIds.length ? (await b.gate`select id::text id from public.students where tenant_id=${t} and id = any(${studentIds}::uuid[])`).map((s) => s.id) : []);
+  const students = new Map(studentIds.length ? (await b.gate`select id::text id, name from public.students where tenant_id=${t} and not coalesce(is_test,false) and id = any(${studentIds}::uuid[])`).map((s) => [s.id, s.name]) : []);
+  const creatorIds = [...new Set(rows.map((r) => r.created_by).filter(Boolean))];
+  const creators = new Map(creatorIds.length ? (await b.gate`select id::text id, display_name from public.users where tenant_id=${t} and id = any(${creatorIds}::uuid[])`).map((u) => [u.id, u.display_name]) : []);
   return {
     since: Number.isFinite(firstMs) ? b.R.kst.kstDateOf(new Date(firstMs)) : null,
     items: known.filter((x) => students.has(x.info.studentId)).map((x) => ({ ...x, makeupDate: String(x.info.makeupDate).slice(0, 10), classId: x.info.classId,
-      className: classById.get(x.info.classId).class_name, subject: classById.get(x.info.classId).subject })),
+      className: classById.get(x.info.classId).class_name, subject: classById.get(x.info.classId).subject,
+      name: students.get(x.info.studentId), createdByName: creators.get(x.info.createdBy) || null })),
   };
 }
 /** 그 순간의 상태 — 지금(복사본을 뜬 순간) 이후는 표, 그 전은 그때까지의 마지막 기록(생기기 전이면 없음). */
@@ -231,15 +237,21 @@ async function makeupSeries({ sql, asOf, tenantId: t = COPY_TENANT, importV2, wi
   const keysOf = { subject: (x) => [b.classGroupKey(x.subject, x.classId)], class: (x) => [x.classId] };
   const labelOf = { subject: b.groupLabel, class: (k) => items.find((x) => x.classId === k)?.className ?? '반 이름 없음' };
   const keep = filter && keysOf[filter.dim] ? (x) => keysOf[filter.dim](x).includes(filter.key) : () => true;
-  // 창 끝 날의 운영실 칸 — 그날부터 한 달(monthAheadWindow) + 지난 60일, 그 순간 예약 상태인 것.
+  // 각 창 끝 전 30일의 보강일 · 그 시점까지 완료한 예약 비율. 오늘 보강일은 아직 세지 않는다.
   const lists = windows.map((w) => {
     const day = min(w.to, today);
     if (before(w, since) || w.from > today) return null;
-    const range = R.upcoming.monthAheadWindow(day), from = R.week.shiftDays(day, -OVERDUE_LOOKBACK_DAYS), ms = b.at(day).getTime();
-    return items.filter((x) => keep(x) && x.makeupDate >= from && x.makeupDate <= range.end && stateAt(x, ms, nowMs) === 'reserved');
+    const from = R.week.shiftDays(day, -30), to = R.week.shiftDays(day, -1), ms = b.at(day).getTime();
+    return items.filter((x) => keep(x) && x.makeupDate >= from && x.makeupDate <= to)
+      .map((x) => ({ ...x, asOfStatus: stateAt(x, ms, nowMs) })).filter((x) => x.asOfStatus === 'reserved' || x.asOfStatus === 'done');
   });
-  const records = filter ? lists.map((l) => l && l.map((x) => ({ id: x.info.studentId, key: x.id, date: x.makeupDate, dateLabel: '보강일', ...(x.className ? { note: x.className } : {}) }))) : null;
-  return { since, ...await namedRecords(b.gate, t, b.load, { total: lists.map((l) => one(l?.length)), rows: keysOf[by] ? tally(lists, keysOf[by], labelOf[by]) : [],
+  const share = (list) => list === null ? null : list.length ? [list.filter((x) => x.asOfStatus === 'done').length, list.length] : null;
+  const records = filter ? lists.map((l) => l && l.filter((x) => x.asOfStatus === 'reserved').map((x) => ({ id: x.id, reportId: x.id, key: x.id, student: false,
+    name: x.name, date: x.makeupDate, dateLabel: '보강일', note: `${x.className} · 결석일 ${x.info.absenceDate || '기록 없음'} · 세운 사람 ${x.createdByName || '기록 없음'}` }))) : null;
+  const keys = keysOf[by], grouped = keys ? [...new Set(items.filter(keep).flatMap(keys))].map((key) => ({ key, label: labelOf[by](key),
+    points: lists.map((list) => share(list?.filter((x) => keys(x).includes(key)) ?? null)) }))
+    .filter((row) => row.points.some(Boolean)).sort((a, c) => c.points.reduce((n, p) => n + (p?.[1] ?? 0), 0) - a.points.reduce((n, p) => n + (p?.[1] ?? 0), 0) || a.label.localeCompare(c.label, 'ko')) : [];
+  return { since, ...await namedRecords(b.gate, t, b.load, { total: lists.map(share), rows: grouped,
     ...(records ? { records } : {}) }) };
 }
 
@@ -277,30 +289,32 @@ export const ATTENDANCE_TREND_METRICS = Object.freeze([
   { id: 'first-classes', label: '첫 수업', group: '운영실', unit: '명', better: 'up', dims: [{ id: 'kind', label: '종류별' }, SUBJECT_DIM], series: firstClassSeries },
   { id: 'recent-absent', label: '최근 결석', group: '운영실', unit: '명', better: 'down', endsYesterday: true,
     dims: [SUBJECT_DIM, { id: 'teacher', label: '담당 선생님별' }, { id: 'class', label: '반별' }], series: absentSeries },
-  { id: 'makeups', label: '보강예정', group: '운영실', unit: '건', better: 'down', dims: [SUBJECT_DIM, { id: 'class', label: '반별' }], series: makeupSeries },
+  { id: 'makeups', label: '보강 진행률', group: '운영실', unit: '%', better: 'up', dims: [SUBJECT_DIM, { id: 'class', label: '반별' }], series: makeupSeries },
   { id: 'attendance-rate', label: '등원율', group: '운영실', unit: '%', better: 'up', dims: [SUBJECT_DIM], series: attendanceRateSeries },
 ].map((m) => Object.freeze(m)));
 
 /**
- * 운영실 KPI 카드 셋 [오늘첫수업, 최근 결석, 보강예정](kpi() 모양) — 점 = 위 지표에 최근 7일 창 8개(최근 결석은 어제까지)를 넣은 전체 값.
- * 큰 숫자 = 마지막 점: 최근 결석·보강예정의 마지막 창은 2.0 칸과 같은 기간이라 2.0 칸 값과 같다. `sql` = 읽기 전용 트랜잭션.
+ * 운영실 KPI 카드 셋 [오늘첫수업, 최근 결석, 보강 진행률](kpi() 모양). 보강 점은 창 끝 전 30일의 이행률이다.
+ * 큰 숫자 = 마지막 점: 최근 결석은 2.0 칸과 같고 보강은 운영실 영역 progress와 같다. `sql` = 읽기 전용 트랜잭션.
  * ⚠️ 같은 트랜잭션의 다른 조회와 `Promise.all`로 나란히 부르지 말 것 — 안의 저장점 조회가 실패하면 나란히 돌던 조회까지 깨진다(따로 await).
  */
 export async function attendanceKpiCards({ sql, asOf, tenantId = COPY_TENANT, importV2 }) {
   const weeks = weekWindows(asOf, 8), untilYesterday = weekWindows(addDays(asOf, -1), 8);
   const args = { asOf, tenantId, importV2, by: null, filter: null };
-  // 차례대로 · 카드마다 저장점 — 한 카드가 실패해도(보강예정의 새 보강 체계 · DB 오류) 다른 카드는 선다(실패는 로그로).
+  // 차례대로 · 카드마다 저장점 — 한 카드가 실패해도(새 보강 체계 · DB 오류) 다른 카드는 선다(실패는 로그로).
   const card = async (what, fn) => { try { return await isolated(sql, fn); } catch (e) { console.error(`운영실 KPI(${what}): ${e?.message ?? e}`); return null; } };
   const first = await card('첫 수업', (sp) => firstClassSeries({ ...args, sql: sp, windows: weeks }));
   const absent = await card('최근 결석', (sp) => absentSeries({ ...args, sql: sp, windows: untilYesterday }));
-  const makeups = await card('보강예정', (sp) => makeupSeries({ ...args, sql: sp, windows: weeks }));
+  const makeups = await card('보강 진행률', (sp) => makeupSeries({ ...args, sql: sp, windows: weeks }));
   const points = (ws, s) => ws.map((w, i) => ({ label: w.label, value: s.total[i]?.[0] ?? null }));
   return [
     first && kpi(ATTENDANCE_TREND_METRICS.find(m => m.id === 'first-classes').label, '명', points(weeks, first), { id: 'first-classes', better: 'up', period: 'week', span: '최근 7일',
       basis: '그 7일 동안 날마다 집계한 첫 수업 원생의 합 · 첫 등원과 처음 듣는 과목의 첫 수업 · 반 이동과 듣던 과목의 반 추가는 제외' }),
     absent && kpi(ATTENDANCE_TREND_METRICS.find(m => m.id === 'recent-absent').label, '명', points(untilYesterday, absent), { id: 'recent-absent', better: 'down', period: 'week', span: '어제까지 7일',
       basis: '그 7일 동안 한 번이라도 결석한 원생(한 원생은 한 번) · 같은 칸을 고쳐 찍었으면 최종 기록' }),
-    makeups && kpi(ATTENDANCE_TREND_METRICS.find(m => m.id === 'makeups').label, '건', points(weeks, makeups), { id: 'makeups', better: 'down', period: 'week', span: '오늘부터 한 달',
-      basis: '그날 예약 상태인 보강(그날부터 한 달 안 + 지난 60일 안 아직 안 한 것) · 지난 주 점은 그 주의 끝 날 같은 시각의 예약 상태' }),
+    makeups && kpi(ATTENDANCE_TREND_METRICS.find(m => m.id === 'makeups').label, '%', weeks.map((w, i) => ({ label: w.label,
+      value: makeups.total[i]?.[1] ? Math.round(makeups.total[i][0] / makeups.total[i][1] * 1000) / 10 : null })),
+    { id: 'makeups', better: 'up', period: 'week', span: '어제까지 30일',
+      basis: '보강일이 지난 30일 예약 중 실제 진행한 비율 · 오늘 보강일은 제외' }),
   ].filter(Boolean);
 }

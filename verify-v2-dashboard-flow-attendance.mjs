@@ -1,5 +1,5 @@
 // 운영실 '흐름' 출결·수업 지표 시험 — node --test experiments/owner-concept/verify-v2-dashboard-flow-attendance.mjs
-// 카드: 최근 결석·보강예정의 큰 숫자 = 운영실 영역(v2-dashboard-attendance.mjs) 칸 값 · 첫 수업의 마지막 점 = 운영실 '오늘첫수업' 칸을 7일 더한 값.
+// 카드: 최근 결석은 운영실 칸 수, 보강 진행률은 운영실 영역의 어제까지 30일 done/예약 · 첫 수업 마지막 점은 칸 7일의 합.
 // 지표: 일·주·월 창을 2.0 조건을 따로 적은 계산(원본 줄을 직접 읽어 칸마다 최신 정정 · 첫 수업 판정 · 예약 생애)과 대조하고, 기준별 줄의 합과
 // 전체의 관계(같음 · 겹침)와 '필터를 건 전체 = 그 키의 줄'을 확인한다. 날짜·건수는 고정하지 않는다. 복사본 DB가 없으면 건너뛴다. 모두 읽기 전용.
 import test from 'node:test';
@@ -67,7 +67,7 @@ async function filterMatches(id, windows, dim, rows) {
   }
 }
 
-test('카드 셋: [첫 수업 · 최근 결석 · 보강예정] · 지표 id · 최근 7일 창 8개 · 최근 결석·보강예정 큰 숫자 = 운영실 칸 · 첫 수업 마지막 점 = 칸 7일의 합', { skip: SKIP }, async (tc) => {
+test('카드 셋: [첫 수업 · 최근 결석 · 보강 진행률] · 지표 id · 8개 추세점 · 운영실 칸과 일치', { skip: SKIP }, async (tc) => {
   assert.deepEqual(cards.map((c) => c.id), ['first-classes', 'recent-absent', 'makeups']);
   for (const c of cards) {
     assert.ok(M[c.id], c.id);
@@ -79,7 +79,7 @@ test('카드 셋: [첫 수업 · 최근 결석 · 보강예정] · 지표 id · 
   assert.deepEqual(cards[0].points.map((p) => p.label), weekWindows(asOf, 8).map((w) => w.label));
   const [absent, makeup] = [await areaAt([asOf], 'absent'), await areaAt([asOf], 'makeup')];
   assert.equal(cards[1].value, absent[asOf].students.length, '최근 결석 = 운영실 칸');
-  assert.equal(cards[2].value, makeup[asOf].rows.length, '보강예정 = 운영실 칸');
+  assert.equal(cards[2].value, makeup[asOf].progress.rate, '보강 진행률 = 운영실 칸');
   // 운영실 '오늘첫수업'(그날 판정 — 그날 시작·종료하는 수강의 학생)을 7일 더한 값 = 기간 판정(그 기간에 시작한 수강의 학생)의 마지막 주.
   const days = Array.from({ length: 7 }, (_, i) => addDays(asOf, i - 6));
   const firsts = await areaAt(days, 'firstClass');
@@ -157,55 +157,32 @@ test('결석한 학생: 일·주·월 창(어제까지) = 칸마다 최신 정�
   tc.diagnostic(notes.join(' · '));
 });
 
-test('보강예정: 창 끝 날의 예약 상태(그날 같은 시각) = 표·감사로그로 따로 만든 예약 구간 · 마지막 창 = 운영실 칸 · 과목·반별 줄의 합 = 전체', { skip: SKIP }, async (tc) => {
-  // 예약 구간 — 생성(표의 생성 시각 · 지워진 예약은 예약 기록) 또는 되돌림에서 열리고, 이행·취소에서 닫힌다. 표에 예약 상태로 남은 예약은 지금까지 열려 있고,
-  // 이행 상태인데 이행 기록이 없으면 표의 이행 시각에서 닫는다. 지금 활성인 반 · 있는 학생의 예약만(운영실 칸과 같은 대상).
-  const [table, logs, active, students] = await Promise.all([
-    db`select id::text id, makeup_date::text md, class_id::text cid, student_id::text sid, status, to_json(created_at)#>>'{}' c, to_json(done_at)#>>'{}' done from public.makeup_reservations where tenant_id=${t}`,
-    db`select action, metadata->>'reservationId' id, metadata->>'makeupDate' md, metadata->>'classId' cid, metadata->>'studentId' sid, to_json(created_at)#>>'{}' ts
-      from public.audit_logs where tenant_id=${t} and action in ('makeup_reserve', 'makeup_reserve_cancel', 'makeup_reserve_done', 'makeup_reserve_revert') order by created_at, id`,
-    db`select id::text id from public.classes where tenant_id=${t} and is_active`,
-    db`select id::text id from public.students where tenant_id=${t}`]);
-  const isActive = new Set(active.map((r) => r.id)), exists = new Set(students.map((r) => r.id)), inTable = new Map(table.map((r) => [r.id, r]));
-  const spans = [];
-  for (const [id, events] of byKey(logs, (l) => l.id)) {
-    const row = inTable.get(id), info = row ?? events.find((e) => e.action === 'makeup_reserve');
-    if (!info || !isActive.has(info.cid) || !exists.has(info.sid)) continue;
-    let open = row ? Date.parse(row.c) : null;
-    for (const e of events) {
-      const ms = Date.parse(e.ts);
-      if (e.action === 'makeup_reserve' || e.action === 'makeup_reserve_revert') open ??= ms;
-      else if (open !== null) { spans.push({ md: info.md, cMs: open, eMs: ms }); open = null; }
-    }
-    if (open !== null) spans.push({ md: info.md, cMs: open, eMs: row?.status === 'reserved' ? Infinity : row?.done ? Date.parse(row.done) : open });
-  }
-  for (const row of table) if (!logs.some((l) => l.id === row.id) && isActive.has(row.cid) && exists.has(row.sid))
-    spans.push({ md: row.md, cMs: Date.parse(row.c), eMs: row.status === 'reserved' ? Infinity : Date.parse(row.done) });
-  const firstDay = new Date(Math.min(...logs.map((l) => Date.parse(l.ts)), ...table.map((r) => Date.parse(r.c))) + 9 * 3600000).toISOString().slice(0, 10);
-  const [kept, gone] = [table.length, new Set(logs.filter((l) => !inTable.has(l.id)).map((l) => l.id)).size];
-  const at = (d) => clock.at.getTime() - (Date.parse(`${asOf}T00:00:00Z`) - Date.parse(`${d}T00:00:00Z`));
-  const monthEnd = (d) => {
-    const [y, m, dd] = d.split('-').map(Number), ny = m === 12 ? y + 1 : y, nm = m === 12 ? 1 : m + 1, last = new Date(Date.UTC(ny, nm, 0)).getUTCDate();
-    return dd > last ? `${ny}-${String(nm).padStart(2, '0')}-${last}` : new Date(Date.UTC(ny, nm - 1, dd - 1)).toISOString().slice(0, 10);
-  };
-  const notes = [];
+test('보강 진행률: 어제까지 30일 done/예약 · 미진행 목록 · 과목·반별 분자와 분모 합 · 필터', { skip: SKIP }, async (tc) => {
+  const base = await db`select m.id::text id, m.makeup_date::text d, m.status::text status, m.class_id::text cid, c.subject, c.english_track track
+    from public.makeup_reservations m join public.classes c on c.id=m.class_id and c.tenant_id=${t} and c.is_active
+    join public.students s on s.id=m.student_id and s.tenant_id=${t} and not coalesce(s.is_test,false)
+    where m.tenant_id=${t} and m.makeup_date between ${addDays(asOf,-30)} and ${addDays(asOf,-1)}
+      and m.status::text in ('reserved','done')`;
+  const done = base.filter((r) => r.status === 'done').length;
+  const day = await run('makeups', winOf('makeups', 'day'), 'class');
+  assert.deepEqual(day.total.at(-1), base.length ? [done, base.length] : null);
+  const area = (await areaAt([asOf], 'makeup'))[asOf].progress;
+  assert.deepEqual([area.done, area.total, area.rate], [done, base.length, base.length ? Math.round(done / base.length * 1000) / 10 : null]);
+  assert.deepEqual(area.pending.map((r) => r.id).sort(), base.filter((r) => r.status === 'reserved').map((r) => r.id).sort());
+  const card = cards.find((c) => c.id === 'makeups');
+  assert.deepEqual([card.label, card.unit, card.better, card.value], ['보강 진행률', '%', 'up', area.rate]);
   for (const grain of ['day', 'week', 'month']) {
-    const windows = winOf('makeups', grain), [out, byClass] = [await run('makeups', windows, 'subject'), await run('makeups', windows, 'class')];
-    assert.equal(out.since, firstDay, '믿을 첫날 = 첫 예약 기록');
-    windows.forEach((w, i) => {
-      if (out.since && w.to < out.since) { assert.equal(out.total[i], null); return; }
-      const d = w.to < asOf ? w.to : asOf, x = at(d);
-      const n = spans.filter((s) => s.cMs <= x && x < s.eMs && s.md >= addDays(d, -60) && s.md <= monthEnd(d)).length;
-      assert.deepEqual(out.total[i], [n, 1], `${grain} ${w.label}`);
-    });
-    relation(out, 'same'); relation(byClass, 'same');
-    if (grain === 'week') { await filterMatches('makeups', windows, 'class', byClass.rows); notes.push(`주 13창 ${out.ms}ms`); }
+    const windows = winOf('makeups', grain), byClass = await run('makeups', windows, 'class'), bySubject = await run('makeups', windows, 'subject');
+    for (const out of [byClass, bySubject]) { relation(out, 'same', 0); relation(out, 'same', 1); assert.deepEqual(out.total, byClass.total); }
+    if (grain === 'week') { await filterMatches('makeups', windows, 'class', byClass.rows); await filterMatches('makeups', windows, 'subject', bySubject.rows); }
   }
-  const area = await areaAt([asOf], 'makeup'), day = await run('makeups', winOf('makeups', 'day'));
-  assert.equal(day.total.at(-1)[0], area[asOf].rows.length, '오늘 = 운영실 칸');
-  tc.diagnostic(`첫 예약 ${firstDay} · 표에 남은 예약 ${kept} · 지워진 예약 ${gone} · 대상 구간 ${spans.length} · ${notes.join(' · ')}`);
+  for (const row of day.rows) {
+    const filtered = await run('makeups', [winOf('makeups','day').at(-1)], null, { dim:'class', key:row.key });
+    assert.deepEqual(filtered.total[0], row.points.at(-1));
+    assert.deepEqual((filtered.records?.[0] || []).map((x) => x.id).sort(), base.filter((x) => x.cid===row.key && x.status==='reserved').map((x) => x.id).sort());
+  }
+  tc.diagnostic('보강 진행률 '+(area.rate ?? '기록 없음')+'% · '+done+'/'+base.length+'건 · 미진행 '+area.pending.length+'건');
 });
-
 test('등원율: 일·주·월 창 = 칸마다 최신 정정의 (출석 + 지각) ÷ 기록 칸 · 최근 14일 일 창 = 운영실 출석률 추이 · 과목별 줄의 합 = 전체', { skip: SKIP }, async (tc) => {
   const notes = [];
   for (const grain of ['day', 'week', 'month']) {

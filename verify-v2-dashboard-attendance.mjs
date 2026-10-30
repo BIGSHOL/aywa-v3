@@ -178,8 +178,30 @@ test('오늘첫수업: 지난 60일 중 수강이 시작된 날마다 칸 = 독�
   tc.diagnostic(`${dates.length}일 · 첫 수업 ${seen}명 · 기준일 ${main.firstClass.data.length}명`);
 });
 
-test('보강예정: 칸 = 독립 SQL(예약 상태 · 오늘−60일 ~ 다음 달 같은 날 전날 · 활성 반 · 학생 있음) · 지남 · 창 뒤 예약 수 · 예약한 직원', { skip: SKIP }, async (tc) => {
+test('보강 진행률: 어제까지 30일 예약의 done 비율·미진행 목록·예약자 · 앞으로 잡힌 예약 수', { skip: SKIP }, async (tc) => {
   const got = main.makeup.data;
+  const progress = await db`select m.id::text id, m.status::text status, m.absence_date::text absence, m.makeup_date::text makeup, s.name, c.class_name,
+      u.display_name creator from public.makeup_reservations m
+    join public.classes c on c.id=m.class_id and c.tenant_id=${t} and c.is_active
+    join public.students s on s.id=m.student_id and s.tenant_id=${t} and not coalesce(s.is_test,false)
+    left join public.users u on u.id=m.created_by and u.tenant_id=${t}
+    where m.tenant_id=${t} and m.makeup_date between ${addDays(asOf, -30)} and ${addDays(asOf, -1)}
+      and m.status::text in ('reserved','done')`;
+  const done = progress.filter((r) => r.status === 'done').length, pending = progress.filter((r) => r.status === 'reserved');
+  assert.deepEqual([got.progress.from, got.progress.to, got.progress.done, got.progress.total, got.progress.rate],
+    [addDays(asOf, -30), addDays(asOf, -1), done, progress.length, progress.length ? Math.round(done / progress.length * 1000) / 10 : null]);
+  assert.deepEqual(got.progress.pending.map((r) => r.id).sort(), pending.map((r) => r.id).sort());
+  for (const r of got.progress.pending) {
+    const source = pending.find((p) => p.id === r.id);
+    assert.deepEqual([r.name, r.className, r.absenceDate, r.makeupDate, r.createdByName],
+      [source.name, source.class_name, source.absence, source.makeup, source.creator?.trim() || null]);
+  }
+  const [{ n: upcoming }] = await db`select count(*)::int n from public.makeup_reservations m
+    join public.classes c on c.id=m.class_id and c.tenant_id=${t} and c.is_active
+    join public.students s on s.id=m.student_id and s.tenant_id=${t} and not coalesce(s.is_test,false)
+    where m.tenant_id=${t} and m.status='reserved' and m.makeup_date >= ${asOf}`;
+  assert.equal(got.progress.upcoming, upcoming);
+  // 2.0 예약 팝업용 원본 목록은 그대로 둔다. 큰 숫자만 진행률로 바꾼다.
   const [y, m, d] = asOf.split('-').map(Number), ny = m === 12 ? y + 1 : y, nm = m === 12 ? 1 : m + 1, last = new Date(Date.UTC(ny, nm, 0)).getUTCDate();
   const end = d > last ? `${ny}-${String(nm).padStart(2, '0')}-${last}` : new Date(Date.UTC(ny, nm - 1, d - 1)).toISOString().slice(0, 10);
   assert.deepEqual(got.range, { start: asOf, end });
@@ -195,7 +217,7 @@ test('보강예정: 칸 = 독립 SQL(예약 상태 · 오늘−60일 ~ 다음 �
     where r.tenant_id=${t} and r.status = 'reserved' and r.makeup_date > ${end}`;
   assert.equal(got.later, n);
   for (let i = 1; i < got.rows.length; i++) assert.ok(`${got.rows[i - 1].makeupDate} ${got.rows[i - 1].slotStart}` <= `${got.rows[i].makeupDate} ${got.rows[i].slotStart}`, '보강일·시각 순');
-  tc.diagnostic(`보강예정 ${got.rows.length}건(지남 ${got.rows.filter((r) => r.overdue).length}) · 창 뒤 ${got.later}건 · ${got.range.start}~${got.range.end}`);
+  tc.diagnostic(`보강 진행률 ${got.progress.rate ?? '기록 없음'}% · ${done}/${progress.length}건 · 미진행 ${pending.length}건 · 앞으로 ${upcoming}건`);
 });
 
 test('최근 결석: 어제까지 7일 · 칸마다 최신 정정이 결석인 (학생·반·날) 수 · 연락 필요 = 미리 알리지 않은 결석 · 대신 보강·자리 칸의 담당 표시', { skip: SKIP }, async (tc) => {

@@ -1,7 +1,7 @@
-// 2.0 운영실 영역(2단계 · 출결·수업) — 오늘첫수업 · 보강예정 · 최근 결석 · 출결 현황 · 출석률 추이 · 출결 처리 현황 · 휴원일 입력 · 반복 결석 · 현재 수업 현황.
+// 2.0 운영실 영역(2단계 · 출결·수업) — 오늘첫수업 · 보강 진행률 · 최근 결석 · 출결 현황 · 출석률 추이 · 출결 처리 현황 · 휴원일 입력 · 반복 결석 · 현재 수업 현황.
 // 2.0 server.ts의 영역(add/addSliced)이 부르는 함수를 같은 표·같은 조건의 SQL(지점 조건 `tenant_id`)과 2.0 순수 함수(importV2)로. 영역 값 모양 = 2.0 `OverviewData[영역]`.
 //   firstClass        ← getFirstClassStudents(dashboard/server/day-arrivals-query.ts: loadDayEnrollmentRows → resolveDayArrivals().starting)
-//   makeup            ← loadUpcomingMakeup(dashboard/server/makeup-upcoming.ts: listMakeupScopeClasses(관리자 = 활성 반 전부) · getReservationsInRange · countLater)
+//   makeup            ← 2.0 예약 목록(loadUpcomingMakeup) + 보강일이 지난 30일 예약의 done 비율·미진행 목록
 //   absent            ← getScopedRecentAbsences(dashboard/server/recent-absences.ts) + recentAbsenceRange(overview/kpi-links.ts) — 담당 = 대신 보강(taught_by) →
 //                        자리 표식 → 그날 교시 담당·그날 담임(loadScopeFacts · getHomeroomHistoryIndex) → 이름(loadAxisTeacherNames)
 //   attendance · attendanceTrend ← server.ts attendanceHistory(14일 출결 → effectiveAttendanceRecords → attendanceOverview) — 두 영역이 한 번 읽어 나눠 쓴다
@@ -83,10 +83,10 @@ async function firstClass(ctx, sp) {
   return R.arrivals.resolveDayArrivals(list, date, ctx.settings.operations.subjects).starting;
 }
 
-// ── 보강예정 ──────────────────────────────────────────────────────────────────────────────────────────────────────────
+// ── 보강 진행률 ───────────────────────────────────────────────────────────────────────────────────────────────────────
 /** 2.0 OVERDUE_LOOKBACK_DAYS(makeup-upcoming.ts) — 지난 미이행 예약을 되짚는 창. */
 export const OVERDUE_LOOKBACK_DAYS = 60;
-/** 2.0 loadUpcomingMakeup(오늘, 강사 없음) — 오늘부터 한 달(monthAheadWindow) 예약 + 지난 60일 미이행 · 창 뒤 예약 수. */
+/** 2.0 예약 목록은 유지하고, 지난 30일(오늘 제외) 예약의 done 비율과 미진행 목록을 더한다. */
 async function makeup(ctx, sp) {
   const R = await rules(ctx.importV2), gate = queryGate(sp), today = ctx.today, t = ctx.t;
   const range = R.upcoming.monthAheadWindow(today), from = R.week.shiftDays(today, -OVERDUE_LOOKBACK_DAYS);
@@ -121,7 +121,26 @@ async function makeup(ctx, sp) {
       absenceDate: String(r.absence_date).slice(0, 10), overdue: makeupDate < today, origin: 'reservation' }];
   });
   rows.sort((a, b) => a.makeupDate.localeCompare(b.makeupDate) || a.slotStart.localeCompare(b.slotStart) || a.name.localeCompare(b.name, 'ko'));
-  return { range, rows, later };
+  const progressFrom = R.week.shiftDays(today, -30), progressTo = R.week.shiftDays(today, -1);
+  const progressRows = classIds.length ? await gate`select m.id::text id, m.student_id::text student_id, m.class_id::text class_id,
+      m.absence_date::text absence_date, m.makeup_date::text makeup_date, m.status::text status,
+      m.slot_start::text slot_start, m.slot_end::text slot_end, s.name, c.class_name, u.display_name creator
+    from public.makeup_reservations m join public.classes c on c.id=m.class_id and c.tenant_id=${t} and c.is_active=true
+    join public.students s on s.id=m.student_id and s.tenant_id=${t} and not coalesce(s.is_test,false)
+    left join public.users u on u.id=m.created_by and u.tenant_id=${t}
+    where m.tenant_id=${t} and m.makeup_date between ${progressFrom} and ${progressTo}
+      and m.status::text in ('reserved', 'done') order by m.makeup_date, m.slot_start, m.id` : [];
+  const done = progressRows.filter((r) => r.status === 'done').length;
+  const pending = progressRows.filter((r) => r.status === 'reserved').map((r) => ({ id: r.id, studentId: r.student_id, name: r.name,
+    classId: r.class_id, className: r.class_name, absenceDate: r.absence_date, makeupDate: r.makeup_date,
+    slotStart: hhmm(r.slot_start), slotEnd: hhmm(r.slot_end), createdByName: r.creator?.trim() || null }));
+  const [{ n: upcoming }] = await gate`select count(*)::int n from public.makeup_reservations m
+    join public.classes c on c.id=m.class_id and c.tenant_id=${t} and c.is_active=true
+    join public.students s on s.id=m.student_id and s.tenant_id=${t} and not coalesce(s.is_test,false)
+    where m.tenant_id=${t} and m.status='reserved' and m.makeup_date >= ${today}`;
+  return { range, rows, later, progress: { from: progressFrom, to: progressTo, done, total: progressRows.length,
+    pending, rate: progressRows.length ? Math.round(done / progressRows.length * 1000) / 10 : null,
+    upcoming } };
 }
 
 // ── 최근 결석 ─────────────────────────────────────────────────────────────────────────────────────────────────────────

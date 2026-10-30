@@ -9,7 +9,7 @@ import { ATTENDANCE_TREND_METRICS, attendanceKpiCards } from './v2-dashboard-flo
 import { BILLING_TREND_METRICS } from './v2-dashboard-flow-billing.mjs';
 import { isolated } from './v2-dashboard-isolate.mjs';
 
-/** 2.0 KPI 칸 차례(kpi-strip.tsx KPI_KEYS) — 재원생 · 강좌수 · 퇴원&수업종료 · 신규문의 · 전일 입테 · 전일/이달 신규 · 오늘첫수업 · 최근 결석 · 보강예정. */
+/** 운영실 KPI 칸 차례 — 재원생 · 강좌수 · 퇴원&수업종료 · 신규문의 · 전일 입테 · 전일/이달 신규 · 오늘첫수업 · 최근 결석 · 보강 진행률. */
 export const DASHBOARD_KPI_ORDER = Object.freeze(['enrolled-students', 'courses', 'exits', 'intake', 'level-tests', 'new-enrollments', 'first-classes', 'recent-absent', 'makeups']);
 
 /**
