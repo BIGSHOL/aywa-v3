@@ -141,7 +141,7 @@ export function ExamsDashboard({ searchParams, loaded }: { searchParams: Params;
       <RecordsPager page={page} pageSize={PAGE_SIZE} total={ledgerRows.length} href={ledgerHref} note="수업보고서 테스트일은 보고서 날짜와 연결됩니다" />
     </div> : null}
 
-    {tab === "student" ? <StudentTab students={students} selected={selectedStudent} href={href} allRows={rows}
+    {tab === "student" ? <StudentTab students={students} selected={selectedStudent} href={href} allRows={rows} subjects={subjectMaps}
       rows={studentRows} goalViews={goalViews} goals={studentGoals} /> : null}
     {tab === "classes" ? <ClassesTab classes={classes} rows={rows} href={href}
       selected={classes.find((row) => row.key === searchParams.cohortClass) ?? classes[0]} /> : null}
