@@ -13,11 +13,22 @@ export const enrollmentStageOf = (lead, assignedByLead, classKeysOf, stageOfCard
 };
 
 export async function studentFamilies(ctx) {
-  const { sql, t, asOf, month, monthStart, subjectLabel, subjectText, subjectFacets } = ctx;
+  const { sql, t, asOf, monthStart, subjectLabel, subjectText, subjectFacets } = ctx;
   const out = {};
 
   // 원생목록 — 원생 상태가 단일 기준(테스트 원생 제외).
-  const students = await sql`select id, name, school, grade, status::text st, enrolled_at::text enrolled, withdrawn_at::text withdrawn from public.students where tenant_id=${t} and not coalesce(is_test,false) order by (status='enrolled') desc, enrolled_at desc nulls last, name`;
+  const students = await sql`select id, name, school, grade, parent_phone, status::text st, enrolled_at::text enrolled, withdrawn_at::text withdrawn from public.students where tenant_id=${t} and not coalesce(is_test,false) order by (status='enrolled') desc, enrolled_at desc nulls last, name`;
+  // 원생목록 2.0의 수강·담임 열: 퇴원생은 이력 전체, 그 밖은 종료되지 않고 휴원하지 않은 수강만 본다.
+  const enrollments = await sql`select e.student_id, e.end_date, e.on_hold, c.subject, u.display_name teacher from public.enrollments e left join public.classes c on c.id=e.class_id and c.tenant_id=${t} left join public.users u on u.id=c.teacher_id and u.tenant_id=${t} where e.tenant_id=${t} and e.student_id in (select id from public.students where tenant_id=${t} and not coalesce(is_test,false))`;
+  const studentsById = new Map(students.map(s => [s.id, s]));
+  const subjectsByStudent = new Map(), teachersByStudent = new Map();
+  for (const e of enrollments) {
+    const student = studentsById.get(e.student_id);
+    if (!student || (student.st !== 'withdrawn' && (e.end_date || e.on_hold))) continue;
+    if (e.subject) { const subjects = subjectsByStudent.get(e.student_id) || new Set(); subjects.add(e.subject); subjectsByStudent.set(e.student_id, subjects); }
+    if (e.teacher) { const teachers = teachersByStudent.get(e.student_id) || []; teachers.push({ subject: e.subject, name: e.teacher }); teachersByStudent.set(e.student_id, teachers); }
+  }
+  const [{ schoolGradeLabel }, { narrowTeacherNames }] = await Promise.all([importV2('lib/format/school-grade.ts'), importV2('features/students/scope-axis.ts')]);
   const daily = await sql`select stat_date::text as date, (data->>'enrolled')::int as value from public.student_daily_stats where tenant_id=${t} and data ? 'enrolled'`;
   const [aux] = await sql`select (select count(*)::int from public.student_siblings where tenant_id=${t}) siblings, (select count(*)::int from public.student_memos where tenant_id=${t}) memos`;
   const by = st => students.filter(s => s.st === st).length;
@@ -26,7 +37,7 @@ export async function studentFamilies(ctx) {
     summary: `이번 달 등록 ${fresh.length}명(등록일 기준).`,
     metrics: [metric('재원', by('enrolled'), '명', '테스트 원생 제외'), metric('휴원', by('on_hold'), '명'), metric('예비', by('prospect'), '명'), metric('퇴원', by('withdrawn'), '명', '전체 기간'), metric('이번 달 등록', fresh.length, '명', '등록일 기준'), metric('직접 정한 형제 관계', aux.siblings, '쌍', '형제 지정 · 형제 아님 지정')],
     trend: dailyTrend('일별 재원생', '명', daily, asOf),
-    evidence: students.map(s => record({ id: s.id, label: s.name, detail: [s.school, s.grade].filter(Boolean).join(' '), date: s.enrolled, status: STUDENT_STATUS[s.st] || '기타', fields: [field('학교', s.school), field('학년', s.grade), field('퇴원일', s.withdrawn)], facets: [`status:${s.st}`, fresh.includes(s) && 'new-this-month'] })),
+    evidence: students.map(s => record({ id: s.id, label: s.name, detail: schoolGradeLabel(s.school, s.grade), date: s.enrolled, status: STUDENT_STATUS[s.st] || '기타', fields: [field('과목', [...(subjectsByStudent.get(s.id) || [])].sort().map(subjectLabel).join(' · ')), field('담임', narrowTeacherNames(null, teachersByStudent.get(s.id) || []).join('·')), field('보호자 연락처', s.parent_phone), field('퇴원일', s.withdrawn)], facets: [`status:${s.st}`, fresh.includes(s) && 'new-this-month'] })),
     facetOrder: [...Object.keys(STUDENT_STATUS).map(k => `status:${k}`), 'new-this-month'], facetLabels: { ...pre('status', STUDENT_STATUS), 'new-this-month': '이번 달 등록' }, recordSource: 'students',
     sourceLabel: '원생 · 일별 재원 기록', coverageNote: '목록은 원생 전체입니다(재원 먼저). 일별 재원생은 기록을 시작한 날부터이며 빠진 날은 비워 둡니다.',
     sources: [{ table: 'students', rows: students.length }, { table: 'student_daily_stats', rows: daily.length }],
