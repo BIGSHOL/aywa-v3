@@ -10,7 +10,7 @@
 // AI 분석은 저장된 결과만 보인다 — 새 분석·녹음·전사·업로드는 하지 않는다(v2-consultations-save.mjs).
 import { readPeople } from './v2-proc-people.mjs';
 import {
-  actAsReader, classOptionsRead, consultationById, consultationCounts, consultationGap, consultationStats, consultationsPage, counselorOptions,
+  actAsReader, classOptionsRead, consultationById, consultationCounts, consultationStats, consultationsPage, counselorOptions,
   homeroomHistory, homeroomStats, loadConsultRules, makeeduSyncState, newcomerLinkTargets, resolvedSettings, retiredStaffIds, statsPrefs,
   studentOptions, teacherIdOf, teacherOptions,
 } from './v2-consultations-read.mjs';
@@ -96,15 +96,15 @@ async function build({ sql, params, tenantId: t, importV2 }) {
   const syncOn = R.modules.isModuleEnabled(settings.modules?.disabled, 'makeedu');
   if (stats) {
     const options = await counselorOptions(sql, teacherId);
-    // 통계 본문 — 집계가 실패해도 화면 틀은 산다(2.0 stats-panel.tsx try/catch) · 담임별 현황은 실패해도 위 통계는 산다.
+    // 통계 본문 — 집계가 실패해도 화면 틀은 산다. 담임별 현황은 실패해도 위 통계는 산다.
     let panel;
     try {
       panel = await sql.savepoint(async sp => {
-        const [st, gap, retired] = await Promise.all([consultationStats(sp, R, filters, teacherId), consultationGap(sp, R, teacherId), retiredStaffIds(sp)]);
+        const [st, retired] = await Promise.all([consultationStats(sp, R, filters, teacherId), retiredStaffIds(sp)]);
         let homeroom = null;
         try { homeroom = await sp.savepoint(s2 => homeroomStats(s2, R, settings, teacherId, history)); }
         catch (e) { console.error('[consultations] 담임별 상담 현황 조회 실패:', msg(e)); }
-        return { stats: st, gap, retiredIds: [...retired], homeroom };
+        return { stats: st, retiredIds: [...retired], homeroom };
       });
     } catch (e) { panel = { error: msg(e) }; }
     return { ...shared, page: 'stats', listParams, filters, counselorOptions: options, syncOn, prefs, panel };

@@ -1,6 +1,6 @@
 // 2.0 원생상담 통계(app/(shell)/consultations/stats/page.tsx)와 통계 본문(_components/stats/stats-panel.tsx) — 둘 다 서버 컴포넌트라 그대로 불러올 수 없어서,
-// 서버가 하던 조회(getConsultationStats · getConsultationGap · loadConsultationStatsPrefs · getTenantSettings · getRetiredStaffIds · getHomeroomConsultStats)는
-// /api/v2/consultations(Docker 복사본)가 하고 여기서는 본문을 **글자 그대로** 옮겼다(verify가 글자를 대조한다). 바꾼 곳 = 자료 받는 머리 · 본문의 조회(PanelData).
+// 서버가 하던 조회(getConsultationStats · loadConsultationStatsPrefs · getTenantSettings · getRetiredStaffIds · getHomeroomConsultStats)는
+// /api/v2/consultations(Docker 복사본)가 하고, 이 화면은 조회를 마친 값을 받아 2.0 통계 구성을 그린다.
 import { createContext, use } from "react";
 import { Suspense } from "react";
 import { isModuleEnabled } from "@/lib/modules";
@@ -16,7 +16,6 @@ import {
   STATS_DIMS,
   type ConsultationStats,
   type ConsultationStatsPrefs,
-  type GapStats,
   type StatsDimItem,
   type StatsDimKey,
   type StatsDimView,
@@ -24,7 +23,6 @@ import {
 import type { HomeroomStats } from "@/features/consultations/homeroom-model";
 import type { SubjectSetting } from "@/features/owner/settings-types";
 import { StatsPanelClient } from "@/app/(shell)/consultations/_components/stats/stats-panel-client";
-import { StatsGap } from "@/app/(shell)/consultations/_components/stats/stats-gap";
 import { StatsHomeroom } from "@/app/(shell)/consultations/_components/stats/stats-homeroom";
 
 /** /api/v2/consultations?v2path=/consultations/stats — 2.0 page·통계 본문이 서버에서 받던 값. */
@@ -36,7 +34,7 @@ export type ConsultationStatsData = {
   filters: ConsultationListFilters;
   counselorOptions: { id: string; name: string; retired: boolean }[];
   prefs: ConsultationStatsPrefs;
-  panel: { stats: ConsultationStats; gap: GapStats; retiredIds: string[]; homeroom: HomeroomStats | null } | { error: string };
+  panel: { stats: ConsultationStats; retiredIds: string[]; homeroom: HomeroomStats | null } | { error: string };
 };
 /** 통계 본문 자료 — 본문이 2.0처럼 같은 props(필터 · 범위)만 받고 그리게 화면 자료를 따로 싣는다. */
 export const PanelData = createContext<ConsultationStatsData | null>(null);
@@ -87,6 +85,7 @@ const DIM_LABEL: Record<StatsDimKey, string> = {
   audience: "대상",
   source: "작성 경로",
 };
+const SHOW_BREAKDOWN = false;
 
 /**
  * 원생상담 **통계 화면 본문**(원장 2026-09-30 *"모든 것을 관리 통계 추이 가능하게."* → 2026-10-01 *"상담 통계를 옆으로 두지말고…
@@ -96,10 +95,9 @@ const DIM_LABEL: Record<StatsDimKey, string> = {
  *    문구는 목록 위 요약 띠와 같은 함수(`statsScopeText`)다.
  * 🔴 목록과 같은 조건(stats.ts 주석). 강사는 본인 상담만(목록과 같은 스코프 — 옛 통계 화면이 한 번 어긋났던 자리, queries.ts 주석).
  * 분해 줄을 누르면 **이 화면이** 그 값으로 걸러진다(통계 안에서 파고들기), 지표 옆 '기한 경과 N건'·'완료 보기'는 **목록**을 그 값으로 연다(할 일 목록).
- * 성능: 집계 RPC 두 번 + 설정 두 번을 병렬로(B4). 부모가 Suspense로 감싸 화면 틀(툴바)이 먼저 선다(B7).
+ * 2.0과 같이 상담사별 분해·상담 공백 카드는 숨기고 담임별 현황을 보여 준다.
  */
 export function ConsultationStatsPanel({
-  filters,
   listParams,
   whoLabel,
   teacherScoped,
@@ -115,7 +113,7 @@ export function ConsultationStatsPanel({
   let loaded;
   if ("stats" in data.panel) {
     const p = data.panel;
-    loaded = [p.stats, p.gap, data.prefs, { operations: data.operations }, new Set(p.retiredIds), p.homeroom] as const;
+    loaded = [p.stats, data.prefs, { operations: data.operations }, new Set(p.retiredIds), p.homeroom] as const;
   } else {
     const raw = data.panel.error;
     return (
@@ -124,7 +122,7 @@ export function ConsultationStatsPanel({
       </p>
     );
   }
-  const [stats, gap, prefs, settings, retiredIds, homeroom] = loaded;
+  const [stats, prefs, settings, retiredIds, homeroom] = loaded;
   const subjects = buildSubjectMaps(settings.operations.subjects);
   // 분해 줄 = 이 화면 안에서 거르기 / 지표 옆 링크 = 목록을 그 값으로 열기.
   const statsHref = (patch: Partial<ConsultationListParams>) => consultationsStatsHref(listParams, patch);
@@ -172,7 +170,7 @@ export function ConsultationStatsPanel({
     }
   };
   // 꺼진 기능은 흔적 없이 — makeedu가 꺼진 학원엔 '작성 경로' 축이, 반 칸이 없으면(0318a 전) '반' 축이 없다.
-  const dims: StatsDimView[] = stats.full
+  const dims: StatsDimView[] = SHOW_BREAKDOWN && stats.full
     ? STATS_DIMS.filter((d) => (d !== "source" || syncOn) && (d !== "class" || classOn)).map((d) => {
         const bucket = stats.dims[d];
         const items = bucket?.items ?? [];
@@ -209,8 +207,8 @@ export function ConsultationStatsPanel({
         overdueHref={listHref({ urg: "overdue" })}
         doneHref={listHref({ urg: "done" })}
       />
-      <StatsGap gap={gap} teacherScoped={teacherScoped} />
-      <StatsHomeroom data={homeroom} teacherScoped={teacherScoped} initialSort={prefs.hrSort} initialFilter={prefs.hrFilter} />
+      <StatsHomeroom data={homeroom} teacherScoped={teacherScoped} initialSort={prefs.hrSort} initialFilter={prefs.hrFilter}
+        linkedWho={listParams.who} linkedSubject={listParams.subject} />
     </section>
   );
 }

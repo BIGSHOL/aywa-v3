@@ -1,7 +1,7 @@
 // 2.0 원생상담 목록(app/(shell)/consultations/page.tsx)과 목록 위 요약 띠(_components/stats-summary.tsx) — 둘 다 서버 컴포넌트라 그대로 불러올 수 없어서,
-// 서버가 하던 조회는 /api/v2/consultations(Docker 복사본, v2-screen-consultations.mjs)가 하고 여기서는 본문을 **글자 그대로** 옮겼다.
+// 서버가 하던 조회는 /api/v2/consultations(Docker 복사본, v2-screen-consultations.mjs)가 하고, 여기서는 받은 값으로 목록과 최근 추세를 그린다.
 // 바꾼 곳: 자료 받는 머리(requireAccess · 쿠키 · getTenantSettings · Promise.all → data) · 동기화 배지(서버 컴포넌트 → 같은 글자의 호스트판, 조회 값은 props) ·
-// 요약 띠의 조회(getConsultationStats · getTenantSettings → 화면이 받은 값, SummaryData). verify-v2-screen-consultations.mjs가 2.0 원문과 글자를 대조한다.
+// 요약 띠의 조회(getConsultationStats · getTenantSettings → 화면이 받은 값, SummaryData). 담임 상담의 별도 지연 조회는 후속 동기화 대상이다.
 import { createContext, use } from "react";
 import { SheetText } from "@/features/teacher-view/interface-label";
 import { Suspense } from "react";
@@ -27,7 +27,8 @@ import { EmbedLink } from "@/components/embed-link";
 import { CONTROL_H, CONTROL_LABEL } from "@/components/ui/control-scale";
 import type { MakeeduSyncState } from "@/features/integrations/server/makeedu-sync";
 import type { SubjectSetting } from "@/features/owner/settings-types";
-import { buildKpiLines } from "@/features/consultations/stats-kpi";
+import { buildKpiLines, fmt } from "@/features/consultations/stats-kpi";
+import { changeText, recentWeekTrend } from "@/features/consultations/stats-recent";
 import { statsScopeText } from "@/features/consultations/stats-scope";
 import type { ConsultationStats, StatsMetric } from "@/features/consultations/stats-model";
 import { ConsultationList } from "./consultations-list-rows";
@@ -175,15 +176,15 @@ const BAND = "@container/band bg-bg-soft flex h-9 items-center gap-4 overflow-hi
 
 /**
  * 띠 폭(`@container/band`)에 따라 싣는 지표 — 앞 지표의 폭 합 + 기간·범위 최소 13rem이 들어가는 경계(Pretendard 16px 실측 근사:
- * 상담 ≈95 · 후속 ≈132 · 1인당 ≈119 · 녹음·AI ≈186 · 동기화 ≈132 · 반 미매핑 ≈116px, 간격 16px). 숨긴 지표는 '통계 보기'에 다 있다.
+ * 최근 4주 ≈160 · 후속 ≈132 · 녹음·AI ≈186 · 동기화 ≈132 · 반 미매핑 ≈116px, 간격 16px). 숨긴 지표는 '통계 보기'에 다 있다.
  */
 const SHOW_FROM: Record<StatsMetric, string> = {
   count: "flex",
-  follow: "hidden @min-[31rem]/band:flex",
-  perStudent: "hidden @min-[40rem]/band:flex",
-  media: "hidden @min-[53rem]/band:flex",
-  sync: "hidden @min-[62rem]/band:flex",
-  class: "hidden @min-[70rem]/band:flex",
+  perStudent: "hidden",
+  follow: "hidden @min-[50rem]/band:flex",
+  media: "hidden @min-[63rem]/band:flex",
+  sync: "hidden @min-[72rem]/band:flex",
+  class: "hidden @min-[80rem]/band:flex",
 };
 
 /** 요약 띠 자리 — 집계가 흘러오기 전에 같은 높이의 빈 띠를 먼저 세운다(B7 · 높이 = 실표면이라 도착해도 목록이 안 밀린다). */
@@ -198,7 +199,6 @@ export function StatsSummarySkeleton() {
  * 🔴 집계가 실패해도 **목록은 산다** — 여기서 던지지 않고 띠 자리에 한 줄만 알린다(같은 높이).
  */
 export function ConsultationStatsSummary({
-  filters,
   listParams,
   whoLabel,
   teacherScoped,
@@ -229,7 +229,11 @@ export function ConsultationStatsSummary({
     whoLabel,
     subjectLabel: listParams.subject ? subjects.labelOf(listParams.subject) : null,
   });
-  const lines = buildKpiLines(stats, { syncOn, classOn: stats.full });
+  const lines = buildKpiLines(stats, { syncOn, classOn: stats.full }).filter(
+    (l) => !stats.full || (l.metric !== "count" && l.metric !== "perStudent"),
+  );
+  const trend = stats.full ? recentWeekTrend(stats.buckets.week, stats.today) : null;
+  const change = trend ? changeText(trend.changePct) : null;
   return (
     <section aria-label="상담 통계 요약" className={BAND}>
       {/* 기간 이름 + 범위(좁으면 말줄임) — 날짜 범위까지 전문은 마우스 오버. */}
@@ -245,6 +249,14 @@ export function ConsultationStatsSummary({
         </span>
       ) : null}
       <ul className="flex shrink-0 items-baseline gap-4">
+        {trend ? (
+          <li className="flex items-baseline gap-1 text-sm whitespace-nowrap"
+            title={`${md(trend.from)}~${md(trend.to)} · 직전 4주 ${fmt(trend.prior)}건 · 이번 주(진행 중) ${fmt(trend.thisWeek)}건 · 기간 필터와 무관하게 최근 주 기준(나머지 필터는 따른다)`}>
+            <span className="font-medium">최근 4주</span>
+            <span className="num text-foreground font-bold">{fmt(trend.recent)}건</span>
+            {change ? <span className={`num text-xs ${trend.changePct !== null && trend.changePct < 0 ? "text-danger" : "text-muted-foreground"}`}>{change}</span> : null}
+          </li>
+        ) : null}
         {lines.map((l) => (
           <li key={l.metric} className={`${SHOW_FROM[l.metric]} items-baseline gap-1 text-sm whitespace-nowrap`} title={l.sub}>
             <span className="font-medium">{l.label}</span>
@@ -255,3 +267,5 @@ export function ConsultationStatsSummary({
     </section>
   );
 }
+
+const md = (ymd: string) => `${Number(ymd.slice(5, 7))}/${Number(ymd.slice(8))}`;
