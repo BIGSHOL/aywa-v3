@@ -17,7 +17,9 @@ import { build } from './v2-host/build.mjs';
 const plainDeep = v => (v === null || typeof v !== 'object' ? typeof v !== 'function'
   : Array.isArray(v) ? v.every(plainDeep) : Object.getPrototypeOf(v) === Object.prototype && Object.values(v).every(plainDeep));
 const done = [];
-const check = async (name, fn) => { await fn(); done.push(name); };
+// CHECK_ONLY=정규식 = 이름이 맞는 항목만(바꾼 곳만 볼 때).
+const only = process.env.CHECK_ONLY ? new RegExp(process.env.CHECK_ONLY) : null;
+const check = async (name, fn) => { if (only && !only.test(name)) return; await fn(); done.push(name); };
 const src = p => readFile(new URL(`../../src/${p}`, import.meta.url), 'utf8');
 const here = p => readFile(new URL(p, import.meta.url), 'utf8');
 const lf = s => s.replace(/\r\n/g, '\n');
@@ -30,7 +32,7 @@ await check('주소 열쇠 = 2.0 page.tsx · 수납관리 부품이 읽는 칸(s
   const dir = new URL('../../src/app/(shell)/billing/_components/', import.meta.url), keys = new Set();
   for (const f of [...(await readdir(dir)).filter(n => n.endsWith('.tsx')).map(n => new URL(n, dir)), new URL('../../src/app/(shell)/billing/page.tsx', import.meta.url)])
     for (const m of (await readFile(f, 'utf8')).matchAll(/\bsp\.([a-zA-Z]+)/g)) keys.add(m[1]);
-  assert.deepEqual(Object.keys(M.screen.params).filter(k => !['viewer', 'v2path', 'invoice', 'ment', 'refundOptions', 'prefill', 'months', 'call', 'args', ...STATS_KEYS].includes(k)).sort(), [...keys].sort());
+  assert.deepEqual(Object.keys(M.screen.params).filter(k => !['viewer', 'v2path', 'invoice', 'ment', 'refundOptions', 'prefill', 'months', 'call', 'args', 'payrollFull', ...STATS_KEYS].includes(k)).sort(), [...keys].sort());
   const host = await here('./v2-host/src/billing.tsx'), shell = await here('./v2-screen-billing.js');
   const listOf = text => JSON.parse(`[${/KEYS = \[([^\]]+)\]|KEEP = \[([^\]]+)\]/.exec(text).slice(1).find(Boolean).replace(/'/g, '"')}]`);
   assert.deepEqual(listOf(host).sort(), ['v2path', 'invoice', ...keys, ...STATS_KEYS].sort());
@@ -75,7 +77,10 @@ await check('그리기 = 2.0 billing/page.tsx · billing-content.tsx · makeedu-
 });
 
 const db = await openFullDatabase();
-const load = params => db.begin('isolation level repeatable read read only', sql => M.screen.load({ sql, params, tenantId, importV2 }));
+const read = params => db.begin('isolation level repeatable read read only', sql => M.screen.load({ sql, params, tenantId, importV2 }));
+// 셸은 늘 현재 계정을 넘긴다(계정이 없으면 자료를 내리지 않는다) — 시험도 첫 직원(원장)으로 읽는다.
+const defaultViewer = (await read({})).editors[0].id;
+const load = params => read({ viewer: defaultViewer, ...params });
 try {
   const base = await load({});
   const R = await importV2('lib/permissions.ts');
@@ -114,6 +119,7 @@ try {
     const p = await load({ tab: 'payroll' });
     assert.equal(p.billing, null, '강사 정산 면엔 수납 면 자료를 싣지 않는다');
     assert.equal(p.payroll.canRead, true, '원장 = 급여 열람 게이트를 지나 강사 정산 자료가 실린다(2.0과 같은 사람)');
+    assert.deepEqual([p.payroll.pending, p.payroll.view, p.payroll.classRows], [true, null, null], '첫 응답은 게이트만 — 금액은 payrollFull=1로 뒤에 받는다(첫 화면을 막지 않는다)');
     assert.ok(!base.host.disabledModules.includes('session_billing'), '침산 = 회차 정산 켜짐');
   });
 
@@ -269,7 +275,7 @@ try {
         assert.deepEqual(logs.find(l => l.action === 'textbook_order_update').metadata.changes, [{ label: '금액', from: '12,000원', to: '15,000원' }], '수정은 바뀐 칸만');
         // 내 학부모 메시지 — 저장 → 읽기
         assert.deepEqual(await act('saveMyTextbookMent', ['  연습 메시지 '], base.viewer.id, 'features/billing/server/textbook-notice-actions.ts'), { ok: true });
-        assert.equal((await M.screen.load({ sql, params: { ment: '1' }, tenantId, importV2 })).ment, '연습 메시지');
+        assert.equal((await M.screen.load({ sql, params: { viewer: defaultViewer, ment: '1' }, tenantId, importV2 })).ment, '연습 메시지');
         const [{ q1 }] = await sql`select count(*)::int q1 from net.http_request_queue`;
         assert.equal(q1, q0, '바깥 요청 0');
         throw ROLL;
@@ -978,7 +984,7 @@ try {
   });
 
   await check('강사 정산 = 2.0 canReadSalary 게이트 · getTeacherTuitionView · getClassSalaryRows 그대로 — 급여 열람 게이트를 못 지나면 자료를 싣지 않는다 · 시험 출력에 금액 없음', async () => {
-    const d = (await load({ tab: 'payroll', period: '2026-09' })).payroll;
+    const d = (await load({ tab: 'payroll', period: '2026-09', payrollFull: '1' })).payroll;
     assert.equal(d.canRead, true, '원장 = 급여 열람');
     assert.ok(Array.isArray(d.view.rows) && d.view.rows.length > 0, '강사 줄');
     assert.ok(plainDeep(d));

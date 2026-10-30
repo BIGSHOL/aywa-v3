@@ -6,7 +6,7 @@
   ],
   [
    "import { getTenantSettings } from \"@/features/owner/server/queries\";\nimport { BillingContent } from \"./_components/billing-content\";\nimport { TextbooksFace } from \"./_components/textbooks-face\";\nimport { ExpensesPanel } from \"./_components/expenses-panel\";\nimport { CalculatorPanel } from \"./_components/calculator-panel\";\nimport { RefundsFace } from \"./_components/refunds-face\";\nimport { SessionTermsFace } from \"./_components/session-terms-face\";\nimport { TeacherSettlementFace } from \"./_components/teacher-settlement-face\";\n",
-   "import { BillingContent, type BillingFaceData } from \"./billing-content\";\nimport { TextbooksFace } from \"./billing-textbooks-face\";\nimport { ExpensesPanel } from \"./billing-expenses-panel\";\nimport { RefundsFace } from \"./billing-refunds-face\";\nimport { CalculatorPanel } from \"./billing-calculator-panel\";\nimport { SessionTermsFace } from \"./billing-session-terms-face\";\nimport { TeacherSettlementFace } from \"./billing-teacher-settlement-face\";\nimport type { CalculatorFaceData, ExpensesPanelData, PayrollFaceData, RefundsFaceData, SessionsFaceData, TextbooksFaceData } from \"./billing-types\";\nimport { HostNoAccess, HostRedirect } from \"./billing-host-parts\";\nimport type { MakeeduSyncState } from \"@/features/integrations/server/makeedu-sync\";\n"
+   "import { BillingContent, type BillingFaceData } from \"./billing-content\";\nimport { TextbooksFace } from \"./billing-textbooks-face\";\nimport { ExpensesPanel } from \"./billing-expenses-panel\";\nimport { RefundsFace } from \"./billing-refunds-face\";\nimport { CalculatorPanel } from \"./billing-calculator-panel\";\nimport { SessionTermsFace } from \"./billing-session-terms-face\";\nimport { PayrollFaceDeferred } from \"./billing-payroll-deferred\";\nimport type { CalculatorFaceData, ExpensesPanelData, PayrollFaceData, RefundsFaceData, SessionsFaceData, TextbooksFaceData } from \"./billing-types\";\nimport { HostNoAccess, HostRedirect } from \"./billing-host-parts\";\nimport type { MakeeduSyncState } from \"@/features/integrations/server/makeedu-sync\";\n"
   ],
   [
    "import { MakeeduSyncBadge } from \"@/components/makeedu-sync-badge\";\nimport { canManageTenant, canAccessTenant } from \"@/lib/auth/perm-matrix\";\nimport { redirect } from \"next/navigation\";\n",
@@ -74,7 +74,7 @@
   ],
   [
    "<TeacherSettlementFace period={sp.period} />",
-   "<TeacherSettlementFace period={sp.period} data={d.payroll!} />"
+   "<PayrollFaceDeferred period={sp.period} data={d.payroll!} />"
   ],
   [
    "<BillingContent sp={sp} canImport={canImport} />",

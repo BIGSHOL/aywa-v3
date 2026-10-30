@@ -1,16 +1,18 @@
 // v2-server-runner.mjs의 작업 스레드 — 2.0 서버 함수를 복사본에서 그대로 돌린다. 모듈 훅(hooks.mjs)은 **이 스레드에만** 건다.
 // 메시지 하나 = 동작 하나 = 복사본 트랜잭션 하나:
-//  · read  = repeatable read · read only
+//  · read  = repeatable read · read only · 2.0 cache()는 요청 단위로 한 번만 · 역할은 바뀔 때만 전환(강사 정산 왕복 6,959 → 1,214)
 //  · write = 쓰기 트랜잭션 · 앞뒤로 net.http_request_queue를 세어 늘었으면 통째로 되돌린다(409 outbound_blocked와 같은 규칙) · after() 할 일까지 안에서
 //  · rollback = 시험용 — 다 돌리고 probes(검사 SQL)를 읽은 뒤 되돌린다
 // 바깥 요청(fetch)은 막는다 — 2.0 코드가 부르려 하면 흉내 밖 오류로 멈춘다.
 import { parentPort } from 'node:worker_threads';
-import { register } from 'node:module';
+import { createRequire, register } from 'node:module';
 import { openFullDatabase } from '../full-db.mjs';
 
 const SRC = new URL('../../../src/', import.meta.url), STUBS = new URL('./stubs/', import.meta.url);
 register('./hooks.mjs', import.meta.url, { data: { src: SRC.href, stubs: STUBS.href } });
-const { runInCall } = await import('./context.mjs');
+const { runInCall, requestCache } = await import('./context.mjs');
+// React cache()는 Next 밖에선 그냥 통과한다 — 2.0 코드가 불러오기 전에 요청 단위 기억으로 바꾼다.
+createRequire(import.meta.url)('react').cache = requestCache;
 const { UnsupportedShape } = await import('./postgrest.mjs');
 globalThis.fetch = async url => { throw new UnsupportedShape(`바깥 요청(fetch ${String(url).slice(0, 60)})`); };
 
@@ -44,7 +46,9 @@ async function markAuditSource(sql, tenantId, actorId) {
 async function runSteps(sql, call) {
   const actor = await actorOf(sql, call.tenantId, call.actorId);
   // metaSql = 표 정보(FK · 칸 형식 · 함수 모양) 전용 — 트랜잭션 밖 연결(역할 전환과 섞이지 않게).
-  return runInCall({ sql, metaSql: db, actor, tenantId: call.tenantId }, async () => {
+  // 읽기 동작 = 한 스냅숏 · 한 사람이라 같은 조회를 다시 할 필요가 없고(memo), 역할을 쿼리마다 되돌리지 않아도 된다(stickyRole).
+  const readOnly = call.mode === 'read' ? { memo: new Map(), stickyRole: true } : {};
+  return runInCall({ sql, metaSql: db, actor, tenantId: call.tenantId, ...readOnly }, async () => {
     const results = [];
     for (const step of call.steps) {
       const mod = await import(new URL(step.module, SRC).href);

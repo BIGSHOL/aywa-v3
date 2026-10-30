@@ -216,10 +216,21 @@ function cell(sql, M, table, col, v) {
 // ── 실행 ───────────────────────────────────────────────────────────────────────────────────────────────────────────────
 const toError = e => (e?.pgrst ? { code: e.pgrst, message: e.message, details: null, hint: null }
   : { code: e?.code ?? null, message: e?.message ?? String(e), details: e?.detail ?? null, hint: e?.hint ?? null });
+/** 읽기 동작의 역할 전환 — 쿼리마다 되돌리지 않고 바뀔 때만 한 문장(쿼리당 왕복 8 → 3). 트랜잭션이 끝나면 저절로 풀린다.
+ *  저장점 밖에서 바꾸므로 쿼리가 실패해 저장점을 되돌려도 역할은 그대로다. */
+async function useRole(call, kind) {
+  const role = kind !== 'user' ? 'none' : call.actor ? 'authenticated' : 'anon';
+  if ((call.role ?? 'none') === role) return;
+  const sql = call.sql;
+  call.outerClaims ??= (await sql`select coalesce(current_setting('request.jwt.claims', true), '') c`)[0].c;
+  const claims = role === 'none' ? call.outerClaims : JSON.stringify(call.actor ? { sub: call.actor.id, role: 'authenticated' } : { role: 'anon' });
+  await sql`select set_config('request.jwt.claims', ${claims}, true), set_config('role', ${role}, true)`;
+  call.role = role;
+}
 /** 그 동작의 줄 — 한 연결에서 하나씩. kind = 'user'(보는 사람 + authenticated) | 'admin'. 실패는 저장점째 되돌린다. */
 function enqueue(kind, fn) {
   const call = currentCall();
-  const run = () => call.sql.savepoint(async s => {
+  const run = call.stickyRole ? async () => { await useRole(call, kind); return call.sql.savepoint(fn); } : () => call.sql.savepoint(async s => {
     if (kind !== 'user') return fn(s);
     const [{ prev }] = await s`select coalesce(current_setting('request.jwt.claims', true), '') prev`;
     await s`select set_config('request.jwt.claims', ${JSON.stringify(call.actor ? { sub: call.actor.id, role: 'authenticated' } : { role: 'anon' })}, true)`;

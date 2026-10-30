@@ -56,7 +56,7 @@ export type SessionsFaceData = {
 
 /** teacher-settlement-face.tsx — 2.0 canReadSalary · canManageSalary · getTeacherTuitionView · getClassSalaryRows · canViewPayslipNow 결과(열람 게이트를 못 지나면 view · classRows = null). */
 export type PayrollFaceData = {
-  period: string; canRead: boolean; canEdit: boolean; canPayslip: boolean;
+  period: string; canRead: boolean; canEdit: boolean; canPayslip: boolean; pending?: boolean;
   view: Awaited<ReturnType<typeof getTeacherTuitionView>> | null; classRows: ClassSalaryRow[] | null;
 };
 

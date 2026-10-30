@@ -9,7 +9,7 @@ import { ExpensesPanel } from "./billing-expenses-panel";
 import { RefundsFace } from "./billing-refunds-face";
 import { CalculatorPanel } from "./billing-calculator-panel";
 import { SessionTermsFace } from "./billing-session-terms-face";
-import { TeacherSettlementFace } from "./billing-teacher-settlement-face";
+import { PayrollFaceDeferred } from "./billing-payroll-deferred";
 import type { CalculatorFaceData, ExpensesPanelData, PayrollFaceData, RefundsFaceData, SessionsFaceData, TextbooksFaceData } from "./billing-types";
 import { HostNoAccess, HostRedirect } from "./billing-host-parts";
 import type { MakeeduSyncState } from "@/features/integrations/server/makeedu-sync";
@@ -117,7 +117,7 @@ export function BillingPage({ d, sp }: { d: BillingPageData; sp: Sp }) {
       ) : effectiveTab === "sessions" ? (
         <SessionTermsFace period={sp.period} subject={sp.subject} q={sp.q} page={sp.page} only={sp.only} allocation={sp.allocation} confirmation={sp.confirmation} panel={sp.panel} status={sp.status} params={sp} data={d.sessions!} />
       ) : effectiveTab === "payroll" ? (
-        <TeacherSettlementFace period={sp.period} data={d.payroll!} />
+        <PayrollFaceDeferred period={sp.period} data={d.payroll!} />
       ) : (
         <BillingContent sp={sp} canImport={canImport} data={d.billing!} />
       )}

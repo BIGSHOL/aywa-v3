@@ -55,7 +55,7 @@ const WORD = /^[a-z0-9_-]{1,40}$/;
 const PARAMS = {
   viewer: UUID, v2path: /^\/billing(?:\/[a-z0-9-]{1,40}){0,2}$/, invoice: UUID,
   tab: WORD, period: /^[0-9-]{1,10}$/, q: /^[^\u0000-\u001f]{0,100}$/, sort: WORD, desc: /^[01]$/, page: /^\d{1,4}$/,
-  overdue: /^1$/, missing: /^1$/, subject: WORD, only: /^[a-z0-9_,-]{1,80}$/, allocation: WORD, confirmation: WORD, panel: WORD, status: WORD,
+  overdue: /^1$/, missing: /^1$/, payrollFull: /^1$/, subject: WORD, only: /^[a-z0-9_,-]{1,80}$/, allocation: WORD, confirmation: WORD, panel: WORD, status: WORD,
   active: WORD, cactive: WORD, cat: WORD, cpage: /^\d{1,4}$/, cpmode: WORD, csub: WORD, grade: /^[^\u0000-\u001f]{0,40}$/,
   hm: /^[0-9-]{1,10}$/, hy: /^\d{4}$/, qid: UUID, qpage: /^\d{1,4}$/, tsub: WORD,
   // 교재 다이얼로그가 열 때 읽는 2.0 loadMyTextbookMent(읽기라 GET) — 답은 { ment }.

@@ -9,3 +9,14 @@ export function currentCall() {
   return c;
 }
 export const runInCall = (ctx, fn) => callStore.run({ queue: Promise.resolve(), after: [], ...ctx }, fn);
+
+const DONE = Symbol('done');
+/** 2.0의 React cache() 자리 — 읽기 동작(memo가 있는 동작) 안에서는 같은 인자로 한 번만 부른다. 인자는 React처럼 값 그대로(===) 비교한다.
+ *  쓰기 동작은 저장 뒤 다시 읽어야 하니 매번 부른다(2.0 서버 액션에서도 cache()는 기억하지 않는다). */
+export const requestCache = fn => (...args) => {
+  const memo = callStore.getStore()?.memo; if (!memo) return fn(...args);
+  let node = memo.get(fn); if (!node) memo.set(fn, node = new Map());
+  for (const a of args) { let next = node.get(a); if (!next) node.set(a, next = new Map()); node = next; }
+  if (!node.has(DONE)) node.set(DONE, fn(...args));
+  return node.get(DONE);
+};
