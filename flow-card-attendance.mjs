@@ -1,5 +1,6 @@
-// 결석 확인 전화 업무 카드: 같은 원생·날짜의 출결 행 중 하나를 골라 2.0 recordFollowup으로 저장한다.
+// 결석 확인 전화 업무 카드: 원생·반·날짜 수업을 골라 2.0 recordFollowup으로 저장한다.
 import { openFullDatabase, tenantId } from './full-db.mjs';
+import { groupAbsenceSessions } from './absence-sessions.mjs';
 import { sourceCardCase } from './flow-card-guard.mjs';
 import { V2Error } from './v2-screens.mjs';
 
@@ -46,7 +47,8 @@ export function createFlowCardAttendance({ flow, v2ScreenRoute, open = openFullD
         const { task, records } = await db.begin('isolation level repeatable read read only', async sql => taskAndRecords(sql, taskId));
         if (!sameGroup(task, flowCase)) throw bad(409, 'source_changed', '결석 대상이 달라졌습니다. 새로 불러와 주세요.');
         const allowed = new Set(flowCase.entityRefs.filter(r => r.type === 'attendance').map(r => r.id));
-        return { caseId, records: records.filter(r => allowed.has(r.id)).map(r => ({ recordRef: `attendance:${r.id}`, className: r.class_name || '반 이름 없음', date: r.session_date, slotStart: r.slot_start || null })) };
+        return { caseId, records: groupAbsenceSessions(records.filter(r => allowed.has(r.id)))
+          .map(r => ({ recordRef: `attendance:${r.id}`, className: r.class_name || '반 이름 없음', date: r.date, slotStart: null })) };
       } finally { await db.end(); }
     },
     async save(raw) {
@@ -65,11 +67,11 @@ export function createFlowCardAttendance({ flow, v2ScreenRoute, open = openFullD
         picked = await db.begin('isolation level repeatable read read only', async sql => {
           const { task, records } = await taskAndRecords(sql, taskId);
           if (!sameGroup(task, flowCase)) throw bad(409, 'source_changed', '결석 대상이 달라졌습니다. 새로 불러와 주세요.');
-          return records.find(r => r.id === recordId);
+          return groupAbsenceSessions(records).find(session => session.cells.some(r => r.id === recordId));
         });
       } finally { await db.end(); }
       if (!picked) throw bad(409, 'record_ref_not_allowed', '이 업무와 연결된 결석 기록이 아닙니다. 새로 불러와 주세요.');
-      const input = { studentId: picked.student_id, classId: picked.class_id, sessionDate: picked.session_date, slotStart: picked.slot_start || null, signal: 'absent', state: raw.state, outcome: raw.outcome || null, contactedVia: raw.contactedVia || null, note: raw.note || null };
+      const input = { studentId: picked.studentId, classId: picked.classId, sessionDate: picked.date, slotStart: null, signal: 'absent', state: raw.state, outcome: raw.outcome || null, contactedVia: raw.contactedVia || null, note: raw.note || null };
       const result = await v2ScreenRoute.performWrite({
         id: 'attendance', name: 'recordFollowup',
         raw: { module: MODULE, actor: raw.actorId, args: [input] },
@@ -77,8 +79,8 @@ export function createFlowCardAttendance({ flow, v2ScreenRoute, open = openFullD
           sourceCardCase(flow.service, raw.caseId, 'attendance_absent_desk', raw.expectedRevision, raw.stepId, raw.actorId);
           const { task, records } = await taskAndRecords(sql, taskId, true);
           if (!sameGroup(task, flowCase)) throw bad(409, 'source_changed', '결석 대상이 달라졌습니다. 새로 불러와 주세요.');
-          const fresh = records.find(r => r.id === recordId);
-          if (!fresh || fresh.student_id !== input.studentId || fresh.class_id !== input.classId || fresh.session_date !== input.sessionDate || (fresh.slot_start || null) !== input.slotStart) throw bad(409, 'record_ref_not_allowed', '이 업무와 연결된 결석 기록이 달라졌습니다. 새로 불러와 주세요.');
+          const fresh = groupAbsenceSessions(records).find(session => session.cells.some(r => r.id === recordId));
+          if (!fresh || fresh.studentId !== input.studentId || fresh.classId !== input.classId || fresh.date !== input.sessionDate) throw bad(409, 'record_ref_not_allowed', '이 업무와 연결된 결석 기록이 달라졌습니다. 새로 불러와 주세요.');
         },
         afterRun: ({ result }) => {
           if (!result || result.ok !== true || !UUID.test(result.id || '')) throw bad(409, 'save_refused', typeof result?.error === 'string' && /[가-힣]/.test(result.error) ? result.error : '결석 처리 결과가 저장되지 않았습니다.');

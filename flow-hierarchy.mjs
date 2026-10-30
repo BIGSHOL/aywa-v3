@@ -4,6 +4,7 @@
 // every authorized record from source.signals and re-derives each record's step with the seed's
 // FK owner rule, cross-checked against the refs the seed stored. Pure: no AI, no I/O.
 import { createHash } from 'node:crypto';
+import { groupAbsenceSessions } from './absence-sessions.mjs';
 
 export const HIERARCHY_SCHEMA = 1;
 export class HierarchyError extends Error { constructor(status, code, message) { super(message); this.status = status; this.code = code; } }
@@ -27,9 +28,9 @@ export const ADAPTERS = Object.freeze({
     record: e => ({ studentId: e.studentId || null, classId: e.classId || null, date: e.date || null, status: 'absent' }),
     basis: ({ asOf, capturedAt }) => ({
       asOf, capturedAt, label: `이번 달(${Number(asOf.slice(5, 7))}/1~${Number(asOf.slice(5, 7))}/${Number(asOf.slice(8, 10))}) 결석 3회 이상`,
-      window: { from: `${asOf.slice(0, 7)}-01`, to: asOf }, threshold: { count: 3, unit: '결석 기록(수업별 출결 칸, 정정 반영)' },
+      window: { from: `${asOf.slice(0, 7)}-01`, to: asOf }, threshold: { count: 3, unit: '결석 수업(반·날짜별, 정정 반영)' },
       cohort: '재원(enrolled) 원생 · 테스트 원생 제외 · 정정 전 기록 제외',
-      interpretation: '결석은 수업마다 따로 셉니다.',
+      interpretation: '결석은 같은 반의 같은 날짜에 한 번 셉니다.',
       note2_0: '2.0 반복 결석 알림은 최근 14일 3/5/10회 단계로 기준이 다릅니다. 이 화면은 복사본 신호의 이번 달 기준을 그대로 씁니다.',
     }),
   },
@@ -103,7 +104,7 @@ export function buildHierarchy(source, state, caseId) {
   const steps = stepIndex(source, c, refs), flow = flowIndex(c), actors = new Set(source.actors.map(a => a.id));
 
   // Cohort check against the stated rule (window, threshold, enrolled) — reported, never "fixed".
-  const perStudent = new Map(); for (const r of rows) perStudent.set(r.studentId, (perStudent.get(r.studentId) || 0) + 1);
+  const perStudent = new Map(); for (const r of groupAbsenceSessions(rows)) perStudent.set(r.studentId, (perStudent.get(r.studentId) || 0) + 1);
   const statuses = [...perStudent.keys()].map(id => source.entities.get(`student:${id}`)?.status);
   const cohortCheck = {
     belowThreshold: [...perStudent.values()].filter(n => n < adapter.threshold).length,
@@ -160,15 +161,16 @@ export function buildHierarchy(source, state, caseId) {
       if (x.cls) cK.classes.add(x.cls.id); else unknown.classRecords += [...x.students.values()].flat().length;
       if (t.id) cK.teachers.add(t.id);
       for (const [sid, list] of x.students) {
-        const all = recordsOf.get(sid), dates = list.map(r => r.date).filter(Boolean).sort(), allDates = all.map(r => r.date).filter(Boolean).sort();
-        const sK = { students: new Set([sid]), classes: new Set(x.cls ? [x.cls.id] : []), teachers: new Set(t.id ? [t.id] : []), records: list.length };
+        const all = recordsOf.get(sid), sessions = groupAbsenceSessions(list), allSessions = groupAbsenceSessions(all);
+        const dates = sessions.map(r => r.date).filter(Boolean).sort(), allDates = allSessions.map(r => r.date).filter(Boolean).sort();
+        const sK = { students: new Set([sid]), classes: new Set(x.cls ? [x.cls.id] : []), teachers: new Set(t.id ? [t.id] : []), records: sessions.length };
         const se = source.entities.get(`student:${sid}`);
         const node = { id: `${cKey}/student:${sid}`, level: 'student', label: se.label, detail: schoolGrade(se.school, se.grade), entityRef: { type: 'student', id: sid }, stepIds: stepsOf(list), counts: finalCounts(sK), flow: flowOf(list), children: [],
           records: list.slice().sort((a, b) => (a.date || '').localeCompare(b.date || '') || a.id.localeCompare(b.id)).map(r => ({ id: `${adapter.recordType}:${r.id}`, date: r.date, status: r.status, statusLabel: adapter.statusLabel[r.status] || '기타', familyId: adapter.familyId, recordId: r.id, classId: x.cls?.id || null, teacherId: t.id })),
-          facts: { origin: 'code', absencesInClass: list.length, absencesAllClasses: all.length, classesWithAbsences: new Set(all.map(r => r.classId || 'unknown')).size, firstDate: dates[0] || null, lastDate: dates.at(-1) || null,
+          facts: { origin: 'code', absencesInClass: sessions.length, absencesAllClasses: allSessions.length, classesWithAbsences: new Set(allSessions.map(r => r.classId || 'unknown')).size, firstDate: dates[0] || null, lastDate: dates.at(-1) || null,
             daysSinceLast: allDates.length ? day(allDates.at(-1), asOf) : null, absencesLast7Days: allDates.filter(d => day(d, asOf) <= 6).length } };
         node.status = node.flow.state; studentNodes.push(node); nodes.set(node.id, node);
-        cK.students.add(sid); cK.records += list.length;
+        cK.students.add(sid); cK.records += sessions.length;
       }
       const all = [...x.students.values()].flat();
       const cn = { id: cKey, level: 'class', label: x.cls?.label || '반 미상', ...(x.cls ? { entityRef: { type: 'class', id: x.cls.id } } : {}), stepIds: stepsOf(all), counts: finalCounts(cK), flow: aggregate(studentNodes), children: sortNodes(studentNodes),
@@ -196,7 +198,7 @@ export function buildHierarchy(source, state, caseId) {
   if (truncated.stepRefs < rows.length) notes.push(`단계 목록에는 근거가 ${truncated.stepRefs}건만 보이지만, 이 정리는 근거 ${rows.length}건 전부를 반의 담임 기준으로 묶었습니다.`);
   if (unmapped) notes.push(`신호 근거 ${unmapped}건은 원생 기록으로 이어지지 않아 이 화면에서 빠졌습니다.`);
   if (unknown.teacherRecords || unknown.classRecords) notes.push(`반 또는 담임이 미상인 기록 ${Math.max(unknown.teacherRecords, unknown.classRecords)}건은 '배정 미상' 묶음에 따로 둡니다.`);
-  if (root.facts.managerQueueRecords) notes.push(`재직 중이 아닌 담임의 기록 ${root.facts.managerQueueRecords}건은 원본 업무에서 관리자 대기열 단계에 있습니다.`);
+  if (root.facts.managerQueueRecords) notes.push(`재직 중이 아닌 담임의 결석 수업 ${root.facts.managerQueueRecords}회는 원본 업무에서 관리자 대기열 단계에 있습니다.`);
   const warnings = [];
   if (cohortCheck.ok === false) warnings.push({ code: 'cohort_mismatch', message: `신호 기준과 맞지 않는 근거가 있습니다: 3회 미만 원생 ${cohortCheck.belowThreshold}명 · 기간 밖 기록 ${cohortCheck.outsideWindow}건 · 재원 아닌 원생 ${cohortCheck.notEnrolled ?? 0}명.` });
   if (cohortCheck.ok === null) notes.push('원생의 재원 상태를 확인할 수 없어 재원 여부는 검증하지 못했습니다.');
@@ -206,7 +208,7 @@ export function buildHierarchy(source, state, caseId) {
   return {
     tree: {
       schemaVersion: HIERARCHY_SCHEMA, caseId, flowRevision: state.revision, sourceFingerprint: fingerprint, basis,
-      counts: { ...finalCounts(rootK), unmappedRecords: unmapped }, units: { students: '명(중복 없음)', classes: '개 반', teachers: '명', records: '결석 기록(건)' },
+      counts: { ...finalCounts(rootK), unmappedRecords: unmapped }, units: { students: '명(중복 없음)', classes: '개 반', teachers: '명', records: '결석 수업(회)' },
       warnings,
       coverage: { complete: !unmapped && !steps.mismatched && cohortCheck.ok !== false, totalRecords: recordIds.length, returnedRecords: rows.length, notes, seedTruncation: truncated, unknown, cohortCheck },
       root,

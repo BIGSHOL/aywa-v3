@@ -2,6 +2,7 @@ import { openFullDatabase, tenantId } from './full-db.mjs';
 import { importV2 } from './v2-bridge.mjs';
 import { queryGate } from './v2-onescreen-roster.mjs';
 import { cellAxes, homeroomHistory } from './v2-dashboard-attendance.mjs';
+import { groupAbsenceSessions } from './absence-sessions.mjs';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const stateLabel = { open: '처리 대기', pending: '처리 대기', done: '처리 완료', completed: '처리 완료', resolved: '처리 완료', dismissed: '해당 없음', cancelled: '취소' };
@@ -18,7 +19,7 @@ export async function loadAbsenceDetail({ studentId, attendanceId, asOf }) {
       const [student] = await sql`select id::text id, name from public.students where tenant_id=${tenantId} and id=${studentId} and not coalesce(is_test,false)`;
       if (!student) return null;
       const monthStart = `${asOf.slice(0, 7)}-01`;
-      const rows = await sql`select a.id::text id, a.session_date::text session_date, a.class_id::text class_id, c.class_name "className",
+      const rows = await sql`select a.id::text id, a.student_id::text student_id, a.session_date::text session_date, a.class_id::text class_id, c.class_name "className",
           coalesce(sched.times, to_char(a.slot_start,'HH24:MI')) time,
           a.note memo, a.slot_start::text slot_start, a.taught_by::text taught_by, a.seat_label, a.recorded_via::text recorded_via
         from public.attendance_records a
@@ -45,12 +46,18 @@ export async function loadAbsenceDetail({ studentId, attendanceId, asOf }) {
       const teachers = rows.length ? await cellAxes(rules, sql, tenantId, rows, history) : new Map();
       const followups = await sql`select class_id::text class_id, session_date::text date, slot_start::text slot, state::text state, outcome::text outcome, note
         from public.attendance_followups where tenant_id=${tenantId} and student_id=${studentId} and session_date between ${monthStart} and ${asOf}`;
-      return { student, month: asOf.slice(0, 7), rows: rows.map(row => {
-        const matched = followups.filter(f => f.class_id === row.class_id && f.date === row.session_date && (!f.slot || !row.slot_start || f.slot === row.slot_start));
-        const teacher = teachers.get(row.id);
-        return { id: row.id, date: row.session_date, classId: row.class_id, className: row.className, time: row.time,
-          teacher: teacher?.label || '담당 기록 없음', teacherSource: teacher?.source || 'none', memo: row.memo,
-          followup: matched.length ? matched.map(f => [stateLabel[f.state] || '후속 기록', queue.OUTCOME_LABEL[f.outcome] || '', f.note].filter(Boolean).join(' · ')).join(' / ') : '후속 기록 없음' };
+      const combined = values => [...new Set(values.filter(Boolean))];
+      return { student, month: asOf.slice(0, 7), rows: groupAbsenceSessions(rows).map(session => {
+        const matched = followups.filter(f => f.class_id === session.classId && f.date === session.date
+          && (!f.slot || session.cells.some(cell => !cell.slot_start || f.slot === cell.slot_start)));
+        const teacherNames = combined(session.cells.map(cell => teachers.get(cell.id)?.label));
+        const followupNames = combined(matched.map(f => [stateLabel[f.state] || '후속 기록', queue.OUTCOME_LABEL[f.outcome] || '', f.note].filter(Boolean).join(' · ')));
+        return { id: session.id, date: session.date, classId: session.classId, className: session.className,
+          time: combined(session.cells.map(cell => cell.time)).join(', '),
+          teacher: teacherNames.join(' · ') || '담당 기록 없음',
+          teacherSource: teachers.get(session.id)?.source || 'none',
+          memo: combined(session.cells.map(cell => cell.memo)).join(' / '),
+          followup: followupNames.join(' / ') || '후속 기록 없음' };
       }) };
     });
   } finally { await db.end(); }

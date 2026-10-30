@@ -2,6 +2,7 @@
 import { ISO_AT, PRIORITY, addDays, countOf, family, field, latest, md, metric, monthlyTrend, record, signal, sumOf, yymm } from './domain-snapshot-core.mjs';
 import { importV2 } from './v2-bridge.mjs';
 import { loadRules as loadClassRules, readClassesPage } from './v2-screen-classes.mjs';
+import { groupAbsenceSessions } from './absence-sessions.mjs';
 
 const ATT = { present: '출석', late: '지각', absent: '결석', early_leave: '조퇴', makeup: '보강' };
 const SEND = { success: '발송 완료', failed: '발송 실패', recalled: '회수', too_old: '기한 지남', none: '미발송' };
@@ -13,13 +14,14 @@ export async function attendanceFamilies(ctx) {
   // 정정된 출결은 최신 줄만(supersedes_id), 기준일까지, 테스트 원생 제외 — snapshot.mjs와 같은 규칙.
   const valid = sql`(select a.* from public.attendance_records a where a.tenant_id=${t} and a.session_date <= ${asOf} and not exists (select 1 from public.attendance_records b where b.tenant_id=${t} and b.supersedes_id=a.id) and a.student_id not in (select id from public.students where tenant_id=${t} and coalesce(is_test,false)))`;
   // 시간 = 그 칸의 교시(시작 시각)와 같은 날 유효한 반 배치의 끝 시각. 시작 시각이 없는 칸은 그 요일 반 배치 전부(배치 이력 #88 — 그날 유효한 행만).
-  const rows = await sql`select v.id, v.student_id, s.name, s.status student_status, c.class_name, v.session_date::text d, v.status::text st, v.seat_label seat, left(v.note, 100) note,
+  const rows = await sql`select v.id, v.student_id, v.class_id::text class_id, s.name, s.status student_status, c.class_name, v.session_date::text d, v.status::text st, v.seat_label seat, left(v.note, 100) note,
       coalesce((select string_agg(to_char(cs.start_time,'HH24:MI') || '~' || to_char(cs.end_time,'HH24:MI'), ', ' order by cs.start_time) from public.class_schedules cs where cs.tenant_id=${t} and cs.class_id=v.class_id and cs.day_of_week::text=lower(to_char(v.session_date,'Dy')) and (v.slot_start is null or cs.start_time=v.slot_start) and (cs.valid_from is null or cs.valid_from <= v.session_date) and (cs.valid_to is null or cs.valid_to >= v.session_date)), to_char(v.slot_start,'HH24:MI')) slot
     from ${valid} v join public.students s on s.id=v.student_id and s.tenant_id=${t} left join public.classes c on c.id=v.class_id and c.tenant_id=${t} where v.session_date >= ${monthStart} order by (v.status='absent') desc, v.session_date desc, s.name`;
   const monthly = await sql`select to_char(session_date,'YYYY-MM') as month, round(100.0 * count(*) filter (where status in ('present','late')) / nullif(count(*),0), 1)::float8 as value from ${valid} v group by 1`;
   const [aux] = await sql`select (select count(*)::int from public.attendance_followups where tenant_id=${t}) followups, (select count(*)::int from public.attendance_followups where tenant_id=${t} and session_date >= ${monthStart}) month_followups, (select count(*)::int from public.kiosk_devices where tenant_id=${t}) kiosks, (select count(*)::int from public.kiosk_devices where tenant_id=${t} and is_active) active_kiosks, (select count(*)::int from public.attendance_checkins where tenant_id=${t}) checkins, (select count(*)::int from public.attendance_records where tenant_id=${t}) raw`;
+  const absences = groupAbsenceSessions(rows.filter(r => r.st === 'absent'));
   const absentBy = new Map();
-  for (const r of rows) if (r.st === 'absent' && r.student_status === 'enrolled') absentBy.set(r.student_id, (absentBy.get(r.student_id) || 0) + 1);
+  for (const r of absences) if (r.student_status === 'enrolled') absentBy.set(r.student_id, (absentBy.get(r.student_id) || 0) + 1);
   const repeat = new Set([...absentBy].filter(([, n]) => n >= 3).map(([id]) => id));
   const attended = rows.filter(r => ['present', 'late'].includes(r.st)).length;
   const rate = rows.length ? Math.round(attended / rows.length * 1000) / 10 : null;
@@ -31,10 +33,10 @@ export async function attendanceFamilies(ctx) {
   const repeatRows = rows.filter(repeatAbsent);
   out.attendance = family('attendance', '출석부(월별·오늘·출결 모드·자리·키오스크)', {
     summary: `이번 달 결석 후속 처리 ${aux.month_followups}건 · 키오스크 ${aux.kiosks}대(사용 중 ${aux.active_kiosks}대).`,
-    metrics: [metric('이번 달 출결 칸', rows.length, '칸', '정정 반영'), metric('이번 달 출석률', rate, '%', '(출석+지각) ÷ 출결 칸 · 보강은 출석 아님'), metric('이번 달 결석', rows.filter(r => r.st === 'absent').length, '칸'), metric('이번 달 결석 3회 이상', repeat.size, '명', '수업마다 따로 셈'), metric('이번 달 결석 후속 처리', aux.month_followups, '건', `전체 ${aux.followups}건`), metric('키오스크 기기', aux.kiosks, '대', `사용 중 ${aux.active_kiosks}대 · 체크인 ${aux.checkins}건`)],
+    metrics: [metric('이번 달 출결 칸', rows.length, '칸', '정정 반영'), metric('이번 달 출석률', rate, '%', '(출석+지각) ÷ 출결 칸 · 보강은 출석 아님'), metric('이번 달 결석', absences.length, '회', '반·날짜별'), metric('이번 달 결석 3회 이상', repeat.size, '명', '반·날짜별'), metric('이번 달 결석 후속 처리', aux.month_followups, '건', `전체 ${aux.followups}건`), metric('키오스크 기기', aux.kiosks, '대', `사용 중 ${aux.active_kiosks}대 · 체크인 ${aux.checkins}건`)],
     trend: monthlyTrend('월별 출석률', '%', monthly, asOf), evidence, detailLabel: '반', dateLabel: '수업일',
     facetOrder: [...Object.keys(ATT).map(k => `status:${k}`), 'repeat-absence', 'repeat-absence-absent'], facetLabels: { ...status('status', ATT), 'repeat-absence': '이번 달 결석 3회 이상 원생의 출결', 'repeat-absence-absent': '이번 달 결석 3회 이상 원생의 결석' }, recordSource: 'attendance_records',
-    signals: repeat.size ? [signal({ id: 'attendance-repeat-absence', title: `이번 달 결석 3회 이상 ${repeat.size}명`, summary: `많은 순: ${most.slice(0, 3).map(([id, n]) => `${nameOf(id)} ${n}회`).join(' · ')}${most.length > 3 ? ` 외 ${most.length - 3}명` : ''}. 결석은 수업마다 따로 셉니다.`, priority: PRIORITY.check, source: '출석부 · 정정 반영 출결', recordIds: repeatRows.map(r => r.id), facet: 'repeat-absence-absent', at: latest(repeatRows.map(r => r.d)), draft: { title: '결석 사유 및 보강 계획 확인', body: '이번 달 결석이 3회 이상인 원생의 결석 사유와 보호자 연락 여부, 보강 계획을 확인해 주세요.' } })] : [],
+    signals: repeat.size ? [signal({ id: 'attendance-repeat-absence', title: `이번 달 결석 3회 이상 ${repeat.size}명`, summary: `많은 순: ${most.slice(0, 3).map(([id, n]) => `${nameOf(id)} ${n}회`).join(' · ')}${most.length > 3 ? ` 외 ${most.length - 3}명` : ''}. 결석은 반·날짜별 한 번 셉니다.`, priority: PRIORITY.check, source: '출석부 · 정정 반영 출결', recordIds: repeatRows.map(r => r.id), facet: 'repeat-absence-absent', at: latest(repeatRows.map(r => r.d)), draft: { title: '결석 사유 및 보강 계획 확인', body: '이번 달 결석이 3회 이상인 원생의 결석 사유와 보호자 연락 여부, 보강 계획을 확인해 주세요.' } })] : [],
     sourceLabel: '출석부 · 결석 후속 · 키오스크', coverageNote: '목록은 이번 달 출결 칸입니다(결석 먼저 · 정정 전 기록과 테스트 원생 제외).',
     sources: [{ table: 'attendance_records', rows: aux.raw }, { table: 'attendance_followups', rows: aux.followups }, { table: 'kiosk_devices', rows: aux.kiosks }],
   });

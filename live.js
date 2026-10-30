@@ -450,17 +450,19 @@
   let absenceAsk=0;
   async function showAbsences(studentId,{attendanceId}={}){
     const ask=++absenceAsk;
-    dialog('absence-detail','이번 달 결석 상세','결석 한 건마다 수업과 후속 기록을 확인합니다.','<p class="live-note" role="status">결석 기록을 불러오는 중입니다.</p>');
+    dialog('absence-detail','이번 달 결석 상세','결석 수업마다 후속 기록을 확인합니다.','<p class="live-note" role="status">결석 기록을 불러오는 중입니다.</p>');
     try{
       const key=attendanceId?`attendance=${encodeURIComponent(attendanceId)}`:`student=${encodeURIComponent(studentId)}`;
       const response=await fetch(`/api/attendance-absences?${key}`,{headers:{Accept:'application/json'}});
       if(!response.ok)throw new Error('load');
       const data=await response.json();
       if(ask!==absenceAsk||!$('#absence-detail')?.open)return;
-      const rows=data.rows||[];
-      const body=`<div class="live-drawer-summary"><strong>${h(rows.length)}건 결석</strong><p>${h(data.month)} · 정정 반영 출결 · 같은 날 반별 수업은 각각 표시</p></div>`+
+      const {groupAbsenceSessions}=await import('/absence-sessions.mjs');
+      if(ask!==absenceAsk||!$('#absence-detail')?.open)return;
+      const rows=groupAbsenceSessions((data.rows||[]).map(row=>({...row,studentId:data.student.id})));
+      const body=`<div class="live-drawer-summary"><strong>${h(rows.length)}회 결석</strong><p>${h(data.month)} · 정정 반영 출결 · 같은 날 반별 수업은 각각 표시</p></div>`+
         (rows.length?`<div class="fl-rectable-wrap"><table class="fl-rectable"><thead><tr><th scope="col">날짜</th><th scope="col">반</th><th scope="col">교시·시간</th><th scope="col" class="wrap">사유·메모</th><th scope="col" class="wrap">후속 처리</th><th scope="col" class="al-c">담당 선생님</th><th scope="col" class="fl-rec-go">처리</th></tr></thead><tbody>${rows.map(r=>`<tr><th scope="row">${h(/^\d{4}-\d{2}-\d{2}/.test(r.date||'')?`${Number(r.date.slice(5,7))}/${Number(r.date.slice(8,10))}`:r.date||'미입력')}</th><td><span class="fl-cut">${h(r.className||'반 미입력')}</span></td><td>${h(r.time||'미입력')}</td><td class="wrap">${h(r.memo||'—')}</td><td class="wrap">${h(r.followup||'—')}</td><td class="al-c">${h(r.teacher||'—')}</td><td class="fl-rec-go">${r.classId?`<button type="button" class="fl-rec-process" data-absence-day="${h(r.date)}" data-absence-class="${h(r.classId)}" aria-label="${h(r.date)} ${h(r.className||'')} 출석부 열기">출석부</button>`:''}</td></tr>`).join('')}</tbody></table></div>`:empty('이번 달 결석 기록이 없습니다.',''));
-      dialog('absence-detail',`${data.student.name} · 이번 달 결석`,`${data.month} · ${rows.length}건`,body);
+      dialog('absence-detail',`${data.student.name} · 이번 달 결석`,`${data.month} · ${rows.length}회`,body);
     }catch{if(ask===absenceAsk&&$('#absence-detail')?.open)dialog('absence-detail','이번 달 결석 상세','',`<p class="live-note">결석 기록을 불러오지 못했습니다. 잠시 뒤 다시 열어 주세요.</p>`);}
   }
   const notesFor=context=>state.localNotes.filter(n=>n.context===context);

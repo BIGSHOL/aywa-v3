@@ -35,9 +35,9 @@ const card = createFlowCardAttendance({ flow, v2ScreenRoute, open });
 const input = { caseId: CASE, stepId: STEP, recordRef: 'attendance:' + RECORD, expectedRevision: 7, actorId: ACTOR, state: 'resolved', outcome: 'no_answer', contactedVia: 'phone', note: '시험장 검증' };
 
 const listed = await card.records(CASE);
-assert.deepEqual(listed.records, [{ recordRef: input.recordRef, className: '시험반', date: '2026-10-29', slotStart: '15:00' }, { recordRef: `attendance:${RECORD2}`, className: '시험반', date: '2026-10-29', slotStart: '15:40' }]);
+assert.deepEqual(listed.records, [{ recordRef: input.recordRef, className: '시험반', date: '2026-10-29', slotStart: null }]);
 assert.equal((await card.save(input)).saved, true);
-assert.deepEqual(lastRaw.args[0], { studentId: STUDENT, classId: CLASS, sessionDate: '2026-10-29', slotStart: '15:00', signal: 'absent', state: 'resolved', outcome: 'no_answer', contactedVia: 'phone', note: '시험장 검증' });
+assert.deepEqual(lastRaw.args[0], { studentId: STUDENT, classId: CLASS, sessionDate: '2026-10-29', slotStart: null, signal: 'absent', state: 'resolved', outcome: 'no_answer', contactedVia: 'phone', note: '시험장 검증' });
 assert.equal(writes, 1);
 
 for (const bad of [{ ...input, actorId: OTHER }, { ...input, expectedRevision: 6 }, { ...input, recordRef: 'attendance:' + OTHER }, { ...input, classId: OTHER }]) {
