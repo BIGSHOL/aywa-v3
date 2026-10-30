@@ -42,7 +42,7 @@
       const linked = cardRequest(data, x.factIds);
       return `<li>${esc(x.text)}<small>근거: ${x.evidence.map(esc).join(' · ')}</small><div class="tr-insight-actions">${linked
         ? `<button type="button" class="button" data-ca-open-case="${esc(linked.id)}">업무 열기</button>`
-        : `<button type="button" class="button" data-ca-request="${i}" ${data.insightFactIds && body?.status === 'ready' ? '' : 'disabled'}>업무 만들기</button>`}<button type="button" class="button" data-ca-flow>열린 업무 보기</button></div></li>`;
+        : `<button type="button" class="button" data-ca-request="${i}" ${data.insightFactIds && body?.status === 'ready' ? '' : 'disabled'}>업무 만들기</button>`}<button type="button" class="button" data-ca-flow>처리할 업무 보기</button></div></li>`;
     }).join('')}</ul></div>` : '';
     return `<div class="tr-insight"><div class="tr-insight-head"><h3>분석 문장</h3><button type="button" class="button" data-ca-make="${esc(data.metric)}" ${body?.enabled === false || state.status === 'making' ? 'disabled' : ''}>${state.status === 'making' ? '만드는 중…' : 'AI 분석'}</button></div>`
       + (body?.note ? `<p class="v3s-note">${esc(body.note)}</p>` : '')
@@ -66,7 +66,7 @@
       }).join('')}</ol></details>` : '';
       return `<section class="tr-analysis-item"><h3>${i + 1}. ${title}</h3><ol>${lines.map(f => {
         const ref = f.kind === 'record' && f.refs?.[0], open = ref ? `<button type="button" class="ax-text-link" data-ca-record="${esc(ref.id)}" data-ca-type="${esc(ref.type)}" data-ca-metric="${esc(entry.data.metric)}">${esc(f.text)}</button>` : esc(f.text);
-        return `<li data-fact="${esc(f.id)}">${open}${i === 3 && f.kind === 'flow' ? ' <button type="button" class="ax-text-link" data-ca-flow>열린 업무 보기</button>' : ''}</li>`;
+        return `<li data-fact="${esc(f.id)}">${open}${i === 3 && f.kind === 'flow' ? ' <button type="button" class="ax-text-link" data-ca-flow>처리할 업무 보기</button>' : ''}</li>`;
       }).join('') || '<li>비교할 기록이 없습니다.</li>'}</ol>${records}</section>`;
     }).join('');
     const a = entry.data, grain = { day: '일별', week: '주별', month: '월별', year: '연별' }[a.period] || '기간';

@@ -67,7 +67,7 @@ try {
         assert.equal(actualFlow.values.review, selected.filter(c => c.state === 'review').length);
         assert.equal(actualFlow.values.overdue, flags.filter(f => f.late).length);
         assert.equal(actualFlow.values.unassigned, flags.filter(f => f.unassigned).length);
-        assert.match(actualFlow.text, /^현재 열린 학원 전체 업무 · 이어진 업무 .*\(처리 전 .* · 진행 중 .* · 검토 대기 .*\) · 그중 지난 업무 .* · 담당 미지정 .*$/);
+        assert.match(actualFlow.text, /^현재 처리할 학원 전체 업무 · 이어진 업무 .*\(처리 전 .* · 진행 중 .* · 검토 대기 .*\) · 그중 지난 업무 .* · 담당 미지정 .*$/);
       }
       assert.equal(a.metric, card.id);
       assert.equal(a.period, card.period);

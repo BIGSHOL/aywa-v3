@@ -227,7 +227,7 @@ window.createOwnerWorkspace = function createOwnerWorkspace(api) {
         if(created===null){error.textContent='요청을 등록하지 못했습니다. 내용을 확인하고 다시 시도해 주세요.';return;}
         const caseId=typeof created==='string'?created:created.caseId;
         form.dataset.submitted='1';ui.drafts.delete(form.dataset.draftKey);sources.forEach(x=>ui.read.add(x));
-        document.querySelectorAll('dialog[open]').forEach(d=>d.close());render();if(caseId)showRequestDetail(caseId);toast(created?.duplicate?'같은 확인 항목의 열린 업무를 보여 드립니다.':'업무 흐름에 요청을 등록했습니다. 담당자의 업무에 바로 보입니다.');
+        document.querySelectorAll('dialog[open]').forEach(d=>d.close());render();if(caseId)showRequestDetail(caseId);toast(created?.duplicate?'같은 확인 항목의 처리할 업무를 보여 드립니다.':'업무 흐름에 요청을 등록했습니다. 담당자의 업무에 바로 보입니다.');
       });
       return;
     }
