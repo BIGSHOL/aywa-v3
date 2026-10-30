@@ -23,6 +23,11 @@ const inventory = JSON.parse(await readFile(inventoryPath, 'utf8'));
 const snapshot = await loadSnapshot();
 const ws = snapshot.workspaces, F = ws.families, store = workspaceRecords(), asOf = snapshot.meta.asOf, month = snapshot.meta.month;
 const metric = (id, label) => F[id].metrics.find(m => m.label === label)?.value;
+// 수납 머리 숫자의 독립 SQL(2.0 수납 화면과 같은 조건 — 무효만 제외).
+const headDb = await openFullDatabase();
+const [headRow] = await headDb`select sum(amount_total)::float8 gross, sum(coalesce(amount_discount,0))::float8 disc, sum(coalesce(amount_paid,0))::float8 paid,
+    coalesce(sum(coalesce(amount_paid,0)) filter (where status::text = 'refunded'),0)::float8 refunded_paid
+  from public.invoices where tenant_id=${tenantId} and period=${month} and status <> 'void'`;
 
 check('inventory families are all mapped, audit-only = not-applicable, owner families are never hidden', () => {
   assert.deepEqual([...inventory.families.map(f => f.id)].sort(), [...FAMILY_IDS].sort());
@@ -42,11 +47,14 @@ check('base read model is unchanged; evidence stays out of snapshot.js', () => {
 
 check('same facts as the base model and the AX issues', () => {
   const bills = snapshot.invoices.filter(i => i.period === month), open = bills.filter(i => i.remaining > 0);
-  assert.equal(metric('billing', '이번 달 청구액'), bills.reduce((n, i) => n + i.total, 0));
-  assert.equal(metric('billing', '이번 달 수납'), bills.reduce((n, i) => n + i.paid, 0));
-  assert.equal(metric('billing', '이번 달 남은 금액'), 329000); assert.equal(open.length, 14);
+  // 머리 숫자 = 2.0 수납 화면·운영실과 같은 모집단(무효만 제외 · 환불 포함). 첫 화면 기록(snapshot.invoices)은 환불도 뺀 유효 청구라 환불만큼 다르다.
+  const refunded = headRow.refunded_paid;
+  assert.equal(metric('billing', '이번 달 총 청구액'), headRow.gross); assert.equal(metric('billing', '이번 달 할인 합계'), headRow.disc);
+  assert.equal(metric('billing', '이번 달 수납 완료'), headRow.paid); assert.equal(metric('billing', '이번 달 수납 완료') - refunded, bills.reduce((n, i) => n + i.paid, 0));
+  assert.equal(metric('billing', '이번 달 실청구'), headRow.gross - headRow.disc);
+  assert.equal(metric('billing', '이번 달 미수금'), 329000); assert.equal(open.length, 14);
   assert.equal(F.billing.signals[0].recordIds.length, 14);
-  assert.equal(metric('billing', '이번 달 할인 전 금액') - metric('billing', '이번 달 할인') - metric('billing', '이번 달 수납'), 329000, 'unpaid = gross − discount − paid');
+  assert.equal(metric('billing', '이번 달 총 청구액') - metric('billing', '이번 달 할인 합계') - metric('billing', '이번 달 수납 완료'), 329000, 'unpaid = gross − discount − paid');
   assert.equal(metric('students', '재원'), snapshot.students.filter(s => s.status === 'enrolled').length);
   assert.equal(metric('attendance', '이번 달 출결 칸'), snapshot.attendance.statuses.reduce((n, s) => n + s.count, 0));
   const leads = snapshot.admissions.filter(a => a.date.startsWith(month));
