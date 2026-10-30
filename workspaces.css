@@ -313,8 +313,3 @@ th:is(.al-c,.al-r) .ws-th-caret{margin-left:0}
 .ws-textbook-plan-list dl{display:grid;grid-template-columns:max-content minmax(0,1fr);gap:4px 10px;margin:8px 0 0;font-size:var(--ax-xs)}
 .ws-textbook-plan-list dt{color:var(--ax-ink)}
 .ws-textbook-plan-list dd{margin:0;overflow-wrap:anywhere}
-/* 신호 근거 목록 한 장 — 줄을 누르면 그 기록의 처리 화면(원장 10-30). 스크롤·페이드는 대화 상자 본문(live-scroll)이 맡는다. */
-.ws-evidence-table{width:100%;border-collapse:collapse;font-size:14px}
-.ws-evidence-table th,.ws-evidence-table td{padding:8px 10px;border-bottom:1px solid var(--ax-line);text-align:left;vertical-align:top}
-.ws-evidence-table th{position:sticky;top:0;background:#fff;color:var(--ax-muted,#5b6475);font-weight:600}
-.ws-evidence-table td:first-child,.ws-evidence-table td:nth-child(3),.ws-evidence-table td:last-child{white-space:nowrap}

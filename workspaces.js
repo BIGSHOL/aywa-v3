@@ -675,7 +675,7 @@ window.createWorkspaces = function createWorkspaces(api) {
     fetch(`/api/workspaces/${encodeURIComponent(a.id)}/records?ids=${shown.map(encodeURIComponent).join(',')}`,{headers:{Accept:'application/json'}})
       .then(r=>r.ok?r.json():Promise.reject(new Error('조회 실패')))
       .then(j=>{const rows=(j.items||[]).filter(r=>r&&r.id);if(!rows.length){fill('<p class="ax-note">근거 기록을 찾지 못했습니다. 작업 공간 목록에서 확인해 주세요.</p>');return;}
-        fill(`<table class="ws-evidence-table"><thead><tr><th>이름</th><th>내용</th><th>날짜</th><th>상태</th></tr></thead><tbody>${rows.map(r=>`<tr><td><button type="button" class="ax-text-link" data-ws="evidence-open" data-id="${h(a.id)}" data-record="${h(r.id)}">${h(r.label||'—')}</button></td><td>${h(r.detail||'—')}</td><td>${h(r.date?ymd(r.date):'—')}</td><td>${h(r.status||'—')}</td></tr>`).join('')}</tbody></table>${more>0?`<p class="ax-note">나머지 ${fmt(more)}건은 작업 공간 목록에서 볼 수 있습니다.</p>`:''}`);})
+        fill(`<div class="fl-rectable-wrap"><table class="fl-rectable"><thead><tr><th scope="col">이름</th><th scope="col">상태</th><th scope="col">날짜</th><th scope="col" class="wrap">내용</th><th scope="col" class="fl-rec-go">처리</th></tr></thead><tbody>${rows.map(r=>{const at=`data-ws="evidence-open" data-id="${h(a.id)}" data-record="${h(r.id)}"`;return `<tr class="can" ${at}><th scope="row"><button type="button" class="fl-cut" ${at}>${h(r.label||'—')}</button></th><td>${h(r.status||'—')}</td><td>${h(r.date?listDay(r.date):'—')}</td><td class="wrap">${h(r.detail||'—')}</td><td class="fl-rec-go"><button type="button" class="fl-rec-process" ${at} aria-label="${h(r.label||'기록')} 열기">처리 ›</button></td></tr>`;}).join('')}</tbody></table></div>${more>0?`<p class="ax-note">나머지 ${fmt(more)}건은 작업 공간 목록에서 볼 수 있습니다.</p>`:''}`);})
       .catch(()=>fill('<p class="ax-note">근거 기록을 불러오지 못했습니다. 잠시 뒤 다시 시도해 주세요.</p>'));
   }
   function recordActions(a,r){
@@ -955,6 +955,8 @@ window.createWorkspaces = function createWorkspaces(api) {
   const ATTACH_STUDENT={enrolled:'재원',withdrawn:'퇴원',paused:'휴원',on_hold:'휴원',leave:'휴원',pending:'등록 예정',waiting:'대기'};
   const ATTACH_HEAD={enrollment:{detail:'학년·학교',date:'접수일'}};
   const ymd=d=>{const s=String(d||'');return /^\d{4}-\d{2}-\d{2}/.test(s)?`${s.slice(2,4)}.${s.slice(5,7)}.${s.slice(8,10)}`:s;};
+  // 목록 날짜 = 올해 MM.DD · 다른 해 YY.MM.DD(work/owner-concept/list-format-1030.md 7).
+  const listDay=d=>{const s=String(d||'');return /^\d{4}-\d{2}-\d{2}/.test(s)?(s.slice(0,4)===String(db.meta?.asOf||'').slice(0,4)?`${s.slice(5,7)}.${s.slice(8,10)}`:ymd(s)):s;};
   const schoolGrade=(school,grade)=>{const s=String(school||''),g=String(grade||''),m=/^([초중고])(\d)$/.exec(g);return m&&s.endsWith(m[1])?`${s}${m[2]}`:[s,g].filter(Boolean).join(' ');};
   let attachStudents=null,attachClasses=null;
   const studentOf=id=>{attachStudents??=new Map((db.students||[]).map(s=>[String(s.id),s]));return attachStudents.get(String(id));};
