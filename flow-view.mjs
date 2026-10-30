@@ -1,4 +1,5 @@
 // GET /api/flow body (flow_contract v1.1). Read-only over the in-memory state; never calls AI.
+import { closeEvidence } from './task-close-evidence.mjs';
 import { actorsOf } from './flow-engine.mjs';
 import { isFactSignal } from './flow-reconcile-signals.mjs';
 import { activeFlowSteps, flowCaseFlags, flowFirstScreen } from './flow-case-flags.mjs';
@@ -58,13 +59,29 @@ export function decisionView(c, inFlight) {
 // re-judging (flow-reconcile.mjs); the view carries counts only, so /api/flow does not grow with them.
 const evidenceView = e => { if (!Array.isArray(e.coveredRefs)) return e; const { coveredRefs, ...rest } = e; return { ...rest, coveredCount: coveredRefs.length }; };
 // factSignal = 사실이 남는 신호(반복 결석 등, flow-rules FACT_SIGNALS) — 보고가 그 업무 안에 처리 완료로 남고 모두 처리하면 닫힌다(화면 안내 문구가 갈린다).
-const caseView = (c, inFlight, flags, source) => { const { pendingDecision, sourceRecords, ...rest } = c; const task = c.sourceKey?.startsWith('task:') ? source.tasks?.find(t => `task:${t.id}` === c.sourceKey) : null; const sourceAssigneeIds = task?.assigneeIds || []; return { ...rest, caseFlags: flags, ...(sourceAssigneeIds.length ? { sourceAssigneeIds } : {}), ...(task?.kind === 'attendance_absent_desk' ? { sourceTaskIds: [task.id, ...(task.mergedTaskIds || [])] } : {}), ...(isFactSignal(c) ? { factSignal: true } : {}), evidence: (c.evidence || []).map(evidenceView), decision: decisionView(c, inFlight), decisionPending: !!pendingDecision }; };
+function caseView(c, inFlight, flags, source, staffNames) {
+  const { pendingDecision, sourceRecords, ...rest } = c;
+  const task = c.sourceKey?.startsWith('task:') ? source.tasks?.find(t => `task:${t.id}` === c.sourceKey) : null;
+  const sourceAssigneeIds = task?.assigneeIds || [];
+  const report = !task && c.state === 'done' ? [...(c.evidence || [])].reverse().find(e => ['done', 'not_needed', 'accepted'].includes(e.outcome)) : null;
+  const record = report?.recordRefs?.[0] || report?.coveredRefs?.[0];
+  const target = record && (c.entityRefs || []).find(r => `${r.type}:${r.id}` === record);
+  const reportEvidence = report ? { what: `처리 보고: ${String(report.note || '').trim() || '완료'}`, by: report.actorId, at: report.at,
+    open: target?.familyId && target.recordId ? `#v2-record-open?family=${target.familyId}&id=${target.recordId}` : '' } : null;
+  const closed = task ? closeEvidence({ status: task.status, close_reason: task.closeReason, closed_at: task.closedAt, closed_by: task.closedById }, task.closeRecord, staffNames)
+    : c.state === 'done' ? closeEvidence({ status: 'done', closed_at: c.closedAt || c.updatedAt }, reportEvidence, staffNames) : null;
+  return { ...rest, caseFlags: flags, ...(sourceAssigneeIds.length ? { sourceAssigneeIds } : {}),
+    ...(task?.kind === 'attendance_absent_desk' ? { sourceTaskIds: [task.id, ...(task.mergedTaskIds || [])] } : {}),
+    ...(closed ? { closeEvidence: closed } : {}), ...(isFactSignal(c) ? { factSignal: true } : {}),
+    evidence: (c.evidence || []).map(evidenceView), decision: decisionView(c, inFlight), decisionPending: !!pendingDecision };
+}
 
 export function buildView(state, source, { aiStatus, tenantName = '', casePage = 1, eventsBefore = null, inFlight = null } = {}) {
   // 같은 원생·같은 날 결석 업무로 합쳐진 옛 업무(mergedInto)는 따로 보이지도 세지도 않는다 — 대표 업무 하나만(flow-reconcile).
   const all = Object.values(state.cases).filter(c => !c.mergedInto).sort((a, b) => STATE_ORDER[a.state] - STATE_ORDER[b.state] || PRIORITY_ORDER[a.priority] - PRIORITY_ORDER[b.priority] || (a.dueAt || '9').localeCompare(b.dueAt || '9') || b.updatedAt.localeCompare(a.updatedAt));
   const caseFlags = new Map(all.map(c => [c.id, flowCaseFlags(c, source.identity.asOf)]));
   const cases = all.slice((casePage - 1) * LIMITS.cases, casePage * LIMITS.cases);
+  const staffNames = new Map([...source.entities].filter(([key]) => key.startsWith('staff:')).map(([key, value]) => [key.slice(6), value.label]));
   // 새 담당은 assignable 계정에서 고른다. 기존 업무에서 이미 담당인 계정은 해당 업무에만 복원할 수 있다.
   const actors = actorsOf(source).map(a => ({ id: a.id, name: a.name, role: a.role, roleLabel: a.roleLabel, ...(a.preview ? { preview: true } : {}), assignable: !a.preview && !!a.assignable, duties: a.desk ? ['desk'] : [] }));
 
@@ -109,7 +126,7 @@ export function buildView(state, source, { aiStatus, tenantName = '', casePage =
   return {
     schemaVersion: 1, asOf: source.identity.asOf, revision: state.revision, mode: 'local-preview', scenarioCandidates,
     source: { tenant: tenantName, capturedAt: source.identity.capturedAt, asOf: source.identity.asOf, note: '원본은 기준일의 학원 기록이며, 이 화면에서 만든 처리·요청은 따로 남습니다.' },
-    actors, entities, relations, cases: cases.map(c => caseView(c, inFlight, caseFlags.get(c.id), source)), casesTotal: all.length, casePage, casePageSize: LIMITS.cases, casePageCount: Math.max(1, Math.ceil(all.length / LIMITS.cases)),
+    actors, entities, relations, cases: cases.map(c => caseView(c, inFlight, caseFlags.get(c.id), source, staffNames)), casesTotal: all.length, casePage, casePageSize: LIMITS.cases, casePageCount: Math.max(1, Math.ceil(all.length / LIMITS.cases)),
     // Newest events (chronological); older ones via ?eventsBefore=<event number>.
     events: (eventsBefore ? state.events.filter(e => Number(e.id.slice(4)) < eventsBefore) : state.events).slice(-LIMITS.events), eventsTotal: state.events.length,
     metrics, aiStatus: aiStatus || { providers: [] }, firstScreen: flowFirstScreen(all, actors, source.identity.asOf, caseFlags),

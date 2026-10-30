@@ -6,6 +6,7 @@ import { EVIDENCE, scrub } from './domain-snapshot-core.mjs';
 import { ACTOR_ROLE, ROLE_LABEL, TASK_KINDS } from './flow-rules.mjs';
 import { PROVIDER as INTEGRATION_LABEL } from './domain-snapshot-support.mjs';
 import { importV2 } from './v2-bridge.mjs';
+import { loadTaskCloseRecords } from './task-close-records.mjs';
 
 // Workspace evidence table → ontology type.
 export const TYPE_OF_TABLE = { students: 'student', users: 'staff', classes: 'class', enrollments: 'enrollment', attendance_records: 'attendance', invoices: 'invoice', student_consultations: 'consultation', enrollment_consultations: 'lead', lesson_reports: 'report', staff_tasks: 'task', approval_documents: 'approval', withdrawal_reports: 'withdrawal_report', textbook_orders: 'textbook_order', inventory_assets: 'asset', student_homework_videos: 'video', teacher_satisfaction_judgments: 'satisfaction', makeup_reservations: 'makeup', makeedu_sync_runs: 'sync_run', classnote_notices: 'notice', user_integrations: 'integration' };
@@ -164,6 +165,7 @@ export async function loadFlowSource({ workspaces, capturedAt, asOf }) {
           and (split_part(k.cycle, '|', 2)='' or f.slot_start is null or to_char(f.slot_start, 'HH24:MI')=split_part(k.cycle, '|', 2))`;
       const deskByTask = new Map();
       for (const r of deskResults) { if (!deskByTask.has(r.task_id)) deskByTask.set(r.task_id, []); deskByTask.get(r.task_id).push(r); }
+      const closeRecords = await loadTaskCloseRecords({ sql, t, asOf, attendanceOutcomeLabel });
       const history = await sql`select e.id::text, e.task_id::text task, e.event, e.actor_id::text actor, to_char(e.at at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"') at from public.staff_task_events e where e.tenant_id=${t} order by e.at, e.id`;
       for (const k of tasks) {
         const key = put('task', k.id, k.title || TASK_KINDS[k.kind]?.label || '업무', 'tasks-notifications');
@@ -189,7 +191,7 @@ export async function loadFlowSource({ workspaces, capturedAt, asOf }) {
       const taskCycles = new Map(tasks.map(k => [k.id, k.cycle]));
       return {
         identity: { tenantId: t, tenantSlug: 'cs', capturedAt, asOf }, loadedAt: new Date().toISOString(), signalFamilies, actors, entities, relations, signals,
-        tasks: groupedTasks.map(k => ({ id: k.id, kind: k.kind, status: k.status, closeReason: k.close_reason, ...(k.kind === 'attendance_absent_desk' && k.close_reason === 'desk_settled' ? { closeResult: deskCloseResult(taskCycles.get(k.settledTaskId || k.id) || k.cycle, deskByTask.get(k.settledTaskId || k.id) || [], attendanceOutcomeLabel) } : {}), closedAt: k.closed, closedById: k.closed_by || null, title: scrub(k.title), detail: taskDetail(k), openedAt: k.opened, dueAt: k.due, assigneeIds: k.assignees || [], subjectKey: k.kind === 'attendance_absent_desk' || k.kind === 'video_upload_check' ? null : TASK_SUBJECT[k.kind] && entities.has(`${TASK_SUBJECT[k.kind]}:${k.subject_id}`) ? `${TASK_SUBJECT[k.kind]}:${k.subject_id}` : null, recordKeys: k.recordKeys || null, studentKey: k.studentKey || null, groupDate: k.groupDate || null, actionTaskId: k.actionTaskId || null, mergedTaskIds: k.mergedTaskIds || [], history: historyBy.get(k.id) || [] })),
+        tasks: groupedTasks.map(k => ({ id: k.id, kind: k.kind, status: k.status, closeReason: k.close_reason, ...(k.kind === 'attendance_absent_desk' && k.close_reason === 'desk_settled' ? { closeResult: deskCloseResult(taskCycles.get(k.settledTaskId || k.id) || k.cycle, deskByTask.get(k.settledTaskId || k.id) || [], attendanceOutcomeLabel) } : {}), closedAt: k.closed, closedById: k.closed_by || null, closeRecord: closeRecords.get(String(k.settledTaskId || k.id)) || null, title: scrub(k.title), detail: taskDetail(k), openedAt: k.opened, dueAt: k.due, assigneeIds: k.assignees || [], subjectKey: k.kind === 'attendance_absent_desk' || k.kind === 'video_upload_check' ? null : TASK_SUBJECT[k.kind] && entities.has(`${TASK_SUBJECT[k.kind]}:${k.subject_id}`) ? `${TASK_SUBJECT[k.kind]}:${k.subject_id}` : null, recordKeys: k.recordKeys || null, studentKey: k.studentKey || null, groupDate: k.groupDate || null, actionTaskId: k.actionTaskId || null, mergedTaskIds: k.mergedTaskIds || [], history: historyBy.get(k.id) || [] })),
         candidates: { absence: absences.filter(a => a.d >= monthStart && a.d <= asOf && studentKey(a.student_id)).map(a => a.id), billing: invoices.filter(i => i.remaining > 0 && studentKey(i.student_id)).map(i => i.id), consultation: consults.filter(c => studentKey(c.student_id)).map(c => c.id) },
       };
     });

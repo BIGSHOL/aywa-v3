@@ -176,7 +176,7 @@
 .fl-table th,.fl-table td{padding:7px 8px;border-bottom:1px solid var(--ax-line);background:transparent;color:var(--ax-ink);font-size:var(--ax-xs);text-align:left;vertical-align:middle;overflow:hidden}
 .fl-table thead th{padding:2px 2px;font-weight:650;border-top:1px solid var(--ax-line);border-bottom-color:rgba(29,29,31,.3)}
 .fl-table tbody tr:last-child td{border-bottom:1px solid var(--ax-line)}
-.fl-table .c-state{width:10em}.fl-table .c-rec{width:7.2em}.fl-table .c-who{width:9.2em}.fl-table .c-due{width:4.8em}.fl-table .c-at{width:7em}.fl-table .c-place{width:7.4em}.fl-table .c-act{width:12em}
+.fl-table .c-state{width:10em}.fl-table .c-rec{width:7.2em}.fl-table .c-who{width:9.2em}.fl-table .c-due{width:6.2em}.fl-table .c-at{width:6.2em}.fl-table .c-place{width:7.4em}.fl-table .c-act{width:7em}
 /* 정렬(원장 10-28 "내용에 따라 제목행은 가운데 정렬 왼쪽 정렬 등 적극적으로 활용해서 깔끔하게") — 상태·일은 왼쪽,
    짧은 값(관련 기록·업무 담당자·기한·발생 시간)은 가운데, 동작은 오른쪽. 열 머리도 같은 쪽. */
 .fl-table :is(td,th):is(.c-rec,.c-who,.c-due,.c-at){text-align:center}
@@ -199,8 +199,8 @@
 .fl-table .c-who .fl-cut{overflow:visible;text-overflow:clip;white-space:normal;overflow-wrap:anywhere}
 .fl-table .fl-line{display:flex;align-items:center;gap:3px}
 .fl-table .fl-line>*{flex:none}
-/* 상태 배지는 자르지 않는다(원장 10-28 "공간 좀 더 확보해서 라벨도 안짤리게") — 둘은 한 줄, 셋이면 다음 줄로. */
-.fl-table .c-state .fl-line{flex-wrap:wrap;overflow:visible;white-space:normal}
+/* 상태 칩은 하나씩 세로로 쌓아 모든 줄에서 같은 위치에 보이게 한다. */
+.fl-table .c-state .fl-line{flex-direction:column;align-items:flex-start;overflow:visible;white-space:normal}
 .fl-table tbody .c-title button{all:unset;box-sizing:border-box;cursor:pointer;font-size:var(--ax-sm);font-weight:650}
 .fl-table tbody .c-title button.fl-cut{display:block;max-width:100%;overflow:visible;text-overflow:clip;white-space:normal;overflow-wrap:anywhere}
 .fl-table tbody .c-title button:hover,.fl-table tbody .c-title button:focus-visible{color:var(--ax-primary);text-decoration:underline;text-underline-offset:3px}
@@ -214,6 +214,13 @@
 .fl-table .c-act .button{height:var(--ax-control-h-sm);min-height:var(--ax-control-h-sm);padding:0 10px;font-size:var(--ax-xs)}
 .fl-table .c-act .button{height:auto;min-height:var(--ax-control-h-sm);white-space:normal;text-align:center}
 .fl-table .c-act .button[aria-busy=true]{opacity:.6}
+.fl-done-table .c-state{width:10em}.fl-done-table .c-title{width:24%}.fl-done-table .c-closer{width:11em}.fl-done-table .c-act{width:7em}
+.fl-done-table .c-evidence{overflow-wrap:anywhere}
+.fl-done-table .c-evidence span{display:block}
+.fl-done-table .c-evidence .button{margin-top:4px;min-height:var(--ax-control-h-sm);padding:0 10px;font-size:var(--ax-xs)}
+.fl-evidence-missing{margin:4px 0 8px;color:var(--ax-primary);font-size:var(--ax-xs);font-weight:650}
+.fl-close-line{display:flex;align-items:center;flex-wrap:wrap;gap:4px 8px;overflow-wrap:anywhere}
+.fl-close-line .button{min-height:var(--ax-control-h-sm);padding:0 10px;font-size:var(--ax-xs)}
 /* 열 머리 = 정렬·필터 메뉴 단추(▲▼ = 정렬 방향 · ● = 필터 켜짐) */
 .fl-th{display:flex;align-items:center;gap:4px;width:100%;min-height:var(--ax-control-h-sm);padding:2px 6px;border-radius:6px;font:inherit;font-weight:650;color:var(--ax-ink);text-align:left}
 .fl-th>span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -223,7 +230,7 @@
 .fl-th-caret{display:inline-flex;margin-left:auto;opacity:.4}.fl-th-caret .icon{width:14px;height:14px}
 .fl-th:hover .fl-th-caret,.fl-th[aria-expanded=true] .fl-th-caret,.fl-th:focus-visible .fl-th-caret{opacity:1}
 /* 좁은 PC에서는 담당자와 처리 단추를 우선해 열을 배분한다. */
-@container (max-width:1000px){.fl-table .c-state{width:114px}.fl-table .c-rec{width:100px}.fl-table .c-who{width:122px}.fl-table .c-due{width:60px}.fl-table .c-place{width:100px}.fl-table .c-act{width:170px}.fl-table .c-at{display:none}}
+@container (max-width:1000px){.fl-table .c-state{width:114px}.fl-table .c-rec{width:100px}.fl-table .c-who{width:122px}.fl-table .c-due{width:90px}.fl-table .c-place{width:100px}.fl-table .c-act{width:90px}.fl-table .c-at{display:none}.fl-done-table .c-title{width:25%}.fl-done-table .c-closer{width:110px}}
 @container (max-width:760px){.fl-table .c-rec{display:none}}
 /* 좁은 폭: 줄마다 쌓는다 — 제목 한 줄 위, 나머지는 그 아래 한 줄. 열 머리는 위에 칩으로 남아 정렬·필터를 그대로 쓴다. */
 @container (max-width:720px){
@@ -238,6 +245,7 @@
   .fl-table tbody td{display:block;width:auto;max-width:100%;padding:0;border:0}
   .fl-table tbody .c-title{flex:1 1 100%;order:-1}
   .fl-table tbody .c-act{margin-left:auto}
+  .fl-done-table tbody .c-evidence{flex:1 1 100%}
 }
 .fl-active{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-bottom:8px}
 .fl-active-chip{display:inline-flex;align-items:center;gap:6px;max-width:100%;padding:2px 10px;border:1px solid var(--ax-primary);border-radius:999px;background:#fff;color:var(--ax-primary);font-size:var(--ax-xs)}
@@ -267,20 +275,22 @@
 .fl-colpop-foot{display:flex;align-items:center;justify-content:space-between;gap:8px}
 .fl-colpop-foot .button{height:var(--ax-control-h-sm);min-height:var(--ax-control-h-sm);padding:0 12px;font-size:var(--ax-xs)}
 /* 관련 기록 — 표 칸은 '기록 보기' 단추 하나, 마우스를 올리면 목록(.fl-recpop), 누르면 같은 목록을 가운데 창(#modal)에. */
-.fl-recbtn{display:inline-flex;align-items:center;justify-content:center;gap:4px;box-sizing:border-box;width:100%;max-width:100%;height:var(--ax-control-h-sm);padding:0 4px;border:1px solid var(--ax-line);border-radius:6px;background:#fff;font:inherit;font-size:var(--ax-xs);font-weight:600;white-space:nowrap}
-.fl-recbtn b{flex:none;font-weight:500;font-variant-numeric:tabular-nums;color:var(--ax-primary)}
+.fl-recbtn{display:inline-flex;align-items:center;justify-content:center;box-sizing:border-box;width:100%;max-width:100%;height:var(--ax-control-h-sm);padding:0 4px;border:1px solid var(--ax-line);border-radius:6px;background:#fff;font:inherit;font-size:var(--ax-xs);font-weight:600;text-align:center;white-space:nowrap}
 .fl-recbtn:hover,.fl-recbtn:focus-visible{border-color:var(--ax-primary);background:var(--ax-soft)}
+.fl-rec-total{margin:4px 4px 8px;font-size:var(--ax-xs);font-weight:650}
 .fl-recpop{position:fixed;z-index:65;display:flex;flex-direction:column;width:max-content;max-width:min(64rem,calc(100vw - 16px));max-height:min(28rem,calc(100vh - 16px));border:1px solid var(--ax-line);border-radius:8px;background:#fff;box-shadow:0 10px 30px rgba(23,33,62,.16);font-size:var(--ax-xs)}
 .fl-recpop-body{min-height:0;padding:4px 8px 8px}
-/* 종류마다 표 하나 — 이름 · 그 종류의 칸(학교·학년 · 상태 · …). 열을 맞추고, 넘치는 칸은 말줄임(마우스를 올리면 전부). */
+/* 종류마다 표 하나 — 이름 · 그 종류의 칸(학교·학년 · 상태 · …). 긴 글은 두 줄까지 보이고 넘치면 팁에서 전부 읽는다. */
 .fl-recgroup+.fl-recgroup{margin-top:10px}
 .fl-recgroup-head{padding:6px 4px;font-weight:650;color:var(--ax-primary)}
-.fl-rectable{border-collapse:collapse;width:100%;white-space:nowrap;font-size:var(--ax-xs)}
-.fl-rectable th,.fl-rectable td{max-width:14em;padding:6px 10px 6px 4px;border-bottom:1px solid var(--ax-line);background:transparent;color:var(--ax-ink);font-size:var(--ax-xs);text-align:left;vertical-align:middle;overflow:hidden}
+.fl-rectable{border-collapse:collapse;width:100%;font-size:var(--ax-xs)}
+.fl-rectable th,.fl-rectable td{padding:6px 10px 6px 4px;border-bottom:1px solid var(--ax-line);background:transparent;color:var(--ax-ink);font-size:var(--ax-xs);text-align:left;vertical-align:middle}
 .fl-rectable thead th{padding-top:2px;font-weight:650;border-bottom-color:rgba(29,29,31,.3)}
 .fl-rectable tbody th{font-weight:650;font-size:var(--ax-sm)}
 .fl-rectable tbody tr:last-child>*{border-bottom:0}
 .fl-rectable .fl-cut{display:block;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.fl-rectable td.al-long{min-width:12em;max-width:34em}
+.fl-rectable td.al-long .fl-cut{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;white-space:normal;overflow-wrap:anywhere;text-overflow:clip}
 .fl-rectable tbody th button{all:unset;box-sizing:border-box;display:block;max-width:100%;cursor:pointer}
 .fl-rectable tbody th button:focus-visible{outline:2px solid var(--ax-primary);outline-offset:1px}
 .fl-rectable tr.can{cursor:pointer}
@@ -290,7 +300,7 @@
 .fl-rectable .fl-rec-go{width:4.5em;padding-right:2px;text-align:center}.fl-rectable .fl-rec-go .icon{width:16px;height:16px}
 .fl-rectable .fl-rec-process{min-height:var(--ax-control-h);padding:0 10px;border:1px solid var(--ax-line);border-radius:6px;background:#fff;color:var(--ax-primary);font:inherit;cursor:pointer}
 .fl-rectable .fl-rec-process:hover,.fl-rectable .fl-rec-process:focus-visible{border-color:var(--ax-primary);text-decoration:underline}
-/* 기록 창은 표 폭만큼 넓어진다(기본 창 510px에 가두면 칸이 많은 기록이 옆으로 넘친다). 칸은 14em에서 말줄임 · 스크롤바는 숨긴다. */
+/* 기록 창은 표 폭만큼 넓어진다(기본 창 510px에 가두면 칸이 많은 기록이 옆으로 넘친다). 스크롤바는 숨긴다. */
 #modal:has(.fl-recs-modal){width:fit-content;min-width:min(32rem,calc(100vw - 28px));max-width:min(84rem,calc(100vw - 80px))}
 .fl-recs-modal{overflow-x:auto;scrollbar-width:none}.fl-recs-modal::-webkit-scrollbar{display:none}
 /* 잘린 글 보기 · 상태의 뜻 */
