@@ -286,24 +286,28 @@ window.createFlowUI = function createFlowUI(api) {
   // 보고·요청에 붙인 기록(서버가 복사본 기록 저장소에서 확인한 값) — 누르면 그 기록을 연다.
   const attachList=list=>(list||[]).length?`<ul class="fl-attach">${list.map(a=>`<li><button type="button" class="ax-text-link" data-fl="attach-open" data-id="${h(a.familyId)}" data-record="${h(a.recordId)}">${h(a.label)}</button><small>${h([api.familyLabel?.(a.familyId),a.date,a.status,...(a.fields||[]).slice(0,3).map(f=>`${f.label} ${f.value}`)].filter(Boolean).join(' · '))}</small></li>`).join('')}</ul>`:'';
   // compact = 표 한 줄용 — 주 동작 하나(처리 화면은 옆 열, 근거와 흐름·후속 보고는 제목을 누르면 열리는 상세 창).
+  const NO_SAVE_SIGNALS=new Set(['attendance-repeat-absence','inventory-loan-overdue','sheet-sync-error']);
   function actionBar(c,{compact=false,drawer=false}={}){
     const id=h(c.id),s=myStep(c),sk=s?h(s.id):'';
     const attendance=c.taskKind==='attendance_absent_desk'&&s&&!isReview(s)&&['ready','working'].includes(s.status);
     const unsent=c.taskKind==='unsent_report'&&s&&!isReview(s)&&['ready','working'].includes(s.status);
     const billing=c.signalId==='billing-remaining'&&c.factSignal&&s&&!isReview(s)&&['ready','working'].includes(s.status);
     const consultation=(c.taskKind==='followup_due'||c.signalId==='consultation-followup-overdue')&&s&&!isReview(s)&&['ready','working'].includes(s.status);
+    // 2.0에 저장 동작이 없는 업무(결석 3회 이상 · 자산 반납 기한 · 시트 연동 오류) = '처리 보고'가 첫 단추(원장 10-30 · Gemini 판정 1번).
+    const reportFirst=NO_SAVE_SIGNALS.has(c.signalId)&&s&&!isReview(s)&&['ready','working'].includes(s.status);
     if(c.state==='done')return `<div class="ax-actions">${lead()&&c.closure!=='fact'?btn('다시 열기','reopen-open',`data-id="${id}"`):''}${compact||drawer?'':btn('근거와 흐름','open',`data-id="${id}"`)}</div>`;
     if(compact){
-      const first=attendance?btn('연락 결과 기록','attendance-open',`data-id="${id}" data-step="${sk}"`,true):unsent?btn('발송 요청','unsent-open',`data-id="${id}" data-step="${sk}"`,true):billing?btn('미수 안내 처리 보고','billing-open',`data-id="${id}" data-step="${sk}"`,true):consultation?btn('상담 후속조치 완료','consultation-open',`data-id="${id}" data-step="${sk}"`,true):s&&!isReview(s)&&s.status==='ready'?btn('확인','ack',`data-id="${id}" data-step="${sk}" data-fl-key="case.ack:${id}"`,true):s&&isReview(s)&&lead()?btn('검토','review-open',`data-id="${id}" data-step="${sk}"`,true):lead()&&activeSteps(c).length?btn(unassigned(c)?'담당 지정':'담당자 변경','reassign-open',`data-id="${id}"`):'';
+      const first=attendance?btn('연락 결과 기록','attendance-open',`data-id="${id}" data-step="${sk}"`,true):unsent?btn('발송 요청','unsent-open',`data-id="${id}" data-step="${sk}"`,true):billing?btn('미수 안내 처리 보고','billing-open',`data-id="${id}" data-step="${sk}"`,true):reportFirst?btn('처리 보고','report-open',`data-id="${id}" data-step="${sk}"`,true):consultation?btn('상담 후속조치 완료','consultation-open',`data-id="${id}" data-step="${sk}"`,true):s&&!isReview(s)&&s.status==='ready'?btn('확인','ack',`data-id="${id}" data-step="${sk}" data-fl-key="case.ack:${id}"`,true):s&&isReview(s)&&lead()?btn('검토','review-open',`data-id="${id}" data-step="${sk}"`,true):lead()&&activeSteps(c).length?btn(unassigned(c)?'담당 지정':'담당자 변경','reassign-open',`data-id="${id}"`):'';
       return `<div class="ax-actions">${first||'<span class="fl-dim">—</span>'}</div>`;
     }
     const out=[];
     if(attendance)out.push(btn('연락 결과 기록','attendance-open',`data-id="${id}" data-step="${sk}"`,true));
     if(unsent)out.push(btn('발송 요청','unsent-open',`data-id="${id}" data-step="${sk}"`,true));
     if(billing)out.push(btn('미수 안내 처리 보고','billing-open',`data-id="${id}" data-step="${sk}"`,true));
+    if(reportFirst)out.push(btn('처리 보고','report-open',`data-id="${id}" data-step="${sk}"`,true));
     if(consultation)out.push(btn('상담 후속조치 완료','consultation-open',`data-id="${id}" data-step="${sk}"`,true));
     if(s&&!isReview(s)&&s.status==='ready')out.push(btn('확인','ack',`data-id="${id}" data-step="${sk}" data-fl-key="case.ack:${id}"`,true));
-    if(s&&!isReview(s)&&!billing)out.push(btn(c.closure==='fact'?'후속 보고 작성':'보고 작성','report-open',`data-id="${id}" data-step="${sk}"`,s.status==='working'));
+    if(s&&!isReview(s)&&!billing&&!reportFirst)out.push(btn(c.closure==='fact'?'후속 보고 작성':'보고 작성','report-open',`data-id="${id}" data-step="${sk}"`,s.status==='working'));
     if(s&&isReview(s)&&lead())out.push(btn('검토','review-open',`data-id="${id}" data-step="${sk}"`,true));
     if(lead()&&activeSteps(c).length)out.push(btn(unassigned(c)?'담당 지정':'담당자 변경','reassign-open',`data-id="${id}"`));
     if(!drawer)out.push(btn('근거와 흐름','open',`data-id="${id}"`));
@@ -1252,7 +1256,13 @@ window.createFlowUI = function createFlowUI(api) {
     if(action==='load-full'){ensureFull();return;}
     if(action==='attach-open'){api.showWorkspaceRecord?.(id,el.dataset.record);return;}
     // 처리 화면('전자결재' 등): 2.0 화면이 있으면 그 화면, 없으면 작업 공간을 신호의 걸러 보기로 — 이 화면 위 엿보기 창에 연다(원장 10-28).
-    if(action==='goto'){const c=caseById(id);if(!c)return;const facet=(db.workspaces?.families?.[c.familyId]?.signals||[]).find(x=>x.id===c.signalId)?.facet||'',own=refsOf(c).filter(r=>r.familyId===c.familyId&&r.type!=='task'&&(r.recordId||r.id)),record=own.length===1?String(own[0].recordId||own[0].id):'',route=(r=>r&&(!r.use||r.use(c))?r:null)(V2_ROUTE[c.familyId]),v2=(route||!facet)&&window.V2Screens?.target(route?.screen||c.familyId);
+    if(action==='goto'){const c=caseById(id);if(!c)return;
+      // 처리 화면 = 대상이 열린 채로(원장 10-30 "근거를 도대체 몇단계나 봐야하는거야") — 업무 기록이면 2.0 업무 주소, 근거가 하나면 그 기록,
+      // 여럿이면 근거 목록 한 장(줄을 누르면 그 기록의 처리 화면). 해석기(v2-screen-record-open)가 모르는 영역만 아래 종전 길.
+      const RO=window.RecordOpen;
+      if(RO){const task=(c.entityRefs||[]).find(r=>r&&r.type==='task'&&RO.supports(r.familyId,r.recordId)),own=refsOf(c).filter(r=>r.familyId===c.familyId&&r.type!=='task'&&RO.supports(r.familyId,String(r.recordId||r.id))),one=task||(own.length===1?own[0]:null);
+        if(one){openPeek({page:RO.href(one.familyId,String(one.recordId||one.id),v2Actor(c)).slice(1)},el);return;}
+        if(own.length>1){showRecords(id);return;}}const facet=(db.workspaces?.families?.[c.familyId]?.signals||[]).find(x=>x.id===c.signalId)?.facet||'',own=refsOf(c).filter(r=>r.familyId===c.familyId&&r.type!=='task'&&(r.recordId||r.id)),record=own.length===1?String(own[0].recordId||own[0].id):'',route=(r=>r&&(!r.use||r.use(c))?r:null)(V2_ROUTE[c.familyId]),v2=(route||!facet)&&window.V2Screens?.target(route?.screen||c.familyId);
       if(v2&&route){const who=v2Actor(c),q=new URLSearchParams({...(record&&route.record?route.record(record):typeof route.list==='function'?route.list(c):route.list),...(who?{actor:who}:{})});openPeek({page:`${v2.slice(1)}?${q}`},el);return;}
       openPeek(v2?{page:v2.slice(1)}:{page:`workspace-${c.familyId}`,family:c.familyId,facet,...(record?{record}:{})},el);return;}
     if(action==='older'){el.disabled=true;loadOlder(id);return;}
@@ -1261,7 +1271,7 @@ window.createFlowUI = function createFlowUI(api) {
     if(action==='bulk-clear'){store.sel.clear();paintBoardList();return;}
     if(action==='bulk-reassign'){openBulkReassign();return;}
     // 관련 기록 한 줄 — 작업 공간이 있으면 엿보기 창에 그 기록, 없으면 이 화면의 기록 상세.
-    if(action==='rec-open'){const {family,record}=el.dataset,recordCase=el.closest('.fl-recs-modal')?.dataset.case||(recPop.el?.contains(el)?recPop.btn?.dataset.id:null);closeRecPop();if(family==='students'&&record&&el.closest('#ax-issue-attendance')){api.showAbsences(record);return;}if(family==='attendance'&&record&&caseById(recordCase)?.signalId==='attendance-repeat-absence'){api.showAbsences(null,{attendanceId:record});return;}if(family&&api.hasView(`workspace-${family}`)){openPeek({page:`workspace-${family}`,family,record},el);return;}if(record&&api.canOpenRecord?.(record)){document.querySelectorAll('dialog[open]').forEach(d=>d.close());api.openRecord(record);}return;}
+    if(action==='rec-open'){const {family,record}=el.dataset,recordCase=el.closest('.fl-recs-modal')?.dataset.case||(recPop.el?.contains(el)?recPop.btn?.dataset.id:null);closeRecPop();if(family==='students'&&record&&el.closest('#ax-issue-attendance')){api.showAbsences(record);return;}if(family==='attendance'&&record&&caseById(recordCase)?.signalId==='attendance-repeat-absence'){api.showAbsences(null,{attendanceId:record});return;}if(family&&record&&window.RecordOpen?.supports(family,record)){const c=caseById(recordCase);openPeek({page:window.RecordOpen.href(family,record,c?v2Actor(c):'').slice(1)},el);return;}if(family&&api.hasView(`workspace-${family}`)){openPeek({page:`workspace-${family}`,family,record},el);return;}if(record&&api.canOpenRecord?.(record)){document.querySelectorAll('dialog[open]').forEach(d=>d.close());api.openRecord(record);}return;}
     if(action==='rec-process'){const {family,type,record}=el.dataset,c=caseById(el.dataset.case);if(!c||!family||!record)return;closeRecPop();processRecord(c,family,type,record,el);return;}
     if(action==='rec-page'){showRecordsPage(id,Number(el.dataset.page));return;}
     // 쪽 이동 — 표만 다시 그리고, 표 머리가 화면 위로 지나갔으면 표 처음으로 눈에 보이게 옮긴다.
