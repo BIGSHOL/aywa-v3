@@ -286,8 +286,8 @@
     return `<section class="tr-break tr-roster tr-report-roster"><h3>작성 의무 명단 <span>${esc(d.filter.label)} · ${fmt(ordered.length)}건</span></h3>`
       + `<div class="tr-report-controls"><label>기간 <select data-tr-report-window aria-label="보고서 명단 기간">${d.windows.map((w, i) => `<option value="${i}"${i === wi ? ' selected' : ''}>${esc(dayName(w))}</option>`).join('')}</select></label>`
       + `<span>작성 ${fmt(written)}건 · 미작성 ${fmt(rows.length - written)}건${aligned ? '' : ' · 집계 확인 필요'}</span></div>`
-      + `<div class="tr-table-wrap"><table class="tr-roster-table"><thead><tr><th scope="col">수업일</th><th scope="col">반</th><th scope="col">원생</th><th scope="col">작성</th><th scope="col">기록</th></tr></thead>`
-      + `<tbody>${shown.map(r => `<tr><td>${esc(r.date)}</td><td>${esc(r.className)}</td><td>${esc(r.name)}</td><td>${r.written ? '작성' : '미작성'}</td><td>${r.reportId ? `<button type="button" class="ax-text-link" data-tr-report="${esc(r.reportId)}">보고서 열기</button>` : r.source === 'classnote' && r.written ? '알림장 게시' : '—'}</td></tr>`).join('') || '<tr><td colspan="5">이 기간의 작성 의무가 없습니다.</td></tr>'}</tbody></table></div>`
+      + `<div class="fl-rectable-wrap"><table class="fl-rectable"><thead><tr><th scope="col">원생</th><th scope="col">작성</th><th scope="col">수업일</th><th scope="col">반</th><th scope="col" class="fl-rec-go">처리</th></tr></thead>`
+      + `<tbody>${shown.map(r => `<tr${r.reportId ? ` class="can" data-tr-report="${esc(r.reportId)}"` : ''}><th scope="row"><span class="fl-cut">${esc(r.name)}</span></th><td>${r.written ? '작성' : '미작성'}</td><td>${esc(dateText(r.date, d.asOf) || r.date)}</td><td><span class="fl-cut">${esc(r.className)}</span></td><td class="fl-rec-go">${r.reportId ? `<button type="button" class="fl-rec-process" data-tr-report="${esc(r.reportId)}" aria-label="${esc(r.name)} 보고서 열기">보고서</button>` : r.source === 'classnote' && r.written ? '알림장 게시' : ''}</td></tr>`).join('') || '<tr><td colspan="5">이 기간의 작성 의무가 없습니다.</td></tr>'}</tbody></table></div>`
       + (pages > 1 ? `<div class="tr-report-pages"><button type="button" data-tr-report-page="prev"${reportState.page === 1 ? ' disabled' : ''}>이전</button><span>${reportState.page} / ${pages}</span><button type="button" data-tr-report-page="next"${reportState.page === pages ? ' disabled' : ''}>다음</button></div>` : '')
       + '</section>';
   }
@@ -301,19 +301,23 @@
     const all = groups.flatMap(g => g.list), hasSub = all.some(r => r.sub), hasTeacher = all.some(r => 'teacher' in r), hasDate = all.some(r => r.date), hasNote = all.some(r => r.note);
     // 날짜 열 제목 = 기록의 날짜 이름(퇴원일 · 등록일 …) — 한 지표 안에서 섞이면(퇴원·수업종료) 제목은 '날짜', 칸마다 그 줄의 이름을 앞에('퇴원 10/16' · '수업종료 10/20').
     const dateNames = [...new Set(all.filter(r => r.date && r.dateLabel).map(r => r.dateLabel))], mixedDates = dateNames.length > 1;
-    const dateHead = mixedDates ? '날짜' : dateNames[0] || '날짜', dateCell = r => [mixedDates && r.dateLabel ? String(r.dateLabel).replace(/일$/, '') : '', dateText(r.date, d.asOf)].filter(Boolean).join(' ');
-    const who = r => (r.id != null && api.canOpenRecord?.(r.id) ? `<button type="button" class="ax-text-link" data-tr-open="${esc(r.id)}">${esc(r.name)}</button>` : esc(r.name));
+    // 내용 칸이 이미 종류로 시작하면(퇴원 · EiE · PL5) 날짜 칸에 종류를 또 적지 않는다(한 줄에 같은 말 두 번 금지).
+    const kindOf = r => String(r.dateLabel || '').replace(/일$/, ''), noteSaysKind = hasNote && all.every(r => !r.dateLabel || String(r.note || '').startsWith(kindOf(r)));
+    const dateHead = mixedDates ? '날짜' : dateNames[0] || '날짜', dateCell = r => [mixedDates && !noteSaysKind && r.dateLabel ? kindOf(r) : '', dateText(r.date, d.asOf)].filter(Boolean).join(' ');
+    const can = r => r.id != null && !!api.canOpenRecord?.(r.id), anyOpen = all.some(can);
+    // 목록 한 벌(fl-rectable · work/owner-concept/list-format-1030.md): 기간은 묶음 머리 줄 · 이름은 굵은 글자 · 담당은 가운데 · 줄을 누르면 연다.
+    const cols = [['이름'], ...(hasDate ? [[dateHead]] : []), ...(hasSub ? [['학교·학년']] : []), ...(hasNote ? [['내용', 'wrap']] : []), ...(hasTeacher ? [['담당 선생님', 'al-c']] : []), ...(anyOpen ? [['', 'fl-rec-go']] : [])];
     let left = ROSTER_MAX; const body = [];
     for (const g of groups) {
       if (left <= 0) break;
       const list = [...g.list].sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')) || String(a.name).localeCompare(String(b.name), 'ko')).slice(0, left); left -= list.length;
-      list.forEach((r, k) => body.push(`<tr>${k ? '' : `<th scope="rowgroup" rowspan="${list.length}">${esc(dayName(g.w))}</th>`}<td>${who(r)}</td>`
-        + `${hasSub ? `<td>${esc(r.sub || '')}</td>` : ''}${hasTeacher ? `<td class="l">${esc(r.teacher || '—')}</td>` : ''}${hasDate ? `<td>${esc(dateCell(r))}</td>` : ''}${hasNote ? `<td class="l">${esc(r.note || '')}</td>` : ''}</tr>`));
+      body.push(`<tr><th scope="rowgroup" colspan="${cols.length}">${esc(dayName(g.w))}</th></tr>`);
+      list.forEach(r => body.push(`<tr${can(r) ? ` class="can" data-tr-open="${esc(r.id)}"` : ''}><th scope="row">${can(r) ? `<button type="button" class="fl-cut" data-tr-open="${esc(r.id)}">${esc(r.name)}</button>` : `<span class="fl-cut">${esc(r.name)}</span>`}</th>`
+        + `${hasDate ? `<td>${esc(dateCell(r))}</td>` : ''}${hasSub ? `<td>${esc(r.sub || '')}</td>` : ''}${hasNote ? `<td class="wrap">${esc(r.note || '')}</td>` : ''}${hasTeacher ? `<td class="al-c">${esc(r.teacher || '—')}</td>` : ''}${anyOpen ? `<td class="fl-rec-go">${can(r) ? (api.icon?.('chevron') || '›') : ''}</td>` : ''}</tr>`));
     }
-    const shownN = ROSTER_MAX - Math.max(left, 0), cols = [['8.5em', '기간'], ['7em', '이름'], ...(hasSub ? [['8em', '학교·학년']] : []), ...(hasTeacher ? [['11em', '담당 선생님', 'l']] : []), ...(hasDate ? [[mixedDates ? '9.5em' : '6.5em', dateHead]] : []), ...(hasNote ? [['', '내용', 'l']] : [])];
+    const shownN = ROSTER_MAX - Math.max(left, 0);
     return `<section class="tr-break tr-roster"><h3>명단 <span>${esc(d.filter.label)} · ${fmt(total)}건</span></h3>`
-      + `<div class="tr-table-wrap"><table class="tr-roster-table"><colgroup>${cols.map(([wd]) => `<col${wd ? ` style="width:${wd}"` : ''}>`).join('')}</colgroup>`
-      + `<thead><tr>${cols.map(([, l, c]) => `<th scope="col"${c ? ` class="${c}"` : ''}>${esc(l)}</th>`).join('')}</tr></thead><tbody>${body.join('')}</tbody></table></div>`
+      + `<div class="fl-rectable-wrap"><table class="fl-rectable"><thead><tr>${cols.map(([l, c]) => `<th scope="col"${c ? ` class="${c}"` : ''}>${esc(l)}</th>`).join('')}</tr></thead><tbody>${body.join('')}</tbody></table></div>`
       + (total > shownN ? `<p class="tr-roster-more">외 ${fmt(total - shownN)}건${d.drill ? ' — 점을 눌러 기간을 쪼개 보면 다 보입니다' : ''}</p>` : '') + '</section>';
   }
 
