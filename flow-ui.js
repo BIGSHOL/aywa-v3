@@ -8,7 +8,7 @@ window.createFlowUI = function createFlowUI(api) {
   const $=s=>document.querySelector(s);
   const ENDPOINT='/api/flow',ACTIONS='/api/flow/actions',ACTOR_KEY='ax-flow-preview-actor';
   const STATE={open:'처리 전',working:'진행 중',review:'검토 대기',done:'완료'};
-  const STEP={waiting:'대기',ready:'할 차례',working:'진행 중',review:'검토 차례',done:'완료'};
+  const STEP={waiting:'대기',ready:'처리 대기',working:'진행 중',review:'검토 차례',done:'완료'};
   const OUTCOME={done:'처리됨',needs_review:'검토 필요',unreachable:'연락 안 됨',not_needed:'해당 없음'};
   const OUTCOME_NOTE={done:'맡은 업무를 끝냈습니다',needs_review:'다른 사람의 확인이 더 필요합니다',unreachable:'연락했지만 닿지 않았습니다',not_needed:'처리할 업무가 아니었습니다'};
   // Judgment codes from the server's decision modules are translated here; unknown codes are never shown.
@@ -261,7 +261,7 @@ window.createFlowUI = function createFlowUI(api) {
   // 업무 흐름 보드 = 표(원장 10-28 "열정렬안되어있는거 정렬" · "열마다 딱 너비가 정해져있어서 넘치면 짤라버려. 마우스 올리면 짤린거 볼 수 있게").
   // 열 너비는 표 머리 한 곳(table-layout:fixed)이 정한다 — 줄마다 글 길이가 달라도 열이 흔들리지 않는다. 넘친 글은 말줄임(.fl-cut),
   // 마우스·초점이 오면 전부 보인다(fl-tip). 처리 화면 = 그 업무를 처리하는 화면, 누르면 이 화면 위 엿보기 창으로 연다.
-  const COLS=[['state','상태'],['title','업무'],['rec','관련 기록'],['who','할 차례'],['due','기한'],['at','발생 시간'],['place','처리 화면'],['act','']];
+  const COLS=[['state','상태'],['title','업무'],['rec','관련 기록'],['who','업무 담당자'],['due','기한'],['at','발생 시간'],['place','처리 화면'],['act','']];
   // 관련 기록 이름 = 지금 학원 기록의 이름(flow().entities, 읽을 때마다 다시 풀린다). 업무에 저장된 이름은 그 일이 생길 때 적은 것이라
   // 옛 모양('2026-10 청구')일 수 있다 — 없을 때만 쓴다(검수 10-28 H3).
   let entSrc=null,entMap=new Map();
@@ -366,14 +366,14 @@ window.createFlowUI = function createFlowUI(api) {
   function staffView(){
     const me=actor(),mineAll=cases().filter(c=>mine(c)),readyNow=newest(mineAll.filter(c=>myStep(c)?.status==='ready')),working=newest(mineAll.filter(c=>myStep(c)?.status!=='ready')),reviewing=cases().filter(c=>c.state!=='done'&&!mine(c)&&inReview(c)&&(c.evidence||[]).some(e=>e.actorId===me?.id));
     const done=cases().filter(c=>c.state==='done'&&(c.evidence||[]).some(e=>e.actorId===me?.id)).slice(0,6);
-    return `<div class="fl-fold"><div class="page-heading"><div><h1>${h(me?.name||'')}님의 업무</h1><p>${h(me?.roleLabel||'')}</p></div></div>${sourceLine()}${stateNote()}<section class="ax-first" aria-label="지금 처리할 업무"><div class="ax-signals">${countCard('지금 할 차례',readyNow.length,'확인하면 진행 중으로 바뀝니다','ready')}${countCard('진행 중',working.length,'보고를 남기면 다음 사람에게 넘어갑니다','working')}${countCard('검토 대기',reviewing.length,'내가 보고한 업무의 검토 상태','reviewing')}</div></section><div class="fl-now"><h2>지금 처리할 업무 ${readyNow.length+working.length}건</h2>${list([...readyNow,...working],'지금 처리할 업무가 없습니다.','now')}</div></div><section class="fl-section" id="fl-detail"><h2>검토 대기 ${reviewing.length}건</h2>${list(reviewing,'검토를 기다리는 보고가 없습니다.','reviewing')}<h2>최근 완료 업무</h2>${list(done,'아직 완료한 업무가 없습니다.')}</section>`;
+    return `<div class="fl-fold"><div class="page-heading"><div><h1>${h(me?.name||'')}님의 업무</h1><p>${h(me?.roleLabel||'')}</p></div></div>${sourceLine()}${stateNote()}<section class="ax-first" aria-label="지금 처리할 업무"><div class="ax-signals">${countCard('내가 해야 할 업무',readyNow.length,'확인하면 진행 중으로 바뀝니다','ready')}${countCard('진행 중',working.length,'보고를 남기면 다음 사람에게 넘어갑니다','working')}${countCard('검토 대기',reviewing.length,'내가 보고한 업무의 검토 상태','reviewing')}</div></section><div class="fl-now"><h2>지금 처리할 업무 ${readyNow.length+working.length}건</h2>${list([...readyNow,...working],'지금 처리할 업무가 없습니다.','now')}</div></div><section class="fl-section" id="fl-detail"><h2>검토 대기 ${reviewing.length}건</h2>${list(reviewing,'검토를 기다리는 보고가 없습니다.','reviewing')}<h2>최근 완료 업무</h2>${list(done,'아직 완료한 업무가 없습니다.')}</section>`;
   }
   function managerView(){
     const open=cases().filter(c=>c.state!=='done'),my=newest(open.filter(c=>mine(c))),queue=open.filter(unassigned),overdue=open.filter(late),review=open.filter(inReview),back=open.filter(returned),chain=open.filter(c=>new Set((c.steps||[]).flatMap(s=>s.assigneeIds||[])).size>1);
     // A manager can also hold a step (e.g. teaches the class); their own turn comes first when there is one.
-    const lists={mine:[my,'지금 내 차례인 업무가 없습니다.'],queue:[queue,'담당 미지정 업무가 없습니다.'],late:[overdue,'지난 업무가 없습니다.'],review:[review,'검토를 기다리는 업무가 없습니다.'],returned:[back,'보완 요청 업무가 없습니다.'],chain:[chain,'여러 사람을 거치는 업무가 없습니다.'],all:[open,'남은 업무가 없습니다.']};
+    const lists={mine:[my,'내가 해야 할 업무가 없습니다.'],queue:[queue,'담당 미지정 업무가 없습니다.'],late:[overdue,'지난 업무가 없습니다.'],review:[review,'검토를 기다리는 업무가 없습니다.'],returned:[back,'보완 요청 업무가 없습니다.'],chain:[chain,'여러 사람을 거치는 업무가 없습니다.'],all:[open,'남은 업무가 없습니다.']};
     const f=lists[store.filter]?store.filter:my.length?'mine':'queue',[items,empty]=lists[f];
-    return `<div class="fl-fold"><div class="page-heading"><div><h1>업무 조율</h1><p>${h(actor()?.name||'')} · ${h(actor()?.roleLabel||'')}</p></div></div>${sourceLine()}${stateNote()}<section class="ax-first" aria-label="조율할 업무"><div class="ax-signals">${my.length?countCard('내 차례',my.length,'내가 맡은 단계','mine','urgent'):''}${countCard('담당 미지정',queue.length,'담당을 지정해야 다음 단계가 시작됩니다','queue','urgent')}${countCard('지난 업무',overdue.length,'기한이 지났고 아직 끝나지 않은 업무','late')}${countCard('검토 대기',review.length,'보고가 들어와 확인이 필요한 업무','review')}${countCard('보완 요청',back.length,'보완 요청 업무','returned')}</div>${scenarioPanel()}</section></div><section class="fl-section" id="fl-detail">${filterBar(f,[['mine','내 차례',my.length],['queue','담당 미지정',queue.length],['late','지난 업무',overdue.length],['review','검토 대기',review.length],['returned','보완 요청',back.length],['chain','여러 사람 거침',chain.length],['all','남은 업무 전체',open.length]])}${list(items,empty,f)}${stageOverview()}</section>`;
+    return `<div class="fl-fold"><div class="page-heading"><div><h1>업무 조율</h1><p>${h(actor()?.name||'')} · ${h(actor()?.roleLabel||'')}</p></div></div>${sourceLine()}${stateNote()}<section class="ax-first" aria-label="조율할 업무"><div class="ax-signals">${my.length?countCard('내가 해야 할 업무',my.length,'내가 맡은 단계','mine','urgent'):''}${countCard('담당 미지정',queue.length,'담당을 지정해야 다음 단계가 시작됩니다','queue','urgent')}${countCard('지난 업무',overdue.length,'기한이 지났고 아직 끝나지 않은 업무','late')}${countCard('검토 대기',review.length,'보고가 들어와 확인이 필요한 업무','review')}${countCard('보완 요청',back.length,'보완 요청 업무','returned')}</div>${scenarioPanel()}</section></div><section class="fl-section" id="fl-detail">${filterBar(f,[['mine','내가 해야 할 업무',my.length],['queue','담당 미지정',queue.length],['late','지난 업무',overdue.length],['review','검토 대기',review.length],['returned','보완 요청',back.length],['chain','여러 사람 거침',chain.length],['all','남은 업무 전체',open.length]])}${list(items,empty,f)}${stageOverview()}</section>`;
   }
   function stageOverview(){
     const stages=Object.entries(flow().firstScreen?.stages||{}),total=Number(flow().casesTotal)||cases().length;
@@ -405,7 +405,7 @@ window.createFlowUI = function createFlowUI(api) {
     if(!stages.length)return '';
     return `<div class="ax-change-cell"><button type="button" class="ax-change-link" data-fl="filter" data-id="moving"><span>업무 흐름</span><strong>남은 업무 ${fmt(stages.filter(([k])=>k!=='done').reduce((n,[,v])=>n+v,0))}건</strong><span class="ax-stages">${stages.map(([k,n])=>`<span><b>${fmt(n)}</b>${STATE[k]}</span>`).join('')}</span><span class="ax-recent"><small>${recent?`최근 변화: ${h(recent.label||'')} · ${h(when(recent.at))}`:'아직 변화가 없습니다.'}</small></span></button></div>`;
   }
-  // 업무 흐름 검색(원장 10-28 "당연히 각종 내용에 대해 검색가능해야함") — 제목 · 요약(원생·날짜·내용) · 상태 · 관련 기록 · 할 차례 · 기한 · 생긴 때 · 영역 · 종류.
+  // 업무 흐름 검색 — 제목 · 요약(원생·날짜·내용) · 상태 · 관련 기록 · 업무 담당자 · 기한 · 생긴 때 · 영역 · 종류.
   // 띄어쓰기로 나눈 낱말이 모두 들어 있어야 맞음 · 공백·대소문자는 무시.
   const fold=x=>String(x||'').toLowerCase().replace(/\s+/g,'');
   const plain=x=>String(x||'').replace(/<[^>]*>/g,' ').replace(/&amp;/g,'&').replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&quot;/g,'"').replace(/&#39;/g,"'");
@@ -443,8 +443,8 @@ window.createFlowUI = function createFlowUI(api) {
     const shownIds=new Set(items.map(c=>c.id));for(const id of store.sel)if(!shownIds.has(id)||!canPick(caseById(id)||{}))store.sel.delete(id);
     board.items=items;
     // 보기는 왼쪽 세로 목록(상태 · 종류 많은 순), 일은 오른쪽 표 — 칩 20여 개를 가로로 늘어놓지 않는다(원장 10-28 "너무 가로로 나열되어있고 공간 낭비 최악").
-    // '내 차례' = 사이드바 '업무 흐름' 배지와 같은 수(검수 10-28 L8 — 배지와 맞는 보기가 없었다).
-    const states=[...(store.cardLink?[['card',`${store.cardLink.label} 관련 처리할 업무`,lists.card.length]]:[]),['decide','원장 결정 대기',lists.decide.length],['mine','내 차례',lists.mine.length],['moving','남은 업무 전체',lists.moving.length],['blocked','지난 업무 · 담당 미지정 업무',lists.blocked.length],['local','직접 등록한 업무',lists.local.length],['done','완료된 업무',lists.done.length]];
+    // '내가 해야 할 업무' = 사이드바 '업무 흐름' 배지와 같은 수.
+    const states=[...(store.cardLink?[['card',`${store.cardLink.label} 관련 처리할 업무`,lists.card.length]]:[]),['decide','원장 결정 대기',lists.decide.length],['mine','내가 해야 할 업무',lists.mine.length],['moving','남은 업무 전체',lists.moving.length],['blocked','지난 업무 · 담당 미지정 업무',lists.blocked.length],['local','직접 등록한 업무',lists.local.length],['done','완료된 업무',lists.done.length]];
     const byKind=[...kinds].sort((a,b)=>b.items.length-a.items.length).map(k=>[k.key,k.label,k.items.length]),label=[...states,...byKind].find(([id])=>id===f)?.[1]||'';
     // 제목 옆 건수는 걸러 볼 때만(찾은 수) — 보기 전체 건수는 왼쪽 목록에 있다(원장 10-28 "왼쪽에도 있으므로 전체개수는 숨겨줘 상단은").
     return {f,q,states,byKind,label,count:narrowed?`찾은 업무 ${fmt(items.length)}건`:'',listHtml:boardTable(items,f,narrowed?'조건에 맞는 업무가 없습니다.':'이 조건에 맞는 업무가 없습니다.')};
@@ -1030,7 +1030,7 @@ window.createFlowUI = function createFlowUI(api) {
   const schoolGrade=(school,grade)=>{const s=String(school||''),g=String(grade||''),m=/^([초중고])(\d)$/.exec(g);return m&&s.endsWith(m[1])?`${s}${m[2]}`:[s,g].filter(Boolean).join(' ');};
   const DETAIL_LABEL={enrollment:'학년·학교',students:'학교·학년',billing:'청구월','textbook-requests':'교재'},DATE_LABEL={approvals:'기안일','tasks-notifications':'기한','textbook-requests':'요청일'};
   // 고정 순서가 있는 종류만 먼저 배치한다. 과목은 모든 종류에서 이름 앞에 놓는다.
-  const FACT_ORDER={approvals:['종류','기간','일수','금액','지출일','수입일','분류','상태','결재 차례','결재선','기안','기안일','사유'],'tasks-notifications':['업무','발생일','시각','상태','기한','담당']};
+  const FACT_ORDER={approvals:['종류','기간','일수','금액','지출일','수입일','분류','상태','결재 차례','결재선','기안','기안일','사유'],'tasks-notifications':['업무','상태','발생일','시각','수업','내용','담당','기한']};
   const ordered=(fam,list)=>{const o=FACT_ORDER[fam];if(!o)return list;const at=k=>{const i=o.indexOf(k);return i<0?o.length:i;};return list.map((x,i)=>[x,i]).sort((a,b)=>at(a[0][0])-at(b[0][0])||a[1]-b[1]).map(([x])=>x);};
   let studentIndex=null,classIndex=null;
   function studentFacts(id){
@@ -1054,23 +1054,29 @@ window.createFlowUI = function createFlowUI(api) {
   }
   // 업무 제목에 끼워 쓴 원생·발생일·시각은 원천 기록을 읽은 뒤 각각의 칸으로 분리한다.
   const recCache=new Map(),recName=new Map(),recItem=new Map();
-  const taskParts=label=>{const m=/^(.+?)\s+—\s+([^·]+?)\s*·\s*(\d{1,2}[-/.]\d{1,2})(?:\s+(\d{1,2}:\d{2}))?\s*(.*)$/.exec(String(label||''));return m?{work:m[1].trim(),name:m[2].trim(),day:m[3],time:m[4]||'',kind:m[5].trim()}:null;};
+  const taskParts=(label,fields=[])=>{
+    const old=/^(.+?)\s+—\s+([^·]+?)\s*·\s*(\d{1,2}[-/.]\d{1,2})(?:\s+(\d{1,2}:\d{2}))?\s*(.*)$/.exec(String(label||''));
+    if(old)return {work:old[1].trim(),name:old[2].trim(),day:old[3].replace('-', '/'),time:old[4]||'',detail:old[5].trim(),fromContent:false};
+    const content=fields.find(([k])=>k==='내용')?.[1]||'';
+    const found=/^([^·]+?)\s*·\s*(\d{1,2}[-/.]\d{1,2})(?:\s+(\d{1,2}:\d{2}))?\s*(.*)$/.exec(String(content));
+    return found?{work:String(label||'업무'),name:found[1].trim(),day:found[2].replace('-', '/'),time:found[3]||'',detail:found[4].trim(),fromContent:true}:null;
+  };
   const nonPerson=new Set(['integrations','inventory','settings','calendar']);
   // 칸 이름은 영역이 알려 준 것(detailLabel·dateLabel — 반·수업일 · 청구월·납부 기한 …)을 먼저 쓴다.
   const famMeta=fam=>db.workspaces?.families?.[fam]||{};
   function recordFacts(r){
     const fam=r.familyId||'',id=String(r.recordId||r.id||''),key=`${fam}:${id}`;
-    const cacheKey=`${key}:${r.teacherName||''}`;
+    const cacheKey=`${key}:${r.teacherName||''}:${r.sessionLabel||''}`;
     if(recCache.has(cacheKey))return recCache.get(cacheKey);
     const clean=v=>{const x=String(v??'').trim();return x==='—'?'':/^\d{4}-\d{2}-\d{2}$/.test(x)?md(x):x;};
     const factsOf=it=>{if(!it)return r.detail?[['내용',String(r.detail)]]:[];
-      const label=String(it.label||r.label||''),detail=clean(it.detail),parts=fam==='tasks-notifications'?taskParts(label):null;
-      const detailLabel=famMeta(fam).detailLabel||DETAIL_LABEL[fam]||'내용',fields=(it.fields||[]).filter(f=>f&&f.label).map(f=>[fam==='attendance'&&f.label==='메모'?'사유':String(f.label),clean(f.value)]);
+      const label=String(it.label||r.label||''),detail=clean(it.detail),fields=(it.fields||[]).filter(f=>f&&f.label).map(f=>[fam==='attendance'&&f.label==='메모'?'사유':String(f.label),clean(f.value)]),parts=fam==='tasks-notifications'?taskParts(r.label,fields)||taskParts(label,fields):null;
+      const detailLabel=famMeta(fam).detailLabel||DETAIL_LABEL[fam]||'내용';
       const applicant=fam==='approvals'?fields.find(([k])=>k==='신청자')?.[1]||fields.find(([k])=>k==='기안')?.[1]||clean(r.detail):'';
-      const person=parts?(db.students||[]).some(s=>s.name===parts.name)?parts.name:'':nonPerson.has(fam)?'':fam==='approvals'?applicant:label;
+      const person=fam==='tasks-notifications'?parts?.name||'':nonPerson.has(fam)?'':fam==='approvals'?applicant:label;
       recName.set(key,person);
-      const visibleFields=fam==='approvals'?fields.filter(([k,v])=>k!=='신청자'&&(k!=='기안'||v!==person)):fields;
-      return ordered(fam,[...(parts?[['업무',parts.work],['발생일',parts.day],['시각',parts.time],['구분',parts.kind]]:fam==='tasks-notifications'?[['업무',label]]:fam==='approvals'?[['문서',label]]:[]),[detailLabel,detail&&!label.includes(detail)?detail:''],['상태',clean(it.status)],[famMeta(fam).dateLabel||DATE_LABEL[fam]||'날짜',it.date?md(String(it.date).slice(0,10)):''],...currentClassFact(r,it,person,detailLabel,fields),...(r.teacherName?[['담당 선생님',clean(r.teacherName)]]:[]),...visibleFields]);};
+      const visibleFields=fam==='approvals'?fields.filter(([k,v])=>k!=='신청자'&&(k!=='기안'||v!==person)):fam==='tasks-notifications'?fields.filter(([k])=>k!=='종류'&&k!=='생성'&&!(parts?.fromContent&&k==='내용')):fields;
+      return ordered(fam,[...(fam==='tasks-notifications'?[['업무',parts?.work||label],['발생일',parts?.day||''],['시각',r.sessionLabel?'':parts?.time||''],['수업',r.sessionLabel||''],['내용',parts?.fromContent?parts.detail.replace(/^결석\s*—\s*/, ''):'']]:fam==='approvals'?[['문서',label]]:[]),...(detail&&!label.includes(detail)?[[detailLabel,detail]]:[]),['상태',clean(it.status)],[famMeta(fam).dateLabel||DATE_LABEL[fam]||'날짜',it.date?md(String(it.date).slice(0,10)):''],...(fam==='tasks-notifications'?[]:currentClassFact(r,it,person,detailLabel,fields)),...(r.teacherName?[['담당 선생님',clean(r.teacherName)]]:[]),...visibleFields]);};
     const p=Promise.resolve(nonPerson.has(fam)?null:api.ensureFull?.()).then(()=>r.type==='student'?studentFacts(id):!fam||!id?[]:recItem.has(key)?factsOf(recItem.get(key)):fetch(`/api/workspaces/${encodeURIComponent(fam)}/records?id=${encodeURIComponent(id)}`,{headers:{Accept:'application/json'}}).then(res=>res.ok?res.json():null).then(b=>factsOf(b?.item))).catch(()=>{recCache.delete(cacheKey);return null;});
     recCache.set(cacheKey,p);return p;
   }
@@ -1085,6 +1091,23 @@ window.createFlowUI = function createFlowUI(api) {
   }
   const recType=r=>r.type==='student'?'원생':r.type==='lead'?'신규 상담':api.familyLabel?.(r.familyId)||'기록';
   const refKey=r=>`${r.familyId||''}:${String(r.recordId||r.id||'')}`;
+  // 결석 전화의 여러 교시 할 일은 한 반·하루 수업으로 보여 준다. 다른 반은 각각 남긴다.
+  function sessionTaskRefs(refs){
+    const owners=new Map();
+    for(const c of cases())if(c.taskKind==='attendance_absent_desk')for(const id of c.sourceTaskIds||[])owners.set(String(id),c);
+    const seen=new Set();
+    return refs.flatMap(r=>{
+      if(r.familyId!=='tasks-notifications')return [r];
+      const c=owners.get(String(r.recordId||r.id||''));
+      if(!c)return [r];
+      if(seen.has(c.id))return [];
+      seen.add(c.id);
+      const sessions=(c.entityRefs||[]).filter(x=>x.type==='attendance');
+      if(!sessions.length)return [r];
+      const id=String(c.actionTaskId||c.sourceTaskIds[0]);
+      return sessions.map(s=>({...r,id,recordId:id,sessionLabel:String(s.label||'').split(' 결석 · ').at(-1),openFamily:'attendance',openRecord:String(s.recordId||s.id)}));
+    });
+  }
   // 집계 신호의 각 근거가 가리키는 2.0 기록 주소. probe는 영역 화면이 ID 열쇠를 받기 전까지 작업 공간 기록으로 돌아간다.
   const RECORD_ROUTE={
     withdrawal_report:{screen:'withdrawal-reports',key:'actor',query:id=>({v2path:`/withdrawal-reports/${id}`})},
@@ -1113,13 +1136,17 @@ window.createFlowUI = function createFlowUI(api) {
     const cls=i=>align[i]?` class="${align[i]}"`:'';
     const cell=(v,i)=>`<td${cls(i)}><span class="fl-cut">${h(v||'')}</span></td>`;
     const heading=list.every(r=>nonPerson.has(r.familyId))?'대상':'이름';
-    return `<table class="fl-rectable"><thead><tr>${subject?'<th scope="col">과목</th>':''}<th scope="col">${heading}</th>${cols.map((k,i)=>`<th scope="col"${cls(i)}>${h(k)}</th>`).join('')}<th scope="col">처리</th></tr></thead><tbody>${list.map((r,i)=>{const fam=r.familyId||'',id=String(r.recordId||r.id||''),can=fam&&api.hasView(`workspace-${fam}`)||api.canOpenRecord?.(id),process=!!c?.signalId&&fam===c.familyId&&r.type!=='task'&&r.type!=='student',f=new Map(facts[i]||[]),at=`data-family="${h(fam)}" data-record="${h(id)}"`,name=recName.has(`${fam}:${id}`)?recName.get(`${fam}:${id}`):refLabel(r),display=nonPerson.has(fam)?recItem.get(`${fam}:${id}`)?.label||refLabel(r):name||'—';
+    return `<table class="fl-rectable"><thead><tr>${subject?'<th scope="col">과목</th>':''}<th scope="col">${heading}</th>${cols.map((k,i)=>`<th scope="col"${cls(i)}>${h(k)}</th>`).join('')}<th scope="col">처리</th></tr></thead><tbody>${list.map((r,i)=>{const fam=r.familyId||'',id=String(r.recordId||r.id||''),openFamily=r.openFamily||fam,openId=r.openRecord||id,can=openFamily&&api.hasView(`workspace-${openFamily}`)||api.canOpenRecord?.(openId),process=!!c?.signalId&&fam===c.familyId&&r.type!=='task'&&r.type!=='student',f=new Map(facts[i]||[]),at=`data-family="${h(openFamily)}" data-record="${h(openId)}"`,name=recName.has(`${fam}:${id}`)?recName.get(`${fam}:${id}`):refLabel(r),display=nonPerson.has(fam)?recItem.get(`${fam}:${id}`)?.label||refLabel(r):name||'—';
       return `<tr ${can?`class="can" data-fl="rec-open" ${at}`:''}>${subject?`<td>${h(f.get('과목')||'')}</td>`:''}<th scope="row">${can&&display!=='—'?`<button type="button" class="fl-cut" data-fl="rec-open" ${at}>${h(display)}</button>`:`<span class="fl-cut">${h(display)}</span>`}</th>${facts[i]===null?`<td colspan="${cols.length||1}" class="fl-dim">정보를 읽지 못했습니다.</td>`:cols.map((k,i)=>cell(f.get(k),i)).join('')}<td class="fl-rec-go">${process?`<button type="button" class="fl-rec-process" data-fl="rec-process" data-case="${h(c.id)}" data-type="${h(r.type)}" aria-label="${h(display)} 처리" ${at}>처리</button>`:can?icon('chevron'):''}</td></tr>`;}).join('')}</tbody></table>`;
   }
   function fillFacts(root,refs,c){
-    const groups=new Map();for(const r of refs){const t=recType(r);if(!groups.has(t))groups.set(t,[]);groups.get(t).push(r);}
-    const ready=prefetch(refs);
-    [...groups].forEach(([,list],i)=>ready.then(()=>Promise.all(list.map(recordFacts))).then(facts=>{const box=root.querySelector(`[data-rec-group="${i}"] .fl-recgroup-body`);if(box?.isConnected){box.innerHTML=recTable(list,facts,c);if(recPop.el===root)placeRecPop();}}));
+    const render=()=>{
+      if(!root.isConnected)return;
+      const grouped=sessionTaskRefs(refs),groups=new Map();for(const r of grouped){const t=recType(r);if(!groups.has(t))groups.set(t,[]);groups.get(t).push(r);}
+      const ready=prefetch(grouped);
+      [...groups].forEach(([,list],i)=>ready.then(()=>Promise.all(list.map(recordFacts))).then(facts=>{const node=root.querySelector(`[data-rec-group="${i}"]`),box=node?.querySelector('.fl-recgroup-body');if(box?.isConnected){node.querySelector('.fl-recgroup-head').textContent=`${recType(list[0])} ${fmt(list.length)}건`;box.innerHTML=recTable(list,facts,c);if(recPop.el===root)placeRecPop();}}));
+    };
+    if(refs.some(r=>r.familyId==='tasks-notifications')&&flow().summary)ensureFull().then(render);else render();
   }
   // 마우스를 올리면(잠깐 머문 뒤) 단추 아래 목록 · 목록 위로 옮겨 가도 그대로 · 둘 다 벗어나면 닫는다. 누르면 같은 목록을 가운데 창으로.
   const recPop={el:null,btn:null,show:0,hide:0,hiding:false};
@@ -1191,7 +1218,7 @@ window.createFlowUI = function createFlowUI(api) {
   // 기록이 여럿이면 그 화면의 목록으로. 주소 형식은 각 화면 세션이 알려 준 것(v2-screen-<id>.js 머리 주석).
   // record = 기록 하나일 때의 주소 열쇠 · list = 여럿일 때(퇴원보고서 '진행 중' 전부 — 승인 대기만 거르는 값은 2.0에 없다 · 전자결재 '결재 대기' 탭).
   // 영상 제출 현황은 기록 하나를 여는 주소가 없다 — 업무 종류에 맞는 상태(미배정 영상 = 배정 필요 · 그 밖 = 미수행)와, 원생이 한 명이면 그 이름 찾기로.
-  // 선생님이 처리할 차례면 강사 화면(내가 낸 숙제 — 2.0 /onescreen/video-homework)으로.
+  // 담당 선생님이면 강사 화면(내가 낸 숙제 — 2.0 /onescreen/video-homework)으로.
   const oneStudent=c=>{const s=refsOf(c).filter(r=>r.familyId==='students'&&r.label);return s.length===1?{q:String(s[0].label).split(' · ')[0]}:{};};
   // screen = 영역과 다른 2.0 화면으로 열 때 · use = 그 길을 탈 업무만(아니면 영역 기본 길) — 진도 기록 이상은 원생 한 명이면 원생 상세 진도 탭으로.
   const studentIdOf=c=>{const s=refsOf(c).filter(r=>r.familyId==='students'&&r.recordId);return s.length===1?String(s[0].recordId):'';};
@@ -1420,5 +1447,5 @@ window.createFlowUI = function createFlowUI(api) {
   },true);
 
   load();
-  return {recordsHtml:recRows,fillRecords:fillFacts,load,ready,status:()=>store.status,actor,role,actors,nameOf,sidebar,inboxCount,ownerCards,ownerStageCell,ownerBelow,fullView,staffView,managerView,showCase,asRequests,createRequest,cardRequestFor,openCardFlow,actAs,caseById,stepOf,myStep,notices,stateNote};
+  return {recordsHtml:recRows,recordsCount:refs=>sessionTaskRefs(refs).length,fillRecords:fillFacts,load,ready,status:()=>store.status,actor,role,actors,nameOf,sidebar,inboxCount,ownerCards,ownerStageCell,ownerBelow,fullView,staffView,managerView,showCase,asRequests,createRequest,cardRequestFor,openCardFlow,actAs,caseById,stepOf,myStep,notices,stateNote};
 };

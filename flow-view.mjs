@@ -58,14 +58,14 @@ export function decisionView(c, inFlight) {
 // re-judging (flow-reconcile.mjs); the view carries counts only, so /api/flow does not grow with them.
 const evidenceView = e => { if (!Array.isArray(e.coveredRefs)) return e; const { coveredRefs, ...rest } = e; return { ...rest, coveredCount: coveredRefs.length }; };
 // factSignal = 사실이 남는 신호(반복 결석 등, flow-rules FACT_SIGNALS) — 보고가 그 업무 안에 처리 완료로 남고 모두 처리하면 닫힌다(화면 안내 문구가 갈린다).
-const caseView = (c, inFlight, flags, source) => { const { pendingDecision, sourceRecords, ...rest } = c; const sourceAssigneeIds = c.sourceKey?.startsWith('task:') ? source.tasks?.find(t => `task:${t.id}` === c.sourceKey)?.assigneeIds || [] : []; return { ...rest, caseFlags: flags, ...(sourceAssigneeIds.length ? { sourceAssigneeIds } : {}), ...(isFactSignal(c) ? { factSignal: true } : {}), evidence: (c.evidence || []).map(evidenceView), decision: decisionView(c, inFlight), decisionPending: !!pendingDecision }; };
+const caseView = (c, inFlight, flags, source) => { const { pendingDecision, sourceRecords, ...rest } = c; const task = c.sourceKey?.startsWith('task:') ? source.tasks?.find(t => `task:${t.id}` === c.sourceKey) : null; const sourceAssigneeIds = task?.assigneeIds || []; return { ...rest, caseFlags: flags, ...(sourceAssigneeIds.length ? { sourceAssigneeIds } : {}), ...(task?.kind === 'attendance_absent_desk' ? { sourceTaskIds: [task.id, ...(task.mergedTaskIds || [])] } : {}), ...(isFactSignal(c) ? { factSignal: true } : {}), evidence: (c.evidence || []).map(evidenceView), decision: decisionView(c, inFlight), decisionPending: !!pendingDecision }; };
 
 export function buildView(state, source, { aiStatus, tenantName = '', casePage = 1, eventsBefore = null, inFlight = null } = {}) {
   // 같은 원생·같은 날 결석 업무로 합쳐진 옛 업무(mergedInto)는 따로 보이지도 세지도 않는다 — 대표 업무 하나만(flow-reconcile).
   const all = Object.values(state.cases).filter(c => !c.mergedInto).sort((a, b) => STATE_ORDER[a.state] - STATE_ORDER[b.state] || PRIORITY_ORDER[a.priority] - PRIORITY_ORDER[b.priority] || (a.dueAt || '9').localeCompare(b.dueAt || '9') || b.updatedAt.localeCompare(a.updatedAt));
   const caseFlags = new Map(all.map(c => [c.id, flowCaseFlags(c, source.identity.asOf)]));
   const cases = all.slice((casePage - 1) * LIMITS.cases, casePage * LIMITS.cases);
-  // 새 담당은 assignable 계정에서 고른다. 원본 업무에서 이미 담당인 계정은 해당 업무에만 복원할 수 있다.
+  // 새 담당은 assignable 계정에서 고른다. 기존 업무에서 이미 담당인 계정은 해당 업무에만 복원할 수 있다.
   const actors = actorsOf(source).map(a => ({ id: a.id, name: a.name, role: a.role, roleLabel: a.roleLabel, ...(a.preview ? { preview: true } : {}), assignable: !a.preview && !!a.assignable, duties: a.desk ? ['desk'] : [] }));
 
   // Entities = what the returned cases point at, plus one hop of verified relations, plus actors.
