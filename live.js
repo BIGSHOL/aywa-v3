@@ -295,7 +295,7 @@
       (state.classView==='week'?`<div class="live-week">${timetable}</div>`:`<div class="live-cards">${rows.slice(state.classPage*18,(state.classPage+1)*18).map(c=>`<button class="live-card" data-class="${h(c.id)}"><header><div><h3>${h(c.name)}</h3><p>${h(c.teacher)} · ${h(c.room)}</p></div>${badge(subject(c.subject),'blue')}</header><span class="live-card-label">현재 수강생</span><div class="live-card-number">${c.students.length}<small>명</small></div><p>이번 달 ${c.attendance}회 출결 기록 · 결석 ${c.absent}회</p><footer><span>주 ${c.schedules.length}개 시간 배치</span>${icon('chevron')}</footer></button>`).join('')}</div>${pager('classPage',state.classPage,rows.length,18)}`);
   };
 
-  // 조회 월도 공용 선택창(원장 10-28 "모든 드랍다운 … 서식 일치") — 달마다 청구 원생·청구액을 함께. 바꾸면 아래 change 처리가 받는다(data-period).
+  // 조회 월 = 공용 선택창. hint = 그 메뉴에 맞는 보조 숫자(수납 'billing' · 성적 'reports' · 콜&상담 'enrollment'). 바꾸면 아래 change 처리가 받는다(data-period).
   // 업무 담당도 공용 직원 선택창(값은 지금처럼 이름 — 업무가 이름으로 담당을 적는다). 맨 위는 원장.
   const ownerField=()=>{const fb=`<label>담당<select name="owner"><option>원장</option>${db.staff.map(s=>`<option>${h(s.name)}</option>`).join('')}</select></label>`,CP=window.ContextPicker;if(!CP)return fb;try{const l=CP.lists.staff({db,subjectLabel:subject});return CP.html({id:'live-task-owner',name:'owner',label:'담당',clearable:false,selected:['원장'],...l,options:[{value:'원장',title:'원장',search:'원장'},...l.options.map(o=>({...o,value:o.title}))]});}catch{return fb;}};
   const periodSelect=(key,value,periods=db.months,hint)=>{const CP=window.ContextPicker;if(CP)try{return `<span class="live-period">${CP.html({id:`live-period-${key}`,name:`period-${key}`,ariaLabel:'조회 월',selected:[value],attrs:{'data-period':key},...CP.lists.months({db,months:periods,hint})})}</span>`;}catch{}
