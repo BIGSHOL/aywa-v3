@@ -135,7 +135,10 @@ window.ContextPicker = (function () {
     const e = entryOf(root), field = root.querySelector('.cpick-field'), panel = root.querySelector('.cpick-panel');
     const r = field.getBoundingClientRect(), vw = document.documentElement.clientWidth, vh = innerHeight, gap = 4, margin = 8;
     if (!r.width || r.bottom < 0 || r.top > vh) { close(root); return; }
-    const width = Math.min(r.width, vw - margin * 2), left = Math.min(Math.max(r.left, margin), vw - margin - width);
+    // 패널 폭 = 버튼 폭과 최소 폭(기본 280px) 중 큰 값 — 좁은 버튼(예: '26.10')에 맞추면 항목이 한 글자씩 접혔다(원장 10-30).
+    // 버튼 오른쪽 끝에 맞춰 왼쪽으로 펼칠 공간이 더 크면 오른쪽 정렬, 화면 밖으로는 나가지 않는다.
+    const width = Math.min(Math.max(r.width, e?.config.minPanelWidth || 280), vw - margin * 2);
+    const left = Math.min(Math.max(r.left + width > vw - margin ? r.right - width : r.left, margin), vw - margin - width);
     // Natural height = panel chrome + the list's full content (the list itself shrinks inside a capped panel).
     const list = panel.querySelector('.cpick-list'), natural = Math.min(440, (panel.offsetHeight - list.clientHeight + list.scrollHeight) || 440);
     const below = vh - r.bottom - gap - margin, above = r.top - gap - margin;
