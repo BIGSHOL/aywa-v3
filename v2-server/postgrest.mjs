@@ -111,7 +111,9 @@ function rowJson(sql, M, table, al, items, embedWheres = []) {
       pairs.push([it.alias ?? it.col, expr]); continue;
     }
     const r = relation(M, table, it), sub = `e${++aliasSeq}`, key0 = it.alias ?? it.name;
-    const { expr: subExpr, inner: subInner } = rowJson(sql, M, r.table, sub, it.select);
+    const nested = embedWheres.filter(w => w.embed.startsWith(`${key0}.`)).map(w => ({ ...w, embed: w.embed.slice(key0.length + 1) }));
+    const { expr: subExpr, inner: subInner, used: subUsed } = rowJson(sql, M, r.table, sub, it.select, nested);
+    for (const w of nested) if (subUsed.has(w.embed)) used.add(`${key0}.${w.embed}`);
     const own = embedWheres.filter(w => w.embed === key0).map(w => w.build(sql, sub, c => M.types.get(r.table)?.get(c)?.udt ?? null));
     if (own.length) used.add(key0);
     // 부모 칸 ↔ 표 칸 짝 — many-to-one: 부모.cols = 표.refcols · one-to-many: 표.cols = 부모.refcols
@@ -252,12 +254,12 @@ class Builder {
   }
   update(values, opts = {}) { if (opts.count) throw new UnsupportedShape('update count'); this.op = 'update'; this.payload = values; return this; }
   delete(opts = {}) { if (opts.count) throw new UnsupportedShape('delete count'); this.op = 'delete'; return this; }
-  /** 거르기 하나 — 칸 이름에 점이 있으면(`invoice.period`) 그 임베드 안의 거르기(PostgREST: 임베드만 거른다 · !inner면 부모도). */
+  /** 거르기 하나 — 점 앞은 임베드 경로(`enrollments.classes.tenant_id`), 끝은 그 표의 칸. */
   #w(col, op, value, negate = false) {
-    const dot = col.indexOf('.');
+    const dot = col.lastIndexOf('.');
     if (dot >= 0) {
       const key = col.slice(0, dot), rest = col.slice(dot + 1);
-      if (rest.includes('.')) throw new UnsupportedShape(`두 겹 임베드 거르기 '${col}'`);
+      for (const part of key.split('.')) aliasIdent(part);
       this.wheres.push({ embed: key, build: (sql, al, typeOf) => cond(sql, al, rest, op, value, negate, typeOf) });
     } else this.wheres.push({ embed: null, build: (sql, al, typeOf) => cond(sql, al, col, op, value, negate, typeOf) });
     return this;
