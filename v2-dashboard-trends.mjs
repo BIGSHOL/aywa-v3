@@ -57,11 +57,13 @@ export function recordCoverage(ctx, gate) {
   }, null));
 }
 
-/** 2.0 loadEnrolledTrend — 재원생 추이(월별 12 · 연도별, 기록이 갖춰진 달부터) + 같은 원본·날짜의 강좌수 추이(수강 종료가 처음 기록된 달과 둘 중 늦은 쪽부터). */
+/** 2.0 loadEnrolledTrend — 재원생·강좌수 추이. 강좌수의 앞쪽 달은 수납 권한이 있을 때 지난 기록으로 잇는다. */
 function enrolledTrend(ctx, gate) {
   return shared(ctx, 'enrolledTrend', async () => {
     const [R, C0] = await Promise.all([kpiRules(ctx.importV2), consts()]), today = ctx.today, t = ctx.t;
-    const subjects = ctx.settings.operations.subjects.map((s) => ({ key: s.key, label: s.label }));
+    const subjects = ctx.settings.operations.subjects;
+    const modules = await ctx.importV2('lib/modules.ts');
+    const splitEnglish = modules.isModuleEnabled(ctx.settings.modules.disabled, 'eie');
     const billing = await gate.soft((sp) => cleanupBilling(sp, R, t, today, C0.search), null);
     const coverage = await recordCoverage(ctx, gate);
     const trustFrom = coverage?.trustFrom ?? null;
@@ -73,8 +75,8 @@ function enrolledTrend(ctx, gate) {
     // 강좌수 자르기 — 2.0 clipCourses(실제로 자른 경계가 무엇인지 `cutBy`).
     const breakdownFrom = raw.enrollments.reduce((m, e) => (e.end && e.end.slice(0, 10) <= today && (!m || e.end < m) ? e.end : m), null)?.slice(0, 7) ?? null;
     const from = !trustFrom ? breakdownFrom : !breakdownFrom ? trustFrom : trustFrom > breakdownFrom ? trustFrom : breakdownFrom;
-    const c = R.points.clipTrend(R.courseTrend.courseTrendOf(raw.students, en, raw.enrollments, months, undefined, today, subjects),
-      R.courseTrend.courseTrendOf(raw.students, en, raw.enrollments, years, undefined, today, subjects), from);
+    const c = R.points.clipTrend(R.courseTrend.courseTrendOf(raw.students, en, raw.enrollments, months, undefined, today, subjects, splitEnglish),
+      R.courseTrend.courseTrendOf(raw.students, en, raw.enrollments, years, undefined, today, subjects, splitEnglish), from);
     const courses = { ...c, cutBy: !c.trustFrom ? null : from === trustFrom ? 'trust' : 'records' };
     return { ...clipped, recordsFrom: raw.recordsFrom, courses };
   });
@@ -86,7 +88,22 @@ async function enrolledTrendArea(ctx, sp) {
   return { monthly: t.monthly, yearly: t.yearly, recordsFrom: t.recordsFrom, trustFrom: t.trustFrom, monthlyFrom: t.monthlyFrom };
 }
 async function courseTrendArea(ctx, sp) {
-  return (await enrolledTrend(ctx, queryGate(sp))).courses ?? null;
+  const gate = queryGate(sp);
+  const trend = (await enrolledTrend(ctx, gate)).courses ?? null;
+  if (!trend || !ctx.allowed.includes('billing')) return trend;
+  // 2.0은 수납 메뉴를 볼 수 있는 사람의 학원 전체 강좌 추이에만 지난 기록을 잇는다.
+  const rows = await gate.soft(s => s`select month::text month, source::text source, data from public.student_history_monthly
+    where tenant_id=${ctx.t} order by month limit 400`, null);
+  if (!rows) return trend;
+  const [history, courseHistory, program, modules] = await Promise.all([
+    ctx.importV2('features/students/stats/history.ts'), ctx.importV2('features/dashboard/overview/course-history.ts'),
+    ctx.importV2('features/students/enrollment/program.ts'), ctx.importV2('lib/modules.ts'),
+  ]);
+  const subjects = ctx.settings.operations.subjects;
+  const splitEnglish = modules.isModuleEnabled(ctx.settings.modules.disabled, 'eie') && !subjects.some(s => program.isEnglishProgramKey(s.key));
+  const groups = [...new Set(subjects.map(s => program.subjectGroupOf(s.key, subjects)).filter(Boolean))]
+    .flatMap(g => g === 'english' && splitEnglish ? [...program.ENGLISH_PROGRAM_KEYS] : [g]);
+  return courseHistory.withCourseHistory(trend, history.mergeHistory(rows.map(r => ({ ...r, month: r.month.slice(0, 7) }))), groups, ctx.today);
 }
 
 /**

@@ -14,7 +14,7 @@ const MODULES = { comp: 'features/students/enrollment/enrolled-composition.ts', 
   special: 'features/classes/special-lecture.ts', exits: 'features/dashboard/overview/monthly-exits.ts', early: 'features/withdrawals/early-exit.ts',
   types: 'features/withdrawals/types.ts', school: 'lib/format/school-grade.ts', kst: 'lib/date-kst.ts', bounds: 'features/enrollment/kst-bounds.ts',
   outcome: 'features/dashboard/overview/enrolled-outcome.ts', recent: 'features/dashboard/overview/enrolled-recent.ts', consult: 'features/enrollment/consult-subject.ts',
-  subjects: 'features/owner/subjects.ts', tasks: 'features/staff-tasks/access.ts' };
+  subjects: 'features/owner/subjects.ts', tasks: 'features/staff-tasks/access.ts', modules: 'lib/modules.ts' };
 let rulesP = null;
 async function rules(importV2) {
   rulesP ??= Promise.all(Object.entries(MODULES).map(async ([k, m]) => [k, await importV2(m)])).then(Object.fromEntries).catch((e) => { rulesP = null; throw e; });
@@ -66,14 +66,15 @@ async function students(ctx, sp) {
     levelSplit: R.scomp.levelSubjectSplit(visible, composition.programs),
   };
 }
-/** 2.0 courses() — 같은 활성 수강 + 종료일이 오늘 이후로 적힌 수강(fetchEndingEnrolledEnrollments) · 학생·과목마다 한 번. */
+/** 2.0 courses() — 같은 활성 수강 + 종료일이 오늘 이후로 적힌 수강. EiE가 켜져 있으면 영어 두 프로그램을 따로 센다. */
 async function courses(ctx, sp) {
   const R = await rules(ctx.importV2), gate = queryGate(sp);
   const [[, open], ending] = await Promise.all([enrolledRows(ctx, gate),
     gate`select e.id::text id, e.student_id::text student_id, e.class_id::text class_id, e.start_date::text start_date, e.end_date::text end_date, e.is_transferred, c.subject, c.english_track
       from public.enrollments e join public.classes c on c.id = e.class_id and c.tenant_id = ${ctx.t} join public.students s on s.id = e.student_id and s.tenant_id = ${ctx.t}
       where e.tenant_id=${ctx.t} and e.end_date >= ${ctx.today} and e.on_hold = false and s.status = 'enrolled' order by e.id`]);
-  return R.course.summarizeCourses({ rows: [...open, ...ending.map(activeRow)], scope: null, subjects: ctx.settings.operations.subjects, today: ctx.today });
+  return R.course.summarizeCourses({ rows: [...open, ...ending.map(activeRow)], scope: null, subjects: ctx.settings.operations.subjects, today: ctx.today,
+    splitEnglish: R.modules.isModuleEnabled(ctx.settings.modules.disabled, 'eie') });
 }
 
 // ── 퇴원&수업종료 · 등록 후 3개월 내 퇴원 ─────────────────────────────────────────────────────────────────────────────
