@@ -80,7 +80,8 @@ window.createExitInsight = function createExitInsight(api) {
   const aiMeta = (d, model, at, target = '') => window.AIResultMeta.html({ model, at, basis: aiBasis(d, target) });
   function overall(d) {
     if (!d.overall) return '';
-    return `<section class="xi-overall"><h3>AI 분석 ${pill('AI 작성', 'blue')}</h3>${aiMeta(d, d.analysis?.claude?.modelLabel, d.analysis?.claude?.at, '원인 묶음 전체')}${window.AIResultMeta.summary(d.overall.summary, h)}${d.overall.reasons.length ? `<ul>${d.overall.reasons.map(r => `<li class="air-rich">${rich(r)}</li>`).join('')}</ul>` : ''}${d.overall.checks.length ? `<h4>사람이 확인할 업무</h4><ul class="xi-checks">${d.overall.checks.map(r => `<li class="air-rich">${rich(r)}</li>`).join('')}</ul>` : ''}<p class="xi-note">숫자·날짜·인원은 기록에서 센 값입니다. 문장 끝 번호에 마우스를 올리면 근거가 보입니다.</p></section>`;
+    const counted = `${ym(d.from)} ${won(d.totals.from)} → ${ym(d.to)} ${won(d.totals.to)} · 차이 ${signed(d.totals.delta)}${d.parts.map(p => ` · ${p.label} ${fmt(p.students)}명 ${signed(p.amount)}`).join('')}`;
+    return `<section class="xi-overall"><h3>AI 분석 ${pill('AI 작성', 'blue')}</h3>${aiMeta(d, d.analysis?.claude?.modelLabel, d.analysis?.claude?.at, '원인 묶음 전체')}${window.AIResultMeta.summary(counted, h)}<p class="air-rich">${rich(d.overall.summary)}</p>${d.overall.reasons.length ? `<ul>${d.overall.reasons.map(r => `<li class="air-rich">${rich(r)}</li>`).join('')}</ul>` : ''}${d.overall.checks.length ? `<h4>사람이 확인할 업무</h4><ul class="xi-checks">${d.overall.checks.map(r => `<li class="air-rich">${rich(r)}</li>`).join('')}</ul>` : ''}<p class="xi-note">숫자·날짜·인원은 기록에서 센 값입니다. 문장 끝 번호에 마우스를 올리면 근거가 보입니다.</p></section>`;
   }
   const factOpen = f => (f.open ? btn('원본 기록 열기', `data-xi="record" data-family="${h(f.open.family)}" data-id="${h(f.open.id)}"`, 'link') : '');
   const factSource = f => (f.source ? `<small class="xi-src">출처 · ${h(TABLE[f.source.table] || '기록')}</small>` : '');
