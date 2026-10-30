@@ -7,7 +7,7 @@ import { cardInput, createCardInsight, openCardInsightStore, validateCardOutput,
 import { createCardInsightRoute } from './card-insight-http.mjs';
 
 const identity = { tenantId: 'test-tenant', tenantSlug: 'test', capturedAt: '2026-10-29T00:00:00Z' };
-const analysis = { metric: 'exits', period: 'month', metricInfo: { name: '퇴원·수업종료', unit: '명', better: 'down' }, records: [{ name: '홍길동' }], facts: [
+const analysis = { metric: 'exits', period: 'month', by: { id: 'teacher', label: '선생님별' }, asOf: '2026-10-29', metricInfo: { name: '퇴원·수업종료', unit: '명', better: 'down' }, records: [{ name: '홍길동' }], facts: [
   { id: 'F1', item: 1, kind: 'current', text: '지금 14명', values: { current: 14 } },
   { id: 'F2', item: 2, kind: 'increase', text: '담당 선생님 김철수 · 3명', values: { dimension: 'teacher', key: 'private-id', current: 3 } },
   { id: 'F3', item: 3, kind: 'cluster', text: '반 샛별반 5건 집중', values: { field: 'className', name: '샛별반', count: 5 } },
@@ -17,7 +17,9 @@ const built = cardInput(analysis), ids = built.facts.map(f => f.id);
 const good = { summary: { text: '변화를 확인할 기록이 있습니다.', factIds: [ids[0]] }, watch: [{ text: '담당 선생님 기준의 변화가 있습니다.', factIds: [ids[1]] }], checks: [{ text: '반의 기록을 확인해 주세요.', factIds: [ids[2]] }] };
 let n = 0;
 assert(!JSON.stringify(built.facts).includes('홍길동') && !JSON.stringify(built.facts).includes('김철수') && !JSON.stringify(built.facts).includes('샛별반') && !JSON.stringify(built.facts).includes('private-id')); n++;
-assert.deepEqual(built.indicator, { 이름: '퇴원·수업종료', 단위: '명', 방향: '낮을수록 좋음', '기준 문장': '집계 기준 · 이번 달 퇴원·수업종료 원생', '기간 단위': '월별' }); n++;
+assert.deepEqual(built.indicator, { 이름: '퇴원·수업종료', 단위: '명', 방향: '낮을수록 좋음', '기준 문장': '집계 기준 · 이번 달 퇴원·수업종료 원생', '기간 단위': '월별', 구분: '선생님별', '자료 기준일': '2026-10-29' }); n++;
+assert.notEqual(cardInput({ ...analysis, by: { id: 'subject', label: '과목별' } }).key, built.key);
+assert.notEqual(cardInput({ ...analysis, period: 'year' }).key, built.key); n++;
 assert.equal(built.facts[2].text, '반 한곳에 집중'); n++;
 assert.equal(cardInput({ ...analysis, facts: [...analysis.facts, { id: 'F5', item: 5, kind: 'difference', text: '카드 수치 14명 · 추세선 13명', values: { cardValue: 14, trendValue: 13 } }] }).facts.at(-1).text, '카드 수치와 추세선의 집계 기준 비교'); n++;
 assert.equal(built.facts.at(-1).text, analysis.facts.at(-1).text); n++;
@@ -35,22 +37,24 @@ try {
   const provider = { ask: async request => { calls++; assert.deepEqual(Object.keys(request.input), ['지표', 'facts']); assert.deepEqual(request.input.지표, built.indicator); return { output: good, model: 'claude-sonnet-5-5' }; } };
   const service = createCardInsight({ store, provider, reserve: async () => { reserves++; return true; }, clock: () => Date.parse('2026-10-29T05:00:00Z') });
   assert.equal(service.view(analysis).status, 'empty'); n++;
-  const route = createCardInsightRoute({ store: Promise.resolve(service), open: () => { throw Error('GET은 DB를 열면 안 됩니다.'); }, getAnalysis: async () => { loads++; return analysis; } });
+  const route = createCardInsightRoute({ store: Promise.resolve(service), open: () => { throw Error('GET은 DB를 열면 안 됩니다.'); }, getAnalysis: async params => { assert.equal(params.grain, 'month'); assert.equal(params.by, 'teacher'); loads++; return analysis; } });
   const http = createServer((req, res) => route.handle(req, res).catch(e => { res.statusCode = 500; res.end(e.message); }));
   await new Promise(resolve => http.listen(0, '127.0.0.1', resolve));
   let made;
   try {
     const base = `http://127.0.0.1:${http.address().port}/api/insight/cards?metric=exits`;
-    const response = await fetch(`${base}&fp=${built.fingerprint}`);
+    const response = await fetch(`${base}&key=${encodeURIComponent(built.key)}&fp=${built.fingerprint}`);
     assert.equal(response.status, 200); assert.equal((await response.json()).status, 'empty'); assert.equal(calls, 0); assert.equal(loads, 0); n++;
     const invalid = await fetch(base);
     assert.equal(invalid.status, 400); assert.equal(loads, 0); n++;
-    const posted = await fetch(base, { method: 'POST', headers: { 'sec-fetch-site': 'same-origin', 'content-type': 'application/json' }, body: '{}' });
+    const posted = await fetch(`${base}&grain=month&by=teacher`, { method: 'POST', headers: { 'sec-fetch-site': 'same-origin', 'content-type': 'application/json' }, body: '{}' });
     assert.equal(posted.status, 200); made = await posted.json(); assert.equal(loads, 1); n++;
-    const ready = await (await fetch(`${base}&fp=${built.fingerprint}`)).json();
+    const ready = await (await fetch(`${base}&key=${encodeURIComponent(built.key)}&fp=${built.fingerprint}`)).json();
     assert.equal(ready.status, 'ready'); assert.equal(loads, 1); n++;
-    const stale = await (await fetch(`${base}&fp=${'0'.repeat(64)}`)).json();
-    assert.equal(stale.status, 'stale'); assert.equal(stale.note, "자료가 바뀌었습니다. 다시 만들려면 'AI 분석'를 누르세요."); assert.equal(loads, 1); n++;
+    const other = await (await fetch(`${base}&key=${encodeURIComponent(cardInput({ ...analysis, by: { id: 'subject', label: '과목별' } }).key)}&fp=${built.fingerprint}`)).json();
+    assert.equal(other.status, 'empty'); assert.equal(other.result, null); assert.equal(other.note, '이 선택으로 만든 AI 분석이 없습니다.'); n++;
+    const changed = await (await fetch(`${base}&key=${encodeURIComponent(built.key)}&fp=${'0'.repeat(64)}`)).json();
+    assert.equal(changed.status, 'empty'); assert.equal(changed.result, null); assert.equal(loads, 1); n++;
   } finally { await new Promise(resolve => http.close(resolve)); }
   assert.equal(made.status, 'ready'); assert.equal(made.httpStatus, 200); assert.equal(calls, 1); assert.equal(reserves, 1); assert.equal(made.result.modelLabel, 'Claude Sonnet 5.5'); n++;
   await store.close();
@@ -59,7 +63,7 @@ try {
   assert.equal(loaded.view(analysis).status, 'ready'); assert.equal(calls, 1); n++;
   assert.deepEqual(await loaded.make(analysis), { status: 503, error: 'ai_disabled', message: '이 서버에서는 AI 분석이 꺼져 있습니다.' }); n++;
   assert.deepEqual(await createCardInsight({ store: again, provider: { ask: () => { throw Error('한도 초과에서 호출하면 안 됩니다.'); } }, reserve: async () => false }).make(analysis), { status: 429, error: 'hourly_cap', message: '시간당 생성 한도를 넘었습니다. 잠시 뒤 다시 눌러 주세요.' }); n++;
-  assert.equal(loaded.view({ ...analysis, facts: [{ ...analysis.facts[0], values: { current: 15 } }, ...analysis.facts.slice(1)] }).status, 'stale'); n++;
+  assert.equal(loaded.view({ ...analysis, facts: [{ ...analysis.facts[0], values: { current: 15 } }, ...analysis.facts.slice(1)] }).status, 'empty'); n++;
   assert.equal(loaded.view(analysis).result.summary.evidence[0], '지금 14명'); n++;
   await again.close();
   const badStore = await openCardInsightStore({ dir: join(root, 'bad'), identity });

@@ -12,3 +12,4 @@
 .absence-item dl{display:grid;grid-template-columns:6.5em minmax(0,1fr);gap:6px 12px;margin:12px 0}
 .absence-item dt{color:var(--muted,#64748b)}
 .absence-item dd{margin:0;white-space:pre-wrap;overflow-wrap:anywhere}
+.ai-result-meta{display:block;margin:5px 0 9px;color:var(--ax-muted);font-size:var(--ax-xs);line-height:1.45}

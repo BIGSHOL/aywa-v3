@@ -31,8 +31,8 @@ export async function flowCasesFromLocal() {
   return null;
 }
 
-export async function loadCardAnalysis({ sql, tenantId, importV2, metricId, loadTrend, flowCases = flowCasesFromLocal }) {
-  const initial = await loadTrend({ metric: metricId });
+export async function loadCardAnalysis({ sql, tenantId, importV2, metricId, selection = {}, loadTrend, flowCases = flowCasesFromLocal }) {
+  const initial = await loadTrend({ metric: metricId, ...selection });
   const asOf = initial.asOf;
   const card = DASHBOARD_KPI_ORDER.includes(metricId)
     ? (await cardOf(sql, 'dashboard', { sql, asOf, tenantId, importV2 })).find(c => c.id === metricId)
@@ -40,17 +40,16 @@ export async function loadCardAnalysis({ sql, tenantId, importV2, metricId, load
       ? (await cardOf(sql, 'teacher', { sql, asOf, tenantId, importV2 })).find(c => c.id === metricId)
       : null;
   if (!card) return null;
-  const grain = card.period === 'month' ? 'month' : 'week';
-  const trend = initial.grain === grain ? initial : await loadTrend({ metric: metricId, grain });
-  const byDimension = {};
-  for (const dim of trend.metric.dims.filter(d => !d.needsFilter)) byDimension[dim.id] = dim.id === trend.by ? trend : await loadTrend({ metric: metricId, grain, by: dim.id });
+  const trend = selection.grain || initial.grain === card.period ? initial : await loadTrend({ metric: metricId, grain: card.period });
+  const byDimension = { [trend.by]: trend };
   let records = null;
   if (ROSTER_METRICS.has(metricId)) {
-    const dimension = Object.values(byDimension).filter(d => d?.rows?.length).sort((a, b) => a.rows.length - b.rows.length)[0];
-    if (dimension) {
+    if (Array.isArray(trend.records)) records = trend.records.at(-1) || [];
+    else if (trend.rows.length) {
       const gathered = new Map();
-      for (const row of dimension.rows) {
-        const filtered = await loadTrend({ metric: metricId, grain, f: `${dimension.by}:${row.key}` });
+      for (const row of trend.rows) {
+        const filtered = await loadTrend({ metric: metricId, grain: trend.grain, f: `${trend.by}:${row.key}`,
+          ...(trend.range ? { from: trend.range.from, to: trend.range.to, up: trend.range.up } : {}) });
         for (const r of filtered.records?.at(-1) || []) gathered.set(String(r.key ?? [r.date, r.classId, r.studentId, r.id].join('|')), r);
       }
       records = [...gathered.values()];
@@ -62,6 +61,6 @@ export async function loadCardAnalysis({ sql, tenantId, importV2, metricId, load
   const built = cardInput(analysis);
   const cardRequests = Array.isArray(cases) ? cases.filter(c => c?.kind === 'request' && c.state !== 'done' && c.requestSource?.card?.metric === metricId)
     .map(c => ({ id: c.id, factIds: c.requestSource.card.factIds })) : [];
-  return { ...analysis, fingerprint: built.fingerprint, insightFactIds: built.facts.map(f => f.id),
+  return { ...analysis, selectionKey: built.key, fingerprint: built.fingerprint, insightFactIds: built.facts.map(f => f.id),
     flowLink: CARD_FLOW_LINKS[metricId] || { tasks: [], signals: [] }, cardRequests };
 }

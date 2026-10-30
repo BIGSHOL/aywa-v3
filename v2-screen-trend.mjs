@@ -147,6 +147,7 @@ export const screen = {
     from: DAY, to: DAY, up: /^(week|month|year)$/ },
   async load({ sql, params, tenantId, importV2 }) {
     if (params.analysis === '1') return loadCardAnalysis({ sql, tenantId, importV2, metricId: params.metric,
+      selection: Object.fromEntries(['grain', 'by', 'f', 'from', 'to', 'up'].filter(k => params[k]).map(k => [k, params[k]])),
       loadTrend: p => screen.load({ sql, params: p, tenantId, importV2 }) });
     const metric = TREND_METRICS.find((m) => m.id === params.metric) ?? TREND_METRICS[0];
     const grains = metric.grains ? GRAINS.filter((g) => metric.grains.includes(g.id)) : GRAINS;

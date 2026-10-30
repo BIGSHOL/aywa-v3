@@ -43,6 +43,7 @@ const routes=new Map([
  ['/styles.css',['styles.css','text/css; charset=utf-8']],
  ['/live.css',['live.css','text/css; charset=utf-8']],
  ['/live.js',['live.js','text/javascript; charset=utf-8']],
+ ['/ai-result-meta.js',['ai-result-meta.js','text/javascript; charset=utf-8']],
  ['/ax.js',['ax.js','text/javascript; charset=utf-8']],
  ['/ax.css',['ax.css','text/css; charset=utf-8']],
  ['/ax-chat.js',['ax-chat.js','text/javascript; charset=utf-8']],

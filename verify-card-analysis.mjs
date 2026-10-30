@@ -67,7 +67,7 @@ try {
         assert.equal(actualFlow.values.review, selected.filter(c => c.state === 'review').length);
         assert.equal(actualFlow.values.overdue, flags.filter(f => f.late).length);
         assert.equal(actualFlow.values.unassigned, flags.filter(f => f.unassigned).length);
-        assert.match(actualFlow.text, /^이어진 업무 .*\(처리 전 .* · 진행 중 .* · 검토 대기 .*\) · 그중 지난 업무 .* · 담당 미지정 .*$/);
+        assert.match(actualFlow.text, /^현재 열린 학원 전체 업무 · 이어진 업무 .*\(처리 전 .* · 진행 중 .* · 검토 대기 .*\) · 그중 지난 업무 .* · 담당 미지정 .*$/);
       }
       assert.equal(a.metric, card.id);
       assert.equal(a.period, card.period);
@@ -75,6 +75,16 @@ try {
       checked++;
       console.log(`${checked}/14 ${card.label} · 카드·추세·분석 일치`);
     }
+    const keys = new Set();
+    for (const grain of ['day', 'week', 'month', 'year']) for (const by of ['mix', 'subject']) {
+      const a = await loadCardAnalysis({ sql, tenantId, importV2, metricId: 'enrolled-students', selection: { grain, by }, loadTrend, flowCases: async () => flow });
+      const trend = await loadTrend({ metric: 'enrolled-students', grain, by });
+      assert.equal(a.period, grain); assert.equal(a.by.id, by);
+      assert.equal(a.facts.find(f => f.item === 1).values.current, trend.total.at(-1)?.value ?? null);
+      assert(a.facts.filter(f => f.item === 2 && f.values.dimension).every(f => f.values.dimension === by));
+      keys.add(a.selectionKey);
+    }
+    assert.equal(keys.size, 8, '기간 4 × 구분 2 AI 저장 열쇠');
   });
   const port = Number(process.env.OWNER_CONCEPT_PORT || 4310);
   const asOf = String((await (await fetch(`http://127.0.0.1:${port}/api/flow`)).json()).asOf).slice(0, 10);

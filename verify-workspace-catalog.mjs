@@ -101,7 +101,7 @@ const serve = readFileSync(join(here, 'serve-live.mjs'), 'utf8');
 const routes = [...serve.matchAll(/\['(\/[^']*)',\s*\['([^']+)','([^']+)'\]\]/g)].map(m => `${m[1]}=>${m[2]}|${m[3]}`);
 const expected = [
   '/=>live.html|text/html; charset=utf-8', '/index.html=>live.html|text/html; charset=utf-8', '/styles.css=>styles.css|text/css; charset=utf-8',
-  '/live.css=>live.css|text/css; charset=utf-8', '/live.js=>live.js|text/javascript; charset=utf-8', '/ax.js=>ax.js|text/javascript; charset=utf-8',
+  '/live.css=>live.css|text/css; charset=utf-8', '/live.js=>live.js|text/javascript; charset=utf-8', '/ai-result-meta.js=>ai-result-meta.js|text/javascript; charset=utf-8', '/ax.js=>ax.js|text/javascript; charset=utf-8',
   '/ax.css=>ax.css|text/css; charset=utf-8', '/workspace-catalog.js=>workspace-catalog.js|text/javascript; charset=utf-8',
   '/workspaces.js=>workspaces.js|text/javascript; charset=utf-8', '/workspaces.css=>workspaces.css|text/css; charset=utf-8',
   '/flow-ui.js=>flow-ui.js|text/javascript; charset=utf-8', '/flow-ui.css=>flow-ui.css|text/css; charset=utf-8',

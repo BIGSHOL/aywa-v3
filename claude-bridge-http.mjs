@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { BridgeError, FAILURES, claudeArgs, cliAvailable, createClaudeRunner, defaultCliPath, prepareRuntimeDir } from './claude-bridge.mjs';
 import { areaDestinations, buildAssistantContext } from './claude-bridge-context.mjs';
 import { LIMITS, buildInput, normalizeAnswer, requestFacts, validateRequest } from './claude-bridge-prompt.mjs';
+import { modelLabel } from './flow-view.mjs';
 
 export const ASSISTANT_PATH = '/api/assistant';
 const JSON_TYPE = /^application\/json\s*(?:;\s*charset\s*=\s*"?utf-8"?\s*)?$/i;
@@ -71,6 +72,8 @@ export function createAssistantRoute({ context, runner, readiness, origins, head
       const facts = requestFacts(ctx, request), list = destinations.list;
       const { output, meta } = await runner.ask({ input: buildInput(ctx, request, undefined, { facts, destinations: list }), signal });
       const reply = normalizeAnswer(output, { facts, destinations: list, records });
+      reply.aiMeta = { modelLabel: modelLabel(meta.models?.[0]) || 'Claude', createdAt: new Date(now()).toISOString(),
+        basis: `${request.contextIssueId ? `이슈 ${ctx.issues[request.contextIssueId]?.title || '선택한 이슈'}` : '원장실 전체'} · ${ctx.month} 업무 자료 · 기준일 ${ctx.asOf}` };
       log(`assistant ok ${(meta.ms / 1000).toFixed(1)}s ${meta.models.join(',') || 'model?'}`);
       send(res, 200, reply);
     } catch (error) {

@@ -7,7 +7,7 @@ import assert from 'node:assert/strict';
 
 const base = process.env.OWNER_CONCEPT_URL || 'http://127.0.0.1:4310';
 const RICH = {
-  answer: '평문', issueIds: ['billing'], provider: 'claude-cli',
+  answer: '평문', issueIds: ['billing'], provider: 'claude-cli', aiMeta: { modelLabel: 'Claude Sonnet 5.5', createdAt: '2026-10-30T04:00:00Z', basis: '이슈 미수납 · 2026-10 업무 자료 · 기준일 2026-10-27' },
   headline: '10월 남은 금액은 ⟦329,000원⟧입니다 <img src=x onerror="window.__xss=1">',
   keyFacts: [{ label: '남은 금액', value: '329,000원', change: '+329,000원', tone: 'bad', note: 1 }, { label: '수납률', value: '99.7%', change: '+0.2%p', tone: 'good', note: 2 }],
   points: [{ text: '남은 청구는 ⟦14건⟧입니다. 다만 수납액은 누적 금액입니다.', notes: [1, 2] }, { text: '<script>window.__xss=2</script>근거', notes: [9] }],
@@ -37,7 +37,9 @@ try {
   assert.equal(await a.locator('.axc-caveat').innerText(), '다만 수납액은 누적 금액입니다.');
   assert.equal(await a.locator('.axc-fact').count(), 2); assert.equal(await a.locator('.axc-table tbody tr').count(), 2); assert.equal(await a.locator('.axc-checks li').count(), 1);
   assert.equal(await a.locator('.axc-points li').nth(1).locator('a[data-axc-fn]').count(), 0, 'unknown footnote numbers are dropped');
-  assert.match(await a.locator('.ax-chat-provider').innerText(), /AI 답변/); assert.doesNotMatch(await a.innerText(), /Claude|CLI|2\.0|로컬/);
+  assert.match(await a.locator('.ax-chat-provider').innerText(), /AI 답변/);
+  assert.match(await a.locator('.ai-result-meta').innerText(), /Claude Sonnet 5\.5.*기준: 이슈 미수납.*기준일 2026-10-27/);
+  assert.doesNotMatch(await a.innerText(), /claude-cli|2\.0|로컬/);
   // ② 좋아짐 빨강 · 나빠짐 파랑
   const colors = await page.evaluate(() => { const v = n => { const d = document.createElement('i'); d.style.color = `var(${n})`; document.body.append(d); const c = getComputedStyle(d).color; d.remove(); return c; }; return { good: v('--ax-good'), bad: v('--ax-bad'), shown: [...document.querySelectorAll('.axc .axc-change')].map(x => [x.className, getComputedStyle(x).color]) }; });
   assert.equal(colors.shown.find(([c]) => c.includes('bad'))[1], colors.bad); assert.equal(colors.shown.find(([c]) => c.includes('good'))[1], colors.good);

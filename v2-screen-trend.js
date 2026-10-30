@@ -22,22 +22,22 @@
     return current === undefined ? data.cardRequests?.find(c => factKey(c.factIds) === factKey(factIds)) : current;
   }
   function loadInsight(data) {
-    const metric = data.metric, signature = data.fingerprint || JSON.stringify(data.facts);
-    const old = insightState.get(metric);
+    const metric = data.metric, key = data.selectionKey, signature = data.fingerprint || JSON.stringify(data.facts);
+    const old = insightState.get(key);
     if (old?.signature === signature) return old;
     const state = { signature, status: 'loading', data: null };
-    insightState.set(metric, state);
-    fetch(`/api/insight/cards?metric=${encodeURIComponent(metric)}${data.fingerprint ? `&fp=${encodeURIComponent(data.fingerprint)}` : ''}`, { headers: { Accept: 'application/json' } })
+    insightState.set(key, state);
+    fetch(`/api/insight/cards?metric=${encodeURIComponent(metric)}&key=${encodeURIComponent(key)}&fp=${encodeURIComponent(data.fingerprint)}`, { headers: { Accept: 'application/json' } })
       .then(async r => { const body = await r.json(); if (!r.ok) throw new Error(body.message || '저장된 문장을 불러오지 못했습니다.'); return body; })
-      .then(body => { if (insightState.get(metric) === state) { state.status = 'ready'; state.data = body; last?.api.render(); } })
-      .catch(error => { if (insightState.get(metric) === state) { state.status = 'error'; state.error = error.message; last?.api.render(); } });
+      .then(body => { if (insightState.get(key) === state) { state.status = 'ready'; state.data = body; last?.api.render(); } })
+      .catch(error => { if (insightState.get(key) === state) { state.status = 'error'; state.error = error.message; last?.api.render(); } });
     return state;
   }
   function insightBox(data) {
     const state = loadInsight(data), body = state.data;
     const lines = (items, title) => items?.length ? `<div><h4>${title}</h4><ul>${items.map(x => `<li>${esc(x.text)}<small>근거: ${x.evidence.map(esc).join(' · ')}</small></li>`).join('')}</ul></div>` : '';
     const result = body?.result;
-    const at = result?.createdAt ? new Intl.DateTimeFormat('ko-KR', { timeZone: 'Asia/Seoul', dateStyle: 'medium', timeStyle: 'short' }).format(new Date(result.createdAt)) : '';
+    const basis = `${data.metricInfo.name} · ${{ day: '일별', week: '주별', month: '월별', year: '연별' }[data.period]} · ${data.by.label} 기준${data.filter ? ` · ${data.filter.label}만` : ''}${data.range ? ` · ${data.range.label}` : ''} · ${data.asOf}`;
     const checks = result?.checks?.length ? `<div><h4>확인할 것</h4><ul>${result.checks.map((x, i) => {
       const linked = cardRequest(data, x.factIds);
       return `<li>${esc(x.text)}<small>근거: ${x.evidence.map(esc).join(' · ')}</small><div class="tr-insight-actions">${linked
@@ -46,16 +46,17 @@
     }).join('')}</ul></div>` : '';
     return `<div class="tr-insight"><div class="tr-insight-head"><h3>분석 문장</h3><button type="button" class="button" data-ca-make="${esc(data.metric)}" ${body?.enabled === false || state.status === 'making' ? 'disabled' : ''}>${state.status === 'making' ? '만드는 중…' : 'AI 분석'}</button></div>`
       + (body?.note ? `<p class="v3s-note">${esc(body.note)}</p>` : '')
-      + (result ? `<small>${esc(result.modelLabel)} · ${esc(at)}</small><p>${esc(result.summary.text)}<small>근거: ${result.summary.evidence.map(esc).join(' · ')}</small></p>${lines(result.watch, '눈여겨볼 점')}${checks}` : '')
+      + (result ? `${window.AIResultMeta.html({ model: result.modelLabel, at: result.createdAt, basis })}<p>${esc(result.summary.text)}<small>근거: ${result.summary.evidence.map(esc).join(' · ')}</small></p>${lines(result.watch, '눈여겨볼 점')}${checks}` : '')
       + (state.status === 'loading' ? '<p class="v3s-note">저장된 문장을 확인하는 중…</p>' : '')
       + (state.status === 'error' ? `<p class="v3s-note">${esc(state.error)}</p>` : '')
+      + (body?.status === 'empty' ? '<p class="v3s-note">이 선택으로 만든 AI 분석이 없습니다.</p>' : '')
       + (body?.enabled === false ? '<p class="v3s-note">이 서버에서는 AI 분석이 꺼져 있습니다.</p>' : '')
       + '</div>';
   }
   function analysisBox(entry) {
     if (!entry) return '';
     if (entry.status === 'error') return `<section class="tr-analysis" aria-label="카드 분석"><h2>카드 분석</h2><p class="v3s-note">${esc(entry.error || '분석을 불러오지 못했습니다.')}</p></section>`;
-    if (!entry.data) return `<section class="tr-analysis" aria-label="카드 분석"${entry.status === 'ready' ? '' : ' aria-busy="true"'}><h2>카드 분석</h2><p class="v3s-note">${entry.status === 'ready' ? '이 카드의 분석 자료가 없습니다.' : '카드 숫자를 살펴보는 중…'}</p></section>`;
+    if (!entry.data) return `<section class="tr-analysis" aria-label="카드 분석"${entry.status === 'ready' ? '' : ' aria-busy="true"'}><h2>카드 분석</h2><p class="v3s-note">${entry.status === 'ready' ? '이 카드의 분석 자료가 없습니다.' : '계산 중…'}</p></section>`;
     const facts = entry.data.facts || [];
     const groups = ANALYSIS_ITEMS.map((title, i) => {
       const lines = facts.filter(f => f.item === i + 1);
@@ -68,7 +69,8 @@
         return `<li data-fact="${esc(f.id)}">${open}${i === 3 && f.kind === 'flow' ? ' <button type="button" class="ax-text-link" data-ca-flow>열린 업무 보기</button>' : ''}</li>`;
       }).join('') || '<li>비교할 기록이 없습니다.</li>'}</ol>${records}</section>`;
     }).join('');
-    return `<section class="tr-analysis" aria-label="카드 분석"><div class="tr-analysis-head"><h2>카드 분석</h2><small>${esc(entry.data.period === 'month' ? '월별 카드 기준' : '주별 카드 기준')} · ${esc(entry.data.asOf)}</small></div><div class="tr-analysis-grid">${groups}</div>${insightBox(entry.data)}</section>`;
+    const a = entry.data, grain = { day: '일별', week: '주별', month: '월별', year: '연별' }[a.period] || '기간';
+    return `<section class="tr-analysis" aria-label="카드 분석"><div class="tr-analysis-head"><h2>카드 분석</h2><small>${esc(`${grain} · ${a.by.label} 기준${a.filter ? ` · ${a.filter.label}만` : ''}${a.range ? ` · ${a.range.label}` : ''} · ${a.asOf}`)}</small></div><div class="tr-analysis-grid">${groups}</div>${insightBox(entry.data)}</section>`;
   }
   const changeOf = (p, q, unit, better) => {
     if (p?.value == null || q?.value == null) return { text: '—', tone: '' };
@@ -303,13 +305,13 @@
     const e = ctx.load(params);
     if (!e.data) {
       if (e.status === 'error') return `<p class="v3s-note">${esc(e.error || '불러오지 못했습니다.')}</p>`;
-      if (lastHtml) markMixed();
-      return lastHtml ? lastHtml.replace('<div class="tr">', '<div class="tr is-loading" aria-busy="true">') : '<div class="tr"><p class="v3s-note">추세를 계산하는 중…</p></div>';
+      return '<div class="tr" aria-busy="true"><p class="v3s-note">추세와 카드 분석 계산 중…</p><section class="tr-analysis" aria-label="카드 분석"><h2>카드 분석</h2><p class="v3s-note">계산 중…</p></section></div>';
     }
     const d = e.data;
     if (params.metric && d.metric.id !== params.metric) { lastHtml = ''; return '<p class="v3s-note">이 지표는 더 이상 제공하지 않습니다. 다른 지표를 열어 주세요.</p>'; }
     last.by = d.by; last.view = viewKey(d); last.d = d;
-    const analysis = CARD_IDS.has(d.metric.id) ? ctx.load({ metric: d.metric.id, analysis: '1' }) : null;
+    const analysis = CARD_IDS.has(d.metric.id) ? ctx.load({ metric: d.metric.id, analysis: '1', grain: d.grain, by: d.by,
+      ...(d.filter ? { f: `${d.filter.dim}:${d.filter.key}` } : {}), ...(d.range ? { from: d.range.from, to: d.range.to, up: d.range.up } : {}) }) : null;
     last.analysis = analysis?.data || null;
     const rq = d.range ? { from: d.range.from, to: d.range.to, up: d.range.up } : {}, li = d.windows.length - 1;
     // 학원 전체(필터를 걸었을 때의 비교선)는 같은 창의 시작일로 맞춘다 — 필터 쪽과 전체 쪽의 '기록 시작'이 달라 앞을 다르게 잘라도 칸이 어긋나지 않게.
@@ -374,7 +376,7 @@
     if (opened) { last?.api?.openFlowCase?.(opened.dataset.caOpenCase); return; }
     const request = t.closest('[data-ca-request]');
     if (request) {
-      const analysis = last?.analysis, saved = insightState.get(analysis?.metric)?.data, check = saved?.result?.checks?.[Number(request.dataset.caRequest)];
+      const analysis = last?.analysis, saved = insightState.get(analysis?.selectionKey)?.data, check = saved?.result?.checks?.[Number(request.dataset.caRequest)];
       if (!analysis || saved?.status !== 'ready' || !check || !Array.isArray(analysis.insightFactIds)) return;
       const byId = new Map(analysis.insightFactIds.map((id, i) => [id, analysis.facts[i]]));
       const evidence = check.factIds.map(id => byId.get(id)).filter(Boolean);
@@ -393,13 +395,16 @@
     }
     const make = t.closest('[data-ca-make]');
     if (make) {
-      const metric = make.dataset.caMake, state = insightState.get(metric);
+      const metric = make.dataset.caMake, analysis = last?.analysis, state = insightState.get(analysis?.selectionKey);
       if (!state || state.status === 'making') return;
       state.status = 'making'; last?.api.render();
-      fetch(`/api/insight/cards?metric=${encodeURIComponent(metric)}`, { method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/json' }, body: '{}' })
+      const selected = { grain: analysis.period, by: analysis.by.id,
+        ...(analysis.filter ? { f: `${analysis.filter.dim}:${analysis.filter.key}` } : {}),
+        ...(analysis.range ? { from: analysis.range.from, to: analysis.range.to, up: analysis.range.up } : {}) };
+      fetch(`/api/insight/cards?${new URLSearchParams({ metric, ...selected })}`, { method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/json' }, body: '{}' })
         .then(async r => { const body = await r.json(); if (!r.ok) throw new Error(body.message || '문장을 만들지 못했습니다.'); return body; })
-        .then(body => { if (insightState.get(metric) === state) { state.status = 'ready'; state.data = body; last?.api.render(); } })
-        .catch(error => { if (insightState.get(metric) === state) { state.status = 'error'; state.error = error.message; last?.api.render(); } });
+        .then(body => { if (insightState.get(analysis.selectionKey) === state) { state.status = 'ready'; state.data = body; last?.api.render(); } })
+        .catch(error => { if (insightState.get(analysis.selectionKey) === state) { state.status = 'error'; state.error = error.message; last?.api.render(); } });
       return;
     }
     const record = t.closest('[data-ca-record]');

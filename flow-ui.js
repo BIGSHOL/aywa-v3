@@ -516,13 +516,14 @@ window.createFlowUI = function createFlowUI(api) {
     const out=[];for(const code of [...(Array.isArray(d?.codes)?d.codes:[]),...String(d?.reason||'').split(',')]){const t=reasonText(code);if(t&&!out.includes(t))out.push(t);}
     return out;
   }
-  function decisionMemo(d){
+  function decisionMemo(d,c,previous=false){
     const p=d.probabilities||{},route=dRoute(d),reasons=dReasons(d).filter(r=>r!==route),draft=d.draft,provider=dProvider(d);
+    const basis=`업무 ${c.title} · ${previous?'지금 선택과 다른 이전 판정 기준':'자료 기준일 '+asOf()}`;
     // 확률·모델 이름·걸린 시간은 개발자용이라 싣지 않는다(원장 10-28). 긴급도는 등급이라 남긴다.
     const facts=[URGENCY[p.urgency]&&`긴급도 ${URGENCY[p.urgency]}`].filter(Boolean);
     const people=(d.suggestedAssigneeIds||[]).map(nameOf).filter(n=>n!=='담당 미지정');
-    const draftHtml=draft&&draft.status==='ok'&&draft.explanation?`<div class="fl-draft"><p><strong>AI 설명 초안</strong>${CONCERN[draft.routeConcern]?` · ${h(CONCERN[draft.routeConcern])}`:''}</p><p class="live-pre">${h(draft.explanation)}</p>${draft.nextAction?.title?`<p>다음 조치 제안: ${h(draft.nextAction.title)}${draft.nextAction.body?` — ${h(draft.nextAction.body)}`:''}</p>`:''}${Array.isArray(draft.missingInfo)&&draft.missingInfo.length?`<p>더 필요한 정보: ${h(draft.missingInfo.filter(x=>typeof x==='string').join(', '))}</p>`:''}<small>초안은 검토할 글입니다. 아무것도 보내지 않습니다.</small></div>`:draft&&['unavailable','error'].includes(draft.status)?'<p class="ax-note">AI 설명 초안을 받지 못했습니다.</p>':'';
-    return `<p>${provider?pill(provider,'blue'):''} ${h(dStatus(d))}${d.at?` · ${h(when(d.at))}`:''}</p>${route||AREA[d.area]?`<p><strong>${h(route)}</strong>${AREA[d.area]?`${route?' · ':''}업무 영역 ${h(AREA[d.area])}`:''}</p>`:''}${facts.length?`<ul class="fl-facts">${facts.map(f=>`<li>${h(f)}</li>`).join('')}</ul>`:''}${people.length?`<p>추천 담당: ${h(people.join(', '))} <small>(배정은 정해진 규칙과 사람이 합니다)</small></p>`:''}${reasons.length?`<p>이유: ${h(reasons.join(' · '))}</p>`:''}${draftHtml}`;
+    const draftHtml=draft&&draft.status==='ok'&&draft.explanation?`<div class="fl-draft"><p><strong>AI 설명 초안</strong>${CONCERN[draft.routeConcern]?` · ${h(CONCERN[draft.routeConcern])}`:''}</p>${window.AIResultMeta.html({model:draft.modelLabel||dModel(d)||'AI',at:draft.at||d.at,basis})}<p class="live-pre">${h(draft.explanation)}</p>${draft.nextAction?.title?`<p>다음 조치 제안: ${h(draft.nextAction.title)}${draft.nextAction.body?` — ${h(draft.nextAction.body)}`:''}</p>`:''}${Array.isArray(draft.missingInfo)&&draft.missingInfo.length?`<p>더 필요한 정보: ${h(draft.missingInfo.filter(x=>typeof x==='string').join(', '))}</p>`:''}<small>초안은 검토할 글입니다. 아무것도 보내지 않습니다.</small></div>`:draft&&['unavailable','error'].includes(draft.status)?'<p class="ax-note">AI 설명 초안을 받지 못했습니다.</p>':'';
+    return `<p>${provider?pill(provider,'blue'):''} ${h(dStatus(d))}</p>${provider||d.model?window.AIResultMeta.html({model:dModel(d)||provider||'AI',at:d.at,basis}):''}${route||AREA[d.area]?`<p><strong>${h(route)}</strong>${AREA[d.area]?`${route?' · ':''}업무 영역 ${h(AREA[d.area])}`:''}</p>`:''}${facts.length?`<ul class="fl-facts">${facts.map(f=>`<li>${h(f)}</li>`).join('')}</ul>`:''}${people.length?`<p>추천 담당: ${h(people.join(', '))} <small>(배정은 정해진 규칙과 사람이 합니다)</small></p>`:''}${reasons.length?`<p>이유: ${h(reasons.join(' · '))}</p>`:''}${draftHtml}`;
   }
   function decisionView(c){
     const d=c.decision,pending=d?.status==='pending'||c.decisionPending===true,providers=Array.isArray(flow().aiStatus?.providers)?flow().aiStatus.providers:[];
@@ -530,8 +531,8 @@ window.createFlowUI = function createFlowUI(api) {
     const lock=pending?'disabled':'',key=`data-id="${h(c.id)}" data-fl-key="case.analyze:${h(c.id)}" ${lock}`;
     const buttons=lead()&&c.state!=='done'?`<div class="ax-actions">${btn(d?'AI 판정 다시 받기':'AI 판정 받기','analyze',key)}${btn('AI 설명 초안까지 받기','analyze-draft',key)}</div>${off(jev)||off(claude)?`<p class="ax-note">${[jev,claude].filter(off).map(p=>h(PROVIDER[p.id]||'자동 판정')).join('·')}을 지금 쓸 수 없습니다. 눌러도 사람이 판단하도록 넘어갑니다.</p>`:''}`:'';
     if(!d&&!pending)return '';
-    if(pending)return `<section class="ax-evidence fl-decision"><h3>판정</h3><p role="status">${pill('판정 중','amber')} ${d?.requestedAt?`${h(when(d.requestedAt))} 요청 · `:''}결과가 나오면 이 화면에 바로 나타납니다. 그동안 업무는 정해진 담당자에게 그대로 있습니다.</p>${d?.previous?`<details class="ax-detail"><summary>이전 판정</summary>${decisionMemo(d.previous)}</details>`:''}${buttons}</section>`;
-    return `<section class="ax-evidence fl-decision"><h3>판정</h3>${decisionMemo(d)}${buttons}</section>`;
+    if(pending)return `<section class="ax-evidence fl-decision"><h3>판정</h3><p role="status">${pill('판정 중','amber')} ${d?.requestedAt?`${h(when(d.requestedAt))} 요청 · `:''}결과가 나오면 이 화면에 바로 나타납니다. 그동안 업무는 정해진 담당자에게 그대로 있습니다.</p>${d?.previous?`<details class="ax-detail"><summary>이전 판정</summary>${decisionMemo(d.previous,c,true)}</details>`:''}${buttons}</section>`;
+    return `<section class="ax-evidence fl-decision"><h3>판정</h3>${decisionMemo(d,c)}${buttons}</section>`;
   }
   /* ---------- relationship tree: GET /api/flow/hierarchy?caseId= (contract v1) ----------
      A case whose evidence hangs off people (absence: teacher → class → student → records) reads as a tree instead of
@@ -602,7 +603,9 @@ window.createFlowUI = function createFlowUI(api) {
   const stepState=s=>s.skipped?'건너뜀':isReview(s)&&s.status==='ready'?STEP.review:STEP[s.status]||'상태 미확인';
   const flowPill=(f,prefix='')=>FLOW_STATE[f?.state]?pill(`${prefix}${FLOW_STATE[f.state][0]}`,FLOW_STATE[f.state][1]):'';
   // AI result with its state, or (no usable summary) an honest status line; code facts are a separate '기록 요약' line.
-  function aiBlock(ai,{facts='',e=null,self=''}={}){
+  const aiBasis=(e,target,ai)=>ai?.stale?`${target} · 지금 선택과 다른 이전 기록 기준`:
+    `${target} · ${e?.data?.basis?.label||'업무 흐름'} · 자료 기준일 ${e?.data?.basis?.asOf||asOf()}`;
+  function aiBlock(ai,{facts='',e=null,self='',target='업무'}={}){
     const s=ai?.status,text=typeof ai?.summary==='string'?ai.summary.trim():'';
     const factLine=facts?`<p class="fl-fact"><strong>기록 요약</strong> ${h(facts)}</p>`:'';
     const reasons=(Array.isArray(ai?.reasons)?ai.reasons:[]).filter(korean),act=ai?.suggestedAction;
@@ -615,7 +618,7 @@ window.createFlowUI = function createFlowUI(api) {
     const ev=e?(Array.isArray(ai.evidenceIds)?ai.evidenceIds:[]).filter(id=>id!==self).map(id=>e.index.get(id)).filter(Boolean):[];
     const head=text?AI_STATE[s]?.[0]||'AI 정리':s==='review_needed'?'AI 판단 · 사람 확인 필요':s==='stale'?'AI 판단 · 그 뒤 기록이 바뀜':'AI 판단';
     const tags=`${pill(head,AI_STATE[s]?.[1]??'blue')}${ai.stale===true&&s!=='stale'?pill('이전 기록 기준','amber'):''}${labels.map(([x,tone])=>pill(x,tone)).join('')}`;
-    return `${factLine}<div class="fl-ai"><p class="fl-ai-head">${tags}${ai.updatedAt?`<span>${h(when(ai.updatedAt))}</span>`:''}</p>${text?`<p class="live-pre">${h(text)}</p>`:''}${said.length?`<ul>${said.map(x=>`<li>${h(x)}</li>`).join('')}</ul>`:''}${actText?`<p>제안: ${h(actText)}</p>`:''}${ev.length?`<p class="fl-ai-ev"><strong>근거</strong>${ev.map(n=>`<button type="button" class="fl-ev-link" data-fl="tree-go" data-node="${h(n.id)}">${h(nodeLabel(n))}${nodeDetail(n)?` ${h(nodeDetail(n))}`:''}</button>`).join('')}</p>`:''}${busy(s)?`<p class="fl-ai-wait">${h(AI_WAIT[s])}</p>`:''}</div>`;
+    return `${factLine}<div class="fl-ai"><p class="fl-ai-head">${tags}</p>${window.AIResultMeta.html({model:ai.modelLabel||ai.provider||'AI',at:ai.updatedAt,basis:aiBasis(e,target,ai)})}${text?`<p class="live-pre">${h(text)}</p>`:''}${said.length?`<ul>${said.map(x=>`<li>${h(x)}</li>`).join('')}</ul>`:''}${actText?`<p>제안: ${h(actText)}</p>`:''}${ev.length?`<p class="fl-ai-ev"><strong>근거</strong>${ev.map(n=>`<button type="button" class="fl-ev-link" data-fl="tree-go" data-node="${h(n.id)}">${h(nodeLabel(n))}${nodeDetail(n)?` ${h(nodeDetail(n))}`:''}</button>`).join('')}</p>`:''}${busy(s)?`<p class="fl-ai-wait">${h(AI_WAIT[s])}</p>`:''}</div>`;
   }
   // Actions for one exact step (the server still checks who may act). On a teacher: confirm, a whole-step report, review
   // and reassign, all step-wide. On a student (scoped): only a report carrying that student's records in that class.
@@ -646,7 +649,7 @@ window.createFlowUI = function createFlowUI(api) {
     const facts=factsText(n.facts)||(recs.length?`${recordWord(e.data)} ${fmt(recs.length)}건${dates.length?` · 처음 ${md(dates[0])} · 최종 ${md(dates.at(-1))}`:''}`:'');
     const sid=n.level==='student'&&n.entityRef?.id,other=sid?cases().filter(x=>x.id!==c.id&&x.state!=='done'&&(x.entityRefs||[]).some(r=>r.type==='student'&&r.id===sid)):[];
     const open=r=>{const rec=r.recordId||'';return Boolean(r.familyId&&rec&&api.hasView(`workspace-${r.familyId}`))||Boolean(rec&&api.canOpenRecord?.(rec));};
-    return `${sid?`<div class="ax-actions">${btn('원생 기록 열기','entity',`data-family="students" data-record="${h(sid)}"`)}</div>`:''}${aiBlock(n.ai,{facts,e,self:n.id})}${total!==null&&total>recs.length?`<p class="fl-tree-warn">${h(recordWord(e.data))} ${fmt(total)}건 중 ${fmt(recs.length)}건만 받았습니다.</p>`:''}${recs.length?`<ol class="fl-records" aria-label="${h(recordWord(e.data))} ${fmt(recs.length)}건">${recs.map(r=>`<li><span class="fl-rec-date">${h(md(String(r.date||'날짜 미입력').slice(0,10)))}</span><span>${h(recLabel(r))}</span><button type="button" class="fl-rec-open" data-fl="entity" data-family="${h(r.familyId||'')}" data-record="${h(r.recordId||'')}" ${open(r)?'':'disabled'}>기록 보기</button></li>`).join('')}</ol>`:'<p class="live-empty">이 묶음에 받은 기록이 없습니다.</p>'}${flowLine(n)}${stepLines(c,n,n.level==='student'?n:null)}${otherWork(other)}`;
+    return `${sid?`<div class="ax-actions">${btn('원생 기록 열기','entity',`data-family="students" data-record="${h(sid)}"`)}</div>`:''}${aiBlock(n.ai,{facts,e,self:n.id,target:nodeLabel(n)})}${total!==null&&total>recs.length?`<p class="fl-tree-warn">${h(recordWord(e.data))} ${fmt(total)}건 중 ${fmt(recs.length)}건만 받았습니다.</p>`:''}${recs.length?`<ol class="fl-records" aria-label="${h(recordWord(e.data))} ${fmt(recs.length)}건">${recs.map(r=>`<li><span class="fl-rec-date">${h(md(String(r.date||'날짜 미입력').slice(0,10)))}</span><span>${h(recLabel(r))}</span><button type="button" class="fl-rec-open" data-fl="entity" data-family="${h(r.familyId||'')}" data-record="${h(r.recordId||'')}" ${open(r)?'':'disabled'}>기록 보기</button></li>`).join('')}</ol>`:'<p class="live-empty">이 묶음에 받은 기록이 없습니다.</p>'}${flowLine(n)}${stepLines(c,n,n.level==='student'?n:null)}${otherWork(other)}`;
   }
   // The student's other open work, same kind and state folded into one line with a button per case (by date).
   function otherWork(list){
@@ -674,7 +677,7 @@ window.createFlowUI = function createFlowUI(api) {
     const tags=`${n.unassigned?pill('배정 미상','amber'):''}${n.status==='inactive'?pill('재직 아님','amber'):''}${step?pill((step.assigneeIds||[]).length?stepState(step):'담당 미지정',(step.assigneeIds||[]).length?'':'amber'):''}${lv==='student'?n.flow?.scope==='record'&&n.flow.state!=='open'?flowPill(n.flow):'':['partial','needs_review'].includes(n.flow?.state)?flowPill(n.flow,'원생 '):''}${aiTags}`;
     const row=`<div class="fl-node-row"><button type="button" class="fl-node-btn" data-fl="${leaf?'pick':'node'}" data-node="${h(n.id)}" aria-expanded="${open}" aria-controls="${dom}"><span class="fl-chev" aria-hidden="true">${icon('chevron')}</span><span class="fl-node-name">${h(label)}${detail?`<small>${h(detail)}</small>`:''}${mineNode(n)?'<small class="fl-mine">내 담당</small>':''}${same>1?'<small>같은 이름 있음</small>':''}</span><span class="fl-node-count">${h(countText(n.counts,lv,q.word))}</span></button>${tags?`<span class="fl-node-tags">${tags}</span>`:''}</div>`;
     if(leaf)return `<li class="fl-node" data-level="${h(lv||'')}">${row}<div class="fl-pane" id="${dom}" ${open?'':'hidden'}>${open?paneHtml(c,e,n):''}</div></li>`;
-    const facts=factsText(n.facts),note=`${byStateLine(n)}${n.ai&&n.ai.status!=='not_started'||facts?aiBlock(n.ai,{facts,e,self:n.id}):''}`;
+    const facts=factsText(n.facts),note=`${byStateLine(n)}${n.ai&&n.ai.status!=='not_started'||facts?aiBlock(n.ai,{facts,e,self:n.id,target:nodeLabel(n)}):''}`;
     return `<li class="fl-node" data-level="${h(lv||'')}">${row}<div class="fl-node-kids" id="${dom}" ${open?'':'hidden'}>${lv==='class'&&n.entityRef?.id&&!n.unassigned?`<div class="ax-actions fl-node-links">${btn('반 기록 열기','entity',`data-family="classes" data-record="${h(n.entityRef.id)}"`)}</div>`:''}${note?`<div class="fl-node-note">${note}</div>`:''}${lv==='teacher'?stepLines(c,n):''}<ul class="fl-tree-list">${kids.map(k=>nodeHtml(c,e,k,q,kids)).join('')}</ul></div></li>`;
   }
   function bodyHtml(c,e){
@@ -684,7 +687,7 @@ window.createFlowUI = function createFlowUI(api) {
     return list?`<ul class="fl-tree-list fl-tree-top">${list}</ul>`:`<p class="live-empty">‘${h(e.query)}’에 맞는 선생님·반·원생이 없습니다.</p>`;
   }
   const hitsText=e=>{const q=searchSets(e);return q.term?`${fmt(q.hits)}곳 일치`:'';};
-  function synth(title,s,e){return s&&typeof s==='object'?`<section class="fl-synth" aria-label="${h(title)}"><h4>${h(title)}</h4>${aiBlock(s,{facts:factsText(s.facts),e})}</section>`:'';}
+  function synth(title,s,e){return s&&typeof s==='object'?`<section class="fl-synth" aria-label="${h(title)}"><h4>${h(title)}</h4>${aiBlock(s,{facts:factsText(s.facts),e,target:title})}</section>`:'';}
   function progressLine(a){
     if(!a||typeof a!=='object')return '';
     if(a.status==='disabled')return '<p class="fl-tree-progress">AI 정리가 꺼져 있어 기록만 보여 줍니다.</p>';

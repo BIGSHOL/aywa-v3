@@ -59,7 +59,7 @@ window.createAxChat = function createAxChat(api) {
     const task = t.suggestedTask ? taskCard(t) : '';
     const head = r.headline ? `<p class="axc-headline">${rich(r.headline)}</p>` : '';
     const body = !r.headline && r.body ? `<div class="ax-chat-text">${rich(r.body)}</div>` : '';
-    return `<div class="ax-chat-answer axc"><div class="ax-chat-provider">${pill('AI 답변', 'blue')}<span>학원 기록으로 쓴 초안입니다. 내용을 확인한 뒤 사용하세요.</span></div>${head}${body}${facts}${points}${table}${checks}${r.notice ? `<p class="axc-notice">${h(r.notice)}</p>` : ''}${notes}${links}${issues}${task}</div>`;
+    return `<div class="ax-chat-answer axc"><div class="ax-chat-provider">${pill('AI 답변', 'blue')}<span>학원 기록으로 쓴 초안입니다. 내용을 확인한 뒤 사용하세요.</span></div>${window.AIResultMeta.html({model:t.aiMeta?.modelLabel||'Claude',at:t.aiMeta?.createdAt,basis:t.aiMeta?.basis||'원장실 전체 · 자료 기준 확인 필요'})}${head}${body}${facts}${points}${table}${checks}${r.notice ? `<p class="axc-notice">${h(r.notice)}</p>` : ''}${notes}${links}${issues}${task}</div>`;
   }
   function taskCard(t) {
     const x = t.task, task = t.suggestedTask;

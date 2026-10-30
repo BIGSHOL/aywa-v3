@@ -8,6 +8,8 @@ import { modelLabel } from './exit-runtime.mjs';
 export const CARD_INSIGHT_PATH = '/api/insight/cards';
 const METRIC = /^[a-z][a-z0-9-]{0,40}$/;
 const sha = x => createHash('sha256').update(JSON.stringify(x)).digest('hex');
+export const cardSelectionKey = a => `${a.metric}|${sha([a.period, a.by?.id || 'all', a.filter ? [a.filter.dim, a.filter.key] : null,
+  a.range ? [a.range.from, a.range.to, a.range.up] : null]).slice(0, 24)}`;
 const text = n => ({ type: 'string', minLength: 1, maxLength: n });
 const line = { type: 'object', additionalProperties: false, required: ['text', 'factIds'], properties: {
   text: text(220), factIds: { type: 'array', minItems: 1, maxItems: 6, items: { type: 'string', pattern: '^F-[0-9a-f]{8}$' } },
@@ -25,7 +27,10 @@ export function cardInput(analysis) {
   const indicator = { 이름: analysis.metricInfo.name, 단위: analysis.metricInfo.unit,
     방향: analysis.metricInfo.better === 'up' ? '높을수록 좋음' : analysis.metricInfo.better === 'down' ? '낮을수록 좋음' : '좋고 나쁨의 방향 없음',
     '기준 문장': analysis.facts.find(f => f.item === 5 && f.kind === 'basis')?.text || '',
-    '기간 단위': { day: '일별', week: '주별', month: '월별', year: '연별' }[analysis.period] || '주별' };
+    '기간 단위': { day: '일별', week: '주별', month: '월별', year: '연별' }[analysis.period] || '주별',
+    '구분': analysis.by?.label || '전체', '자료 기준일': analysis.asOf || '확인 필요',
+    ...(analysis.filter ? { '선택 범위': `${analysis.filter.label}만` } : {}),
+    ...(analysis.range ? { '살펴본 기간': analysis.range.label } : {}) };
   const facts = analysis.facts.map(f => {
     const id = `F-${sha([analysis.metric, f.id, f.item, f.kind]).slice(0, 8)}`;
     labels.set(id, f.text);
@@ -37,7 +42,7 @@ export function cardInput(analysis) {
       : f.text;
     return { id, text: safe, values };
   });
-  return { metric: analysis.metric, fingerprint: sha([indicator, analysis.facts.map(f => ({ id: f.id, text: f.text, values: f.values }))]), indicator, facts, labels };
+  return { metric: analysis.metric, key: cardSelectionKey(analysis), fingerprint: sha([indicator, analysis.facts.map(f => ({ id: f.id, text: f.text, values: f.values }))]), indicator, facts, labels };
 }
 
 export function validateCardOutput(output, facts) {
@@ -63,21 +68,20 @@ export const openCardInsightStore = ({ dir, identity, lock }) => openStore({ dir
 export function createCardInsight({ store, provider = null, reserve = async () => false, clock = () => Date.now() }) {
   const busy = new Set();
   const state = () => store.state.cardInsight || { results: {} };
-  const viewFingerprint = (metric, fingerprint) => {
-    const record = state().results[metric], saved = record?.byFingerprint?.[record.latest] || null;
-    const stale = !!saved && saved.fingerprint !== fingerprint;
-    return { metric, fingerprint, status: !saved ? 'empty' : stale ? 'stale' : 'ready',
-      note: stale ? "자료가 바뀌었습니다. 다시 만들려면 'AI 분석'를 누르세요." : null,
+  const viewFingerprint = (metric, key, fingerprint) => {
+    const record = state().results[key], saved = record?.byFingerprint?.[fingerprint] || null;
+    return { metric, key, fingerprint, status: saved ? 'ready' : 'empty',
+      note: saved ? null : '이 선택으로 만든 AI 분석이 없습니다.',
       result: saved ? { ...displayCardOutput(saved.output, saved.facts),
         modelLabel: modelLabel(saved.model) || 'Claude', createdAt: saved.createdAt } : null,
       enabled: !!provider };
   };
-  const view = analysis => viewFingerprint(analysis.metric, cardInput(analysis).fingerprint);
+  const view = analysis => { const input = cardInput(analysis); return viewFingerprint(input.metric, input.key, input.fingerprint); };
   async function make(analysis) {
     if (!provider) return { status: 503, error: 'ai_disabled', message: '이 서버에서는 AI 분석이 꺼져 있습니다.' };
     const built = cardInput(analysis);
-    if (busy.has(built.metric)) return { status: 409, error: 'busy', message: '이 카드의 문장을 만드는 중입니다.' };
-    busy.add(built.metric);
+    if (busy.has(built.key)) return { status: 409, error: 'busy', message: '이 카드의 문장을 만드는 중입니다.' };
+    busy.add(built.key);
     try {
       let checked, answer;
       for (let attempt = 0; attempt < 2; attempt++) {
@@ -94,13 +98,13 @@ export function createCardInsight({ store, provider = null, reserve = async () =
       const saved = { fingerprint: built.fingerprint, facts: [...built.labels].map(([id, text]) => ({ id, text })), output: answer.output, model: answer.model || null, createdAt: new Date(clock()).toISOString() };
       await store.transact(draft => {
         const results = (draft.cardInsight ??= { results: {} }).results;
-        const record = (results[built.metric] ??= { latest: null, byFingerprint: {} });
+        const record = (results[built.key] ??= { latest: null, byFingerprint: {} });
         record.byFingerprint[built.fingerprint] = saved;
         record.latest = built.fingerprint;
         return { next: draft, result: null };
       });
       return { ...view(analysis), httpStatus: 200 };
-    } finally { busy.delete(built.metric); }
+    } finally { busy.delete(built.key); }
   }
   return { view, viewFingerprint, make };
 }

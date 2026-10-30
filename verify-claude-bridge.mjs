@@ -224,6 +224,8 @@ test('HTTP: only a same-origin JSON POST can start a call', async t => {
   assert.equal(res.status, 200);
   for (const key of ['answer', 'issueIds', 'suggestedTask', 'provider', 'headline', 'keyFacts', 'points', 'notes', 'checks', 'table', 'links']) assert(key in res.json, key);
   assert.equal(res.json.provider, 'claude-cli');
+  assert.match(res.json.aiMeta.basis, new RegExp(`이슈 .* · ${context.month} 업무 자료 · 기준일 ${context.asOf}`));
+  assert.match(res.json.aiMeta.createdAt, /^\d{4}-\d{2}-\d{2}T/);
   assert.deepEqual(res.json.links, [{ id: 'ws:billing', label: '수납관리' }], 'unknown destination dropped');
   assert.equal(res.json.notes.length, 2, 'refs 5 and 6 kept as footnotes 1·2, 99 dropped'); assert.equal(res.json.suggestedTask.area, 'billing');
 });

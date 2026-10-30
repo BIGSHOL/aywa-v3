@@ -85,15 +85,19 @@ export function buildCardAnalysis({ trend, byDimension = {}, card, flowCases = n
     }
   } else facts.push(fact(3, 'roster-empty', '이 조건에는 추세 명단이 없습니다.', { count: 0 }));
 
-  facts.push(...flowFacts(metric, flowCases, trend.asOf));
+  // 업무 흐름은 현재 열린 건의 상태다. 과거 기간·구분의 추세 건수와 혼동하지 않게 범위를 적는다.
+  facts.push(...flowFacts(metric, flowCases, trend.asOf).map(f => ({ ...f, text: `현재 열린 학원 전체 업무 · ${f.text}` })));
   const missing = points.filter(p => value(p) == null).length;
   facts.push(fact(5, 'basis', `집계 기준 · ${card?.detail || card?.basis || '확장 추세의 같은 기간과 같은 조건으로 집계'}`, { basis: card?.detail ?? card?.basis ?? null }));
   facts.push(fact(5, 'coverage', `기록 시작 ${trend.since || '확인할 기록 없음'} · 기록 없는 기간 ${fmt(missing)}개${trend.endsYesterday ? ' · 어제까지 집계' : ''}`,
     { since: trend.since ?? null, missingWindows: missing, endsYesterday: !!trend.endsYesterday }));
-  if (metric === 'exits' && card) {
+  const sameCardWindow = card?.period === trend.grain && !trend.filter && !trend.range;
+  if (metric === 'exits' && sameCardWindow) {
     const policy = exitCleanupPolicy(current, card.cleanupCount ?? 0);
     facts.push(fact(5, 'difference', `카드 수치 ${shown(card.value, unit)} · 추세선 ${shown(current, unit)}${policy.note ? ` · ${policy.note}` : ''}`,
       { cardValue: card.value, trendValue: current, cleanupCount: card.cleanupCount ?? 0, note: policy.note }));
-  } else if (card && current != null && card.value != null && card.value !== current) facts.push(fact(5, 'difference', `카드 수치 ${shown(card.value, unit)} · 추세선 ${shown(current, unit)} · 집계 기준을 확인해 주세요.`, { cardValue: card.value, trendValue: current }));
-  return { metric, period: card?.period || trend.grain, asOf: trend.asOf, facts: facts.map((f, i) => ({ id: `F${i + 1}`, ...f })), records: roster };
+  } else if (sameCardWindow && current != null && card.value != null && card.value !== current) facts.push(fact(5, 'difference', `카드 수치 ${shown(card.value, unit)} · 추세선 ${shown(current, unit)} · 집계 기준을 확인해 주세요.`, { cardValue: card.value, trendValue: current }));
+  return { metric, period: trend.grain, by: { id: trend.by, label: trend.metric.dims.find(d => d.id === trend.by)?.label || '전체' },
+    filter: trend.filter ?? null, range: trend.range ?? null, asOf: trend.asOf,
+    facts: facts.map((f, i) => ({ id: `F${i + 1}`, ...f })), records: roster };
 }
