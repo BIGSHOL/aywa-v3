@@ -9,7 +9,7 @@ const NOTICE = { success: '발송 완료', partial: '일부 실패', failed: '�
 const prefixed = (prefix, labels) => Object.fromEntries(Object.entries(labels).map(([k, v]) => [`${prefix}:${k}`, v]));
 
 export async function academicFamilies(ctx) {
-  const { sql, t, asOf, month, monthStart, capturedAt, notTest, subjectLabel, subjectFacets } = ctx;
+  const { sql, t, asOf, monthStart, capturedAt, notTest, subjectLabel, subjectFacets } = ctx;
   const out = {};
   const week = addDays(asOf, -6);
 
@@ -29,7 +29,7 @@ export async function academicFamilies(ctx) {
     summary: `${windows ? '' : '수업보고서 지표를 계산하지 못했습니다. '}최근 7일${windows ? `(${windows.at(-1).label})` : ''} 학부모 공지 발송 실패 ${failedNotices.length}건.`,
     metrics: osKpis,
     trend: monthlyTrend('월별 수업보고서 원생 기록', '건', await sql`select to_char(session_date,'YYYY-MM') as month, count(*)::int as value from public.onescreen_daily_sessions where tenant_id=${t} and session_date <= ${asOf} ${notTest} group by 1`, asOf),
-    evidence: notices.map(n => record({ id: n.id, label: n.first_student || '원생 이름 미확인', date: n.d, status: NOTICE[n.status] || '기타', fields: [field('보낸 선생님', n.sender), field('대상', n.targets === null ? null : `${n.targets}명`), field('반', (n.class_names || []).join(', ') || null)], facets: [`status:${n.status}`, failedNotices.includes(n) && 'failed-recent'] })),
+    evidence: notices.map(n => record({ id: n.id, label: n.first_student || '원생 이름 미확인', date: n.d, status: NOTICE[n.status] || '기타', fields: [field('보낸 선생님', n.sender), field('대상 수', n.targets === null ? null : `${n.targets}명`), field('반', (n.class_names || []).join(', ') || null)], facets: [`status:${n.status}`, failedNotices.includes(n) && 'failed-recent'] })),
     facetLabels: { ...prefixed('status', NOTICE), 'failed-recent': '최근 7일 발송 실패(일부 실패 포함)' }, recordSource: 'classnote_notices',
     signals: failedNotices.length ? [signal({ id: 'onescreen-notice-failed', title: `최근 7일 학부모 공지 발송 실패 ${failedNotices.length}건`, summary: `보낸 선생님: ${Object.entries(Object.groupBy(failedNotices, n => n.sender || '발송자 미상')).sort((a, b) => b[1].length - a[1].length).map(([k, v]) => `${k} ${v.length}`).join(' · ')}. 일부 실패 포함.`, priority: PRIORITY.check, source: 'ClassNote 공지 발송 결과', recordIds: failedNotices.map(n => n.id), facet: 'failed-recent', at: latest(failedNotices.map(n => n.at)), draft: { title: '학부모 공지 발송 실패 확인', body: '최근 7일 안에 발송에 실패한 공지가 있습니다. 대상과 결과를 확인하고 필요한 경우 다시 보내 주세요.' } })] : [],
     sourceLabel: '수업보고서 · 출결 · 영상 숙제 · 학부모 공지', coverageNote: `목록은 선생님이 보낸 학부모 공지입니다(최근 순).${!os.last ? ' 수업보고서 기록이 없습니다.' : os.last < asOf ? ` 수업보고서 기록은 ${md(os.last)}까지 있습니다.` : ''}`,
