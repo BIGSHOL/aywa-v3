@@ -28,9 +28,15 @@ await assert.rejects(reconcileReaderEvidence({ ...output, points: [{ text: '신�
   error => error.code === 'unverified_fact');
 await assert.rejects(reconcileReaderEvidence({ ...output, headline: '인과를 확인할 수 없습니다' }, { facts: [] }, fake),
   error => error.code === 'unverified_fact');
+await assert.rejects(reconcileReaderEvidence({ ...output, headline: '책임은 판단할 수 없습니다' }, { facts: [] }, fake),
+  error => error.code === 'unverified_fact');
+await assert.rejects(reconcileReaderEvidence({ ...output, checks: ['확인이 필요합니다'] }, { facts: [] }, fake),
+  error => error.code === 'unverified_fact');
+await assert.rejects(reconcileReaderEvidence({ ...output, suggestedTask: { title: '일부 항목 확인', body: '원장 확인', area: '', recordQueries: [] } }, { facts: [] }, fake),
+  error => error.code === 'unverified_fact');
 const madeUp = 'select 3 as 상담_건';
 const madeUpId = `Q-${createHash('sha256').update(madeUp).digest('hex').slice(0, 12)}`;
 await assert.rejects(reconcileReaderEvidence({ ...output, queries: [{ id: madeUpId, sql: madeUp }] }, { facts: [] }, fake),
   error => error.code === 'unverified_fact');
 assert.ok(inspectTexts(['기록으로는 인과를 확인할 수 없습니다'], new Set()).issues.includes('banned_reason'));
-console.log('AI 읽기 호출·근거 검사 5/5');
+console.log('AI 읽기 호출·근거 검사 8/8');

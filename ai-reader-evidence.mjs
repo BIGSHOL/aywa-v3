@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { BANNED_REASON } from './ai-reader-cli.mjs';
+import { BANNED_COPY, BANNED_REASON } from './ai-reader-cli.mjs';
 import { unsupportedAnswerFacts } from './claude-bridge-facts.mjs';
 
 const REF = /^Q-[0-9a-f]{12}:[1-9][0-9]{0,2}$/;
@@ -54,8 +54,14 @@ export async function reconcileReaderEvidence(output, facts, reader) {
     if (item.ref && unsupportedAnswerFacts({ keyFacts: [item] }, { facts: nextFacts.filter(f => f.n === item.ref) }).length) throw fail();
   }
   delete copied.queries;
-  const prose = [copied.headline, ...(copied.points || []).map(p => p.text), ...(copied.checks || []),
-    ...(copied.table?.rows || []).flat()].filter(Boolean).join(' ');
-  if (BANNED_REASON.test(prose) || unsupportedAnswerFacts(copied, { ...facts, facts: nextFacts }).length) throw fail();
+  if ((copied.checks || []).some(check =>
+    !/(?:원장|관리자|담당자|선생님|직원|상담팀|교무팀|운영팀)/.test(check) ||
+    !/(?:⟦[^⟧]+⟧|[0-9]+명|[가-힣]+(?:원생|반|청구|미납|상담|보고서|업무))/.test(check) ||
+    !/(?:기록|화면|보고서|상담|출석|청구|수납)/.test(check))) throw fail();
+  const prose = [copied.headline, ...(copied.keyFacts || []).flatMap(f => [f.label, f.value, f.change]),
+    ...(copied.points || []).map(p => p.text), ...(copied.checks || []),
+    ...(copied.table?.columns || []), ...(copied.table?.rows || []).flat(),
+    copied.suggestedTask?.title, copied.suggestedTask?.body].filter(Boolean).join(' ');
+  if (BANNED_REASON.test(prose) || BANNED_COPY.test(prose) || unsupportedAnswerFacts(copied, { ...facts, facts: nextFacts }).length) throw fail();
   return { output: copied, facts: { ...facts, facts: nextFacts }, citedRows: refs.size };
 }

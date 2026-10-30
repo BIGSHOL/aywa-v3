@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { createServer } from 'node:http';
 import { cardInput, createCardInsight, openCardInsightStore, validateCardOutput, displayCardOutput } from './card-insight.mjs';
 import { createCardInsightRoute } from './card-insight-http.mjs';
+import { buildCardAnalysis } from './card-analysis.mjs';
 
 const identity = { tenantId: 'test-tenant', tenantSlug: 'test', capturedAt: '2026-10-29T00:00:00Z' };
 const analysis = { metric: 'exits', period: 'month', by: { id: 'teacher', label: '선생님별' }, asOf: '2026-10-29', metricInfo: { name: '퇴원·수업종료', unit: '명', better: 'down' }, records: [{ name: '홍길동' }], facts: [
@@ -14,7 +15,7 @@ const analysis = { metric: 'exits', period: 'month', by: { id: 'teacher', label:
   { id: 'F4', item: 5, kind: 'basis', text: '집계 기준 · 이번 달 퇴원·수업종료 원생', values: { basis: '이번 달 퇴원·수업종료 원생' } },
 ] };
 const built = cardInput(analysis), ids = built.facts.map(f => f.id);
-const good = { summary: { text: '변화를 확인할 기록이 있습니다.', factIds: [ids[0]] }, watch: [{ text: '담당 선생님 기준의 변화가 있습니다.', factIds: [ids[1]] }], checks: [{ text: '반의 기록을 확인해 주세요.', factIds: [ids[2]] }] };
+const good = { summary: { text: '변화를 확인할 기록이 있습니다.', factIds: [ids[0]] }, watch: [{ text: '담당 선생님 기준의 변화가 있습니다.', factIds: [ids[1]] }], checks: [] };
 let n = 0;
 assert(!JSON.stringify(built.facts).includes('홍길동') && !JSON.stringify(built.facts).includes('김철수') && !JSON.stringify(built.facts).includes('샛별반') && !JSON.stringify(built.facts).includes('private-id')); n++;
 assert.deepEqual(built.indicator, { 이름: '퇴원·수업종료', 단위: '명', 방향: '낮을수록 좋음', '기준 문장': '집계 기준 · 이번 달 퇴원·수업종료 원생', '기간 단위': '월별', 구분: '선생님별', '자료 기준일': '2026-10-29' }); n++;
@@ -25,11 +26,31 @@ assert.equal(cardInput({ ...analysis, facts: [...analysis.facts, { id: 'F5', ite
 assert.equal(built.facts.at(-1).text, analysis.facts.at(-1).text); n++;
 assert.notEqual(cardInput({ ...analysis, metricInfo: { ...analysis.metricInfo, better: 'up' } }).fingerprint, built.fingerprint); n++;
 assert.equal(validateCardOutput(good, built.facts).ok, true); n++;
+assert(validateCardOutput({ ...good, checks: [{ text: '확인이 필요합니다.', factIds: [ids[0]] }] }, built.facts).issues.includes('vague_check')); n++;
 assert(validateCardOutput({ ...good, summary: { text: '14명이 늘었습니다.', factIds: [ids[0]] } }, built.facts).issues.includes('number_in_text')); n++;
 assert.equal(validateCardOutput({ ...good, summary: { text: '확인이 필요합니다.', factIds: ['F-deadbeef'] } }, built.facts).ok, false); n++;
 assert(validateCardOutput({ ...good, summary: { text: 'current 값 확인', factIds: [ids[0]] } }, built.facts).issues.includes('raw_code')); n++;
 assert.equal(displayCardOutput({ ...good, summary: { text: `${ids[0]} 확인`, factIds: [ids[0]] } }, [{ id: ids[0], text: '지금 14명' }, ...built.facts.slice(1)]).summary.text, '지금 14명 확인'); n++;
-assert.deepEqual(displayCardOutput(good, built.facts).checks[0].factIds, [ids[2]]); n++;
+assert.deepEqual(displayCardOutput(good, built.facts).checks, []); n++;
+const mixRows = [['인재원 영어만', 75, 79], ['EiE만', 62, 64], ['인재원 영어+수학', 63, 58],
+  ['EiE+수학', 28, 29], ['수학만', 103, 102], ['미수강', 0, 1]];
+const points = [326, 372, 372, 402, 331, 333].map(value => ({ value }));
+const trend = { metric: { id: 'enrolled-students', unit: '명', dims: [{ id: 'mix', label: '수강 구성별' }] },
+  grain: 'month', by: 'mix', total: points, windows: points.map((_, i) => ({ label: `${i + 5}월` })), asOf: '2026-10-27', since: '2026-05-01' };
+const mix = buildCardAnalysis({ trend, byDimension: { mix: { rows: mixRows.map(([label, previous, current], i) =>
+  ({ key: `mix-${i}`, label, points: [{ value: previous }, { value: current }] })) } }, card: { value: 333, period: 'month' } });
+const mixFacts = mix.facts.filter(f => f.item === 2);
+assert.equal(mixFacts.length, 6);
+assert.equal(mixFacts[0].values.delta, -5);
+assert.equal(mixFacts.reduce((sum, f) => sum + f.values.delta, 0), 2);
+assert.equal(mixFacts.filter(f => f.kind === 'other-change').length, 1);
+assert(mixFacts.every((f, i) => !i || Math.abs(mixFacts[i - 1].values.delta) >= Math.abs(f.values.delta))); n++;
+const mixInput = cardInput({ ...mix, metricInfo: { name: '재원생', unit: '명', better: 'up' } });
+assert(mixInput.facts.some(f => f.text.includes('인재원 영어+수학')));
+assert.equal(mixInput.facts.find(f => f.item === 1).values.changeFromPrevious, 2);
+assert.equal(mixInput.facts.find(f => f.item === 1).values.changeFromMedian, -39);
+assert.equal(mixInput.facts.find(f => f.item === 1).values.changeFromFloor, 7);
+assert.equal(mixInput.indicator['구분 주의'], '한 원생은 수강 구성 하나에만 속함'); n++;
 const root = await mkdtemp(join(tmpdir(), 'card-insight-'));
 try {
   const store = await openCardInsightStore({ dir: root, identity });

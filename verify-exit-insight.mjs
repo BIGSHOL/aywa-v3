@@ -108,8 +108,11 @@ test('hand-over clusters: a subject only for a hand-over in that subject, or a t
   assert.equal(out.find(c => c.id === 'handover:math'), undefined);
   assert.deepEqual(out.find(c => c.id === 'teacher_reason:math')?.members, ['s1']);
   assert.deepEqual(out.find(c => c.id === 'handover:english')?.members, ['s6']);
-  // Code facts handed to Claude must themselves pass the output check (a fact with '일부' made faithful answers fail).
-  for (const c of out) for (const f of c.facts) if (f.claude) assert.deepEqual(AI.checkTexts([f.claude], new Set()), [], f.claude);
+  // 원본의 내부 용어는 입력에서 바꾼 뒤 검사한다.
+  for (const c of out) for (const f of c.facts) if (f.claude) {
+    const safe = f.claude.replaceAll('이 묶음', '해당 원생').replaceAll('퇴원율 판정', '담당 퇴원 기록');
+    assert.deepEqual(AI.checkTexts([safe], new Set()), [], safe);
+  }
 });
 
 test('hand-over facts: not a new class\'s first rows, not the same person under a label; a real change counts', () => {
@@ -131,7 +134,7 @@ test('hand-over facts: not a new class\'s first rows, not the same person under 
 
 test('AI output check: ids inside the input, no digits, counts, months or guesses', () => {
   const built = { input: { 묶음: [{ id: 'G-aaaaaaaa', 사실: [{ id: 'F-11111111' }] }], 학생: [{ id: 'S-22222222' }] }, clusterIds: ['G-aaaaaaaa'], factsOf: new Map([['G-aaaaaaaa', new Set(['F-11111111'])]]) };
-  const good = { clusters: [{ id: 'G-aaaaaaaa', chain: [{ text: 'T 선생님이 아니라 S-22222222 학생의 반이 폐강된 뒤 퇴원했습니다', factIds: ['F-11111111'] }], summary: '반 폐강 뒤 퇴원이 이어졌습니다', confidence: '분명' }], overall: { summary: '폐강이 퇴원과 이어졌습니다', reasons: [], checks: ['확인이 필요합니다'], clusterIds: ['G-aaaaaaaa'] } };
+  const good = { clusters: [{ id: 'G-aaaaaaaa', chain: [{ text: 'T 선생님이 아니라 S-22222222 학생의 반이 폐강된 뒤 퇴원했습니다', factIds: ['F-11111111'] }], summary: '반 폐강 뒤 퇴원이 이어졌습니다', confidence: '분명' }], overall: { summary: '폐강이 퇴원과 이어졌습니다', reasons: [], checks: [], clusterIds: ['G-aaaaaaaa'] } };
   const v = AI.validateCohort(good, built); assert.equal(v.ok, false, 'even one latin letter outside an id is a raw code'); assert.deepEqual(v.issues, ['raw_code']);
   good.clusters[0].chain[0].text = 'S-22222222 학생의 반이 폐강된 뒤 퇴원했습니다'; assert.equal(AI.validateCohort(good, built).ok, true);
   const bad = (patch, code) => { const o = structuredClone(good); patch(o); assert(AI.validateCohort(o, built).issues.includes(code), code); };
@@ -141,6 +144,8 @@ test('AI output check: ids inside the input, no digits, counts, months or guesse
   bad(o => { o.overall.summary = '칠월에 많이 줄었습니다'; }, 'month_word');
   bad(o => { o.overall.summary = '아마 성적 때문일 것 같습니다'; }, 'guess_word');
   bad(o => { o.overall.summary = 'S-99999999 학생'; }, 'unknown_id');
+  bad(o => { o.overall.checks = ['확인이 필요합니다']; }, 'vague_check');
+  bad(o => { o.overall.summary = '이 묶음은 책임을 판단할 수 없습니다'; }, 'banned_phrase');
   bad(o => { o.clusters[0].chain[0].factIds = ['F-99999999']; }, 'fact_outside_cluster');
   bad(o => { o.clusters = []; }, 'cluster_set');
   // Not counts: '전부터'·'일부러' and the phrases '다시 한 번'·'한 번 더'; failing fragments are kept for diagnosis.
@@ -148,6 +153,15 @@ test('AI output check: ids inside the input, no digits, counts, months or guesse
   // '일부' narrows the scope (a fact true of part of a group) — allowed, so the model is not pushed to over-generalise (10-28).
   fine.overall.summary = '일부 학생의 퇴원 사유에 담당 변경이 적혀 있습니다'; assert.equal(AI.validateCohort(fine, built).ok, true);
   const kept = structuredClone(good); kept.overall.summary = '그 반 학생 전원과 Jev 판정'; assert.deepEqual(AI.validateCohort(kept, built).samples, { count_word: ['생 전원과 '], raw_code: ['과 Jev 판'] });
+});
+
+test('원인 후보 입력은 분류 축을 빼고 금액 큰 순으로 둔다', () => {
+  const cluster = (kind, amount) => ({ id: `${kind}:one`, kind, amount, members: [], facts: [], teacherIds: [], classIds: [] });
+  const alias = AI.pseudonymizer('candidate-test');
+  const built = AI.cohortInput({ clusters: [cluster('teacher_left', -100), cluster('same_day', -500), cluster('siblings', -400),
+    cluster('classmates', -300), cluster('reason', -200)], cases: [], departedAmount: -300 }, alias, x => x);
+  assert.deepEqual(built.clusterIds.map(alias.reverse), ['reason:one', 'teacher_left:one']);
+  assert.match(built.input.기준, /더하지 않습니다/);
 });
 
 function fakeProviders({ invalid = false, unsure = false } = {}) {

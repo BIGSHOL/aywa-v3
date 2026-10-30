@@ -48,21 +48,36 @@ export function buildCardAnalysis({ trend, byDimension = {}, card, flowCases = n
   const band = current == null || min == null ? '비교할 기록 없음' : current > max ? '평소보다 높음' : current < min ? '평소보다 낮음' : '평소 범위';
   const den = unit === '%' && now ? now.den : null;
   facts.push(fact(1, 'current', `${last(trend.windows)?.label || '현재'} ${shown(current, unit)} · 직전 ${shown(previous, unit)} · 평소 ${min == null ? '기록 없음' : `${shown(min, unit)}~${shown(max, unit)} (가운데값 ${shown(middle, unit)})`} · ${band}${den == null ? '' : ` · 대상 ${fmt(den)}건`}`,
-    { current, previous, min, max, median: middle, denominator: den, historyCount: prior.length, cardValue: card?.value ?? null, band }));
+    { current, previous, min, max, median: middle, changeFromPrevious: current != null && previous != null ? current - previous : null,
+      changeFromMedian: current != null && middle != null ? current - middle : null,
+      changeFromFloor: current != null && min != null ? current - min : null,
+      denominator: den, historyCount: prior.length, cardValue: card?.value ?? null, band }));
 
   for (const dim of trend.metric.dims) {
     if (dim.needsFilter) continue;
     const d = byDimension[dim.id];
     if (!d) continue;
     const changed = d.rows.map(r => ({ ...r, current: value(last(r.points)), previous: value(r.points.at(-2)) }))
-      .filter(r => r.current != null && r.previous != null).map(r => ({ ...r, delta: r.current - r.previous }));
-    const pick = (sign) => changed.filter(r => sign * r.delta > 0).sort((a, b) => sign * (b.delta - a.delta) || a.label.localeCompare(b.label, 'ko') || a.key.localeCompare(b.key)).slice(0, 3);
-    for (const [kind, rows] of [['increase', pick(1)], ['decrease', pick(-1)]]) for (const r of rows) {
+      .filter(r => r.current != null && r.previous != null).map(r => ({ ...r, delta: r.current - r.previous }))
+      .filter(r => r.delta !== 0).sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta) || a.label.localeCompare(b.label, 'ko') || a.key.localeCompare(b.key));
+    const displayed = changed.slice(0, 5).map(r => ({ ...r, kind: r.delta > 0 ? 'increase' : 'decrease' }));
+    if (changed.length > 5) {
+      const rest = changed.slice(5);
+      displayed.push({ kind: 'other-change', label: '그 밖의 변화', count: rest.length, delta: rest.reduce((sum, r) => sum + r.delta, 0) });
+    }
+    displayed.sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta) || a.label.localeCompare(b.label, 'ko'));
+    for (const r of displayed) {
+      if (r.kind === 'other-change') {
+        facts.push(fact(2, r.kind, `${dim.label} 그 밖의 변화 ${fmt(r.count)}항목 합계 ${r.delta < 0 ? '−' : '+'}${shown(Math.abs(r.delta), unit === '%' ? '%p' : unit)}`,
+          { dimension: dim.id, count: r.count, delta: r.delta, overlapping: OVERLAP.has(dim.id) }));
+        continue;
+      }
+      const kind = r.kind;
       const type = REF_DIM[dim.id];
       facts.push(fact(2, kind, `${dim.label} ${r.label} · ${shown(r.previous, unit)} → ${shown(r.current, unit)} (${kind === 'increase' ? '+' : '−'}${shown(Math.abs(r.delta), unit === '%' ? '%p' : unit)})${OVERLAP.has(dim.id) ? ' · 중복 포함' : ''}`,
-        { dimension: dim.id, key: r.key, current: r.current, previous: r.previous, delta: r.delta, overlapping: OVERLAP.has(dim.id) }, type ? [{ type, id: r.key }] : []));
+        { dimension: dim.id, key: r.key, label: r.label, current: r.current, previous: r.previous, delta: r.delta, overlapping: OVERLAP.has(dim.id) }, type ? [{ type, id: r.key }] : []));
     }
-    if (!pick(1).length && !pick(-1).length) facts.push(fact(2, 'dimension-empty', `${dim.label} · 비교할 변화 없음`, { dimension: dim.id, count: 0 }));
+    if (!changed.length) facts.push(fact(2, 'dimension-empty', `${dim.label} · 비교할 변화 없음`, { dimension: dim.id, count: 0 }));
   }
 
   if (Array.isArray(records)) {
