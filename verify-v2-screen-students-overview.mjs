@@ -21,6 +21,10 @@ try {
     assert.equal(first.page, 'overview');
     const root = first.overview;
     assert.ok(root && root.rows.length >= 3);
+    assert.equal(root.columns.find(c => c.key === 'classes')?.label, '재원생 있는 반');
+    const withdrawalMentions = root.rows.reduce((n, row) => n + Number.parseInt(row.cells.withdrawn, 10), 0);
+    assert.ok(withdrawalMentions >= root.monthly.withdrawn);
+    assert.match(root.note, new RegExp(`프로그램별 퇴원 합 ${withdrawalMentions}명분.*퇴원 원생 ${root.monthly.withdrawn}명`));
     const base = await studentsBase({ sql, tenantId, importV2 });
     const C = await importV2('features/students/enrollment/enrolled-composition.ts');
     const rows = await sql`select e.id::text id, e.student_id::text student_id, e.class_id::text class_id,

@@ -16,7 +16,7 @@ const classOf = row => ({ subject: row.subject, english_track: row.english_track
 const one = (map, key) => map.get(key) ?? empty();
 const metric = (n, total) => `${n} / ${total}명`;
 const columns = [{ key: 'name', label: '구분' }, { key: 'enrolled', label: '오늘 재원 / 전체' }, { key: 'newly', label: '이번 달 신규' },
-  { key: 'withdrawn', label: '이번 달 퇴원' }, { key: 'hold', label: '휴원' }, { key: 'classes', label: '반' }];
+  { key: 'withdrawn', label: '이번 달 퇴원' }, { key: 'hold', label: '휴원' }, { key: 'classes', label: '재원생 있는 반' }];
 
 export async function studentOverview({ sql, tenantId, importV2, viewerId = null, params = {} }) {
   const base = await studentsBase({ sql, tenantId, importV2, viewerId });
@@ -107,9 +107,10 @@ export async function studentOverview({ sql, tenantId, importV2, viewerId = null
     const id = key.slice(`${selectedProgram}:${course.key}:`.length);
     return { id, ...row(byClass.get(id) || '반 이름 없음', data, href({ v2path: '/students', status: 'enrolled', program: selectedProgram, level: course.key, classId: id }), course.label) };
   }).sort((a, b) => String(a.cells.name).localeCompare(String(b.cells.name), 'ko'));
+  const withdrawalMentions = [...programRows.values()].reduce((n, item) => n + item.withdrawn.size, 0);
   return { title: params.classId ? byClass.get(params.classId) || '반 원생' : course ? `${program.label(selectedProgram)} ${course.label} 반 현황` : selectedProgram ? `${program.label(selectedProgram)} 과정 현황` : '원생 현황',
     purpose: '프로그램과 과정에서 원생 이동과 반 배정을 확인합니다.', path, summary: `전체 재원 ${total}명 · 이번 달 신규 ${newIds.size}명 · 퇴원 ${withdrawnIds.size}명 · 휴원 ${holdIds.size}명`,
     columns, rows, totals, total, month, monthly: { newly: newIds.size, withdrawn: withdrawnIds.size, hold: holdIds.size },
-    note: '재원 수는 오늘 시작한 수강 기준이며, 한 원생이 여러 프로그램·반에 설 수 있습니다. 신규·퇴원은 첫·마지막 수강 반, 휴원은 휴원한 반으로 묶었습니다. 귀속할 반이 없으면 귀속 미정에 표시합니다. 지난달 비교는 같은 기준의 과거 기록이 확인된 뒤 표시합니다.' };
+    note: `재원 수는 오늘 시작한 수강 기준이며, 한 원생이 여러 프로그램·반에 설 수 있습니다. '재원생 있는 반'은 현재 재원생의 활성 수강이 있는 반 수로, 전체 운영 반 수와 다릅니다. 신규·퇴원은 첫·마지막 수강 반으로 묶고 두 프로그램이면 양쪽에 표시합니다. 따라서 프로그램별 퇴원 합 ${withdrawalMentions}명분은 서로 다른 퇴원 원생 ${withdrawnIds.size}명과 다를 수 있습니다. 휴원은 휴원한 반으로 묶고, 귀속할 반이 없으면 귀속 미정에 표시합니다. 지난달 비교는 같은 기준의 과거 기록이 확인된 뒤 표시합니다.` };
 }
 

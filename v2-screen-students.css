@@ -1,8 +1,12 @@
-.v2o-students table{table-layout:fixed;min-width:780px}
+.v2o-students table{table-layout:fixed;min-width:780px;font-size:14px;white-space:normal}
 .v2o-students col[data-col=name]{width:24%}
 .v2o-students col[data-col=enrolled]{width:22%}
 .v2o-students col[data-col=newly],.v2o-students col[data-col=withdrawn],.v2o-students col[data-col=hold]{width:14%}
 .v2o-students col[data-col=classes]{width:12%}
 .v2o-students td,.v2o-students thead th:not(:first-child){text-align:right}
-.v2o-students tbody th a{display:flex;justify-content:space-between;gap:8px;text-align:left}
-.v2o-students .v2o-enter{white-space:nowrap}
+.v2o-students th,.v2o-students td{padding:10px 8px;line-height:1.35;font-size:14px}
+.v2o-students tbody th a{display:inline-flex;align-items:baseline;gap:6px;text-align:left}
+.v2o-students .v2o-enter{margin:0;white-space:nowrap;font-size:14px}
+.v2o-students tbody tr[data-v2-overview-href]{cursor:pointer}
+.v2o-students tbody tr[data-v2-overview-href]:hover{background:#f5f7fb}
+.v2o-students tbody tr[data-v2-overview-href]:focus-within{outline:2px solid #6078c8;outline-offset:-2px}

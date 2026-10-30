@@ -34,6 +34,9 @@
     const cols = document.createElement('colgroup');
     for (const column of model.columns) { const col = document.createElement('col'); col.dataset.col = column.key; cols.append(col); }
     section.querySelector('table')?.prepend(cols);
+    section.querySelectorAll('tbody tr:not(.v2o-group)').forEach((tr, i) => {
+      if (model.rows[i]?.href) tr.dataset.v2OverviewHref = model.rows[i].href;
+    });
     return template.innerHTML;
   }
 
@@ -102,6 +105,10 @@
       actor = t.value;
       try { localStorage.setItem(ACTOR_KEY, t.value); } catch { /* 이 창에서만 기억 */ }
       tellHost();
+    });
+    document.addEventListener('click', e => {
+      const row = e.target.closest?.(`${SEL} .v2o-students tr[data-v2-overview-href]`);
+      if (row && !e.target.closest('a, button, input, select, textarea')) location.hash = row.dataset.v2OverviewHref;
     });
     const later = () => requestAnimationFrame(place);
     addEventListener('resize', later); addEventListener('scroll', place, { passive: true }); addEventListener('hashchange', later);
