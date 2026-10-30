@@ -1,7 +1,7 @@
 // 2.0 화면 — 학원 설정 '연동' 면: 면 구성(integrations-face.tsx — 켜진 연동만 탭) · 과목별 구글 시트 상태(integrations/server/queries.ts getGoogleSheetsStatus) ·
 // 시트 저장 둘(integrations/server/actions.ts setSheetsExportEnabled · setSubjectSheetTarget)을 Docker 복사본에 같은 판정·문구·감사로그로.
 // 업무 흐름 신호 `sheet-sync-error`(켜진 연결에 오류가 남음)의 처리 화면이 여기다 — 내보내기를 끄면(sync_enabled=false) 신호의 근거가 사라진다.
-// ⚠️ 시트로 실제 보내기(syncSheetsNow — 구글 API)는 바깥 요청이라 이 연습 화면에서 하지 않는다(시간표 화면의 버튼이 2.0 거절 모양으로 답한다).
+// ⚠️ 시트로 실제 보내기(syncSheetsNow — 구글 API)는 바깥 요청이라 이 연습 자료에서 하지 않는다(시간표 화면의 버튼이 2.0 거절 모양으로 답한다).
 // ⚠️ 서비스계정 이메일은 서버 환경값이라 복사본에 없다(2.0처럼 '서비스계정 키 미설정' 안내가 선다).
 import { V2Error } from './v2-screens.mjs';
 import { audit, asAuthenticated } from './v2-timetable-save.mjs';

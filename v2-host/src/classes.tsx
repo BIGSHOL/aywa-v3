@@ -61,7 +61,7 @@ function List() {
 
 type SubData = { settings: { operations: unknown; modules: { disabled: unknown } }; editors?: Editors };
 type Editors = Parameters<typeof setHostEditors>[0];
-/** 저장할 수 있는 사람(수업 관리 '전체') — 3.0 띠가 이 목록에서 '저장하는 사람'을 고른다(시간표와 같은 신호). */
+/** 저장할 수 있는 사람(수업 관리 '전체') — 셸 계정이 이 목록에서 '저장하는 사람'을 고른다(시간표와 같은 신호). */
 const useEditors = (editors: Editors | undefined) => useEffect(() => { if (editors) setHostEditors(editors); }, [editors]);
 /** 하위 화면(반 상세 · 반 수정 · 새 반) — 같은 화면의 GET(v2path)으로 읽는다. 없는(또는 고칠 수 없는) 반이면 2.0 notFound 자리에 안내 한 줄. */
 function Sub<T extends SubData>({ path, render }: { path: string; render: (data: T) => ReactNode }) {
@@ -96,7 +96,7 @@ function App() {
   if (DETAIL_PATH.test(path)) return <Sub<ClassDetailData> key={path} path={path} render={(d) => <ClassDetailPage data={d} />} />;
   if (EDIT_PATH.test(path)) return <Sub<ClassEditData> key={path} path={path} render={(d) => <EditClassPage data={d} />} />;
   if (path === '/classes/new') return <Sub<ClassNewData> key={path} path={path} render={(d) => <NewClassPage data={d} />} />;
-  return <HostMessage text="이 화면은 연습 화면에서 아직 열 수 없습니다." />;
+  return <HostMessage text="아직 3.0에 없는 화면입니다." />;
 }
 
 createRoot(document.getElementById('root')!).render(<AppProviders><HostFrame screen="classes"><App /></HostFrame></AppProviders>);

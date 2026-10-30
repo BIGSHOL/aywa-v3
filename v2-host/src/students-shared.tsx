@@ -21,7 +21,7 @@ export function useStudentTab<T>(): T {
 
 /** 아직 옮기지 않은 탭 — 안내 한 줄(2.0 화면의 빈 탭 자리). */
 export function MissingTab() {
-  return <p className="text-text-dim py-8 text-center text-sm">이 탭은 연습 화면에서 아직 열 수 없습니다.</p>;
+  return <p className="text-text-dim py-8 text-center text-sm">아직 3.0에 없는 화면입니다.</p>;
 }
 
 let copyDay: string | null = null;

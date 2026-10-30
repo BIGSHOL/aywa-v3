@@ -3,13 +3,14 @@
    `v2-screen-<id>.js` (loaded from GET /api/v2) that calls V2Screens.register({ id, label, render }). Pages live at
    #v2-<id>[?query]; render(ctx) returns HTML synchronously from cached data (ctx.load) and the page re-renders when data lands.
    ctx.act(action, body) saves to the Docker copy (원장 2026-10-28 "연습용이므로 모두 docker"), then refreshes that screen's data in
-   place. Screens that save show ctx.copyNote so nobody mistakes the practice copy for 2.0. */
+   place. The shell identifies the practice data and the current account once for every screen. */
 window.V2Screens = (() => {
   'use strict';
   const screens = new Map(), cache = new Map();
   let api = null, index = null;
-  const COPY_NOTE = '연습용 복사본에 저장됩니다. 운영 데이터와 실제 발송(ClassNote·알림톡·슬랙)에는 닿지 않습니다.';
-  const PRACTICE_COPY = Object.freeze({ selectedPerson: '선택한 사람' });
+  const account = () => window.AywaAccount?.current?.() || null;
+  const accountId = () => account()?.id || null;
+  const PRACTICE_COPY = Object.freeze({ selectedPerson: '현재 계정' });
   const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const overviewHref = href => /^#v2-[a-z][a-z0-9-]{0,30}(?:\?[^\u0000-\u001f]*)?$/.test(String(href || '')) ? esc(href) : null;
   const overviewScroll = new Map();
@@ -93,9 +94,27 @@ window.V2Screens = (() => {
     const p = parse(page), def = p && screens.get(p.id); if (!def) return null;
     return () => {
       const writable = !!(index || []).find(s => s.id === def.id)?.writable;
-      const ctx = { api, query: p.query, esc, writable, overview: (index || []).find(s => s.id === def.id)?.overview || null, copyNote: COPY_NOTE, load: params => load(def.id, params), act: (action, body) => act(def.id, action, body), go: params => go(def.id, params), refresh: () => { for (const k of [...cache.keys()]) if (k.startsWith(`${def.id}?`)) cache.delete(k); api?.render(); } };
+      const signed = account(), turn = p.query.get('actor') || (def.id === 'onescreen' ? p.query.get('teacher') : null)
+        || (p.query.get('teacherHome') === '1' ? p.query.get('viewer') : null);
+      if (!signed) return '<div class="v2s"><p class="v2s-note" role="status">계정을 불러오는 중…</p></div>';
+      if (turn && turn !== signed.id) {
+        const other = window.AywaAccount?.actors?.().find(a => a.id === turn);
+        return `<div class="v2s"><p class="v2s-note" role="status">${esc(other?.name || '다른 사람')} 님 차례입니다 · <button type="button" class="ax-text-link" data-ax="account-switch">계정 전환</button></p></div>`;
+      }
+      const ctx = { api, query: p.query, esc, writable, overview: (index || []).find(s => s.id === def.id)?.overview || null, load: params => load(def.id, params), act: (action, body) => act(def.id, action, body), go: params => go(def.id, params), refresh: () => { for (const k of [...cache.keys()]) if (k.startsWith(`${def.id}?`)) cache.delete(k); api?.render(); } };
       // native = 3.0 고유 화면(확장 추세 등) — 2.0 모양을 지키는 .v2s 예외 없이 3.0 컨트롤 규칙을 그대로 받는다.
-      try { const html = def.render(ctx); requestAnimationFrame(updateOverviewScroll); return `<div class="${def.native ? 'v3s' : 'v2s'}" data-v2-screen="${esc(def.id)}">${html}</div>`; }
+      try {
+        const template = document.createElement('template'); template.innerHTML = def.render(ctx);
+        // 이식 화면에 남은 반복 안내와 선택기는 여기서 한 번에 걷어 낸다. 안내 속 실제 이동 링크는 살린다.
+        for (const note of template.content.querySelectorAll('.v2h-note,.dsh-note,.osh-note')) {
+          const actions = document.createElement('div'); actions.className = 'v2h-inline-actions';
+          for (const link of note.querySelectorAll('a[href],button[data-ax]')) actions.append(link);
+          if (actions.childElementCount) note.before(actions);
+          note.remove();
+        }
+        requestAnimationFrame(updateOverviewScroll);
+        return `<div class="${def.native ? 'v3s' : 'v2s'}" data-v2-screen="${esc(def.id)}">${template.innerHTML}</div>`;
+      }
       catch (error) { console.error(error); return `<div class="v2s"><p class="v2s-note">이 화면을 그리지 못했습니다.</p></div>`; }
     };
   }
@@ -135,5 +154,5 @@ window.V2Screens = (() => {
   /** A 3.0 workspace id → its 2.0 screen address when that screen is registered (workspace links open the 2.0 form first). */
   const WORKSPACE_ALIAS = { 'class-sheets': 'ecs' }; // the only workspace whose id differs from its 2.0 screen
   const target = wsId => { const id = WORKSPACE_ALIAS[wsId] || wsId; return screens.has(id) ? `#v2-${id}` : null; };
-  return { register, view, sidebar, sticker, bind, esc, target, renderOverview, updateOverviewScroll, dataChanged, practiceCopy: PRACTICE_COPY };
+  return { register, view, sidebar, sticker, bind, esc, target, renderOverview, updateOverviewScroll, dataChanged, accountId, practiceCopy: PRACTICE_COPY };
 })();

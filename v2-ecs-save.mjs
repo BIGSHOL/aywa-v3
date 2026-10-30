@@ -67,7 +67,7 @@ const backdatedFlag = (dates, today) => (dates.some(d => d < today) ? { backdate
 function keepRaw(raw, incoming) {
   if (!masked(raw)) return { value: incoming };
   if ((incoming ?? null) === (shown(raw) ?? null)) return { value: raw };
-  return { error: '연락처가 든 글이라 연습 화면에서는 고치지 않습니다.' };
+  return { error: '연락처가 든 글이라 연습 자료에서는 고치지 않습니다.' };
 }
 
 // ── 계획 줄 — 2.0 actions.ts 껍데기 + plan-write.ts 밑바닥 ───────────────────────────────────────────
@@ -424,7 +424,7 @@ export const ACTIONS = {
     if (noteOnly && !noteProvided) return { error: '메모가 없습니다' };
     if (!noteOnly && status !== null && !['present', 'absent', 'late', 'excused', 'makeup', 'early_leave'].includes(status)) return { error: '잘못된 상태입니다' };
     if (!input.slotStart || !R.HHMM_RE.test(String(input.slotStart).slice(0, 5)) || input.source || input.onlyIfEmpty || input.ghostTransfer || input.scopeTeacherId != null) {
-      throw new V2Error(409, 'not_in_copy', '이 저장 방식(그날 전체 칸·당일 출결·다른 선생님 교시)은 연습 화면에서 아직 지원하지 않습니다. 바뀐 것은 없습니다.');
+      throw new V2Error(409, 'not_in_copy', '이 저장 방식(그날 전체 칸·당일 출결·다른 선생님 교시)은 연습 자료에서 아직 지원하지 않습니다. 바뀐 것은 없습니다.');
     }
     const unitsProvided = input.units !== undefined;
     let unitsVal = null;
@@ -443,7 +443,7 @@ export const ACTIONS = {
     const [AR, M] = await Promise.all([loadAttendanceRules(importV2), loadMakeupRules(importV2)]), settings = await readAttendanceSettings(sql, t, AR);
     if (nativeMakeupsOn(M, settings)) {
       const [resvCell] = await sql`select 1 from public.makeup_reservations where tenant_id=${t} and class_id=${classId} and student_id=${studentId} and makeup_date=${sessionDate} and status in ('reserved','done') limit 1`;
-      if (resvCell) throw new V2Error(409, 'reservation_cell', '보강 예약이 걸린 칸은 연습 화면에서 아직 저장하지 않습니다. 바뀐 것은 없습니다.');
+      if (resvCell) throw new V2Error(409, 'reservation_cell', '보강 예약이 걸린 칸은 연습 자료에서 아직 저장하지 않습니다. 바뀐 것은 없습니다.');
     }
     const complete = cells => completeMakeupReservations({ sql, t, R: AR, M, settings, actor: { id: user.id, name: user.name } }, cells);
     const slot = String(input.slotStart), via = (await teachesOn(sql, t, user.id, classId, sessionDate, { R, env })) ? 'teacher' : 'desk';
@@ -614,14 +614,14 @@ export const ACTIONS = {
     await audit(sql, t, user, 'student_english_name_update', 'student', student.name, { studentId, before: previousEnglishName, after: englishName });
     return { ok: true, englishName };
   }),
-  /** pullEcsMemorizedWords({ classId, date, slotStart }) — 2.0은 인재원 SRS(바깥 연동)에서 단어 수를 받아 적는다. 연습 화면은 바깥을 부르지 않으므로
+  /** pullEcsMemorizedWords({ classId, date, slotStart }) — 2.0은 인재원 SRS(바깥 연동)에서 단어 수를 받아 적는다. 연습 자료은 바깥을 부르지 않으므로
    *  2.0과 같은 입력 검사·반 게이트를 지난 뒤 2.0 실패 모양으로 알린다(출석부 자리 화면과 같은 문구). 쓰기·감사 없음. */
   pullEcsMemorizedWords: serverFn('features/class-sheets/server/memorized-actions.ts', 1, async ({ sql, t, R, env, user }, raw) => {
     const input = obj(raw);
     if (!/^\d{4}-\d{2}-\d{2}$/.test(str(input.date)) || !/^\d{2}:\d{2}$/.test(str(input.slotStart))) return { ok: false, error: '잘못된 요청입니다(날짜/교시)' };
     const gate = await classAccess(sql, t, R, env, user, str(input.classId), { write: true });
     if (!gate.ok) return { ok: false, error: gate.error };
-    return { ok: false, error: '인재원 단어수 가져오기는 연습 화면에서 부르지 않습니다. 바뀐 것은 없습니다.' };
+    return { ok: false, error: '인재원 단어수 가져오기는 연습 자료에서 부르지 않습니다. 바뀐 것은 없습니다.' };
   }),
   // ── 내 보기 설정(users.ui_prefs.ecs) — 2.0 setMyEcs*: 기본값과 같으면 키를 지운다. 감사로그 없음(2.0과 같다). ──
   setMyEcsTodayOrder: serverFn(MODULE.sheet, 1, async ({ sql, t, R, user }, order) => {

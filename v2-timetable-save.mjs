@@ -135,7 +135,7 @@ async function notifyClassAssignment(sql, t, actor, assignments, type) {
 /** moveEnrollmentsBatch(moves, effectiveDate?, sourceClassId?) — 시간표는 앞의 둘만 쓴다. 단체 이동(sourceClassId)은 반 상세 화면의 것이라 여기선 받지 않는다. */
 function moveArgs(args) {
   const [moves, effectiveDate, sourceClassId] = args;
-  if (optional(sourceClassId) !== undefined) throw new V2Error(400, 'unsupported', '단체 이동은 이 연습 화면에서 아직 저장하지 않습니다.');
+  if (optional(sourceClassId) !== undefined) throw new V2Error(400, 'unsupported', '단체 이동은 이 연습 자료에서 아직 저장하지 않습니다.');
   if (!Array.isArray(moves) || moves.length > MAX_ITEMS) throw bad();
   const eff = optional(effectiveDate);
   if (eff !== undefined && typeof eff !== 'string') throw bad();

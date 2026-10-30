@@ -1,7 +1,7 @@
 // 2.0 화면 — 학원 설정 '팝업 공지' 면: 목록(notices/server/queries.ts listPopups — 비활성 포함 · 번역 상태) ·
 // 저장 넷(notices/server/actions.ts createNoticePopup · updateNoticePopup · toggleNoticePopupActive · deleteNoticePopup)을 Docker 복사본에 같은 판정·문구·감사로그로.
 // 게이트 = 2.0 gate()(popup_settings 쓰기) · 쓰기 = 2.0 사용자 클라이언트(authenticated + 그 사람 신분 — notice_popups RLS가 2.0처럼 본다).
-// ⚠️ 영문 번역(저장 뒤 백그라운드 · [영문 만들기])은 AI 호출이라 이 연습 화면에서 하지 않는다 — 저장은 그대로 되고 번역 상태는 2.0처럼 '없음/옛 번역'으로 보인다.
+// ⚠️ 영문 번역(저장 뒤 백그라운드 · [영문 만들기])은 AI 호출이라 이 연습 자료에서 하지 않는다 — 저장은 그대로 되고 번역 상태는 2.0처럼 '없음/옛 번역'으로 보인다.
 // ⚠️ 팝업 그림 올리기(파일 저장소)는 받지 않는다(호스트가 '아직 지원하지 않는 저장'으로 답한다). 그림 미리보기도 저장소·바깥 주소면 싣지 않는다(사이트 안 그림 경로만).
 import { V2Error } from './v2-screens.mjs';
 import { audit, asAuthenticated } from './v2-timetable-save.mjs';
@@ -10,7 +10,7 @@ import { UUID } from './v2-mcs-core.mjs';
 const bad = () => new V2Error(400, 'invalid_request', '입력 값을 확인해 주세요.');
 const plain = v => !!v && typeof v === 'object' && !Array.isArray(v);
 const ISO = (sql, col) => sql`to_char(${sql(col)} at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US') || '+00:00'`;
-const NOT_YET = '연습 화면에서는 아직 지원하지 않는 기능입니다';
+const NOT_YET = '연습 자료에서는 아직 지원하지 않는 기능입니다';
 
 let rulesPromise = null;
 function loadPopupRules(importV2) {
@@ -129,7 +129,7 @@ async function deleteNoticePopup(io, actor, [, raw]) {
   return { ok: true };
 }
 
-/** [영문 만들기] — AI 호출이라 이 연습 화면에서 하지 않는다(게이트는 2.0과 같게 먼저 본다). */
+/** [영문 만들기] — AI 호출이라 이 연습 자료에서 하지 않는다(게이트는 2.0과 같게 먼저 본다). */
 async function regenerateNoticeTranslation(io, actor) {
   const P = await loadPopupRules(io.importV2), denied = gate(P, actor);
   return denied ?? { error: NOT_YET };

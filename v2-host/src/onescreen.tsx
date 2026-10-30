@@ -24,17 +24,17 @@ import { HostFrame, HostMessage } from './host-frame';
 export const HOST_TITLE = '선생님 수업보고서';
 export const HOST_ROUTE = '/onescreen';
 
-// 2.0 공지 부품의 연동 PC 문구는 연습 복사본의 실제 동작(대기열에만 저장)으로 안내한다.
+// 2.0 공지 부품의 연동 PC 문구는 연습 자료의 실제 동작(대기열에만 저장)으로 안내한다.
 const noticeSuccess = toast.success;
 toast.success = ((message, data) => noticeSuccess(
   typeof message === 'string' && message.includes('발송 대기(연동 PC가 순차 게시)')
-    ? `${message.replace('(연동 PC가 순차 게시)', '')} · 연습 복사본이라 실제로 보내지지 않습니다`
+    ? `${message.replace('(연동 PC가 순차 게시)', '')} · 연습 자료이라 실제로 보내지지 않습니다`
     : message, data,
 )) as typeof toast.success;
 const noticeMessage = toast.message;
 toast.message = ((message, data) => noticeMessage(
   typeof message === 'string' && message.startsWith('실제 발송이 꺼져 있어 전송하지 않았습니다')
-    ? '발송 설정이 꺼져 대기열에도 올리지 않았습니다. 연습 복사본에서는 실제로 보내지지 않습니다.'
+    ? '발송 설정이 꺼져 대기열에도 올리지 않았습니다. 연습 자료에서는 실제로 보내지지 않습니다.'
     : message, data,
 )) as typeof toast.message;
 

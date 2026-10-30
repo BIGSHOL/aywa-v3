@@ -84,7 +84,7 @@ export function evaluationActions(makeIo) {
         enabled: on.length, maxTotal: on.reduce((n, m) => n + m.max, 0), manual: parsed.config.manual.length,
         churnExclude: parsed.config.metrics.churn.churn?.excludeReasons ?? null, churnCountEnded: parsed.config.metrics.churn.churn?.countEnded ?? null,
       }, '강사평가 설정');
-      return { ok: true, notice: '저장했습니다. 연습 화면에서는 월간 점수 다시 매기기는 아직 지원하지 않습니다' };
+      return { ok: true, notice: '저장했습니다. 연습 자료에서는 월간 점수 다시 매기기는 아직 지원하지 않습니다' };
     }) },
     saveEvaluationPreset: { validate: validate(MODULE_PRESETS, 2), run: run('saveEvaluationPreset', async ({ sql, body, t, actor, C }) => {
       const name = typeof body.args[0] === 'string' ? body.args[0].trim() : '';

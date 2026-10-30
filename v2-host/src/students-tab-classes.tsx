@@ -1,7 +1,7 @@
 // 2.0 원생 상세 '수업' 탭(app/(shell)/students/[id]/_tabs/classes-tab.tsx) — 서버 컴포넌트라 그대로 불러올 수 없어서, 탭이 서버에서 하던 조회
 // (수강 줄 · 배정 후보 반 · 학원 설정 · 지난 수업의 그 시점 담임)는 상세 GET(v2-students-tab-classes.mjs loadTab)이 하고 여기서는 그 파일 본문(첫 상수부터
 // 끝까지)을 **글자 그대로** 옮겼다. 바꾼 곳은 서버 호출 자리뿐이다(students-tab-classes.swaps.json) — verify-v2-students-tabs-a.mjs가 글자를 대조한다.
-// 자료 = useStudentTab() · kstToday = 복사본 날짜(students-shared.tsx). 반 배정·반 이동·수강 종료·삭제·날짜·등원 요일 저장은 아직 연습 화면에서 받지 않는다
+// 자료 = useStudentTab() · kstToday = 복사본 날짜(students-shared.tsx). 반 배정·반 이동·수강 종료·삭제·날짜·등원 요일 저장은 아직 연습 자료에서 받지 않는다
 // (누르면 '아직 지원하지 않는 저장'으로 거절 — shims/server-action.ts).
 import { SheetClassName, SheetText } from "@/features/teacher-view/interface-label";
 import { CalendarDays } from "@/components/icons/aywa-icon-compat";

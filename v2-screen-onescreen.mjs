@@ -227,7 +227,7 @@ function hostCall(raw, module) {
 }
 function reportInput(raw) {
   if (!plain(raw)) throw bad();
-  if (raw.makeup === true || raw.outOfClass === true || raw.makeupClassId) throw unsupported('보강·수업 외 보고서는 이 연습 화면에서 아직 저장하지 않습니다.');
+  if (raw.makeup === true || raw.outOfClass === true || raw.makeupClassId) throw unsupported('보강·수업 외 보고서는 이 연습 자료에서 아직 저장하지 않습니다.');
   if (raw.mentSource != null && !['manual', 'auto_edited', 'auto'].includes(raw.mentSource)) throw bad();
   const pc = raw.pilotCheck;
   if (pc != null && !(plain(pc) && typeof pc.factsCurrent === 'boolean' && typeof pc.reasonsOk === 'boolean')) throw bad();
@@ -251,8 +251,8 @@ function reportInput(raw) {
 function attendanceInput(raw) {
   if (!plain(raw)) throw bad();
   if (raw.noteOnly === true || raw.units !== undefined || raw.slotStart != null || raw.periodStart != null || raw.scopeTeacherId != null || raw.ghostTransfer === true)
-    throw unsupported('메모만 저장·시수·교시·강사 보기 칸은 이 연습 화면에서 아직 하지 않습니다.');
-  if (raw.allowMakeup === true) throw unsupported('보강·수업 나누기로 온 학생의 출결은 이 연습 화면에서 아직 하지 않습니다.');
+    throw unsupported('메모만 저장·시수·교시·강사 보기 칸은 이 연습 자료에서 아직 하지 않습니다.');
+  if (raw.allowMakeup === true) throw unsupported('보강·수업 나누기로 온 학생의 출결은 이 연습 자료에서 아직 하지 않습니다.');
   if (!(raw.status === null || STATUSES.includes(raw.status))) throw new V2Error(400, 'invalid_status', '잘못된 상태입니다');
   return { actor: uuid(raw.actor), studentId: uuid(raw.studentId), classId: uuid(raw.classId), sessionDate: ymd(raw.sessionDate), status: raw.status,
     note: raw.note === undefined ? undefined : str(raw.note, 500).trim() || null, onlyIfEmpty: raw.onlyIfEmpty === true };

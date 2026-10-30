@@ -1,7 +1,7 @@
-// 2.0 `@/lib/supabase/client` 대체(운영실 호스트 요청 10-28) — 연습 화면은 브라우저에서 Supabase에 접속하지 않는다.
+// 2.0 `@/lib/supabase/client` 대체(운영실 호스트 요청 10-28) — 연습 자료는 브라우저에서 Supabase에 접속하지 않는다.
 // 실시간 구독은 아무 일도 하지 않는다(변경 알림 없음 · 화면 갱신은 서버 액션 새로고침이 맡는다).
 // 직접 조회·인증·파일 저장소를 부르면 빈 값으로 위장하지 않고 오류로 알린다 — 그 부품은 3.0 서버 화면으로 옮겨야 한다.
-const unsupported = (what: string) => () => { throw new Error(`연습 화면에서는 ${what}을 쓰지 않습니다.`); };
+const unsupported = (what: string) => () => { throw new Error(`연습 자료에서는 ${what}을 쓰지 않습니다.`); };
 const blocked = (what: string) => new Proxy({}, { get: () => unsupported(what) });
 
 function channel() {

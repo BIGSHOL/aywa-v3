@@ -9,7 +9,7 @@
   const KEEP = ['v2path', 'form', 'view', 'month', 'consultant', 'q', 'outcome', 'page', 'range', 'year', 'received', 'from',
     'trend', 'trendMonth', 'trendFrom', 'trendTo', 'trendSpan', 'pg', 'pgMonth', 'pgFrom', 'pgTo', 'pgSpan'];
   let api = null, frame = null, requested = null, hostOk = null, wired = false, editors = [], actor = null, urlActor = null;
-  const ACTOR_KEY = `v2-host-actor:${ID}`, SEL = `[data-v2-screen="${ID}"]`;
+  const SEL = `[data-v2-screen="${ID}"]`;
   const esc = s => S.esc(s);
   const queryOf = q => { const o = new URLSearchParams(); for (const k of KEEP) { const v = q.get(k); if (v) o.set(k, v); } return o.toString(); };
 
@@ -43,20 +43,14 @@
     }
     const m = /^\/(students|classes)\/([0-9a-f-]{36})(?:[/?#]|$)/i.exec(raw);
     if (m && api?.canOpenRecord?.(m[2])) return m[1] === 'students' ? api.showStudent(m[2]) : api.openRecord(m[2]);
-    api?.toast?.('이 화면은 연습 화면에서 아직 열 수 없습니다.');
+    api?.toast?.('아직 3.0에 없는 화면입니다.');
   }
-  function currentActor() {
-    let stored = null;
-    try { stored = localStorage.getItem(ACTOR_KEY); } catch { /* 저장소를 못 쓰면 이 창에서만 */ }
-    for (const id of [actor, stored]) if (id && editors.some(e => e.id === id)) return id;
-    return editors[0]?.id ?? null;
-  }
-  const actorPicker = () => (editors.length ? `<label class="v2h-actor"><span>저장하는 사람</span><select data-v2h-actor aria-label="저장하는 사람">${editors.map(e => `<option value="${esc(e.id)}"${e.id === currentActor() ? ' selected' : ''}>${esc(e.role ? `${e.name} · ${e.role}` : e.name)}</option>`).join('')}</select></label>` : '');
+  const currentActor = () => S.accountId();
+  const actorPicker = () => ''; // 화면별 선택기는 셸 계정으로 대체했다.
   // 호스트(shims/server-action.ts hostActor)는 같은 출처 기억을 알림보다 먼저 본다 — 명단이 늦게 와도(주소 actor가 먼저 온 경우) 정해진 사람을 기억에도 적어야
   // 저장이 그 사람으로 나간다(회의록 작업자 발견 10-28). currentActor는 명단 안의 사람만 돌려주므로 명단 밖 id가 기억을 지우지는 않는다.
   const tellHost = () => {
     const id = currentActor(); if (!id) return;
-    try { if (localStorage.getItem(ACTOR_KEY) !== id) localStorage.setItem(ACTOR_KEY, id); } catch { /* 저장소를 못 쓰면 알림만 */ }
     if (frame?.contentWindow) frame.contentWindow.postMessage({ type: 'v2-host-actor', id }, location.origin);
   };
   function wire() {
@@ -81,7 +75,6 @@
       const t = e.target;
       if (!(t instanceof HTMLSelectElement) || !t.matches(`${SEL} [data-v2h-actor]`)) return;
       actor = t.value;
-      try { localStorage.setItem(ACTOR_KEY, t.value); } catch { /* 이 창에서만 기억 */ }
       tellHost();
     });
     const later = () => requestAnimationFrame(place);
@@ -98,7 +91,6 @@
       const asked = ctx.query.get('actor');
       if (asked && /^[0-9a-f-]{36}$/i.test(asked) && location.hash !== urlActor) {
         urlActor = location.hash; actor = asked;
-        if (editors.some(e => e.id === asked)) try { localStorage.setItem(ACTOR_KEY, asked); } catch { /* 이 창에서만 */ }
         if (editors.length) { const at = document.querySelector(`${SEL} [data-v2h-actor-slot]`); if (at) at.innerHTML = actorPicker(); }
         tellHost();
       }

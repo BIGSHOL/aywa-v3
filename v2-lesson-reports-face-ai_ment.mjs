@@ -4,7 +4,7 @@
 //    + 강사별 report_notice_mode A/B) — 2.0 isPromptInUse 그대로.
 //  · getMentStyleRows = 2.0 listTeacherMentStyles(teacher_ment_styles · 최근 생성순 · 깨진 프로파일은 2.0 parseMentStyleProfile로 거름 · 표가 없으면 tableMissing).
 //  · 둘 다 2.0 requireAiMentAccess(AI 멘트 열람 + AI 라이선스)를 지난다 — 이 면은 그 둘이 열렸을 때만 서므로(2.0 lessonReportFaces) 같은 게이트를 다시 본다.
-//  · 저장값만 읽는다 — AI를 부르지 않는다(미리보기 · 말투 지금 갱신은 연습 화면에서 하지 않는다).
+//  · 저장값만 읽는다 — AI를 부르지 않는다(미리보기 · 말투 지금 갱신은 연습 자료에서 하지 않는다).
 // · 읽기 전용 · 바깥 호출 없음.
 
 const MODULES = { prompts: 'features/onescreen/prompt-defaults.ts', style: 'features/onescreen/ment-style.ts' };

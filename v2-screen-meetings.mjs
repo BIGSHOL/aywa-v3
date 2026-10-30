@@ -98,7 +98,7 @@ export const WRITES = ['updateMeetingTitle', 'updateMeetingNotepad', 'updateMeet
 const ARG_LIMIT = 512 * 1024;
 const refused = (e) => (e instanceof V2ServerError
   ? e.code === 'outbound_blocked' ? new V2Error(409, 'outbound_blocked', '이 저장이 바깥으로 요청을 보내려 해서 되돌렸습니다. 바뀐 것은 없습니다.')
-    : e.code === 'unsupported' ? new V2Error(409, 'not_supported', '연습 화면에서는 아직 지원하지 않는 저장입니다.')
+    : e.code === 'unsupported' ? new V2Error(409, 'not_supported', '연습 자료에서는 아직 지원하지 않는 저장입니다.')
       : new V2Error(500, 'write_failed', '저장하지 못했습니다. 바뀐 것은 없습니다.')
   : e);
 const isForm = (v) => !!v && typeof v === 'object' && Array.isArray(v.$formData) && v.$formData.every((e) => Array.isArray(e) && e.length === 2 && typeof e[0] === 'string' && typeof e[1] === 'string');

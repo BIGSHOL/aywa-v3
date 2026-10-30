@@ -1,7 +1,7 @@
 // 2.0 부품 호스트 — 교재 요청 진입점. 3.0 `#v2-textbook-requests`가 같은 출처 iframe(/v2-host/textbook-requests.html?…)으로 연다.
 // 2.0이 창(embed)으로 열 때의 틀(AppProviders · OperationsProvider · <main class="embed-main">) 그대로 감싸고,
 // 데이터 = /api/v2/textbook-requests?viewer=…(Docker 복사본, v2-screen-textbook-requests.mjs) — 2.0 page.tsx가 서버에서 만들던 값 그대로.
-// 보는 사람 = 3.0 띠가 고른 사람(강사 = 담당 학생 + 본인 요청 — 2.0과 같은 판정). 고르면 v2-host-actor로 알려 오고 다시 읽는다(교재목록과 같은 방식).
+// 보는 사람 = 셸에서 선택한 현재 사람(강사 = 담당 학생 + 본인 요청 — 2.0과 같은 판정). 고르면 v2-host-actor로 알려 오고 다시 읽는다(교재목록과 같은 방식).
 import { createRoot } from 'react-dom/client';
 import { useEffect, useRef, useState } from 'react';
 import { AppProviders } from '@/lib/providers/app-providers';
@@ -32,8 +32,7 @@ type Data = TextbookRequestsPageData & {
   route: 'none' | 'page';
 };
 
-const ACTOR_KEY = 'v2-host-actor:textbook-requests';
-const storedActor = () => { try { return localStorage.getItem(ACTOR_KEY); } catch { return null; } };
+const storedActor = () => hostActor();
 
 function App() {
   const qs = useHostSearch(), search = new URLSearchParams(qs);

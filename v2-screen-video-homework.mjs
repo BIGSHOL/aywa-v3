@@ -379,7 +379,7 @@ async function build({ sql, params, tenantId: t, importV2 }) {
 /** GET ?read= — 2.0이 서버 함수로 읽던 것(배정 창 영상 목록 · AI 참고 메모). 둘 다 저장 없음. */
 async function readOnServer(sql, t, R, people, u, params) {
   if (params.read === 'assign') return getVideoAssignmentOptions(sql, t, R, people, u, { classId: params.class, studentId: params.student, fromDate: params.from, toDate: params.to });
-  // AI 참고 메모(2.0 /api/homework-videos/<id>/review) — 저장된 결과만. 다시 분석(AI 호출)은 연습 화면에서 하지 않는다(canRerun 꺼짐).
+  // AI 참고 메모(2.0 /api/homework-videos/<id>/review) — 저장된 결과만. 다시 분석(AI 호출)은 연습 자료에서 하지 않는다(canRerun 꺼짐).
   if (!R.licenseExplicitlyOn(await license(sql, t, 'video_review'))) return { status: 404 };
   const [row] = await J(sql`select to_jsonb(x) j from (select r.stage, r.result from public.homework_video_reviews r join public.homework_video_ledger_videos v
     on v.id = r.video_id and v.tenant_id = ${t} where r.tenant_id=${t} and r.video_id=${params.video}) x`);
@@ -723,7 +723,7 @@ async function rejectHomeworkVideos(ctx) {
       ${'미확인으로 되돌림 — 영상 반려(Drive 휴지통)'}, ${observedAt}::timestamptz, ${legacyCheck}::date) r`);
     if (data === 'changed') return { ok: false, error: '그사이 영상 연결이 바뀌었습니다. 화면을 새로고침한 뒤 다시 시도해 주세요.' };
     if (data !== 'rejected') return { ok: false, error: '영상을 반려하지 못했습니다. 화면을 새로고침한 뒤 다시 시도해 주세요.' };
-    // 휴지통 — 연습 화면은 Drive를 부르지 않는다. 2.0 trashFiles의 셈 그대로: 다른 영상 줄이 같은 파일을 쓰면 남겨 둠(trashShared),
+    // 휴지통 — 연습 자료은 Drive를 부르지 않는다. 2.0 trashFiles의 셈 그대로: 다른 영상 줄이 같은 파일을 쓰면 남겨 둠(trashShared),
     // 나머지는 2.0이 자격을 못 읽었을 때처럼 '못 옮김'(trashFailed). 반려 자체는 그대로다(2.0도 못 옮겨도 반려는 남는다).
     let trashed = 0, trashFailed = 0, trashShared = 0;
     const ids = new Set(files.map(f => f.id));

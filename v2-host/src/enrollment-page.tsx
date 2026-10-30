@@ -326,7 +326,7 @@ export function EnrollmentPage({
                 </Button>
               }
             >
-              <Button variant="ghost" disabled title="연습 화면에서는 아직 지원하지 않는 기능입니다">
+              <Button variant="ghost" disabled title="연습 자료에서는 아직 지원하지 않는 기능입니다">
                 <QrCode className="size-4" />
                 공개 접수 QR
               </Button>

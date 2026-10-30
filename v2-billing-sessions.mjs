@@ -31,7 +31,7 @@ export const SESSION_READS = {
 const ARG_LIMIT = 200 * 1024;
 const refused = e => (e instanceof V2ServerError
   ? e.code === 'outbound_blocked' ? new V2Error(409, 'outbound_blocked', '이 저장이 바깥으로 요청을 보내려 해서 되돌렸습니다. 바뀐 것은 없습니다.')
-    : e.code === 'unsupported' ? new V2Error(409, 'not_supported', '연습 화면에서는 아직 지원하지 않는 저장입니다.')
+    : e.code === 'unsupported' ? new V2Error(409, 'not_supported', '연습 자료에서는 아직 지원하지 않는 저장입니다.')
       : new V2Error(500, 'write_failed', '저장하지 못했습니다. 바뀐 것은 없습니다.')
   : e);
 /** 보는 사람 = 수납관리를 볼 수 있는 재직 직원만(운영자 계정 제외) — 그 밖이면 2.0 '로그인 없음' 자리(getCurrentUser = null). */

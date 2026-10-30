@@ -1,7 +1,7 @@
 // 2.0 부품 호스트 — 월별 출석부 진입점. 3.0 `#v2-attendance`가 같은 출처 iframe(/v2-host/attendance.html?…)으로 연다.
 // 2.0 page.tsx(`/attendance`)가 그리는 그대로(attendance-page.tsx), 2.0 (shell) 레이아웃이 창(embed) 화면을 감싸는
 // 공급자(Embed · 화면 언어 · 운영 설정)로 감싼다. 데이터 = /api/v2/attendance?…(Docker 복사본) — page.tsx가 부품에 넘기던 값 그대로.
-// 로그인이 없으니 '보는 사람'은 3.0 띠에서 고른 저장하는 사람(정렬·날짜축·퇴직 숨김·접은 반은 그 사람의 ui_prefs).
+// 로그인이 없으니 '보는 사람'은 셸에서 선택한 현재 저장하는 사람(정렬·날짜축·퇴직 숨김·접은 반은 그 사람의 ui_prefs).
 import { createRoot } from 'react-dom/client';
 import { useEffect, useRef, useState } from 'react';
 import { AppProviders } from '@/lib/providers/app-providers';
@@ -67,14 +67,14 @@ registerHostHandler('features/attendance/server/actions.ts', 'saveAttendance', a
 
 function App() {
   const search = new URLSearchParams(useHostSearch());
-  const [viewer, setViewer] = useState<string | null>(null);
+  const [viewer, setViewer] = useState<string | null>(() => hostActor());
   const key = [...KEYS.map((k) => `${k}=${search.get(k) ?? ''}`), `viewer=${viewer ?? ''}`].join('&');
   const [state, setState] = useState<{ key?: string; data?: Data; error?: string }>({});
   const [tick, setTick] = useState(0);
   // 지금 화면이 그려진 사람(서버가 고른 보는 사람) — 띠가 같은 사람을 다시 알려 오면 다시 받지 않는다.
   const drawnFor = useRef<string | null>(null);
   useEffect(() => onHostRefresh(() => setTick((n) => n + 1)), []);
-  // 3.0 띠에서 저장하는 사람을 바꾸면 그 사람의 보기 설정으로 다시 받는다(shim이 먼저 받아 두므로 다음 틱에 읽는다).
+  // 셸 계정에서 저장하는 사람을 바꾸면 그 사람의 보기 설정으로 다시 받는다(shim이 먼저 받아 두므로 다음 틱에 읽는다).
   useEffect(() => {
     const onMessage = (e: MessageEvent) => {
       if (e.origin !== location.origin || e.source !== window.parent || (e.data as { type?: string } | null)?.type !== 'v2-host-actor') return;
@@ -94,7 +94,7 @@ function App() {
         if (!live) return;
         if (data.page === 'redirect' || data.page === 'notFound' || data.page === 'seatMonthClosed' || data.page === 'unitsMasterUnavailable') { setState({ key, data }); return; }
         setHostEditors(data.editors);
-        // 띠에 남아 있던 사람(같은 출처 저장소)이 서버가 고른 사람과 다르면 그 사람으로 한 번 더 받는다.
+        // 셸 계정이 서버가 고른 사람과 다르면 그 사람으로 한 번 더 받는다.
         const picked = hostActor();
         if (picked && picked !== data.viewer && picked !== viewer) { setViewer(picked); return; }
         drawnFor.current = data.viewer;
@@ -119,7 +119,7 @@ function App() {
   if (redirectTo || d.page === 'redirect') return <HostMessage text="출석부를 불러오는 중…" />;
   // 2.0 notFound — 자리 기능이 꺼진 학원·없는 자리(2.0은 없는 주소와 똑같이 다룬다).
   if (d.page === 'notFound') return <HostMessage text="이 주소의 화면이 없습니다." />;
-  if (d.page === 'unitsMasterUnavailable') return <HostMessage text="연습 화면에서는 아직 열 수 없습니다." />;
+  if (d.page === 'unitsMasterUnavailable') return <HostMessage text="아직 3.0에 없는 화면입니다." />;
   if (d.page === 'seatMonthClosed') return <EmbedProvider embed><AttendanceSeatMonthClosed seatName={d.seatName} /></EmbedProvider>;
   if (!d.editors.length) return <HostMessage text={d.page === 'seatDay' || d.page === 'seatMonth' ? '이 자리 출석부를 입력할 수 있는 직원이 없습니다.' : '출결을 저장할 수 있는 직원이 없습니다.'} />;
   const ops = d.host.operations;

@@ -77,7 +77,7 @@ function useScreenData<T>(query: string, failed: string): Loaded<T> {
       .then(async (r) => { const body = await r.json().catch(() => null); if (!r.ok) throw new Error(body?.message || failed); return body; })
       .then((body) => {
         if (!live) return;
-        // 저장하는 사람(학생 관리 '전체') — 3.0 띠가 이 목록에서 고른다(수업목록과 같은 신호).
+        // 저장하는 사람(학생 관리 '전체') — 셸 계정이 이 목록에서 고른다(수업목록과 같은 신호).
         if (Array.isArray(body?.editors)) setHostEditors(body.editors);
         setState(body?.notFound ? { key: query, notFound: true } : body?.missing ? { key: query, missing: true } : { key: query, data: body as T });
       })
@@ -105,8 +105,8 @@ function pending<T>(s: Loaded<T>, what: { loading: string; missing: string }): R
   if (s.missing) return <HostMessage text={what.missing} />;
   return <HostMessage text={what.loading} />;
 }
-const LIST_TEXT = { loading: "원생목록을 불러오는 중…", missing: "원생목록은 연습 화면에서 아직 열 수 없습니다." };
-const STUDENT_TEXT = { loading: "학생 정보를 불러오는 중…", missing: "이 화면은 연습 화면에서 아직 열 수 없습니다." };
+const LIST_TEXT = { loading: "원생목록을 불러오는 중…", missing: "아직 3.0에 없는 화면입니다." };
+const STUDENT_TEXT = { loading: "학생 정보를 불러오는 중…", missing: "아직 3.0에 없는 화면입니다." };
 const STATS_KEYS = ['view', 'subject', 'fc', 'fcMonth', 'fcFrom', 'fcTo', 'fcSpan', 'tr', 'trMonth', 'trFrom', 'trTo', 'trSpan'] as const;
 
 function pickQuery(search: URLSearchParams, keys: readonly string[], extra: Record<string, string> = {}) {
@@ -163,7 +163,7 @@ function App() {
   if (detail) return <Detail key={path} path={path} id={detail[1]} />;
   if (edit) return <Form<StudentEditData> key={path} path={path} render={(d) => <EditStudentPage data={d} params={{ id: edit[1] }} />} />;
   if (path === "/students/new") return <Form<StudentNewData> key={path} path={path} render={(d) => <NewStudentPage data={d} />} />;
-  return <HostMessage text="이 화면은 연습 화면에서 아직 열 수 없습니다." />;
+  return <HostMessage text="아직 3.0에 없는 화면입니다." />;
 }
 
 createRoot(document.getElementById("root")!).render(<AppProviders><HostFrame screen="students"><App /></HostFrame></AppProviders>);

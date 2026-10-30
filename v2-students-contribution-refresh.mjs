@@ -74,7 +74,7 @@ export const actions = {
       const refresh = original.refresh.create(access.CONTRIBUTION_PILOT_TENANT,
         (...args) => readOriginal('lib/laboratory/server.ts', 'isLaboratoryMenuAvailable', args),
         store.contributionReady, date.kstToday,
-        () => { throw new Error('연습 복사본에서 AI 판정을 실행할 수 없습니다'); },
+        () => { throw new Error('연습 자료에서 AI 판정을 실행할 수 없습니다'); },
         store.loadContributionSettings,
         (...args) => readOriginal('features/owner/server/queries.ts', 'getTenantSettingsByTenantId', args),
         core.loadCoreSources, store.loadContributionMonths, activities, core.loadHistoricalBills, parent.loadParentEvents,

@@ -12,6 +12,7 @@ window.createOwnerWorkspace = function createOwnerWorkspace(api) {
   const ui={recRefs:new Map(),filter:'all',inbox:'unread',read:new Set(),reportRead:new Set(),archived:new Set(),expanded:new Set(),requests:[],drafts:new Map(),requestArgs:null,focusIssue:null,homePrompt:'',rule:true,slack:true,app:true};
   const chat={turns:[],context:null,topic:'',pending:null};
   let workspaces=null,flowUI=null;
+  window.AywaAccount={current:()=>flowUI?.actor?.()||null,actors:()=>flowUI?.actors?.()||[]};
   // Requests come from the durable flow store when the server provides it; otherwise from this tab (session only).
   const reqs=()=>flowUI?.ready()?flowUI.asRequests():ui.requests;
   const flowRole=()=>flowUI?.ready()?flowUI.role():'owner';
@@ -355,6 +356,10 @@ window.createOwnerWorkspace = function createOwnerWorkspace(api) {
   window.AxAssistantContract={endpoint:ASSISTANT.endpoint,limits:{prompt:ASSISTANT.promptLimit,historyItems:ASSISTANT.historyItems,historyItem:ASSISTANT.historyItemLimit,historyTotal:ASSISTANT.historyTotal},validate:validateAssistant,buildHistory};
 
   /* ---------- Shell: chrome lives on the left. The desktop header band is gone; phones keep a slim menu bar. ---------- */
+  function accountPicker(){
+    const actors=flowUI?.actors?.()||[],me=flowUI?.actor?.();
+    return `<div class="ax-account"><label for="ax-account">계정</label><select id="ax-account" data-fl-actor aria-label="계정 전환" ${actors.length?'':'disabled'}>${actors.map(a=>`<option value="${h(a.id)}" ${a.id===me?.id?'selected':''}>${h(a.name)} · ${h(a.roleLabel||a.role)}</option>`).join('')}</select><small>연습 자료</small></div>`;
+  }
   function decorateShell(){
     document.body.classList.add('ax-enabled');
     const page=api.getPage(),offset=$('.nav-scroll')?.scrollTop||0,count=flowUI?.ready()&&flowRole()!=='owner'?flowUI.inboxCount():unread(),reports=reqs().filter(r=>r.status==='done').length;
@@ -362,7 +367,7 @@ window.createOwnerWorkspace = function createOwnerWorkspace(api) {
     const sticker=(id,symbol)=>window.V2Screens?.sticker?.(id)||icon(symbol);
     const link=(id,label,symbol,extra='')=>`<a class="nav-item ${page===id?'active':''}" href="#${id}" ${page===id?'aria-current="page"':''}>${sticker(id,symbol)}<span>${label}</span>${extra}</a>`;
     const tool=(attrs,label,symbol,extra='')=>`<button type="button" class="nav-item" ${attrs}>${sticker(attrs.match(/data-(?:ax|action)="([^"]+)"/)?.[1],symbol)}<span>${label}</span>${extra}</button>`;
-    $('#sidebar').innerHTML=`<a href="#home" class="brand"><span class="brand-mark">${icon('trend')}</span><div><div class="brand-name">aywa</div><div class="brand-caption">학원 운영</div></div></a><div class="academy-box"><span class="academy-symbol">${icon('building')}</span><div><strong>${h(db.meta.tenant)}</strong><small>원장</small></div></div><button type="button" class="ax-search-trigger" data-action="search">${icon('search')}<span>통합 검색</span><kbd>Ctrl K</kbd></button><nav class="nav-scroll" aria-label="원장 작업 공간">${flowUI?.sidebar(page)||''}<div class="nav-group">${flowRole()==='owner'?'원장실':'업무 공간'}</div>${link('home',flowRole()==='owner'?'브리핑':flowRole()==='manager'?'업무 조율':'내 업무','home',flowRole()!=='owner'&&count?`<span class="nav-count" aria-label="업무 ${count}건">${count}</span>`:'')}${link('inbox','알림','message',flowRole()==='owner'&&count?`<span class="nav-count" aria-label="안 읽음 ${count}건">${count}</span>`:'')}${['owner','manager'].includes(flowRole())?link('requests','요청한 업무','check',reqs().length?`<span class="nav-count">${reqs().length}</span>`:''):''}${flowRole()==='owner'?link('automation','자동화','settings'):''}${workspaces?.sidebar(page)||''}${window.V2Screens?.sidebar(page)||''}<div class="nav-group">AI · 알림 채널</div>${tool('data-ax="chat"','AI 업무 지원','message',`<span class="nav-count" ${chat.pending?'':'hidden'}>응답 중</span>`)}${tool('data-ax="digest"','슬랙 브리핑','arrow')}${tool('data-action="notes"','검토 메모','book')}<div class="nav-group">바로 요청</div>${tool('data-ax="request" data-id=""','업무 요청','plus')}${tool('data-ax="launcher"','전체 업무','search')}<div class="ax-sidebar-summary"><strong>처리 현황</strong>${Object.entries(STATUS).map(([id,label])=>`<p>${label} ${reqs().filter(r=>r.status===id).length}건</p>`).join('')}${reports?`<p>완료 보고 중 안 읽음 ${unreadReports().length}건</p>`:''}</div></nav><div class="sidebar-bottom">${link('settings','학원 설정','settings')}<div class="profile"><div><strong>원장님</strong><small>${h(db.meta.tenant)}</small></div></div></div>`;
+    $('#sidebar').innerHTML=`<a href="#home" class="brand"><span class="brand-mark">${icon('trend')}</span><div><div class="brand-name">aywa</div><div class="brand-caption">학원 운영</div></div></a><div class="academy-box"><span class="academy-symbol">${icon('building')}</span><div><strong>${h(db.meta.tenant)}</strong><small>원장</small></div></div><button type="button" class="ax-search-trigger" data-action="search">${icon('search')}<span>통합 검색</span><kbd>Ctrl K</kbd></button><nav class="nav-scroll" aria-label="원장 작업 공간">${flowUI?.sidebar(page)||''}<div class="nav-group">${flowRole()==='owner'?'원장실':'업무 공간'}</div>${link('home',flowRole()==='owner'?'브리핑':flowRole()==='manager'?'업무 조율':'내 업무','home',flowRole()!=='owner'&&count?`<span class="nav-count" aria-label="업무 ${count}건">${count}</span>`:'')}${link('inbox','알림','message',flowRole()==='owner'&&count?`<span class="nav-count" aria-label="안 읽음 ${count}건">${count}</span>`:'')}${['owner','manager'].includes(flowRole())?link('requests','요청한 업무','check',reqs().length?`<span class="nav-count">${reqs().length}</span>`:''):''}${flowRole()==='owner'?link('automation','자동화','settings'):''}${workspaces?.sidebar(page)||''}${window.V2Screens?.sidebar(page)||''}<div class="nav-group">AI · 알림 채널</div>${tool('data-ax="chat"','AI 업무 지원','message',`<span class="nav-count" ${chat.pending?'':'hidden'}>응답 중</span>`)}${tool('data-ax="digest"','슬랙 브리핑','arrow')}${tool('data-action="notes"','검토 메모','book')}<div class="nav-group">바로 요청</div>${tool('data-ax="request" data-id=""','업무 요청','plus')}${tool('data-ax="launcher"','전체 업무','search')}<div class="ax-sidebar-summary"><strong>처리 현황</strong>${Object.entries(STATUS).map(([id,label])=>`<p>${label} ${reqs().filter(r=>r.status===id).length}건</p>`).join('')}${reports?`<p>완료 보고 중 안 읽음 ${unreadReports().length}건</p>`:''}</div></nav><div class="sidebar-bottom">${link('settings','학원 설정','settings')}${accountPicker()}</div>`;
     $('.nav-scroll').scrollTop=offset;
     $('#topbar').innerHTML=`<button type="button" class="button ax-menu-button" data-action="menu" aria-controls="sidebar" aria-expanded="${document.body.classList.contains('menu-open')}" aria-label="메뉴 열기${count?` · 안 읽은 알림 ${count}건`:''}">${icon('menu')}<span>메뉴</span>${count?`<span class="ax-menu-count" aria-hidden="true">${count}</span>`:''}</button><strong class="ax-mobile-title">aywa · ${h(db.meta.tenant)}</strong>`;
   }
@@ -386,6 +391,7 @@ window.createOwnerWorkspace = function createOwnerWorkspace(api) {
     const el=event.target.closest('[data-ax]');if(!el)return;event.preventDefault();event.stopImmediatePropagation();
     const {ax:action,id,prompt,type}=el.dataset;
     if(el.closest('#sidebar'))api.closeMenu?.(false);
+    if(action==='account-switch'){document.body.classList.add('menu-open');document.getElementById('ax-account')?.focus();return;}
     if(action==='navigate'){navigate(id);return;}
     if(action==='filter'){ui.filter=id;render();return;}
     if(action==='focus-issue'){ui.read.add(id);ui.archived.delete(id);ui.filter='all';render();requestAnimationFrame(()=>focusIssue(id));return;}
@@ -424,6 +430,10 @@ window.createOwnerWorkspace = function createOwnerWorkspace(api) {
   });
   document.addEventListener('compositionend',event=>{if(event.target.id==='ax-launcher-search')$('#ax-launcher-list').innerHTML=launcherList(event.target.value);});
   document.addEventListener('change',event=>{const key=event.target.dataset.axSetting;if(key)ui[key]=event.target.checked;const form=event.target.closest?.('form[data-ax-form="request"]');if(form)saveDraft(form);});
+  document.addEventListener('change',event=>{
+    if(!event.target.matches?.('#ax-account'))return;
+    queueMicrotask(()=>{const id=flowUI?.actor?.()?.id;if(id)document.querySelectorAll('iframe[data-v2-host]').forEach(frame=>frame.contentWindow?.postMessage({type:'v2-host-actor',id},location.origin));});
+  });
   document.addEventListener('submit',event=>{
     const form=event.target,kind=form.dataset.axForm;if(!kind)return;event.preventDefault();event.stopImmediatePropagation();
     if(kind==='request'){submitRequest(form);return;}

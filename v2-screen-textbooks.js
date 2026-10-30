@@ -10,7 +10,7 @@
   // 2.0 page.tsx가 읽는 주소 열쇠 그대로(면 · 과목 · 구분 · 검색 · 쪽).
   const KEEP = ['tab', 'subject', 'area', 'q', 'page', 'textbook'];
   let api = null, frame = null, requested = null, hostOk = null, wired = false, editors = [], actor = null;
-  const ACTOR_KEY = `v2-host-actor:${ID}`, SEL = `[data-v2-screen="${ID}"]`;
+  const SEL = `[data-v2-screen="${ID}"]`;
   const esc = s => S.esc(s);
   const queryOf = q => { const o = new URLSearchParams(); for (const k of KEEP) { const v = q.get(k); if (v) o.set(k, v); } return o.toString(); };
 
@@ -40,16 +40,11 @@
     if (OWN.test(path)) { const q = queryOf(new URLSearchParams(String(href).split('?')[1] ?? '')); location.hash = `#v2-${ID}${q ? `?${q}` : ''}`; return; }
     const m = /^\/(students|classes)\/([0-9a-f-]{36})(?:[/?#]|$)/i.exec(href || '');
     if (m && api?.canOpenRecord?.(m[2])) return m[1] === 'students' ? api.showStudent(m[2]) : api.openRecord(m[2]);
-    api?.toast?.('이 화면은 연습 화면에서 아직 열 수 없습니다.');
+    api?.toast?.('아직 3.0에 없는 화면입니다.');
   }
   /** 저장하는 사람 — 고른 값이 목록에 없으면 첫 사람(원장 먼저). 호스트(shims/server-action.ts)와 같은 규칙. */
-  function currentActor() {
-    let stored = null;
-    try { stored = localStorage.getItem(ACTOR_KEY); } catch { /* 저장소를 못 쓰면 이 창에서만 */ }
-    for (const id of [actor, stored]) if (id && editors.some(e => e.id === id)) return id;
-    return editors[0]?.id ?? null;
-  }
-  const actorPicker = () => (editors.length ? `<label class="v2h-actor"><span>보는 사람</span><select data-v2h-actor aria-label="보는 사람">${editors.map(e => `<option value="${esc(e.id)}"${e.id === currentActor() ? ' selected' : ''}>${esc(e.role ? `${e.name} · ${e.role}` : e.name)}</option>`).join('')}</select></label>` : '');
+  const currentActor = () => S.accountId();
+  const actorPicker = () => ''; // 화면별 선택기는 셸 계정으로 대체했다.
   const tellHost = () => { const id = currentActor(); if (id && frame?.contentWindow) frame.contentWindow.postMessage({ type: 'v2-host-actor', id }, location.origin); };
   function wire() {
     if (wired) return; wired = true;
@@ -74,7 +69,6 @@
       // 이 화면 안의 선택만 — 다른 화면의 '저장하는 사람'과 섞이지 않게.
       if (!(t instanceof HTMLSelectElement) || !t.matches(`${SEL} [data-v2h-actor]`)) return;
       actor = t.value;
-      try { localStorage.setItem(ACTOR_KEY, t.value); } catch { /* 이 창에서만 기억 */ }
       tellHost();
     });
     const later = () => requestAnimationFrame(place);

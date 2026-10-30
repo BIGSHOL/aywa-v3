@@ -12,7 +12,7 @@
   const ID = 'ecs', HOST = `/v2-host/${ID}.html`, S = window.V2Screens; if (!S) return;
   // 2.0 page.tsx가 읽는 주소 열쇠 그대로(v2path = 2.0 하위 경로 /ecs/<반>·/ecs/<반>/month).
   const KEEP = ['v2path', 'week', 'view', 'date', 'mode', 'month', 'period', 'day', 'readonly'];
-  const ACTOR_KEY = `v2-host-actor:${ID}`, SEL = `[data-v2-screen="${ID}"]`;
+  const SEL = `[data-v2-screen="${ID}"]`;
   let api = null, frame = null, requested = null, hostOk = null, wired = false, editors = [], actor = null;
   const esc = s => S.esc(s);
   const queryOf = q => { const o = new URLSearchParams(); for (const k of KEEP) { const v = q.get(k); if (v) o.set(k, v); } return o.toString(); };
@@ -41,16 +41,11 @@
   function openFromHost(href) {
     const m = /^\/(students|classes)\/([0-9a-f-]{36})(?:[/?#]|$)/i.exec(href || '');
     if (m && api?.canOpenRecord?.(m[2])) return m[1] === 'students' ? api.showStudent(m[2]) : api.openRecord(m[2]);
-    api?.toast?.('이 화면은 3.0 연습본에 아직 없습니다.');
+    api?.toast?.('아직 3.0에 없는 화면입니다.');
   }
   /** 보고 저장하는 사람 — 고른 값이 목록에 없으면 첫 사람(원장 먼저). 호스트(shims/server-action.ts · ecs.tsx)와 같은 규칙. */
-  function currentActor() {
-    let stored = null;
-    try { stored = localStorage.getItem(ACTOR_KEY); } catch { /* 저장소를 못 쓰면 이 창에서만 */ }
-    for (const id of [actor, stored]) if (id && editors.some(e => e.id === id)) return id;
-    return editors[0]?.id ?? null;
-  }
-  const actorPicker = () => (editors.length ? `<label class="v2h-actor"><span>보고 저장하는 사람</span><select data-ecs-actor aria-label="보고 저장하는 사람">${editors.map(e => `<option value="${esc(e.id)}"${e.id === currentActor() ? ' selected' : ''}>${esc(e.role ? `${e.name} · ${e.role}` : e.name)}</option>`).join('')}</select></label>` : '');
+  const currentActor = () => S.accountId();
+  const actorPicker = () => ''; // 화면별 선택기는 셸 계정으로 대체했다.
   const tellHost = () => { const id = currentActor(); if (id && frame?.contentWindow) frame.contentWindow.postMessage({ type: 'v2-host-actor', id }, location.origin); };
   function wire() {
     if (wired) return; wired = true;
@@ -77,7 +72,6 @@
       const t = e.target;
       if (!(t instanceof HTMLSelectElement) || !t.matches('[data-ecs-actor]')) return;
       actor = t.value;
-      try { localStorage.setItem(ACTOR_KEY, t.value); } catch { /* 이 창에서만 기억 */ }
       tellHost();
     });
     const later = () => requestAnimationFrame(place);
@@ -91,7 +85,7 @@
       api = ctx.api; wire();
       const requestedActor = ctx.query.get('actor');
       const teacherMode = ctx.query.get('teacherHome') === '1' && /^[0-9a-f-]{36}$/i.test(requestedActor || '');
-      if (teacherMode) { actor = requestedActor; try { localStorage.setItem(ACTOR_KEY, actor); } catch { /* 저장소 없이도 이 창에서 유지 */ } }
+      if (teacherMode) actor = requestedActor;
       const teacherStrip = teacherMode ? window.TeacherHome?.strip(ctx, requestedActor, 'ecs') || '' : '';
       const query = queryOf(ctx.query);
       if (hostOk === null) fetch(HOST, { method: 'HEAD' }).then(r => r.ok, () => false).then(ok => { if (hostOk === null) { hostOk = ok; api?.render?.(); } });

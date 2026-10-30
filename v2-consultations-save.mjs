@@ -21,9 +21,9 @@ export const MODULES = {
 const MENU = 'consultations';
 const OUT_OF_SCOPE_CONSULTATION = '본인이 작성한 상담만 고칠 수 있습니다';
 const OUT_OF_SCOPE_STUDENT = '담당 학생의 상담만 기록할 수 있습니다';
-export const NO_AI = '연습 화면에서는 AI 분석을 새로 하지 않습니다 — 저장된 분석 결과만 볼 수 있습니다';
-export const NO_RECORDING = '연습 화면에서는 녹음 상담을 새로 만들지 않습니다 — 아래 상담 기록 추가로 글로 남겨 주세요';
-export const NO_UPLOAD = '연습 화면에서는 녹음 파일을 올리지 않습니다';
+export const NO_AI = '연습 자료에서는 AI 분석을 새로 하지 않습니다 — 저장된 분석 결과만 볼 수 있습니다';
+export const NO_RECORDING = '연습 자료에서는 녹음 상담을 새로 만들지 않습니다 — 아래 상담 기록 추가로 글로 남겨 주세요';
+export const NO_UPLOAD = '연습 자료에서는 녹음 파일을 올리지 않습니다';
 const CATEGORIES = ['general', 'academic', 'emotional', 'career', 'social', 'other'];
 const AUDIENCES = ['parent', 'student', 'both'];
 const plain = v => !!v && typeof v === 'object' && !Array.isArray(v);
@@ -315,7 +315,7 @@ async function deleteStudentConsultation(c, fd) {
   await audit(c.sql, c.t, c.u, 'student_consultation_delete', 'student_consultation', null, {
     consultationId: id, studentId: before?.student_id ?? (studentId || null), consultedAt: c.R.kst.kstDateOf(before?.consulted_at),
     category: before?.category ?? null, audience: before?.audience ?? null, hasFollowUp: !!before?.follow_up_action });
-  // 2.0은 여기서 redirect(redirectTo) — 연습 화면은 화면(호스트)이 같은 주소로 옮긴다.
+  // 2.0은 여기서 redirect(redirectTo) — 연습 자료은 화면(호스트)이 같은 주소로 옮긴다.
   return undefined;
 }
 

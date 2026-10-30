@@ -31,7 +31,7 @@ const plain = (v) => !!v && typeof v === 'object' && !Array.isArray(v);
 const bad = () => new V2Error(400, 'invalid_request', '입력 값을 확인해 주세요.');
 /** 2.0 문구(makeup-reservation-actions.ts) */
 const NOT_APPLIED = '보강 예약 표(0264a)가 아직 적용되지 않았습니다 — 관리자에게 SQL 적용을 요청하세요';
-const NATIVE_REFUSED = '보강관리로 옮겨진 학원의 보강 예약은 연습 화면에서 아직 바꾸지 않습니다. 바뀐 것은 없습니다.';
+const NATIVE_REFUSED = '보강관리로 옮겨진 학원의 보강 예약은 연습 자료에서 아직 바꾸지 않습니다. 바뀐 것은 없습니다.';
 const DONE_ERROR = '이 보강은 이미 기록된 반 출석부에 찍혀 있어 다른 반으로 옮길 수 없습니다 — 출석부에서 보강 칸을 먼저 고쳐 주세요';
 const MISSED_MAKEUP_ONLY_ERROR = '정규 수업이 없는 날의 보강 출결이 남아 있습니다 — 출석부에서 그 칸을 지운 뒤 다시 눌러 주세요';
 const MISSED_MAKEUP_STATUS_ERROR = "그날 출결 칸에서 정규 수업분을 가려낼 수 없습니다(출결이 '보강'이거나 시수가 보강분뿐) — 출석부에서 출결·시수를 고친 뒤 다시 눌러 주세요";

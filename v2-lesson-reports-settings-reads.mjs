@@ -3,7 +3,7 @@
 //  · getRecentReportsForTest() → { ok, reports } — 미리보기에 고를 최근 보고서 30건(진도 있음 · 영어 제외)의 라벨.
 //  둘 다 2.0 requireAiMentAccess(열람 + AI 라이선스)를 지난다(같은 게이트 = v2-lesson-reports-face-ai_ment.mjs aiMentGate).
 //  화면 GET 열쇠(promptHistory=<유형> · testReports=1)와 호스트 registerHostHandler로 이어 붙인다(원생 listMovableEnrollments 본보기 — 연결은 화면 정의 쪽).
-//  미리보기(testPrompt)·말투 지금 갱신(rebuildMentStylesNow)은 AI를 부르므로 연습 화면에서 하지 않는다.
+//  미리보기(testPrompt)·말투 지금 갱신(rebuildMentStylesNow)은 AI를 부르므로 연습 자료에서 하지 않는다.
 // · 읽기 전용 · 바깥 호출 없음.
 import { studentsBase } from './v2-students-common.mjs';
 import { aiMentGate, mods } from './v2-lesson-reports-face-ai_ment.mjs';

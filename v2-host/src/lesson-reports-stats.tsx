@@ -46,7 +46,7 @@ export function LessonReportsStats() {
   }, [query, tick]);
   if (state.key !== query) return <HostMessage text="보고서 통계를 불러오는 중…" />;
   if (state.error) return <HostMessage text={state.error} error />;
-  if (state.noAccess || !state.data) return <HostMessage text="고른 사람은 이 화면을 볼 수 없습니다." />;
+  if (state.noAccess || !state.data) return <HostMessage text="현재 계정은 이 화면을 볼 수 없습니다." />;
   const data = state.data;
   setCopyDay(data.today);
   const ops = data.settings.operations as Parameters<typeof OperationsProvider>[0];

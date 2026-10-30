@@ -8,13 +8,9 @@
     'year', 'term', 'class', 'slot', 'date', 'max', 'view', 'type', 'jjClass'];
   const SEL = `[data-v2-screen="${ID}"]`;
   let api = null, frame = null, requested = null, hostOk = null, wired = false, editors = [], actor = null;
-  const esc = s => S.esc(s), actorKey = `v2-host-actor:${ID}`;
-  const currentActor = () => {
-    let stored = null; try { stored = localStorage.getItem(actorKey); } catch { /* 선택은 현재 창에만 */ }
-    for (const id of [actor, stored]) if (id && editors.some(e => e.id === id)) return id;
-    return editors[0]?.id ?? null;
-  };
-  const actorPicker = () => editors.length ? `<label class="v2h-actor"><span>저장하는 사람</span><select data-v2h-actor aria-label="저장하는 사람">${editors.map(e => `<option value="${esc(e.id)}"${e.id === currentActor() ? ' selected' : ''}>${esc(e.name)}</option>`).join('')}</select></label>` : '';
+  const esc = s => S.esc(s);
+  const currentActor = () => S.accountId();
+  const actorPicker = () => ''; // 화면별 선택기는 셸 계정으로 대체했다.
   const tellHost = () => { const id = currentActor(); if (id && frame?.contentWindow) frame.contentWindow.postMessage({ type: 'v2-host-actor', id }, location.origin); };
   const queryOf = q => { const o = new URLSearchParams(); for (const k of KEEP) { const v = q.get(k); if (v) o.set(k, v); } return o.toString(); };
   const place = () => {
@@ -36,7 +32,7 @@
   const openFromHost = href => {
     const u = new URL(href || '/', location.origin), segs = u.pathname.split('/').filter(Boolean);
     const to = segs[0] ? S.target(segs[0]) : null;
-    if (!to) { api?.toast?.('이 화면은 연습 화면에서 아직 열 수 없습니다.'); return; }
+    if (!to) { api?.toast?.('아직 3.0에 없는 화면입니다.'); return; }
     const q = new URLSearchParams(u.search);
     if (segs.length > 1) q.set('v2path', u.pathname);
     location.hash = `${to}${q.toString() ? `?${q}` : ''}`;
@@ -67,7 +63,7 @@
     addEventListener('change', e => {
       const t = e.target;
       if (!(t instanceof HTMLSelectElement) || !t.matches(`${SEL} [data-v2h-actor]`)) return;
-      actor = t.value; try { localStorage.setItem(actorKey, t.value); } catch { /* 현재 창에만 */ }
+      actor = t.value;
       tellHost();
     });
     const later = () => requestAnimationFrame(place);

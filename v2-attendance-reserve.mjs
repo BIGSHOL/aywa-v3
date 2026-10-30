@@ -22,7 +22,7 @@ export function loadReserveRules(importV2) {
 }
 const VIA = '3.0 연습 복사본';
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/, YMD = /^\d{4}-\d{2}-\d{2}$/;
-const NATIVE = '새 보강관리를 쓰는 학원의 보강 예약은 연습 화면에서는 아직 지원하지 않는 저장입니다. 바뀐 것은 없습니다.';
+const NATIVE = '새 보강관리를 쓰는 학원의 보강 예약은 연습 자료에서는 아직 지원하지 않는 저장입니다. 바뀐 것은 없습니다.';
 
 /** 2.0 서버 전용 `MADE_UP_RE`·`pickAbsenceNoteTarget`(server/absence-cell.ts) — 이미 이 줄이 있는 칸 → 아직 어떤 보강도 안 적힌 칸 → 최신 칸. */
 export const PORTED = {

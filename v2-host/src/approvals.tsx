@@ -1,13 +1,13 @@
 // 2.0 부품 호스트 — 전자결재 진입점(처리 화면 세션 R). 3.0 `#v2-approvals`가 같은 출처 iframe(/v2-host/approvals.html?…)으로 연다.
 // 2.0 주소: /approvals(결재함 · approvals-list.tsx) · /approvals/<id>(결재 문서 · approvals-doc.tsx) · /approvals/new(기안하기 · approvals-new.tsx).
 // 데이터 = /api/v2/approvals?…(Docker 복사본, v2-screen-approvals.mjs) — 2.0 서버 컴포넌트가 부품에 넘기던 값.
-// 보는 사람 = 3.0 띠에서 고른 직원(저장하는 사람과 같다) — 결재함·결재 단추가 그 사람의 것이라 조회에도 싣는다(?actor=).
+// 보는 사람 = 셸에서 선택한 현재 직원(저장하는 사람과 같다) — 결재함·결재 단추가 그 사람의 것이라 조회에도 싣는다(?actor=).
 import { createRoot } from 'react-dom/client';
 import { useEffect, useState } from 'react';
 import { AppProviders } from '@/lib/providers/app-providers';
 import { OperationsProvider } from '@/features/owner/operations-context';
 import { onHostRefresh } from '../shims/host-nav';
-import { setHostEditors, type HostEditor } from '../shims/server-action';
+import { hostActor, setHostEditors, type HostEditor } from '../shims/server-action';
 import { usePathname, useSearchParams } from '../shims/next-navigation';
 import { HostFrame, HostMessage } from './host-frame';
 import { ApprovalsPage, type ApprovalsListData } from './approvals-list';
@@ -20,10 +20,9 @@ const SCREEN = 'approvals';
 
 type Base = { editors: HostEditor[]; operations: Record<string, unknown>; notFound?: boolean; noMenu?: boolean; notAllowed?: boolean };
 
-const ACTOR_KEY = `v2-host-actor:${SCREEN}`;
-/** 보는 사람 — 3.0 띠가 고른 값(같은 출처 저장소 + v2-host-actor 알림). 바뀌면 다시 읽는다. */
+/** 보는 사람 — 셸에서 선택한 현재 값(부모 셸 계정). 바뀌면 다시 읽는다. */
 function useActor() {
-  const [actor, setActor] = useState<string | null>(() => { try { return localStorage.getItem(ACTOR_KEY); } catch { return null; } });
+  const [actor, setActor] = useState<string | null>(() => hostActor());
   useEffect(() => {
     const on = (e: MessageEvent) => {
       if (e.origin !== location.origin || e.source !== window.parent) return;
@@ -57,12 +56,12 @@ function App() {
     return () => { live = false; };
   }, [query, tick, known]);
   useEffect(() => { if (state.data?.editors) setHostEditors(state.data.editors); }, [state.data?.editors]);
-  if (!known) return <HostMessage text="이 화면은 연습 화면에서 아직 열 수 없습니다." />;
+  if (!known) return <HostMessage text="아직 3.0에 없는 화면입니다." />;
   if (state.query !== query || (!state.data && !state.error)) return <HostMessage text="전자결재를 불러오는 중…" />;
   if (!state.data) return <HostMessage text={state.error!} error />;
   const data = state.data;
-  if (data.notFound) return <HostMessage text="이 문서를 볼 수 없습니다. 기안자·결재자·참조자나 원장으로 보는 사람을 바꿔 주세요." error />;
-  if (data.noMenu) return <HostMessage text="고른 사람은 전자결재 메뉴가 없습니다. 위에서 다른 사람을 골라 주세요." error />;
+  if (data.notFound) return <HostMessage text="이 문서를 볼 수 없습니다. 왼쪽 아래에서 해당 결재자의 계정으로 전환해 주세요." error />;
+  if (data.noMenu) return <HostMessage text="현재 계정은 전자결재 메뉴가 없습니다. 왼쪽 아래에서 계정을 전환해 주세요." error />;
   const ops = data.operations as unknown as Parameters<typeof OperationsProvider>[0];
   return (
     <OperationsProvider subjects={ops.subjects} gradeLevels={ops.gradeLevels} jobTitles={ops.jobTitles} jobTitlesByDepartment={ops.jobTitlesByDepartment} disabledModules={[] as never}>

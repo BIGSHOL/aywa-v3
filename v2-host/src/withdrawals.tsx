@@ -47,10 +47,9 @@ saving('features/enrollments/server/actions.ts', 'updateEnrollmentDates', true);
 // 보기 취향 저장은 2.0도 다시 읽지 않는다(분석 카드가 필요할 때만 스스로 router.refresh).
 saving('features/withdrawals/server/trend-prefs-actions.ts', 'saveWithdrawalTrendPrefs', false);
 
-/** 보는 사람 — 3.0 띠가 고른 값(같은 출처 저장소 + v2-host-actor 알림). 바뀌면 다시 읽는다. */
-const ACTOR_KEY = `v2-host-actor:${SCREEN}`;
+/** 보는 사람 — 셸에서 선택한 현재 값(부모 셸 계정). 바뀌면 다시 읽는다. */
 function useActor() {
-  const [actor, setActor] = useState<string | null>(() => { try { return localStorage.getItem(ACTOR_KEY); } catch { return null; } });
+  const [actor, setActor] = useState<string | null>(() => hostActor());
   useEffect(() => {
     const on = (e: MessageEvent) => {
       if (e.origin !== location.origin || e.source !== window.parent) return;
@@ -134,11 +133,11 @@ function App() {
   }, [teacherRaw]);
   useEffect(() => { if (main.data?.editors) setHostEditors(main.data.editors); }, [main.data?.editors]);
 
-  if (!known) return <HostMessage text="이 화면은 연습 화면에서 아직 열 수 없습니다." />;
+  if (!known) return <HostMessage text="아직 3.0에 없는 화면입니다." />;
   if (main.error) return <HostMessage text={main.error} error />;
   if (!main.data) return <HostMessage text="퇴원관리를 불러오는 중…" />;
   const data = main.data;
-  if (data.notAllowed) return <HostMessage text="고른 사람은 퇴원관리를 볼 수 없습니다. 위에서 다른 사람을 골라 주세요." error />;
+  if (data.notAllowed) return <HostMessage text="현재 계정은 퇴원관리를 볼 수 없습니다. 왼쪽 아래에서 계정을 전환해 주세요." error />;
   if (data.notFound) return <HostMessage text="이 학생을 찾을 수 없습니다. 목록에서 다시 골라 주세요." error />;
   // 강사 칸 필터(`teacher=`)는 판정으로 명단을 거른다 — 2.0도 그때는 판정을 기다린 뒤 그린다.
   if (!detail && sp.teacher && teacher.status === 'loading') return <HostMessage text="퇴원관리를 불러오는 중…" />;

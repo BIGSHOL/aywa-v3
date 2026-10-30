@@ -1,4 +1,4 @@
-// 2.0 슬랙 부품: 미리보기 링크만 현재 연습 화면 주소로 바꾼다.
+// 2.0 슬랙 부품: 미리보기 링크만 현재 연습 자료 주소로 바꾼다.
 "use client";
 
 import { useEffect, useState } from "react";

@@ -6,36 +6,27 @@
 // registerHostFallback으로 그 함수의 모양을 정하거나, setHostRefusal('throw')로 던지게 한다(부품이 실패를 catch로 받는 화면).
 import { currentScreen } from './host-nav';
 
-export const VIEW_ONLY = '연습 화면에서는 아직 지원하지 않는 저장입니다';
+export const VIEW_ONLY = '연습 자료에서는 아직 지원하지 않는 저장입니다';
 /** 저장이 아닌 것(내려받기 링크 등)을 막을 때 — 호스트 틀이 쓴다. */
-export const NOT_SUPPORTED = '연습 화면에서는 아직 지원하지 않는 기능입니다';
+export const NOT_SUPPORTED = '연습 자료에서는 아직 지원하지 않는 기능입니다';
 const UNREACHABLE = '연습 서버에 닿지 못했습니다 — 바뀐 것은 없습니다';
 const NOT_SAVED = '저장하지 못했습니다 — 바뀐 것은 없습니다';
 
 export type HostEditor = { id: string; name: string; role: string };
 let editors: HostEditor[] = [];
-let picked: string | null = null;
-const actorKey = () => `v2-host-actor:${currentScreen()}`;
 
-/** 저장하는 사람 — 3.0엔 로그인이 없어 3.0 띠에서 고른다(같은 출처 저장소 + 'v2-host-actor' 알림). 목록에 없으면 첫 사람(원장 먼저). */
+/** 저장하는 사람은 부모 셸의 단일 계정을 따른다. 화면별 저장값이나 첫 직원으로 대체하지 않는다. */
 export function hostActor(): string | null {
-  let stored: string | null = null;
-  try { stored = localStorage.getItem(actorKey()); } catch { /* 저장소를 못 쓰면 알림으로 받은 값 */ }
-  for (const id of [stored, picked]) if (id && editors.some((e) => e.id === id)) return id;
-  return editors[0]?.id ?? null;
+  if (window.parent === window) return null;
+  try { return (window.parent as Window & { AywaAccount?: { current: () => { id: string } | null } }).AywaAccount?.current()?.id ?? null; }
+  catch { return null; }
 }
 
-/** 화면이 자료를 받으면 저장할 수 있는 사람을 알려 준다 — 3.0 띠가 이 목록으로 고르게 한다. */
+/** 화면이 자료를 받으면 직원 목록을 부모에 알려 준다. 계정 전환은 셸에서만 한다. */
 export function setHostEditors(list: HostEditor[]) {
   editors = list;
   if (window.parent !== window) window.parent.postMessage({ type: 'v2-host-editors', screen: currentScreen(), editors: list, actor: hostActor() }, location.origin);
 }
-
-window.addEventListener('message', (e) => {
-  if (e.origin !== location.origin || e.source !== window.parent) return;
-  const d = e.data as { type?: string; id?: unknown } | null;
-  if (d?.type === 'v2-host-actor' && typeof d.id === 'string') picked = d.id;
-});
 
 const keyOf = (module: string, name: string) => `${module}#${name}`;
 

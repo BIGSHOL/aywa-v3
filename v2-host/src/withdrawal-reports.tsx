@@ -2,7 +2,7 @@
 // 2.0 주소: /withdrawal-reports(목록 · page.tsx) · /withdrawal-reports/<id>(보고서 상세 · [id]/page.tsx) · /withdrawal-reports/archive/<id>(원본 상세).
 // 데이터 = /api/v2/withdrawal-reports?…(Docker 복사본, v2-screen-withdrawal-reports.mjs) — 2.0 서버 컴포넌트가 부품에 넘기던 값.
 // 여기서는 page.tsx의 그리기(필터 해석 · 목록 만들기 · 쪽 나누기 · 부품 조립)를 같은 2.0 함수·같은 순서로 옮겼다.
-// 보는 사람 = 3.0 띠에서 고른 직원(저장하는 사람과 같다) — 처리 화면은 보는 사람에 따라 열리는 단추가 달라 조회에도 싣는다(?actor=).
+// 보는 사람 = 셸에서 선택한 현재 직원(저장하는 사람과 같다) — 처리 화면은 보는 사람에 따라 열리는 단추가 달라 조회에도 싣는다(?actor=).
 import { createRoot } from 'react-dom/client';
 import { useEffect, useMemo, useState } from 'react';
 import { AppProviders } from '@/lib/providers/app-providers';
@@ -21,7 +21,7 @@ import { RequestDialog } from '@/app/(shell)/withdrawal-reports/_components/requ
 import { ReportDetail } from '@/app/(shell)/withdrawal-reports/_components/report-detail';
 import { ArchiveDetailView } from '@/app/(shell)/withdrawal-reports/_components/archive-detail';
 import { onHostRefresh } from '../shims/host-nav';
-import { setHostEditors, type HostEditor } from '../shims/server-action';
+import { hostActor, setHostEditors, type HostEditor } from '../shims/server-action';
 import { usePathname, useSearchParams } from '../shims/next-navigation';
 import { HostFrame, HostMessage } from './host-frame';
 
@@ -36,10 +36,9 @@ type DetailData = Base & { staff: StaffOption[]; withdrawalHref: string | null;
   record: { report: WithdrawalReport; events: ReportEvent[]; assignmentChanged: boolean; consultations: ReportConsultation[]; prefill?: Partial<ReportBody>; prefillWarning?: string } };
 type ArchiveData = Base & { archive: ArchiveDetail; students: ArchiveStudent[]; withdrawalHref: string | null };
 
-/** 보는 사람 — 3.0 띠가 고른 값(같은 출처 저장소 + v2-host-actor 알림). 바뀌면 다시 읽는다. */
-const ACTOR_KEY = `v2-host-actor:${SCREEN}`;
+/** 보는 사람 — 셸에서 선택한 현재 값(부모 셸 계정). 바뀌면 다시 읽는다. */
 function useActor() {
-  const [actor, setActor] = useState<string | null>(() => { try { return localStorage.getItem(ACTOR_KEY); } catch { return null; } });
+  const [actor, setActor] = useState<string | null>(() => hostActor());
   useEffect(() => {
     const on = (e: MessageEvent) => {
       if (e.origin !== location.origin || e.source !== window.parent) return;
@@ -174,11 +173,11 @@ function App() {
   const known = path === HOST_ROUTE || DETAIL.test(path) || ARCHIVE.test(path);
   const sp = useMemo(() => (path === HOST_ROUTE ? Object.fromEntries(KEYS.flatMap((k) => (search.get(k) ? [[k, search.get(k)!]] : []))) : {}) as Record<string, string>, [path, search]);
   const state = useScreenData<Base>(known ? path : HOST_ROUTE, sp);
-  if (!known) return <HostMessage text="이 화면은 연습 화면에서 아직 열 수 없습니다." />;
+  if (!known) return <HostMessage text="아직 3.0에 없는 화면입니다." />;
   if (state.error) return <HostMessage text={state.error} error />;
   if (!state.data) return <HostMessage text="퇴원보고서를 불러오는 중…" />;
   const data = state.data;
-  if (data.notAllowed) return <HostMessage text="고른 사람은 퇴원보고서를 볼 수 없습니다. 위에서 다른 사람을 골라 주세요." error />;
+  if (data.notAllowed) return <HostMessage text="현재 계정은 퇴원보고서를 볼 수 없습니다. 왼쪽 아래에서 계정을 전환해 주세요." error />;
   if (data.notFound) return <HostMessage text="이 보고서를 볼 수 없습니다. 보는 사람을 바꾸거나 목록에서 다시 골라 주세요." error />;
   return <Shell data={data}>
     {ARCHIVE.test(path) ? <ArchivePage data={data as ArchiveData} /> : DETAIL.test(path) ? <DetailPage data={data as DetailData} /> : <ListPage data={data as ListData} sp={sp} />}

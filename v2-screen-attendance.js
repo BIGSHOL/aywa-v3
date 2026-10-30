@@ -14,7 +14,7 @@
   // 2.0 page.tsx가 읽는 주소 열쇠 그대로(class·month·teacher·subject·mode·q).
   // 하위 주소는 v2path(2.0 `/attendance/seat/<자리>` — 날짜 date · 교시 start · `/attendance/live` — 탭 tab · 요약 기간 from)로 iframe에 간다(shims/host-nav.ts 규칙).
   const KEEP = ['v2path', 'month', 'subject', 'teacher', 'class', 'mode', 'q', 'date', 'start', 'tab', 'from'];
-  const ACTOR_KEY = `v2-host-actor:${ID}`, SEL = `[data-v2-screen="${ID}"]`;
+  const SEL = `[data-v2-screen="${ID}"]`;
   let api = null, frame = null, requested = null, hostOk = null, wired = false, editors = [], actor = null, urlActor = null;
   const esc = s => S.esc(s);
   const queryOf = q => { const o = new URLSearchParams(); for (const k of KEEP) { const v = q.get(k); if (v) o.set(k, v); } return o.toString(); };
@@ -43,21 +43,15 @@
   function openFromHost(href) {
     const m = /^\/(students|classes)\/([0-9a-f-]{36})(?:[/?#]|$)/i.exec(href || '');
     if (m && api?.canOpenRecord?.(m[2])) return m[1] === 'students' ? api.showStudent(m[2]) : api.openRecord(m[2]);
-    api?.toast?.('이 화면은 3.0 연습본에 아직 없습니다.');
+    api?.toast?.('아직 3.0에 없는 화면입니다.');
   }
   /** 저장하는 사람 — 고른 값이 목록에 없으면 첫 사람(원장 먼저). 호스트(shims/server-action.ts)와 같은 규칙. */
-  function currentActor() {
-    let stored = null;
-    try { stored = localStorage.getItem(ACTOR_KEY); } catch { /* 저장소를 못 쓰면 이 창에서만 */ }
-    for (const id of [actor, stored]) if (id && editors.some(e => e.id === id)) return id;
-    return editors[0]?.id ?? null;
-  }
-  const actorPicker = () => (editors.length ? `<label class="v2h-actor"><span>저장하는 사람</span><select data-att-actor aria-label="저장하는 사람">${editors.map(e => `<option value="${esc(e.id)}"${e.id === currentActor() ? ' selected' : ''}>${esc(e.role ? `${e.name} · ${e.role}` : e.name)}</option>`).join('')}</select></label>` : '');
+  const currentActor = () => S.accountId();
+  const actorPicker = () => ''; // 화면별 선택기는 셸 계정으로 대체했다.
   // 호스트(shims/server-action.ts hostActor)는 같은 출처 기억을 알림보다 먼저 본다 — 명단이 늦게 와도(주소 actor가 먼저 온 경우) 정해진 사람을 기억에도 적어야
   // 저장이 그 사람으로 나간다(회의록 작업자 발견 10-28). currentActor는 명단 안의 사람만 돌려주므로 명단 밖 id가 기억을 지우지는 않는다.
   const tellHost = () => {
     const id = currentActor(); if (!id) return;
-    try { if (localStorage.getItem(ACTOR_KEY) !== id) localStorage.setItem(ACTOR_KEY, id); } catch { /* 저장소를 못 쓰면 알림만 */ }
     if (frame?.contentWindow) frame.contentWindow.postMessage({ type: 'v2-host-actor', id }, location.origin);
   };
   function wire() {
@@ -82,7 +76,6 @@
       const t = e.target;
       if (!(t instanceof HTMLSelectElement) || !t.matches("[data-att-actor]")) return;
       actor = t.value;
-      try { localStorage.setItem(ACTOR_KEY, t.value); } catch { /* 이 창에서만 기억 */ }
       tellHost();
     });
     const later = () => requestAnimationFrame(place);
@@ -100,7 +93,6 @@
       if (asked && /^[0-9a-f-]{36}$/i.test(asked) && location.hash !== urlActor) {
         urlActor = location.hash; actor = asked;
         // 기억은 명단에 있는 사람일 때만 — 명단 밖 id가 앞서 고른 사람을 지우지 않게(명단이 아직 안 왔으면 이 창 안에서만 이긴다).
-        if (editors.some(e => e.id === asked)) try { localStorage.setItem(ACTOR_KEY, asked); } catch { /* 이 창에서만 */ }
         if (editors.length) { const at = document.querySelector(`${SEL} [data-v2h-actor-slot]`); if (at) at.innerHTML = actorPicker(); }
         tellHost();
       }

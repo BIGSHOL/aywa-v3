@@ -1,7 +1,7 @@
 /* 2.0 화면 — 전자결재 (V2-SCREENS.md, 처리 화면 세션 R · 원장 10-28 *"근거보기 들어가도 뭘 처리할 수가 없음"*).
    그리기는 2.0의 실제 React 부품이 한다 — 같은 출처 iframe `/v2-host/approvals.html?…`(v2-host/src/approvals.tsx, 데이터 = /api/v2/approvals,
-   Docker 복사본). 3.0 쪽은 안내 한 줄 · '보는 사람' 고르기 · 자리(slot)만 — 퇴원보고서 껍데기와 같은 틀이다.
-   보는 사람 = 저장하는 사람: 결재함과 결재 단추는 그 사람의 것이다(결재 차례 · 원장 대결 · 기안자 회수).
+   Docker 복사본). 조회와 저장은 셸의 현재 계정으로 하고, 3.0 쪽은 호스트 자리(slot)를 둔다.
+   결재함과 결재 단추는 현재 계정의 것이다(결재 차례 · 기안자 회수).
    기록 바로 열기: `#v2-approvals?v2path=/approvals/<문서 id>[&actor=<직원 id>]` · 결재함 = `tab=waiting|upcoming|progress|done|rejected|refs|all|academy`. */
 (() => {
   'use strict';
@@ -9,7 +9,7 @@
   // 2.0 page.tsx가 읽는 주소 열쇠 그대로(tab) + v2path(2.0 하위 경로 — 결재 문서 · 기안하기).
   const KEEP = ['v2path', 'tab'];
   let api = null, frame = null, requested = null, hostOk = null, wired = false, editors = [], actor = null, urlActor = null;
-  const ACTOR_KEY = `v2-host-actor:${ID}`, SEL = `[data-v2-screen="${ID}"]`;
+  const SEL = `[data-v2-screen="${ID}"]`;
   const esc = s => S.esc(s);
   const queryOf = q => { const o = new URLSearchParams(); for (const k of KEEP) { const v = q.get(k); if (v) o.set(k, v); } return o.toString(); };
 
@@ -43,24 +43,18 @@
     }
     const m = /^\/(students|classes)\/([0-9a-f-]{36})(?:[/?#]|$)/i.exec(raw);
     if (m && api?.canOpenRecord?.(m[2])) return m[1] === 'students' ? api.showStudent(m[2]) : api.openRecord(m[2]);
-    api?.toast?.('이 화면은 연습 화면에서 아직 열 수 없습니다.');
+    api?.toast?.('아직 3.0에 없는 화면입니다.');
   }
-  function currentActor() {
-    let stored = null;
-    try { stored = localStorage.getItem(ACTOR_KEY); } catch { /* 저장소를 못 쓰면 이 창에서만 */ }
-    for (const id of [actor, stored]) if (id && editors.some(e => e.id === id)) return id;
-    return editors[0]?.id ?? null;
-  }
-  const actorPicker = () => (editors.length ? `<label class="v2h-actor"><span>보는 사람</span><select data-v2h-actor aria-label="보는 사람">${editors.map(e => `<option value="${esc(e.id)}"${e.id === currentActor() ? ' selected' : ''}>${esc(e.role ? `${e.name} · ${e.role}` : e.name)}</option>`).join('')}</select></label>` : '');
+  const currentActor = () => S.accountId();
+  const actorPicker = () => ''; // 화면별 선택기는 셸 계정으로 대체했다.
   const tellHost = () => { const id = currentActor(); if (id && frame?.contentWindow) frame.contentWindow.postMessage({ type: 'v2-host-actor', id }, location.origin); };
-  /** 주소의 actor — 고를 수 있는 사람(명단 안)일 때만 이기고 저장한다. 명단 밖이면 앞서 고른 값(저장소)을 건드리지 않는다(팀장 10-28). */
+  /** 주소의 actor는 공통 화면이 현재 계정과 먼저 비교한다. 같은 계정이면 호스트에 알린다. */
   let pendingActor = null;
   function applyPendingActor() {
     if (!pendingActor || !editors.length) return;
     const id = pendingActor; pendingActor = null;
     if (!editors.some(e => e.id === id)) return;
     actor = id;
-    try { localStorage.setItem(ACTOR_KEY, id); } catch { /* 이 창에서만 */ }
     const at = document.querySelector(`${SEL} [data-v2h-actor-slot]`); if (at) at.innerHTML = actorPicker();
     tellHost();
   }
@@ -87,7 +81,6 @@
       const t = e.target;
       if (!(t instanceof HTMLSelectElement) || !t.matches(`${SEL} [data-v2h-actor]`)) return;
       actor = t.value;
-      try { localStorage.setItem(ACTOR_KEY, t.value); } catch { /* 이 창에서만 기억 */ }
       tellHost();
     });
     const later = () => requestAnimationFrame(place);

@@ -2,8 +2,8 @@
 // · 머리 = getStudentById · getStudentEnrollments(상태 변경 창이 쓰는 수강 · 원생 상태를 다룰 수 있을 때만) · getScheduledForStudent ·
 //   getStudentUpcomingReservations · studentReportEntry(퇴원보고서 입구) · 권한 칸(v2-students-common.mjs detailGates).
 // · 탭 = 2.0처럼 **고른 탭 하나**의 자료만 읽는다. 탭마다 모듈 `v2-students-tab-<탭>.mjs`의 `loadTab(ctx)` — 아직 없는 탭은 { missing: true }
-//   (호스트가 '연습 화면에 아직 없는 탭' 한 줄을 그린다). 탭 고르기(권한 · 기여도 · SRS · 오늘 수학)는 page.tsx와 같은 판정(TAB_KEYS · resolveTab).
-// · 인재원 SRS·오늘 수학 탭은 그 서비스를 부르는 탭이라 연습 화면에서 세우지 않는다(바깥 호출 없음 — 2.0 page.tsx의 '탭 없음' 갈래와 같은 모양).
+//   (호스트가 '연습 자료에 아직 없는 탭' 한 줄을 그린다). 탭 고르기(권한 · 기여도 · SRS · 오늘 수학)는 page.tsx와 같은 판정(TAB_KEYS · resolveTab).
+// · 인재원 SRS·오늘 수학 탭은 그 서비스를 부르는 탭이라 연습 자료에서 세우지 않는다(바깥 호출 없음 — 2.0 page.tsx의 '탭 없음' 갈래와 같은 모양).
 // · 읽기 전용 · 바깥 호출 없음.
 import { studentsBase, detailGates } from './v2-students-common.mjs';
 

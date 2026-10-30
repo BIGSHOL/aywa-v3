@@ -2,7 +2,7 @@
 // 2.0 주소: /consultations(목록 · consultations-list.tsx) · /consultations/<id>(상세 · consultations-detail.tsx) · /consultations/<id>/edit ·
 // /consultations/new(작성·수정 · consultations-form.tsx) · /consultations/stats(통계 · consultations-stats.tsx).
 // 데이터 = /api/v2/consultations?…(Docker 복사본, v2-screen-consultations.mjs) — 2.0 서버 컴포넌트가 부품에 넘기던 값.
-// 보는 사람 = 3.0 띠에서 고른 직원(저장하는 사람과 같다) — 강사면 본인이 쓴 상담만 보이므로 조회에도 싣는다(?actor=).
+// 보는 사람 = 셸에서 선택한 현재 직원(저장하는 사람과 같다) — 강사면 본인이 쓴 상담만 보이므로 조회에도 싣는다(?actor=).
 import { createRoot } from 'react-dom/client';
 import { useEffect, useState } from 'react';
 import { AppProviders } from '@/lib/providers/app-providers';
@@ -67,10 +67,9 @@ registerHostHandler('features/consultations/server/class-actions.ts', 'getConsul
   } catch { return { error: '반 목록을 불러오지 못했습니다' }; }
 });
 
-const ACTOR_KEY = `v2-host-actor:${SCREEN}`;
-/** 보는 사람 — 3.0 띠가 고른 값(같은 출처 저장소 + v2-host-actor 알림). 바뀌면 다시 읽는다. */
+/** 보는 사람 — 셸에서 선택한 현재 값(부모 셸 계정). 바뀌면 다시 읽는다. */
 function useActor() {
-  const [actor, setActor] = useState<string | null>(() => { try { return localStorage.getItem(ACTOR_KEY); } catch { return null; } });
+  const [actor, setActor] = useState<string | null>(() => hostActor());
   useEffect(() => {
     const on = (e: MessageEvent) => {
       if (e.origin !== location.origin || e.source !== window.parent) return;
@@ -106,7 +105,7 @@ function App() {
     return () => { live = false; };
   }, [query, tick, known]);
   useEffect(() => { if (state.data?.editors) setHostEditors(state.data.editors); }, [state.data?.editors]);
-  if (!known) return <HostMessage text="이 화면은 연습 화면에서 아직 열 수 없습니다." />;
+  if (!known) return <HostMessage text="아직 3.0에 없는 화면입니다." />;
   if (!state.data && !state.error) return <HostMessage text="원생상담을 불러오는 중…" />;
   if (!state.data) return <HostMessage text={state.error!} error />;
   const data = state.data;

@@ -35,7 +35,7 @@
 //  · 서버 액션 모듈(부품이 부르는 것): features/billing/server/actions.ts(createInvoice) · manual-invoice-actions.ts(markManualInvoicePaid · voidManualInvoice) ·
 //    textbook-actions.ts · textbook-notice-actions.ts(prepareTextbookNotice · sendTextbookNotice = 학부모 발송 — 받지 않는다) · catalog-actions.ts(단가표 — 다음 단계).
 //  · 서버 컴포넌트를 옮긴 것(교재 면): textbooks-face.tsx · textbooks-panel.tsx · catalog-panel.tsx(billing-textbooks.swaps.json).
-//  · 바깥 링크: 엑셀 내보내기 `/api/exports/billing` — 호스트 틀이 막는다(연습 화면 미지원).
+//  · 바깥 링크: 엑셀 내보내기 `/api/exports/billing` — 호스트 틀이 막는다(연습 자료 미지원).
 import { UUID } from './v2-mcs-core.mjs';
 import { loadBillingRules, readSettings, readBillingViewers, billingEditorsOf, readSyncState, resolveBillingTab } from './v2-billing-common.mjs';
 import { readInvoicesForPeriod, readAvailablePeriods, readStudentOptions } from './v2-billing-invoices.mjs';

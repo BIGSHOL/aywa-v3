@@ -1,7 +1,7 @@
 // 2.0 부품 호스트 — 교재목록 진입점. 3.0 `#v2-textbooks`가 같은 출처 iframe(/v2-host/textbooks.html?…)으로 연다.
 // 2.0이 창(embed)으로 열 때의 틀(AppProviders · OperationsProvider · <main class="embed-main">) 그대로 감싸고,
 // 데이터 = /api/v2/textbooks?tab=…&subject=…&area=…&q=…&page=…&viewer=…(Docker 복사본, v2-screen-textbooks.mjs) — 2.0 page.tsx가 서버에서 만들던 값 그대로.
-// 보는 사람 = 3.0 띠가 고른 사람(강사는 읽기 전용 · 반 배정은 강사 시트 담당 범위 — 2.0과 같은 판정). 고르면 v2-host-actor로 알려 오고 다시 읽는다(MCS와 같은 방식).
+// 보는 사람 = 셸에서 선택한 현재 사람(강사는 읽기 전용 · 반 배정은 강사 시트 담당 범위 — 2.0과 같은 판정). 고르면 v2-host-actor로 알려 오고 다시 읽는다(MCS와 같은 방식).
 import { createRoot } from 'react-dom/client';
 import { useEffect, useRef, useState } from 'react';
 import { AppProviders } from '@/lib/providers/app-providers';
@@ -34,8 +34,7 @@ type Data = TextbooksPageData & {
 
 /** 2.0 page.tsx searchParams — 서버가 다시 그리던 열쇠(면 · 과목 · 구분 · 검색 · 쪽). */
 const KEYS = ['tab', 'subject', 'area', 'q', 'page', 'textbook'] as const;
-const ACTOR_KEY = 'v2-host-actor:textbooks';
-const storedActor = () => { try { return localStorage.getItem(ACTOR_KEY); } catch { return null; } };
+const storedActor = () => hostActor();
 
 /** 주소로 한 권을 열면 기존 2.0 목록의 그 행만 보여 주고 표시한다. 필터를 누르면 일반 목록으로 돌아간다. */
 function FocusedPage({ d, sp, settings }: Parameters<typeof TextbooksHostPage>[0]) {

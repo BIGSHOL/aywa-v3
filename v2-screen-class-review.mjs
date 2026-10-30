@@ -97,7 +97,7 @@ async function load({ sql, params, tenantId: t, importV2 }) {
 
 const refused = (e) => (e instanceof V2ServerError
   ? e.code === 'outbound_blocked' ? new V2Error(409, 'outbound_blocked', '이 저장이 바깥으로 요청을 보내려 해서 되돌렸습니다. 바뀐 것은 없습니다.')
-    : e.code === 'unsupported' ? new V2Error(409, 'not_supported', '연습 화면에서는 아직 지원하지 않는 저장입니다.')
+    : e.code === 'unsupported' ? new V2Error(409, 'not_supported', '연습 자료에서는 아직 지원하지 않는 저장입니다.')
       : new V2Error(500, 'write_failed', '저장하지 못했습니다. 바뀐 것은 없습니다.')
   : e);
 /** 쓰기 한 번 = 러너 write 한 번. test = 시험 전용(rollback · probes · allowRefs) — 화면 저장 경로는 넘기지 않는다. 지금 집계는 20초 넘게 걸린다. */

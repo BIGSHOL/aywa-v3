@@ -7,8 +7,8 @@ const LABEL: Record<string, string> = {
 export function OwnerServerFace({ face }: { face: string }) {
   return (
     <div className="bg-card border-line rounded-2xl border p-6">
-      <p className="text-foreground text-sm font-bold">{LABEL[face] ?? '이 면'}은 연습 화면에서 아직 열 수 없습니다</p>
-      <p className="text-text-dim mt-1 text-sm">다른 설정 면은 그대로 볼 수 있습니다.</p>
+      <p className="text-foreground text-sm font-bold">아직 3.0에 없는 화면입니다.</p>
+      <p className="text-text-dim mt-1 text-sm">{LABEL[face] ?? '이 면'} 기능은 준비 중입니다.</p>
     </div>
   );
 }

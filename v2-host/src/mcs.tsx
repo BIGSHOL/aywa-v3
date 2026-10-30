@@ -2,7 +2,7 @@
 // 2.0이 창(embed)으로 열 때의 틀(AppProviders · OperationsProvider · <main class="embed-main">) 그대로 감싸고,
 // 데이터 = /api/v2/mcs?v2path=…&viewer=…&month=…(Docker 복사본, v2-screen-mcs.mjs) — 2.0 page.tsx가 서버에서 만들던 값 그대로.
 // 2.0 주소: /mcs(반별) · /mcs/teachers(선생님별) · /mcs/<반>/month(반 월간, mcs-month.tsx) · /mcs/progress-map(진도맵 시안, mcs-progress-map.tsx).
-// 보는 사람 = 3.0 띠가 고른 사람(강사는 담당 반만 — 2.0과 같은 범위). 고르면 v2-host-actor로 알려 오고, 이 화면이 다시 읽는다(ECS와 같은 방식).
+// 보는 사람 = 셸에서 선택한 현재 사람(강사는 담당 반만 — 2.0과 같은 범위). 고르면 v2-host-actor로 알려 오고, 이 화면이 다시 읽는다(ECS와 같은 방식).
 import { createRoot } from 'react-dom/client';
 import { useEffect, useRef, useState } from 'react';
 import { AppProviders } from '@/lib/providers/app-providers';
@@ -48,14 +48,13 @@ type Data = {
 
 /** 서버를 다시 부르는 주소 열쇠 — 2.0에서 서버가 다시 그리던 것(주소 · 달). */
 const KEYS = ['v2path', 'month'] as const;
-const ACTOR_KEY = 'v2-host-actor:mcs';
-const storedActor = () => { try { return localStorage.getItem(ACTOR_KEY); } catch { return null; } };
+const storedActor = () => hostActor();
 const OWN = /^\/mcs(?:\/teachers|\/progress-map|\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\/month)?$/;
 const MONTH = /^\/mcs\/([0-9a-f-]{36})\/month$/;
 
 function App() {
   const qs = useHostSearch(), search = new URLSearchParams(qs);
-  // 처음 열 때 고른 사람이 없으면 서버가 첫 사람(원장 먼저)으로 정한다 — 3.0 띠가 그 사람을 다시 알려 와도 같은 사람이면 다시 받지 않는다.
+  // 처음 열 때 고른 사람이 없으면 서버가 첫 사람(원장 먼저)으로 정한다 — 셸 계정이 그 사람을 다시 알려 와도 같은 사람이면 다시 받지 않는다.
   const [viewer, setViewer] = useState<string | null>(storedActor);
   const shownViewer = useRef<string | null>(null);
   useEffect(() => {
@@ -100,7 +99,7 @@ function App() {
     for (const k of ['date', 'view', 'display', 'topic', 'lesson', 'undated']) { const v = search.get(k); if (v !== null) selection.set(k, v); }
     hostNavigate(`${redirect}${selection.size ? `&${selection}` : ''}`, 'replace');
   }, [redirect]); // eslint-disable-line react-hooks/exhaustive-deps
-  if (!OWN.test(path)) return <HostMessage text="이 화면은 연습 화면에서 아직 열 수 없습니다." />;
+  if (!OWN.test(path)) return <HostMessage text="아직 3.0에 없는 화면입니다." />;
   if (!state.data || state.key !== key) {
     const failed = state.key === key && !!state.error;
     return <HostMessage text={failed ? state.error! : '강사 시트를 불러오는 중…'} error={failed} />;

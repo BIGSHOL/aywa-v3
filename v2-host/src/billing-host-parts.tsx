@@ -10,7 +10,7 @@ export function HostFaceNotReady() {
 
 /** 2.0 requireAccess가 역할 홈으로 보내던 자리 — 그 사람은 이 화면을 볼 수 없다. */
 export function HostNoAccess() {
-  return <p className="text-text-dim p-6 text-sm" role="status">고른 사람은 이 화면을 볼 수 없습니다.</p>;
+  return <p className="text-text-dim p-6 text-sm" role="status">현재 계정은 이 화면을 볼 수 없습니다.</p>;
 }
 
 /** 2.0 redirect(href) 자리 — 같은 화면 안 이동(replace). */

@@ -1022,7 +1022,7 @@ export async function loadOnescreenProps({ sql: tx, params = {}, tenantId: t, im
       allowTeacherTestMax: roster.allowTeacherTestMax, showDailyTest: roster.showDailyTest, showCheckTest: roster.showCheckTest, noticeMode: roster.noticeMode,
       academyNoticeMode: roster.academyNoticeMode, classnoteSendEnabled: roster.classnoteSendEnabled, classnoteOn: roster.classnoteOn, sendWindow: roster.sendWindow,
       showAttachments: roster.showAttachments, canEditAttendance: roster.canEditAttendance,
-      // 복사본 연습 화면은 그 선생님 본인으로 저장한다('다른 강사 뷰' 아님).
+      // 복사본 연습 자료은 그 선생님 본인으로 저장한다('다른 강사 뷰' 아님).
       readonlyView: false,
       initialFontSize: roster.fontSize, initialDisplayOptions: roster.displayOptions, initialTrendOptOut: roster.trendOptOut, noClassesToday: roster.noClassesToday,
       showingAll: roster.showingAll, holidayName: roster.holidayName, teacherName: sendName.name ?? roster.teacherName, reportClassNamePrefix: sendName.includeClassName,

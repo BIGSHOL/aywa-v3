@@ -10,7 +10,7 @@
   // 2.0 page.tsx가 읽는 주소 열쇠 그대로 + view(강사 화면).
   const KEEP = ['view', 'from', 'to', 'date', 'q', 'subject', 'grade', 'status', 'sort', 'class', 'school'];
   let api = null, frame = null, requested = null, hostOk = null, wired = false, editors = [], actor = null, urlActor = null;
-  const ACTOR_KEY = `v2-host-actor:${ID}`, SEL = `[data-v2-screen="${ID}"]`;
+  const SEL = `[data-v2-screen="${ID}"]`;
   const esc = s => S.esc(s);
   // v2path(2.0 경로)는 화면 열쇠로 바꿔 싣는다 — 강사 주소(/onescreen/video-homework) = view=mine.
   const queryOf = q => {
@@ -50,15 +50,10 @@
     }
     const m = /^\/(students|classes)\/([0-9a-f-]{36})(?:[/?#]|$)/i.exec(raw);
     if (m && api?.canOpenRecord?.(m[2])) return m[1] === 'students' ? api.showStudent(m[2]) : api.openRecord(m[2]);
-    api?.toast?.('이 화면은 연습 화면에서 아직 열 수 없습니다.');
+    api?.toast?.('아직 3.0에 없는 화면입니다.');
   }
-  function currentActor() {
-    let stored = null;
-    try { stored = localStorage.getItem(ACTOR_KEY); } catch { /* 저장소를 못 쓰면 이 창에서만 */ }
-    for (const id of [actor, stored]) if (id && editors.some(e => e.id === id)) return id;
-    return editors[0]?.id ?? null;
-  }
-  const actorPicker = () => (editors.length ? `<label class="v2h-actor"><span>보는 사람</span><select data-v2h-actor aria-label="보는 사람">${editors.map(e => `<option value="${esc(e.id)}"${e.id === currentActor() ? ' selected' : ''}>${esc(e.role ? `${e.name} · ${e.role}` : e.name)}</option>`).join('')}</select></label>` : '');
+  const currentActor = () => S.accountId();
+  const actorPicker = () => ''; // 화면별 선택기는 셸 계정으로 대체했다.
   // 화면 고르기 — 2.0은 관리자 메뉴와 강사뷰 메뉴로 따로 들어간다. 바꾸면 보는 사람도 그 화면의 첫 사람으로(관리자를 고른 채 강사 화면으로
   // 가면 2.0처럼 관리자 장부로 되돌아가기 때문이다).
   const viewPicker = mine => `<label class="v2h-actor"><span>화면</span><select data-v2h-view aria-label="화면"><option value="">관리자 장부</option><option value="mine"${mine ? ' selected' : ''}>강사 · 내가 낸 숙제</option></select></label>`;
@@ -70,7 +65,6 @@
     const id = pendingActor; pendingActor = null;
     if (!editors.some(e => e.id === id)) return;
     actor = id;
-    try { localStorage.setItem(ACTOR_KEY, id); } catch { /* 이 창에서만 */ }
     const at = document.querySelector(`${SEL} [data-v2h-actor-slot]`); if (at) at.innerHTML = actorPicker();
     tellHost();
   }
@@ -100,14 +94,12 @@
         q.delete('v2path'); q.delete('actor');
         if (t.value === 'mine') q.set('view', 'mine'); else q.delete('view');
         actor = null; editors = [];
-        try { localStorage.removeItem(ACTOR_KEY); } catch { /* 이 창에서만 */ }
         const query = queryOf(q);
         location.hash = `#v2-${ID}${query ? `?${query}` : ''}`;
         return;
       }
       if (!(t instanceof HTMLSelectElement) || !t.matches(`${SEL} [data-v2h-actor]`)) return;
       actor = t.value;
-      try { localStorage.setItem(ACTOR_KEY, t.value); } catch { /* 이 창에서만 기억 */ }
       tellHost();
     });
     const later = () => requestAnimationFrame(place);

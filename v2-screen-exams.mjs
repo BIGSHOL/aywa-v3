@@ -33,7 +33,7 @@ const action = (name, module) => ({
       if (e instanceof V2ServerError && e.code === 'outbound_blocked')
         throw new V2Error(409, 'outbound_blocked', '이 저장이 바깥으로 요청을 보내려 해서 되돌렸습니다. 바뀐 것은 없습니다.');
       if (e instanceof V2ServerError && e.code === 'unsupported')
-        throw new V2Error(409, 'not_supported', '연습 화면에서는 아직 지원하지 않는 저장입니다.');
+        throw new V2Error(409, 'not_supported', '연습 자료에서는 아직 지원하지 않는 저장입니다.');
       throw e;
     }
   },
@@ -72,7 +72,7 @@ export const screen = {
     if (!base.viewer || base.level('exams') === 'none') return { notFound: true };
     // JJ실의 수치는 Docker에 없고 2.0은 인재원 API에 매번 묻는다. 이 이식의 바깥 요청 0 조건에서 부르지 않는다.
     if (params.v2path?.startsWith('/exams/jj') || ['jj', 'jj_exam'].includes(params.view) || params.type === 'jj')
-      return { route: 'external-unavailable', message: '인재원 실시간 성적은 연습 화면에서 열 수 없습니다.' };
+      return { route: 'external-unavailable', message: '인재원 실시간 성적은 연습 자료에서 열 수 없습니다.' };
     if (params.roster === '1') {
       let args;
       try { args = JSON.parse(params.args ?? '[]'); } catch { throw bad(); }

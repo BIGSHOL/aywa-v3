@@ -79,8 +79,8 @@ save('video-assignment.ts', 'assignHomeworkVideo', (r) => !!r.ok);
 registerHostHandler(`${VH}/reject-videos.ts`, 'rejectHomeworkVideos', async (...args: unknown[]) => {
   const result = await post(`${VH}/reject-videos.ts`, 'rejectHomeworkVideos', args);
   if (result.ok || result.rejected) hostRefresh();
-  // 연습 화면은 드라이브 파일을 옮기지 않는다 — 반려는 끝났고, 파일은 그대로 남는다(2.0이 못 옮겼을 때와 같은 결과).
-  if (result.ok && result.trashFailed) toast.info('연습 화면에서는 드라이브 파일을 옮기지 않습니다. 반려 기록만 남았습니다.');
+  // 연습 자료은 드라이브 파일을 옮기지 않는다 — 반려는 끝났고, 파일은 그대로 남는다(2.0이 못 옮겼을 때와 같은 결과).
+  if (result.ok && result.trashFailed) toast.info('연습 자료에서는 드라이브 파일을 옮기지 않습니다. 반려 기록만 남았습니다.');
   return result;
 });
 /** 화면의 읽기 경로(GET) — 보는 사람 · 화면(관리자/강사)을 함께 싣는다. */
@@ -131,10 +131,9 @@ function useGetFormNavigation() {
   }, []);
 }
 
-/** 보는 사람 — 3.0 띠가 고른 값(같은 출처 저장소 + v2-host-actor 알림). 바뀌면 다시 읽는다. */
-const ACTOR_KEY = `v2-host-actor:${SCREEN}`;
+/** 보는 사람 — 셸에서 선택한 현재 값(부모 셸 계정). 바뀌면 다시 읽는다. */
 function useActor() {
-  const [actor, setActor] = useState<string | null>(() => { try { return localStorage.getItem(ACTOR_KEY); } catch { return null; } });
+  const [actor, setActor] = useState<string | null>(() => hostActor());
   useEffect(() => {
     const on = (e: MessageEvent) => {
       if (e.origin !== location.origin || e.source !== window.parent) return;
@@ -300,10 +299,10 @@ function App() {
     const q = new URLSearchParams(location.search); q.delete('view');
     hostNavigate(`${HOST_ROUTE}${q.size ? `?${q}` : ''}`, 'replace');
   }, [data?.redirectAdmin]);
-  if (path !== HOST_ROUTE) return <HostMessage text="이 화면은 연습 화면에서 아직 열 수 없습니다." />;
+  if (path !== HOST_ROUTE) return <HostMessage text="아직 3.0에 없는 화면입니다." />;
   if (state.error) return <HostMessage text={state.error} error />;
   if (!data || data.redirectAdmin) return <HostMessage text="영상 제출 현황을 불러오는 중…" />;
-  if (data.notAllowed) return <HostMessage text="고른 사람은 영상 제출 현황을 볼 수 없습니다. 위에서 다른 사람을 골라 주세요." error />;
+  if (data.notAllowed) return <HostMessage text="현재 계정은 영상 제출 현황을 볼 수 없습니다. 왼쪽 아래에서 계정을 전환해 주세요." error />;
   return <Shell data={data}>{data.view === 'mine' ? <TeacherPage data={data} param={param} /> : <AdminPage data={data} param={param} />}</Shell>;
 }
 

@@ -3,7 +3,7 @@
 // (2.0 page.tsx 조립)가 2.0 부품(SheetClient · MonthClient · EcsLandingList …)을 수정 없이 그린다.
 // 데이터 = /api/v2/ecs?v2path=…&viewer=…&…(Docker 복사본) — 2.0 page.tsx가 부품에 넘기던 props 모양 그대로(v2-ecs-props.mjs).
 // 2.0 주소: /ecs · /ecs/<반> · /ecs/<반>/month — 하위 주소는 iframe 주소의 v2path로 싣는다(3.0 쪽 v2-screen-ecs.js가 같은 규칙으로 연다).
-// 보는 사람 = 저장하는 사람(3.0 띠에서 고른다 — 로그인 대신). 바뀌면 그 사람의 화면(권한·강사 스코프·보기 설정)으로 다시 받는다.
+// 보는 사람 = 저장하는 사람(셸에서 선택한 현재다 — 로그인 대신). 바뀌면 그 사람의 화면(권한·강사 스코프·보기 설정)으로 다시 받는다.
 // 실시간 편집 표시(EditPresenceProvider)·알림은 감싸지 않는다 — 공급자가 없으면 2.0 훅이 아무것도 하지 않아 바깥 접속이 생기지 않는다.
 // 서버 액션 모듈("use server" — shim이 /api/v2/ecs/<함수>로 잇는다): v2-screen-ecs.mjs 머리 주석의 대응표.
 import { createRoot } from 'react-dom/client';
@@ -74,13 +74,12 @@ type Data = {
 
 /** 서버를 다시 부르는 주소 열쇠 — 2.0에서 서버가 다시 그리던 것(주소·주·면·달·기간·날짜·읽기 전용). `day`는 2.0 시트가 주소만 바꾸는 값이라 뺀다. */
 const KEYS = ['v2path', 'week', 'view', 'date', 'mode', 'month', 'period', 'readonly'] as const;
-const ACTOR_KEY = 'v2-host-actor:ecs';
-const storedActor = () => { try { return localStorage.getItem(ACTOR_KEY); } catch { return null; } };
+const storedActor = () => hostActor();
 
 function App() {
   const qs = useHostSearch(), search = new URLSearchParams(qs);
-  // 보는 사람 — 3.0 띠가 고르면 v2-host-actor로 알려 준다(shim도 같은 알림으로 저장하는 사람을 정한다).
-  // 처음 열 때 고른 사람이 없으면 서버가 첫 사람(원장 먼저)으로 정한다 — 3.0 띠가 그 사람을 다시 알려 와도 같은 사람이면 다시 받지 않는다(입력 중인 시트가 다시 서지 않게).
+  // 보는 사람 — 셸 계정이 고르면 v2-host-actor로 알려 준다(shim도 같은 알림으로 저장하는 사람을 정한다).
+  // 처음 열 때 고른 사람이 없으면 서버가 첫 사람(원장 먼저)으로 정한다 — 셸 계정이 그 사람을 다시 알려 와도 같은 사람이면 다시 받지 않는다(입력 중인 시트가 다시 서지 않게).
   const [viewer, setViewer] = useState<string | null>(storedActor);
   const shownViewer = useRef<string | null>(null);
   useEffect(() => {

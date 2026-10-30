@@ -10,7 +10,7 @@ export function OwnerImportFace({ rows }: { rows: OwnerImportRow[] }) {
     <div className="flex flex-col gap-4">
       <section className="bg-card border-line rounded-2xl border p-5">
         <p className="text-foreground text-sm font-bold">엑셀로 한꺼번에 넣기</p>
-        <p className="text-text-dim mt-1 text-xs">연습 화면에서는 엑셀 파일 가져오기를 아직 지원하지 않습니다.</p>
+        <p className="text-text-dim mt-1 text-xs">연습 자료에서는 엑셀 파일 가져오기를 아직 지원하지 않습니다.</p>
         <ol className="text-text-dim mt-2 list-decimal space-y-1 pl-5 text-sm">
           <li>항목마다 [엑셀로 넣기] → <b>서식 내려받기</b>. 지금 들어 있는 자료가 담긴 서식이면 고쳐서 다시 올려도 됩니다.</li>
           <li>서식의 시트·열 제목 그대로 채웁니다. 주황 칸(*)이 필수이고, 열 설명은 &lsquo;안내&rsquo; 시트에 있습니다.</li>

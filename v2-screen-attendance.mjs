@@ -874,7 +874,7 @@ function cellBody(raw) {
   if (input.scopeTeacherId !== undefined && input.scopeTeacherId !== null && (typeof input.scopeTeacherId !== 'string' || !UUID.test(input.scopeTeacherId))) throw bad();
   for (const k of ['noteOnly', 'quiet', 'onlyIfEmpty', 'allowMakeup', 'ghostTransfer']) if (input[k] !== undefined && typeof input[k] !== 'boolean') throw bad();
   if (input.onlyIfEmpty || input.allowMakeup) {
-    throw new V2Error(409, 'not_in_copy', '보강 추가는 연습 화면에서는 아직 지원하지 않는 저장입니다. 바뀐 것은 없습니다.');
+    throw new V2Error(409, 'not_in_copy', '보강 추가는 연습 자료에서는 아직 지원하지 않는 저장입니다. 바뀐 것은 없습니다.');
   }
   // 교시 지정(0196a "HH:MM[:SS]") · 화면 교시(데스크 10분 판정) · 당일 출결 화면(source 'live' — 데스크 게이트).
   const time = v => { if (v === undefined || v === null) return null; if (typeof v !== 'string' || !/^\d{2}:\d{2}(:\d{2})?$/.test(v)) throw bad(); return v; };
@@ -892,7 +892,7 @@ async function saveGhostWithV2(name, body, tenantId) {
   } catch (e) {
     if (!(e instanceof V2ServerError)) throw e;
     if (e.code === 'outbound_blocked') throw new V2Error(409, 'outbound_blocked', '이 저장이 바깥으로 요청을 보내려 해서 되돌렸습니다. 바뀐 것은 없습니다.');
-    if (e.code === 'unsupported') throw new V2Error(409, 'not_supported', '연습 화면에서는 아직 지원하지 않는 저장입니다.');
+    if (e.code === 'unsupported') throw new V2Error(409, 'not_supported', '연습 자료에서는 아직 지원하지 않는 저장입니다.');
     throw new V2Error(500, 'write_failed', '저장하지 못했습니다. 바뀐 것은 없습니다.');
   }
 }
@@ -1135,8 +1135,8 @@ async function reservedKeysOn(sql, t, classIds, date) {
   if (classIds.length === 0) return new Set();
   return new Set((await sql`select student_id::text s, class_id::text c from public.makeup_reservations where tenant_id=${t} and status='reserved' and makeup_date=${date} and class_id = any(${classIds}::uuid[])`).map(r => `${r.s}::${r.c}`));
 }
-const RESERVATION_CELL = '보강 예약이 걸린 칸은 연습 화면에서는 아직 지원하지 않는 저장입니다. 바뀐 것은 없습니다.';
-const NATIVE_MAKEUP = '보강 참여로 연 칸은 연습 화면에서는 아직 지원하지 않는 저장입니다. 바뀐 것은 없습니다.';
+const RESERVATION_CELL = '보강 예약이 걸린 칸은 연습 자료에서는 아직 지원하지 않는 저장입니다. 바뀐 것은 없습니다.';
+const NATIVE_MAKEUP = '보강 참여로 연 칸은 연습 자료에서는 아직 지원하지 않는 저장입니다. 바뀐 것은 없습니다.';
 
 /**
  * 2.0 setAttendanceCell의 강사(scoped) 게이트 — 자기 출석부로만 · 7일 창(메모만은 면제) · 담당 반(담임 ∪ 위임 ∪ JJ 담당 ∪ 교시 담당) ·
@@ -1484,7 +1484,7 @@ screen.actions = {
   reserveMakeup: reserveAction(Reserve.reserveBody, Reserve.reserveMakeup),
   cancelMakeupReservation: reserveAction(Reserve.cancelBody, Reserve.cancelMakeupReservation),
   // 오늘 출결 '어제 출결' AI 정리 — 바깥(AI) 호출이라 부르지 않는다(2.0 실패 모양 { error } · 바뀌는 것 없음). 저장된 정리는 보인다.
-  generateRecapSummary: notYet('features/attendance/recap/server/actions.ts', 2, () => ({ error: 'AI 정리는 연습 화면에서 만들지 않습니다. 바뀐 것은 없습니다.' })),
+  generateRecapSummary: notYet('features/attendance/recap/server/actions.ts', 2, () => ({ error: 'AI 정리는 연습 자료에서 만들지 않습니다. 바뀐 것은 없습니다.' })),
 };
 
 export const __test = { readProcessing, readClassAxis, readTransitions, actorsOf };

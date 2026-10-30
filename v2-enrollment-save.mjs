@@ -4,7 +4,7 @@
 //    consultation-audit · referrer · school-name). 2.0은 세션 클라이언트(RLS)로 쓴다 — 여기선 tenant_id를 직접 건다.
 //    🔴 동시 저장 판정(2.0 `.eq("updated_at", 읽은 값)`)은 시각을 **글자로** 견준다 — postgres.js에 시각 글자를 ::timestamptz로 넘기면
 //       마이크로초가 잘려 늘 0행(= 늘 '다른 저장이 먼저')이 된다.
-//    녹음 첨부(audioPath)는 연습 화면에서 받지 않는다(업로드 자체를 거절 — 전사·AI 분석 없음).
+//    녹음 첨부(audioPath)는 연습 자료에서 받지 않는다(업로드 자체를 거절 — 전사·AI 분석 없음).
 import { audit } from './v2-proc-people.mjs';
 import { notifyClassAssignment } from './v2-timetable-save.mjs'; // 2.0 notifyClassAssignment(반 담임 알림 줄 — 바깥 전송 없음)
 import { countAssignedClasses, detailRules } from './v2-enrollment-detail.mjs'; // 2.0 countAssignedClasses(assigned-classes.ts)
@@ -159,7 +159,7 @@ export async function updateEnrollmentConsultation(ctx, formData) {
       consultationId: id, ...summary, ...(autofilled ? { counselorAutofill: autofilled } : {}), ...(outcomeTo ? { outcomeTo } : {}),
     });
   }
-  if (String(formData.get('audioPath') ?? '').trim()) return { error: '입력 내용은 저장되었습니다. 녹음 첨부만 실패: 연습 화면에서는 녹음을 받지 않습니다', saved: true };
+  if (String(formData.get('audioPath') ?? '').trim()) return { error: '입력 내용은 저장되었습니다. 녹음 첨부만 실패: 연습 자료에서는 녹음을 받지 않습니다', saved: true };
   return { ok: true };
 }
 
@@ -286,7 +286,7 @@ export async function createEnrollmentConsultation(ctx, formData) {
   if ('error' in followUp) return { error: followUp.error };
   const referrer = S.ref.referrerColumns(formData);
   if ('error' in referrer) return { error: referrer.error };
-  if (String(formData.get('audioPath') ?? '').trim()) return { error: '연습 화면에서는 녹음을 받지 않습니다' };
+  if (String(formData.get('audioPath') ?? '').trim()) return { error: '연습 자료에서는 녹음을 받지 않습니다' };
   const learningHistory = {};
   if (parsed.data.prevAcademy) learningHistory.prevAcademy = parsed.data.prevAcademy;
   if (parsed.data.lastScore) learningHistory.lastScore = parsed.data.lastScore;

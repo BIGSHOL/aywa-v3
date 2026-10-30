@@ -1,7 +1,7 @@
 // 2.0 부품 호스트 — 수납관리 진입점. 3.0 `#v2-billing`이 같은 출처 iframe(/v2-host/billing.html?…)으로 연다.
 // 2.0 page.tsx(`/billing`)가 그리는 그대로(billing-page.tsx), 2.0 (shell) 레이아웃이 창(embed) 화면을 감싸는 공급자(Embed · 운영 설정)로 감싼다.
 // 데이터 = /api/v2/billing?…(Docker 복사본, v2-screen-billing.mjs) — page.tsx와 각 면이 서버에서 받던 값 그대로.
-// 보는 사람 = 3.0 띠가 고른 사람(수납 권한 · 급여 열람 · 쓰기 수준이 그 사람의 권한 표). 고르면 v2-host-actor로 알려 오고 다시 읽는다.
+// 보는 사람 = 셸의 현재 계정(수납 권한 · 급여 열람 · 쓰기 수준이 그 계정의 권한 표). 계정이 바뀌면 다시 읽는다.
 import { createRoot } from 'react-dom/client';
 import { useEffect, useRef, useState } from 'react';
 import { AppProviders } from '@/lib/providers/app-providers';
@@ -121,7 +121,7 @@ const KEYS = ['v2path', 'tab', 'period', 'q', 'sort', 'desc', 'page', 'overdue',
 
 function App() {
   const search = new URLSearchParams(useHostSearch());
-  const [viewer, setViewer] = useState<string | null>(null);
+  const [viewer, setViewer] = useState<string | null>(() => hostActor());
   const sp: Record<string, string | undefined> = {};
   const q = new URLSearchParams();
   for (const k of KEYS) { const v = search.get(k); if (v !== null) { q.set(k, v); if (k !== 'v2path') sp[k] = v; } }
@@ -131,7 +131,7 @@ function App() {
   const [tick, setTick] = useState(0);
   const drawnFor = useRef<string | null>(null);
   useEffect(() => onHostRefresh(() => setTick((n) => n + 1)), []);
-  // 3.0 띠에서 보는 사람을 바꾸면 그 사람의 권한으로 다시 받는다(shim이 먼저 받아 두므로 다음 틱에 읽는다).
+  // 셸에서 계정을 바꾸면 그 계정의 권한으로 다시 받는다.
   useEffect(() => {
     const onMessage = (e: MessageEvent) => {
       if (e.origin !== location.origin || e.source !== window.parent || (e.data as { type?: string } | null)?.type !== 'v2-host-actor') return;
@@ -147,7 +147,7 @@ function App() {
       .then((data) => {
         if (!live) return;
         setHostEditors(data.editors);
-        // 띠에 남아 있던 사람(같은 출처 저장소)이 서버가 고른 사람과 다르면 그 사람으로 한 번 더 받는다.
+        // 셸 계정과 서버의 보는 사람이 다르면 계정으로 다시 받는다.
         const picked = hostActor();
         if (picked && data.viewer && picked !== data.viewer.id && picked !== viewer) { setViewer(picked); return; }
         drawnFor.current = data.viewer?.id ?? null;
@@ -163,7 +163,7 @@ function App() {
   }
   const d = state.data, ops = d.host.operations;
   if (d.route === 'none' || !d.access) return <HostMessage text="수납관리를 볼 수 있는 직원이 없습니다." />;
-  if (d.page === 'noAccess') return <HostMessage text="고른 사람은 이 화면을 볼 수 없습니다." />;
+  if (d.page === 'noAccess') return <HostMessage text="현재 계정은 이 화면을 볼 수 없습니다." />;
   if (d.page === 'notFound') return <HostMessage text="이 주소의 화면이 없습니다." />;
   if (d.page === 'invoiceMissing') return <HostMessage text="이 청구를 찾을 수 없습니다." error />;
   // 2.0 expenses/[id]/page.tsx — 본문은 부품 하나(ExpenseDocument)라 그대로 그린다.

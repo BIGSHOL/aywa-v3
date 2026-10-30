@@ -1,7 +1,7 @@
 // 2.0 부품 호스트 — 학원 설정 진입점. 3.0 `#v2-owner`가 같은 출처 iframe(/v2-host/owner.html?…)으로 연다.
 // 2.0이 창(embed)으로 열 때의 틀(AppProviders · OperationsProvider · <main class="embed-main">) 그대로 감싸고,
 // 데이터 = /api/v2/owner?tab=…&year=…&viewer=…(Docker 복사본, v2-screen-owner.mjs) — 2.0 page.tsx가 return 앞에서 만들던 값 그대로.
-// 보는 사람 = 3.0 띠가 고른 사람(면마다 그 사람의 권한 — 2.0과 같은 판정). 권한 없는 면 · 옛 주소는 서버가 알려 준 주소로 옮긴다(2.0 redirect).
+// 보는 사람 = 셸에서 선택한 현재 사람(면마다 그 사람의 권한 — 2.0과 같은 판정). 권한 없는 면 · 옛 주소는 서버가 알려 준 주소로 옮긴다(2.0 redirect).
 import { createRoot } from 'react-dom/client';
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { AppProviders } from '@/lib/providers/app-providers';
@@ -22,10 +22,10 @@ for (const [module, names] of [
   ['features/slack/server/rule-actions.ts', ['sendSlackRuleSample']],
   ['features/slack/server/link-actions.ts', ['loadSlackPeople', 'linkSlackByEmail', 'unlinkSlackUser']],
 ] as const) for (const name of names) registerHostHandler(module, name,
-  async () => ({ error: name === 'listSlackChannels' ? '연습 화면에서는 슬랙 채널 목록을 불러올 수 없습니다'
-    : name === 'loadSlackPeople' ? '연습 화면에서는 슬랙 직원 목록을 불러올 수 없습니다' : VIEW_ONLY }));
+  async () => ({ error: name === 'listSlackChannels' ? '연습 자료에서는 슬랙 채널 목록을 불러올 수 없습니다'
+    : name === 'loadSlackPeople' ? '연습 자료에서는 슬랙 직원 목록을 불러올 수 없습니다' : VIEW_ONLY }));
 registerHostHandler('features/video-submit/server/drive-settings-actions.ts', 'saveVideoDriveSetting', async () => ({ error: VIEW_ONLY }));
-for (const name of ['loadTodaysMathMenus', 'saveTodaysMathMenus']) registerHostHandler('features/integrations/todays-math/server/branch-menus-actions.ts', name, async () => ({ ok: false, message: '연습 화면에서는 오늘 수학에 연결할 수 없습니다.' }));
+for (const name of ['loadTodaysMathMenus', 'saveTodaysMathMenus']) registerHostHandler('features/integrations/todays-math/server/branch-menus-actions.ts', name, async () => ({ ok: false, message: '연습 자료에서는 오늘 수학에 연결할 수 없습니다.' }));
 
 registerHostHandler('features/sync-agent/server/actions.ts', 'getAgentDashboard', async (input) => {
   const p = input && typeof input === 'object' ? input as { module?: unknown; level?: unknown; date?: unknown; cursor?: { at?: unknown; id?: unknown } } : {};
@@ -63,7 +63,7 @@ for (const [module, names] of [
   ['features/slack/server/rule-actions.ts', ['sendSlackRuleSample']],
   ['features/slack/server/link-actions.ts', ['loadSlackPeople', 'linkSlackByEmail', 'unlinkSlackUser']],
 ] as const) for (const name of names) registerHostHandler(module, name,
-  async () => ({ error: name === 'listSlackChannels' ? '연습 화면에서는 슬랙 채널 목록을 불러올 수 없습니다' : VIEW_ONLY }));
+  async () => ({ error: name === 'listSlackChannels' ? '연습 자료에서는 슬랙 채널 목록을 불러올 수 없습니다' : VIEW_ONLY }));
 
 type Data = {
   page?: OwnerPageData;
@@ -76,8 +76,7 @@ type Data = {
 
 /** 2.0 page.tsx searchParams 중 서버가 다시 그리던 열쇠(면 · 세션 연도 · 연동 하위 탭). */
 const KEYS = ['tab', 'year', 'sub', 'page', 'action', 'q', 'from', 'to'] as const;
-const ACTOR_KEY = 'v2-host-actor:owner';
-const storedActor = () => { try { return localStorage.getItem(ACTOR_KEY); } catch { return null; } };
+const storedActor = () => hostActor();
 
 function App() {
   const qs = useHostSearch(), search = new URLSearchParams(qs);

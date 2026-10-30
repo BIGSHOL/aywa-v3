@@ -14,6 +14,10 @@
 .ax-enabled .brand-caption,.ax-enabled .academy-box small,.ax-enabled .profile small{font-size:var(--ax-xs)}
 .ax-enabled .academy-box strong,.ax-enabled .profile strong{font-size:var(--ax-sm)}
 .ax-enabled .profile{padding:8px 13px 0}
+.ax-account{padding:8px 12px 4px;display:grid;gap:5px}
+.ax-account label{font-size:var(--ax-xs);font-weight:700;color:var(--ax-ink)}
+.ax-account select{width:100%;min-width:0;background:var(--ax-white);color:var(--ax-ink);border:1px solid var(--ax-line);border-radius:7px;padding:7px;font-size:var(--ax-sm)}
+.ax-account small{font-size:var(--ax-xs);color:var(--ax-ink)}
 .ax-search-trigger{display:flex;align-items:center;gap:8px;width:100%;min-height:38px;padding:0 10px;margin-bottom:10px;border:1px solid var(--ax-line);border-radius:8px;background:#fff;font-size:var(--ax-sm);color:var(--ax-ink);text-align:left}
 .ax-search-trigger:hover{background:var(--ax-soft)}
 .ax-search-trigger .icon{width:18px;height:18px}

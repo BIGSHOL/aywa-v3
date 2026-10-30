@@ -102,7 +102,7 @@ function buildHref(opts: { view: ViewMode; subject: string; kind: TimetableKind;
 /** 아직 이 호스트로 옮기지 않은 보기·구분 — 2.0의 빈 화면 카드 자리에 사실대로 적는다. */
 function NotYet({ what }: { what: string }) {
   const last = what.charCodeAt(what.length - 1), topic = last >= 0xac00 && last <= 0xd7a3 && (last - 0xac00) % 28 ? '은' : '는';
-  return <div className="mx-auto w-full max-w-xl py-4"><PhotoCard src="/photos/timetable-empty.webp" alt="" caption={`${what}${topic} 연습 화면에서 아직 볼 수 없습니다`} sub="기본뷰·통합뷰에서 볼 수 있습니다" aspect="3/2" sizes="576px" /></div>;
+  return <div className="mx-auto w-full max-w-xl py-4"><PhotoCard src="/photos/timetable-empty.webp" alt="" caption={`${what}${topic} 연습 자료에서 아직 볼 수 없습니다`} sub="기본뷰·통합뷰에서 볼 수 있습니다" aspect="3/2" sizes="576px" /></div>;
 }
 
 export function TimetablePage({ data, search }: { data: TimetableData; search: URLSearchParams }) {

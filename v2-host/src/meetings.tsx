@@ -1,7 +1,7 @@
 // 2.0 부품 호스트 — 회의록 진입점(작업자 v2-meetings). 3.0 `#v2-meetings`가 같은 출처 iframe(/v2-host/meetings.html?…)으로 연다.
 // 2.0 주소: /meetings(목록 — meetings-page.tsx) · /meetings/<id>(상세 — meetings-detail.tsx) · /meetings/new(새 회의록 — meetings-new.tsx).
 // 데이터 = /api/v2/meetings?…(Docker 복사본, v2-screen-meetings.mjs — 2.0 서버 함수 그대로) — 2.0 서버 컴포넌트가 부품에 넘기던 값.
-// 저장하는 사람 = 3.0 띠에서 고른 직원 — 목록·상세도 그 사람의 신분으로 읽는다(?actor=).
+// 저장하는 사람 = 셸에서 선택한 현재 직원 — 목록·상세도 그 사람의 신분으로 읽는다(?actor=).
 import { createRoot } from 'react-dom/client';
 import { useEffect, useState } from 'react';
 import { AppProviders } from '@/lib/providers/app-providers';
@@ -25,7 +25,7 @@ type Base = { editors: HostEditor[]; operations: Record<string, unknown>; module
   page: 'list' | 'detail' | 'new' | 'print' | 'missing' | 'noMenu' | 'notFound' };
 
 /**
- * AI·녹음 — 연습 화면에서는 부르지 않는다(AI로 정리·분석 다시 생성(기둥 A) · 전사부터 다시(기둥 B) · 녹음으로 회의록 만들기 · 녹음 올리기 표).
+ * AI·녹음 — 연습 자료에서는 부르지 않는다(AI로 정리·분석 다시 생성(기둥 A) · 전사부터 다시(기둥 B) · 녹음으로 회의록 만들기 · 녹음 올리기 표).
  * 보내지 않고 그 자리에서 2.0 실패 모양({ error })으로. 저장된 마지막 결과는 2.0처럼 그대로 보인다.
  */
 const notSupported = async () => ({ error: NOT_SUPPORTED });
@@ -51,10 +51,9 @@ registerHostHandler(ACTIONS, 'deleteMeeting', async (_prev, fd) => {
   return undefined;
 });
 
-const ACTOR_KEY = `v2-host-actor:${SCREEN}`;
-/** 저장하는 사람 — 3.0 띠가 고른 값(같은 출처 저장소 + v2-host-actor 알림). 바뀌면 다시 읽는다(보는 권한이 그 사람의 것). */
+/** 저장하는 사람 — 셸에서 선택한 현재 값(부모 셸 계정). 바뀌면 다시 읽는다(보는 권한이 그 사람의 것). */
 function useActor() {
-  const [actor, setActor] = useState<string | null>(() => { try { return localStorage.getItem(ACTOR_KEY); } catch { return null; } });
+  const [actor, setActor] = useState<string | null>(() => hostActor());
   useEffect(() => {
     const on = (e: MessageEvent) => {
       if (e.origin !== location.origin || e.source !== window.parent) return;
@@ -106,13 +105,13 @@ function App() {
     return () => { live = false; };
   }, [query, tick, known]);
   useEffect(() => { if (state.data?.editors) setHostEditors(state.data.editors); }, [state.data?.editors]);
-  if (!known) return <HostMessage text="이 화면은 연습 화면에서 아직 열 수 없습니다." />;
+  if (!known) return <HostMessage text="아직 3.0에 없는 화면입니다." />;
   // 같은 화면에서 주소만 바뀐 새로고침(저장 뒤)은 받던 화면을 그대로 둔다 — 첫 자료가 오기 전까지만 '불러오는 중'.
   if (!state.data && !state.error) return <HostMessage text="회의록을 불러오는 중…" />;
   if (!state.data) return <HostMessage text={state.error!} error />;
   const data = state.data;
   if (data.page === 'noMenu') return <HostMessage text="회의록을 열 수 있는 직원이 없습니다." error />;
-  if (data.page === 'notFound') return <HostMessage text="이 화면은 연습 화면에서 아직 열 수 없습니다." />;
+  if (data.page === 'notFound') return <HostMessage text="아직 3.0에 없는 화면입니다." />;
   if (data.page === 'missing') return <HostMessage text="이 회의록을 찾을 수 없습니다. 지워졌을 수 있습니다." error />;
   const ops = data.operations as unknown as Parameters<typeof OperationsProvider>[0];
   // 주소 열쇠는 그 자료를 받은 주소의 것(다음 자료가 오기 전 잠깐 옛 자료 + 새 주소로 어긋나 그리지 않게).

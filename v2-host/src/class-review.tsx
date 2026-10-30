@@ -1,7 +1,7 @@
 // 2.0 부품 호스트 — 직원 평가 진입점(작업자 v2-meetings). 3.0 `#v2-class-review`가 같은 출처 iframe(/v2-host/class-review.html?…)으로 연다.
 // 2.0 주소: /class-review(직원 평가 면 · ?tab=portfolio 직원 포트폴리오 면 — class-review-page.tsx) · /class-review/<id>(상세) · /<id>/score(채점) ·
 //          /class-review/new(새 평가) · /class-review/template(문항 세트) · /class-review/board(종합).
-// 데이터 = /api/v2/class-review?…(Docker 복사본, v2-screen-class-review.mjs — 2.0 서버 함수 그대로). 보는·저장하는 사람 = 3.0 띠에서 고른 직원(?actor=).
+// 데이터 = /api/v2/class-review?…(Docker 복사본, v2-screen-class-review.mjs — 2.0 서버 함수 그대로). 보는·저장하는 사람 = 셸에서 선택한 현재 직원(?actor=).
 import { createRoot } from 'react-dom/client';
 import { useEffect, useState } from 'react';
 import { AppProviders } from '@/lib/providers/app-providers';
@@ -46,7 +46,7 @@ for (const [module, name] of [[`${TP}compare-actions.ts`, 'loadPortfolioComparis
 }
 
 /** 계정 보기 설정(목록 보기 필터 · 점수 기준 상자 접힘 · 비교 표 정렬) — 3.0엔 계정이 없어 저장하지 않는다(보기는 그 화면 안에서만). */
-const noAccountPrefs = async () => ({ ok: false, error: '연습 화면에서는 보기 설정을 계정에 저장하지 않습니다' });
+const noAccountPrefs = async () => ({ ok: false, error: '연습 자료에서는 보기 설정을 계정에 저장하지 않습니다' });
 registerHostHandler(CR, 'setMyClassReviewFilter', noAccountPrefs);
 for (const name of ['saveRuleBoxCollapsed', 'saveCompareSort']) registerHostHandler(`${TP}view-prefs-actions.ts`, name, noAccountPrefs);
 
@@ -70,10 +70,9 @@ for (const name of ['createClassReview', 'saveChecklistTemplate', 'deleteCheckli
   });
 }
 
-const ACTOR_KEY = `v2-host-actor:${SCREEN}`;
-/** 저장하는 사람 — 3.0 띠가 고른 값(같은 출처 저장소 + v2-host-actor 알림). 바뀌면 다시 읽는다(보는 권한이 그 사람의 것). */
+/** 저장하는 사람 — 셸에서 선택한 현재 값(부모 셸 계정). 바뀌면 다시 읽는다(보는 권한이 그 사람의 것). */
 function useActor() {
-  const [actor, setActor] = useState<string | null>(() => { try { return localStorage.getItem(ACTOR_KEY); } catch { return null; } });
+  const [actor, setActor] = useState<string | null>(() => hostActor());
   useEffect(() => {
     const on = (e: MessageEvent) => {
       if (e.origin !== location.origin || e.source !== window.parent) return;
@@ -112,13 +111,13 @@ function App() {
   useEffect(() => { if (state.data?.editors) setHostEditors(state.data.editors); }, [state.data?.editors]);
   // 2.0 redirect(자격이 없는 하위 화면 → 목록 · 채점 자격 없음 → 상세) — 그 주소로 옮긴다.
   useEffect(() => { if (state.data?.page === 'redirect' && state.data.to) hostNavigate(state.data.to, 'replace'); }, [state.data]);
-  if (!known) return <HostMessage text="이 화면은 연습 화면에서 아직 열 수 없습니다." />;
+  if (!known) return <HostMessage text="아직 3.0에 없는 화면입니다." />;
   if (!state.data && !state.error) return <HostMessage text="직원 평가를 불러오는 중…" />;
   if (!state.data) return <HostMessage text={state.error!} error />;
   const data = state.data;
   if (data.page === 'noMenu') return <HostMessage text="직원 평가를 열 수 있는 직원이 없습니다." error />;
   // 꺼진 지점(2.0 ModuleBoundary) = 없는 주소와 똑같이.
-  if (data.page === 'notFound' || data.page === 'moduleOff') return <HostMessage text="이 화면은 연습 화면에서 아직 열 수 없습니다." />;
+  if (data.page === 'notFound' || data.page === 'moduleOff') return <HostMessage text="아직 3.0에 없는 화면입니다." />;
   if (data.page === 'redirect') return <HostMessage text="화면을 옮기는 중…" />;
   if (data.page === 'missing') return <HostMessage text="이 평가를 찾을 수 없습니다. 지워졌을 수 있습니다." error />;
   if (data.page === 'judgmentMissing') return <HostMessage text="이 판정 대기 글을 찾을 수 없습니다. 이미 처리됐을 수 있습니다." error />;

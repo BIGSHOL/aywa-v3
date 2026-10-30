@@ -1,17 +1,15 @@
 /* 2.0 화면 — 시간표 (V2-SCREENS.md '그리는 방식 전환', 원장 10-28 *"시간표가 기존 2.0 뷰와 너무 다른데"*).
    그리기는 2.0의 실제 React 부품이 한다 — 같은 출처 iframe `/v2-host/timetable.html?…`(v2-host/, 데이터 = Docker 복사본).
-   3.0 쪽은 '연습 복사본' 한 줄과 자리(slot)만 둔다. live.js는 그릴 때마다 #main을 통째로 바꾸므로 iframe을 본문 안에 두면
+   3.0 쪽은 호스트 자리(slot)만 둔다. live.js는 그릴 때마다 #main을 통째로 바꾸므로 iframe을 본문 안에 두면
    매번 다시 읽힌다 → iframe은 문서에 한 번만 만들어 자리 위에 겹쳐 둔다(다른 화면으로 가면 숨기고, 돌아오면 그대로).
    iframe 안 이동은 iframe이 주소만 바꾸고 알려 준다(v2-host-nav) → 3.0 주소(#v2-timetable?…)를 맞춘다. 학생·반 상세 같은 2.0 주소는
    3.0 기록 창으로 연다(v2-host-open). 운영 2.0 사이트 주소는 어디에도 없다.
-   저장(2단계)은 Docker 복사본에만 — 3.0엔 로그인이 없어 '저장하는 사람'을 이 띠에서 고른다(호스트가 v2-host-editors로 목록을
-   알려 주고, 고른 값은 같은 출처 저장소 `v2-host-actor:timetable` + v2-host-actor 알림으로 호스트에 간다). */
+   저장(2단계)은 Docker 복사본에만 — 조회와 저장의 주체는 셸의 현재 계정이다. */
 (() => {
   'use strict';
   const ID = 'timetable', HOST = `/v2-host/${ID}.html`;
   const KEEP = ['subject', 'view', 'kind', 'week', 'etrack', 'students', 'emptyperiods', 'emptydays', 'compact1h', 'gedit'];
   let api = null, frame = null, requested = null, hostOk = null, wired = false, editors = [], actor = null;
-  const ACTOR_KEY = `v2-host-actor:${ID}`;
   const esc = s => V2Screens.esc(s);
   const queryOf = q => { const o = new URLSearchParams(); for (const k of KEEP) { const v = q.get(k); if (v) o.set(k, v); } return o.toString(); };
 
@@ -38,16 +36,11 @@
   function openFromHost(href) {
     const m = /^\/(students|classes)\/([0-9a-f-]{36})(?:[/?#]|$)/i.exec(href || '');
     if (m && api?.canOpenRecord?.(m[2])) return m[1] === 'students' ? api.showStudent(m[2]) : api.openRecord(m[2]);
-    api?.toast?.('이 화면은 연습 화면에서 아직 열 수 없습니다.');
+    api?.toast?.('아직 3.0에 없는 화면입니다.');
   }
-  /** 저장하는 사람 — 고른 값이 목록에 없으면 첫 사람(원장 먼저). 호스트(shims/server-action.ts)와 같은 규칙. */
-  function currentActor() {
-    let stored = null;
-    try { stored = localStorage.getItem(ACTOR_KEY); } catch { /* 저장소를 못 쓰면 이 창에서만 */ }
-    for (const id of [actor, stored]) if (id && editors.some(e => e.id === id)) return id;
-    return editors[0]?.id ?? null;
-  }
-  const actorPicker = () => (editors.length ? `<label class="v2h-actor"><span>저장하는 사람</span><select data-v2h-actor aria-label="저장하는 사람">${editors.map(e => `<option value="${esc(e.id)}"${e.id === currentActor() ? ' selected' : ''}>${esc(e.role ? `${e.name} · ${e.role}` : e.name)}</option>`).join('')}</select></label>` : '');
+  /** 저장하는 사람은 셸의 현재 계정이다. */
+  const currentActor = () => V2Screens.accountId();
+  const actorPicker = () => ''; // 화면별 선택기는 셸 계정으로 대체했다.
   const tellHost = () => { const id = currentActor(); if (id && frame?.contentWindow) frame.contentWindow.postMessage({ type: 'v2-host-actor', id }, location.origin); };
   function wire() {
     if (wired) return; wired = true;
@@ -69,10 +62,9 @@
     });
     addEventListener('change', e => {
       const t = e.target;
-      // 시간표 화면 안의 선택만 — 다른 화면이 같은 표식을 써도 시간표의 '저장하는 사람'이 바뀌지 않게.
+      // 화면별 선택기는 더 이상 그리지 않는다. 이전 표식의 변경은 다른 화면에 영향을 주지 않는다.
       if (!(t instanceof HTMLSelectElement) || !t.matches('[data-v2-screen="timetable"] [data-v2h-actor]')) return;
       actor = t.value;
-      try { localStorage.setItem(ACTOR_KEY, t.value); } catch { /* 이 창에서만 기억 */ }
       tellHost();
     });
     const later = () => requestAnimationFrame(place);

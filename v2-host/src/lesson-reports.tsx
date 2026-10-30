@@ -60,14 +60,14 @@ registerHostHandler(SYNC_MODULE, "requestClassnoteBoardSync", async (...args) =>
     if (!response.ok || !body?.ok) return { ok: false, error: body?.message ?? "동기화 요청을 저장하지 못했습니다." };
     const result = body.result as { ok?: boolean; message?: string; error?: string } | null;
     if (result?.ok && typeof result.message === "string" && result.message.includes("연동 PC"))
-      return { ...result, message: "요청을 복사본 대기열에 남겼습니다. 연습 복사본이라 실제 동기화는 실행되지 않습니다." };
+      return { ...result, message: "요청을 복사본 대기열에 남겼습니다. 연습 자료이라 실제 동기화는 실행되지 않습니다." };
     if (result && !result.ok && result.error?.startsWith("연동 PC가 꺼져 있거나"))
-      return { ...result, error: "연습 복사본에는 연동 PC가 없어 지금 동기화 요청을 받을 수 없습니다." };
+      return { ...result, error: "연습 자료에는 연동 PC가 없어 지금 동기화 요청을 받을 수 없습니다." };
     return result;
   } catch { return { ok: false, error: "동기화 요청을 저장하지 못했습니다." }; }
 });
-// 발송 요청은 2.0 함수를 Docker에서 실행한다. 대기열에 오른 뒤 2.0의 발송 PC 안내는 연습 복사본 안내로 바꾼다.
-const COPY_QUEUE_NOTICE = "연습 복사본이라 실제로 보내지지 않습니다 — 발송 대기로만 남습니다";
+// 발송 요청은 2.0 함수를 Docker에서 실행한다. 대기열에 오른 뒤 2.0의 발송 PC 안내는 연습 자료 안내로 바꾼다.
+const COPY_QUEUE_NOTICE = "연습 자료이라 실제로 보내지지 않습니다 — 발송 대기로만 남습니다";
 let queuedToastCount = 0;
 const originalSuccess = toast.success;
 toast.success = ((message, data) => {
@@ -83,9 +83,9 @@ toast.success = ((message, data) => {
 const originalMessage = toast.message;
 toast.message = ((message, data) => originalMessage(
   typeof message === "string" && (message.startsWith("dry-run — 승인 전이라 실제") || message.startsWith("dry-run — '보고서 설정' 탭에서 'ClassNote 실제 발송'") || message.startsWith("실제 발송이 꺼져 있어 전송하지 않았습니다 — 대상"))
-    ? "발송 설정이 꺼져 대기열에도 올리지 않았습니다. 연습 복사본에서는 실제로 보내지지 않습니다."
+    ? "발송 설정이 꺼져 대기열에도 올리지 않았습니다. 연습 자료에서는 실제로 보내지지 않습니다."
     : message === "저장했습니다. 현재 실제 발송이 꺼져 있어 전송은 대기 상태입니다(원장 설정에서 켜야 전송)."
-      ? "저장했습니다. 발송 설정이 꺼져 대기열에도 올리지 않았습니다. 연습 복사본에서는 실제로 보내지지 않습니다."
+      ? "저장했습니다. 발송 설정이 꺼져 대기열에도 올리지 않았습니다. 연습 자료에서는 실제로 보내지지 않습니다."
     : typeof message === "string" && message.includes("발송 대기(연동 PC가 순차 게시)")
       ? `${message.replace("(연동 PC가 순차 게시)", "")} · ${COPY_QUEUE_NOTICE}`
     : message, data,
@@ -124,7 +124,7 @@ for (const name of ["requestParentReply", "requestParentReplyEdit", "requestPare
     if (!response.ok || !body?.ok) return { ok: false, error: body?.message ?? "답글 요청을 저장하지 못했습니다." };
     const result = body.result as { ok?: boolean; message?: string } | null;
     if (result?.ok && typeof result.message === "string" && result.message.includes(" — 연동 PC가"))
-      return { ...result, message: `${result.message.split(" — 연동 PC가")[0]} · 연습 복사본이라 실제로 보내지지 않습니다` };
+      return { ...result, message: `${result.message.split(" — 연동 PC가")[0]} · 연습 자료이라 실제로 보내지지 않습니다` };
     return result;
   } catch { return { ok: false, error: "답글 요청을 저장하지 못했습니다." }; }
 });
@@ -141,7 +141,7 @@ for (const name of ["requestParentReaction", "requestParentReactionRemove"]) reg
     if (!response.ok || !body?.ok) return { ok: false, error: body?.message ?? "공감 요청을 저장하지 못했습니다." };
     const result = body.result as { ok?: boolean; message?: string } | null;
     if (result?.ok && typeof result.message === "string" && result.message.includes(" — 연동 PC가"))
-      return { ...result, message: `${result.message.split(" — 연동 PC가")[0]} · 연습 복사본이라 실제로 보내지지 않습니다` };
+      return { ...result, message: `${result.message.split(" — 연동 PC가")[0]} · 연습 자료이라 실제로 보내지지 않습니다` };
     return result;
   } catch { return { ok: false, error: "공감 요청을 저장하지 못했습니다." }; }
 });
@@ -150,14 +150,14 @@ for (const name of ["requestParentReaction", "requestParentReactionRemove"]) reg
 // 여기 적지 않은 함수는 shim이 쓰기 경로로 보낸다. 아래는 그 경로가 받지 않는 저장 — 보내지 않고 그 자리에서 2.0 거절 모양으로.
 const REFUSE: Record<string, string[]> = {};
 for (const [module, names] of Object.entries(REFUSE)) for (const name of names) registerHostHandler(module, name, async () => ({ ok: false, error: VIEW_ONLY }));
-// AI를 부르는 일(멘트 자동작성 · 사랑의 한마디 초안 · 말투 지금 갱신)도 연습 화면에서 하지 않는다.
-const NO_AI = { ok: false, error: "연습 화면에서는 AI를 부르지 않습니다" };
+// AI를 부르는 일(멘트 자동작성 · 사랑의 한마디 초안 · 말투 지금 갱신)도 연습 자료에서 하지 않는다.
+const NO_AI = { ok: false, error: "연습 자료에서는 AI를 부르지 않습니다" };
 registerHostHandler("features/onescreen/server/actions.ts", "generateReportComment", async () => NO_AI);
 registerHostHandler("features/onescreen/server/love-note-actions.ts", "suggestLoveNote", async () => NO_AI);
 registerHostHandler("features/onescreen/server/ment-style-actions.ts", "rebuildMentStylesNow", async () => NO_AI);
 // 직접 발송 · 답글 창의 읽기 넷은 서버 화면 actions가 2.0 함수를 읽기 전용 러너로 실행한다.
-// AI를 부르는 미리보기는 연습 화면에서 하지 않는다. 학부모 글 공감 상태는 2.0 원본 읽기를 사용한다.
-registerHostHandler("features/onescreen/server/prompt-actions.ts", "testPrompt", async () => ({ ok: false, error: "연습 화면에서는 AI 미리보기를 하지 않습니다" }));
+// AI를 부르는 미리보기는 연습 자료에서 하지 않는다. 학부모 글 공감 상태는 2.0 원본 읽기를 사용한다.
+registerHostHandler("features/onescreen/server/prompt-actions.ts", "testPrompt", async () => ({ ok: false, error: "연습 자료에서는 AI 미리보기를 하지 않습니다" }));
 
 type Loaded = { key?: string; data?: LessonReportsData; missing?: boolean; redirect?: string; error?: string };
 
@@ -190,7 +190,7 @@ function Page() {
   if (state.error) return <HostMessage text={state.error} error />;
   // 2.0 page.tsx 첫 판정(?tab=video_homework → 영상 제출 현황) — 서버가 면 조회 없이 알려 준 주소를 다른 3.0 화면으로 넘긴다.
   if (state.redirect) return <Elsewhere path={state.redirect} />;
-  if (state.missing || !state.data) return <HostMessage text="이 화면은 연습 화면에서 아직 열 수 없습니다." />;
+  if (state.missing || !state.data) return <HostMessage text="아직 3.0에 없는 화면입니다." />;
   const data = state.data;
   setCopyDay(data.today);
   const ops = data.settings.operations as Parameters<typeof OperationsProvider>[0];
@@ -198,7 +198,7 @@ function Page() {
     <OperationsProvider subjects={ops.subjects} gradeLevels={ops.gradeLevels} jobTitles={ops.jobTitles} jobTitlesByDepartment={ops.jobTitlesByDepartment} disabledModules={data.settings.modules.disabled as never}>
       <p className="mx-4 mt-3 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900" role="note">{COPY_QUEUE_NOTICE}</p>
       <LessonReportsPage data={data} searchParams={sp} />
-      {data.faceMissing ? <p className="text-text-dim py-6 text-center text-sm" role="status">이 면은 연습 화면에서 아직 열 수 없습니다.</p> : null}
+      {data.faceMissing ? <p className="text-text-dim py-6 text-center text-sm" role="status">아직 3.0에 없는 화면입니다.</p> : null}
     </OperationsProvider>
   );
 }
@@ -223,7 +223,7 @@ document.addEventListener("click", (e) => {
 const openWindow = window.open.bind(window);
 window.open = ((url?: string | URL, ...rest: unknown[]) => {
   const path = url ? new URL(String(url), location.origin).pathname : "";
-  if (/^\/r\/[^/]+$/.test(path) || /^\/lesson_reports\/[^/]+\/print$/.test(path)) { toast.info("연습 화면에서는 아직 열 수 없습니다"); return null; }
+  if (/^\/r\/[^/]+$/.test(path) || /^\/lesson_reports\/[^/]+\/print$/.test(path)) { toast.info("아직 3.0에 없는 화면입니다"); return null; }
   return openWindow(url as string, ...(rest as [string?, string?]));
 }) as typeof window.open;
 
@@ -234,7 +234,7 @@ class Boundary extends Component<{ children: ReactNode }, { failed: string | nul
   render() {
     const f = this.state.failed;
     if (f === null) return this.props.children;
-    return <HostMessage text={f === "redirect" ? "옮기는 중…" : f === "notFound" ? "고른 사람은 이 화면을 볼 수 없습니다." : "이 화면을 그리지 못했습니다. 새로고침해 주세요."} error={f !== "redirect" && f !== "notFound"} />;
+    return <HostMessage text={f === "redirect" ? "옮기는 중…" : f === "notFound" ? "현재 계정은 이 화면을 볼 수 없습니다." : "이 화면을 그리지 못했습니다. 새로고침해 주세요."} error={f !== "redirect" && f !== "notFound"} />;
   }
 }
 
@@ -253,7 +253,7 @@ function App() {
   if (path === HOST_ROUTE) return <Page />;
   if (path === "/lesson-reports/stats") return <LessonReportsStats />;
   if (path === "/lesson-reports/video-homework") return <Elsewhere path={path} />;
-  return <HostMessage text="이 화면은 연습 화면에서 아직 열 수 없습니다." />;
+  return <HostMessage text="아직 3.0에 없는 화면입니다." />;
 }
 
 /** 주소(면 · 하위 주소)가 바뀌면 안내를 걷고 다시 그린다 — 한 면의 오류가 다른 면까지 가두지 않게. */
