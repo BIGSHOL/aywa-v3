@@ -10,6 +10,17 @@ window.V2Screens = (() => {
   let api = null, index = null;
   const account = () => window.AywaAccount?.current?.() || null;
   const accountId = () => account()?.id || null;
+  const WORKSPACE_SCREEN = Object.freeze({
+    dashboard:'dashboard',onescreen:'onescreen',timetable:'timetable','class-sheets':'ecs',attendance:'attendance',classes:'classes',students:'students',
+    exams:'exams','lesson-reports':'lesson-reports',textbooks:'textbooks',billing:'billing','textbook-requests':'textbook-requests',
+    'owner-settings':'owner',enrollment:'enrollment','withdrawal-reports':'withdrawal-reports',approvals:'approvals',withdrawals:'withdrawals',
+    'video-homework':'video-homework',consultations:'consultations',staff:'staff',meetings:'meetings','class-review':'class-review',
+  });
+  const workspaceFor = id => id === 'mcs' ? 'class-sheets' : Object.keys(WORKSPACE_SCREEN).find(key => WORKSPACE_SCREEN[key] === id) || null;
+  const canonical = hash => { const m = /^#workspace-([a-z][a-z0-9-]*)(\?.*)?$/.exec(hash); return m && WORKSPACE_SCREEN[m[1]] ? `#v2-${WORKSPACE_SCREEN[m[1]]}${m[2] || ''}` : null; };
+  function redirectWorkspace(event) { const dest = canonical(location.hash); if (dest && dest !== location.hash) { event?.stopImmediatePropagation(); location.replace(dest); } }
+  addEventListener('hashchange', redirectWorkspace, true);
+  redirectWorkspace();
   const PRACTICE_COPY = Object.freeze({ selectedPerson: '현재 계정' });
   const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const errorHtml = (error, message) => { const hint = String(error?.message || '').trim(); return `<span class="ws-error"${hint ? ` data-hint="${esc(hint)}" tabindex="0"` : ''}>${esc(message)}</span>`; };
@@ -102,6 +113,7 @@ window.V2Screens = (() => {
         const other = window.AywaAccount?.actors?.().find(a => a.id === turn);
         return `<div class="v2s"><p class="v2s-note" role="status">${esc(other?.name || '다른 사람')} 님 차례입니다 · <button type="button" class="ax-text-link" data-ax="account-switch">계정 전환</button></p></div>`;
       }
+      if (signed.role === 'teacher' && ['billing','staff'].includes(def.id)) return '<div class="v2s"><p class="v2s-note" role="status">이 계정은 이 화면을 열 수 없습니다.</p></div>';
       const ctx = { api, query: p.query, esc, writable, overview: (index || []).find(s => s.id === def.id)?.overview || null, load: params => load(def.id, params), act: (action, body) => act(def.id, action, body), go: params => go(def.id, params), refresh: () => { for (const k of [...cache.keys()]) if (k.startsWith(`${def.id}?`)) cache.delete(k); api?.render(); } };
       // native = 3.0 고유 화면(확장 추세 등) — 2.0 모양을 지키는 .v2s 예외 없이 3.0 컨트롤 규칙을 그대로 받는다.
       try {
@@ -114,7 +126,10 @@ window.V2Screens = (() => {
           note.remove();
         }
         requestAnimationFrame(updateOverviewScroll);
-        return `<div class="${def.native ? 'v3s' : 'v2s'}" data-v2-screen="${esc(def.id)}">${template.innerHTML}</div>`;
+        const screen = `<div class="${def.native ? 'v3s' : 'v2s'}" data-v2-screen="${esc(def.id)}">${template.innerHTML}</div>`;
+        const family = workspaceFor(def.id), overview = family && window.AywaWorkspaces?.overview?.(family, signed);
+        const classTabs = family === 'class-sheets' ? `<nav class="v2-class-tabs" aria-label="강사 시트 과목"><a href="#v2-ecs" ${def.id === 'ecs' ? 'aria-current="page"' : ''}>영어</a><a href="#v2-mcs" ${def.id === 'mcs' ? 'aria-current="page"' : ''}>수학</a></nav>` : '';
+        return overview ? `<div class="v2-combined">${overview}${classTabs}${screen}</div>` : screen;
       }
       catch (error) { console.error(error); return `<div class="v2s"><p class="v2s-note">이 화면을 그리지 못했습니다.</p></div>`; }
     };
@@ -133,11 +148,11 @@ window.V2Screens = (() => {
     flow:'check',inbox:'bellRing',requests:'listChecks',automation:'sync',chat:'messages',digest:'note',notes:'note',request:'userPlus',launcher:'layoutGrid',
   });
   const sticker = id => `<img class="nav-sticker" src="/icons/${NAV_STICKER[id] || 'folder'}.png" alt="" aria-hidden="true" width="18" height="18" draggable="false">`;
-  /** live.js sidebar hook: the '2.0 화면' group, in the order the server lists. */
-  function sidebar(page) {
-    const list = (index || []).filter(s => screens.has(s.id) && screens.get(s.id).nav !== false); if (!list.length) return ''; // nav:false = 카드·링크로만 들어오는 화면(확장 추세)
-    const active = parse(page)?.id;
-    return `<div class="nav-group">업무 화면</div>${list.map(s => `<a class="nav-item ${active === s.id ? 'active' : ''}" href="#v2-${esc(s.id)}" ${active === s.id ? 'aria-current="page"' : ''}>${sticker(s.id)}<span>${esc(s.label)}</span></a>`).join('')}`;
+  const sidebar = () => '';
+  function extraNav(id, page) {
+    const def = screens.get(id); if (!def || def.nav === false) return '';
+    const active = parse(page)?.id === id;
+    return `<a class="nav-item ws-nav ${active ? 'active' : ''}" href="#v2-${esc(id)}" ${active ? 'aria-current="page"' : ''}>${sticker(id)}<span>${esc(def.label)}</span></a>`;
   }
   function bind(a) {
     api = a;
@@ -152,8 +167,6 @@ window.V2Screens = (() => {
       api.render();
     });
   }
-  /** A 3.0 workspace id → its 2.0 screen address when that screen is registered (workspace links open the 2.0 form first). */
-  const WORKSPACE_ALIAS = { 'class-sheets': 'ecs' }; // the only workspace whose id differs from its 2.0 screen
-  const target = wsId => { const id = WORKSPACE_ALIAS[wsId] || wsId; return screens.has(id) ? `#v2-${id}` : null; };
-  return { register, view, sidebar, sticker, bind, esc, errorHtml, target, renderOverview, updateOverviewScroll, dataChanged, accountId, practiceCopy: PRACTICE_COPY };
+  const target = wsId => { const id = WORKSPACE_SCREEN[wsId]; return id && screens.has(id) ? `#v2-${id}` : null; };
+  return { register, view, sidebar, extraNav, sticker, bind, esc, errorHtml, target, canonical, workspaceFor, renderOverview, updateOverviewScroll, dataChanged, accountId, practiceCopy: PRACTICE_COPY };
 })();

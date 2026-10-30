@@ -1,13 +1,31 @@
 /* 2.0 화면 (V2-SCREENS.md): shared frame of the 2.0-form pages; each screen adds its own v2-screen-<id>.css. 2.0 typography
    and labels — dense tables and grids are the work surface here, not cards. */
 .v2s{display:flex;flex-direction:column;gap:12px;min-width:0}
-/* 2.0 부품 화면은 바깥 문서의 높이를 화면 안에 맞춘다. 내용 스크롤은 iframe의 .embed-main 하나가 맡는다. */
+/* 단독 2.0 부품 화면은 바깥 문서의 높이를 화면 안에 맞춘다. 현황과 합친 화면은 아래에서 페이지 스크롤을 되살린다. */
 .workspace:has(.v2s [data-v2-host-slot]){height:100dvh;min-height:0;display:grid;grid-template-rows:auto minmax(0,1fr) auto;overflow:clip}
 .workspace:has(.v2s [data-v2-host-slot]) #main{grid-row:2;width:100%;height:100%;min-height:0;overflow:clip;padding-bottom:12px}
 /* 데스크톱은 topbar가 숨어(display:none) 줄이 당겨진다 — main·footer 줄을 명시해야 main이 '나머지 전부' 줄에 선다(안 그러면 칸 높이 0 = 본문 빈 화면). */
 .workspace:has(.v2s [data-v2-host-slot]) #footer{grid-row:3}
 .workspace:has(.v2s [data-v2-host-slot]) .v2s{height:100%;min-height:0}
 .workspace:has(.v2s [data-v2-host-slot]) [data-v2-host-slot]{flex:1 1 0;min-height:0!important;height:auto!important}
+.workspace:has(.v2-combined [data-v2-host-slot]){height:auto;min-height:100dvh;display:block;overflow:visible}
+.workspace:has(.v2-combined [data-v2-host-slot]) #main{width:100%;height:auto;min-height:0;overflow:visible;padding-bottom:40px}
+.workspace:has(.v2-combined [data-v2-host-slot]) .v2s{height:auto;min-height:0}
+.workspace:has(.v2-combined [data-v2-host-slot]) [data-v2-host-slot]{flex:none;min-height:640px!important;height:calc(100dvh - 120px)!important}
+.v2-combined{display:grid;gap:18px;min-width:0}
+.v2-combined .ws-combined-overview{gap:12px}
+.v2-combined .ws-heading{align-items:center}
+.v2-combined .ws-heading h2{font-size:var(--ax-base);line-height:1.3}
+.v2-combined .ws-heading p{margin-top:4px}
+.v2-combined .ws-critical{gap:10px}
+.v2-combined .ws-metrics{gap:8px}
+.v2-combined .ws-metric{padding:10px 12px}
+.v2-combined .ws-signal-grid{grid-template-columns:repeat(auto-fit,minmax(min(100%,260px),1fr));gap:8px}
+.v2-combined .ws-signal{padding:10px 12px}
+.v2-combined .ws-signals h2{margin-bottom:6px}
+.v2-class-tabs{display:flex;align-items:center;gap:6px;border-bottom:1px solid var(--ax-line)}
+.v2-class-tabs a{display:inline-flex;align-items:center;justify-content:center;min-height:var(--ax-control-h);padding:0 14px;border-bottom:2px solid transparent;color:var(--ax-ink);font-size:var(--ax-control-sm);text-decoration:none}
+.v2-class-tabs a[aria-current=page]{border-bottom-color:var(--ax-primary);color:var(--ax-primary);font-weight:700}
 .v2s-head{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px}
 .v2s-head h1{margin:0;font-size:1.5rem}
 .v2s-note{margin:0;color:var(--muted,#5f6b7a);font-size:.875rem}

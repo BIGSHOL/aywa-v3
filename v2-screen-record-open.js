@@ -23,7 +23,11 @@
     const run = ++focusRun, started = Date.now(), here = () => location.hash.split('?')[0] === screen; // 화면이 주소에 조건을 덧붙여도 같은 화면
     const tick = () => {
       if (run !== focusRun || !here() || Date.now() - started > 20000) return;
-      const frame = document.querySelector('iframe[src*="/v2-host/"]');
+      const id = screen.slice(4), root = document.querySelector(`[data-v2-screen="${id}"]`);
+      if (!root) { setTimeout(tick, 400); return; }
+      const slot = root.querySelector('[data-v2-host-slot]');
+      const frame = document.querySelector(`iframe[data-v2-host="${id}"]:not([hidden])`);
+      if (slot && !frame) { setTimeout(tick, 400); return; }
       let doc = null; try { doc = frame ? frame.contentDocument : document; } catch { doc = null; }
       const row = doc && (!frame || doc.readyState === 'complete') ? findRow(doc, texts) : null;
       if (!row) { setTimeout(tick, 400); return; }
@@ -41,14 +45,14 @@
     const family = ctx.query.get('family') || '', id = ctx.query.get('id') || '';
     if (!FAMILY.test(family) || !UUID.test(id)) return '<p class="v2s-note">열 기록을 찾지 못했습니다.</p>';
     const r = ctx.load({ family, id });
-    if (r.status === 'error' || r.data?.error) return `<p class="v2s-note">처리 화면을 찾지 못했습니다. <a href="#workspace-${ctx.esc(family)}">작업 공간에서 보기</a></p>`;
+    if (r.status === 'error' || r.data?.error) return `<p class="v2s-note">처리 화면을 찾지 못했습니다. <a href="${ctx.esc(S.canonical(`#workspace-${family}`) || `#workspace-${family}`)}">업무 화면에서 보기</a></p>`;
     if (r.status !== 'ready') return '<p class="v2s-note">처리 화면을 여는 중…</p>';
     const { focus = [], expand = false } = r.data, actor = ctx.query.get('actor') || '';
     const target = r.data.target && UUID.test(actor) && !/[?&]actor=/.test(r.data.target) ? `${r.data.target}${r.data.target.includes('?') ? '&' : '?'}actor=${actor}` : r.data.target;
     requestAnimationFrame(() => {
       if (target && /^#v2-[a-z-]+(?:\?|$)/.test(target)) { location.replace(target); if (focus.length) focusRow(focus, expand, target.split('?')[0]); return; }
       // 처리 화면이 없는 기록 = 작업 공간 기록 서랍(뒤로 가기에 이 중간 주소가 남지 않게 replace).
-      location.replace(`#workspace-${family}`);
+      location.replace(S.canonical(`#workspace-${family}`) || `#workspace-${family}`);
       requestAnimationFrame(() => api?.showWorkspaceRecord?.(family, id));
     });
     return '<p class="v2s-note">처리 화면을 여는 중…</p>';

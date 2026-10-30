@@ -1,4 +1,4 @@
-/* 3.0 작업 공간: 카탈로그의 영역·처리 화면과 사본의 읽기 전용 기록을 보여 준다.
+/* 3.0 작업 공간: 2.0 화면이 있는 영역은 현황만 위에 더하고, 나머지는 읽기 전용 기록도 보여 준다.
    업무 요청은 공용 요청 창으로, 처리 동작은 실제 이식 화면으로 이어진다. */
 window.createWorkspaces = function createWorkspaces(api) {
   'use strict';
@@ -67,12 +67,13 @@ window.createWorkspaces = function createWorkspaces(api) {
   const areas=()=>Array.isArray(window.AxCatalog?.areas)?window.AxCatalog.areas.filter(a=>a&&a.id&&a.label&&!a.menuHidden):[];
   const area=id=>areas().find(a=>a.id===id);
   const has=id=>Boolean(area(id));
-  const familyOf=page=>String(page||'').startsWith('workspace-')?String(page).slice(10):'';
+  const familyOf=page=>{const value=String(page||'');return value.startsWith('workspace-')?value.slice(10).split('?')[0]:value.startsWith('v2-')?window.V2Screens?.workspaceFor?.(value.slice(3).split('?')[0])||'':'';};
+  const canonicalPage=id=>(window.V2Screens?.canonical?.(`#workspace-${id}`)||`#workspace-${id}`).slice(1);
   const data=id=>db.workspaces?.families?.[id]||null;
   const viewKind=a=>VIEW_KINDS.includes(a.viewKind)?a.viewKind:'records';
   const actionsOf=a=>(Array.isArray(a.actions)?a.actions:[]).filter(x=>x&&x.id&&x.label);
   const targetOf=x=>typeof x.target==='string'?{page:x.target,facet:''}:{page:String(x.target?.page||''),facet:String(x.target?.facet||'')};
-  const resolvePage=page=>api.hasView(page)?page:has(familyOf(page)||page)?`workspace-${familyOf(page)||page}`:'';
+  const resolvePage=page=>api.hasView(page)?(page.startsWith('workspace-')?canonicalPage(familyOf(page)):page):has(familyOf(page)||page)?canonicalPage(familyOf(page)||page):'';
   function dataState(id){
     const d=data(id);if(!d)return {key:'missing',note:''};
     return {key:STATE_LABEL[d.dataState]?d.dataState:'unavailable',note:String(d.coverageNote||'')};
@@ -228,6 +229,7 @@ window.createWorkspaces = function createWorkspaces(api) {
   /* ---------- workspace page ---------- */
   function view(id){
     const a=area(id);if(!a)return '';
+    if(id==='payroll'&&window.AywaAccount?.current?.()?.role==='teacher')return '<div class="ws"><p class="ax-note" role="status">이 계정은 이 화면을 열 수 없습니다.</p></div>';
     state.recent=[id,...state.recent.filter(x=>x!==id)].slice(0,4);
     if(needsRemote(id))queueMicrotask(()=>loadRecords(id));
     if(boardNeeded(id))queueMicrotask(()=>loadBoard(id));
@@ -235,6 +237,13 @@ window.createWorkspaces = function createWorkspaces(api) {
     const d=data(id),kind=viewKind(a);
     // 머리 = 영역 · 제목 · 지금 상태 한 줄. 출처·기준일·목록 설명 줄은 싣지 않는다(원장 10-28 "쓸데없는 문구들 … 없애거나 수정해").
     return `<div class="ws" data-family="${h(id)}" data-view="${kind}"><div class="page-heading ws-heading"><div><p class="ws-group">${h(a.group||'')}</p><h1>${h(a.label)}</h1><p>${h(d?.summary||a.summary||'')}</p></div><div class="heading-actions">${btn('이 화면으로 대화','ask',`data-id="${h(id)}"`)}</div></div>${critical(a)}${signalList(a)}<div class="ws-body"><section class="ws-main" id="ws-main" aria-label="${h(a.label)} 기록">${mainHtml(a)}</section><aside class="ws-side">${actionPanel(a)}${linkedRequests(a)}${relations(a)}</aside></div></div>`;
+  }
+  function overview(id,account){
+    const a=area(id);if(!a)return '';
+    state.recent=[id,...state.recent.filter(x=>x!==id)].slice(0,4);
+    const allowed=['master','owner'].includes(account?.role);
+    const d=data(id);
+    return `<section class="ws ws-combined-overview" data-family="${h(id)}" aria-label="${h(a.label)} 현황"><div class="page-heading ws-heading"><div><p class="ws-group">${h(a.group||'')}</p><h2>지금 상태</h2><p>${allowed?h(d?.summary||a.summary||''):'이 화면의 현황을 볼 수 없습니다.'}</p></div>${allowed?`<div class="heading-actions">${btn('이 화면으로 대화','ask',`data-id="${h(id)}"`)}${btn('업무 요청','request',`data-id="${h(id)}"`,true)}</div>`:''}</div>${allowed?`${critical(a)}${signalList(a)}`:''}</section>`;
   }
   // KPI = 최근 변화(원장 10-28 "원하는건 추세"): 지금 값 · 직전 기간 대비(좋아짐/나빠짐 색) · 추세선(기간마다 값은 마우스·키보드로).
   // 작업 공간 카드와 원장 첫 화면 '운영 상태'가 같은 함수로 그린다. 기간(span)은 제목 오른쪽(원장 10-28 "제목 우측에 기한 적어놓을것").
@@ -545,7 +554,7 @@ window.createWorkspaces = function createWorkspaces(api) {
   function openEvidence(familyId,recordId){
     document.querySelectorAll('dialog[open]').forEach(d=>d.close());
     if(window.RecordOpen?.supports(familyId,recordId)){window.RecordOpen.open(familyId,recordId);return;}
-    if(api.getPage()!==`workspace-${familyId}`)navigate(`workspace-${familyId}`);
+    const page=canonicalPage(familyId);if(api.getPage()!==page)navigate(page);
     requestAnimationFrame(()=>showRecord(familyId,recordId));
   }
   // 근거가 여럿 = 목록 한 장(열 맞춤) — 줄을 누르면 서랍을 거치지 않고 그 기록의 처리 화면.
@@ -567,7 +576,7 @@ window.createWorkspaces = function createWorkspaces(api) {
     if(open)out.push(btn('상세 화면 열기','record-open',`data-record="${h(rid)}"`));
     const direct=window.RecordOpen?.supports(a.id,rid)?window.RecordOpen.href(a.id,rid):''; // 그 기록이 열린 처리 화면 — 없으면 이 영역의 업무 화면
     if(direct||target)out.push(btn('처리 화면 열기','goto',`data-page="${h((direct||target).slice(1))}"`));
-    if(!open&&!v2)actionsOf(a).filter(x=>x.mode==='navigate'&&!familyOf(targetOf(x).page)&&resolvePage(targetOf(x).page)).forEach(x=>out.push(btn(x.label,'action',`data-id="${h(a.id)}" data-action="${h(x.id)}" data-record="${h(rid)}"`)));
+    if(!open&&!v2)actionsOf(a).filter(x=>x.mode==='navigate'&&!targetOf(x).page.startsWith('workspace-')&&resolvePage(targetOf(x).page)).forEach(x=>out.push(btn(x.label,'action',`data-id="${h(a.id)}" data-action="${h(x.id)}" data-record="${h(rid)}"`)));
     return `<div class="ax-actions">${out.join('')}</div>`;
   }
   function textbookAssignments(r){
@@ -606,13 +615,14 @@ window.createWorkspaces = function createWorkspaces(api) {
   }
   function sidebar(page){
     if(!areas().length)return '';
-    // Only the current group opens by itself; groups the owner opened or closed by hand keep that choice.
-    const current=familyOf(page),currentGroup=area(current)?.group,isOpen=g=>state.open.has(g)||(g===currentGroup&&!state.closed.has(g));
-    const recent=state.recent.filter(has).slice(0,3);
-    return `<div class="nav-group">업무 찾기</div><div class="ws-finder"><input type="search" id="ws-find" role="combobox" aria-expanded="${Boolean(state.query)}" aria-controls="ws-find-list" aria-autocomplete="list" aria-activedescendant="${state.active>=0?`ws-find-${state.active}`:''}" aria-label="업무 찾기 · 기능 이름이나 작업으로 검색" placeholder="예: 보강, 급여, 회의록" value="${h(state.query)}" autocomplete="off"><ul id="ws-find-list" role="listbox" aria-label="업무 검색 결과">${finderResults()}</ul></div>${recent.length?`<div class="ws-recent">${recent.map(id=>`<a class="nav-item ${current===id?'active':''}" href="#workspace-${h(id)}" ${current===id?'aria-current="page"':''}>${window.V2Screens?.sticker?.(id)||''}<span>${h(area(id).label)}</span></a>`).join('')}</div>`:''}<div class="ws-groups">${groups().map(g=>`<details data-ws-group="${h(g)}" ${isOpen(g)?'open':''}><summary>${h(g)}<span class="nav-count">${areas().filter(a=>(a.group||'기타')===g).length}</span></summary>${areas().filter(a=>(a.group||'기타')===g).map(a=>`<a class="nav-item ws-nav ${current===a.id?'active':''}" href="#workspace-${h(a.id)}" ${current===a.id?'aria-current="page"':''}>${window.V2Screens?.sticker?.(a.id)||''}<span>${h(a.label)}</span></a>`).join('')}</details>`).join('')}</div>`;
+    // 현재 영역의 묶음만 자동으로 연다. 직접 연 상태는 유지한다.
+    const current=familyOf(page),currentGroup=area(current)?.group||(page?.startsWith('v2-before-class')?'수업':null),isOpen=g=>state.open.has(g)||(g===currentGroup&&!state.closed.has(g));
+    const groupItems=g=>areas().filter(a=>(a.group||'기타')===g);
+    const item=a=>{const href=window.V2Screens?.canonical?.(`#workspace-${a.id}`)||`#workspace-${a.id}`,active=current===a.id;return `<a class="nav-item ws-nav ${active?'active':''}" href="${h(href)}" ${active?'aria-current="page"':''}>${window.V2Screens?.sticker?.(a.id)||''}<span>${h(a.label)}</span></a>${a.id==='attendance'?window.V2Screens?.extraNav?.('before-class',page)||'':''}`;};
+    return `<div class="nav-group">업무 찾기</div><div class="ws-finder"><input type="search" id="ws-find" role="combobox" aria-expanded="${Boolean(state.query)}" aria-controls="ws-find-list" aria-autocomplete="list" aria-activedescendant="${state.active>=0?`ws-find-${state.active}`:''}" aria-label="업무 찾기 · 기능 이름이나 작업으로 검색" placeholder="예: 보강, 급여, 회의록" value="${h(state.query)}" autocomplete="off"><ul id="ws-find-list" role="listbox" aria-label="업무 검색 결과">${finderResults()}</ul></div><div class="ws-groups">${groups().map(g=>`<details data-ws-group="${h(g)}" ${isOpen(g)?'open':''}><summary>${h(g)}<span class="nav-count">${groupItems(g).length+(g==='수업'&&window.V2Screens?.extraNav?.('before-class',page)?1:0)}</span></summary>${groupItems(g).map(item).join('')}</details>`).join('')}</div>`;
   }
   function updateFinder(){const list=$('#ws-find-list'),input=$('#ws-find');if(!list||!input)return;list.innerHTML=finderResults();input.setAttribute('aria-expanded',String(Boolean(state.query)));input.setAttribute('aria-activedescendant',state.active>=0?`ws-find-${state.active}`:'');list.querySelector('.active')?.scrollIntoView({block:'nearest'});}
-  function searchItems(query){return matches(query).map(m=>({page:`workspace-${m.a.id}`,title:m.a.label,note:`업무 · ${m.a.group||''}${m.op?` · ${m.op.label}`:''}`}));}
+  function searchItems(query){return matches(query).map(m=>({page:canonicalPage(m.a.id),title:m.a.label,note:`업무 · ${m.a.group||''}${m.op?` · ${m.op.label}`:''}`}));}
   function homeSignals(){
     const list=areas().flatMap(a=>(data(a.id)?.signals||[]).map(s=>({a,s}))).sort((x,y)=>byPriority(x.s,y.s));
     if(!list.length)return '';
@@ -739,7 +749,7 @@ window.createWorkspaces = function createWorkspaces(api) {
     const el=event.target.closest('[data-ws]');if(!el||el.disabled)return;
     const {ws:action,id,record}=el.dataset;event.preventDefault();event.stopImmediatePropagation();
     if(el.closest('#sidebar'))api.closeMenu?.(false);
-    if(action==='open'){state.query='';state.active=-1;navigate(`workspace-${id}`);return;}
+    if(action==='open'){state.query='';state.active=-1;navigate(canonicalPage(id));return;}
     if(action==='facet'){state.facet[id]=state.facet[id]===el.dataset.facet&&el.dataset.facet?'':el.dataset.facet;state.page[id]=1;delete state.pin[id];reloadList(id);
       // 위 막대의 강조·기준 줄도 칩을 따른다(목록만 다시 그리면 막대가 그대로 남는다).
       const crit=document.querySelector(`.ws[data-family="${CSS.escape(id)}"] .ws-critical`),ar=area(id);if(crit&&ar)crit.outerHTML=critical(ar);return;}
@@ -769,7 +779,7 @@ window.createWorkspaces = function createWorkspaces(api) {
       const ids=[...new Set((s.recordIds||[]).map(String))];
       if(ids.length===1){openEvidence(id,ids[0]);return;}
       if(ids.length>1){evidenceList(a,s,ids);return;}
-      state.facet[id]='';state.q[id]='';if(api.getPage()!==`workspace-${id}`){navigate(`workspace-${id}`);}
+      state.facet[id]='';state.q[id]='';const page=canonicalPage(id);if(api.getPage()!==page){navigate(page);}
       requestAnimationFrame(()=>{$('#ws-main')?.scrollIntoView({block:'start',behavior:'auto'});toast('이 신호의 근거 기록은 작업 공간 목록에서 확인할 수 있습니다.');});
       return;
     }
@@ -789,7 +799,7 @@ window.createWorkspaces = function createWorkspaces(api) {
       if(event.isComposing||event.keyCode===229)return;
       const n=matches(state.query).length;
       if(event.key==='ArrowDown'||event.key==='ArrowUp'){event.preventDefault();if(n){state.active=(state.active+(event.key==='ArrowDown'?1:-1)+n)%n;updateFinder();}}
-      else if(event.key==='Enter'){event.preventDefault();const m=matches(state.query)[Math.max(0,state.active)];if(m){state.query='';state.active=-1;api.closeMenu?.(false);navigate(`workspace-${m.a.id}`);}}
+      else if(event.key==='Enter'){event.preventDefault();const m=matches(state.query)[Math.max(0,state.active)];if(m){state.query='';state.active=-1;api.closeMenu?.(false);navigate(canonicalPage(m.a.id));}}
       else if(event.key==='Escape'&&state.query){event.preventDefault();event.stopPropagation();state.query='';state.active=-1;el.value='';updateFinder();}
       return;
     }
@@ -936,12 +946,14 @@ window.createWorkspaces = function createWorkspaces(api) {
     state.q[id]='';state.page[id]=1;delete state.pin[id];
     state.facet[id]=f&&facetsOf(a).some(x=>x.id===f)?f:'';
     if(f&&!state.facet[id]&&screensOf(a).some(x=>x.id===f)){if(viewKind(a)==='settings')state.face[id]=f;else state.screen[id]=f;}
-    // 걸러보기를 싣고 왔으면 그 목록이 첫 화면에 오게 목록 구역으로 곧바로 옮긴다(경로 전환이라 애니메이션 없이 — 스크롤 원칙). 화면을 다 그린 뒤에.
-    const page=`workspace-${id}`,land=()=>{if(state.facet[id]&&api.getPage()===page)document.getElementById('ws-main')?.scrollIntoView({block:'start',behavior:'instant'});};
+    // 짝이 없는 작업 공간에서 구분을 싣고 왔으면 목록 구역으로 옮긴다. 짝이 있으면 같은 현황 표시를 유지하며 2.0 화면을 연다.
+    const page=canonicalPage(id),land=()=>{if(state.facet[id]&&api.getPage()===page)document.getElementById('ws-main')?.scrollIntoView({block:'start',behavior:'instant'});};
     if(location.hash===`#${page}`){api.navigate(page);land();}else{addEventListener('hashchange',land,{once:true});api.navigate(page);}
     return true;
   }
   /** 다른 화면에서 기록 하나를 연다 — 상세 서랍을 열고, 그 작업 공간이 열려 있으면 목록 맨 위에 그 줄을 세워 화면 안으로 옮긴다. */
   const showRecordFrom=(familyId,recordId)=>showRecord(familyId,recordId,true);
-  return {has,familyOf,view,sidebar,homeSignals,searchItems,coverage,area,areas,showRecord:showRecordFrom,kpiCard,data,openFamily,attachField,listTable,billingDetails};
+  const app={has,familyOf,view,overview,sidebar,homeSignals,searchItems,coverage,area,areas,showRecord:showRecordFrom,kpiCard,data,openFamily,attachField,listTable,billingDetails};
+  window.AywaWorkspaces=app;
+  return app;
 };

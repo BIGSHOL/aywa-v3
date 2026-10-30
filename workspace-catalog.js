@@ -1,5 +1,5 @@
 /* 생성 파일 — experiments/owner-concept/catalog/build-workspace-catalog.mjs가 만든다. 손으로 고치지 말 것.
-   2.0 감사 인벤토리에서 파생한 원장 작업 공간 카탈로그. 처리 화면 이동과 업무 요청만 제공한다. */
+   학원 업무 카탈로그. 처리 화면 이동과 업무 요청을 제공한다. */
 window.AxCatalog = {
  "schemaVersion": 1,
  "source": {
@@ -59,7 +59,7 @@ window.AxCatalog = {
    "label": "운영실",
    "group": "홈",
    "groupId": "home",
-   "page": "workspace-dashboard",
+   "page": "v2-dashboard",
    "summary": "역할별로 배치한 지표와 카드로 학원 현황을 봅니다.",
    "viewKind": "report",
    "facets": [
@@ -282,7 +282,7 @@ window.AxCatalog = {
    "label": "선생님 수업보고서",
    "group": "수업",
    "groupId": "class",
-   "page": "workspace-onescreen",
+   "page": "v2-onescreen",
    "summary": "선생님이 수업보고서를 쓰고 보내며 출결·공지·보강까지 한곳에서 마감하는 화면을 봅니다.",
    "viewKind": "sheet",
    "facets": [
@@ -374,7 +374,7 @@ window.AxCatalog = {
    "label": "영상 숙제",
    "group": "수업",
    "groupId": "class",
-   "page": "workspace-video-homework",
+   "page": "v2-video-homework",
    "summary": "영상 숙제 제출·배정·확인을 장부로 봅니다.",
    "viewKind": "records",
    "facets": [
@@ -457,7 +457,7 @@ window.AxCatalog = {
    "label": "시간표",
    "group": "수업",
    "groupId": "class",
-   "page": "workspace-timetable",
+   "page": "v2-timetable",
    "summary": "과목별 수업 배치와 반 이동·시트 가져오기를 봅니다.",
    "viewKind": "sheet",
    "facets": [
@@ -544,7 +544,7 @@ window.AxCatalog = {
    "label": "강사 시트",
    "group": "수업",
    "groupId": "class",
-   "page": "workspace-class-sheets",
+   "page": "v2-ecs",
    "summary": "영어·수학 강사 시트의 목표·수업계획·진도를 봅니다.",
    "viewKind": "sheet",
    "facets": [
@@ -673,7 +673,7 @@ window.AxCatalog = {
    "label": "출석부",
    "group": "수업",
    "groupId": "class",
-   "page": "workspace-attendance",
+   "page": "v2-attendance",
    "summary": "월별 출석부·오늘 출결·자리 출석부·키오스크를 봅니다.",
    "viewKind": "sheet",
    "facets": [
@@ -792,7 +792,7 @@ window.AxCatalog = {
    "label": "수업목록",
    "group": "수업",
    "groupId": "class",
-   "page": "workspace-classes",
+   "page": "v2-classes",
    "summary": "반 목록과 반 상세(수강생·시간표·인수인계)를 봅니다.",
    "viewKind": "records",
    "facets": [
@@ -947,7 +947,7 @@ window.AxCatalog = {
    "label": "교재목록",
    "group": "수업",
    "groupId": "class",
-   "page": "workspace-textbooks",
+   "page": "v2-textbooks",
    "summary": "수업 교재와 차수별 진도·과제, 반 배정을 봅니다.",
    "viewKind": "records",
    "facets": [
@@ -1025,7 +1025,7 @@ window.AxCatalog = {
    "label": "수업보고서",
    "group": "수업",
    "groupId": "class",
-   "page": "workspace-lesson-reports",
+   "page": "v2-lesson-reports",
    "summary": "수업보고서 작성률·목록과 ClassNote 발송을 봅니다.",
    "viewKind": "report",
    "facets": [
@@ -1152,7 +1152,7 @@ window.AxCatalog = {
    "label": "직원 평가",
    "group": "수업",
    "groupId": "class",
-   "page": "workspace-class-review",
+   "page": "v2-class-review",
    "summary": "수업 참관 평가와 직원 포트폴리오를 봅니다.",
    "viewKind": "report",
    "facets": [
@@ -1240,7 +1240,7 @@ window.AxCatalog = {
    "label": "원생목록",
    "group": "원생",
    "groupId": "student",
-   "page": "workspace-students",
+   "page": "v2-students",
    "summary": "원생 명단과 원생 상세(수업·성적·출결·상담·수납 등)를 봅니다.",
    "viewKind": "records",
    "facets": [
@@ -1455,7 +1455,7 @@ window.AxCatalog = {
    "label": "성적관리",
    "group": "원생",
    "groupId": "student",
-   "page": "workspace-exams",
+   "page": "v2-exams",
    "summary": "학기별 시험 성적을 입력 격자와 확인 뷰로 봅니다.",
    "viewKind": "sheet",
    "facets": [
@@ -1539,7 +1539,7 @@ window.AxCatalog = {
    "label": "원생상담",
    "group": "원생",
    "groupId": "student",
-   "page": "workspace-consultations",
+   "page": "v2-consultations",
    "summary": "재원생 상담 기록과 후속조치를 봅니다.",
    "viewKind": "records",
    "facets": [
@@ -1618,7 +1618,7 @@ window.AxCatalog = {
    "label": "신규 콜&상담",
    "group": "원생",
    "groupId": "student",
-   "page": "workspace-enrollment",
+   "page": "v2-enrollment",
    "summary": "신규 콜&상담을 접수부터 등록까지 단계로 봅니다.",
    "viewKind": "flow",
    "facets": [
@@ -1859,7 +1859,7 @@ window.AxCatalog = {
    "label": "퇴원관리",
    "group": "원생",
    "groupId": "student",
-   "page": "workspace-withdrawals",
+   "page": "v2-withdrawals",
    "summary": "퇴원·수강종료를 사유와 추이로 봅니다.",
    "viewKind": "flow",
    "facets": [
@@ -1931,7 +1931,7 @@ window.AxCatalog = {
    "label": "퇴원보고서",
    "group": "원생",
    "groupId": "student",
-   "page": "workspace-withdrawal-reports",
+   "page": "v2-withdrawal-reports",
    "summary": "퇴원보고서를 작성 요청부터 승인·처리까지 단계로 봅니다.",
    "viewKind": "flow",
    "facets": [
@@ -2010,7 +2010,7 @@ window.AxCatalog = {
    "label": "직원관리",
    "group": "운영",
    "groupId": "operation",
-   "page": "workspace-staff",
+   "page": "v2-staff",
    "summary": "직원 명부·계약·이력서·휴가·연차를 봅니다.",
    "viewKind": "records",
    "facets": [
@@ -2172,7 +2172,7 @@ window.AxCatalog = {
    "label": "수납관리",
    "group": "운영",
    "groupId": "operation",
-   "page": "workspace-billing",
+   "page": "v2-billing",
    "summary": "청구·수납과 교재·지출·회차 확정·환불을 봅니다.",
    "viewKind": "report",
    "facets": [
@@ -2306,7 +2306,7 @@ window.AxCatalog = {
    "label": "교재 요청",
    "group": "운영",
    "groupId": "operation",
-   "page": "workspace-textbook-requests",
+   "page": "v2-textbook-requests",
    "summary": "선생님이 요청한 교재가 주문·전달·납부되는 흐름을 봅니다.",
    "viewKind": "flow",
    "facets": [
@@ -2603,7 +2603,7 @@ window.AxCatalog = {
    "label": "회의록",
    "group": "운영",
    "groupId": "operation",
-   "page": "workspace-meetings",
+   "page": "v2-meetings",
    "summary": "회의록과 녹음 분석 결과를 봅니다.",
    "viewKind": "timeline",
    "facets": [
@@ -2684,7 +2684,7 @@ window.AxCatalog = {
    "label": "전자결재",
    "group": "운영",
    "groupId": "operation",
-   "page": "workspace-approvals",
+   "page": "v2-approvals",
    "summary": "결재함을 대기·예정·진행·완료로 봅니다.",
    "viewKind": "flow",
    "facets": [
@@ -2806,7 +2806,7 @@ window.AxCatalog = {
     },
     {
      "id": "preview",
-     "label": "문서 미리보기",
+     "label": "문서 보기",
      "kind": "face"
     }
    ],
@@ -2907,7 +2907,7 @@ window.AxCatalog = {
    "label": "학원 설정",
    "group": "지원",
    "groupId": "support",
-   "page": "workspace-owner-settings",
+   "page": "v2-owner",
    "summary": "학원 설정 18개 면(프로필·운영·과목·청구·권한·메뉴·연동 등)을 봅니다.",
    "viewKind": "settings",
    "facets": [
@@ -4083,19 +4083,19 @@ window.AxCatalog = {
   },
   "operationFacets": {
    "attendance.change-poll": {
-    "page": "workspace-attendance",
+    "page": "v2-attendance",
     "facet": "live"
    },
    "attendance.hub-search": {
-    "page": "workspace-attendance",
+    "page": "v2-attendance",
     "facet": "monthly"
    },
    "class-review.portfolio-compare": {
-    "page": "workspace-class-review",
+    "page": "v2-class-review",
     "facet": "portfolio"
    },
    "class-sheets.day-plan": {
-    "page": "workspace-class-sheets",
+    "page": "v2-ecs",
     "facet": "ecs"
    },
    "documents.view": {
@@ -4103,11 +4103,11 @@ window.AxCatalog = {
     "facet": "preview"
    },
    "enrollment.count-poll": {
-    "page": "workspace-enrollment",
+    "page": "v2-enrollment",
     "facet": "pending"
    },
    "onescreen.report-reads": {
-    "page": "workspace-onescreen",
+    "page": "v2-onescreen",
     "facet": "reports"
    },
    "shuttle.live-map": {
@@ -4123,11 +4123,11 @@ window.AxCatalog = {
     "facet": "ontology"
    },
    "textbooks.plan-compare": {
-    "page": "workspace-class-sheets",
+    "page": "v2-ecs",
     "facet": "plan-gap"
    },
    "withdrawals.exit-overlay": {
-    "page": "workspace-timetable",
+    "page": "v2-timetable",
     "facet": "board"
    }
   }

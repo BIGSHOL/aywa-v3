@@ -149,7 +149,7 @@ const AREA_DEFINITIONS = [
       fc('done', '완료', text(APR, '"완료"'), 'box'), fc('rejected', '반려·회수', text(APR, '반려·회수'), 'box'), fc('cc', '참조', text(APR, '"참조"'), 'box'), fc('academy', '학원 전체 진행', text(APR, '학원 전체 진행'), 'box')],
     actions: [] },
   { id: 'documents', label: '데이터베이스', group: 'operation', viewKind: 'records', summary: '학원 서식·문서 저장소를 폴더로 봅니다.',
-    facets: [fc('folders', '데이터베이스', route('/documents')), fc('detail', '문서 상세', route('/documents/[id]'), 'face'), fc('preview', '문서 미리보기', route('/documents/[id]/preview'), 'face')],
+    facets: [fc('folders', '데이터베이스', route('/documents')), fc('detail', '문서 상세', route('/documents/[id]'), 'face'), fc('preview', '문서 보기', route('/documents/[id]/preview'), 'face')],
     actions: [] },
   // ───────── 지원 ─────────
   { id: 'support', label: '고객센터', group: 'support', viewKind: 'records', summary: '공지사항과 개선요청 처리 상태를 봅니다.',

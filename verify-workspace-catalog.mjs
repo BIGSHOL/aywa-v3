@@ -6,7 +6,7 @@ import { readFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import vm from 'node:vm';
-import { buildWorkspaceCatalog, renderCatalogJs, catalogJsPath, catalogJsonPath, FIELD_TYPES, VIEW_KINDS, MODES, BANNED_VISIBLE, BANNED_ANYWHERE, displayOptions } from './catalog/build-workspace-catalog.mjs';
+import { buildWorkspaceCatalog, renderCatalogJs, catalogJsPath, catalogJsonPath, FIELD_TYPES, VIEW_KINDS, MODES, BANNED_VISIBLE, BANNED_ANYWHERE, displayOptions, pageFor } from './catalog/build-workspace-catalog.mjs';
 import { extractOptions } from './catalog/option-sources.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -38,7 +38,7 @@ const legacy = new Set(['home', 'students', 'admissions', 'classes', 'learning',
 for (const a of C.areas) {
   const where = `area ${a.id}`;
   for (const k of ['id', 'label', 'group', 'page', 'summary', 'viewKind']) if (typeof a[k] !== 'string' || !a[k]) schema.push(`${where}.${k}`);
-  if (a.page !== `workspace-${a.id}`) schema.push(`${where}.page 규칙`);
+  if (a.page !== pageFor(a.id)) schema.push(`${where}.page 규칙`);
   if (!VIEW_KINDS.includes(a.viewKind)) schema.push(`${where}.viewKind`);
   if (!Array.isArray(a.facets) || !a.facets.length) schema.push(`${where}.facets 비어 있음`);
   for (const fc of a.facets || []) if (!fc.id || !fc.label) schema.push(`${where}.facet`);
@@ -105,7 +105,7 @@ const serve = readFileSync(join(here, 'serve-live.mjs'), 'utf8');
 const routes = [...serve.matchAll(/\['(\/[^']*)',\s*\['([^']+)','([^']+)'\]\]/g)].map(m => `${m[1]}=>${m[2]}|${m[3]}`);
 const expected = [
   '/=>live.html|text/html; charset=utf-8', '/index.html=>live.html|text/html; charset=utf-8', '/styles.css=>styles.css|text/css; charset=utf-8',
-  '/live.css=>live.css|text/css; charset=utf-8', '/live.js=>live.js|text/javascript; charset=utf-8', '/ai-result-meta.js=>ai-result-meta.js|text/javascript; charset=utf-8', '/ax.js=>ax.js|text/javascript; charset=utf-8',
+  '/live.css=>live.css|text/css; charset=utf-8', '/live.js=>live.js|text/javascript; charset=utf-8', '/absence-sessions.mjs=>absence-sessions.mjs|text/javascript; charset=utf-8', '/ai-result-meta.js=>ai-result-meta.js|text/javascript; charset=utf-8', '/ax.js=>ax.js|text/javascript; charset=utf-8',
   '/ax.css=>ax.css|text/css; charset=utf-8', '/workspace-catalog.js=>workspace-catalog.js|text/javascript; charset=utf-8',
   '/workspaces.js=>workspaces.js|text/javascript; charset=utf-8', '/workspaces.css=>workspaces.css|text/css; charset=utf-8',
   '/flow-ui.js=>flow-ui.js|text/javascript; charset=utf-8', '/flow-ui.css=>flow-ui.css|text/css; charset=utf-8',
@@ -119,8 +119,8 @@ const expected = [
 const serving = [];
 for (const e of expected) if (!routes.includes(e)) serving.push(`허용 목록에 없음: ${e}`);
 for (const r of routes) if (!expected.includes(r)) serving.push(`허용 목록 밖 정적 경로: ${r}`);
-if (!/server\.listen\(port,'127\.0\.0\.1'/.test(serve)) serving.push('127.0.0.1 바인딩이 아니다');
-if (!/const hosts=new Set\(\[`127\.0\.0\.1:\$\{port\}`,`localhost:\$\{port\}`\]\)/.test(serve)) serving.push('호스트 허용이 루프백 둘이 아니다');
+if (!/server\.listen\(port,lanIp\?'0\.0\.0\.0':'127\.0\.0\.1'/.test(serve)) serving.push('기본 루프백 바인딩이 아니다');
+if (!/const hosts=new Set\(\[`127\.0\.0\.1:\$\{port\}`,`localhost:\$\{port\}`/.test(serve)) serving.push('루프백 호스트 허용이 없다');
 check('정적 서빙이 정확한 허용 목록과 루프백 바인딩을 유지한다', serving);
 
 const failed = checks.filter(c => !c.ok);

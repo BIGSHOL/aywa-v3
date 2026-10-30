@@ -13,6 +13,13 @@ import { repoRoot } from './scan-source.mjs';
 import { DISCOVERED } from './operation-groups.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
+const SCREEN_PAGES = Object.freeze({
+  dashboard:'dashboard',onescreen:'onescreen',timetable:'timetable','class-sheets':'ecs',attendance:'attendance',classes:'classes',students:'students',
+  exams:'exams','lesson-reports':'lesson-reports',textbooks:'textbooks',billing:'billing','textbook-requests':'textbook-requests',
+  'owner-settings':'owner',enrollment:'enrollment','withdrawal-reports':'withdrawal-reports',approvals:'approvals',withdrawals:'withdrawals',
+  'video-homework':'video-homework',consultations:'consultations',staff:'staff',meetings:'meetings','class-review':'class-review',
+});
+export const pageFor = id => SCREEN_PAGES[id] ? `v2-${SCREEN_PAGES[id]}` : `workspace-${id}`;
 export const catalogJsPath = join(here, '..', 'workspace-catalog.js');
 export const catalogJsonPath = join(here, 'workspace-catalog.json');
 
@@ -149,7 +156,7 @@ export function buildWorkspaceCatalog({ pages = scanPages(), inventoryText = rea
     });
     return {
       id: a.id, label: a.label, group: groupLabel[a.group], groupId: a.group, ...(a.menuHidden ? { menuHidden: true } : {}),
-      page: `workspace-${a.id}`, summary: a.summary, viewKind: a.viewKind,
+      page: pageFor(a.id), summary: a.summary, viewKind: a.viewKind,
       facets: a.facets.map(fc => ({ id: fc.id, label: fc.label, kind: fc.kind })),
       actions, relations: [a.id, ...new Set(actions.flatMap(x => x.sourceOperationIds.map(id => id.slice(0, id.indexOf('.')))).filter(id => id !== a.id))],
       meta: { ownerScope: fam?.ownerScope, priority: fam?.ax.priority, sourceRoutes: inventory.families.find(x => x.id === a.id)?.routes.length ?? 0, operations: fam?.keyOps.length ?? 0, operationIds: fam?.keyOps.map(o => o.id) ?? [] },
@@ -171,7 +178,7 @@ export function buildWorkspaceCatalog({ pages = scanPages(), inventoryText = rea
       const [areaId, facetId] = g.dest.facet.split('/');
       const area = AREAS.find(x => x.id === areaId);
       if (!area || !area.facets.some(x => x.id === facetId)) problems.push(`${g.id}: 없는 화면 면 ${g.dest.facet}`);
-      else operationFacets[g.id] = { page: `workspace-${areaId}`, facet: facetId };
+      else operationFacets[g.id] = { page: pageFor(areaId), facet: facetId };
     }
   }
 
@@ -216,7 +223,7 @@ export function buildWorkspaceCatalog({ pages = scanPages(), inventoryText = rea
 export function renderCatalogJs(catalog) {
   const json = JSON.stringify(catalog, null, 1).replaceAll('<', '\\u003c');
   return `/* 생성 파일 — experiments/owner-concept/catalog/build-workspace-catalog.mjs가 만든다. 손으로 고치지 말 것.
-   2.0 감사 인벤토리에서 파생한 원장 작업 공간 카탈로그. 처리 화면 이동과 업무 요청만 제공한다. */
+   학원 업무 카탈로그. 처리 화면 이동과 업무 요청을 제공한다. */
 window.AxCatalog = ${json};
 window.dispatchEvent(new Event('ax-catalog'));
 `;
