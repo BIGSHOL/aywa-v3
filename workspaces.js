@@ -249,8 +249,12 @@ window.createWorkspaces = function createWorkspaces(api) {
     if(!metrics.length&&!trend?.points?.length)return '';
     const value=m=>m.value===null||m.value===undefined?'기록 없음':`${fmt(m.value)}${m.unit||''}`;
     const points=(trend?.points||[]).map(p=>trend.granularity==='day'?{date:p.date,value:p.value}:{month:p.date,value:p.value});
-    const chartHtml=!points.length?'':trend.granularity==='day'?`<div class="ws-line">${api.lineChart(points,{key:'value',label:trend.label,unit:trend.unit||''})}</div>`:api.chart(points.map(p=>({...p,label:api.yymm(p.month)})),'value',trend.unit==='원'?'만원':trend.unit||'',{label:trend.label});
-    return `<section class="ws-critical" aria-label="핵심 지표">${metrics.length?`<div class="ws-metrics"${isKpi?` style="--kpi-n:${metrics.length<=6?metrics.length:Math.ceil(metrics.length/2)};--kpi-half:${metrics.length<=6?Math.ceil(metrics.length/2):3}"`:''}>${metrics.map(m=>m.kind==='kpi'?kpiCard(m):`<div class="ws-metric"><span>${h(m.label)}</span><strong>${h(value(m))}</strong>${m.detail?`<small>${h(m.detail)}</small>`:''}</div>`).join('')}</div>`:''}${chartHtml?`<div class="ws-trend"><h2>${h(trend.label||'추이')}</h2>${chartHtml}</div>`:''}</section>`;
+    // 막대는 아래 구분 칩과 무관한 전체 기록이다. 기간 칩(이번 달·올해·26.xx)을 고르면 그 달 막대를 강조하고, 머리에 기준을 적는다.
+    const fid=state.facet[a.id]||'',fl=fid?facetsOf(a).find(f=>f.id===fid)?.label||'':'',months=points.map(p=>p.month).filter(Boolean),cur=db.meta.month;
+    const active=(/^month:\d{4}-\d{2}$/.test(fid)?[fid.slice(6)]:fid==='this-year'||/올해/.test(fl)?months.filter(m=>m.slice(0,4)===cur.slice(0,4)):/this-month/.test(fid)||/이번 달/.test(fl)?[cur]:[]).filter(m=>months.includes(m));
+    const basis=`${active.length?`${active.length>1?`${api.yymm(active[0])}~${api.yymm(active.at(-1))}`:api.yymm(active[0])} 강조 · `:''}전체 기록 · 아래 구분과 무관`;
+    const chartHtml=!points.length?'':trend.granularity==='day'?`<div class="ws-line">${api.lineChart(points,{key:'value',label:trend.label,unit:trend.unit||''})}</div>`:api.chart(points.map(p=>({...p,label:api.yymm(p.month)})),'value',trend.unit==='원'?'만원':trend.unit||'',{label:trend.label,...(active.length?{active}:{})});
+    return `<section class="ws-critical" aria-label="핵심 지표">${metrics.length?`<div class="ws-metrics"${isKpi?` style="--kpi-n:${metrics.length<=6?metrics.length:Math.ceil(metrics.length/2)};--kpi-half:${metrics.length<=6?Math.ceil(metrics.length/2):3}"`:''}>${metrics.map(m=>m.kind==='kpi'?kpiCard(m):`<div class="ws-metric"><span>${h(m.label)}</span><strong>${h(value(m))}</strong>${m.detail?`<small>${h(m.detail)}</small>`:''}</div>`).join('')}</div>`:''}${chartHtml?`<div class="ws-trend"><h2>${h(trend.label||'추이')}</h2><p class="ax-note ws-trend-basis">${h(basis)}</p>${chartHtml}</div>`:''}</section>`;
   }
   const byPriority=(x,y)=>(PRIORITY_ORDER.indexOf(x.priority)+1||9)-(PRIORITY_ORDER.indexOf(y.priority)+1||9);
   function signalCard(id,s,withFamily=false){
@@ -818,7 +822,9 @@ window.createWorkspaces = function createWorkspaces(api) {
     const {ws:action,id,record}=el.dataset;event.preventDefault();event.stopImmediatePropagation();
     if(el.closest('#sidebar'))api.closeMenu?.(false);
     if(action==='open'){state.query='';state.active=-1;navigate(`workspace-${id}`);return;}
-    if(action==='facet'){state.facet[id]=state.facet[id]===el.dataset.facet&&el.dataset.facet?'':el.dataset.facet;state.page[id]=1;delete state.pin[id];reloadList(id);return;}
+    if(action==='facet'){state.facet[id]=state.facet[id]===el.dataset.facet&&el.dataset.facet?'':el.dataset.facet;state.page[id]=1;delete state.pin[id];reloadList(id);
+      // 위 막대의 강조·기준 줄도 칩을 따른다(목록만 다시 그리면 막대가 그대로 남는다).
+      const crit=document.querySelector(`.ws[data-family="${CSS.escape(id)}"] .ws-critical`),ar=area(id);if(crit&&ar)crit.outerHTML=critical(ar);return;}
     if(action==='as-list'){if(el.dataset.v==='list')state.asList[id]=true;else{delete state.asList[id];state.facet[id]='';state.q[id]='';}state.page[id]=1;delete state.pin[id];reloadList(id);return;}
     if(action==='col'){openColMenu(id,el.dataset.col);return;}
     if(action==='expand'){const set=state.expanded[id]||(state.expanded[id]=new Set()),rid=String(record);if(set.has(rid))set.delete(rid);else set.add(rid);if(LOCAL.has(id))repaintLocal(id);else refreshMain(id);return;}
