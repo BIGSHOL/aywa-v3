@@ -3,7 +3,7 @@
 //  · 조회 = features/video-homework/server/ledger-queries.ts(getVideoHomeworkLedger · loadClassVideos) · assignments.ts(getAssignedVideoHomework) ·
 //    extra-issues.ts · rejections.ts · blank-facts.ts · blank-lessons.ts · assignment-availability.ts · own-homework.ts · manual-drive-review.ts ·
 //    video-review/server/points.ts — 표·칸·조건을 SQL로, 판정(명단·회차·숙제 0건 반·빈 칸 사유·마감)은 2.0 순수 함수(importV2) 그대로.
-//  · 보는 사람 = 3.0 띠에서 고른 직원(GET ?actor=). 관리자 장부 = 수업보고서를 열 수 있는 사람 · 강사 '내가 낸'(?view=mine) = 강사 역할(2.0 강사뷰).
+//  · 보는 사람 = 3.0 셸 계정(GET ?actor=). 관리자 장부 = 수업보고서를 열 수 있는 사람 · 강사 '내가 낸'(?view=mine) = 강사 역할(2.0 강사뷰).
 //    관리자 계열이 강사 주소로 오면 2.0처럼 같은 기간·필터의 관리자 장부로 보낸다. 겸직 강사뷰·'다른 강사 뷰'는 3.0에 없다.
 //  · 🔴 영상은 재생하지 않는다 — Drive 주소(미리보기·썸네일)를 화면으로 보내지 않는다. 회차 판정은 2.0처럼 '재생 가능한 영상'으로 하고
 //    (rounds.ts가 playback !== null을 본다), 화면에는 그 칸을 빼서 보낸다(빠진 칸 = 판정은 같고 재생 단추 대신 '아직 재생할 수 없는 영상').
@@ -338,7 +338,7 @@ async function build({ sql, params, tenantId: t, importV2 }) {
   const mine = params.view === 'mine', S = settingsOf(people), policy = S.report.videoHomeworkPolicy;
   // 강사 주소에 관리자 계열이 오면(알림 링크) 2.0처럼 같은 기간·필터의 관리자 장부로.
   if (mine && params.actor && people.editors.some(e => e.id === params.actor && e.role !== 'teacher')) return { redirectAdmin: true };
-  const pool = mine ? teacherEditors(people) : people.editors, u = pool.find(e => e.id === params.actor) ?? pool[0] ?? null;
+  const pool = mine ? teacherEditors(people) : people.editors, u = pool.find(e => e.id === params.actor) ?? null;
   const editors = listOf(pool);
   if (!u) return { notAllowed: true, editors };
   if (params.read) return { editors, read: await readOnServer(sql, t, R, people, u, params) };

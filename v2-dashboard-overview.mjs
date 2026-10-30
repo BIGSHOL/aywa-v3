@@ -37,7 +37,7 @@ async function tenantSettings(sql, t, RR) {
 }
 
 /**
- * 보는 사람 — 재직 중인 원장(master) 가운데 `viewerId`, 없거나 맞지 않으면 복사본을 뜨기 전 30일 동안 감사로그 활동이 가장 많은 사람(같으면 이름 순).
+ * 보는 사람 — 재직 중인 원장(master) 가운데 `viewerId`. 내부 조회에서 id가 없을 때만 최근 활동이 많은 원장(같으면 이름 순)을 쓴다.
  * 플랫폼 운영 계정(super_admins)은 고르지 않는다(2.0 지점 화면에서 그 계정은 관리자로 보인다 — 원장 첫 화면의 주인이 아니다).
  */
 export async function pickViewer(sql, t, viewerId, at) {
@@ -46,7 +46,7 @@ export async function pickViewer(sql, t, viewerId, at) {
       (select count(*)::int from public.audit_logs a where a.tenant_id=${t} and a.actor_id = u.id and a.created_at > ${new Date(at.getTime() - 30 * 86400000)} and a.created_at <= ${at}) recent
     from public.users u where u.tenant_id=${t} and u.status::text = 'active' and u.system_role::text = 'master' order by u.display_name, u.id`;
   const owners = rows.filter((r) => !r.super);
-  return owners.find((r) => r.id === viewerId) ?? [...owners].sort((a, b) => b.recent - a.recent)[0] ?? null;
+  return viewerId == null ? [...owners].sort((a, b) => b.recent - a.recent)[0] ?? null : owners.find((r) => r.id === viewerId) ?? null;
 }
 
 /** 2.0 OverviewSnapshot + 첫 그림의 막대/꺾은선(`loadDashboardChartKinds` — 보는 사람의 ui_prefs.dashboard). */

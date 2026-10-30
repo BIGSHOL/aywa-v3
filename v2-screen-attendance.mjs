@@ -9,7 +9,7 @@
 //    .tsx 안에만 있는 몇 줄(31칸 채우기·날짜축·담당 강사 합집합·역할 판정)과 불러올 수 없는 resolve.ts의 설정 병합은 아래 PORTED —
 //    verify가 2.0 원문과 맞는지 잡는다.
 //  · actions = 2.0 "use server" 함수와 1:1(이름 = 2.0 export 이름 · 인자 = 2.0 인자 · 같은 표·칸·감사로그). 호스트 shim이
-//    POST /api/v2/attendance/<함수> { module, actor, args }로 부른다(actor = 3.0 띠에서 고른 출결 권한 직원 — 로그인 대신).
+//    POST /api/v2/attendance/<함수> { module, actor, args }로 부른다(actor = 3.0 셸 계정 — 로그인 대신).
 //      2.0 모듈 · 함수                                              → 여기
 //      features/attendance/server/actions.ts      setAttendanceCell   → actions.setAttendanceCell (그날 칸 · 교시 지정 칸(slotStart) · 당일 출결
 //                                                 source 'live' 데스크 게이트 · 강사(담당 반만) 게이트 · attendance_cell/_clear/_note)
@@ -609,9 +609,9 @@ async function readSubstituteCells(sql, t, R, teacherId, month, excludeClassIds)
 
 const SEARCH_SEED_MAX = 40; // 2.0 `HUB_SEARCH_MAX_QUERY`(att-search-seed.ts가 쓰는 길이) — verify가 원문과 맞춘다.
 
-/** 보는 사람 = 2.0의 로그인한 사람(관리자 보기) — 3.0엔 로그인이 없어 호스트가 고른 직원(출결 '전체' 권한)을 주소 `viewer`로 보낸다. */
+/** 보는 사람 = 2.0의 로그인한 사람(관리자 보기) — 3.0 셸 계정을 주소 `viewer`로 받고 출결 '전체' 권한을 확인한다. */
 function pickViewer(editors, wanted) {
-  return editors.find(e => e.id === wanted) ?? editors.find(e => e.role === 'master') ?? editors[0] ?? null;
+  return editors.find(e => e.id === wanted) ?? null;
 }
 
 export const screen = {
@@ -639,6 +639,7 @@ export const screen = {
     const R = await loadRules(importV2), today = await copyDay();
     const [settings, transitions] = await Promise.all([readSettings(sql, t, R), readTransitions(sql, t, R)]);
     const editors = await actorsOf(sql, t, R, settings), viewer = pickViewer(editors, params.viewer);
+    if (!viewer) throw new V2Error(403, 'viewer_not_allowed', '출석 관리 권한이 없습니다.');
     // 2.0 `loadAttendanceViewPrefs` — 보는 사람의 users.ui_prefs.attendance(없으면 2.0 기본값).
     const [prefRow] = viewer ? await sql`select ui_prefs from public.users where tenant_id=${t} and id=${viewer.id}` : [];
     const viewPrefs = R.viewPrefs.parseAttendanceViewPrefs(prefRow?.ui_prefs?.attendance);
@@ -761,7 +762,7 @@ async function dayLoad({ sql, params, t, importV2 }) {
   if (Number.isNaN(day.getTime()) || day.toISOString().slice(0, 10) !== date || (classId && !UUID.test(classId))) return { page: 'notFound' };
   const R = await loadRules(importV2), settings = await readSettings(sql, t, R);
   const editors = await actorsOf(sql, t, R, settings), viewer = pickViewer(editors, params.viewer);
-  if (!viewer) return { page: 'notFound' };
+  if (!viewer) throw new V2Error(403, 'viewer_not_allowed', '출석 관리 권한이 없습니다.');
   const host = { operations: { subjects: settings.operations.subjects, gradeLevels: settings.operations.gradeLevels,
     jobTitles: settings.operations.jobTitles, jobTitlesByDepartment: settings.operations.jobTitlesByDepartment, holidays: settings.operations.holidays },
     disabledModules: settings.modules.disabled, preset: settings.preset };
@@ -822,7 +823,11 @@ async function quickLoad({ sql, params, t, importV2 }) {
 }
 /** 하위 주소 `/attendance/live` — 2.0 오늘 출결 page.tsx(좌석표 · 확인 필요 · 어제 출결). `poll`이면 화면 폴링의 지문만(2.0 poll-actions 두 함수). */
 async function liveLoad({ sql, params, t, importV2 }) {
-  if (params.poll) return { page: 'poll', fingerprint: await pollFingerprint(sql, t, params.poll, params.date ?? await copyDay(), params.from) };
+  if (params.poll) {
+    const R = await loadRules(importV2), settings = await readSettings(sql, t, R);
+    if (!pickViewer(await actorsOf(sql, t, R, settings), params.viewer)) throw new V2Error(403, 'viewer_not_allowed', '출석 관리 권한이 없습니다.');
+    return { page: 'poll', fingerprint: await pollFingerprint(sql, t, params.poll, params.date ?? await copyDay(), params.from) };
+  }
   const [R, S, L] = await Promise.all([loadRules(importV2), loadSeatRules(importV2), loadLiveRules(importV2)]);
   const settings = await readSettings(sql, t, R);
   return { ...(await liveProps({ sql, t, R, S, L, settings, toSplit }, params)), host: hostOf(settings) };
@@ -844,7 +849,7 @@ const VIA = '3.0 연습 복사본';
 const STATUSES = ['present', 'absent', 'late', 'excused', 'makeup', 'early_leave'];
 const bad = () => new V2Error(400, 'invalid_request', '입력 값을 확인해 주세요.');
 /**
- * 호스트(shims/server-action.ts)가 보내는 모양 — `{ module, actor, args }`(2.0 함수 인자 그대로 · actor = 3.0 띠에서 고른 사람).
+ * 호스트(shims/server-action.ts)가 보내는 모양 — `{ module, actor, args }`(2.0 함수 인자 그대로 · actor = 3.0 셸 계정).
  * 그 2.0 모듈의 그 함수가 아니면 받지 않는다(같은 이름이 다른 모듈에 있어도 섞이지 않게).
  */
 function hostCall(raw, module, arity) {
@@ -908,7 +913,7 @@ async function actorsOf(sql, t, R, settings) {
   const operators = new Set(supers.map(s => s.id)), base = R.perms.resolveMatrix(settings.permissions?.overrides ?? []), userOverrides = settings.permissions?.userOverrides ?? [];
   return users.filter(u => !operators.has(u.id) && R.perms.accessLevel(u.role, 'attendance', R.perms.applyUserOverrides(base, u.id, u.role, userOverrides)) === 'full')
     .map(u => ({ id: u.id, name: u.display_name, role: u.role }))
-    // 원장 먼저(2.0 `ROLE_HIERARCHY` 순) — 호스트 shim이 고른 사람이 없으면 첫 사람으로 저장한다.
+    // 원장 먼저(2.0 `ROLE_HIERARCHY` 순). 조회 주체는 주소의 계정 ID로만 결정한다.
     .sort((a, b) => (R.roles.ROLE_HIERARCHY[a.role] ?? 99) - (R.roles.ROLE_HIERARCHY[b.role] ?? 99) || a.name.localeCompare(b.name, 'ko'));
 }
 

@@ -10,7 +10,7 @@
 //  · 회차 확정(session-terms-face.tsx · session-verification-face.tsx) — v2-billing-sessions.mjs(2.0 서버 함수 그대로 · 공용 러너)
 //  · 수납 통계(/billing/stats · stats/page.tsx) — v2-billing-stats.mjs(2.0 loadBillingStats 그대로)
 //  · 강사 정산(teacher-settlement-face.tsx) — v2-billing-payroll.mjs(2.0 서버 함수 그대로 · 급여 열람 게이트 = 2.0 canReadSalary)
-// 사람마다 보이는 것이 다르다 — '보는 사람'을 고르고(운영자 계정 제외 · 원장 먼저) 그 사람의 권한 표로 2.0과 같게 낸다(v2-billing-common.mjs).
+// 사람마다 보이는 것이 다르다 — 3.0 셸 계정(viewer)이 수납·급여 허용 명단에 있어야 그 권한 표로 읽는다(v2-billing-common.mjs).
 // 🔴 급여(강사 정산)는 급여 열람 게이트(payroll_settings · 급여 기능 켜짐)를 지난 사람에게만 싣는다.
 //
 // 2.0 서버 액션 ↔ actions 대응표(이름·인자·반환 = 2.0 그대로, 저장하는 사람 = 보는 사람):
@@ -37,6 +37,7 @@
 //  · 서버 컴포넌트를 옮긴 것(교재 면): textbooks-face.tsx · textbooks-panel.tsx · catalog-panel.tsx(billing-textbooks.swaps.json).
 //  · 바깥 링크: 엑셀 내보내기 `/api/exports/billing` — 호스트 틀이 막는다(연습 자료 미지원).
 import { UUID } from './v2-mcs-core.mjs';
+import { V2Error } from './v2-screens.mjs';
 import { loadBillingRules, readSettings, readBillingViewers, billingEditorsOf, readSyncState, resolveBillingTab } from './v2-billing-common.mjs';
 import { readInvoicesForPeriod, readAvailablePeriods, readStudentOptions } from './v2-billing-invoices.mjs';
 import { readTextbooksFace, loadMyTextbookMent, textbookFaceActions } from './v2-billing-textbooks.mjs';
@@ -76,14 +77,14 @@ export const screen = {
   load: async ({ sql, params: sp, tenantId: t, importV2 }) => {
     const R = await loadBillingRules(importV2);
     const env = await readSettings(sql, t, R), viewers = await readBillingViewers(sql, t, R, env);
-    const viewer = viewers.find(v => v.id === sp.viewer) ?? viewers[0] ?? null;
+    const viewer = viewers.find(v => v.id === sp.viewer) ?? null;
+    if (!viewer) throw new V2Error(403, 'viewer_not_allowed', '이 계정은 수납관리를 볼 수 없습니다.');
     if (sp.ment) return { ment: await loadMyTextbookMent(sql, t, importV2, viewer) };
     if (sp.call) return { value: await readSessionCall(sql, t, importV2, viewer, sp.call, sp.args) };
     if (sp.refundOptions) return loadRefundStudentOptions(sql, viewer, await loadRefundRules(importV2));
     if (sp.prefill) return loadRefundPrefill(sql, viewer, await loadRefundRules(importV2), sp.prefill, sp.months === 'all' ? null : Number(sp.months ?? 3));
     const common = { editors: billingEditorsOf(viewers), viewer: viewer && { id: viewer.id, name: viewer.name, role: viewer.roleLabel },
       host: { operations: env.operations, disabledModules: env.disabled } };
-    if (!viewer) return { ...common, route: 'none' };
     // page.tsx 게이트 — 화면(호스트)이 같은 순서로 판정한다(requireAccess · canReadSalary · canAccessTenant · canManageTenant).
     const access = {
       billing: viewer.billing !== 'none', payrollMenu: viewer.payroll !== 'none',

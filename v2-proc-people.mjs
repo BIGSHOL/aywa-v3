@@ -1,7 +1,7 @@
-// 처리 화면(R — 퇴원보고서 · 전자결재 · 영상 제출 현황 · 퇴원관리) 공용: 3.0엔 로그인이 없어 '보는·저장하는 사람'을 3.0 띠에서 고른다.
+// 처리 화면(R — 퇴원보고서 · 전자결재 · 영상 제출 현황 · 퇴원관리) 공용: 3.0 셸 계정이 조회·저장 주체다.
 // 고를 수 있는 사람 = 그 메뉴를 열 수 있는 재직 직원(2.0 권한 표 = 역할 기본 + 학원 설정 덮어쓰기 + 개인 예외 · 운영자 계정 제외 —
 // 시간표 저장의 readPeople과 같은 계산). 처리 화면은 '누가 보느냐'로 화면 자체가 달라진다(내 차례 결재 · 담임이 쓸 보고서 …) —
-// 그래서 고른 사람은 저장(actor)뿐 아니라 조회(GET ?actor=)에도 쓴다. 고른 값이 없거나 목록 밖이면 첫 사람(원장 먼저).
+// 그래서 고른 사람은 저장(actor)뿐 아니라 조회(GET ?actor=)에도 쓴다. 목록 밖 계정은 열람할 수 없다.
 // 감사로그 = 2.0 logAction과 같은 칸 + metadata.via '3.0 연습 복사본'(공통 규약).
 import { V2Error } from './v2-screens.mjs';
 
@@ -64,10 +64,10 @@ export async function readPeople(sql, t, importV2, menu) {
   return {
     P, settings, level, operators, users,
     editors,
-    /** 3.0 띠에 보내는 모양 { id, name, role(라벨) }. */
+    /** 허용 계정 목록의 표시 모양 { id, name, role(라벨) }. */
     editorList: editors.map(e => ({ id: e.id, name: e.display_name, role: e.label })),
-    /** 고른 사람(없거나 목록 밖이면 첫 사람). */
-    pick: id => editors.find(e => e.id === id) ?? editors[0] ?? null,
+    /** 조회 계정이 이 메뉴의 허용 명단에 없으면 화면이 거절한다. */
+    pick: id => editors.find(e => e.id === id) ?? null,
     /** 2.0 canManageStudentStatusNow — 원생 쓰기 '전체' + 원생 상태 변경 담당. */
     canManageStatus: u => level(u, 'students') === 'full' && P.statusAccess.canManageStudentStatus({ id: u.id, systemRole: u.role }, false, managerIds),
     /** 2.0 getViewerStaffScope — 원장 역할엔 범위 없음. */

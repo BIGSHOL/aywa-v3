@@ -5,7 +5,7 @@
 //    getMyLineTemplates · getMyLeaveBalance). 2.0은 **세션 클라이언트 + RLS**로 읽는다 — 여기서도 읽기 트랜잭션 안에서 고른 사람의 신분
 //    (request.jwt.claims + authenticated 역할)으로 바꿔 같은 RLS를 지난다(누가 어떤 문서를 보는지가 2.0과 똑같다).
 //    판정(isMyTurn · needsMyDeferredConfirm · 연차 기간·잔여 · 직급 정렬)은 2.0 순수 함수(importV2) 그대로.
-//  · 보는 사람 = 3.0 띠에서 고른 직원(GET ?actor=). 결재자 후보가 전 직원이라(2.0) 고를 수 있는 사람도 재직 직원 전원 —
+//  · 보는 사람 = 3.0 셸 계정(GET ?actor=). 결재자 후보는 2.0처럼 재직 직원 전원이며,
 //    결재함·기안은 2.0처럼 전자결재 메뉴가 열린 사람만, 결재 문서는 메뉴 없이 결재선·참조·원장이면 열린다.
 //  · 저장 = 2.0 server/actions.ts의 11개 함수(같은 이름 · 같은 인자(_prev, FormData) · 같은 검증 · 같은 표·칸 · 같은 알림 줄 · 같은 감사로그).
 //    2.0은 service_role(RLS 우회)로 쓴다 — 여기서도 신분 전환 없이 쓴다. 슬랙 깨우기(notifyUsers 안의 pokeSlack)는 바깥 전송이라 하지 않는다.
@@ -157,7 +157,7 @@ const DOC = new RegExp(`^/approvals/(${UUID_BODY})$`, 'i');
 async function build({ sql, params, tenantId: t, importV2 }) {
   const [R, people] = await Promise.all([loadRules(importV2), readPeople(sql, t, importV2, MENU)]);
   const staff = staffOf(people), editors = editorList(people, staff);
-  const u = staff.find(s => s.id === params.actor) ?? staff[0];
+  const u = staff.find(s => s.id === params.actor) ?? null;
   if (!u) return { notAllowed: true, editors };
   const hasMenu = people.level(u, MENU) !== 'none';
   const [me] = await sql`select job_title from public.users where id=${u.id}`;

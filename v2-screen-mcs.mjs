@@ -3,7 +3,7 @@
 //  · /mcs(반별) = features/math-sheets/server/landing.ts getMathSheetLanding + 진도맵(시안) 버튼 자격(canPreviewProgressMap)
 //  · /mcs/teachers(선생님별) = server/teacher-roster.ts getMathTeacherRoster
 //  · /mcs/<반>/month(반 월간) = v2-mcs-month.mjs(getMathSheetMonth · getMathLearningData · 교재 · page.tsx의 교재 창·계획 가공)
-// 사람마다 화면이 다르다(강사 = 담당 반만) — '보는 사람'(viewer)을 고르고 그 사람의 역할·권한 표로 범위를 낸다(v2-mcs-core).
+// 사람마다 화면이 다르다(강사 = 담당 반만) — 3.0 셸 계정(viewer)의 역할·권한 표로 범위를 낸다(v2-mcs-core).
 import { UUID, loadRules, readSettings, readViewers, editorsOf, visibleClassFilter } from './v2-mcs-core.mjs';
 import { mcsMonthPage, loadMonthRules, mathSheetMonth } from './v2-mcs-month.mjs';
 import { mcsActions, mcsIo, loadMathLearningGoalRevision } from './v2-mcs-save.mjs';
@@ -157,7 +157,7 @@ export const screen = {
     }
     const R = await loadRules(importV2), env = await readSettings(sql, t, R);
     const viewers = await readViewers(sql, t, R, env);
-    const viewer = viewers.find(v => v.id === q.viewer) ?? viewers[0] ?? null;
+    const viewer = viewers.find(v => v.id === q.viewer) ?? null;
     const common = { editors: editorsOf(viewers), viewer: viewer && { id: viewer.id, name: viewer.name, role: viewer.roleLabel },
       host: { operations: env.operations, disabledModules: env.disabled } };
     if (!viewer) return { ...common, route: 'none' };

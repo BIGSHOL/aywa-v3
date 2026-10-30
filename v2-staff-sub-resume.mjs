@@ -48,8 +48,8 @@ const readResume = (s, id) => s`select d.id::text id, d.form_data, to_json(d.cre
 export async function resumeLoad({ sql, params, tenantId: t, importV2, path }) {
   const [R, people] = await Promise.all([loadRules(importV2), readPeople(sql, t, importV2, MENU)]);
   const editors = people.editorList, operations = people.settings.operations, u = people.pick(params?.actor);
-  if (path === '/staff/resumes') return { editors, redirect: '/staff' }; // 2.0: 목록은 따로 없다 — 직원목록으로
   if (!u) return { notAllowed: true, editors };
+  if (path === '/staff/resumes') return { editors, redirect: '/staff' }; // 2.0: 목록은 따로 없다 — 직원목록으로
   if (path === '/staff/resumes/new') {
     if (!staffWrite(people, u)) return { editors, redirect: '/staff' };
     let staff = null;

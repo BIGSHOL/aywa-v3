@@ -8,8 +8,9 @@
 //    (담임 ∪ 그날 위임 ∪ JJ 담당 지정 ∪ 교시 담당).
 //  · server/holiday-activity.ts `getHolidayDayActivity` → readHolidayDayActivity(휴원일 읽기 전용 패널).
 // "지금"은 복사본 기준 시각(백업 시각의 KST — copyClock) — 국면·띠·오늘 판정이 3.0 다른 화면과 같은 때를 본다.
-// 보는 사람 = 3.0 띠에서 고른 출결 권한 직원(2.0 로그인 사용자 자리). 2.0 `effectiveTeacherId`는 강사 계정이면 그 사람, 그 밖(관리자뷰)은 없음.
+// 보는 사람 = 3.0 셸 계정 가운데 출결 권한이 있는 직원(2.0 로그인 사용자 자리). 2.0 `effectiveTeacherId`는 강사 계정이면 그 사람, 그 밖(관리자뷰)은 없음.
 import { copyClock, readLabSplit } from './v2-attendance-seat.mjs';
+import { V2Error } from './v2-screens.mjs';
 
 export const LIVE_MODULES = {
   signals: 'features/attendance/live/signals.ts', slotAxis: 'features/attendance/live/slot-axis.ts', floors: 'features/attendance/live/seating-floors.ts',
@@ -230,7 +231,7 @@ export function attendanceLevelOf(R, settings, user) {
 /** 2.0 `effectiveTeacherId`(관리자뷰 기준 — 3.0엔 강사뷰 쿠키가 없다): 강사 계정이면 그 사람, 아니면 없음. */
 const viewTeacherIdOf = user => (user.role === 'teacher' ? user.id : null);
 
-/** 2.0 `getLiveBoard(date, selfOnly)`(queries.ts) — user = { id, role }(띠에서 고른 사람). */
+/** 2.0 `getLiveBoard(date, selfOnly)`(queries.ts) — user = { id, role }(권한을 확인한 셸 계정). */
 export async function readLiveBoard(ctx, user, date, selfOnly = false) {
   const { sql, t, R, L, settings } = ctx;
   const { day: today, hm } = await copyClock();
@@ -327,7 +328,8 @@ export async function quickProps(ctx, params) {
   const { sql, t, R, L, settings } = ctx;
   const { day: today } = await copyClock();
   const editors = await attendanceWritersOf(sql, t, R, settings);
-  const viewer = editors.find(e => e.id === params.viewer) ?? editors[0] ?? null;
+  const viewer = editors.find(e => e.id === params.viewer) ?? null;
+  if (!viewer) throw new V2Error(403, 'viewer_not_allowed', '출석 관리 권한이 없습니다.');
   const base = { page: 'quick', date: today, lang: 'ko', homeHref: viewer ? await homeHrefOf(ctx, viewer) : L.homeRule.DEFAULT_TEACHER_HOME,
     editors: editors.map(e => ({ id: e.id, name: e.name, role: R.roles.ROLE_LABEL?.[e.role] ?? '' })), viewer: viewer?.id ?? null };
   const holiday = holidayNameOf(R, settings, today);
@@ -491,7 +493,8 @@ export async function liveProps(ctx, params) {
   const { sql, t, R, L, settings } = ctx;
   const { day: today } = await copyClock();
   const editors = await attendanceWritersOf(sql, t, R, settings);
-  const viewer = editors.find(e => e.id === params.viewer) ?? editors[0] ?? null;
+  const viewer = editors.find(e => e.id === params.viewer) ?? null;
+  if (!viewer) throw new V2Error(403, 'viewer_not_allowed', '출석 관리 권한이 없습니다.');
   const isDesk = !!viewer && viewer.level === 'full';
   const date = ISO.test(params.date ?? '') && params.date <= today ? params.date : today;
   const tab = isDesk && (params.tab === 'desk' || params.tab === 'recap') ? params.tab : 'seating';

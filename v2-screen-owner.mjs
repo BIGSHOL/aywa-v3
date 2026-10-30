@@ -5,7 +5,7 @@
 //    운영 면 기준 token(operations-save.ts operationsFaceTokens) · 자리 PIN 가리기(seat-pin-view.ts) · 권한 기준 token(permissions-save.ts)
 //  · 면별 조회 = 강의실 사용 현황(classroom-queries.ts) · 과목별 강사 라벨(timetable getTeacherLabelsBySubject) · 세션 기간(periods getPeriodDefsForEditor) ·
 //    개인별 권한의 이름 · 직원 선택지(getPermissionStaffOptions — 운영자 계정 제외)
-// 3.0엔 로그인이 없다 — '보는 사람'을 고르고(학원 설정의 어느 면이든 열 수 있는 재직 직원 · 운영자 계정 제외 · 원장 먼저) 그 사람의 권한 표로 2.0과 같게 낸다.
+// 3.0 셸 계정(viewer)이 학원 설정 허용 명단에 있어야 그 사람의 권한 표로 읽는다.
 // 아직 그리지 않는 하위 카드(숙제영상 드라이브 · 오늘 수학 · 연동 PC · makeedu 동기화)는 호스트가 '아직' 안내를 세운다(owner-server-face.tsx).
 // 지점 화면에는 운영자(슈퍼관리자) 설정 면을 세우지 않는다(CLAUDE.md '지점과 슈퍼관리자 설정 분리') — 2.0 page.tsx도 세우지 않는다.
 import { UUID, loadRules } from './v2-mcs-core.mjs';
@@ -250,7 +250,7 @@ export const screen = {
     const row = await readSettingsRow(sql, t);
     const settings = O.resolve.resolveSettings(row.data, { name: row.name });
     const viewers = await readOwnerViewers(sql, t, R, O, settings);
-    const viewer = viewers.find(v => v.id === sp.viewer) ?? viewers[0] ?? null;
+    const viewer = viewers.find(v => v.id === sp.viewer) ?? null;
     if (sp.read === 'agent_dashboard' && (sp.tab !== 'sheets' || sp.sub !== 'agent' || !sp.viewer || viewer?.id !== sp.viewer))
       return { route: 'denied' };
     if (sp.read === 'dashboard_preview') {

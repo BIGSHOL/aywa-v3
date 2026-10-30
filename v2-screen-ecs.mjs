@@ -66,7 +66,7 @@
 //   attendance/server/{actions,makeup-actions,makeup-note-action}.ts · students/server/english-name.ts ·
 //   textbooks/server/{compare-actions,import-undo-actions,plan-actions,plan-delete-actions,shift-undo-actions}.ts.
 //
-// 2.0과 다른 것: v2-ecs-props.mjs · v2-ecs-save.mjs 머리 주석(보는 사람 고르기 · 10분 필터 되돌리기 없음 · 알림 끔 · 보강 예약 칸(새 보강 체계 학원만 거절 — 아니면 출석부의 이행 본문으로 이행) · JJ 이어받기 · 연락처 가림).
+// 2.0과 다른 것: v2-ecs-props.mjs · v2-ecs-save.mjs 머리 주석(3.0 셸 계정을 조회 주체로 사용 · 10분 필터 되돌리기 없음 · 알림 끔 · 보강 예약 칸(새 보강 체계 학원만 거절 — 아니면 출석부의 이행 본문으로 이행) · JJ 이어받기 · 연락처 가림).
 import { DAY, UUID, canWriteLevel, copyDay, editorsOf, loadRules, readSettings, readViewers, teacherEnglishNames, teacherScopeOf } from './v2-ecs-core.mjs';
 import { classOptionsOf, landingData, monthData, sheetWeekData, textbookOptions } from './v2-ecs-props.mjs';
 import { ACTIONS, MODULE, serverFn, readDayPlan, readSlotCompare } from './v2-ecs-save.mjs';
@@ -129,7 +129,7 @@ export const screen = {
       if (q.read === 'textbookPlans') return readClassTextbookPlans(ctx, q.class);
       return readAssignableTextbooks(ctx);
     }
-    const viewer = viewers.find(v => v.id === q.viewer) ?? viewers[0] ?? null;
+    const viewer = viewers.find(v => v.id === q.viewer) ?? null;
     const ops = env.operations;
     const common = { asOf: today, editors: editorsOf(viewers), viewer: viewer && { id: viewer.id, name: viewer.name, role: viewer.roleLabel },
       host: { operations: { subjects: ops.subjects, gradeLevels: ops.gradeLevels, jobTitles: ops.jobTitles, jobTitlesByDepartment: ops.jobTitlesByDepartment },

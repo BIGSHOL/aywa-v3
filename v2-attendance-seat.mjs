@@ -7,10 +7,11 @@
 //    next-destination.ts · student-classes.ts · destination-room.ts · lab-split.ts · prev-period.ts · jj-fields.ts · plan-line.ts …).
 //  · 2.0은 표가 없으면(마이그레이션 전) 조회 오류를 '아직 켜지지 않음'으로 접는다. 여기는 한 트랜잭션 안이라 오류가 나면 뒤 조회가
 //    모두 죽으므로, 표·칸이 있는지를 **먼저 물어** 같은 갈래로 접는다(hasTable·hasColumn).
-//  · 보는 사람 = 3.0 띠에서 고른 자리 저장 가능자(2.0 `gateSeatWrite`: 자리 메뉴 쓰기 권한 ∪ 그 자리 당번 · 보호 계정 제외).
+//  · 보는 사람 = 3.0 셸 계정 가운데 자리 저장 가능자(2.0 `gateSeatWrite`: 자리 메뉴 쓰기 권한 ∪ 그 자리 당번 · 보호 계정 제외).
 //    "지금"은 복사본 기준 시각(백업 시각의 KST) — 날짜(오늘)와 기본 교시가 3.0 다른 화면과 같은 때를 본다.
 import { readFile } from 'node:fs/promises';
 import { activeBackup } from './full-db-paths.mjs';
+import { V2Error } from './v2-screens.mjs';
 
 export const SEAT_MODULES = {
   seat: 'features/attendance/seat/seat.ts', choice: 'features/attendance/seat/period-choice.ts', next: 'features/attendance/seat/next-destination.ts',
@@ -357,7 +358,8 @@ export async function seatDayProps({ sql, t, R, S, settings, seat, params, viewe
   const { day: today, hm } = await copyClock();
   const date = /^\d{4}-\d{2}-\d{2}$/.test(params.date ?? '') ? params.date : today;
   const editors = await seatWritersOf(sql, t, R, S, settings, seat);
-  const viewer = editors.find(e => e.id === viewerId) ?? editors[0] ?? null;
+  const viewer = editors.find(e => e.id === viewerId) ?? null;
+  if (!viewer) throw new V2Error(403, 'viewer_not_allowed', '출석 관리 권한이 없습니다.');
   const [day, periodChoiceLoad] = await Promise.all([readSeatDay(sql, t, R, S, seat, date), readSeatPeriodChoices(sql, t, R, S, seat, date)]);
   const rosterByPeriod = applySeatDayChoices(S, day, periodChoiceLoad, date);
   const startParam = params.start ?? null, viewAll = startParam === 'all';
@@ -487,7 +489,8 @@ export async function seatMonthProps({ sql, t, R, S, settings, seat, params, vie
   const currentMonth = today.slice(0, 7);
   const month = /^\d{4}-(0[1-9]|1[0-2])$/.test(params.month ?? '') ? params.month : currentMonth;
   const editors = await seatWritersOf(sql, t, R, S, settings, seat);
-  const viewer = editors.find(e => e.id === viewerId) ?? editors[0] ?? null;
+  const viewer = editors.find(e => e.id === viewerId) ?? null;
+  if (!viewer) throw new V2Error(403, 'viewer_not_allowed', '출석 관리 권한이 없습니다.');
   const [view, prefRow] = await Promise.all([
     readSeatMonthly(sql, t, R, S, settings, seat, month, today, defsOf),
     viewer ? sql`select ui_prefs from public.users where tenant_id=${t} and id=${viewer.id}` : Promise.resolve([]),

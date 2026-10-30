@@ -2,7 +2,7 @@
 // 그리기는 2.0의 실제 React 부품(v2-host/src/enrollment.tsx). 이 모듈은 2.0 서버가 하던 일을 Docker 복사본에서 같은 결과로:
 //  · 칸반·목록 = v2-enrollment-list.mjs(2.0 server/queries.ts 목록 함수들) — 2.0 page.tsx가 부품에 넘기던 props 그대로.
 //  · 통계 = v2-enrollment-stats.mjs(2.0 server/stats-queries.ts · intake-trend · management-attending · 매일 기록 · 퇴원 창) · 상세·수정 = v2-enrollment-detail.mjs · 저장 = v2-enrollment-save.mjs.
-//  · 저장하는 사람 = 3.0 띠에서 고른 직원(GET ?actor=) — 2.0 requireAccess('enrollment')를 지나는 사람(신규 콜&상담 메뉴가 열린 재직 직원).
+//  · 조회·저장하는 사람 = 3.0 셸 계정(GET ?actor=) — 2.0 requireAccess('enrollment')를 지나는 재직 직원.
 //    칸반 끌기·목록 칸 수정(canWrite) · 엑셀 가져오기(full) · 수강료 계산기(수납 열람)는 그 사람의 권한으로(2.0과 같은 판정 — v2-proc-people.mjs).
 //  · 계정 보기 설정(ui_prefs)은 쓰지 않는다 — 3.0엔 계정이 없어 보기는 주소(view=)로만 · 기본은 칸반(2.0 savedEnrollmentView({})).
 //
@@ -89,14 +89,14 @@ async function buildDetail({ sql, t, importV2, v, operations, modules, id, edit 
 }
 
 async function load({ sql, params, tenantId: t, importV2 }) {
-  // 20초 폴링(2.0 getConsultationTotalCount) — 건수만(사람·설정은 읽지 않는다).
-  if (params.poll === 'count') return { page: 'poll', count: await getConsultationTotalCount(sql, t) };
   const [R, people] = await Promise.all([rules(importV2), readPeople(sql, t, importV2, MENU)]);
   const settings = people.settings, operations = settings.operations;
   const modules = modulesOf(settings);
   const base = { editors: people.editorList, operations, modules };
   const v = viewerOf(people, params.actor);
   if (!v) return { ...base, page: 'noMenu' };
+  // 20초 폴링(2.0 getConsultationTotalCount) — 건수도 조회 계정의 메뉴 권한을 확인한 뒤 읽는다.
+  if (params.poll === 'count') return { page: 'poll', count: await getConsultationTotalCount(sql, t) };
   // '소개한 사람' 고르기 목록(2.0 loadReferrerOptions — 읽기라 GET) · 쓰기 권한이 있어야(2.0 같은 문).
   if (params.referrers === '1') {
     if (!v.canWrite) return { page: 'referrers', result: { ok: false, error: '신규 콜&상담 권한이 없습니다' } };
@@ -145,7 +145,7 @@ async function load({ sql, params, tenantId: t, importV2 }) {
 }
 
 // ── 저장(2.0 server/actions.ts) ─────────────────────────────────────────────────────────────────────────────────────────
-/** 저장하는 사람 = 3.0 띠에서 고른 직원(신규 콜&상담 메뉴가 열린 사람 · 쓰기는 2.0과 같은 판정으로 함수가 다시 본다). */
+/** 저장하는 사람 = 3.0 셸 계정(신규 콜&상담 메뉴가 열린 사람 · 쓰기는 2.0과 같은 판정으로 함수가 다시 본다). */
 async function actCtx({ sql, body, tenantId: t, importV2 }) {
   const people = await readPeople(sql, t, importV2, MENU);
   const e = typeof body.actor === 'string' ? people.editors.find((x) => x.id === body.actor) : null;

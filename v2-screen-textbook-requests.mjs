@@ -4,7 +4,7 @@
 //    textbook-queries.ts getTextbookOrdersForStudents · getTextbookOrdersCreatedBy · getStudentOptionsForIds(강사) /
 //    getTextbookOrdersPage({}, 1, 100) · getStudentOptions(사무실) · textbook-notice-links.ts withTextbookNoticeLinks · catalog-queries.ts getCatalogOptions
 //  · 저장 = textbook-actions.ts requestTextbook · updateTextbookRequest · deleteTextbookRequest(+ textbook-notice-handover.ts) — 판정·문구·감사로그 2.0 그대로.
-// 사람마다 화면이 다르다(강사 = 담당 학생 + 본인 요청) — '보는 사람'을 고르고(교재목록과 같은 방식 · 운영자 계정 제외 · 원장 먼저) 그 사람이 저장도 한다.
+// 사람마다 화면이 다르다(강사 = 담당 학생 + 본인 요청) — 3.0 셸 계정(viewer)을 허용 명단에서 확인하며 저장도 그 계정으로 한다.
 // 2.0은 이 화면을 사용자 클라이언트(RLS)로 쓴다 — 쓰기는 같은 역할(authenticated)로 해서 소유 게이트(강사는 본인 이름·본인 작성만 고치고 지운다)가 2.0처럼 본다.
 // 학원 로고는 파일 저장소·바깥 주소라 싣지 않는다(요청서 그림에 로고 자리가 빈다). 학부모 발송(ClassNote)·첨부 그림은 다음 단계.
 import { V2Error } from './v2-screens.mjs';
@@ -267,12 +267,12 @@ export const screen = {
     run: async ({ sql, body, tenantId, importV2 }) => { const c = await io(sql, tenantId, importV2); return run(c, c.viewers.find(v => v.id === body.actor) ?? null, body.args); },
   }])),
   load: async ({ sql, params: sp, tenantId: t, importV2 }) => {
-    const c = await io(sql, t, importV2), viewer = c.viewers.find(v => v.id === sp.viewer) ?? c.viewers[0] ?? null;
+    const c = await io(sql, t, importV2), viewer = c.viewers.find(v => v.id === sp.viewer) ?? null;
+    if (!viewer) throw new V2Error(403, 'viewer_not_allowed', '교재 요청을 볼 권한이 없습니다.');
     // 작성 폼이 열 때 읽는 2.0 loadMyTextbookMent(읽기라 GET) — 답은 글자 하나({ ment }).
     if (sp.ment) return { ment: await loadMyTextbookMent(c, viewer) };
     const common = { editors: editorsOf(c.viewers), viewer: viewer && { id: viewer.id, name: viewer.name, role: viewer.roleLabel },
       host: { operations: c.env.operations, disabledModules: c.env.disabled } };
-    if (!viewer) return { ...common, route: 'none' };
     const [page, catalog, branding] = await Promise.all([
       readPage(sql, t, c.R, c.X, viewer),
       sql`select id::text id, title, book_detail, price from public.textbook_catalog where tenant_id=${t} and is_active order by title asc`,

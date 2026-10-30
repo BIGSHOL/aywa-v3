@@ -32,7 +32,7 @@ export function loadStaffRules(importV2) {
 export const isFullShellRole = role => role !== 'teacher' && role !== 'student';
 
 /**
- * 보는 사람·저장하는 사람 — 직원관리 메뉴가 열린 재직 직원(2.0 requireAccess("staff")). 운영자 계정은 3.0 띠에 나오지 않는다(readPeople).
+ * 보는 사람·저장하는 사람 — 직원관리 메뉴가 열린 재직 직원(2.0 requireAccess("staff")). 운영자 계정은 허용 명단에서 빠진다(readPeople).
  * level = 2.0 getUserPermMatrix의 역할 기본 + 학원 설정 + 개인 예외 → **맨 끝에 개인 메뉴 차단**(user-menu-blocks.ts applyUserMenuBlocks).
  */
 export async function readStaffPeople(sql, t, importV2) {
@@ -48,12 +48,12 @@ export async function readStaffPeople(sql, t, importV2) {
   return {
     sql, t, R, people, settings, level, editors,
     editorList: editors.map(e => ({ id: e.id, name: e.display_name, role: R.roles.ROLE_LABEL[e.role] ?? '' })),
-    pick: id => editors.find(e => e.id === id) ?? editors[0] ?? null,
+    pick: id => editors.find(e => e.id === id) ?? null,
     find: id => (typeof id === 'string' ? editors.find(e => e.id === id) ?? null : null),
     canAccess: (u, menu) => level(u, menu) !== 'none',
     canWrite: (u, menu) => ['full', 'scoped'].includes(level(u, menu)),
     canManage: (u, menu) => level(u, menu) === 'full',
-    /** 2.0 getViewerStaffScope — 원장 역할엔 범위 없음(운영자 계정은 띠에 없다). */
+    /** 2.0 getViewerStaffScope — 원장 역할엔 범위 없음(운영자 계정은 허용 명단에 없다). */
     staffScope: u => (u.role === 'master' ? null : R.scope.staffSubjectScopeOf(u.id, settings.permissions?.specialAccess?.staffSubjectScopes)),
   };
 }

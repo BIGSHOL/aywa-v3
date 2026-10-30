@@ -2,7 +2,7 @@
 // 이 모듈은 2.0 app/(shell)/textbooks/page.tsx가 서버에서 하던 조회를 Docker 복사본에서 같은 결과로 만든다:
 //  · features/textbooks/server/queries.ts getTextbooks(교재 면 — 한 쪽 50권 · 차수 채움 · 배정 수) · getClassTextbookPlans(영어 반 배정 면)
 //  · math-assignment-queries.ts getMathAssignmentList(수학 반 배정 면) · 쓰기·엑셀 자격(canWriteTenant · canManageTenant)
-// 사람마다 보이는 것이 다르다(강사 = 읽기 전용 · 반 배정은 강사 시트 담당 범위) — '보는 사람'을 고르고(MCS·ECS와 같은 방식 · 운영자 계정 제외 · 원장 먼저)
+// 사람마다 보이는 것이 다르다(강사 = 읽기 전용 · 반 배정은 강사 시트 담당 범위) — 3.0 셸 계정(viewer)을 허용 명단에서 확인하고
 // 그 사람의 권한 표로 2.0과 같게 낸다. 표지 그림은 파일 저장소(복사본 밖)에 있어 싣지 않는다(표지 칸은 비어 보인다).
 // 복사본 접속은 RLS를 안 타서 모든 조회에 tenant_id를 직접 건다.
 import { UUID, loadRules, readSettings, readViewers, editorsOf } from './v2-mcs-core.mjs';
@@ -139,7 +139,7 @@ export const screen = {
     if (sp.detail) { const io = await textbooksIo(sql, t, importV2); return loadTextbookDetail(io, io.viewers.find(v => v.id === sp.viewer) ?? null, sp.detail); }
     const [R, tb, ecs] = await Promise.all([loadRules(importV2), loadTextbookRules(importV2), loadEcsRules(importV2)]);
     const env = await readSettings(sql, t, R), viewers = await readViewers(sql, t, R, env, 'textbooks');
-    const viewer = viewers.find(v => v.id === sp.viewer) ?? viewers[0] ?? null;
+    const viewer = viewers.find(v => v.id === sp.viewer) ?? null;
     const common = { editors: editorsOf(viewers), viewer: viewer && { id: viewer.id, name: viewer.name, role: viewer.roleLabel },
       host: { operations: env.operations, disabledModules: env.disabled } };
     if (!viewer) return { ...common, route: 'none' };
