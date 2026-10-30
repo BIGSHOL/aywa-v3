@@ -128,3 +128,4 @@
 .tr-insight small{display:block;color:var(--ax-muted)}
 .tr-insight-actions{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
 @media(max-width:760px){.tr-analysis-grid{grid-template-columns:1fr}.tr-analysis-item:last-child{grid-column:auto}.tr-analysis-head{display:block}.tr-analysis-head small{display:block;margin-top:4px}}
+.tr-metric-detail{max-width:90ch;margin:8px 0 16px;color:var(--ax-ink);font-size:14px;line-height:1.6}

@@ -12,6 +12,9 @@ window.createAxChat = function createAxChat(api) {
   const arr = (v, max) => (Array.isArray(v) ? v.slice(0, max) : []);
   const rich = t => h(t).replace(/⟦([^⟧]*)⟧/g, '<strong>$1</strong>').replace(/(^|[.!?]\s+)(다만 [^.!?]*[.!?]?)/g, '$1<u class="axc-caveat">$2</u>');
   const LINK = /^(ws|v2|trend):[a-z0-9-]{1,40}$/;
+  // 저장된 옛 답의 링크는 새 지표 목록에서 사라져도 남는다. 제공하지 않는 목적지는 버튼을 그리지 않는다.
+  const REMOVED_TRENDS = new Set(['report-sent']);
+  const availableLink = id => typeof id === 'string' && LINK.test(id) && !(id.startsWith('trend:') && REMOVED_TRENDS.has(id.slice(6)));
 
   /** 서버 답의 정리된 부분 — 모양이 틀린 칸은 버린다(없으면 null → ax.js가 평문 답을 그린다). */
   function validate(p) {
@@ -28,7 +31,7 @@ window.createAxChat = function createAxChat(api) {
       checks: arr(p.checks, 4).map(c => str(c, 200)).filter(Boolean),
       table: p.table && Array.isArray(p.table.columns) && Array.isArray(p.table.rows) ? { columns: arr(p.table.columns, 4).map(c => str(c, 30)), rows: arr(p.table.rows, 8).filter(Array.isArray).map(r => arr(r, 4).map(c => str(c, 40))) } : null,
       notes,
-      links: arr(p.links, 4).filter(l => l && LINK.test(l.id) && str(l.label, 60)).map(l => ({ id: l.id, label: str(l.label, 60) })),
+      links: arr(p.links, 4).filter(l => l && availableLink(l.id) && str(l.label, 60)).map(l => ({ id: l.id, label: str(l.label, 60) })),
       notice: str(p.notice, 200),
     };
   }
@@ -78,7 +81,7 @@ window.createAxChat = function createAxChat(api) {
   // ── 이동 · 미주 ──────────────────────────────────────────────────────────────────────────────────────────────────────
   function go(id) {
     const [kind, key] = [id.slice(0, id.indexOf(':')), id.slice(id.indexOf(':') + 1)];
-    if (!LINK.test(id)) return;
+    if (!availableLink(id)) return;
     if (kind === 'ws') {
       const ws = api.workspaces?.();
       if (ws && !ws.has?.(key)) { api.toast?.('이 화면은 지금 열 수 없습니다.'); return; }

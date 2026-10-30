@@ -64,6 +64,10 @@ try {
   // ⑥ 옛 모양 답(정리 칸 없음)은 예전처럼 평문으로
   await openChat(); await ask(LEGACY, '옛 모양'); await page.waitForFunction(() => /옛 모양 답입니다/.test(document.querySelector('.ax-chat-log')?.innerText || ''));
   assert.equal(await page.locator('.ax-chat-answer:not(.axc) .ax-chat-text strong').last().innerText(), '굵게');
+  await openChat(); const before = await page.locator('.axc').count();
+  await ask({ ...RICH, links: [{ id: 'trend:report-sent', label: '옛 발송 지표' }, { id: { old: true }, label: '잘못된 링크' }] }, '옛 링크');
+  await page.waitForFunction(n => document.querySelectorAll('.axc').length > n, before);
+  assert.equal(await page.locator('.axc').last().locator('[data-axc-go]').count(), 0, '제거한 지표의 저장된 바로 가기는 그리지 않는다');
   assert.deepEqual(errors, []);
   console.log('PASS: AI 업무 지원 — 서식·이스케이프·색·미주·바로 가기·요청 창 채우기·옛 모양(가짜 답, AI 호출 없음).');
 } finally { await browser.close(); }

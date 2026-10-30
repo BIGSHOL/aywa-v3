@@ -29,7 +29,7 @@ async function classScope(sql, tenantId, filter) {
 // 하루 창엔 판정할 보고서가 늘 없다(일별 31일이 모두 '기록 없음'이었다). 주·월·연만 둔다(월을 쪼개면 7일 묶음).
 const NO_DAY = new Set(['parent-read']);
 export const TREND_METRICS = Object.freeze([...TEACHER_WORK_METRICS.map((m) => Object.freeze({
-  id: m.id, label: m.label, group: '선생님 수업보고서', unit: '%', better: 'up', endsYesterday: !!m.attendance,
+  id: m.id, label: m.label, group: '선생님 수업보고서', unit: '%', better: 'up', endsYesterday: !!m.attendance, detail: m.detail,
   ...(m.byStudent === false ? { dims: TEACHER_WORK_DIMS } : { dims: WITH_STUDENT, defaultBy: STUDENT_DEFAULT }),
   ...(NO_DAY.has(m.id) ? { grains: Object.freeze(['week', 'month', 'year']) } : {}),
   async series({ sql, asOf, tenantId, importV2, windows, by, filter }) {

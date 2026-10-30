@@ -12,7 +12,7 @@
 
   const shown = (v, unit) => (v === null || v === undefined ? '기록 없음' : unit === '%' ? `${v.toFixed(1)}%` : `${fmt(v)}${unit}`);
   const CARD_IDS = new Set(['enrolled-students', 'courses', 'exits', 'intake', 'level-tests', 'new-enrollments', 'first-classes', 'recent-absent', 'makeups',
-    'report-written', 'report-sent', 'parent-read', 'attendance-input', 'video-issued', 'video-submitted']);
+    'report-written', 'parent-read', 'attendance-input', 'video-issued', 'video-submitted']);
   const ANALYSIS_ITEMS = ['지금 값과 평소', '어디서 변했나', '누가', '이어진 업무', '집계 기준과 빠진 기록'];
   const analysisOpen = new Set();
   const insightState = new Map();
@@ -306,7 +306,9 @@
       if (lastHtml) markMixed();
       return lastHtml ? lastHtml.replace('<div class="tr">', '<div class="tr is-loading" aria-busy="true">') : '<div class="tr"><p class="v3s-note">추세를 계산하는 중…</p></div>';
     }
-    const d = e.data; last.by = d.by; last.view = viewKey(d); last.d = d;
+    const d = e.data;
+    if (params.metric && d.metric.id !== params.metric) { lastHtml = ''; return '<p class="v3s-note">이 지표는 더 이상 제공하지 않습니다. 다른 지표를 열어 주세요.</p>'; }
+    last.by = d.by; last.view = viewKey(d); last.d = d;
     const analysis = CARD_IDS.has(d.metric.id) ? ctx.load({ metric: d.metric.id, analysis: '1' }) : null;
     last.analysis = analysis?.data || null;
     const rq = d.range ? { from: d.range.from, to: d.range.to, up: d.range.up } : {}, li = d.windows.length - 1;
@@ -319,7 +321,7 @@
     const items = d.metrics.map(m => ({ value: m.id, title: m.label, search: `${m.label} ${m.group}` }));
     const picker = CP ? CP.html({ id: 'tr-metric', name: 'tr-metric', label: '지표', clearable: false, selected: [d.metric.id], ...CP.lists.choices({ items, columns: [{ key: 'name', label: '지표' }], noun: '지표', unit: '개' }) }) : '';
     const seg = (attr, list, cur) => list.map(x => `<button type="button" class="tab ${x.id === cur ? 'active' : ''}" ${attr}="${esc(x.id)}" aria-pressed="${x.id === cur}">${esc(x.label)}</button>`).join('');
-    lastHtml = `<div class="tr"><div class="page-heading"><div><p class="ws-group">확장 추세</p><h1>${esc(d.metric.label)}</h1></div><div class="heading-actions">${picker}</div></div>`
+    lastHtml = `<div class="tr"><div class="page-heading"><div><p class="ws-group">확장 추세</p><h1>${esc(d.metric.label)}</h1></div><div class="heading-actions">${picker}</div></div>${d.metric.detail ? `<p class="tr-metric-detail">${esc(d.metric.detail)}</p>` : ''}`
       + `<div class="tr-bar"><div class="tr-seg" role="group" aria-label="기간 단위">${seg('data-tr-grain', d.grains, d.grain)}</div><div class="tr-seg" role="group" aria-label="기준">${seg('data-tr-by', d.metric.dims.filter(x => (d.byOptions ? d.byOptions.includes(x.id) : x.id !== d.filter?.dim && !x.needsFilter)), d.by)}</div>`
       + (d.range ? `<span class="tr-filter tr-range"><strong>${esc(d.range.label)}</strong> ${esc(grainName(d, d.grain))}<button type="button" class="icon-button" data-tr-undrill aria-label="나눠 보기 닫기 — ${esc(grainName(d, d.range.up))} 보기로">×</button></span>` : '')
       + (d.filter ? `<span class="tr-filter"><strong>${esc(d.filter.label)}</strong>만 보는 중<button type="button" class="icon-button" data-tr-unfilter aria-label="필터 풀기">×</button></span>` : '') + '</div>'

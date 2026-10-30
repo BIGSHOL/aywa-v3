@@ -220,7 +220,28 @@ window.createWorkspaces = function createWorkspaces(api) {
     const change=d===null?'비교할 기간 기록 없음':dir===0?`${per} 대비 변화 없음`:`${per} 대비 ${dir>0?'▲':'▼'} ${pct?`${Math.abs(d).toFixed(1)}%p`:`${fmt(Math.abs(d))}${m.unit||''}`}${!pct&&m.previous>0?` (${Math.round(Math.abs(d)/m.previous*100)}%)`:''}`;
     // id가 있는 지표 = 확장 추세가 있다 — 카드 어디를 눌러도 그 지표의 확장 추세로(원장 10-28 "추세를 눌렀을때 확장 추세로 이동"). 클릭은 v2-screen-trend.js가 받는다.
     const grain=m.period==='month'?'month':'week',href=m.id?`#v2-trend?metric=${encodeURIComponent(m.id)}&grain=${grain}`:'';
-    return `<div class="ws-metric ws-kpi"${m.id?` data-trend="${h(m.id)}" data-grain="${grain}"`:''}><span class="ws-kpi-title">${href?`<a href="${href}">${h(m.label)}</a>`:`<span>${h(m.label)}</span>`}${m.span?`<em>${h(m.span)}</em>`:''}</span><strong>${h(shown(m.value))}</strong><small class="ws-kpi-change${dir===0||good===null?'':good?' good':' bad'}">${h(change)}${m.cleanupNote?`<span class="ws-kpi-cleanup">${h(m.cleanupNote)}</span>`:''}</small><span class="ws-kpi-spark">${api.lineChart(m.points,{key:'value',label:m.label,unit:m.unit||'',compare:per,better:m.better||''})}</span></div>`;}
+    const tip=m.detail?` data-tip="${h(m.detail)}"`:'';
+    return `<div class="ws-metric ws-kpi"${m.id?` data-trend="${h(m.id)}" data-grain="${grain}"`:''}><span class="ws-kpi-title">${href?`<a href="${href}"${tip}>${h(m.label)}</a>`:`<span${tip}>${h(m.label)}</span>`}${m.span?`<em>${h(m.span)}</em>`:''}</span><strong>${h(shown(m.value))}</strong><small class="ws-kpi-change${dir===0||good===null?'':good?' good':' bad'}">${h(change)}${m.cleanupNote?`<span class="ws-kpi-cleanup">${h(m.cleanupNote)}</span>`:''}</small><span class="ws-kpi-spark">${api.lineChart(m.points,{key:'value',label:m.label,unit:m.unit||'',compare:per,better:m.better||''})}</span></div>`;}
+  // 카드 제목 설명은 문서에 한 장만 둔다. 링크의 클릭과 차트 팝오버를 가리지 않는다.
+  let kpiTip=null,kpiTipFor=null;
+  const hideKpiTip=()=>{kpiTipFor?.removeAttribute('aria-describedby');kpiTipFor=null;if(kpiTip)kpiTip.hidden=true;};
+  function showKpiTip(el){
+    if(el===kpiTipFor)return;
+    hideKpiTip();if(!el?.dataset.tip)return;
+    kpiTip??=Object.assign(document.createElement('div'),{id:'ws-kpi-tip',className:'ws-kpi-tip',role:'tooltip'});
+    if(!kpiTip.isConnected)document.body.append(kpiTip);
+    kpiTip.textContent=el.dataset.tip;kpiTip.hidden=false;kpiTipFor=el;el.setAttribute('aria-describedby',kpiTip.id);
+    const r=el.getBoundingClientRect(),w=kpiTip.offsetWidth,height=kpiTip.offsetHeight;
+    const top=r.bottom+8+height<=innerHeight-8?r.bottom+8:Math.max(8,r.top-height-8);
+    kpiTip.style.left=`${Math.max(8,Math.min(r.left,innerWidth-w-8))}px`;kpiTip.style.top=`${top}px`;
+  }
+  const kpiTitleOf=target=>target.closest?.('.ws-kpi-title [data-tip]');
+  document.addEventListener('pointerover',e=>{const el=kpiTitleOf(e.target);if(el&&!(e.relatedTarget instanceof Node&&el.contains(e.relatedTarget)))showKpiTip(el);});
+  document.addEventListener('pointerout',e=>{const el=kpiTitleOf(e.target);if(el&&!(e.relatedTarget instanceof Node&&el.contains(e.relatedTarget)))hideKpiTip();});
+  document.addEventListener('focusin',e=>{const el=kpiTitleOf(e.target);if(el){showKpiTip(el);requestAnimationFrame(()=>{if(document.activeElement===el&&!kpiTipFor)showKpiTip(el);});}});
+  document.addEventListener('focusout',e=>{if(kpiTipFor===e.target)hideKpiTip();});
+  document.addEventListener('keydown',e=>{if(e.key==='Escape')hideKpiTip();});
+  document.addEventListener('scroll',hideKpiTip,true);addEventListener('resize',hideKpiTip);addEventListener('hashchange',hideKpiTip);
   function critical(a){
     // KPI 추세 카드가 있으면 6개까지, 누적 건수 막대는 그리지 않는다(원장 10-28 "전체 몇건 … 아무 도움이 안됨"). 공통 설명은 카드 아래 한 번.
     const all=d0=>d0?.metrics||[],d=data(a.id),isKpi=all(d).some(m=>m.kind==='kpi'),metrics=isKpi?all(d).filter(m=>m.kind==='kpi'):all(d).slice(0,4),trend=isKpi?null:d?.trend;

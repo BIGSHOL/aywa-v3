@@ -1,4 +1,4 @@
-// 첫 화면·작업 공간 KPI 15개 = 연결된 확장 추세의 같은 기간 이름·값(읽기 전용, 브라우저·빌드 없음).
+// 첫 화면·작업 공간 KPI 14개 = 연결된 확장 추세의 같은 기간 이름·값(읽기 전용, 브라우저·빌드 없음).
 import assert from 'node:assert/strict';
 import { openFullDatabase, tenantId } from './full-db.mjs';
 import { importV2 } from './v2-bridge.mjs';
@@ -25,7 +25,7 @@ try {
     const teacher = (await teacherWorkWeekly({ sql, asOf, tenantId, importV2 })).kpis;
     assert.deepEqual(dashboard.map(c => c.id), [...DASHBOARD_KPI_ORDER]);
     assert.deepEqual(teacher.map(c => c.id), TEACHER_WORK_METRICS.map(m => m.id));
-    const cards = [...dashboard, ...teacher]; assert.equal(cards.length, 15);
+    const cards = [...dashboard, ...teacher]; assert.equal(cards.length, 14);
     const mismatches = [];
     for (const card of cards) {
       const metric = TREND_METRICS.find(m => m.id === card.id);
@@ -47,6 +47,6 @@ try {
       } else if (card.value !== points.at(-1).value) mismatches.push(`${card.id}: 큰 숫자 ${card.value} ≠ 마지막 추세 ${points.at(-1).value}`);
     }
     if (mismatches.length) throw new Error(`${mismatches.length}개 불일치\n${mismatches.join('\n')}`);
-    console.log('KPI 15개: 카드 이름·모든 점·큰 숫자 일치(퇴원 장부 정리 예외 안내 포함)');
+    console.log('KPI 14개: 카드 이름·모든 점·큰 숫자 일치(퇴원 장부 정리 예외 안내 포함)');
   });
 } finally { await db.end(); }

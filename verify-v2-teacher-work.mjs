@@ -163,30 +163,33 @@ test('다른 영역과 같은 읽기 전용 트랜잭션: 신분(request.jwt.cla
   walk(out.windows, 'windows');
 });
 
-test('teacherWorkWeekly: six KPIs over 8 weekly windows — 2.0 card scope (lesson rows), real windows, no video before it existed; one computation per transaction', { skip: SKIP }, async () => {
+test('teacherWorkWeekly: five KPIs over 8 weekly windows — 2.0 card scope (lesson rows), real windows, no video before it existed; one computation per transaction', { skip: SKIP }, async () => {
   await ro(async (sql) => {
     const first = teacherWorkWeekly({ sql, asOf, tenantId: t, importV2 });
     assert.equal(teacherWorkWeekly({ sql, asOf, importV2 }), first, 'same transaction, tenant by default = same computation');
     const { windows, kpis } = await first;
     assert.equal(windows.length, 8); assert.equal(windows.at(-1).to, asOf);
-    assert.deepEqual(kpis.map((k) => k.label), ['수업보고서 작성률', '수업보고서 발송률', '학부모 보고서 열람률', '출결 입력률', '영상 숙제 출제율', '영상 숙제 제출률']);
+    assert.deepEqual(kpis.map((k) => k.label), ['수업보고서 작성률', '학부모 보고서 열람률', '출결 입력률', '영상 숙제 출제율', '영상 숙제 제출률']);
     assert(kpis.every((k) => k.kind === 'kpi' && k.unit === '%' && k.better === 'up' && k.points.length === 8));
-    assert.equal(kpis[3].span, '어제까지 7일'); assert.match(kpis[2].span, /^최근 \d+일$/); assert.match(kpis[2].basis, /\d+시간이 안 된 것/);
-    for (const k of kpis) assert.doesNotMatch(`${k.label} ${k.span} ${k.basis}`, /2\.0/,'화면 문구에 2.0을 적지 않는다(원장 10-28)');
+    assert.equal(kpis[2].span, '어제까지 7일'); assert.match(kpis[1].span, /^최근 \d+일$/); assert.match(kpis[1].basis, /\d+시간이 안 된 것/);
+    for (const k of kpis) {
+      assert.match(k.detail, /÷.*7일 전 대비/);
+      assert.doesNotMatch(`${k.label} ${k.span} ${k.basis} ${k.detail}`, /2\.0/, '화면 문구에 2.0을 적지 않는다(원장 10-28)');
+    }
     // Past windows are judged as they ended (no as-of cut), the last one at the capture — the same judgment as the expanded trend (원장 10-28).
     // 반은 창 안에 있었던 반(period — 원장 10-28 "기간내에 존재하는 항목들로만") · 2.0 단일 창(현재 담당 반)과는 종강이 걸린 창에서 다르다(아래 확인).
-    const works = await loadTeacherWorkWindows({ sql, tenantId: t, todays: windows.map((w) => w.to), importV2, asOfCut: false, period: true });
+    const works = await loadTeacherWorkWindows({ sql, tenantId: t, todays: windows.map((w) => w.to), spans: windows.map(() => 7), importV2, asOfCut: false, period: true });
     const sum = (rows, k) => rows.reduce((n, r) => n + (Number(r[k]) || 0), 0), pct = (a, b) => (b > 0 ? Math.round((a / b) * 1000) / 10 : null);
     const [{ first: videoFrom }] = await sql`select min(report_date)::text first from public.lesson_reports where tenant_id=${t} and video_homework is not null`;
     let differs = false;
     for (let i = 0; i < 8; i += 1) {
       const all = works[i].rows, lesson = all.filter((r) => r.reportSource === 'lesson'), video = videoFrom && windows[i].to >= videoFrom;
-      const expect = [pct(sum(all, 'reports'), sum(all, 'reportTarget')), pct(sum(lesson, 'sent'), sum(lesson, 'reports') - sum(lesson, 'recalled')),
+      const expect = [pct(sum(all, 'reports'), sum(all, 'reportTarget')),
         pct(sum(lesson, 'unreadJudged') - sum(lesson, 'unread'), sum(lesson, 'unreadJudged')), pct(sum(all, 'attendanceDays') - sum(all, 'attendanceUnrecorded'), sum(all, 'attendanceDays')),
         video ? pct(sum(lesson, 'videoIssuedReports'), sum(lesson, 'reportsWritten')) : null, video ? pct(sum(all, 'videoSubmitted'), sum(all, 'videoAssigned')) : null];
       assert.deepEqual(kpis.map((k) => k.points[i].value), expect, `window ${windows[i].label}`);
-      if (video && pct(sum(all, 'videoIssuedReports'), sum(all, 'reportsWritten')) !== expect[4]) differs = true;
-      if (!video) assert.equal(kpis[4].points[i].value, null, 'no video homework yet → 기록 없음, not 0%');
+      if (video && pct(sum(all, 'videoIssuedReports'), sum(all, 'reportsWritten')) !== expect[3]) differs = true;
+      if (!video) assert.equal(kpis[3].points[i].value, null, 'no video homework yet → 기록 없음, not 0%');
     }
     assert(differs, 'some window has non-lesson rows that would change 출제율 — the lesson scope is doing something');
     const current = await loadTeacherWorkWindows({ sql, tenantId: t, todays: windows.map((w) => w.to), importV2, asOfCut: false });

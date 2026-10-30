@@ -329,10 +329,10 @@ export async function loadTeacherWorkWindows({ sql: tx, tenantId, todays, scope 
 // 지난 창은 그 창이 끝난 상태(그날 수업은 모두 마감 대상 · 늦게 쓴 보고서도 셈), 지금 창은 복사본을 뜬 순간 — 확장 추세(teacherWorkTrend)의 주별과
 // 같은 판정이라 카드의 '7일 전 대비'와 확장 추세의 '직전 대비'가 같은 숫자다(원장 10-28 카드 ▲7.4%p ↔ 확장 추세 ▼1.7%p가 갈렸던 것).
 // 반도 같은 기준(period — 창 안에 있었던 반 · 원장 10-28 "기간내에 존재하는 항목들로만") — 2.0 단일 창(현재 담당 반)과는 종강이 걸린 창에서 다르다.
-const SUMS = ['reports', 'reportTarget', 'sent', 'recalled', 'unread', 'unreadJudged', 'attendanceUnrecorded', 'attendanceDays', 'videoIssuedReports', 'reportsWritten', 'videoSubmitted', 'videoAssigned'];
+const SUMS = ['reports', 'reportTarget', 'unread', 'unreadJudged', 'attendanceUnrecorded', 'attendanceDays', 'videoIssuedReports', 'reportsWritten', 'videoSubmitted', 'videoAssigned'];
 const weeklyMemo = new WeakMap();
 /**
- * 학원 전체 합으로 낸 KPI 여섯 개(kpi() 카드 모양) + 창·합계. `asOf` = 마지막 창의 끝(복사본 기준일). `sql` = 읽기 전용 트랜잭션.
+ * 학원 전체 합으로 낸 KPI 다섯 개(kpi() 카드 모양) + 창·합계. `asOf` = 마지막 창의 끝(복사본 기준일). `sql` = 읽기 전용 트랜잭션.
  * ⚠️ 같은 트랜잭션의 다른 조회와 `Promise.all`로 나란히 부르지 말 것 — 안의 저장점 조회가 실패하면 나란히 돌던 조회까지 25P02로 깨진다(따로 await).
  */
 export function teacherWorkWeekly({ sql, asOf, tenantId = COPY_TENANT, importV2, n = 8 }) {
@@ -349,32 +349,39 @@ async function weekly({ sql, asOf, tenantId: t, importV2, n }) {
   // 영상 숙제 값이 처음 생긴 날 — 그 전에 끝난 창은 영상 지표가 '기록 없음'(0%가 아니다).
   const [{ first: videoFrom }] = await sql`select min(report_date)::text first from public.lesson_reports where tenant_id=${t} and video_homework is not null`;
   const sum = (rows) => Object.fromEntries(SUMS.map((k) => [k, rows.reduce((s, r) => s + (Number(r[k]) || 0), 0)]));
-  // 발송·학부모 확인·영상 출제는 2.0 카드처럼 수업보고서 줄(reportSource 'lesson')만 — 알림장(영어)·작성 제외 줄은 그 칸이 '—'(teacher-work-card.tsx).
+  // 학부모 확인·영상 출제는 2.0 카드처럼 수업보고서 줄(reportSource 'lesson')만 — 알림장(영어)·작성 제외 줄은 그 칸이 '—'(teacher-work-card.tsx).
   const totals = works.map((w) => sum(w.rows)), lessonTotals = works.map((w) => sum(w.rows.filter((r) => r.reportSource === 'lesson')));
   // 학부모 열람률의 기간·유예 = 판정이 쓰는 그 값(UNREAD_WINDOW_DAYS · UNREAD_GRACE_HOURS) — 문구가 계산과 어긋나지 않게.
   const { UNREAD_GRACE_HOURS: graceHours } = await rules(load);
   // 화면 문구에 '2.0'을 적지 않는다(원장 10-28 "2.0과 관련된 멘트는 일단 제거") — 판정이 2.0 함수라는 것은 이 파일의 주석이 말한다.
   const SPAN = { 'attendance-input': '어제까지 7일' };
-  const kpis = TEACHER_WORK_METRICS.map((m) => kpi(m.label, '%', (m.attendance ? attendanceWindows : windows).map((w, i) => ({ label: w.label,
+  const kpis = TEACHER_WORK_METRICS.map((m) => ({ ...kpi(m.label, '%', (m.attendance ? attendanceWindows : windows).map((w, i) => ({ label: w.label,
     value: m.attendance ? attendance.total[i] ? rate(...attendance.total[i]) : null
-      : m.video && (!videoFrom || w.to < videoFrom) ? null : rate(...m.part(totals[i], lessonTotals[i])) })), { id: m.id, better: 'up', span: SPAN[m.id] ?? '최근 7일', basis: m.basis(graceHours) }));
-  return { windows, totals, lessonTotals, kpis, basis: '변화 = 7일 전 값과 비교 · 날마다 같은 시각까지 집계' };
+      : m.video && (!videoFrom || w.to < videoFrom) ? null : rate(...m.part(totals[i], lessonTotals[i])) })), { id: m.id, better: 'up', span: SPAN[m.id] ?? '최근 7일', basis: m.basis(graceHours) }),
+    detail: m.detail(graceHours) }));
+  return { windows, totals, lessonTotals, kpis, basis: '변화 = 직전 7일과 비교 · 최근 창은 복사 시각, 지난 창은 종료일 끝까지 판정' };
 }
 
 /**
  * 지표 정의 한 벌 — 카드(weekly)와 확장 추세(teacherWorkTrend)가 같이 쓴다. part(a, l) = [분자, 분모](a = 줄 합 · l = 수업보고서 줄 합).
  * 이름은 무엇을 세는지 그대로(원장 10-28 "무엇을 발송했다는것의 확인율인지 명확하지 않음").
- * 발송·학부모 확인·영상 출제는 2.0 카드처럼 수업보고서 줄(reportSource 'lesson')만 — 알림장(영어)·작성 제외 줄은 그 칸이 '—'(teacher-work-card.tsx).
+ * 학부모 확인·영상 출제는 2.0 카드처럼 수업보고서 줄(reportSource 'lesson')만 — 알림장(영어)·작성 제외 줄은 그 칸이 '—'(teacher-work-card.tsx).
  */
+const comparisonDetail = '카드의 ‘7일 전 대비’는 바로 앞의 겹치지 않는 7일과 비교합니다. 최근 창은 복사 시각까지, 지난 창은 종료일 끝까지 수업 대상을 판정하며 늦게 입력한 과거 기록도 현재 저장 상태로 다시 셉니다.';
+const detail = (formula, exclusions) => `카드 기준: ${formula} ${exclusions} 확장 추세는 고른 기간에 같은 분자·분모 판정을 적용합니다. ${comparisonDetail}`;
 export const TEACHER_WORK_METRICS = Object.freeze([
-  { id: 'report-written', label: '수업보고서 작성률', part: (a) => [a.reports, a.reportTarget], basis: () => '써야 할 수업보고서 중 쓴 것' },
-  { id: 'report-sent', label: '수업보고서 발송률', part: (a, l) => [l.sent, l.reports - l.recalled], basis: () => '쓴 수업보고서 중 학부모에게 보낸 것(회수한 보고서 제외)' },
-  { id: 'parent-read', label: '학부모 보고서 열람률', part: (a, l) => [l.unreadJudged - l.unread, l.unreadJudged], basis: (g) => `보낸 수업보고서 중 학부모가 읽은 것 · 보낸 지 ${g}시간이 안 된 것은 제외하고 집계` },
+  { id: 'report-written', label: '수업보고서 작성률', part: (a) => [a.reports, a.reportTarget], basis: () => '써야 할 수업보고서 중 쓴 것',
+    detail: () => detail('최근 7일 수업분에서 작성한 보고서·영어 알림장 줄 수 ÷ 작성 대상 줄 수입니다. 영어 알림장은 반·수업일마다 한 줄로 셉니다.', '휴일·보고서 작성 제외 반은 빼고, 시간표 밖에 쓴 보고서는 포함합니다. 결석해 작성 의무가 없는 원생도 실제 보고서를 썼으면 포함합니다.') },
+  { id: 'parent-read', label: '학부모 보고서 열람률', part: (a, l) => [l.unreadJudged - l.unread, l.unreadJudged], basis: (g) => `보낸 수업보고서 중 학부모가 읽은 것 · 보낸 지 ${g}시간이 안 된 것은 제외하고 집계`,
+    detail: (g) => detail(`최근 7일 수업분 중 발송 성공하고 읽음 연동이 가능하며 보낸 지 ${g}시간이 지난 수업보고서에서 학부모가 읽은 수 ÷ 그 보고서 수입니다.`, '회수·발송 실패 보고서와 영어 알림장 줄은 뺍니다.') },
   // 학생 기준 없음(byStudent:false) — 2.0 판정 단위가 '반 × 수업한 날'(그날 명단 중 한 명이라도 비면 미입력)이라 학생으로 나눌 행이 없다.
-  { id: 'attendance-input', label: '출결 입력률', part: (a) => [a.attendanceDays - a.attendanceUnrecorded, a.attendanceDays], basis: () => '수업한 날 출결 칸 중 입력된 것', attendance: true, byStudent: false },
-  { id: 'video-issued', label: '영상 숙제 출제율', part: (a, l) => [l.videoIssuedReports, l.reportsWritten], basis: () => '쓴 수업보고서 중 영상 숙제를 낸 것', video: true },
+  { id: 'attendance-input', label: '출결 입력률', part: (a) => [a.attendanceDays - a.attendanceUnrecorded, a.attendanceDays], basis: () => '수업한 날 출결 칸 중 입력된 것', attendance: true, byStudent: false,
+    detail: () => detail('어제까지 7일, 출결 대상 원생이 있는 반·수업일 중 명단의 출결을 모두 입력한 날 수 ÷ 대상 반·수업일 수입니다.', '한 원생이라도 출결이 비면 그 반·날은 미입력으로 세며, 휴일·수업 없는 날은 뺍니다.') },
+  { id: 'video-issued', label: '영상 숙제 출제율', part: (a, l) => [l.videoIssuedReports, l.reportsWritten], basis: () => '쓴 수업보고서 중 영상 숙제를 낸 것', video: true,
+    detail: () => detail('최근 7일 수업분에서 작성한 수업보고서 중 영상 숙제를 낸 보고서 수 ÷ 작성한 수업보고서 수입니다.', '영어 알림장 줄·보고서 작성 제외 반은 빼며, 반·학년 정책상 영상 숙제가 꺼진 건은 출제로 세지 않습니다.') },
   // 원장 10-28: '영상 업로드가 숙제 출제에 비해 잘되고 있냐 안되고 있냐'
-  { id: 'video-submitted', label: '영상 숙제 제출률', part: (a) => [a.videoSubmitted, a.videoAssigned], basis: () => '낸 영상 숙제 중 원생이 영상을 올린 것', video: true },
+  { id: 'video-submitted', label: '영상 숙제 제출률', part: (a) => [a.videoSubmitted, a.videoAssigned], basis: () => '낸 영상 숙제 중 원생이 영상을 올린 것', video: true,
+    detail: () => detail('최근 7일 수업 날짜의 영상 숙제 배정 중 영상 제출로 판정된 수 ÷ 영상 숙제 배정 수입니다.', '보고서 출제와 별도 출제를 포함하되 보관 처리한 별도 출제와 반·학년 정책상 영상 숙제가 꺼진 건은 뺍니다.') },
 ]);
 
 /**

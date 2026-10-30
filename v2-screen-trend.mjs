@@ -217,7 +217,9 @@ export const screen = {
       asOf, grain, by, since: raw.since ?? null, endsYesterday: !!metric.endsYesterday,
       // range = 지금 쪼개 보는 범위(없으면 null) · drill = 점을 누르면 쪼갤 단위(쪼개 보는 중이거나 더 잘게 못 나누면 null — 그 점은 누를 수 없다).
       range, drill: range ? null : drillOf(grain, grains.map((g) => g.id)),
-      metric: { id: metric.id, label: metric.label, unit: metric.unit, better: metric.better, dims: dims.map((d) => ({ id: d.id, label: d.label, ...(d.needsFilter ? { needsFilter: true } : {}) })) },
+      metric: { id: metric.id, label: metric.label, unit: metric.unit, better: metric.better,
+        ...(metric.detail ? { detail: metric.detail((await importV2('features/report-admin/unread-filter.ts')).UNREAD_GRACE_HOURS) } : {}),
+        dims: dims.map((d) => ({ id: d.id, label: d.label, ...(d.needsFilter ? { needsFilter: true } : {}) })) },
       metrics: TREND_METRICS.map((m) => ({ id: m.id, label: m.label, group: m.group, dims: m.dims.map((d) => ({ id: d.id, ...(d.needsFilter ? { needsFilter: true } : {}) })) })),
       grains,
       byOptions: dims.filter((d) => usable(d.id)).map((d) => d.id), // 기준 단추 = 지금 고를 수 있는 기준(화면은 이 목록만 그린다)

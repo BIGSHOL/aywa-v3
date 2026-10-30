@@ -9,7 +9,6 @@ export const CARD_FLOW_LINKS = Object.freeze({
   makeups: { tasks: [], signals: ['makeup-overdue'] },
   intake: { tasks: ['enrollment_followup'], signals: ['enrollment-followup'] },
   'report-written': { tasks: ['unsent_report'], signals: [] },
-  'report-sent': { tasks: ['unsent_report', 'report_send_failed'], signals: ['report-send-failed'] },
   'parent-read': { tasks: [], signals: [] },
   'video-issued': { tasks: ['video_upload_check'], signals: [] },
   'video-submitted': { tasks: ['video_upload_check', 'video_unassigned'], signals: ['video-upload-failed'] },
@@ -88,7 +87,7 @@ export function buildCardAnalysis({ trend, byDimension = {}, card, flowCases = n
 
   facts.push(...flowFacts(metric, flowCases, trend.asOf));
   const missing = points.filter(p => value(p) == null).length;
-  facts.push(fact(5, 'basis', `집계 기준 · ${card?.basis || '확장 추세의 같은 기간과 같은 조건으로 집계'}`, { basis: card?.basis ?? null }));
+  facts.push(fact(5, 'basis', `집계 기준 · ${card?.detail || card?.basis || '확장 추세의 같은 기간과 같은 조건으로 집계'}`, { basis: card?.detail ?? card?.basis ?? null }));
   facts.push(fact(5, 'coverage', `기록 시작 ${trend.since || '확인할 기록 없음'} · 기록 없는 기간 ${fmt(missing)}개${trend.endsYesterday ? ' · 어제까지 집계' : ''}`,
     { since: trend.since ?? null, missingWindows: missing, endsYesterday: !!trend.endsYesterday }));
   if (metric === 'exits' && card) {

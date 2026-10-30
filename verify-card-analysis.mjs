@@ -19,7 +19,7 @@ try {
     const dashboard = await dashboardKpiCards({ sql, asOf, tenantId, importV2 });
     const teacher = (await teacherWorkWeekly({ sql, asOf, tenantId, importV2 })).kpis;
     const cards = [...dashboard, ...teacher];
-    assert.equal(cards.length, 15);
+    assert.equal(cards.length, 14);
     const loadTrend = params => screen.load({ sql, params, tenantId, importV2 });
     let checked = 0;
     for (const card of cards) {
@@ -29,6 +29,10 @@ try {
       assert.deepEqual(a.facts, b.facts, `${card.id}: 같은 요청의 사실 순서·숫자`);
       assert.deepEqual(a.facts.map(f => f.id), a.facts.map((_, i) => `F${i + 1}`));
       const trend = await loadTrend({ metric: card.id, grain: card.period });
+      if (card.detail) {
+        assert.equal(trend.metric.detail, card.detail, `${card.id}: 카드·추세 설명 일치`);
+        assert.equal(a.facts.find(f => f.kind === 'basis')?.values.basis, card.detail, `${card.id}: 분석 설명 일치`);
+      }
       const one = a.facts.find(f => f.item === 1);
       assert.equal(one.values.current, trend.total.at(-1)?.value ?? null, `${card.id}: 추세 마지막 점`);
       if (card.id === 'exits') {
@@ -69,7 +73,7 @@ try {
       assert.equal(a.period, card.period);
       assert(CARD_FLOW_LINKS[card.id] || actualFlow.kind === 'flow-empty');
       checked++;
-      console.log(`${checked}/15 ${card.label} · 카드·추세·분석 일치`);
+      console.log(`${checked}/14 ${card.label} · 카드·추세·분석 일치`);
     }
   });
   const port = Number(process.env.OWNER_CONCEPT_PORT || 4310);
@@ -81,5 +85,5 @@ try {
     assert.equal(open.filter(c => flowCaseFlags(c, asOf).unassigned).length, screenUnassigned, '업무 흐름 화면의 담당 미지정 칸 수');
     console.log(`업무 흐름 화면 칸 수 일치 · 지난 업무 ${screenLate}건 · 담당 미지정 ${screenUnassigned}건`);
   } else console.log('업무 흐름 화면 칸 수 대조는 서버 재시작 뒤 확인');
-  console.log('카드 분석 15/15 · 반복·기준별·명단·업무 흐름 확인');
+  console.log('카드 분석 14/14 · 반복·기준별·명단·업무 흐름 확인');
 } finally { await db.end(); }
