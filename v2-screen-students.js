@@ -125,7 +125,7 @@
         const model = entry.data?.overview;
         requestAnimationFrame(place);
         return `<div class="v2h-note" role="note"><p><b>연습 화면</b> 오늘의 재원생을 프로그램·과정·반 순서로 볼 수 있습니다. 원생 목록은 마지막 층에서 열립니다.</p><span data-v2h-actor-slot>${actorPicker()}</span></div>`
-          + (model ? renderStudentOverview(model) : `<p class="v2s-note">${entry.status === 'error' ? esc(entry.error || '원생 현황을 불러오지 못했습니다.') : '원생 현황을 불러오는 중…'}</p>`);
+          + (model ? renderStudentOverview(model) : `<p class="v2s-note">${entry.status === 'error' ? S.errorHtml(entry.error, '원생 현황을 불러오지 못했습니다. 다시 시도해 주세요.') : '원생 현황을 불러오는 중…'}</p>`);
       }
       const query = queryOf(ctx.query);
       if (hostOk === null) fetch(HOST, { method: 'HEAD' }).then(r => r.ok, () => false).then(ok => { if (hostOk === null) { hostOk = ok; api?.render?.(); } });

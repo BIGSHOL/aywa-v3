@@ -30,7 +30,7 @@
     fetch(`/api/insight/cards?metric=${encodeURIComponent(metric)}&key=${encodeURIComponent(key)}&fp=${encodeURIComponent(data.fingerprint)}`, { headers: { Accept: 'application/json' } })
       .then(async r => { const body = await r.json(); if (!r.ok) throw new Error(body.message || '저장된 문장을 불러오지 못했습니다.'); return body; })
       .then(body => { if (insightState.get(key) === state) { state.status = 'ready'; state.data = body; last?.api.render(); } })
-      .catch(error => { if (insightState.get(key) === state) { state.status = 'error'; state.error = error.message; last?.api.render(); } });
+      .catch(error => { if (insightState.get(key) === state) { state.status = 'error'; state.error = error; last?.api.render(); } });
     return state;
   }
   function insightBox(data) {
@@ -57,14 +57,14 @@
       + (body?.note && body.status !== 'empty' && !body.note.includes('이 화면의 버튼으로만') ? `<p class="v3s-note">${esc(body.note)}</p>` : '')
       + (result ? `${ai.html({ model: result.modelLabel, at: result.createdAt, basis })}${ai.summary(codeSummary, esc, [change(previous, '직전 대비'), change(median, '평소 가운데값 대비')].filter(Boolean))}<p class="air-rich">${ai.rich(result.summary.text, esc)}${ai.evidence(result.summary.evidence, esc)}</p>${lines(result.watch, '눈여겨볼 점')}${checks}` : '')
       + (state.status === 'loading' ? '<p class="v3s-note">저장된 문장을 확인하는 중…</p>' : '')
-      + (state.status === 'error' ? `<p class="v3s-note">${esc(state.error)}</p>` : '')
+      + (state.status === 'error' ? `<p class="v3s-note">${S.errorHtml(state.error, 'AI 분석을 불러오지 못했습니다. 다시 시도해 주세요.')}</p>` : '')
       + (body?.status === 'empty' ? '<p class="v3s-note">이 선택으로 만든 AI 분석이 없습니다.</p>' : '')
       + (body?.enabled === false ? '<p class="v3s-note">이 서버에서는 AI 분석이 꺼져 있습니다.</p>' : '')
       + '</div>';
   }
   function analysisBox(entry) {
     if (!entry) return '';
-    if (entry.status === 'error') return `<section class="tr-analysis" aria-label="카드 분석"><h2>카드 분석</h2><p class="v3s-note">${esc(entry.error || '분석을 불러오지 못했습니다.')}</p></section>`;
+    if (entry.status === 'error') return `<section class="tr-analysis" aria-label="카드 분석"><h2>카드 분석</h2><p class="v3s-note">${S.errorHtml(entry.error, '카드 분석을 불러오지 못했습니다. 다시 시도해 주세요.')}</p></section>`;
     if (!entry.data) return `<section class="tr-analysis" aria-label="카드 분석"${entry.status === 'ready' ? '' : ' aria-busy="true"'}><h2>카드 분석</h2><p class="v3s-note">${entry.status === 'ready' ? '이 카드의 분석 자료가 없습니다.' : '계산 중…'}</p></section>`;
     const facts = entry.data.facts || [];
     const groups = ANALYSIS_ITEMS.map((title, i) => {
@@ -147,8 +147,9 @@
     for (let exp = power - 2; exp <= power + 2; exp++) for (const digit of [1, 2, 5]) {
       const tick = digit * 10 ** exp;
       if (unit !== '%' && tick < 1) continue;
-      const min = low >= 0 && paddedLow <= 0 ? 0 : tick * Math.floor(paddedLow / tick);
-      const max = tick * Math.ceil(paddedHigh / tick);
+      const rawMin = low >= 0 && paddedLow <= 0 ? 0 : tick * Math.floor(paddedLow / tick);
+      const min = unit === '%' ? Math.max(0, rawMin) : rawMin;
+      const max = unit === '%' ? Math.min(100, tick * Math.ceil(paddedHigh / tick)) : tick * Math.ceil(paddedHigh / tick);
       const count = Math.round((max - min) / tick) + 1;
       candidates.push({ min, max, tick, count, score: Math.abs(count - 5) * 2 + (max - min) / spread });
     }
@@ -157,7 +158,9 @@
     const near = candidates.sort((a, b) => Math.abs(a.count - 5) - Math.abs(b.count - 5) || a.score - b.score)[0];
     const extra = Math.max(0, 4 - near.count);
     const below = low >= 0 && near.min === 0 ? 0 : Math.floor(extra / 2);
-    return { ...near, min: near.min - below * near.tick, max: near.max + (extra - below) * near.tick, count: near.count + extra };
+    const min = unit === '%' ? Math.max(0, near.min - (below + extra) * near.tick) : near.min - below * near.tick;
+    const max = unit === '%' ? Math.min(100, near.max) : near.max + (extra - below) * near.tick;
+    return { ...near, min, max, count: Math.round((max - min) / near.tick) + 1 };
   }
   function bigChart(d, base, series) {
     // 굵은 선 = 지금 보는 범위의 합계 — 좁혔으면 그 범위 이름(인재원 영어), 아니면 '학원 전체'(좁힌 화면에서 '전체' · '학원 전체' · '인재원 영어'가 뜻이 겹쳐 보였다).
@@ -342,7 +345,7 @@
     last = { params, go: ctx.go, api: ctx.api, by: last?.by || '' };
     const e = ctx.load(params);
     if (!e.data) {
-      if (e.status === 'error') return `<p class="v3s-note">${esc(e.error || '불러오지 못했습니다.')}</p>`;
+      if (e.status === 'error') return `<p class="v3s-note">${S.errorHtml(e.error, '추세를 불러오지 못했습니다. 다시 시도해 주세요.')}</p>`;
       return '<div class="tr" aria-busy="true"><p class="v3s-note">추세와 카드 분석 계산 중…</p><section class="tr-analysis" aria-label="카드 분석"><h2>카드 분석</h2><p class="v3s-note">계산 중…</p></section></div>';
     }
     const d = e.data;
@@ -442,7 +445,7 @@
       fetch(`/api/insight/cards?${new URLSearchParams({ metric, ...selected })}`, { method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/json' }, body: '{}' })
         .then(async r => { const body = await r.json(); if (!r.ok) throw new Error(body.message || '문장을 만들지 못했습니다.'); return body; })
         .then(body => { if (insightState.get(analysis.selectionKey) === state) { state.status = 'ready'; state.data = body; last?.api.render(); } })
-        .catch(error => { if (insightState.get(analysis.selectionKey) === state) { state.status = 'error'; state.error = error.message; last?.api.render(); } });
+        .catch(error => { if (insightState.get(analysis.selectionKey) === state) { state.status = 'error'; state.error = error; last?.api.render(); } });
       return;
     }
     const record = t.closest('[data-ca-record]');

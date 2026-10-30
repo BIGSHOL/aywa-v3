@@ -12,6 +12,7 @@ window.V2Screens = (() => {
   const accountId = () => account()?.id || null;
   const PRACTICE_COPY = Object.freeze({ selectedPerson: '현재 계정' });
   const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const errorHtml = (error, message) => { const hint = String(error?.message || '').trim(); return `<span class="ws-error"${hint ? ` data-hint="${esc(hint)}" tabindex="0"` : ''}>${esc(message)}</span>`; };
   const overviewHref = href => /^#v2-[a-z][a-z0-9-]{0,30}(?:\?[^\u0000-\u001f]*)?$/.test(String(href || '')) ? esc(href) : null;
   const overviewScroll = new Map();
   // 각 화면은 같은 모양의 현재 층만 준다. 표·경로·마지막 목록 필터는 이 틀 한 곳에서 그린다.
@@ -56,7 +57,7 @@ window.V2Screens = (() => {
 
   const fetchInto = (id, qs, entry) => fetch(`/api/v2/${encodeURIComponent(id)}${qs ? `?${qs}` : ''}`, { headers: { Accept: 'application/json' } })
     .then(async r => { const body = await r.json().catch(() => null); if (!r.ok) throw new Error(body?.message || '불러오지 못했습니다.'); entry.status = 'ready'; entry.data = body; entry.error = null; })
-    .catch(error => { entry.error = error.message; if (entry.status !== 'ready') entry.status = 'error'; }) // kept: retried only by ctx.refresh(), never by a re-render; a failed refresh after a save keeps the shown data
+    .catch(error => { entry.error = error; if (entry.status !== 'ready') entry.status = 'error'; }) // kept: retried only by ctx.refresh(), never by a re-render; a failed refresh after a save keeps the shown data
     .finally(() => { entry.refreshing = false; if (current()?.id === id) api?.render(); });
   /** Read-only data for this screen and these params: cached; the first call fetches and re-renders the page on arrival. */
   function load(id, params = {}) {
@@ -154,5 +155,5 @@ window.V2Screens = (() => {
   /** A 3.0 workspace id → its 2.0 screen address when that screen is registered (workspace links open the 2.0 form first). */
   const WORKSPACE_ALIAS = { 'class-sheets': 'ecs' }; // the only workspace whose id differs from its 2.0 screen
   const target = wsId => { const id = WORKSPACE_ALIAS[wsId] || wsId; return screens.has(id) ? `#v2-${id}` : null; };
-  return { register, view, sidebar, sticker, bind, esc, target, renderOverview, updateOverviewScroll, dataChanged, accountId, practiceCopy: PRACTICE_COPY };
+  return { register, view, sidebar, sticker, bind, esc, errorHtml, target, renderOverview, updateOverviewScroll, dataChanged, accountId, practiceCopy: PRACTICE_COPY };
 })();

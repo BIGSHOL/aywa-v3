@@ -209,7 +209,7 @@
         }) } : null;
         requestAnimationFrame(place);
         return `<div class="v2h-note" role="note"><p><b>연습 화면</b> 상담 기록은 이 PC의 연습 자료입니다. 담임 상담 대상·완료 수는 통계 보기와 같습니다.</p><span data-v2h-actor-slot>${actorPicker()}</span><a class="button" href="#v2-consultations?v2path=%2Fconsultations%2Fstats">통계 보기</a></div>`
-          + (shown ? renderConsultOverview(shown) : `<p class="v2s-note">${entry.status === 'error' ? esc(entry.error || '담임 현황을 불러오지 못했습니다.') : '담임 현황을 불러오는 중…'}</p>`);
+          + (shown ? renderConsultOverview(shown) : `<p class="v2s-note">${entry.status === 'error' ? S.errorHtml(entry.error, '담임 현황을 불러오지 못했습니다. 다시 시도해 주세요.') : '담임 현황을 불러오는 중…'}</p>`);
       }
       lastOverview = null;
       const query = queryOf(ctx.query);

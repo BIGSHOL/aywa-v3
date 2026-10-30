@@ -141,7 +141,7 @@
             + renderReviewOverview(entry.data.overview);
         }
         if (entry.data?.page === 'moduleOff' || entry.data?.page === 'noMenu') return '<p class="v2s-note">이 화면을 열 수 없습니다.</p>';
-        if (!entry.data && entry.status !== 'ready') return `<p class="v2s-note">${entry.status === 'error' ? esc(entry.error || '강사평가 현황을 불러오지 못했습니다.') : '강사평가 현황을 불러오는 중…'}</p>`;
+        if (!entry.data && entry.status !== 'ready') return `<p class="v2s-note">${entry.status === 'error' ? S.errorHtml(entry.error, '강사평가 현황을 불러오지 못했습니다. 다시 시도해 주세요.') : '강사평가 현황을 불러오는 중…'}</p>`;
       }
       const query = queryOf(ctx.query);
       if (hostOk === null) fetch(HOST, { method: 'HEAD' }).then(r => r.ok, () => false).then(ok => { if (hostOk === null) { hostOk = ok; api?.render?.(); } });
