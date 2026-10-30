@@ -108,15 +108,19 @@ window.createExitInsight = function createExitInsight(api) {
   const ymd = d => (/^\d{4}-\d{2}-\d{2}/.test(String(d ?? '')) ? `${d.slice(2, 4)}.${d.slice(5, 7)}.${d.slice(8, 10)}` : '');
   const dates = t => String(t ?? '').replace(/\b20(\d{2})-(\d{2})-(\d{2})\b/g, '$1.$2.$3').replace(/\b20(\d{2})-(\d{2})\b/g, '$1.$2'); // 상세 글의 날짜 yy.mm.dd · 연월 yy.mm
   const body = f => { const t = String(f.text ?? ''); return f.label && t.startsWith(`${f.label} `) ? t.slice(f.label.length + 1) : t; }; // 항목 이름을 내용 앞에 되풀이하지 않는다
-  const whenOf = s => (s.exit.kind === 'withdrawn' ? (ymd(s.exit.date) || '날짜 미기재') : s.exit.kind === 'cleanup' ? (s.exit.month ? `${mlabel(s.exit.month)} 추정` : '시점 미상') : '—');
+  // 목록 날짜 = 올해는 MM.DD · 다른 해는 YY.MM.DD(원장 10-30 'mm.dd만 표시할것' · list-format-1030.md). 정렬은 표시 글자가 아니라 원래 날짜로.
+  const listDay = d => (/^\d{4}-\d{2}-\d{2}/.test(String(d ?? '')) ? (d.slice(0, 4) === String(st.data?.to || '').slice(0, 4) ? `${d.slice(5, 7)}.${d.slice(8, 10)}` : ymd(d)) : '');
+  const whenRaw = s => (s.exit.kind === 'withdrawn' ? s.exit.date || '' : s.exit.kind === 'cleanup' ? s.exit.month || '' : '');
+  const whenOf = s => (s.exit.kind === 'withdrawn' ? (listDay(s.exit.date) || '날짜 미기재') : s.exit.kind === 'cleanup' ? (s.exit.month ? `${mlabel(s.exit.month)} 추정` : '시점 미상') : '—');
   const SORT = {
     amount: (a, b) => a.amount - b.amount,
     name: (a, b) => a.name.localeCompare(b.name, 'ko'),
     kind: (a, b) => a.kindLabel.localeCompare(b.kindLabel, 'ko') || a.amount - b.amount,
-    when: (a, b) => whenOf(b).localeCompare(whenOf(a)) || a.amount - b.amount,
+    when: (a, b) => whenRaw(b).localeCompare(whenRaw(a)) || a.amount - b.amount,
   };
-  const COLS = [['name', '이름'], ['', '학교'], ['kind', '구분'], ['when', '시점'], ['', '기록된 사유'], ['', 'AI 추정'], ['amount', '금액']];
-  const studentHead = () => `<div class="xi-student-cols" role="row">${COLS.map(([k, l]) => (k ? `<button type="button" data-xi="sort" data-key="${k}" aria-pressed="${st.sort.key === k}">${l}${st.sort.key === k ? (st.sort.dir ? ' ↑' : ' ↓') : ''}</button>` : `<span>${l}</span>`)).join('')}<span></span></div>`;
+  // 목록 한 벌(fl-rectable · list-format-1030.md): 이름 → 구분 → 시점 → 학교 → 사유 → AI 추정 → 금액(오른쪽) → 펼침. 원생마다 tbody 하나(거르기·펼침 단위).
+  const COLS = [['name', '이름'], ['kind', '구분'], ['when', '시점'], ['', '학교'], ['', '기록된 사유', 'wrap'], ['', 'AI 추정', 'wrap'], ['amount', '금액', 'al-r']];
+  const studentHead = () => `<thead><tr>${COLS.map(([k, l, c]) => `<th scope="col"${c ? ` class="${c}"` : ''}>${k ? `<button type="button" data-xi="sort" data-key="${k}" aria-pressed="${st.sort.key === k}">${l}${st.sort.key === k ? (st.sort.dir ? ' ↑' : ' ↓') : ''}</button>` : l}</th>`).join('')}<th scope="col" class="fl-rec-go" aria-label="펼치기"></th></tr></thead>`;
   // 펼친 상세 = 묶음별(상태 · 사유 · 반·담당 · 출결·성적 · 상담·주변), 묶음 안은 날짜순 · '항목 | 내용 | 원본' 세 칸(원장 10-28 "db가 나열되어있는게 아니라 정렬되어서").
   const GROUPS = [['상태', ['timing', 'billing', 'hold', 'continuing']], ['사유', ['reason', 'report']], ['반·담당', ['class', 'handover', 'churn']], ['출결·성적', ['attendance', 'grades']], ['상담·주변', ['consultation', 'sibling', 'classmates']]];
   const dateKey = f => String(f.text ?? '').match(/\b20\d{2}-\d{2}-\d{2}\b/)?.[0] ?? '';
@@ -130,14 +134,14 @@ window.createExitInsight = function createExitInsight(api) {
   function student(s, d) {
     const ai = s.ai?.label ? `<span class="xi-ai-cause air-rich ${s.ai.review ? 'check' : ''}">${rich(s.ai.label)}${s.ai.review ? `<em>${s.ai.conflict ? '기록과 다름' : '확인 필요'}</em>` : ''}</span>` : s.ai?.status === 'pending' ? '<span class="xi-dim">추정 중</span>' : s.ai?.status === 'error' ? '<span class="xi-dim">추정 못 함</span>' : '<span class="xi-dim">—</span>';
     const recorded = s.cause.origin === 'record' ? h(s.cause.label) : '<span class="xi-dim">—</span>';
-    return `<li class="xi-student" data-groups="${h(['departed', `departed.${s.kind === 'withdrawn' || s.kind === 'cleanup' || s.kind === 'on_hold' || s.kind === 'enrolled' ? s.kind : 'other'}`, ...s.clusterIds.map(c => `cluster:${c}`)].join('|'))}"><button type="button" class="xi-student-head" data-xi="row" data-xi-row="${h(s.studentId)}" aria-expanded="false" aria-controls="xi-s-${h(s.studentId)}"><strong class="c-name">${h(s.name)}</strong><span class="c-school">${h(s.label)}</span><span class="c-kind">${pill(s.kindLabel, s.kind === 'cleanup' ? 'amber' : '')}</span><span class="c-when">${h(whenOf(s))}</span><span class="c-rec">${recorded}</span><span class="c-ai">${ai}</span><b class="c-amt">${signed(s.amount)}</b>${icon('down')}</button><div class="xi-student-body" id="xi-s-${h(s.studentId)}" hidden>${s.ai?.label ? aiMeta(d, s.ai.modelLabel, s.ai.at, `원생 ${s.name}`) : ''}${factRows(s)}${btn('원생 상세 열기', `data-xi="record" data-family="students" data-id="${h(s.studentId)}"`, 'link')}</div></li>`;
+    return `<tbody class="xi-student" data-groups="${h(['departed', `departed.${s.kind === 'withdrawn' || s.kind === 'cleanup' || s.kind === 'on_hold' || s.kind === 'enrolled' ? s.kind : 'other'}`, ...s.clusterIds.map(c => `cluster:${c}`)].join('|'))}"><tr class="can" data-xi="row" data-xi-row="${h(s.studentId)}"><th scope="row"><button type="button" class="fl-cut xi-student-head" data-xi="row" data-xi-row="${h(s.studentId)}" aria-expanded="false" aria-controls="xi-s-${h(s.studentId)}">${h(s.name)}</button></th><td>${h(s.kindLabel)}</td><td>${h(whenOf(s))}</td><td><span class="fl-cut">${h(s.label)}</span></td><td class="wrap">${recorded}</td><td class="wrap">${ai}</td><td class="al-r">${signed(s.amount)}</td><td class="fl-rec-go">${icon('down')}</td></tr><tr class="xi-student-body" id="xi-s-${h(s.studentId)}" hidden><td colspan="8">${s.ai?.label ? aiMeta(d, s.ai.modelLabel, s.ai.at, `원생 ${s.name}`) : ''}${factRows(s)}${btn('원생 상세 열기', `data-xi="record" data-family="students" data-id="${h(s.studentId)}"`, 'link')}</td></tr></tbody>`;
   }
   function view(d) {
     const a = d.analysis, more = d.clusters.length - 8;
     return `<div class="xi" data-filter="">${pairs(d)}<div class="xi-totals"><div><span>${ym(d.from)} 청구</span><strong>${won(d.totals.from)}</strong></div><div><span>${ym(d.to)} 청구</span><strong>${won(d.totals.to)}</strong></div><div><span>차이</span><strong class="${d.totals.delta < 0 ? 'neg' : d.totals.delta > 0 ? 'pos' : ''}">${signed(d.totals.delta)}</strong></div></div>
       <section><h3>① 청구 변화 내역</h3><p class="xi-note">${h(d.basis.billing)}.${d.check.exact ? '' : ` <strong>나눈 금액의 합이 차이와 다릅니다(합 ${signed(d.check.sum)}).</strong>`} ${h(d.basis.special)}.</p>${bars(d)}</section>
       <section><h3>② 원인 묶음</h3>${aiLine(a)}${overall(d)}<p class="xi-note">묶음은 빠진 원생의 기록을 이어 만든 후보입니다(한 원생이 여러 묶음에 들 수 있음). ${h(d.basis.teacher)}.</p><div class="xi-clusters">${d.clusters.map((c, i) => cluster(c, i, d)).join('')}</div>${more > 0 ? btn(`나머지 묶음 ${fmt(more)}개 보기`, 'data-xi="more"', 'link') : ''}</section>
-      <section id="xi-students"><h3>③ 빠진 원생별 기록 <span class="xi-count">${fmt(d.students.length)}명</span></h3><div class="xi-filter-line" hidden><span></span>${btn('전체 보기', 'data-xi="filter" data-filter=""', 'link')}</div><p class="xi-note">${h(d.basis.cleanup)}. ‘기록’은 퇴원 기록에 적힌 사유, ‘AI 추정’은 사유가 비어 있어 다른 기록으로 짐작한 것입니다.</p>${studentHead()}<ul class="xi-students">${[...d.students].sort((a, b) => SORT[st.sort.key](a, b) * (st.sort.dir ? -1 : 1)).map(s => student(s, d)).join('')}</ul></section></div>`;
+      <section id="xi-students"><h3>③ 빠진 원생별 기록 <span class="xi-count">${fmt(d.students.length)}명</span></h3><div class="xi-filter-line" hidden><span></span>${btn('전체 보기', 'data-xi="filter" data-filter=""', 'link')}</div><p class="xi-note">${h(d.basis.cleanup)}. ‘기록’은 퇴원 기록에 적힌 사유, ‘AI 추정’은 사유가 비어 있어 다른 기록으로 짐작한 것입니다.</p><div class="fl-rectable-wrap"><table class="fl-rectable xi-students">${studentHead()}${[...d.students].sort((a, b) => SORT[st.sort.key](a, b) * (st.sort.dir ? -1 : 1)).map(s => student(s, d)).join('')}</table></div></section></div>`;
   }
   // In-dialog jumps glide inside the dialog body and brake into place (AGENTS.md scroll rule); any input stops them.
   function glide(node) {
@@ -151,7 +155,7 @@ window.createExitInsight = function createExitInsight(api) {
     st.stop = stop; frame = requestAnimationFrame(step);
   }
   function toggleRow(id, force) {
-    const b = document.querySelector(`[data-xi-row="${CSS.escape(id)}"]`), body = b && document.getElementById(b.getAttribute('aria-controls')); if (!b || !body) return;
+    const b = document.querySelector(`button[data-xi-row="${CSS.escape(id)}"]`), body = b && document.getElementById(b.getAttribute('aria-controls')); if (!b || !body) return; // 줄(tr)에도 같은 속성 — 펼침 상태는 이름 단추가 든다
     const on = force ?? b.getAttribute('aria-expanded') !== 'true'; b.setAttribute('aria-expanded', String(on)); body.hidden = !on;
   }
   function applyFilter(f, scroll = true) {
