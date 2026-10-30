@@ -52,9 +52,10 @@ export function validateCommand(body, actors) {
   return { ...body, payload, actor };
 }
 
-const assignable = (actors, ids) => {
+const assignable = (actors, ids, keep = []) => {
   if (!Array.isArray(ids) || !ids.length || ids.length > 10 || new Set(ids).size !== ids.length) throw bad('담당자는 중복 없이 1~10명이어야 합니다.');
-  for (const id of ids) { const a = actors.get(id); if (!a || a.preview || !a.assignable) throw new CommandError(400, 'assignee_not_allowed', '배정할 수 없는 사람이 있습니다.'); }
+  const current = new Set(keep);
+  for (const id of ids) { const a = actors.get(id); if ((!a || a.preview || !a.assignable) && !current.has(id)) throw new CommandError(400, 'assignee_not_allowed', '배정할 수 없는 사람이 있습니다.'); }
   return ids;
 };
 // 기록 첨부(원장 10-28 "후속 보고 쓰기에 실제 db를 활용해 결과 첨부할 수 있게" · "업무요청에도 실제 db를 활용해 요청가능하게"):
@@ -249,9 +250,11 @@ export async function applyCommand(state, source, cmd, { now, inFlight = new Map
     }
     case 'case.reassign': {
       keys(payload, ['stepId', 'assigneeIds']);
-      const c = getCase(), who = assignable(actors, payload.assigneeIds);
+      const c = getCase();
       const s = c.steps.find(x => (payload.stepId ? x.id === payload.stepId : true) && (x.status === 'ready' || x.status === 'working'));
       if (!s) throw new CommandError(409, 'step_not_ready', '담당을 변경할 남은 단계가 없습니다.');
+      const original = c.sourceKey?.startsWith('task:') ? source.tasks?.find(t => `task:${t.id}` === c.sourceKey)?.assigneeIds || [] : [];
+      const who = assignable(actors, payload.assigneeIds, [...s.assigneeIds, ...original]);
       const from = s.assigneeIds; s.assigneeIds = who; s.queue = null; delete s.ack; s.unassignedReason = null; s.status = 'ready'; s.rule = '관리자가 직접 다시 지정'; s.ruleSource = 'case.reassign';
       emit({ caseId: c.id, type: 'step.reassigned', stepId: s.id, targetActorIds: who, causeId: c.history.at(-1), data: { from, to: who } });
       refreshCase(c, at); return { caseId: c.id, eventIds: ids };
