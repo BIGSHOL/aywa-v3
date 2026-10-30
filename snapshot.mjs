@@ -71,7 +71,7 @@ export function buildReadModel(r, info, billingTools = null) {
   const replaced = new Set(r.attendance_records.map(a => a.supersedes_id).filter(Boolean));
   const attendance = r.attendance_records.filter(a => actualStudent(a) && !replaced.has(a.id) && date(a.session_date) <= today);
   const currentAttendance = attendance.filter(a => date(a.session_date).startsWith(month));
-  const attendanceByStudent = group(currentAttendance, 'student_id');
+  const attendanceByStudent = group(currentAttendance, 'student_id'), allAttendanceByStudent = group(attendance, 'student_id');
   const validInvoices = r.invoices.filter(a => actualStudent(a) && !['void', 'refunded'].includes(a.status));
   // amount_total is before discounts. In the copied October data all 319 paid
   // invoices reconcile exactly after amount_discount; discounts are not debt.
@@ -91,6 +91,8 @@ export function buildReadModel(r, info, billingTools = null) {
       enrolled: date(s.enrolled_at), withdrawn: date(s.withdrawn_at),
       classes: [...new Set((studentEnrollments.get(s.id) || []).map(e => e.class_id))],
       attendance: { total: at.length, present: at.filter(a => ['present', 'late', 'early_leave'].includes(a.status)).length, absent: at.filter(a => a.status === 'absent').length, late: at.filter(a => a.status === 'late').length, makeup: at.filter(a => a.status === 'makeup').length },
+      // 조회 월을 고르는 화면(성적관리·수업보고서 원생 카드)용 — 최근 6개월 달별 기록·결석. 기록이 있는 달만(전체 출결 표를 읽으므로 없는 달 = 0건).
+      attendanceMonths: Object.fromEntries(lastSix.map(m => { const rows = (allAttendanceByStudent.get(s.id) || []).filter(a => date(a.session_date).startsWith(m)); return [m, { total: rows.length, absent: rows.filter(a => a.status === 'absent').length }]; }).filter(([, v]) => v.total)),
       billed: sum(bills, 'total'), paid: sum(bills, 'paid'), remaining: sum(bills, 'remaining'),
       followups: consults.filter(c => c.follow_up_date && date(c.follow_up_date) <= today && !c.follow_up_done).length,
       lessons: recent(lessonByStudent.get(s.id) || [], 'report_date', 3).map(l => ({ date: date(l.report_date), subject: l.subject, progress: l.progress, teacher: l.teacher_name, read: Boolean(l.classnote_read_at) })),
@@ -111,6 +113,8 @@ export function buildReadModel(r, info, billingTools = null) {
   });
   const admissions = r.enrollment_consultations.filter(c => !c.student_id || studentIds.has(c.student_id)).map(c => ({ id: c.id, name: c.prospect_name || '이름 미입력', grade: c.prospect_grade, school: c.prospect_school, outcome: c.outcome, date: date(c.received_date || c.consultation_date || c.consulted_at || c.created_at), scheduled: date(c.consultation_date), followup: date(c.follow_up_date), note: c.follow_up_content, reason: c.non_registration_reason, subject: c.subject, teacher: teacher(c.consultant_id), channel: c.consultation_path || '미입력' }));
   const channel = value => /소개|추천|친구|동생|재원/.test(value) ? '소개·재원 연결' : /설명회|감사제/.test(value) ? '설명회' : /인터넷|검색|블로그|네이버|홈페이지|당근/.test(value) ? '온라인' : /간판|전단|광고|현수막/.test(value) ? '지역 광고' : value === '미입력' ? '미입력' : '기타';
+  // 유입 경로 범주는 모든 달이 같은 묶음을 쓴다(이번 달 admissionChannels와 다른 달 화면 묶음이 갈리지 않게).
+  admissions.forEach(a => { a.channelGroup = channel(a.channel); });
   const history = r.student_history_monthly.filter(h => h.source === 'aywa' && date(h.month).slice(0, 7) >= start && date(h.month).slice(0, 7) <= month).map(h => ({ month: date(h.month).slice(0, 7), ...h.data })).sort((a, b) => a.month.localeCompare(b.month));
   const trend = months.map(m => {
     const bills = invoices.filter(i => i.period === m), at = attendance.filter(a => date(a.session_date).startsWith(m));
