@@ -4,6 +4,8 @@ const href = params => `#v2-class-review${Object.keys(params).length ? `?${new U
 const shown = n => Number.isInteger(Number(n)) ? String(Number(n)) : Number(n).toFixed(1);
 const score = (value, max) => value !== null && value !== undefined && max !== null && max !== undefined && Number.isFinite(Number(value)) && Number.isFinite(Number(max)) && Number(max) > 0 ? `${shown(value)} / ${shown(max)}점` : '—';
 const percent = (n, d) => d ? `${Math.round(n / d * 100)}%` : '—';
+// 화면 글자는 다른 3.0 화면과 같은 '26.09' 표기(값·주소·저장 키는 '2026-09' 그대로).
+const monthLabel = month => `${month.slice(2, 4)}.${month.slice(5, 7)}`;
 const previousMonth = month => new Date(Date.UTC(Number(month.slice(0, 4)), Number(month.slice(5)) - 2, 1)).toISOString().slice(0, 7);
 const leaf = teacher => href({ v2path: '/class-review', tab: 'portfolio', teacher });
 
@@ -46,7 +48,7 @@ export async function portfolioOverview({ sql, tenantId, settings, params }) {
     left join public.users u on u.id=p.teacher_id and u.tenant_id=${tenantId}
     where p.tenant_id=${tenantId} and p.month=${month} order by u.display_name, p.teacher_id`;
   const ids = rows.map(r => r.id);
-  const prevMonth = previousMonth(month);
+  const prevMonth = previousMonth(month), shownMonth = monthLabel(month);
   const [previous, others] = ids.length ? await Promise.all([
     sql`select teacher_id::text id, payload from public.teacher_portfolio_months where tenant_id=${tenantId} and month=${prevMonth} and teacher_id=any(${ids}::uuid[])`,
     sql`select teacher_id::text id, subjects from public.teacher_portfolio_months where tenant_id=${tenantId} and month<>${month}
@@ -64,7 +66,7 @@ export async function portfolioOverview({ sql, tenantId, settings, params }) {
     ...(selected ? [{ label: selected.name || '이름 없음' }] : [])];
   let columns, output;
   if (!chosenSubject) {
-    columns = [{ key: 'name', label: '과목' }, { key: 'closed', label: `${month} 마감 / 평가` }, { key: 'rate', label: '마감률' },
+    columns = [{ key: 'name', label: '과목' }, { key: 'closed', label: `${shownMonth} 마감 / 평가` }, { key: 'rate', label: '마감률' },
       { key: 'range', label: '마감 점수 범위 / 만점' }, { key: 'guide', label: '지도 대상' }, { key: 'excluded', label: '판단 제외' }];
     output = SUBJECTS.filter(s => groups.get(s.key).length).map(s => {
       const list = groups.get(s.key), closed = list.filter(r => r.closed_at), maxima = new Set(closed.map(r => r.payload?.knownMax));
@@ -82,7 +84,7 @@ export async function portfolioOverview({ sql, tenantId, settings, params }) {
       String(a.name).localeCompare(String(b.name), 'ko')).map(r => {
       const p = r.payload ?? {}, prev = prevById.get(r.id), { low, missing, lowItems } = guidanceOf(r);
       const delta = comparable(p, prev) && r.total !== null && prev?.total !== null && Number.isFinite(Number(r.total)) && Number.isFinite(Number(prev?.total)) ? shown(Number(r.total) - Number(prev.total)) : '—';
-      return { teacherId: r.id, month, lowItems: lowItems.map(i => `${i.label || i.id} ${score(i.value, i.max)}`),
+      return { teacherId: r.id, month, monthLabel: shownMonth, lowItems: lowItems.map(i => `${i.label || i.id} ${score(i.value, i.max)}`),
         href: href({ subject: chosenSubject.key, teacher: r.id }),
         cells: { name: r.name || '이름 없음', status: r.closed_at ? '마감' : '마감 대기',
           score: r.closed_at ? { text: score(r.total, p.knownMax), tone: low ? 'low' : '' } : '—', change: r.closed_at ? delta : '—',
@@ -101,10 +103,10 @@ export async function portfolioOverview({ sql, tenantId, settings, params }) {
     }) : [];
   }
   const closedCount = rows.filter(r => r.closed_at).length;
-  return { period: month, title: selected ? `${selected.name || '강사'} ${month} 평가 항목` : chosenSubject ? `${chosenSubject.label} ${month} 강사 평가` : `${month} 강사평가 현황`,
+  return { period: month, title: selected ? `${selected.name || '강사'} ${shownMonth} 평가 항목` : chosenSubject ? `${chosenSubject.label} ${shownMonth} 강사 평가` : `${shownMonth} 강사평가 현황`,
     purpose: '마감된 점수와 항목 근거를 확인하고 필요한 지도를 요청합니다.', path, columns, rows: output,
     summary: `마감 ${closedCount} / 평가 ${rows.length}명 · 마감 대기 ${rows.length - closedCount}명`,
     empty: selected && !selected.closed_at ? '평가가 마감된 뒤 항목을 볼 수 있습니다.' : undefined,
-    note: selected ? selected.closed_at ? `전월 같은 항목은 설정과 배점이 같을 때만 표시합니다. 항목을 누르면 직원 포트폴리오가 열립니다. 열린 뒤 ${month}을 골라 같은 달의 근거를 확인해 주세요.` : '이 강사의 평가가 아직 마감되지 않았습니다.'
+    note: selected ? selected.closed_at ? `전월 같은 항목은 설정과 배점이 같을 때만 표시합니다. 항목을 누르면 직원 포트폴리오가 열립니다. 열린 뒤 ${shownMonth} 평가월을 골라 같은 달의 근거를 확인해 주세요.` : '이 강사의 평가가 아직 마감되지 않았습니다.'
       : '마감 전 점수는 순위와 범위에 넣지 않습니다. 점수 범위에는 판단 제외된 강사의 마감 점수도 포함됩니다. 지도 대상은 마감 총점이 만점의 70% 미만이고 자료 없음·계산 전 항목이 없는 강사입니다. 판단 제외는 마감했지만 자료 없음·계산 전 항목이 있는 강사입니다. 여러 과목 강사는 과목마다 표시됩니다.' };
 }

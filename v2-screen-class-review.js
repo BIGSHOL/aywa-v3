@@ -32,6 +32,7 @@
         button.dataset.teacher = row.teacherId;
         button.dataset.teacherName = row.cells.name;
         button.dataset.month = row.month;
+        button.dataset.monthLabel = row.monthLabel || row.month;
         button.dataset.evidence = row.lowItems?.join(', ') || '';
       }
     });
@@ -110,10 +111,10 @@
     document.addEventListener('click', e => {
       const button = e.target.closest?.(`${SEL} [data-v2-review-task]`);
       if (!button) return;
-      const closing = button.dataset.v2ReviewTask === 'closing', name = button.dataset.teacherName, month = button.dataset.month;
-      api?.showCardRequest?.({ title: `${month} ${name} ${closing ? '평가 마감 확인' : '지도 요청'}`.slice(0, 80),
-        body: closing ? `${name} 강사의 ${month} 직원 포트폴리오 평가가 아직 마감되지 않았습니다. 마감 상태를 확인해 주세요.`
-          : `${name} 강사의 ${month} 마감 평가가 총점/만점 70% 미만입니다. 낮은 항목: ${button.dataset.evidence || '항목별 근거 확인 필요'}. 포트폴리오에서 근거를 확인하고 지도해 주세요.`,
+      const closing = button.dataset.v2ReviewTask === 'closing', name = button.dataset.teacherName, month = button.dataset.month, shown = button.dataset.monthLabel || month;
+      api?.showCardRequest?.({ title: `${shown} ${name} ${closing ? '평가 마감 확인' : '지도 요청'}`.slice(0, 80),
+        body: closing ? `${name} 강사의 ${shown} 직원 포트폴리오 평가가 아직 마감되지 않았습니다. 마감 상태를 확인해 주세요.`
+          : `${name} 강사의 ${shown} 마감 평가가 총점/만점 70% 미만입니다. 낮은 항목: ${button.dataset.evidence || '항목별 근거 확인 필요'}. 포트폴리오에서 근거를 확인하고 지도해 주세요.`,
         source: 'direct', draftKey: `portfolio-overview:${button.dataset.v2ReviewTask}:${month}:${button.dataset.teacher}`,
         context: { family: 'class-review', familyLabel: '강사평가', records: [{ id: button.dataset.teacher, label: name }] } });
     });
