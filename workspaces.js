@@ -33,7 +33,7 @@ window.createWorkspaces = function createWorkspaces(api) {
   const SUBJECT_FIRST=new Set(['video-homework','timetable','classes','textbooks','lesson-reports','exams','consultations','enrollment','withdrawal-reports']);
   const COLUMN_ORDER={
     dashboard:['date','f:요약','f:알림','status'],calendar:['date','detail','f:태그','status'],
-    'tasks-notifications':['f:업무','f:내용','f:담당','date','status','f:처리 근거'],onescreen:['f:보낸 선생님','f:대상 수','f:반','date','status'],
+    'tasks-notifications':['f:업무','f:내용','f:업무 담당자','date','status','f:처리 근거'],onescreen:['f:보낸 선생님','f:대상 수','f:반','date','status'],
     'video-homework':['detail','date','f:선생님','status'],timetable:['f:요일','f:시간','f:선생님','f:강의실'],
     'class-sheets':['date','f:교재','f:범위','status'],attendance:['detail','date','status','f:시간','f:자리','f:메모'],
     classes:['f:구분','subject','f:담임','f:강의실','f:요일','f:학생','status','f:메모'],makeups:['detail','f:결석일','date','f:보강 시간','status'],
@@ -380,7 +380,7 @@ window.createWorkspaces = function createWorkspaces(api) {
     return c?sortBy(out,c.sortv,dir):viewKind(a)==='timeline'?sortBy(out,r=>String(r.date||''),'desc'):out;
   }
   const nameColumn=id=>({key:'name',label:NAME_HEAD[id]||'이름',text:r=>String(r.label||''),sortv:r=>String(r.label||''),align:'l'});
-  const DETAIL_ONLY={classes:new Set(['수강 원생']),integrations:new Set(['실패 영역 상세']),onescreen:new Set(['대상 원생']),'class-review':new Set(['담당 반 이름','계산 항목 이름']),'teacher-workspace':new Set(['담임 반 이름'])};
+  const DETAIL_ONLY={classes:new Set(['수강 원생']),exams:new Set(['시험']),integrations:new Set(['실패 영역 상세']),onescreen:new Set(['대상 원생']),'class-review':new Set(['담당 반 이름','계산 항목 이름']),'teacher-workspace':new Set(['담임 반 이름'])};
   // 2.0에서 과목이 이름 앞인 목록만 앞세우고, 다른 목록의 과목은 원래 자리에서 보인다.
   function familyColumns(a,basis){
     const id=a.id,dn=dateName(id),labels=[],sample=[...previews(id),...basis.slice(0,300)],subjectFirst=SUBJECT_FIRST.has(id),order=COLUMN_ORDER[id]||[];
