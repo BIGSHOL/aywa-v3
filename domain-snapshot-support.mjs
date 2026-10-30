@@ -3,12 +3,14 @@ import { ISO_AT, PRIORITY, addDays, family, field, latest, md, metric, monthlyTr
 
 const RUN = { ok: '완료', partial: '일부 실패', error: '실패' };
 const TRIGGER = { scheduled: '정기 실행', relay: '연동 PC 요청', button: '직접 실행' };
+// 2.0 makeedu-sync-runs.tsx DOMAIN_LABEL과 같은 표시 이름. 알 수 없는 내부 키는 화면에 내지 않는다.
+const SYNC_DOMAIN_LABEL = { students: '학생', classes: '반', prospects: '예비상담', invoices: '수납', consultations: '재원상담', catalog: '교재', enrollments: '수강', textbook_checks: '교재 체크', staff_attendance: '직원 출퇴근' };
 export const PROVIDER = { makeedu: '메이크에듀', google_sheets: '구글 시트', 'google_sheets:english': '구글 시트(영어)' };
 // 연동 오류는 정해진 한국어 요약으로만 싣는다(오류 원문은 영어·주소·계정이 섞일 수 있다 — verify-domain-report 'integrations').
 const LINK_ERROR = [[/시트 보호|수동 편집/, '자동 반영 건너뜀(시트 보호)'], [/권한|permission|forbidden|403/i, '공유 권한 오류'], [/찾을 수 없|not found|404/i, '시트를 찾지 못함'], [/인증|token|unauthori|invalid_grant|401/i, '연결 인증 만료'], [/한도|quota|rate limit|429/i, '요청 한도 초과']];
 const linkError = text => LINK_ERROR.find(([re]) => re.test(text || ''))?.[1] || '동기화 오류';
 
-export async function supportFamilies({ sql, t, asOf, month, monthStart, subjectLabel }) {
+export async function supportFamilies({ sql, t, asOf, monthStart, subjectLabel }) {
   const out = {};
   // 고객센터 — 지점이 낸 개선요청. 운영자 답변 화면은 운영 콘솔 쪽이다.
   const requests = await sql`select id, title, status, to_char(created_at at time zone 'Asia/Seoul','YYYY-MM-DD') d, answered_at is not null answered from public.support_requests where tenant_id=${t} order by created_at desc`;
@@ -85,7 +87,7 @@ export async function supportFamilies({ sql, t, asOf, month, monthStart, subject
     summary: `오류가 남은 연동 ${failingLinks.length}개${failingNames ? `(${failingNames})` : ''} · ClassNote 반 보드 동기화 실패 ${ig.board_failed}회(전체 기간).`,
     metrics: [metric('메이크에듀 동기화 실행', runs.length, '회', `전체 기간 · 실패 ${runs.filter(r => r.status === 'error').length} · 일부 실패 ${runs.filter(r => r.status === 'partial').length}`), metric('최근 7일 메이크에듀 동기화 문제', recentBad.length, '회', '실패 · 일부 실패'), metric('연동 PC', ig.agents, '대', `최종 응답 ${ig.agent_seen ? md(ig.agent_seen) : '기록 없음'}`), metric('연동 PC 정기 작업 실패', ig.agent_failed, '회', `전체 ${ig.agent_runs}회 중`), metric('ClassNote 반 보드 동기화 실패', ig.board_failed, '회', `전체 ${ig.board_runs}회 중`), metric('오류가 남은 연동', failingLinks.length, '개', `최종 동기화 ${links.map(l => `${PROVIDER[l.provider] || '기타 연동'} ${l.last ? md(l.last) : '날짜 없음'}`).join(' · ')}`), metric('오늘 수학 결과', ig.todays_math, '건')],
     trend: monthlyTrend('월별 메이크에듀 동기화', '회', Object.entries(Object.groupBy(runs.filter(r => r.d <= asOf), r => r.d.slice(0, 7))).map(([m, rows]) => ({ month: m, value: rows.length })), asOf),
-    evidence: [...runs.map(r => record({ id: r.id, label: '메이크에듀 동기화', date: r.d, status: RUN[r.status] || '기타', fields: [field('실행 시각', r.hm), field('실패 영역', (r.failed_domains || []).length ? `${r.failed_domains.length}개` : null), field('실행 방식', TRIGGER[r.trigger_source] || '기타'), field('소요', r.duration_ms ? `${Math.round(r.duration_ms / 1000)}초` : null)], facets: [`status:${r.status}`, `trigger:${r.trigger_source}`, recentBad.includes(r) && 'problem-recent'] })), ...linkRecords],
+    evidence: [...runs.map(r => record({ id: r.id, label: '메이크에듀 동기화', date: r.d, status: RUN[r.status] || '기타', fields: [field('실행 시각', r.hm), field('실패 영역', (r.failed_domains || []).length ? `${r.failed_domains.length}개` : null), field('실패 영역 상세', (r.failed_domains || []).map(key => SYNC_DOMAIN_LABEL[key] || '기타 영역').join(' · ')), field('실행 방식', TRIGGER[r.trigger_source] || '기타'), field('소요', r.duration_ms ? `${Math.round(r.duration_ms / 1000)}초` : null)], facets: [`status:${r.status}`, `trigger:${r.trigger_source}`, recentBad.includes(r) && 'problem-recent'] })), ...linkRecords],
     facetLabels: { 'problem-recent': '최근 7일 동기화 문제(실패·일부 실패)', 'link-error': '오류가 남은 연동', ...Object.fromEntries(Object.entries(RUN).map(([k, v]) => [`status:${k}`, v])), ...Object.fromEntries(Object.entries(TRIGGER).map(([k, v]) => [`trigger:${k}`, v])) }, recordSource: linkRecords.length ? 'makeedu_sync_runs,user_integrations' : 'makeedu_sync_runs',
     signals: [
       ...(recentBad.length ? [signal({ id: 'makeedu-sync-problem', title: `최근 7일 메이크에듀 동기화 문제 ${recentBad.length}회`, summary: `${recentBad.slice(0, 3).map(r => `${md(r.d)} ${r.hm} ${RUN[r.status] || '기타'}`).join(' · ')}${recentBad.length > 3 ? ` 외 ${recentBad.length - 3}회` : ''}.`, priority: PRIORITY.check, source: '메이크에듀 동기화 기록', recordIds: recentBad.map(r => r.id), facet: 'problem-recent', at: latest(recentBad.map(r => r.at)), draft: { title: '메이크에듀 동기화 상태 확인', body: '최근 동기화에서 실패하거나 일부만 성공한 실행이 있습니다. 연동 PC 상태와 실패한 항목을 확인해 주세요.' } })] : []),
