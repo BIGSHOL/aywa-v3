@@ -1028,7 +1028,7 @@ window.createFlowUI = function createFlowUI(api) {
     return [['학교·학년',schoolGrade(s.school,s.grade)],['상태',STUDENT_STATE[s.status]||''],['반',cls.length?cls.map(k=>k.name).join(', '):''],['이번 달 결석',a.absent?`${fmt(a.absent)}회`:''],['이번 달 미납',s.remaining>0?`${fmt(s.remaining)}원`:'']];
   }
   function currentClassFact(r,it,person,detailLabel,fields){
-    if(detailLabel==='반'||fields.some(([k])=>k==='반')||!person)return [];
+    if(r.familyId==='approvals'||detailLabel==='반'||fields.some(([k])=>k==='반')||!person)return [];
     studentIndex??=new Map((db.students||[]).map(s=>[String(s.id),s]));classIndex??=new Map((db.classes||[]).map(k=>[String(k.id),k]));
     const id=String(r.recordId||r.id||''),book=r.familyId==='textbook-requests'?(db.textbooks||[]).find(t=>String(t.id)===id):null;
     const matches=(db.students||[]).filter(s=>s.name===person),student=book?.studentId?studentIndex.get(String(book.studentId)):r.type==='student'?studentIndex.get(id):matches.length===1?matches[0]:null;
@@ -1054,10 +1054,12 @@ window.createFlowUI = function createFlowUI(api) {
     const clean=v=>{const x=String(v??'').trim();return x==='—'?'':/^\d{4}-\d{2}-\d{2}$/.test(x)?md(x):x;};
     const factsOf=it=>{if(!it)return r.detail?[['내용',String(r.detail)]]:[];
       const label=String(it.label||r.label||''),detail=clean(it.detail),parts=fam==='tasks-notifications'?taskParts(label):null;
-      const person=parts?(db.students||[]).some(s=>s.name===parts.name)?parts.name:'':nonPerson.has(fam)?'':label;
-      recName.set(key,person);
       const detailLabel=famMeta(fam).detailLabel||DETAIL_LABEL[fam]||'내용',fields=(it.fields||[]).filter(f=>f&&f.label).map(f=>[fam==='attendance'&&f.label==='메모'?'사유':String(f.label),clean(f.value)]);
-      return ordered(fam,[...(parts?[['업무',parts.work],['발생일',parts.day],['시각',parts.time],['구분',parts.kind]]:fam==='tasks-notifications'?[['업무',label]]:[]),[detailLabel,detail&&!label.includes(detail)?detail:''],['상태',clean(it.status)],[famMeta(fam).dateLabel||DATE_LABEL[fam]||'날짜',it.date?md(String(it.date).slice(0,10)):''],...currentClassFact(r,it,person,detailLabel,fields),...(r.teacherName?[['담당 선생님',clean(r.teacherName)]]:[]),...fields]);};
+      const applicant=fam==='approvals'?fields.find(([k])=>k==='신청자')?.[1]||fields.find(([k])=>k==='기안')?.[1]||clean(r.detail):'';
+      const person=parts?(db.students||[]).some(s=>s.name===parts.name)?parts.name:'':nonPerson.has(fam)?'':fam==='approvals'?applicant:label;
+      recName.set(key,person);
+      const visibleFields=fam==='approvals'?fields.filter(([k,v])=>k!=='신청자'&&(k!=='기안'||v!==person)):fields;
+      return ordered(fam,[...(parts?[['업무',parts.work],['발생일',parts.day],['시각',parts.time],['구분',parts.kind]]:fam==='tasks-notifications'?[['업무',label]]:fam==='approvals'?[['문서',label]]:[]),[detailLabel,detail&&!label.includes(detail)?detail:''],['상태',clean(it.status)],[famMeta(fam).dateLabel||DATE_LABEL[fam]||'날짜',it.date?md(String(it.date).slice(0,10)):''],...currentClassFact(r,it,person,detailLabel,fields),...(r.teacherName?[['담당 선생님',clean(r.teacherName)]]:[]),...visibleFields]);};
     const p=Promise.resolve(nonPerson.has(fam)?null:api.ensureFull?.()).then(()=>r.type==='student'?studentFacts(id):!fam||!id?[]:recItem.has(key)?factsOf(recItem.get(key)):fetch(`/api/workspaces/${encodeURIComponent(fam)}/records?id=${encodeURIComponent(id)}`,{headers:{Accept:'application/json'}}).then(res=>res.ok?res.json():null).then(b=>factsOf(b?.item))).catch(()=>{recCache.delete(cacheKey);return null;});
     recCache.set(cacheKey,p);return p;
   }
