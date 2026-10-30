@@ -6,8 +6,9 @@
 //  · settings = 2.0 `getTenantSettings()`의 operations·modules(resolveSettings의 같은 병합) · teacherColors = `getTeacherColorMap`
 //    · teacherNicknames = `getTeacherNicknameMap` · labSeparateEnrollmentIds = `getLabSeparateEnrollmentIdSet` · seatPins = `getSeatPins`.
 // 주·과목·보기 해석과 화면 조립은 호스트가 2.0 page.tsx와 같은 함수로 한다(v2-host/src/timetable-page.tsx).
-// 저장(2단계, Docker 복사본)은 v2-timetable-save.mjs — 2.0 부품이 부르는 서버 함수를 같은 이름의 동작으로 받는다.
+// 저장은 v2-timetable-save.mjs. 반 블록 옮기기는 2.0 서버 함수를 직접 실행해 함께 옮기는 기록·교재 배정·비는 회차를 같이 판정한다.
 import { timetableActions, readPeople, loadExtra } from './v2-timetable-save.mjs';
+import { runV2Server } from './v2-server-runner.mjs';
 // 시간표 X(퇴원 겹침)는 읽기 — 같은 GET에 exit=<과목>&anchor=<YYYY-MM>로 묻는다(v2-timetable-exit.mjs, 2.0 loadExitOverlay).
 import { loadExitOverlay } from './v2-timetable-exit.mjs';
 
@@ -366,6 +367,15 @@ async function weekSlots(sql, t, R, ref, today) {
   return { slots: slots.map(x => ({ ...x, students: rosters.get(x.classId) ?? [] })), labelMap };
 }
 
+const actions = timetableActions(loadRules, { weekSlots });
+actions.moveClassSlots = { ...actions.moveClassSlots,
+  async run({ body, tenantId }) {
+    const { results: [result] } = await runV2Server({ tenantId, actorId: body.actor, mode: 'write',
+      steps: [{ module: 'features/timetable/server/move-actions.ts', fn: 'moveClassSlots', args: body.args }] });
+    return result.value;
+  },
+};
+
 export const screen = {
   id: ID, label: '시간표', order: 2,
   params: { week: /^\d{4}-\d{2}-\d{2}$/, exit: /^[a-z][a-z0-9_]{0,30}$/, anchor: /^\d{4}-\d{2}$/ },
@@ -374,6 +384,6 @@ export const screen = {
     if (params.exit) return loadExitOverlay(sql, tenantId, importV2, (await readSettings(sql, tenantId, R)).operations, { subject: params.exit, anchor: params.anchor ?? null });
     return buildTimetableData({ sql, params, tenantId, R, X: await loadExtra(importV2) });
   },
-  actions: timetableActions(loadRules, { weekSlots }),
+  actions,
 };
 export { loadRules, weekSlots };
