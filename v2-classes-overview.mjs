@@ -41,7 +41,7 @@ export async function classOverview({ sql, tenantId, importV2, R, params, readSe
   const totalSeats = classes.reduce((n, c) => n + c.studentCount, 0), totalAverage = average(totalSeats, total);
   const summary = `운영 반 ${total}개 · 명단 인원 ${totalSeats}명분 · 반당 평균 ${totalAverage}`;
   const columns = [{ key: 'name', label: '구분' }, { key: 'classes', label: '운영 반 / 전체' }, { key: 'seats', label: '명단 인원' },
-    { key: 'average', label: '반당 평균 / 전체' }, { key: 'teachers', label: '담임' }, { key: 'small', label: '편성 검토' }, { key: 'capacity', label: '정원 대비 채움' }];
+    { key: 'average', label: '반당 평균 / 전체' }, { key: 'teachers', label: '담임 강사' }, { key: 'small', label: '편성 검토' }, { key: 'capacity', label: '정원 대비 채움' }];
   const metric = (name, group, link) => {
     const list = group?.classes ?? [], seats = list.reduce((n, c) => n + c.studentCount, 0);
     const sized = list.filter(c => c.capacity);

@@ -29,6 +29,7 @@
     table.prepend(cols);
     table.querySelectorAll('tbody tr:not(.v2o-group)').forEach((tr, i) => {
       const row = model.rows[i];
+      if (row.href) tr.dataset.v2OverviewHref = row.href;
       if (!row.id) return;
       const action = tr.lastElementChild;
       const course = document.createElement('select'); course.dataset.v2ClassCourse = row.id; course.setAttribute('aria-label', `${row.cells.name} 과정`);
@@ -144,6 +145,10 @@
           : `${name} 반의 기본 담당 강사가 지정되어 있지 않습니다. 담당 강사를 확인해 주세요.`,
         source: 'direct', draftKey: `class-overview:${button.dataset.v2ClassTask}:${button.dataset.classId}`,
         context: { family: 'classes', familyLabel: '수업 현황', records: [{ id: button.dataset.classId, label: name }] } });
+    });
+    document.addEventListener('click', e => {
+      const row = e.target.closest?.(`${SEL} .v2o-classes tr[data-v2-overview-href]`);
+      if (row && !e.target.closest('a, button, input, select, textarea')) location.hash = row.dataset.v2OverviewHref;
     });
     const later = () => requestAnimationFrame(place);
     addEventListener('resize', later); addEventListener('scroll', place, { passive: true }); addEventListener('hashchange', later);

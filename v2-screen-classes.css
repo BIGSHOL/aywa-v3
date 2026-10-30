@@ -1,15 +1,27 @@
-.v2o-classes table{table-layout:fixed;min-width:1400px}
-.v2o-classes col[data-col=name]{width:16%}
-.v2o-classes col[data-col=classes]{width:10%}
-.v2o-classes col[data-col=seats]{width:9%}
-.v2o-classes col[data-col=average]{width:14%}
-.v2o-classes col[data-col=teachers]{width:10%}
-.v2o-classes col[data-col=small]{width:9%}
-.v2o-classes col[data-col=capacity]{width:11%}
-.v2o-classes col[data-col=action]{width:21%}
+.v2o-classes table{table-layout:fixed;width:100%;min-width:0;font-size:14px;white-space:normal}
+.v2o-classes col[data-col=name]{width:20%}
+.v2o-classes col[data-col=classes]{width:13%}
+.v2o-classes col[data-col=seats]{width:12%}
+.v2o-classes col[data-col=average]{width:16%}
+.v2o-classes col[data-col=teachers]{width:12%}
+.v2o-classes col[data-col=small]{width:12%}
+.v2o-classes col[data-col=capacity]{width:15%}
+.v2o-classes:has([data-v2-class-course]) col[data-col=name]{width:15%}
+.v2o-classes:has([data-v2-class-course]) col[data-col=classes]{width:8%}
+.v2o-classes:has([data-v2-class-course]) col[data-col=seats]{width:8%}
+.v2o-classes:has([data-v2-class-course]) col[data-col=average]{width:10%}
+.v2o-classes:has([data-v2-class-course]) col[data-col=teachers]{width:10%}
+.v2o-classes:has([data-v2-class-course]) col[data-col=small]{width:9%}
+.v2o-classes:has([data-v2-class-course]) col[data-col=capacity]{width:12%}
+.v2o-classes col[data-col=action]{width:28%}
 .v2o-classes td,.v2o-classes thead th:not(:first-child){text-align:right}
-.v2o-classes tbody th a{display:flex;justify-content:space-between;gap:8px;text-align:left}
-.v2o-classes td:last-child:has([data-v2-class-course]){white-space:nowrap}
+.v2o-classes th,.v2o-classes td{padding:10px 6px;line-height:1.35;font-size:14px}
+.v2o-classes tbody th a{display:inline-flex;align-items:baseline;gap:6px;text-align:left}
+.v2o-classes .v2o-enter{margin:0;white-space:nowrap;font-size:14px}
+.v2o-classes tbody tr[data-v2-overview-href]{cursor:pointer}
+.v2o-classes tbody tr[data-v2-overview-href]:hover{background:#f5f7fb}
+.v2o-classes tbody tr[data-v2-overview-href]:focus-within{outline:2px solid #6078c8;outline-offset:-2px}
+.v2o-classes td:last-child:has([data-v2-class-course]){white-space:normal}
 .v2o-classes td:last-child:has([data-v2-class-course]) > *{margin-left:3px}
 .v2o-classes td select{max-width:86px}
 .v2o-classes td input{width:80px}
