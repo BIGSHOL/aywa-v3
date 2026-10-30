@@ -145,8 +145,9 @@ async function reportFamilies(ctx) {
 // 만족도 저장은 기본 첫 화면 자료를 건드리지 않는다. 이 영역만 다시 읽을 때도 같은 생성 함수를 쓴다.
 export async function classReviewFamily({ sql, t }) {
   const out = {};
-  // 직원 평가·포트폴리오 — 원장만 보는 화면. 점수 값은 싣지 않고 기록 상태만.
-  const portfolio = await sql`select p.teacher_id||':'||p.month id, u.display_name, p.month, p.class_count, p.known_count, p.closed_at is not null closed from public.teacher_portfolio_months p join public.users u on u.id=p.teacher_id and u.tenant_id=${t} where p.tenant_id=${t} order by p.month desc, u.display_name`;
+  const { itemLabel, shownItems } = await importV2('features/teacher-portfolio/view.ts');
+  // 직원 평가·포트폴리오 — 원장만 보는 화면. 점수 값은 싣지 않고 반·계산 항목 이름만 기록에 둔다.
+  const portfolio = await sql`select p.teacher_id||':'||p.month id, u.display_name, p.month, p.class_count, p.known_count, p.closed_at is not null closed, p.payload->'classes' classes, p.payload->'items' items from public.teacher_portfolio_months p join public.users u on u.id=p.teacher_id and u.tenant_id=${t} where p.tenant_id=${t} order by p.month desc, u.display_name`;
   const judgments = await sql`select state as key, count(*)::int count from public.teacher_satisfaction_judgments where tenant_id=${t} group by 1`;
   const [cr] = await sql`select count(*)::int reviews, max(to_char(created_at at time zone 'Asia/Seoul','YYYY-MM-DD')) last_review from public.academy_documents where tenant_id=${t} and form_type='class_review'`;
   const pending = countOf(judgments, 'pending');
@@ -159,7 +160,7 @@ export async function classReviewFamily({ sql, t }) {
   out['class-review'] = family('class-review', '직원 평가·직원 포트폴리오', {
     summary: portfolio.length ? `직원 포트폴리오 ${yymm(portfolio.at(-1).month)}~${yymm(portfolio[0].month)}.` : '직원 포트폴리오 기록이 없습니다.',
     metrics: [metric('수업 평가 문서', cr.reviews, '건', `최근 ${cr.last_review ? md(cr.last_review) : '기록 없음'}`), metric('포트폴리오 대상 직원', new Set(portfolio.map(p => p.display_name)).size, '명'), metric('포트폴리오 월 기록', portfolio.length, '건', `마감 ${portfolio.filter(p => p.closed).length}건`), metric('만족도 확인 대기', pending, '건', `학부모 글 · 반영 ${countOf(judgments, 'applied')} · 제외 ${countOf(judgments, 'dismissed')}`)],
-    evidence: [...satisfactionRecords, ...portfolio.map(r => record({ id: r.id, label: r.display_name, date: r.month, status: r.closed ? '마감' : '집계 중', fields: [field('담당 반', r.class_count), field('계산된 항목', r.known_count)], facets: [r.closed ? 'closed' : 'open', `month:${r.month}`] }))],
+    evidence: [...satisfactionRecords, ...portfolio.map(r => record({ id: r.id, label: r.display_name, date: r.month, status: r.closed ? '마감' : '집계 중', fields: [field('담당 반', r.class_count), field('계산된 항목', r.known_count), field('담당 반 이름', Array.isArray(r.classes) ? r.classes.join(' · ') : ''), field('계산 항목 이름', Array.isArray(r.items) ? shownItems({ items: r.items }).filter(m => m.value !== null).map(itemLabel).join(' · ') : '')], facets: [r.closed ? 'closed' : 'open', `month:${r.month}`] }))],
     facetOrder: ['satisfaction:pending', 'open', 'closed', ...[...new Set(portfolio.map(p => p.month))].map(m => `month:${m}`)], facetLabels: { 'satisfaction:pending': '만족도 확인 대기', closed: '마감', open: '집계 중', ...Object.fromEntries([...new Set(portfolio.map(p => p.month))].map(m => [`month:${m}`, yymm(m)])) }, recordSource: 'teacher_portfolio_months,teacher_satisfaction_judgments', detailLabel: '반',
     signals: pending ? [signal({ id: 'satisfaction-pending', title: `만족도 확인 대기 학부모 글 ${pending}건`, summary: `담임별: ${Object.entries(Object.groupBy(satisfaction, r => r.teacher || '담임 미상')).sort((a, b) => b[1].length - a[1].length).map(([k, v]) => `${k} ${v.length}`).join(' · ')}. 문구만으로 판정하지 못한 글입니다.`, priority: PRIORITY.check, source: '강사평가 만족도 판정', recordIds: satisfaction.map(r => r.id), facet: 'satisfaction:pending', at: latest(satisfaction.map(r => r.d)), draft: { title: '만족도 확인 대기 글 검토', body: '강사평가 만족도 판정에서 확인 대기로 남은 학부모 글을 검토해 주세요.' } })] : [],
     sourceLabel: '수업 평가 문서 · 직원 포트폴리오 · 만족도 판정', coverageNote: '목록은 만족도 확인 대기 학부모 글과 직원 포트폴리오 월 기록입니다.',

@@ -379,10 +379,11 @@ window.createWorkspaces = function createWorkspaces(api) {
     return c?sortBy(out,c.sortv,dir):viewKind(a)==='timeline'?sortBy(out,r=>String(r.date||''),'desc'):out;
   }
   const nameColumn=id=>({key:'name',label:NAME_HEAD[id]||'이름',text:r=>String(r.label||''),sortv:r=>String(r.label||''),align:'l'});
+  const DETAIL_ONLY={classes:new Set(['수강 원생']),integrations:new Set(['실패 영역 상세']),onescreen:new Set(['대상 원생']),'class-review':new Set(['담당 반 이름','계산 항목 이름'])};
   // 2.0에서 과목이 이름 앞인 목록만 앞세우고, 다른 목록의 과목은 원래 자리에서 보인다.
   function familyColumns(a,basis){
     const id=a.id,dn=dateName(id),labels=[],sample=[...previews(id),...basis.slice(0,300)],subjectFirst=SUBJECT_FIRST.has(id),order=COLUMN_ORDER[id]||[];
-    for(const r of basis)for(const f of r.fields||[])if(f?.label&&f.label!==dn&&!(subjectFirst&&f.label==='과목')&&!(id==='classes'&&f.label==='수강 원생')&&!(id==='integrations'&&f.label==='실패 영역 상세')&&!(id==='onescreen'&&f.label==='대상 원생')&&!labels.includes(f.label))labels.push(f.label);
+    for(const r of basis)for(const f of r.fields||[])if(f?.label&&f.label!==dn&&!(subjectFirst&&f.label==='과목')&&!DETAIL_ONLY[id]?.has(f.label)&&!labels.includes(f.label))labels.push(f.label);
     const cols=[...(subjectFirst&&basis.some(r=>subjectOf(r))?[{key:'subject',label:'과목'}]:[]),{key:'detail',label:detailName(id)},{key:'status',label:'상태',chip:true},...(dn?[{key:'date',label:dn}]:[]),...labels.map(l=>({key:`f:${l}`,label:l}))]
       .filter(c=>order.includes(c.key)||basis.some(r=>cellText(r,c.key)))
       .map(c=>{const vs=sample.map(r=>cellText(r,c.key)).filter(Boolean);return {...c,vs,money:vs.length>0&&vs.every(v=>MONEY.test(v)),text:r=>cellText(r,c.key),sortv:r=>sortValue(r,c.key),...(c.chip?{html:r=>r.status?`<span class="ax-chip ws-cut">${h(r.status)}</span>`:''}:{})};});
