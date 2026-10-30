@@ -1,5 +1,6 @@
 // 원생 영역 두 번째 묶음 — 이탈 방어·신규생 관리·퇴원관리·퇴원보고서.
 import { ISO_AT, PRIORITY, family, field, latest, metric, monthlyTrend, record, signal } from './domain-snapshot-core.mjs';
+import { importV2 } from './v2-bridge.mjs';
 
 // src/features/withdrawals/types.ts REASON_LABEL·REASON_ALIAS와 같은 표(verify-domain-snapshot.mjs가 원본과 대조).
 export const REASON_LABEL = { dissatisfaction: '수업·강사', grades: '성적', motivation: '학생 상태', method: '공부 방법 변경', competitor: '타 학원으로 이동', schedule: '시간/일정', financial: '경제적 이유', career: '진로·진학', peers: '가족·친구', illness: '질병', advised: '권고퇴원', relocation: '이사', graduated: '졸업', other: '기타' };
@@ -13,7 +14,6 @@ const REPORT_STATUS = { requested: '작성 요청', revision: '반려 · 수정 
 // src/features/retention/components/campaign-board.tsx COLUMNS와 같은 라벨.
 const CAMPAIGN = { pending: '대상', contacted: '연락 완료', enrolled: '재등록 완료', declined: '이탈' };
 const BUCKETS = [['d7', '0~7일', 7], ['d30', '8~30일', 30], ['d60', '31~60일', 60], ['d90', '61~90일', 90]];
-const days = (a, b) => Math.round((Date.parse(`${b}T00:00:00Z`) - Date.parse(`${a}T00:00:00Z`)) / 86400000);
 
 export async function lifecycleFamilies({ sql, t, asOf, monthStart, students, subjectLabel, schoolGradeLabel }) {
   const out = {};
@@ -30,16 +30,28 @@ export async function lifecycleFamilies({ sql, t, asOf, monthStart, students, su
   });
 
   // 신규생 관리 — 등록일부터 90일 창(7·30·60·90일), 체크리스트 완료 기록.
+  const [onboarding, subjectRows] = await Promise.all([importV2('features/newcomers/onboarding-items.ts'), importV2('features/newcomers/subject-rows.ts')]);
   const checks = await sql`select student_id, count(*) filter (where done_on is not null)::int done, count(*)::int rows_all from public.student_onboarding_checks where tenant_id=${t} group by 1`;
   const doneBy = new Map(checks.map(c => [c.student_id, c.done]));
-  const newcomers = students.filter(s => s.st === 'enrolled' && s.enrolled && s.enrolled <= asOf && days(s.enrolled, asOf) <= 90).map(s => ({ ...s, elapsed: days(s.enrolled, asOf) }));
-  const bucketOf = n => BUCKETS.find(([, , max]) => n <= max) || BUCKETS.at(-1);
+  const newcomers = students.filter(s => ['enrolled', 'on_hold'].includes(s.st) && s.enrolled && s.enrolled <= asOf && onboarding.daysBetween(s.enrolled, asOf) <= onboarding.NEWCOMER_WINDOW_DAYS).map(s => ({ ...s, elapsed: onboarding.daysBetween(s.enrolled, asOf) }));
+  const newcomerIds = newcomers.map(s => String(s.id));
+  const [enrollments, checkRows] = newcomerIds.length ? await Promise.all([
+    sql`select e.student_id::text student_id, e.start_date::text start_date, e.end_date::text end_date, c.subject from public.enrollments e left join public.classes c on c.id=e.class_id and c.tenant_id=${t} where e.tenant_id=${t} and e.student_id=any(${newcomerIds}::uuid[]) order by e.id`,
+    sql`select student_id::text student_id, item_key, done_on::text done_on, subject from public.student_onboarding_checks where tenant_id=${t} and student_id=any(${newcomerIds}::uuid[]) order by id`,
+  ]) : [[], []];
+  const { bySubject, earliest } = subjectRows.buildSubjectAnchors(enrollments.map(e => ({ studentId: e.student_id, startDate: e.start_date, endDate: e.end_date, subject: e.subject })), asOf);
+  const checkIndex = subjectRows.indexChecks(checkRows.map(c => ({ studentId: c.student_id, itemKey: c.item_key, doneOn: c.done_on, subject: c.subject })));
+  const subjectsOf = id => [...(bySubject.get(String(id))?.keys() ?? [])].sort();
+  const checkText = (s, item) => { const subjects = subjectsOf(s.id); return (subjects.length ? subjects : [null]).map(subject => {
+    const done = subjectRows.effectiveChecks(checkIndex, String(s.id), subject)[item.key];
+    return done ? `${subject ? `${subjectLabel(subject)} ` : ''}${done}` : '';
+  }).filter(Boolean).join(' · '); };
   out.newcomers = family('newcomers', '신규생 관리(90일 체크리스트)', {
     summary: `체크리스트 기록 ${checks.reduce((n, c) => n + c.rows_all, 0)}건 중 완료 ${checks.reduce((n, c) => n + c.done, 0)}건.`,
-    metrics: [metric('90일 안 신규생', newcomers.length, '명', '재원 · 등록일 기준'), ...BUCKETS.map(([, label, max], i) => metric(`등록 후 ${label}`, newcomers.filter(s => s.elapsed <= max && s.elapsed > (BUCKETS[i - 1]?.[2] ?? -1)).length, '명')), metric('체크 완료 기록', checks.reduce((n, c) => n + c.done, 0), '건', `체크 기록 ${checks.reduce((n, c) => n + c.rows_all, 0)}건`)],
-    evidence: newcomers.sort((a, b) => b.enrolled.localeCompare(a.enrolled)).map(s => record({ id: s.id, label: s.name, date: s.enrolled, detail: schoolGradeLabel(s.school, s.grade), status: `등록 후 ${s.elapsed}일`, fields: [field('완료한 체크', doneBy.get(s.id) || 0)], facets: [`bucket:${bucketOf(s.elapsed)[0]}`, doneBy.get(s.id) ? 'has-checks' : 'no-checks'] })),
+    metrics: [metric('90일 안 신규생', newcomers.length, '명', '재원·휴원 · 등록일 기준'), ...BUCKETS.map(([, label, max], i) => metric(`등록 후 ${label}`, newcomers.filter(s => s.elapsed <= max && s.elapsed > (BUCKETS[i - 1]?.[2] ?? -1)).length, '명')), metric('체크 완료 기록', checks.reduce((n, c) => n + c.done, 0), '건', `체크 기록 ${checks.reduce((n, c) => n + c.rows_all, 0)}건`)],
+    evidence: newcomers.sort((a, b) => b.enrolled.localeCompare(a.enrolled)).map(s => record({ id: s.id, label: s.name, date: s.enrolled, detail: schoolGradeLabel(s.school, s.grade), status: `등록 후 ${s.elapsed}일`, fields: [field('과목', subjectsOf(s.id).map(subjectLabel).join(' · ')), field('첫 수업', earliest.get(String(s.id))), ...onboarding.ONBOARDING_ITEMS.map(item => field(item.shortLabel, checkText(s, item))), field('완료한 체크', doneBy.get(s.id) || 0)], facets: [`bucket:${onboarding.bucketOf(s.enrolled, asOf)}`, doneBy.get(s.id) ? 'has-checks' : 'no-checks'] })),
     facetOrder: [...BUCKETS.map(([id]) => `bucket:${id}`), 'has-checks', 'no-checks'], facetLabels: { ...Object.fromEntries(BUCKETS.map(([id, label]) => [`bucket:${id}`, `등록 후 ${label}`])), 'has-checks': '완료한 체크 있음', 'no-checks': '완료한 체크 없음' }, recordSource: 'students',
-    sourceLabel: '원생 등록일 · 신규생 체크리스트', coverageNote: '목록은 등록 후 90일 안의 재원생입니다(최근 등록 순). 체크 항목은 기한 지남을 따지지 않고 완료만 셉니다.',
+    sourceLabel: '원생 등록일 · 신규생 체크리스트', coverageNote: '목록은 등록 후 90일 안의 재원·휴원생입니다(최근 등록 순). 체크 항목은 기한 지남을 따지지 않고 완료만 셉니다.',
     sources: [{ table: 'students', rows: newcomers.length }, { table: 'student_onboarding_checks', rows: checks.reduce((n, c) => n + c.rows_all, 0) }],
   });
 

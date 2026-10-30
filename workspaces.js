@@ -40,7 +40,7 @@ window.createWorkspaces = function createWorkspaces(api) {
     'class-review':['detail','f:담임','date','f:담당 반','f:계산된 항목','status'],students:['detail','status','f:과목','f:담임','f:보호자 연락처','date','f:퇴원일'],
     'student-contribution':['date','f:출처','status'],exams:['date','detail','f:점수','status'],
     consultations:['date','f:상담자','f:후속조치','status'],enrollment:['detail','date','f:상담자','f:경로','f:상담 결과','status'],
-    retention:['date','status'],newcomers:['detail','date','f:완료한 체크','status'],withdrawals:['date','status'],
+    retention:['date','status'],newcomers:['detail','f:과목','date','f:첫 수업','f:사전 콜','f:첫 수업 안내','f:OJT','f:첫 수업 후 콜','f:1개월 콜','f:2개월 콜','f:3개월 콜','f:완료한 체크','status'],withdrawals:['date','status'],
     'withdrawal-reports':['f:담임','date','detail','status'],staff:['detail','f:역할','status','f:고용 형태','date'],
     payroll:['detail','date','status'],billing:['detail','f:수납명','f:청구액','f:수납','f:남은 금액','status','date'],
     'textbook-requests':['f:교재','date','f:요청 선생님','f:가격','status'],
@@ -381,12 +381,12 @@ window.createWorkspaces = function createWorkspaces(api) {
   const nameColumn=id=>({key:'name',label:NAME_HEAD[id]||'이름',text:r=>String(r.label||''),sortv:r=>String(r.label||''),align:'l'});
   // 2.0에서 과목이 이름 앞인 목록만 앞세우고, 다른 목록의 과목은 원래 자리에서 보인다.
   function familyColumns(a,basis){
-    const id=a.id,dn=dateName(id),labels=[],sample=[...previews(id),...basis.slice(0,300)],subjectFirst=SUBJECT_FIRST.has(id);
+    const id=a.id,dn=dateName(id),labels=[],sample=[...previews(id),...basis.slice(0,300)],subjectFirst=SUBJECT_FIRST.has(id),order=COLUMN_ORDER[id]||[];
     for(const r of basis)for(const f of r.fields||[])if(f?.label&&f.label!==dn&&!(subjectFirst&&f.label==='과목')&&!labels.includes(f.label))labels.push(f.label);
     const cols=[...(subjectFirst&&basis.some(r=>subjectOf(r))?[{key:'subject',label:'과목'}]:[]),{key:'detail',label:detailName(id)},{key:'status',label:'상태',chip:true},...(dn?[{key:'date',label:dn}]:[]),...labels.map(l=>({key:`f:${l}`,label:l}))]
-      .filter(c=>basis.some(r=>cellText(r,c.key)))
+      .filter(c=>order.includes(c.key)||basis.some(r=>cellText(r,c.key)))
       .map(c=>{const vs=sample.map(r=>cellText(r,c.key)).filter(Boolean);return {...c,vs,money:vs.length>0&&vs.every(v=>MONEY.test(v)),text:r=>cellText(r,c.key),sortv:r=>sortValue(r,c.key),...(c.chip?{html:r=>r.status?`<span class="ax-chip ws-cut">${h(r.status)}</span>`:''}:{})};});
-    const order=COLUMN_ORDER[id]||[],rank=key=>{const n=order.indexOf(key);return n<0?order.length:n;};
+    const rank=key=>{const n=order.indexOf(key);return n<0?order.length:n;};
     return cols.sort((x,y)=>rank(x.key)-rank(y.key));
   }
   // 열 모양 = 값으로 정한다: 금액 오른쪽 · 짧은 값(8자 이하) 가운데 · 긴 글 왼쪽. 짧은 열은 가장 긴 값에 맞춰 고정(목록마다 기억 — 쪽을 넘겨도 줄지 않는다),
