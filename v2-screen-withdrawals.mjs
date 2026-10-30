@@ -2,7 +2,7 @@
 // 그리기는 2.0의 실제 React 부품(v2-host/src/withdrawals*.tsx). 이 모듈은 2.0 서버가 하던 일을 Docker 복사본에서 같은 결과로:
 //  · 목록 = page.tsx가 서버에서 받던 재료 — getWithdrawnStudents · getSubjectEndedStudents({ withNotes }) · getTenantSettings ·
 //    loadWithdrawalTrendPrefs · loadExitTeacherJudge(→ attributeTeachers · teacherNames). 같은 표·같은 조건을 SQL로, 판정·조립은
-//    2.0 순수 함수(importV2) 그대로. 필터·카드·쪽 나누기는 호스트가 page.tsx와 같은 함수·같은 순서로 한다.
+//    납부 청구로 퇴원월·과목 수강종료월을 계산하는 2.0 순수 함수(importV2)를 쓴다. 필터·카드·쪽 나누기는 호스트가 page.tsx와 같은 함수·같은 순서로 한다.
 //  · 상세 = [studentId]/page.tsx — getWithdrawalDetail · loadStudentReportRecords · loadLinkedConsultations · 권한 판정 넷.
 //  · 보는 사람 = 3.0 띠에서 고른 직원(GET ?actor=) — 2.0 requireAccess('withdrawals')와 같은 메뉴 키(readPeople).
 //  · 2.0은 사용자 클라이언트(RLS)로 읽는다 — 복사본 접속은 RLS를 안 타서 모든 조회에 tenant_id를 직접 건다.
@@ -26,17 +26,17 @@ let rulesPromise = null;
 function loadRules(importV2) {
   rulesPromise ??= (async () => {
     const at = p => importV2(p);
-    const [win, rows, bulk, types, reasonDetail, subjectEnded, merged, breakdown, prefs, special, dk, modules, preset, subjects, reasonKey, teachers,
+    const [win, rows, bulk, types, reasonDetail, subjectEnded, exitMonth, merged, breakdown, prefs, special, dk, modules, preset, subjects, reasonKey, teachers,
       churnModel, context, students, evalConfig, dates, license, consultSubject, boardStages, dateAccess] = await Promise.all([
       'features/withdrawals/window.ts', 'features/withdrawals/exit-rows.ts', 'features/withdrawals/system-bulk.ts', 'features/withdrawals/types.ts',
-      'features/withdrawals/reason-detail.ts', 'features/withdrawals/subject-ended.ts', 'features/students/status/merged.ts', 'features/withdrawals/breakdown.ts',
+      'features/withdrawals/reason-detail.ts', 'features/withdrawals/subject-ended.ts', 'features/withdrawals/exit-month.ts', 'features/students/status/merged.ts', 'features/withdrawals/breakdown.ts',
       'features/withdrawals/trend-prefs.ts', 'features/classes/special-lecture.ts', 'lib/date-kst.ts', 'lib/modules.ts', 'features/owner/preset.ts',
       'features/owner/subjects.ts', 'features/withdrawals/reason-key.ts', 'features/withdrawals/exit-overlay-teachers.ts',
       'features/teacher-portfolio/model/churn-model.ts', 'features/teacher-portfolio/model/context.ts', 'features/teacher-portfolio/model/students.ts',
       'features/teacher-portfolio/evaluation/config.ts', 'features/teacher-portfolio/model/dates.ts', 'lib/license/rule.ts',
       'features/enrollment/consult-subject.ts', 'features/enrollment/board-stages.ts', 'features/enrollments/date-access.ts',
     ].map(at));
-    return { win, rows, bulk, types, reasonDetail, subjectEnded, merged, breakdown, prefs, special, dk, modules, preset, subjects, reasonKey, teachers,
+    return { win, rows, bulk, types, reasonDetail, subjectEnded, exitMonth, merged, breakdown, prefs, special, dk, modules, preset, subjects, reasonKey, teachers,
       churnModel, context, students, evalConfig, dates, license, consultSubject, boardStages, dateAccess };
   })().catch(error => { rulesPromise = null; throw error; });
   return rulesPromise;
@@ -79,12 +79,26 @@ async function loadEndedEnrollments(sql, t, studentIds) {
 }
 const lastClassOf = row => { const k = row ? (one(row.class) ?? undefined) : undefined; return { className: k?.class_name ?? null, subject: k?.subject ?? null, englishTrack: k?.english_track ?? null, reason: row?.withdrawal_reason ?? null }; };
 
+/** 퇴원·과목 수강종료의 기간 판정에 쓰는 납부 청구. 2.0 loadPaidTuition과 같은 지점·상태·금액 조건이다. */
+async function paidTuition(sql, t, studentIds, lastDate) {
+  if (!studentIds.length || !lastDate) return new Map();
+  const rows = await sql`select student_id::text student_id, period::text period, status::text status, category::text category, amount_paid, line_items
+    from public.invoices where tenant_id=${t} and student_id = any(${studentIds}::uuid[]) and category::text='tuition'
+      and status::text not in ('void','refunded') and amount_paid > 0 and period <= ${lastDate.slice(0, 7)} order by id`;
+  const byStudent = new Map();
+  for (const row of rows) byStudent.set(row.student_id, [...(byStudent.get(row.student_id) ?? []), row]);
+  return byStudent;
+}
+
 async function getWithdrawnStudents(sql, t, L) {
   const rows = await sql`select id::text id, name, school, grade, enrolled_at::text enrolled_at, withdrawn_at::text withdrawn_at, withdrawal_metadata, notes
     from public.students where tenant_id=${t} and status::text='withdrawn' order by withdrawn_at desc nulls first, id`;
   const students = rows.filter(s => !L.merged.isMergedStudent(s.notes));
   if (!students.length) return [];
-  const ended = await loadEndedEnrollments(sql, t, students.map(s => s.id));
+  const [ended, paid] = await Promise.all([
+    loadEndedEnrollments(sql, t, students.map(s => s.id)),
+    paidTuition(sql, t, students.map(s => s.id), students.reduce((m, s) => s.withdrawn_at > m ? s.withdrawn_at : m, '')),
+  ]);
   const last = L.win.lastEndedByStudent(ended), byStudent = new Map();
   for (const e of ended) { const list = byStudent.get(e.student_id) ?? []; list.push({ endDate: e.end_date, subject: lastClassOf(e).subject }); byStudent.set(e.student_id, list); }
   return students.filter(s => !L.bulk.isBookkeepingOnlyExit({ withdrawalMetadata: s.withdrawal_metadata, hasEnrollmentHistory: last.has(s.id) })).map(s => {
@@ -92,6 +106,7 @@ async function getWithdrawnStudents(sql, t, L) {
     const rawMemo = s.withdrawal_metadata?.memo;
     return {
       id: s.id, name: s.name, school: s.school, grade: s.grade, enrolledAt: s.enrolled_at, withdrawnAt: s.withdrawn_at,
+      exitDate: s.withdrawn_at ? L.exitMonth.exitCountDate(s.withdrawn_at, L.exitMonth.paidTuitionMonths(paid.get(s.id) ?? [])) : null,
       lastClassName: k.className, lastClassSubject: k.subject, lastClassEnglishTrack: k.englishTrack,
       withdrawalReason: md?.reason ? L.types.REASON_LABEL[md.reason] : k.reason, metadata: md, hasEnrollmentHistory,
       systemBulk: L.bulk.isSystemBulkWithdrawal({ withdrawnAt: s.withdrawn_at, hasEnrollmentHistory }),
@@ -103,7 +118,7 @@ async function getWithdrawnStudents(sql, t, L) {
 }
 
 // ── server/queries.ts getSubjectEndedStudents({ withNotes: true }) ─────────────────────────────────────────────────────
-async function getSubjectEndedStudents(sql, t, L, today) {
+async function getSubjectEndedStudents(sql, t, L, today, settings) {
   const students = await sql`select id::text id, name, school, grade, status::text status from public.students where tenant_id=${t} and status::text in ('enrolled','on_hold') order by id`;
   if (!students.length) return [];
   const enrollments = [];
@@ -134,11 +149,22 @@ async function getSubjectEndedStudents(sql, t, L, today) {
     const endedDetail = ended.map(subject => {
       const best = L.win.pickLastEnded(enr.filter(e => e.subject === subject).map(e => ({ ...e, end_date: e.endDate, start_date: e.startDate, is_transferred: e.isTransferred })));
       const n = best ? notes.get(best.id) : undefined;
-      return { subject, endedAt: lastEndOf(subject) ?? best?.endDate ?? null, className: best?.className ?? null, englishTrack: best?.englishTrack ?? null,
+      const endedAt = lastEndOf(subject) ?? best?.endDate ?? null;
+      const subjectRows = enr.filter(e => e.subject === subject).map(e => ({ ...e, end_date: e.endDate, start_date: e.startDate, is_transferred: e.isTransferred }));
+      return { subject, endedAt, countAt: endedAt,
+        runStart: L.exitMonth.subjectRunStart(all.filter(e => e.subject === subject), best?.startDate ?? null),
+        endedTogether: L.win.endedTogether(subjectRows).map(e => ({ enrollmentId: e.id, classId: e.classId, startDate: e.startDate, endDate: e.endDate, isTransferred: e.isTransferred === true })),
+        className: best?.className ?? null, englishTrack: best?.englishTrack ?? null,
         reason: best?.reason ?? null, enrollmentId: best?.id, isTransferred: best?.isTransferred === true,
         detail: n ? L.reasonDetail.detailFor(best.reason, n.withdrawal_detail) : null, memo: n?.withdrawal_memo?.trim() || null };
     });
     out.push({ id: s.id, name: s.name, school: s.school, grade: s.grade, status: s.status, endedSubjects: ended, activeSubjects: active, lastEndedAt, endedDetail });
+  }
+  const paid = await paidTuition(sql, t, out.map(s => s.id), out.reduce((m, s) => s.lastEndedAt > m ? s.lastEndedAt : m, ''));
+  const bySubject = new Map();
+  for (const s of out) {
+    if (!bySubject.has(s.id)) bySubject.set(s.id, L.exitMonth.paidSubjectMonths(paid.get(s.id) ?? [], settings.operations.subjects));
+    for (const d of s.endedDetail) if (d.endedAt) d.countAt = L.exitMonth.subjectExitCountDate(d.endedAt, d.subject, bySubject.get(s.id), settings.operations.subjects, d.runStart);
   }
   return out.sort((a, b) => (b.lastEndedAt ?? '').localeCompare(a.lastEndedAt ?? ''));
 }
@@ -228,7 +254,7 @@ async function buildList(sql, t, L, u, settings, params) {
   const teacherPart = params.part === 'teacher';
   const [withdrawn, subjectEnded, [prefsRow]] = await Promise.all([
     getWithdrawnStudents(sql, t, L),
-    type !== 'withdrawn' ? getSubjectEndedStudents(sql, t, L, today) : [],
+    type !== 'withdrawn' ? getSubjectEndedStudents(sql, t, L, today, settings) : [],
     teacherPart ? [] : sql`select ui_prefs->'withdrawals' p from public.users where tenant_id=${t} and id=${u.id}`,
   ]);
   // 2.0은 담당 판정(무겁다)을 기다리지 않고 흘려받는다 — 여기도 목록 먼저, 판정은 같은 조건의 두 번째 요청(part=teacher)으로.
