@@ -3,7 +3,7 @@ import { importV2 } from './v2-bridge.mjs';
 import { screen } from './v2-screen-trend.mjs';
 import { CARD_INSIGHT_PATH, validCardMetric } from './card-insight.mjs';
 
-export function createCardInsightRoute({ store, headers = {}, open = openFullDatabase, getAnalysis = null }) {
+export function createCardInsightRoute({ store, headers = {}, open = openFullDatabase, getAnalysis = null, providerForOrigin = null }) {
   const send = (req, res, status, body) => { const data = Buffer.from(JSON.stringify(body)); res.writeHead(status, { ...headers, 'Content-Type': 'application/json; charset=utf-8', 'Content-Length': data.length }); res.end(req.method === 'HEAD' ? undefined : data); };
   const load = getAnalysis || (async params => { const db = await open(); try { return await db.begin('isolation level repeatable read read only', sql => screen.load({ sql, params: { ...params, analysis: '1' }, tenantId, importV2 })); } finally { await db.end(); } });
   return { handles: path => path === CARD_INSIGHT_PATH,
@@ -23,12 +23,16 @@ export function createCardInsightRoute({ store, headers = {}, open = openFullDat
         return send(req, res, 400, { error: 'invalid_request', message: '카드 지표를 확인해 주세요.' });
       const service = await store;
       if (!service) return send(req, res, 503, { error: 'insight_unavailable', message: '분석 문장을 준비하지 못했습니다.' });
-      if (req.method !== 'POST') return send(req, res, 200, service.viewFingerprint(metric, key, fingerprint));
+      const selectedProvider = providerForOrigin?.(req.headers.origin || `http://${req.headers.host}`);
+      if (req.method !== 'POST') {
+        const view = service.viewFingerprint(metric, key, fingerprint);
+        return send(req, res, 200, providerForOrigin ? { ...view, enabled: !!selectedProvider } : view);
+      }
       const analysis = await load(Object.fromEntries([...q].filter(([name]) => name !== 'key' && name !== 'fp')));
       if (!analysis) return send(req, res, 404, { error: 'card_not_found', message: '분석할 카드가 없습니다.' });
       // 본문은 보내지 않는다. 서버가 현재 카드 facts를 새로 읽어 AI 입력을 만든다.
       req.resume();
-      const result = await service.make(analysis);
+      const result = await service.make(analysis, selectedProvider);
       return send(req, res, result.httpStatus || result.status, result);
     } };
 }

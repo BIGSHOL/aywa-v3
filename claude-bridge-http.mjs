@@ -1,6 +1,6 @@
-// POST /api/assistant for the local dev server. Only a same-origin JSON POST
-// from the loopback page can start a (subscription-billed) Claude call; one call
-// runs at a time, calls per window are capped, and a closed request kills it.
+// POST /api/assistant. Same-origin JSON requests use the local subscription on
+// loopback and the Anthropic API on the LAN address. One call runs at a time,
+// calls per window are capped, and a closed request cancels it.
 import { readdir } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { BridgeError, FAILURES, claudeArgs, cliAvailable, createClaudeRunner, defaultCliPath, prepareRuntimeDir } from './claude-bridge.mjs';
@@ -8,6 +8,7 @@ import { areaDestinations, buildAssistantContext } from './claude-bridge-context
 import { LIMITS, buildInput, normalizeAnswer, requestFacts, validateRequest } from './claude-bridge-prompt.mjs';
 import { createAiReader } from './ai-reader.mjs';
 import { reconcileReaderEvidence } from './ai-reader-evidence.mjs';
+import { ownerAiTransport } from './owner-ai-api.mjs';
 import { modelLabel } from './flow-view.mjs';
 
 export const ASSISTANT_PATH = '/api/assistant';
@@ -45,7 +46,7 @@ function readBody(req, max, timeoutMs) {
 
 // destinations.list = 답 아래 바로 가기·요청 영역으로 고를 수 있는 곳(서버가 아는 목록), records() = 작업 영역 기록 저장소(요청안의 기록 확인).
 // context = 서버 컨텍스트, 또는 지금 것을 돌려주는 함수(저장 뒤 자료 갱신이 바꿔 끼운다 — 질문 하나는 시작할 때 잡은 것으로 끝까지).
-export function createAssistantRoute({ context, runner, readiness, origins, headers = {}, enabled = true, maxConcurrent = 1, rate = { max: 10, windowMs: 5 * 60_000 }, readTimeoutMs = 10_000, now = Date.now, log = () => {}, destinations = { list: [] }, records = null, readerFactory = null }) {
+export function createAssistantRoute({ context, runner, readiness, origins, headers = {}, enabled = true, maxConcurrent = 1, rate = { max: 10, windowMs: 5 * 60_000 }, readTimeoutMs = 10_000, now = Date.now, log = () => {}, destinations = { list: [] }, records = null, readerFactory = null, selectProvider = null }) {
   let active = 0;
   const stamps = [];
   const send = (res, status, body, extra = {}) => {
@@ -56,12 +57,13 @@ export function createAssistantRoute({ context, runner, readiness, origins, head
   };
   const fail = (res, error, extra = {}) => send(res, error.status, { error: error.code, message: error.message }, extra);
   async function answer(req, res, signal) {
-    let request;
+    let request, selected;
     try {
       const body = await readBody(req, LIMITS.body, readTimeoutMs);
       let parsed; try { parsed = JSON.parse(body.toString('utf8')); } catch { throw err('invalid_request', 400, '요청 형식이 올바르지 않습니다.'); }
       request = validateRequest(parsed);
-      await readiness.require();
+      selected = selectProvider ? selectProvider(req.headers.origin) : { runner, readiness };
+      await selected.readiness.require();
     } catch (error) { fail(res, error instanceof BridgeError ? error : FAILURES.failed(), error?.status === 413 ? { Connection: 'close' } : {}); return; }
     if (signal.aborted) { log('assistant cancelled before start'); return; }
     if (active >= maxConcurrent) { fail(res, err('busy', 429, '이전 질문의 답변을 만드는 중입니다. 잠시 후 다시 시도해 주세요.'), { 'Retry-After': '5' }); return; }
@@ -73,7 +75,7 @@ export function createAssistantRoute({ context, runner, readiness, origins, head
       const ctx = typeof context === 'function' ? context() : context;
       let facts = requestFacts(ctx, request);
       const list = destinations.list;
-      let { output, meta } = await runner.ask({ input: buildInput(ctx, request, undefined, { facts, destinations: list, allowReader: !!readerFactory }), signal });
+      let { output, meta } = await selected.runner.ask({ input: buildInput(ctx, request, undefined, { facts, destinations: list, allowReader: !!readerFactory }), signal });
       if (readerFactory) {
         const reader = await readerFactory();
         try {
@@ -91,7 +93,7 @@ export function createAssistantRoute({ context, runner, readiness, origins, head
       send(res, 200, reply);
     } catch (error) {
       const failure = error instanceof BridgeError ? error : FAILURES.failed();
-      if (failure.code === 'auth_required' || failure.code === 'subscription_required' || failure.code === 'cli_missing') readiness.invalidate();
+      if (['auth_required', 'subscription_required', 'cli_missing'].includes(failure.code)) selected.readiness.invalidate?.();
       log(`assistant ${failure.code}`);
       if (!signal.aborted) fail(res, failure, failure.status === 429 ? { 'Retry-After': '30' } : {});
     } finally { active -= 1; }
@@ -105,8 +107,7 @@ export function createAssistantRoute({ context, runner, readiness, origins, head
       if (!origins.has(req.headers.origin) || (site && site !== 'same-origin')) { fail(res, err('forbidden_origin', 403, '이 화면에서만 요청할 수 있습니다.')); return; }
       if (!JSON_TYPE.test(req.headers['content-type'] || '') || (req.headers['content-encoding'] && req.headers['content-encoding'] !== 'identity')) { fail(res, err('unsupported_media_type', 415, 'JSON 요청만 받을 수 있습니다.')); return; }
       if (Number(req.headers['content-length'] || 0) > LIMITS.body) { fail(res, err('body_too_large', 413, '요청이 너무 큽니다.'), { Connection: 'close' }); return; }
-      // Watch for the browser leaving from here on, so a request that is gone
-      // before the CLI starts never starts it.
+      // A closed browser request cancels either transport before or during the call.
       const controller = new AbortController();
       const onClose = () => { if (!res.writableEnded) controller.abort(); };
       res.on('close', onClose);
@@ -116,7 +117,7 @@ export function createAssistantRoute({ context, runner, readiness, origins, head
 }
 
 // Wiring for serve-live.mjs. Local dev only: production-like environments get 404.
-export function createAssistantFromEnv({ snapshot, origins, headers, runtimeDefault, env = process.env, log = console.log }) {
+export function createAssistantFromEnv({ snapshot, origins, headers, runtimeDefault, env = process.env, log = console.log, apiProvider = null }) {
   const enabled = env.NODE_ENV !== 'production' && !env.VERCEL && !env.VERCEL_ENV && env.OWNER_CONCEPT_ASSISTANT !== 'off';
   const command = env.OWNER_CONCEPT_CLAUDE_BIN || defaultCliPath(env);
   const runtime = env.OWNER_CONCEPT_CLAUDE_RUNTIME || (runtimeDefault ? fileURLToPath(runtimeDefault) : '');
@@ -126,6 +127,12 @@ export function createAssistantFromEnv({ snapshot, origins, headers, runtimeDefa
     await prepareRuntimeDir(runtime);
     return runner.checkAuth();
   });
+  const apiRouteProvider = apiProvider && { runner: { ask: request => apiProvider.askAssistant(request) }, readiness: { require: async () => {} } };
+  const selectProvider = origin => {
+    if (ownerAiTransport(origin) === 'subscription') return { runner, readiness };
+    if (!apiRouteProvider) throw err('api_key_missing', 503, 'AI 연결 키가 준비되지 않았습니다. 관리자에게 알려 주세요.');
+    return apiRouteProvider;
+  };
   // 바로 가기 목록 — 작업 영역(스냅샷)은 바로, 연습 화면·확장 추세 지표는 서버가 이미 불러 둔 모듈에서 이어 붙인다.
   // 컨텍스트와 작업 영역 목록은 저장 뒤 자료 갱신(data-refresh.mjs)이 route.use()로 바꿔 끼운다(연습 화면 목록은 그대로).
   const live = { context: buildAssistantContext(snapshot), area: areaDestinations(snapshot), extra: [] };
@@ -136,7 +143,8 @@ export function createAssistantFromEnv({ snapshot, origins, headers, runtimeDefa
     import('./workspace-store.mjs').then(m => { store = m.currentWorkspaceStore; }).catch(() => {});
   }
   const route = createAssistantRoute({ context: () => live.context, runner, readiness, origins, headers, enabled, log, destinations,
-    records: () => store?.() ?? null, readerFactory: enabled ? () => createAiReader({ target: env.OWNER_CONCEPT_DB === 'sandbox' ? 'sandbox' : 'snapshot' }) : null });
+    records: () => store?.() ?? null, readerFactory: enabled ? () => createAiReader({ target: env.OWNER_CONCEPT_DB === 'sandbox' ? 'sandbox' : 'snapshot' }) : null,
+    selectProvider });
   /** { context, area } — 같은 스냅숏에서 만든 새 비서 컨텍스트와 작업 영역 목록. */
   route.use = next => { if (next?.context) live.context = next.context; if (Array.isArray(next?.area)) live.area = next.area; };
   if (enabled) readiness.refresh().then(() => {

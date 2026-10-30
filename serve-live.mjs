@@ -7,6 +7,8 @@ import { loadSnapshot } from './snapshot.mjs';
 import { fullDbRoot } from './full-db-paths.mjs';
 import { openFullDatabase, tenantId } from './full-db.mjs';
 import { createAssistantFromEnv } from './claude-bridge-http.mjs';
+import { createAiReader } from './ai-reader.mjs';
+import { createOwnerApiProvider, loadOwnerApiKey, ownerAiTransport } from './owner-ai-api.mjs';
 import { handleWorkspaceRecords } from './domain-http.mjs';
 import { handleAbsenceDetail } from './absence-detail.mjs';
 import { loadFlowSource } from './flow-source.mjs';
@@ -75,8 +77,10 @@ const headers={
  'Cross-Origin-Resource-Policy':'same-origin',
  'Content-Security-Policy':"default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; frame-ancestors 'none'; form-action 'none'; base-uri 'none'",
 };
-// Local dev chat on this PC's Claude subscription; facts come from the snapshot above (CLAUDE-DEV.md).
-const assistant=createAssistantFromEnv({snapshot,origins,headers,runtimeDefault:new URL('../claude-runtime/',fullDbRoot)});
+// 이 PC 주소는 구독 실행, 랜 주소는 서버 시작 때 읽은 Anthropic 키로 실행한다.
+const ownerApiKey=await loadOwnerApiKey();
+const ownerApiProvider=createOwnerApiProvider({apiKey:ownerApiKey,readerFactory:()=>createAiReader({target:process.env.OWNER_CONCEPT_DB==='sandbox'?'sandbox':'snapshot'})});
+const assistant=createAssistantFromEnv({snapshot,origins,headers,runtimeDefault:new URL('../claude-runtime/',fullDbRoot),apiProvider:ownerApiProvider});
 // Local work-flow overlay (FLOW-ENGINE.md): source facts read-only, local actions in F:/aywa-dev/owner-flow.
 const flowEnabled=process.env.NODE_ENV!=='production'&&!process.env.VERCEL&&process.env.OWNER_CONCEPT_FLOW!=='off';
 const flow=flowEnabled?startFlow(async()=>{const source=await loadFlowSource({workspaces:snapshot.workspaces,capturedAt:snapshot.meta.importedAt,asOf:snapshot.meta.asOf});return createFlowService({source,dir:defaultStoreDir({dataRoot:fullDbRoot,identity:source.identity}),ai:await createFlowAI(),tenantName:snapshot.meta.tenant});}):{service:null,failure:null};
@@ -84,13 +88,13 @@ const flow=flowEnabled?startFlow(async()=>{const source=await loadFlowSource({wo
 const insight=flowEnabled?startExitInsight({snapshot,dir:defaultStoreDir({dataRoot:fullDbRoot,identity:{tenantId,tenantSlug:'cs',capturedAt:snapshot.meta.importedAt}})}):{service:null,failure:null};
 const insightRoute=createExitRoute({insight,headers,enabled:flowEnabled});
 // 카드 문장은 버튼을 눌렀을 때만 생성한다. GET은 별도 로컬 저장소의 마지막 결과만 읽는다.
+const cardCliProvider=flowEnabled?exitProviders().providers?.claude||null:null;
 const cardInsight=flowEnabled?(async()=>{
  const dir=defaultStoreDir({dataRoot:fullDbRoot,identity:{tenantId,tenantSlug:'cs',capturedAt:snapshot.meta.importedAt}});
  const store=await openCardInsightStore({dir,identity:{tenantId,tenantSlug:'cs',capturedAt:snapshot.meta.importedAt}});
- const {providers}=exitProviders();
- return createCardInsight({store,provider:providers?.claude||null,reserve:async()=>{await insight.ready;return await insight.service?.reserveClaude()||false;}});
+ return createCardInsight({store,provider:cardCliProvider,reserve:async()=>{await insight.ready;return await insight.service?.reserveClaude()||false;}});
 })().catch(error=>{console.error(`카드 문장 저장소: ${error.code||error.message}`);return null;}):Promise.resolve(null);
-const cardInsightRoute=createCardInsightRoute({store:cardInsight,headers});
+const cardInsightRoute=createCardInsightRoute({store:cardInsight,headers,providerForOrigin:origin=>ownerAiTransport(origin)==='api'?ownerApiProvider:cardCliProvider});
 // 저장 뒤 자료 갱신(AX-H2, data-refresh.mjs): 2.0 화면 저장이 커밋되면 모아서 작업 스레드에서 다시 만들고, 첫 화면·기록·비서를 한 틱에,
 // 업무 흐름은 reloadSource로 맞춘다. 복사본이 시작 때와 다르면(복사 시각·기준일·지점) 바꾸지 않는다. 그동안 요청은 옛 자료로 답한다.
 const debounceMs=Math.min(60_000,Math.max(200,Number(process.env.OWNER_CONCEPT_REFRESH_DEBOUNCE_MS)||3000));

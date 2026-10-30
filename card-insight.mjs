@@ -77,8 +77,8 @@ export function createCardInsight({ store, provider = null, reserve = async () =
       enabled: !!provider };
   };
   const view = analysis => { const input = cardInput(analysis); return viewFingerprint(input.metric, input.key, input.fingerprint); };
-  async function make(analysis) {
-    if (!provider) return { status: 503, error: 'ai_disabled', message: '이 서버에서는 AI 분석이 꺼져 있습니다.' };
+  async function make(analysis, selectedProvider = provider) {
+    if (!selectedProvider) return { status: 503, error: 'ai_disabled', message: '이 서버에서는 AI 분석이 꺼져 있습니다.' };
     const built = cardInput(analysis);
     if (busy.has(built.key)) return { status: 409, error: 'busy', message: '이 카드의 문장을 만드는 중입니다.' };
     busy.add(built.key);
@@ -87,7 +87,7 @@ export function createCardInsight({ store, provider = null, reserve = async () =
       for (let attempt = 0; attempt < 2; attempt++) {
         if (!await reserve()) return { status: 429, error: 'hourly_cap', message: '시간당 생성 한도를 넘었습니다. 잠시 뒤 다시 눌러 주세요.' };
         const fragments = attempt ? [...new Set(Object.values(checked.samples || {}).flat())].slice(0, 8) : [];
-        answer = await provider.ask({ schema: CARD_SCHEMA, prompt: attempt ? `${CARD_PROMPT}\n${repairNote(fragments)}` : CARD_PROMPT,
+        answer = await selectedProvider.ask({ schema: CARD_SCHEMA, prompt: attempt ? `${CARD_PROMPT}\n${repairNote(fragments)}` : CARD_PROMPT,
           model: 'sonnet', effort: attempt ? 'medium' : 'low', timeoutMs: 240_000,
           input: { 지표: built.indicator, facts: built.facts } });
         checked = validateCardOutput(answer.output, built.facts);
