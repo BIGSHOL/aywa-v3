@@ -1,7 +1,7 @@
 /* AI 업무 지원 — 답 그리기(원장 10-28 "그냥 나열하지말고 서식등을 동원해서 정리해서 나열하게. 실제로 해당 메뉴로 갈 수도 있게.
    업무 요청도 할 수 있게"). ax.js가 대화·요청 창을 맡고, 이 파일은 한 답의 모양과 그 안의 이동만 맡는다.
    · 순서 = 결론 한 줄 → 핵심 숫자 → 근거(미주 [n]) → 짧은 표 → 확인할 업무 → 미주 → 바로 가기 → 요청안.
-   · 모델 글은 이스케이프한 뒤에만 서식을 입힌다: ⟦이름·숫자⟧ = 굵게, '다만 …' 문장 = 밑줄(퇴원 분석 exit-insight.js와 같은 결).
+   · 모델 글은 공통 AI 서식으로 이스케이프·강조하고, '다만 …' 문장은 밑줄로 표시한다.
    · 미주 글은 서버가 계산한 사실 줄 그대로다(모델이 쓴 글이 아니다). 마우스를 올리면 카드로, 누르면 아래 미주로 미끄러져 간다.
    · 바로 가기는 서버가 아는 목적지(작업 영역·연습 화면·확장 추세 지표)뿐 — 여기서는 그 id를 화면 주소로 옮기기만 한다.
    · 좋아짐 = var(--ax-good)(빨강), 나빠짐 = var(--ax-bad)(파랑). */
@@ -10,7 +10,7 @@ window.createAxChat = function createAxChat(api) {
   const { h, pill, button } = api;
   const str = (v, max) => (typeof v === 'string' ? v.trim().slice(0, max) : '');
   const arr = (v, max) => (Array.isArray(v) ? v.slice(0, max) : []);
-  const rich = t => h(t).replace(/⟦([^⟧]*)⟧/g, '<strong>$1</strong>').replace(/(^|[.!?]\s+)(다만 [^.!?]*[.!?]?)/g, '$1<u class="axc-caveat">$2</u>');
+  const rich = t => window.AIResultMeta.rich(t, h).replace(/(^|[.!?]\s+)(다만 [^.!?]*[.!?]?)/g, '$1<u class="axc-caveat">$2</u>');
   const LINK = /^(ws|v2|trend):[a-z0-9-]{1,40}$/;
   // 저장된 옛 답의 링크는 새 지표 목록에서 사라져도 남는다. 제공하지 않는 목적지는 버튼을 그리지 않는다.
   const REMOVED_TRENDS = new Set(['report-sent']);
@@ -52,17 +52,17 @@ window.createAxChat = function createAxChat(api) {
   function answer(t, { issues = '' } = {}) {
     const r = t.rich, tid = t.id;
     const facts = r.keyFacts.length ? `<dl class="axc-facts">${r.keyFacts.map(f => `<div class="axc-fact"><dt>${h(f.label)}</dt><dd><strong>${h(f.value)}</strong>${f.change ? ` <span class="axc-change ${f.tone}">${h(f.change)}</span>` : ''}${f.note ? fnMark(tid, f.note) : ''}</dd></div>`).join('')}</dl>` : '';
-    const points = r.points.length ? `<h4 class="axc-h">근거</h4><ul class="axc-points">${r.points.map(p => `<li>${rich(p.text)}${marks(tid, p.notes)}</li>`).join('')}</ul>` : '';
+    const points = r.points.length ? `<h4 class="axc-h">근거</h4><ul class="axc-points">${r.points.map(p => `<li class="air-rich">${rich(p.text)}${marks(tid, p.notes)}</li>`).join('')}</ul>` : '';
     const table = r.table && r.table.columns.length >= 2 && r.table.rows.length ? `<div class="axc-table-wrap"><table class="axc-table"><thead><tr>${r.table.columns.map(c => `<th scope="col">${h(c)}</th>`).join('')}</tr></thead><tbody>${r.table.rows.map(row => `<tr>${r.table.columns.map((_, i) => `<td>${h(row[i] ?? '')}</td>`).join('')}</tr>`).join('')}</tbody></table></div>` : '';
-    const checks = r.checks.length ? `<h4 class="axc-h">확인할 업무</h4><ul class="axc-checks">${r.checks.map(c => `<li>${rich(c)}</li>`).join('')}</ul>` : '';
+    const checks = r.checks.length ? `<h4 class="axc-h">확인할 업무</h4><ul class="axc-checks">${r.checks.map(c => `<li class="air-rich">${rich(c)}</li>`).join('')}</ul>` : '';
     const notes = r.notes.length ? `<ol class="axc-notes" aria-label="근거 미주">${r.notes.map(n => `<li id="axc-n-${h(tid)}-${n.n}"><span class="axc-n-no">[${n.n}]</span><span class="axc-n-text">${h(n.text)}</span></li>`).join('')}</ol>` : '';
     // Stored replies may predate link normalization, so the view also removes repeated destinations.
     const linksForView = uniqueLinks(r.links);
     const links = linksForView.length ? `<div class="axc-links"><span class="ax-note">바로 가기</span>${linksForView.map(l => `<button type="button" class="button axc-go" data-axc-go="${h(l.id)}">${h(l.label)} <span aria-hidden="true">→</span></button>`).join('')}</div>` : '';
     const task = t.suggestedTask ? taskCard(t) : '';
-    const head = r.headline ? `<p class="axc-headline">${rich(r.headline)}</p>` : '';
-    const body = !r.headline && r.body ? `<div class="ax-chat-text">${rich(r.body)}</div>` : '';
-    return `<div class="ax-chat-answer axc"><div class="ax-chat-provider">${pill('AI 답변', 'blue')}<span>학원 기록으로 쓴 초안입니다. 내용을 확인한 뒤 사용하세요.</span></div>${window.AIResultMeta.html({model:t.aiMeta?.modelLabel||'Claude',at:t.aiMeta?.createdAt,basis:t.aiMeta?.basis||api.basis?.(t)||'원장실 전체'})}${head}${body}${facts}${points}${table}${checks}${r.notice ? `<p class="axc-notice">${h(r.notice)}</p>` : ''}${notes}${links}${issues}${task}</div>`;
+    const head = r.headline ? window.AIResultMeta.summary(r.headline, h) : '';
+    const body = !r.headline && r.body ? `<div class="ax-chat-text air-rich">${rich(r.body)}</div>` : '';
+    return `<div class="ax-chat-answer axc"><div class="ax-chat-provider">${pill('AI 분석', 'blue')}<span>학원 기록으로 쓴 초안입니다. 내용을 확인한 뒤 사용하세요.</span></div>${window.AIResultMeta.html({model:t.aiMeta?.modelLabel||'Claude',at:t.aiMeta?.createdAt,basis:t.aiMeta?.basis||api.basis?.(t)||'원장실 전체'})}${head}${body}${facts}${points}${table}${checks}${r.notice ? `<p class="axc-notice">${h(r.notice)}</p>` : ''}${notes}${links}${issues}${task}</div>`;
   }
   function taskCard(t) {
     const x = t.task, task = t.suggestedTask;

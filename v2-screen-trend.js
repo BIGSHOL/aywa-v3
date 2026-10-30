@@ -35,18 +35,21 @@
   }
   function insightBox(data) {
     const state = loadInsight(data), body = state.data;
-    const lines = (items, title) => items?.length ? `<div><h4>${title}</h4><ul>${items.map(x => `<li>${esc(x.text)}<small>근거: ${x.evidence.map(esc).join(' · ')}</small></li>`).join('')}</ul></div>` : '';
+    const ai = window.AIResultMeta;
+    const lines = (items, title) => items?.length ? `<div><h4>${title}</h4><ul>${items.map(x => `<li><span class="air-rich">${ai.rich(x.text, esc)}</span>${ai.evidence(x.evidence, esc)}</li>`).join('')}</ul></div>` : '';
     const result = body?.result;
     const basis = `${data.metricInfo.name} · ${{ day: '일별', week: '주별', month: '월별', year: '연별' }[data.period]} · ${data.by.label} 기준${data.filter ? ` · ${data.filter.label}만` : ''}${data.range ? ` · ${data.range.label}` : ''} · ${data.asOf}`;
     const checks = result?.checks?.length ? `<div><h4>확인할 것</h4><ul>${result.checks.map((x, i) => {
       const linked = cardRequest(data, x.factIds);
-      return `<li>${esc(x.text)}<small>근거: ${x.evidence.map(esc).join(' · ')}</small><div class="tr-insight-actions">${linked
+      return `<li><span class="air-rich">${ai.rich(x.text, esc)}</span>${ai.evidence(x.evidence, esc)}<div class="tr-insight-actions">${linked
         ? `<button type="button" class="button" data-ca-open-case="${esc(linked.id)}">업무 열기</button>`
         : `<button type="button" class="button" data-ca-request="${i}" ${data.insightFactIds && body?.status === 'ready' ? '' : 'disabled'}>업무 만들기</button>`}<button type="button" class="button" data-ca-flow>처리할 업무 보기</button></div></li>`;
     }).join('')}</ul></div>` : '';
-    return `<div class="tr-insight"><div class="tr-insight-head"><h3>분석 문장</h3><button type="button" class="button" data-ca-make="${esc(data.metric)}" ${body?.enabled === false || state.status === 'making' ? 'disabled' : ''}>${state.status === 'making' ? '만드는 중…' : 'AI 분석'}</button></div>`
-      + (body?.note ? `<p class="v3s-note">${esc(body.note)}</p>` : '')
-      + (result ? `${window.AIResultMeta.html({ model: result.modelLabel, at: result.createdAt, basis })}<p>${esc(result.summary.text)}<small>근거: ${result.summary.evidence.map(esc).join(' · ')}</small></p>${lines(result.watch, '눈여겨볼 점')}${checks}` : '')
+    const current = data.facts?.find(f => f.item === 1 && f.kind === 'current')?.values?.current;
+    const value = current == null ? '' : ` · ${data.metricInfo.name} ${shown(current, data.metricInfo.unit)}`;
+    return `<div class="tr-insight"><div class="tr-insight-head"><h3>AI 분석</h3><button type="button" class="button" data-ca-make="${esc(data.metric)}" ${body?.enabled === false || state.status === 'making' ? 'disabled' : ''}>${state.status === 'making' ? '만드는 중…' : 'AI 분석'}</button></div>`
+      + (body?.note && body.status !== 'empty' && !body.note.includes('이 화면의 버튼으로만') ? `<p class="v3s-note">${esc(body.note)}</p>` : '')
+      + (result ? `${ai.html({ model: result.modelLabel, at: result.createdAt, basis })}${ai.summary(`${result.summary.text}${value}`, esc)}${ai.evidence(result.summary.evidence, esc)}${lines(result.watch, '눈여겨볼 점')}${checks}` : '')
       + (state.status === 'loading' ? '<p class="v3s-note">저장된 문장을 확인하는 중…</p>' : '')
       + (state.status === 'error' ? `<p class="v3s-note">${esc(state.error)}</p>` : '')
       + (body?.status === 'empty' ? '<p class="v3s-note">이 선택으로 만든 AI 분석이 없습니다.</p>' : '')

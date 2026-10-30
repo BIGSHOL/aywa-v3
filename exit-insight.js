@@ -74,13 +74,13 @@ window.createExitInsight = function createExitInsight(api) {
     const parts = [j && j.total ? `원생별 원인 분류 ${fmt(j.done)}/${fmt(j.total)}명${j.failed ? ` · 분류 못 함 ${fmt(j.failed)}` : ''}${j.review ? ` · 사람 확인 ${fmt(j.review)}` : ''}` : '', c?.status === 'error' ? '분석 요약 생성 대기' : '', a.claude?.blocked === 'budget' ? '잠시 후 분석 요약이 생성됩니다.' : ''].filter(Boolean);
     return `<div class="xi-ai-line">${pill(label, tone)}<span>${h(a.note || a.disabledReason || parts.join(' · ') || '')}</span></div>`;
   }
-  // AI 글 서식(원장 10-28 "볼드나 밑줄 등의 서식도 적극적으로 활용"): 코드가 넣은 이름(⟦ ⟧)은 굵게, '다만 …' 단서 문장은 밑줄. 글자는 이스케이프한 뒤에만 서식을 입힌다.
-  const rich = t => h(t).replace(/⟦([^⟧]*)⟧/g, '<strong>$1</strong>').replace(/(^|[.!?]\s+)(다만 [^.!?]*[.!?])/g, '$1<u class="xi-caveat">$2</u>');
+  // 이름·수치·증감은 모든 AI 결과와 같은 서식으로, 단서 문장은 밑줄로 읽는다.
+  const rich = t => window.AIResultMeta.rich(t, h).replace(/(^|[.!?]\s+)(다만 [^.!?]*[.!?])/g, '$1<u class="xi-caveat">$2</u>');
   const aiBasis = (d, target = '') => `${target ? `${target} · ` : ''}${d.from} → ${d.to} 청구 · 자료 기준일 ${d.asOf}`;
   const aiMeta = (d, model, at, target = '') => window.AIResultMeta.html({ model, at, basis: aiBasis(d, target) });
   function overall(d) {
     if (!d.overall) return '';
-    return `<section class="xi-overall"><h3>AI 정리 ${pill('AI 작성', 'blue')}</h3>${aiMeta(d, d.analysis?.claude?.modelLabel, d.analysis?.claude?.at, '원인 묶음 전체')}<p>${rich(d.overall.summary)}</p>${d.overall.reasons.length ? `<ul>${d.overall.reasons.map(r => `<li>${rich(r)}</li>`).join('')}</ul>` : ''}${d.overall.checks.length ? `<h4>사람이 확인할 업무</h4><ul class="xi-checks">${d.overall.checks.map(r => `<li>${rich(r)}</li>`).join('')}</ul>` : ''}<p class="xi-note">숫자·날짜·인원은 기록에서 센 값입니다. 문장 끝 번호에 마우스를 올리면 근거가 보입니다.</p></section>`;
+    return `<section class="xi-overall"><h3>AI 분석 ${pill('AI 작성', 'blue')}</h3>${aiMeta(d, d.analysis?.claude?.modelLabel, d.analysis?.claude?.at, '원인 묶음 전체')}${window.AIResultMeta.summary(d.overall.summary, h)}${d.overall.reasons.length ? `<ul>${d.overall.reasons.map(r => `<li class="air-rich">${rich(r)}</li>`).join('')}</ul>` : ''}${d.overall.checks.length ? `<h4>사람이 확인할 업무</h4><ul class="xi-checks">${d.overall.checks.map(r => `<li class="air-rich">${rich(r)}</li>`).join('')}</ul>` : ''}<p class="xi-note">숫자·날짜·인원은 기록에서 센 값입니다. 문장 끝 번호에 마우스를 올리면 근거가 보입니다.</p></section>`;
   }
   const factOpen = f => (f.open ? btn('원본 기록 열기', `data-xi="record" data-family="${h(f.open.family)}" data-id="${h(f.open.id)}"`, 'link') : '');
   const factSource = f => (f.source ? `<small class="xi-src">출처 · ${h(TABLE[f.source.table] || '기록')}</small>` : '');
@@ -92,9 +92,9 @@ window.createExitInsight = function createExitInsight(api) {
     const factFor = f => d.clusters.find(x => x.id === f.ref)?.facts.find(x => x.key === f.key) || d.students.find(x => x.studentId === f.ref)?.facts.find(x => x.key === f.key) || null;
     const number = (ref, key, fact) => { const k = `${ref}|${key}`; if (!noteOf.has(k)) { notes.push(fact); noteOf.set(k, notes.length); } return noteOf.get(k); };
     const mark = n => `<sup class="xi-fn"><a href="#xi-n-${h(c.id)}-${n}" data-xi="fact" data-fn aria-label="근거 ${n}">[${n}]</a></sup>`;
-    const chain = c.ai ? c.ai.chain.map(s => `<li><span>${rich(s.text)}</span>${[...new Set(s.facts.map(f => { const fact = factFor(f); return fact ? number(f.ref, f.key, fact) : 0; }).filter(Boolean))].map(mark).join('')}</li>`).join('') : '';
+    const chain = c.ai ? c.ai.chain.map(s => `<li><span class="air-rich">${rich(s.text)}</span>${[...new Set(s.facts.map(f => { const fact = factFor(f); return fact ? number(f.ref, f.key, fact) : 0; }).filter(Boolean))].map(mark).join('')}</li>`).join('') : '';
     if (!c.ai) for (const f of c.facts) number(c.id, f.key, f);
-    const ai = c.ai ? `<div class="xi-ai"><div class="xi-ai-tags">${pill('AI 작성', 'blue')}${c.ai.confidence === '사람 확인' ? pill('참고용', 'amber') : ''}</div>${aiMeta(d, d.analysis?.claude?.modelLabel, d.analysis?.claude?.at, `원인 묶음 ${c.label}`)}<p>${rich(c.ai.summary)}</p><ol class="xi-chain">${chain}</ol></div>` : '';
+    const ai = c.ai ? `<div class="xi-ai"><div class="xi-ai-tags">${pill('AI 분석', 'blue')}${c.ai.confidence === '사람 확인' ? pill('참고용', 'amber') : ''}</div>${aiMeta(d, d.analysis?.claude?.modelLabel, d.analysis?.claude?.at, `원인 묶음 ${c.label}`)}${window.AIResultMeta.summary(c.ai.summary, h)}<ol class="xi-chain">${chain}</ol></div>` : '';
     const facts = `<ol class="xi-notes" aria-label="근거">${notes.map((f, n) => `<li id="xi-n-${h(c.id)}-${n + 1}"><span class="xi-n-no">[${n + 1}]</span><span class="xi-n-text">${f.label && f.label !== f.text ? `<b>${h(f.label)}</b> ` : ''}${h(f.text || '')}</span>${factSource(f)}${factOpen(f)}</li>`).join('')}</ol>`;
     return `<article class="xi-cluster" ${i >= 8 ? 'data-more hidden' : ''}><header><div>${pill(c.kindLabel)}<h4>${h(c.label)}</h4></div><strong>${fmt(c.members.length)}명 · ${signed(c.amount)}</strong></header>${ai}${facts}${btn(`이 묶음 원생 ${fmt(c.members.length)}명 보기`, `data-xi="filter" data-filter="cluster:${h(c.id)}"`, 'link')}</article>`;
   }
@@ -127,7 +127,7 @@ window.createExitInsight = function createExitInsight(api) {
     }).join('');
   }
   function student(s, d) {
-    const ai = s.ai?.label ? `<span class="xi-ai-cause ${s.ai.review ? 'check' : ''}">${h(s.ai.label)}${s.ai.review ? `<em>${s.ai.conflict ? '기록과 다름' : '확인 필요'}</em>` : ''}</span>` : s.ai?.status === 'pending' ? '<span class="xi-dim">추정 중</span>' : s.ai?.status === 'error' ? '<span class="xi-dim">추정 못 함</span>' : '<span class="xi-dim">—</span>';
+    const ai = s.ai?.label ? `<span class="xi-ai-cause air-rich ${s.ai.review ? 'check' : ''}">${rich(s.ai.label)}${s.ai.review ? `<em>${s.ai.conflict ? '기록과 다름' : '확인 필요'}</em>` : ''}</span>` : s.ai?.status === 'pending' ? '<span class="xi-dim">추정 중</span>' : s.ai?.status === 'error' ? '<span class="xi-dim">추정 못 함</span>' : '<span class="xi-dim">—</span>';
     const recorded = s.cause.origin === 'record' ? h(s.cause.label) : '<span class="xi-dim">—</span>';
     return `<li class="xi-student" data-groups="${h(['departed', `departed.${s.kind === 'withdrawn' || s.kind === 'cleanup' || s.kind === 'on_hold' || s.kind === 'enrolled' ? s.kind : 'other'}`, ...s.clusterIds.map(c => `cluster:${c}`)].join('|'))}"><button type="button" class="xi-student-head" data-xi="row" data-xi-row="${h(s.studentId)}" aria-expanded="false" aria-controls="xi-s-${h(s.studentId)}"><strong class="c-name">${h(s.name)}</strong><span class="c-school">${h(s.label)}</span><span class="c-kind">${pill(s.kindLabel, s.kind === 'cleanup' ? 'amber' : '')}</span><span class="c-when">${h(whenOf(s))}</span><span class="c-rec">${recorded}</span><span class="c-ai">${ai}</span><b class="c-amt">${signed(s.amount)}</b>${icon('down')}</button><div class="xi-student-body" id="xi-s-${h(s.studentId)}" hidden>${s.ai?.label ? aiMeta(d, s.ai.modelLabel, s.ai.at, `원생 ${s.name}`) : ''}${factRows(s)}${btn('원생 상세 열기', `data-xi="record" data-family="students" data-id="${h(s.studentId)}"`, 'link')}</div></li>`;
   }

@@ -13,3 +13,11 @@
 .absence-item dt{color:var(--muted,#64748b)}
 .absence-item dd{margin:0;white-space:pre-wrap;overflow-wrap:anywhere}
 .ai-result-meta{display:block;margin:5px 0 9px;color:var(--ax-muted);font-size:var(--ax-xs);line-height:1.45}
+/* 저장된 AI 글의 공통 계층: 결론·수치·증감·초점으로 읽는 근거. */
+.air-summary{font-size:var(--ax-base);font-weight:700;line-height:1.55;word-break:keep-all;overflow-wrap:anywhere}
+.air-summary strong,.air-rich strong{font-weight:750}
+.air-up{color:#2459a4}.air-down{color:#b13645}
+.air-evidence{position:relative;display:inline-flex;align-items:center;margin-left:6px;color:var(--ax-primary);font-size:var(--ax-xs);font-weight:650;text-decoration:underline;text-underline-offset:2px;cursor:help;outline-offset:3px}
+.air-evidence .air-evidence-pop{display:none;position:absolute;z-index:50;left:0;bottom:calc(100% + 6px);width:min(58ch,calc(100vw - 48px));box-sizing:border-box;padding:9px 11px;border:1px solid var(--ax-line);border-radius:8px;background:var(--ax-white);box-shadow:0 8px 24px #1b2f4833;color:var(--ax-ink);font-weight:400;line-height:1.55;white-space:normal;pointer-events:none}
+.air-evidence:is(:hover,:focus-within) .air-evidence-pop{display:block}
+.fl-ai .air-evidence-pop{pointer-events:auto}
