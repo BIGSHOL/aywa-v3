@@ -13,6 +13,7 @@
 .tr .good{color:var(--ax-good)}.tr .bad{color:var(--ax-bad)}
 .tr .tr-now small.good,.tr .tr-now small.bad,.tr td.good,.tr td.bad{font-weight:600}
 .tr-chart svg{display:block;width:100%;height:auto}
+.tr-chart-empty{display:flex;align-items:center;justify-content:center;min-height:240px;color:var(--ax-muted);font-size:var(--ax-sm)}
 .tr-chart .col-line{stroke:#cfd6e1;stroke-width:1;stroke-dasharray:3 4}
 .tr-spark .chart-line .col-line{display:none}
 .tr-chart text{font-size:var(--ax-xs);fill:var(--ax-ink)}
@@ -38,7 +39,8 @@
 .tr-table th,.tr-table td{font-size:var(--ax-xs);color:var(--ax-ink);background:transparent}
 .tr-table thead th{font-weight:650}
 .tr-table tbody tr:last-child>*{border-bottom:1px solid var(--ax-line)}
-/* 기준별 꺾은선 — 줄마다 색(--c) · 전체는 굵은 검은 선 · 범례 · 표의 칸으로 켜고 끈다. 지표를 바꾸는 동안은 직전 화면을 흐리게. */
+.tr-table tbody tr.tr-sum-row>*{background:var(--ax-soft);font-weight:650}
+/* 기준별 꺾은선 — 줄마다 색(--c) · 켠 합계는 다른 줄이 있으면 굵은 검은 선 · 표의 칸으로 켜고 끈다. 지표를 바꾸는 동안은 직전 화면을 흐리게. */
 .tr-line.series polyline{stroke:var(--c);stroke-width:1.8}.tr-line.series .tr-solo{fill:var(--c)}
 .tr-chart.has-series .tr-line:not(.series):not(.base) polyline{stroke:#121212;stroke-width:2.8}
 .tr-chart.has-series .tr-dot{stroke:#121212}.tr-chart.has-series .chart-col.active .tr-dot,.tr-chart.has-series .chart-col:hover .tr-dot{fill:#121212}

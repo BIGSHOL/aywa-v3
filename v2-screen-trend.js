@@ -106,7 +106,7 @@
 
   // 기준별 꺾은선(원장 10-28 "꺾은선도 과목별로 표시할 수 있게" · "여기도 선생님별 추세선 보이게. 다른 비슷한 확장 추세는 전부").
   // 과목·프로그램은 정해 준 색(원장 10-28 "수학 파란색 영어 빨간색. EiE 주황색"), 그 밖의 줄은 줄 순서대로 같은 색을 받는다(정렬·켜고 끄기에 색이 바뀌지 않게).
-  // 줄이 8개 이하면 모두, 많으면 큰 줄(대상이 많은 순) 다섯을 먼저 그리고 표의 칸으로 켜고 끈다. 전체는 굵은 검은 선.
+  // 줄이 8개 이하면 모두, 많으면 큰 줄(대상이 많은 순) 다섯을 먼저 그리고 표의 칸으로 켜고 끈다.
   // 과목 색은 앱 전체 한 곳(live.js subjectColor — 수학 파랑 · 영어 빨강 · EiE 주황 · 영어+수학 보라 · 미수강·모름 회색).
   const PALETTE = ['#0f766e', '#7c3aed', '#b45309', '#be185d', '#4d7c0f', '#0e7490', '#9f1239', '#57534e', '#a16207', '#4338ca', '#15803d', '#c2410c'];
   const SUBJECT_DIMS = new Set(['subject', 'program', 'mix', 'combo']);
@@ -119,7 +119,9 @@
   const rankOf = key => (key === 'both' ? 1 : TAIL.test(String(key)) ? 2 : 0);
   const rowsOf = d => d.rows.filter(r => !HIDDEN_ROWS.has(r.key)).sort((a, b) => rankOf(a.key) - rankOf(b.key));
   const picked = new Map(); // `${지표}|${기준}|${필터}` → 그리는 줄 열쇠(사람이 바꾸면 그대로 둔다)
+  const hiddenSums = new Set();
   const viewKey = d => `${d.metric.id}|${d.by}|${d.filter ? `${d.filter.dim}:${d.filter.key}` : ''}`;
+  const sumOn = d => !hiddenSums.has(viewKey(d));
   const sizeOf = r => { const p = r.points[r.points.length - 1]; return p ? (p.den ?? p.num ?? 0) : 0; };
   function shownKeys(d) {
     const k = viewKey(d);
@@ -130,30 +132,48 @@
   const seriesOf = d => { const on = shownKeys(d); return rowsOf(d).map((r, i) => ({ key: r.key, label: r.label, color: colorOf(d, r, i), points: r.points })).filter(s => on.has(s.key)); };
   // 좁힌 그 줄 = 굵은 합계 선과 같은 값 — 따로 그리지 않는다(원장 10-29 "전체는 뭐고 학원 전체는 뭐야? 이상한데 헷갈림").
   // 합계 선 색 = 다른 줄이 함께 그려지면 검정, 혼자면 기본 남색(.tr-line · .tr-chart.has-series) — 범례·표의 색 표시도 이 색.
-  const isFilterRow = (d, key) => !!d.filter && d.by === d.filter.dim && key === d.filter.key;
+  const isFilterRow = (d, key) => !!d.filter && key === d.filter.key
+    && d.rows.find(r => r.key === key)?.points.every((p, i) => p?.value === d.total[i]?.value);
   const sumColor = many => (many ? '#121212' : 'var(--ax-primary)');
 
-  // 큰 추세: 비율은 0~100 고정, 건수는 딱 떨어지는 눈금 — 값이 0에서 멀면(가장 작은 값이 가장 큰 값의 30%를 넘으면) 값 범위에 맞춰
-  // 변화가 보이게 한다(재원생 402→333이 0~600 축에선 평평했다). 기록이 없는 기간은 선을 잇지 않는다. 점마다 앱 팝오버(마우스·키보드·터치).
+  // 큰 추세는 켠 선의 값만으로 축을 다시 잡는다(원장 10-30 "선택한 추세선의 최대최소"). 기록이 없는 기간은 선을 잇지 않는다.
   // 그림 폭 = 화면에 놓일 실제 폭(글자가 화면 폭에 비례해 커지지 않게 — 760 폭을 1,400px로 늘리면 축 글자가 20px을 넘었다).
-  const nice = raw => { const mag = 10 ** Math.floor(Math.log10(raw)), k = raw / mag; return Math.max((k <= 1 ? 1 : k <= 2 ? 2 : k <= 2.5 ? 2.5 : k <= 5 ? 5 : 10) * mag, 1); };
+  function axisFor(values, unit) {
+    const low = Math.min(...values), high = Math.max(...values), same = high === low;
+    const spread = same ? Math.max(Math.abs(high) * 0.2, unit === '%' ? 0.1 : 1) : high - low;
+    const paddedLow = low - spread * (same ? 0.6 : 0.1), paddedHigh = high + spread * (same ? 0.6 : 0.1);
+    const target = (paddedHigh - paddedLow) / 4, power = Math.floor(Math.log10(target));
+    const candidates = [];
+    for (let exp = power - 2; exp <= power + 2; exp++) for (const digit of [1, 2, 5]) {
+      const tick = digit * 10 ** exp;
+      if (unit !== '%' && tick < 1) continue;
+      const min = low >= 0 && paddedLow <= 0 ? 0 : tick * Math.floor(paddedLow / tick);
+      const max = tick * Math.ceil(paddedHigh / tick);
+      const count = Math.round((max - min) / tick) + 1;
+      candidates.push({ min, max, tick, count, score: Math.abs(count - 5) * 2 + (max - min) / spread });
+    }
+    const fitted = candidates.filter(x => x.count >= 4 && x.count <= 6).sort((a, b) => a.score - b.score)[0];
+    if (fitted) return fitted;
+    const near = candidates.sort((a, b) => Math.abs(a.count - 5) - Math.abs(b.count - 5) || a.score - b.score)[0];
+    const extra = Math.max(0, 4 - near.count);
+    const below = low >= 0 && near.min === 0 ? 0 : Math.floor(extra / 2);
+    return { ...near, min: near.min - below * near.tick, max: near.max + (extra - below) * near.tick, count: near.count + extra };
+  }
   function bigChart(d, base, series) {
     // 굵은 선 = 지금 보는 범위의 합계 — 좁혔으면 그 범위 이름(인재원 영어), 아니면 '학원 전체'(좁힌 화면에서 '전체' · '학원 전체' · '인재원 영어'가 뜻이 겹쳐 보였다).
     series = series.filter(s => !isFilterRow(d, s.key));
-    const sumName = d.filter ? d.filter.label : '학원 전체';
+    const sumName = d.filter ? d.filter.label : '학원 전체', showSum = sumOn(d);
+    if (!showSum && !series.length) return '<div class="chart-box tr-chart tr-chart-empty" role="status">선을 하나 이상 고르세요</div>';
     const room = document.querySelector('[data-v2-screen="trend"] .tr-main')?.clientWidth || document.querySelector('#main')?.clientWidth || 800;
     // 오른쪽 여백 = 마지막 축 이름의 반 폭(가운데 맞춤이라 끝 이름이 그림 밖으로 잘렸다 — 주별 '10/21~10/27' 19px · 요일 붙인 '10/20(화)' 10px). 글자 폭은 어림(숫자·기호 7 · 한글 13).
     const n = d.windows.length, axisName = n <= 14 ? dayName : w => w.label, half = s => Math.ceil([...s].reduce((t, ch) => t + (ch.charCodeAt(0) > 0x3000 ? 13 : 7), 0) / 2);
-    const W = Math.max(560, Math.round(room - 34)), H = 300, L = 52, R = Math.max(16, n ? half(axisName(d.windows[n - 1])) + 4 : 16), T = 18, B = 34, pct = d.metric.unit === '%';
-    const vals = [...d.total, ...(base?.total || []), ...series.flatMap(s => s.points)].map(p => p?.value).filter(v => v != null);
-    let min = 0, max = 100, tick = 20;
-    if (!pct) {
-      const top = Math.max(...vals, 1), low = vals.length ? Math.min(...vals) : 0;
-      if (low > top * 0.3 && top > low) { tick = nice((top - low) / 4); min = Math.max(0, tick * Math.floor((low - tick / 2) / tick)); max = tick * Math.ceil((top + tick / 4) / tick); }
-      else { tick = nice(top / 4); max = tick * Math.ceil(top / tick); }
-    }
+    const W = Math.max(560, Math.round(room - 34)), H = 300, R = Math.max(16, n ? half(axisName(d.windows[n - 1])) + 4 : 16), T = 18, B = 34, pct = d.metric.unit === '%';
+    const vals = [...(showSum ? d.total : []), ...(showSum ? base?.total || [] : []), ...series.flatMap(s => s.points)].map(p => p?.value).filter(v => v != null);
+    const { min, max, tick, count } = axisFor(vals.length ? vals : [0], d.metric.unit);
+    const axisLabel = v => pct ? `${Number(v.toFixed(6))}%` : fmt(Number(v.toFixed(6)));
+    const L = Math.max(52, Math.max(...Array.from({ length: count }, (_, i) => axisLabel(min + tick * i).length)) * 7 + 12);
     const x = i => L + (n === 1 ? (W - L - R) / 2 : (W - L - R) * i / (n - 1)), y = v => T + (H - T - B) * (1 - (v - min) / (max - min)), step = (W - L - R) / Math.max(n - 1, 1);
-    const grid = Array.from({ length: Math.round((max - min) / tick) + 1 }, (_, i) => { const v = min + tick * i; return `<line class="grid-line" x1="${L}" x2="${W - R}" y1="${y(v)}" y2="${y(v)}"/><text x="${L - 8}" y="${y(v) + 4}" text-anchor="end">${pct ? `${v}%` : fmt(v)}</text>`; }).join('');
+    const grid = Array.from({ length: count }, (_, i) => { const v = min + tick * i; return `<line class="grid-line" x1="${L}" x2="${W - R}" y1="${y(v)}" y2="${y(v)}"/><text x="${L - 8}" y="${y(v) + 4}" text-anchor="end">${axisLabel(v)}</text>`; }).join('');
     // 구간마다 흐린 점선 세로선(원장 10-28 "구간마다 점선 세로선을 그어서 쉽게 위치 파악") — 선·점보다 뒤에.
     const vlines = d.windows.map((_, i) => `<line class="col-line" x1="${x(i)}" x2="${x(i)}" y1="${T}" y2="${H - B}"/>`).join('');
     const path = list => { const runs = []; list.forEach((p, i) => { if (p?.value == null) return; if (i && list[i - 1]?.value != null) runs.at(-1).push(i); else runs.push([i]); });
@@ -165,21 +185,22 @@
     // 점은 그 기간의 칸(chart-col) 안에 그려 마우스·초점이 간 기간의 모든 줄 점이 함께 채워진다(같은 세로선).
     const cols = d.windows.map((w, i) => {
       const p = d.total[i], q = i ? d.total[i - 1] : null, b = base?.total?.[i], drill = sub && p?.value != null, u = d.metric.unit, bt = d.metric.better;
+      const anchorValue = showSum ? p?.value : series.find(s => s.points[i]?.value != null)?.points[i]?.value;
       // 합계 선 이름은 범례와 같은 sumName 하나(원장 10-29 "라벨은 항상 동일하게" · "같은 곳을 보면 문구, 수치 모든곳이 동일해야함").
-      const rows = [{ label: sumName, value: shown(p?.value, u), tone: 'primary', color: many ? '#121212' : '', delta: deltaOf(p, q, u, bt) },
-        ...(base ? [{ label: '학원 전체', value: shown(b?.value, u), tone: 'secondary', delta: deltaOf(b, i ? base.total[i - 1] : null, u, bt) }] : []),
+      const rows = [...(showSum ? [{ label: sumName, value: shown(p?.value, u), tone: 'primary', color: many ? '#121212' : '', delta: deltaOf(p, q, u, bt) }] : []),
+        ...(showSum && base ? [{ label: '학원 전체', value: shown(b?.value, u), tone: 'secondary', delta: deltaOf(b, i ? base.total[i - 1] : null, u, bt) }] : []),
         ...series.map(s => ({ label: s.label, value: shown(s.points[i]?.value, u), color: s.color, delta: deltaOf(s.points[i], i ? s.points[i - 1] : null, u, bt) }))];
       const dots = series.map(s => (s.points[i]?.value == null ? '' : `<circle class="tr-sdot" style="--c:${s.color}" cx="${x(i)}" cy="${y(s.points[i].value)}" r="3.5"/>`)).join('');
-      return `<g class="chart-col" data-point${drill ? ` data-tr-drill="${i}"` : ''} data-tip="${tip(when(w), rows, [ratio(p, u), d.cleanupNotes?.[i], drill ? `눌러서 ${sub}로 보기` : ''])}">`
+      return `<g class="chart-col" data-point${drill ? ` data-tr-drill="${i}"` : ''} data-tip="${tip(when(w), rows, [showSum ? ratio(p, u) : '', d.cleanupNotes?.[i], drill ? `눌러서 ${sub}로 보기` : ''])}">`
         + `<rect class="chart-hit" x="${x(i) - step / 2}" y="${T - 8}" width="${step}" height="${H - B - T + 8}"/>` + dots
-        + (p?.value == null ? `<text data-anchor x="${x(i)}" y="${H - B - 6}" text-anchor="middle">—</text>` : `<circle class="tr-dot" data-anchor cx="${x(i)}" cy="${y(p.value)}" r="4"/>`)
+        + (showSum ? (p?.value == null ? `<text data-anchor x="${x(i)}" y="${H - B - 6}" text-anchor="middle">—</text>` : `<circle class="tr-dot" data-anchor cx="${x(i)}" cy="${y(p.value)}" r="4"/>`) : `<circle data-anchor cx="${x(i)}" cy="${anchorValue == null ? H - B - 6 : y(anchorValue)}" r="1" opacity="0"/>`)
         + (i % every === 0 || i === n - 1 ? `<text x="${x(i)}" y="${H - 10}" text-anchor="middle">${esc(axisName(w))}</text>` : '') + '</g>';
     }).join('');
     const lines = series.map(s => `<g class="tr-line series" style="--c:${s.color}">${path(s.points)}</g>`).join('');
     // 범례는 선이 하나여도 늘 — 범례가 있다 없다에 따라 같은 선의 이름이 바뀌지 않게.
-    const legend = `<div class="tr-legend">${[`<span><i class="sum" style="background:${sumColor(many)}"></i>${esc(sumName)}</span>`, ...(base ? ['<span><i class="alt"></i>학원 전체</span>'] : []),
+    const legend = `<div class="tr-legend">${[...(showSum ? [`<span><i class="sum" style="background:${sumColor(many)}"></i>${esc(sumName)}</span>`] : []), ...(showSum && base ? ['<span><i class="alt"></i>학원 전체</span>'] : []),
       ...series.map(s => `<span><i style="background:${s.color}"></i>${esc(s.label)}</span>`)].join('')}</div>`;
-    return `<div class="chart-box tr-chart${many ? ' has-series' : ''}" data-chart tabindex="0" role="group" aria-label="${esc(name)} 추세 — 화살표 키로 기간을 옮기며 수치를 확인합니다${sub ? `. Enter로 그 기간을 ${sub}로 나눠 봅니다` : ''}"><svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(name)} ${d.windows.map((w, i) => `${w.label} ${shown(d.total[i]?.value, d.metric.unit)}`).join(', ')}">${grid}${vlines}${base ? `<g class="tr-line base">${path(base.total)}</g>` : ''}${lines}<g class="tr-line">${path(d.total)}</g>${cols}</svg></div>${legend}`;
+    return `<div class="chart-box tr-chart${many ? ' has-series' : ''}" data-chart tabindex="0" role="group" aria-label="${esc(name)} 추세 — 화살표 키로 기간을 옮기며 수치를 확인합니다${sub ? `. Enter로 그 기간을 ${sub}로 나눠 봅니다` : ''}"><svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(name)} ${d.windows.map((w, i) => `${w.label} ${[...(showSum ? [shown(d.total[i]?.value, d.metric.unit)] : []), ...series.map(s => `${s.label} ${shown(s.points[i]?.value, d.metric.unit)}`)].join(', ')}`).join(', ')}">${grid}${vlines}${showSum && base ? `<g class="tr-line base">${path(base.total)}</g>` : ''}${lines}${showSum ? `<g class="tr-line">${path(d.total)}</g>` : ''}${cols}</svg></div>${legend}`;
   }
 
   // 기준별 표의 정보 칸(원장 10-28 "각 선생님의 과목, 담당 반 수, 담당 원생 수 표시") — 서버가 줄마다 meta로 준다(화면에 보이는 범위에 운영된 반 · 수강이 겹친 원생 기준).
@@ -204,7 +225,7 @@
     return r => (!q || String(r.label).toLowerCase().includes(q)) && groups.every(g => { const on = g.values.filter(v => f.chips.has(`${g.k}:${v}`)); return !on.length || splitMeta(r.meta?.[g.k]).some(v => on.includes(v)); }); };
   function table(d, api) {
     const li = d.windows.length - 1, dim = d.metric.dims.find(x => x.id === d.by), unit = d.metric.unit, better = d.metric.better, noun = dim?.label.replace(/별$/, '') || '이름';
-    const all = rowsOf(d), order = new Map(all.map((r, i) => [r.key, i])), on = shownKeys(d), metaCols = d.rows.some(r => r.meta) ? META_COLS[d.by] || [] : [];
+    const all = rowsOf(d).filter(r => !isFilterRow(d, r.key)), order = new Map(all.map((r, i) => [r.key, i])), on = shownKeys(d), metaCols = d.rows.some(r => r.meta) ? META_COLS[d.by] || [] : [];
     const f = findOf(d), groups = chipGroups(d, metaCols), hit = matcher(f, groups);
     const rows = all.filter(hit).map(r => ({ ...r, now: r.points[li], prev: li ? r.points[li - 1] : null }));
     const val = r => r.now?.value, sign = better === 'down' ? 1 : -1;
@@ -219,8 +240,7 @@
     const head = (key, label, a) => `<th class="${a}"><button type="button" data-tr-sort="${key}" aria-pressed="${sort.key === key}">${label}${sort.key === key ? `<i class="tr-arrow" aria-hidden="true">${sort.dir ? '↑' : '↓'}</i>` : ''}</button></th>`;
     const cut = showAll ? rows : rows.slice(0, 20), w = d.windows[li];
     // 전체 선택 = 거른 줄 모두(보이지 않는 '나머지'까지) — 그래프 선 켜고 끄기와 같은 picked. 일부만 켜졌으면 반쯤(indeterminate, 그린 뒤 render가 건다).
-    // 좁힌 그 줄은 합계 선이라 켜고 끄는 대상이 아니다(isFilterRow).
-    const keys = rows.filter(r => !isFilterRow(d, r.key)).map(r => r.key), lit = keys.filter(k => on.has(k)).length; last.visibleKeys = keys;
+    const keys = rows.map(r => r.key), lit = keys.filter(k => on.has(k)).length; last.visibleKeys = keys;
     const pickAll = `<input type="checkbox" data-tr-all ${keys.length && lit === keys.length ? 'checked' : ''} ${lit && lit < keys.length ? 'data-mixed' : ''} ${keys.length ? '' : 'disabled'} aria-label="보이는 ${esc(noun)} 모두 그래프에 표시">`;
     const tools = all.length >= 6 || f.q || f.chips.size
       ? `<div class="tr-tools"><input type="search" id="tr-find" class="tr-find" data-tr-find value="${esc(f.q)}" placeholder="${esc(noun)} 찾기" aria-label="${esc(noun)} 이름으로 거르기" autocomplete="off">`
@@ -230,16 +250,20 @@
     return `<section class="tr-break"><h3>${esc(dim?.label || '기준별')} <span>${esc(dayName(w))}</span></h3>${tools}`
       + `<div class="tr-table-wrap"><table class="tr-table"><thead><tr><th class="tr-pick c"><label>${pickAll}<i class="tr-pick-pad" aria-hidden="true"></i></label></th>${head('name', esc(noun), 'l')}${metaCols.map(([k, l, a]) => `<th class="tr-meta ${a}${a === 'l' ? ' wide' : ''}">${l}</th>`).join('')}`
       + `${head('value', '값', 'r num')}${head('change', '직전 대비', 'c num')}${unit === '%' ? head('den', '대상', 'c num') : ''}<th class="c">추세</th><th class="r"></th></tr></thead><tbody>`
+      + (() => { const now = d.total[li], prev = li ? d.total[li - 1] : null, c = changeOf(now, prev, unit, better), label = d.filter?.label || '학원 전체';
+        const color = sumColor(seriesOf(d).some(s => !isFilterRow(d, s.key)));
+        return `<tr class="tr-sum-row"><td class="tr-pick c"><label><input type="checkbox" data-tr-sum ${sumOn(d) ? 'checked' : ''} aria-label="${esc(label)} 그래프에 표시"><i style="background:${color}"></i></label></td><th scope="row" class="l">${esc(label)}</th>`
+          + metaCols.map(([, , a]) => `<td class="tr-meta ${a}${a === 'r' ? ' num' : ''}${a === 'l' ? ' wide' : ''}"></td>`).join('')
+          + `<td class="r num"><strong>${shown(now?.value, unit)}</strong></td><td class="c num ${c.tone}">${c.text}</td>${unit === '%' ? `<td class="c num">${ratio(now)}</td>` : ''}`
+          + `<td class="tr-spark c">${api.lineChart(d.total.map((p, i) => ({ label: d.windows[i].label, value: p?.value ?? null })), { key: 'value', label, unit, compare: '직전', better })}</td><td class="r"></td></tr>`; })()
       + (cut.length ? cut.map(r => { const c = changeOf(r.now, r.prev, unit, better);
-        // 좁힌 그 줄 = 그래프의 굵은 합계 선(따로 그리지 않는다 — bigChart) · 색도 합계 선 색, 체크는 켠 채 잠금.
-        const filterRow = isFilterRow(d, r.key), color = filterRow ? sumColor(seriesOf(d).some(s => !isFilterRow(d, s.key))) : colorOf(d, r, order.get(r.key));
-        const box = filterRow ? `checked disabled aria-label="${esc(r.label)} — 그래프의 굵은 선"` : `${on.has(r.key) ? 'checked' : ''} aria-label="${esc(r.label)} 그래프에 표시"`;
-        return `<tr><td class="tr-pick c"><label><input type="checkbox" data-tr-line="${esc(r.key)}" ${box}><i style="background:${color}"></i></label></td><th scope="row" class="l">${esc(r.label)}</th>`
+        const color = colorOf(d, r, order.get(r.key));
+        return `<tr><td class="tr-pick c"><label><input type="checkbox" data-tr-line="${esc(r.key)}" ${on.has(r.key) ? 'checked' : ''} aria-label="${esc(r.label)} 그래프에 표시"><i style="background:${color}"></i></label></td><th scope="row" class="l">${esc(r.label)}</th>`
           + metaCols.map(([k, , a]) => `<td class="tr-meta ${a}${a === 'r' ? ' num' : ''}${a === 'l' ? ' wide' : ''}">${esc(metaCell(k, r.meta?.[k]))}</td>`).join('')
           + `<td class="r num"><strong>${shown(r.now?.value, unit)}</strong></td><td class="c num ${c.tone}">${c.text}</td>${unit === '%' ? `<td class="c num">${ratio(r.now)}</td>` : ''}`
           + `<td class="tr-spark c">${api.lineChart(r.points.map((p, i) => ({ label: d.windows[i].label, value: p?.value ?? null })), { key: 'value', label: r.label, unit, compare: '직전', better })}</td>`
           + `<td class="r"><button type="button" class="ax-text-link" data-tr-filter="${esc(r.key)}">자세히 보기</button></td></tr>`; }).join('')
-        : `<tr><td class="c" colspan="${ncols}">맞는 줄이 없습니다</td></tr>`)
+        : (all.length ? `<tr><td class="c" colspan="${ncols}">맞는 줄이 없습니다</td></tr>` : ''))
       + `</tbody></table></div>${rows.length > cut.length ? `<button type="button" class="button" data-tr-more>나머지 ${fmt(rows.length - cut.length)}개 더 보기</button>` : ''}</section>`;
   }
 
@@ -338,7 +362,7 @@
       + (d.filter ? `<span class="tr-filter"><strong>${esc(d.filter.label)}</strong>만 보는 중<button type="button" class="icon-button" data-tr-unfilter aria-label="필터 풀기">×</button></span>` : '') + '</div>'
       + analysisBox(analysis)
       + `<section class="tr-main"><div class="tr-now"><span>${esc(d.windows[li] ? dayName(d.windows[li]) : '')}</span><strong>${shown(p?.value, d.metric.unit)}</strong><small class="${c.tone}">${li ? `직전 대비 ${c.text}` : ''}</small><small>${ratio(p, d.metric.unit)}</small>${cleanupNote?`<small class="tr-cleanup-note">${esc(cleanupNote)}</small>`:''}</div>${bigChart(d, base, seriesOf(d))}</section>`
-      + (d.rows.length ? table(d, ctx.api) : '<p class="v3s-note">이 조건의 기록이 없습니다.</p>') + roster(d, ctx.api) + '</div>';
+      + table(d, ctx.api) + roster(d, ctx.api) + '</div>';
     warm(d, params.grain);
     markMixed();
     return lastHtml;
@@ -440,6 +464,10 @@
   document.addEventListener('input', onFind); document.addEventListener('compositionend', onFind);
   document.addEventListener('change', ev => {
     if (ev.target.matches?.('[data-v2-screen="trend"] [data-tr-report-window]') && last) { reportState.window=Number(ev.target.value); reportState.page=1; const node=document.querySelector('[data-v2-screen="trend"] .tr-report-roster'); if(node){node.outerHTML=reportRoster(last.d);document.querySelector('[data-v2-screen="trend"] [data-tr-report-window]')?.focus({preventScroll:true});} return; }
+    if (ev.target.matches?.('[data-v2-screen="trend"] [data-tr-sum]') && last) {
+      if (ev.target.checked) hiddenSums.delete(last.view); else hiddenSums.add(last.view);
+      last.api.render(); return;
+    }
     // 전체 선택 = 거른 줄 모두 켜기(이미 다 켜져 있으면 모두 끄기).
     if (ev.target.matches?.('[data-v2-screen="trend"] [data-tr-all]') && last) {
       const set = picked.get(last.view), keys = last.visibleKeys || [];
