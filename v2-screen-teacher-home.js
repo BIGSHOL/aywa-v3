@@ -87,11 +87,22 @@
     const task = e.target.closest?.('[data-th-case]'); if (task) { drawer?.close(); api?.openFlowCase?.(task.dataset.thCase); }
   });
   addEventListener('aywa:data-revision', () => { if (currentActor) CARD.forEach(card => fetchCard(currentActor, card, true)); });
+  // 보는 선생님이 없으면(원장이 메뉴로 연 경우) 왼쪽 '보는 사람'까지 가지 않고 여기서 고른다.
+  function pickView(ctx) {
+    const list = ctx.load({ card: 'pick' });
+    const head = '<header class="th-head"><div><strong>선생님 오늘</strong><span>볼 선생님을 고르면 그 선생님의 수업과 오늘 할 일이 열립니다.</span></div></header>';
+    if (list.status !== 'ready') return `${head}<p class="v2s-note">${list.status === 'error' ? '선생님 명단을 불러오지 못했습니다.' : '선생님 명단을 불러오는 중…'}</p>`;
+    if (list.data?.error || !Array.isArray(list.data?.teachers)) return `${head}<p class="v2s-note">선생님 명단을 불러오지 못했습니다.</p>`;
+    const rows = list.data.teachers;
+    if (!rows.length) return `${head}<p class="v2s-note">재직 중인 선생님이 없습니다.</p>`;
+    const subject = key => ctx.api?.subjectLabel?.(key) || '';
+    return `${head}<ul class="th-pick" aria-label="볼 선생님">${rows.map(t => `<li><a href="#v2-teacher-home?actor=${esc(t.id)}"><strong>${esc(t.name)}</strong><span>${esc(t.subjects.map(subject).filter(Boolean).join(' · ') || '담당 과목 없음')}</span></a></li>`).join('')}</ul>`;
+  }
   window.TeacherHome = { strip };
   S.register({ id: 'teacher-home', label: '선생님 오늘', render(ctx) {
     api = ctx.api;
     const actor = ctx.query.get('actor');
-    if (!actor) return '<p class="v2s-note">보는 선생님을 먼저 골라 주세요.</p>';
+    if (!actor) return pickView(ctx);
     const entry = ctx.load({ actor, card: 'landing' });
     if (entry.status !== 'ready') return `<p class="v2s-note">${entry.status === 'error' ? '선생님 화면을 열지 못했습니다.' : '선생님 작업 화면을 여는 중…'}</p>`;
     if (entry.data?.error) return `<p class="v2s-note">${esc(entry.data.error)}</p>`;

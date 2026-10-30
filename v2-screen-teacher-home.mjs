@@ -166,9 +166,19 @@ async function parentNotifications(c) {
   return { rows, total: rows.length };
 }
 
+async function pickList({ sql, tenantId: t, importV2 }) {
+  const people = await readPeople(sql, t, importV2, 'teacher_onescreen');
+  const teachers = people.users.filter(u => u.role === 'teacher')
+    .map(u => ({ id: u.id, name: u.display_name, subjects: Array.isArray(u.subjects) ? u.subjects : [] }))
+    .sort((a, b) => a.name.localeCompare(b.name, 'ko'));
+  return { teachers };
+}
+
 export const screen = { id: 'teacher-home', label: '선생님 오늘', order: 2,
-  params: { actor: UUID, card: /^(?:landing|lessons|attendance|reports|parents)$/ },
+  params: { actor: UUID, card: /^(?:landing|lessons|attendance|reports|parents|pick)$/ },
   async load(args) {
+    // 보는 선생님이 없을 때(원장이 메뉴로 연 경우) 화면 안에서 고를 재직 선생님 명단.
+    if (args.params.card === 'pick') return pickList(args);
     const c = await context(args);
     if (!c) return { error: '선생님을 찾지 못했습니다.' };
     const card = args.params.card || 'landing';
