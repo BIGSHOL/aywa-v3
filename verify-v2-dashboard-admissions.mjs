@@ -120,12 +120,12 @@ test('콜&상담 전환: 지난달·이번 달 칸 = 독립 SQL(상담일 KST �
   assert.deepEqual([s.prevYearMonths, s.prevSamePeriod, s.paths], [[], null, []], '운영실 값은 두 달만(전년·유입경로 없음)');
 });
 
-test('원생상담: 전체 · 최근 7일(복사본을 뜬 순간부터) · 후속조치 대기 · 기한 지남 = 독립 SQL', { skip: SKIP }, async () => {
-  const [r] = await db`select count(*)::int total, count(*) filter (where consulted_at >= ${clock.at}::timestamptz - interval '7 days')::int week,
+test('원생상담: 이번 달(KST 1일부터) · 최근 7일(복사본을 뜬 순간부터) · 후속조치 대기 · 기한 지남 = 독립 SQL', { skip: SKIP }, async () => {
+  const [r] = await db`select count(*) filter (where consulted_at >= ${kst(`${today.slice(0, 7)}-01`)})::int this_month, count(*) filter (where consulted_at >= ${clock.at}::timestamptz - interval '7 days')::int week,
       count(*) filter (where follow_up_done is false and follow_up_date is not null)::int pending,
       count(*) filter (where follow_up_done is false and follow_up_date is not null and follow_up_date < ${today}::date)::int overdue
     from public.student_consultations where tenant_id=${t}`;
-  assert.deepEqual(D('consultations'), { total: r.total, lastWeek: r.week, pendingFollowUps: r.pending, overdueFollowUps: r.overdue });
+  assert.deepEqual(D('consultations'), { thisMonth: r.this_month, lastWeek: r.week, pendingFollowUps: r.pending, overdueFollowUps: r.overdue });
 });
 
 test('신규생: 인원·단계(등록 경과일) = 독립 SQL · 항목마다 상태 합 = 인원 · 등록일 기준 항목(OJT·1~3개월 콜) 상태 수 = 따로 센 값', { skip: SKIP }, async () => {

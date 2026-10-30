@@ -76,14 +76,14 @@ async function admissions(ctx, sp) {
 }
 
 // ── 원생상담 ──────────────────────────────────────────────────────────────────────────────────────────────────────────
-/** 2.0 getStudentConsultationCounts() — 원장은 강사 스코프가 없어 지점 전체 · 최근 7일 = 복사본을 뜬 순간에서 7×24시간. 2.0의 head count 넷을 한 번에. */
+/** 2.0 getStudentConsultationCounts() — 원장은 강사 스코프가 없어 지점 전체 · 이번 달 = KST 1일부터 · 최근 7일 = 복사본을 뜬 순간에서 7×24시간. 2.0의 head count 넷을 한 번에. */
 async function consultations(ctx, sp) {
   const weekAgo = new Date(ctx.clock.at.getTime() - 7 * 86400000);
-  const [r] = await sp`select count(*)::int total, (count(*) filter (where consulted_at >= ${weekAgo}))::int last_week,
+  const [r] = await sp`select (count(*) filter (where consulted_at >= ${`${ctx.today.slice(0, 7)}-01T00:00:00+09:00`}))::int this_month, (count(*) filter (where consulted_at >= ${weekAgo}))::int last_week,
       (count(*) filter (where follow_up_done = false and follow_up_date is not null))::int pending,
       (count(*) filter (where follow_up_done = false and follow_up_date is not null and follow_up_date < ${ctx.today}))::int overdue
     from public.student_consultations where tenant_id=${ctx.t}`;
-  return { total: r.total, lastWeek: r.last_week, pendingFollowUps: r.pending, overdueFollowUps: r.overdue };
+  return { thisMonth: r.this_month, lastWeek: r.last_week, pendingFollowUps: r.pending, overdueFollowUps: r.overdue };
 }
 
 // ── 신규생 관리 ───────────────────────────────────────────────────────────────────────────────────────────────────────
