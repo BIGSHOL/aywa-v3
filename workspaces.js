@@ -40,7 +40,7 @@ window.createWorkspaces = function createWorkspaces(api) {
     textbooks:['detail','f:차수','f:배정된 반','f:반 이름','status'],'lesson-reports':['f:반','f:작성','date','status','f:읽음'],
     'class-review':['detail','f:담임','date','f:담당 반','f:계산된 항목','status'],students:['detail','status','f:과목','f:담임','f:보호자 연락처','date','f:퇴원일'],
     'student-contribution':['date','f:출처','status'],exams:['date','detail','f:점수','status'],
-    consultations:['f:학년','f:상담자','f:반','f:요약','f:분류','f:후속조치','f:녹음·AI','date','f:시각','status'],enrollment:['detail','date','f:상담자','f:경로','f:상담 결과','status'],
+    consultations:['f:학년','f:상담자','f:반','f:요약','f:분류','f:후속조치','f:녹음·AI','date','f:시각','status'],enrollment:['detail','date','f:상담자','f:경로','f:상담 결과','f:후속 조치일','status'],
     retention:['date','status'],newcomers:['detail','f:과목','date','f:첫 수업','f:사전 콜','f:첫 수업 안내','f:OJT','f:첫 수업 후 콜','f:1개월 콜','f:2개월 콜','f:3개월 콜','f:완료한 체크','status'],withdrawals:['date','status'],
     'withdrawal-reports':['f:담임','date','detail','status','f:처리 근거'],staff:['detail','f:역할','status','f:고용 형태','date'],
     payroll:['detail','date','status'],billing:['detail','f:수납명','f:청구액','f:수납','f:남은 금액','status','date'],
