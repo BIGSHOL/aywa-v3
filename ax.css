@@ -186,10 +186,14 @@
 
 /* Inbox · requests · automation */
 .ax-enabled main>.ax-filter{margin-bottom:12px}
-.ax-notifications>article{padding:22px 0;border-bottom:1px solid var(--ax-line)}
-.ax-notifications>article>div:first-child{display:flex;gap:8px;margin-bottom:10px}
-.ax-notifications h3{margin:8px 0;font-size:var(--ax-base)}
-.ax-notifications p{margin-bottom:16px;font-size:var(--ax-sm)}
+.ax-notifications>.ax-notification{display:grid;grid-template-columns:minmax(160px,210px) minmax(240px,1fr) minmax(180px,auto);align-items:center;gap:16px 22px;padding:17px 0;border-bottom:1px solid var(--ax-line)}
+.ax-notification-meta{display:flex;align-items:center;align-content:center;flex-wrap:wrap;gap:6px}
+.ax-notifications .ax-notification-copy{min-width:0}
+.ax-notifications h3{margin:0 0 4px;font-size:var(--ax-base)}
+.ax-notifications p{margin:0;font-size:var(--ax-sm);line-height:1.5}
+.ax-notification .ax-actions{justify-content:flex-end;gap:6px}
+@media(max-width:1100px){.ax-notifications>.ax-notification{grid-template-columns:minmax(140px,190px) minmax(0,1fr)}.ax-notification .ax-actions{grid-column:2;justify-content:flex-start}}
+@media(max-width:700px){.ax-notifications>.ax-notification{grid-template-columns:minmax(0,1fr);gap:8px}.ax-notification .ax-actions{grid-column:1}}
 .ax-workflow{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:20px}
 .ax-workflow>section{min-width:0;min-height:210px;padding:20px;border:1px solid var(--ax-line);border-radius:8px}
 .ax-workflow h2{display:flex;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:16px}
