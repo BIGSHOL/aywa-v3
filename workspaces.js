@@ -628,15 +628,35 @@ window.createWorkspaces = function createWorkspaces(api) {
       .catch(()=>same()?fail(false):'stale');
   }
   // 기록 상세 서랍 = 그 기록의 사실 + 실제로 일이 되는 동작만(원장 10-28 — 저장되지 않는 미리보기·요청 초안은 해결 동작처럼 보여 헷갈린다).
-  // 남기는 것: '이 기록으로 요청'(업무 요청을 실제로 연다) · '상세 화면 열기'(이 기록을 바로 여는 화면) · '처리 화면 열기'(이 영역의 업무 화면) ·
+  // 남기는 것: '이 기록으로 요청'(업무 요청을 실제로 연다) · '상세 화면 열기'(이 기록을 바로 여는 화면) · '처리 화면 열기'(그 기록이 열린 처리 화면 · 없으면 이 영역의 업무 화면) ·
   // 이 영역의 본래 화면으로 가는 '화면 이동'(기록을 바로 여는 화면이 없을 때만). 같은 작업 공간 안의 보조 면(키오스크 설정·실급여 비율 …)으로 가는
   // 이동은 그 기록과 상관없어 뺀다. 미리보기·요청 초안은 본문 '할 수 있는 일'에 그대로 있다.
+  // 근거 한 건 열기 = 처리 화면(record-open, v2-screen-record-open.js) · 처리 화면이 없는 영역은 기록 서랍.
+  function openEvidence(familyId,recordId){
+    document.querySelectorAll('dialog[open]').forEach(d=>d.close());
+    if(window.RecordOpen?.supports(familyId,recordId)){window.RecordOpen.open(familyId,recordId);return;}
+    if(api.getPage()!==`workspace-${familyId}`)navigate(`workspace-${familyId}`);
+    requestAnimationFrame(()=>showRecord(familyId,recordId));
+  }
+  // 근거가 여럿 = 목록 한 장(열 맞춤) — 줄을 누르면 서랍을 거치지 않고 그 기록의 처리 화면.
+  let evidenceAsk=0;
+  function evidenceList(a,s,ids){
+    const ask=++evidenceAsk,shown=ids.slice(0,100),more=ids.length-shown.length;
+    dialog('modal',s.title,`${a.label} · 근거 ${fmt(ids.length)}건`,`<div class="ws-evidence" data-evidence><p class="ax-note" role="status">근거 기록을 불러오는 중입니다.</p></div>`);
+    const fill=html=>{const box=document.querySelector('#modal [data-evidence]');if(box&&ask===evidenceAsk)box.innerHTML=html;};
+    fetch(`/api/workspaces/${encodeURIComponent(a.id)}/records?ids=${shown.map(encodeURIComponent).join(',')}`,{headers:{Accept:'application/json'}})
+      .then(r=>r.ok?r.json():Promise.reject(new Error('조회 실패')))
+      .then(j=>{const rows=(j.items||[]).filter(r=>r&&r.id);if(!rows.length){fill('<p class="ax-note">근거 기록을 찾지 못했습니다. 작업 공간 목록에서 확인해 주세요.</p>');return;}
+        fill(`<table class="ws-evidence-table"><thead><tr><th>이름</th><th>내용</th><th>날짜</th><th>상태</th></tr></thead><tbody>${rows.map(r=>`<tr><td><button type="button" class="ax-text-link" data-ws="evidence-open" data-id="${h(a.id)}" data-record="${h(r.id)}">${h(r.label||'—')}</button></td><td>${h(r.detail||'—')}</td><td>${h(r.date?ymd(r.date):'—')}</td><td>${h(r.status||'—')}</td></tr>`).join('')}</tbody></table>${more>0?`<p class="ax-note">나머지 ${fmt(more)}건은 작업 공간 목록에서 볼 수 있습니다.</p>`:''}`);})
+      .catch(()=>fill('<p class="ax-note">근거 기록을 불러오지 못했습니다. 잠시 뒤 다시 시도해 주세요.</p>'));
+  }
   function recordActions(a,r){
     const rid=String(r.id),open=Boolean(api.openRecord&&api.canOpenRecord?.(rid)),v2=window.V2Screens?.target(a.id)||'';
     const target=a.id==='textbooks'&&v2?`${v2}${v2.includes('?')?'&':'?'}textbook=${encodeURIComponent(rid)}`:v2;
     const out=[btn('이 기록으로 요청','record-request',`data-id="${h(a.id)}" data-record="${h(rid)}"`,true)];
     if(open)out.push(btn('상세 화면 열기','record-open',`data-record="${h(rid)}"`));
-    if(target)out.push(btn('처리 화면 열기','goto',`data-page="${h(target.slice(1))}"`));
+    const direct=window.RecordOpen?.supports(a.id,rid)?window.RecordOpen.href(a.id,rid):''; // 그 기록이 열린 처리 화면 — 없으면 이 영역의 업무 화면
+    if(direct||target)out.push(btn('처리 화면 열기','goto',`data-page="${h((direct||target).slice(1))}"`));
     if(!open&&!v2)actionsOf(a).filter(x=>x.mode==='navigate'&&!familyOf(targetOf(x).page)&&resolvePage(targetOf(x).page)).forEach(x=>out.push(btn(x.label,'action',`data-id="${h(a.id)}" data-action="${h(x.id)}" data-record="${h(rid)}"`)));
     return `<div class="ax-actions">${out.join('')}</div>`;
   }
@@ -839,6 +859,7 @@ window.createWorkspaces = function createWorkspaces(api) {
     if(action==='record-open'){api.openRecord(record);return;}
     if(action==='textbook-class'){showRecord('classes',record);return;}
     if(action==='goto'){navigate(el.dataset.page);return;}
+    if(action==='evidence-open'){openEvidence(id,el.dataset.record);return;}
     if(action==='record-request'){const a=area(id),r=recordById(id,record);if(!a||!r)return;document.querySelectorAll('dialog[open]').forEach(d=>d.close());requestFrom(a,{title:`${r.label} 확인`,body:`${a.label}의 이 기록을 확인하고 필요한 조치와 결과를 보고해 주세요.`,records:[r]});return;}
     if(action==='action'){if(el.closest('dialog'))el.closest('dialog').close();openAction(id,el.dataset.action,record||'');return;}
     if(action==='request'){const a=area(id);requestFrom(a,{title:`${a.label} 확인 요청`,body:`${a.label}에서 확인할 내용을 정리해 결과를 보고해 주세요.`});return;}
@@ -846,8 +867,12 @@ window.createWorkspaces = function createWorkspaces(api) {
     if(action==='signal-evidence'||action==='signal-request'){
       const a=area(id),s=(data(id)?.signals||[]).find(x=>x.id===el.dataset.signal);if(!s)return;
       if(action==='signal-request'){requestFrom(a,{title:s.draft?.title||s.title,body:s.draft?.body||s.summary||s.title,signal:s.id,records:(s.recordIds||[]).map(r=>recordById(id,r)).filter(Boolean)});return;}
+      // 근거 보기 = 그 기록을 처리하는 화면(원장 10-30 "근거를 도대체 몇단계나 봐야하는거야") — 하나면 바로, 여럿이면 근거 목록 한 장에서 줄을 누르면 바로.
+      const ids=[...new Set((s.recordIds||[]).map(String))];
+      if(ids.length===1){openEvidence(id,ids[0]);return;}
+      if(ids.length>1){evidenceList(a,s,ids);return;}
       state.facet[id]='';state.q[id]='';if(api.getPage()!==`workspace-${id}`){navigate(`workspace-${id}`);}
-      requestAnimationFrame(()=>{const first=(s.recordIds||[]).map(r=>recordById(id,r)).find(Boolean);$('#ws-main')?.scrollIntoView({block:'start',behavior:'auto'});if(first)showRecord(id,first.id);else toast('이 신호의 근거 기록은 작업 공간 목록에서 확인할 수 있습니다.');});
+      requestAnimationFrame(()=>{$('#ws-main')?.scrollIntoView({block:'start',behavior:'auto'});toast('이 신호의 근거 기록은 작업 공간 목록에서 확인할 수 있습니다.');});
       return;
     }
     if(action==='cell'){editCell(el);return;}
