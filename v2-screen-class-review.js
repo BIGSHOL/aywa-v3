@@ -13,6 +13,31 @@
   const esc = s => S.esc(s);
   const queryOf = q => { const o = new URLSearchParams(); for (const k of KEEP) { const v = q.get(k); if (v) o.set(k, v); } return o.toString(); };
 
+  function renderReviewOverview(model) {
+    const template = document.createElement('template');
+    template.innerHTML = S.renderOverview(model);
+    const section = template.content.querySelector('.v2o');
+    if (!section) return template.innerHTML;
+    section.classList.add('v2o-review');
+    const table = section.querySelector('table'), cols = document.createElement('colgroup');
+    for (const column of model.columns) { const col = document.createElement('col'); col.dataset.col = column.key; cols.append(col); }
+    if (model.rows.some(row => row.action)) { const col = document.createElement('col'); col.dataset.col = 'action'; cols.append(col); }
+    table?.prepend(cols);
+    table?.querySelectorAll('tbody tr:not(.v2o-group)').forEach((tr, i) => {
+      const row = model.rows[i];
+      if (row?.href) tr.dataset.v2OverviewHref = row.href;
+      const button = tr.querySelector('[data-v2-overview-action]');
+      if (button && row?.action?.kind !== 'none') {
+        button.dataset.v2ReviewTask = row.action.kind;
+        button.dataset.teacher = row.teacherId;
+        button.dataset.teacherName = row.cells.name;
+        button.dataset.month = row.month;
+        button.dataset.evidence = row.lowItems?.join(', ') || '';
+      }
+    });
+    return template.innerHTML;
+  }
+
   function ensureFrame(query) {
     if (!frame) {
       frame = document.createElement('iframe');
@@ -80,6 +105,21 @@
       actor = t.value;
       try { localStorage.setItem(ACTOR_KEY, t.value); } catch { /* 이 창에서만 기억 */ }
       tellHost();
+      api?.render?.();
+    });
+    document.addEventListener('click', e => {
+      const button = e.target.closest?.(`${SEL} [data-v2-review-task]`);
+      if (!button) return;
+      const closing = button.dataset.v2ReviewTask === 'closing', name = button.dataset.teacherName, month = button.dataset.month;
+      api?.showCardRequest?.({ title: `${month} ${name} ${closing ? '평가 마감 확인' : '지도 요청'}`.slice(0, 80),
+        body: closing ? `${name} 강사의 ${month} 직원 포트폴리오 평가가 아직 마감되지 않았습니다. 마감 상태를 확인해 주세요.`
+          : `${name} 강사의 ${month} 마감 평가가 총점/만점 70% 미만입니다. 낮은 항목: ${button.dataset.evidence || '항목별 근거 확인 필요'}. 포트폴리오에서 근거를 확인하고 지도해 주세요.`,
+        source: 'direct', draftKey: `portfolio-overview:${button.dataset.v2ReviewTask}:${month}:${button.dataset.teacher}`,
+        context: { family: 'class-review', familyLabel: '강사평가', records: [{ id: button.dataset.teacher, label: name }] } });
+    });
+    document.addEventListener('click', e => {
+      const row = e.target.closest?.(`${SEL} .v2o-review tr[data-v2-overview-href]`);
+      if (row && !e.target.closest('a, button, input, select, textarea')) location.hash = row.dataset.v2OverviewHref;
     });
     const later = () => requestAnimationFrame(place);
     addEventListener('resize', later); addEventListener('scroll', place, { passive: true }); addEventListener('hashchange', later);
@@ -98,6 +138,19 @@
         if (editors.some(e => e.id === asked)) try { localStorage.setItem(ACTOR_KEY, asked); } catch { /* 이 창에서만 */ }
         if (editors.length) { const at = document.querySelector(`${SEL} [data-v2h-actor-slot]`); if (at) at.innerHTML = actorPicker(); }
         tellHost();
+      }
+      if (!ctx.query.has('v2path') && !ctx.query.has('tab') && !ctx.query.has('judgment')) {
+        let remembered = null;
+        try { remembered = localStorage.getItem(ACTOR_KEY); } catch { /* 이 창에서만 선택 */ }
+        const entry = ctx.load({ actor: currentActor() || actor || remembered, subject: ctx.query.get('subject'), teacher: ctx.query.get('teacher') });
+        if (entry.data?.editors && !editors.length) editors = entry.data.editors;
+        if (entry.data?.page === 'overview') {
+          requestAnimationFrame(place);
+          return `<div class="v2h-note" role="note"><p><b>연습 화면</b> 마감된 직원 포트폴리오 점수를 과목·강사·항목 순서로 볼 수 있습니다. 항목의 월별 근거는 마지막 층에서 열립니다. <a href="#v2-class-review?tab=review">기존 직원 평가 목록 열기</a></p><span data-v2h-actor-slot>${actorPicker()}</span></div>`
+            + renderReviewOverview(entry.data.overview);
+        }
+        if (entry.data?.page === 'moduleOff' || entry.data?.page === 'noMenu') return '<p class="v2s-note">이 화면을 열 수 없습니다.</p>';
+        if (!entry.data && entry.status !== 'ready') return `<p class="v2s-note">${entry.status === 'error' ? esc(entry.error || '강사평가 현황을 불러오지 못했습니다.') : '강사평가 현황을 불러오는 중…'}</p>`;
       }
       const query = queryOf(ctx.query);
       if (hostOk === null) fetch(HOST, { method: 'HEAD' }).then(r => r.ok, () => false).then(ok => { if (hostOk === null) { hostOk = ok; api?.render?.(); } });

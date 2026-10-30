@@ -25,6 +25,7 @@ import { V2Error } from './v2-screens.mjs';
 import { UUID, deepMerge, readPeople, serverCall } from './v2-proc-people.mjs';
 import { runV2Server, V2ServerError } from './v2-server-runner.mjs';
 import { loadClassReview, read } from './v2-class-review-load.mjs';
+import { portfolioOverview } from './v2-class-review-overview.mjs';
 
 const ID = 'class-review', MENU = 'class_review';
 const UUID_BODY = UUID.source.slice(1, -1);
@@ -60,6 +61,11 @@ async function load({ sql, params, tenantId: t, importV2 }) {
   if (modules.disabled.includes('class_review')) return { ...base, page: 'moduleOff' };
   const v = people.pick(params.actor);
   if (!v) return { ...base, page: 'noMenu' };
+  if (!params.v2path && !params.tab && !params.read && !params.judgment) {
+    const [priv] = await read(t, v.id, [{ module: 'features/class-review/server/queries.ts', fn: 'getReviewPrivileges', args: [] }]);
+    if (!priv?.seePortfolio) return { ...base, ...(await loadClassReview({ t, v, path: '/class-review', sp: {}, importV2 })) };
+    return { ...base, page: 'overview', overview: await portfolioOverview({ sql, tenantId: t, settings, params }) };
+  }
   if (params.read) {
     const r = READS[params.read];
     let args;
@@ -120,6 +126,7 @@ export const screen = {
   params: {
     actor: UUID, v2path: new RegExp(`^/class-review(?:/new|/template|/board|/${UUID_BODY}(?:/score)?)?$`, 'i'),
     tab: /^(?:review|portfolio)$/, teacher: UUID, set: UUID, new: /^1$/, judgment: UUID,
+    subject: /^(english|math|other)$/,
     read: new RegExp(`^(?:${Object.keys(READS).join('|')})$`), args: /^\[[\s\S]*\]$/,
   },
   paramMax: { args: 4000 },

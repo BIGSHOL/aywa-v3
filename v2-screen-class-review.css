@@ -1,0 +1,16 @@
+.v2o-review table{table-layout:fixed;width:100%;min-width:0;white-space:normal;font-size:14px}
+.v2o-review col[data-col=name]{width:25%}
+.v2o-review col[data-col=closed],.v2o-review col[data-col=status]{width:14%}
+.v2o-review col[data-col=rate],.v2o-review col[data-col=score]{width:14%}
+.v2o-review col[data-col=range],.v2o-review col[data-col=raw]{width:32%}
+.v2o-review col[data-col=change],.v2o-review col[data-col=previous]{width:16%}
+.v2o-review col[data-col=missing]{width:13%}
+.v2o-review col[data-col=action]{width:18%}
+.v2o-review th,.v2o-review td{padding:10px 8px;line-height:1.35;font-size:14px}
+.v2o-review thead th:not(:first-child),.v2o-review td{text-align:right}
+.v2o-review tbody th a{display:inline-flex;align-items:baseline;gap:6px;text-align:left}
+.v2o-review .v2o-enter{margin:0;white-space:nowrap;font-size:14px}
+.v2o-review tbody tr[data-v2-overview-href]{cursor:pointer}
+.v2o-review tbody tr[data-v2-overview-href]:hover{background:#f5f7fb}
+.v2o-review tbody tr[data-v2-overview-href]:focus-within{outline:2px solid #6078c8;outline-offset:-2px}
+.v2o-review td:last-child .button{white-space:nowrap;padding-inline:8px}

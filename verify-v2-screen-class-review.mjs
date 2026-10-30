@@ -153,7 +153,7 @@ test('강사 자기 평가 = 본인 슬롯 한 장만 남고 타인 채점·평�
 
 // ── ③ 보기 ───────────────────────────────────────────────────────────────────────────────────────────────────────────────
 test('목록 = 독립 SQL(평가지 최신순 · 머리) · 내 채점 자리 · 정원 · 보기 필터 = 2.0 기본값', { skip: SKIP }, async () => {
-  const d = await load({ actor: master.id });
+  const d = await load({ tab: 'review', actor: master.id });
   assert.equal(d.page, 'list');
   const rows = await db`select id::text id, form_data from public.academy_documents where tenant_id = ${t} and form_type = 'class_review' order by created_at desc limit 200`;
   assert.deepEqual(d.rows.map((r) => r.id), rows.map((r) => r.id));
@@ -167,7 +167,7 @@ test('목록 = 독립 SQL(평가지 최신순 · 머리) · 내 채점 자리 ·
 });
 
 test('상세 · 채점 · 새 평가 · 문항 세트 · 종합 = 독립 SQL · 없는 평가지 · 채점 자격 없으면 상세로', { skip: SKIP }, async () => {
-  const list = await load({ actor: master.id });
+  const list = await load({ tab: 'review', actor: master.id });
   const seated = list.rows.find((r) => list.mine[r.id]), unseated = list.rows.find((r) => !list.mine[r.id]);
   const det = await load({ v2path: `/class-review/${seated.id}`, actor: master.id });
   assert.equal(det.page, 'detail'); assert.equal(det.found.doc.id, seated.id);
