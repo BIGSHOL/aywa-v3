@@ -196,6 +196,11 @@ export async function studentsPage(base, R, options, page = 1, pageSize = PAGE_S
     conds.push(F`exists (select 1 from public.enrollments e ${join} where ${ec.reduce((a, p) => F`${a} and ${p}`)})`);
   }
   if (idWhitelist) conds.push(F`s.id = any(${idWhitelist}::uuid[])`);
+  // 현황표의 마지막 층: 반 이름 검색이 아닌 정확한 반 ID로, 오늘 실제 시작한 재원 수강만 잇는다.
+  if (options.classId && options.status === 'enrolled') conds.push(F`exists (
+    select 1 from public.enrollments ce where ce.tenant_id=${t} and ce.student_id=s.id and ce.class_id=${options.classId}::uuid
+      and ce.end_date is null and ce.on_hold=false and (ce.start_date is null or ce.start_date <= ${base.today}::date)
+  )`);
   const where = conds.reduce((a, p) => F`${a} and ${p}`);
   const order = options.sort === 'name' ? F`s.name asc, s.id asc` : options.sort === 'name_desc' ? F`s.name desc, s.id asc` : F`s.grade asc, s.name asc, s.id asc`;
   const cols = F`s.id::text id, s.name, s.english_name, s.school, s.grade, s.status::text status, s.enrolled_at::text enrolled_at, s.parent_phone`;
@@ -257,7 +262,7 @@ export async function buildStudentList({ sql: tx, tenantId: t, importV2, sp = {}
   const resolved = resolveFilters(R, sp, base.settings, teachers);
   const restrictIds = await restrictIdsFor(base, R, resolved.program, resolved.firstDay, { levels: resolved.levels, mixes: resolved.mixes });
   const page = await studentsPage(base, R, { status: resolved.status, subject: resolved.subject, q: resolved.q, grade: resolved.grade, teacherId: resolved.teacherId,
-    searchField: resolved.field, sort: resolved.sort, excludeNoEnrollment: resolved.excludeNoEnrollment, restrictIds }, resolved.page, PAGE_SIZE);
+    searchField: resolved.field, sort: resolved.sort, excludeNoEnrollment: resolved.excludeNoEnrollment, restrictIds, classId: sp.classId }, resolved.page, PAGE_SIZE);
   const counts = await statCounts(base);
   return {
     viewer: { id: base.viewer.id, name: base.viewer.name, systemRole: base.viewer.systemRole, tenantId: t },

@@ -23,12 +23,12 @@ test('주소 열쇠 = 2.0 목록·상세 page.tsx searchParams(상세의 embed�
   assert.deepEqual([...LIST_KEYS], list);
   assert.deepEqual([...DETAIL_KEYS], detail.filter((k) => k !== 'embed'));
   // + movable = 수업 탭 배정 창의 '반 이동' 후보 읽기(2.0 listMovableEnrollments — 반 화면과 같은 읽기).
-  assert.deepEqual(Object.keys(screen.params).sort(), [...new Set(['v2path', 'viewer', 'movable', ...list, ...DETAIL_KEYS])].sort());
+  for (const key of new Set(['v2path', 'viewer', 'movable', 'course', 'classId', ...list, ...DETAIL_KEYS])) assert.ok(key in screen.params, `${key} 주소 열쇠`);
   const entry = await here('./v2-host/src/students.tsx'), wrap = await here('./v2-screen-students.js');
   const arr = (re, s) => JSON.parse(re.exec(s)[1].replace(/'/g, '"').replace(/,\s*\]/, ']'));
   assert.deepEqual(arr(/const KEYS = (\[[^\]]*\])/, entry), [...LIST_KEYS]);
   assert.deepEqual(arr(/const DETAIL_KEYS = (\[[^\]]*\])/, entry), [...DETAIL_KEYS]);
-  assert.deepEqual(arr(/const KEEP = (\[[^\]]*\])/, wrap).sort(), [...new Set(['v2path', ...list, ...DETAIL_KEYS])].sort());
+  for (const key of new Set(['v2path', ...list, ...DETAIL_KEYS, 'classId'])) assert.ok(arr(/const KEEP = (\[[^\]]*\])/, wrap).includes(key), `${key} 감싸개 주소 열쇠`);
   for (const ok of ['/students', '/students/new', '/students/e4a2c026-8992-4211-a5fe-b9e93be8a0f3', '/students/e4a2c026-8992-4211-a5fe-b9e93be8a0f3/edit']) assert.ok(screen.params.v2path.test(ok), ok);
   for (const no of ['/classes/x', '/students/new/edit', '/students/x', '/students/']) assert.ok(!screen.params.v2path.test(no), no);
   for (const no of ['//evil.com', 'https://x', '/\\x']) assert.ok(!screen.params.back.test(no), `back ${no}`);

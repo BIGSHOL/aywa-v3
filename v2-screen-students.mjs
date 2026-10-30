@@ -8,6 +8,7 @@
 import { UUID_BODY, studentsBase, readStudentEditors } from './v2-students-common.mjs';
 import { readStudentStats } from './v2-students-stats.mjs';
 import { statsActions } from './v2-students-stats-actions.mjs';
+import { studentOverview } from './v2-students-overview.mjs';
 
 const ID = 'students';
 const TEXT = /^[^\u0000-\u001f]{0,200}$/, DAY = /^\d{4}-\d{2}-\d{2}$/;
@@ -49,6 +50,7 @@ export const screen = {
     status: /^[a-z_]{1,20}$/, subject: /^[a-z0-9_,]{0,200}$/, q: /^[^\u0000-\u001f]{0,200}$/, page: /^\d{1,5}$/, grade: TEXT,
     teacher: new RegExp(`^(all|${UUID_BODY}(?:,${UUID_BODY}){0,60})$`), field: /^[a-z]{1,12}$/, sort: /^[a-zA-Z_]{1,24}$/, noenr: /^[01]$/,
     program: /^[a-z]{1,20}$/, first: DAY, level: /^[a-z,]{0,80}$/, mix: /^[A-Za-z,]{0,120}$/, from: /^(dashboard|\d{4}-\d{2}-\d{2})$/,
+    course: /^(elem|middle|high|preschool|etc)$/, classId: new RegExp(`^${UUID_BODY}$`),
     // 상세(탭 · 돌아갈 자리 · 탭 안 조회)
     tab: /^[a-z-]{1,20}$/, back: /^\/(?!\/)[^\u0000-\u001f\\]{0,199}$/, video: new RegExp(`^${UUID_BODY}$`), jjFrom: DAY, jjTo: DAY, to: DAY,
     kind: /^[a-z_]{1,30}$/, dir: /^(asc|desc)$/, fScore: TEXT, fDelta: TEXT, contribution: TEXT, month: /^\d{4}-\d{2}$/, view: /^[a-z_-]{1,20}$/, entity: TEXT,
@@ -83,8 +85,9 @@ export const screen = {
     const withEditors = async (data) => (data && !data.notFound && !data.missing && Object.keys(ACTIONS).length
       ? { ...data, editors: await readStudentEditors(await studentsBase({ sql, tenantId, importV2, viewerId })) } : data);
     if (!sub[1] && !sub[2]) {
+      if (!params.v2path) return withEditors({ page: 'overview', overview: await studentOverview({ sql, tenantId, importV2, viewerId, params }) });
       const list = await optional('v2-students-list.mjs');
-      return withEditors(list ? await list.buildStudentList({ sql, tenantId, importV2, sp: pick(params, LIST_KEYS), viewerId }) : { missing: true });
+      return withEditors(list ? await list.buildStudentList({ sql, tenantId, importV2, sp: { ...pick(params, LIST_KEYS), classId: params.classId }, viewerId }) : { missing: true });
     }
     if (sub[1] || sub[3]) {
       const form = await optional('v2-students-form.mjs');

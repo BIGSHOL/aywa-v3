@@ -116,7 +116,8 @@ function pickQuery(search: URLSearchParams, keys: readonly string[], extra: Reco
 
 function List() {
   const search = useSearchParams();
-  const { sp, query } = useMemo(() => pickQuery(search, KEYS), [search]);
+  // 현황표의 마지막 층은 3.0 연결부에서만 정확한 반 ID를 더해 조회한다.
+  const { sp, query } = useMemo(() => pickQuery(search, [...KEYS, 'classId']), [search]);
   const s = useScreenData<StudentListData & WithSettings>(query, "원생목록을 불러오지 못했습니다.");
   return pending(s, LIST_TEXT) ?? <Ops data={s.data!}><StudentsListPage data={s.data!} sp={sp} /></Ops>;
 }

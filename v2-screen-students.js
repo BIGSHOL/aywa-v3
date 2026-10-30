@@ -10,7 +10,7 @@
   // 2.0 목록·상세 page.tsx가 읽는 주소 열쇠 그대로(이름이 같은 열쇠는 한 칸) + v2path(2.0 하위 경로 /students/<학생> …).
   const KEEP = ['v2path', 'status', 'subject', 'q', 'page', 'grade', 'teacher', 'field', 'sort', 'noenr', 'program', 'first', 'level', 'mix', 'from',
     'contribution', 'month', 'view', 'entity', 'tab', 'video', 'back', 'jjFrom', 'jjTo', 'to', 'kind', 'dir', 'fScore', 'fDelta',
-    'fc', 'fcMonth', 'fcFrom', 'fcTo', 'fcSpan', 'tr', 'trMonth', 'trFrom', 'trTo', 'trSpan'];
+    'fc', 'fcMonth', 'fcFrom', 'fcTo', 'fcSpan', 'tr', 'trMonth', 'trFrom', 'trTo', 'trSpan', 'classId'];
   let api = null, frame = null, requested = null, hostOk = null, wired = false, editors = [], actor = null;
   const ACTOR_KEY = `v2-host-actor:${ID}`, SEL = `[data-v2-screen="${ID}"]`;
   const esc = s => S.esc(s);
@@ -24,6 +24,18 @@
   const actorPicker = () => (editors.length ? `<label class="v2h-actor"><span>저장하는 사람</span><select data-v2h-actor aria-label="저장하는 사람">${editors.map(e => `<option value="${esc(e.id)}"${e.id === currentActor() ? ' selected' : ''}>${esc(e.role ? `${e.name} · ${e.role}` : e.name)}</option>`).join('')}</select></label>` : '');
   const tellHost = () => { const id = currentActor(); if (id && frame?.contentWindow) frame.contentWindow.postMessage({ type: 'v2-host-actor', id }, location.origin); };
   const queryOf = q => { const o = new URLSearchParams(); for (const k of KEEP) { const v = q.get(k); if (v) o.set(k, v); } return o.toString(); };
+
+  function renderStudentOverview(model) {
+    const template = document.createElement('template');
+    template.innerHTML = S.renderOverview(model);
+    const section = template.content.querySelector('.v2o');
+    if (!section) return template.innerHTML;
+    section.classList.add('v2o-students');
+    const cols = document.createElement('colgroup');
+    for (const column of model.columns) { const col = document.createElement('col'); col.dataset.col = column.key; cols.append(col); }
+    section.querySelector('table')?.prepend(cols);
+    return template.innerHTML;
+  }
 
   function ensureFrame(query) {
     if (!frame) {
@@ -106,6 +118,14 @@
         actor = asked;
         try { localStorage.setItem(ACTOR_KEY, asked); } catch { /* 이 창에서만 기억 */ }
         tellHost();
+      }
+      if (!ctx.query.has('v2path')) {
+        const entry = ctx.load({ program: ctx.query.get('program'), course: ctx.query.get('course') });
+        if (entry.data?.editors && !editors.length) editors = entry.data.editors;
+        const model = entry.data?.overview;
+        requestAnimationFrame(place);
+        return `<div class="v2h-note" role="note"><p><b>연습 화면</b> 오늘의 재원생을 프로그램·과정·반 순서로 볼 수 있습니다. 원생 목록은 마지막 층에서 열립니다.</p><span data-v2h-actor-slot>${actorPicker()}</span></div>`
+          + (model ? renderStudentOverview(model) : `<p class="v2s-note">${entry.status === 'error' ? esc(entry.error || '원생 현황을 불러오지 못했습니다.') : '원생 현황을 불러오는 중…'}</p>`);
       }
       const query = queryOf(ctx.query);
       if (hostOk === null) fetch(HOST, { method: 'HEAD' }).then(r => r.ok, () => false).then(ok => { if (hostOk === null) { hostOk = ok; api?.render?.(); } });
