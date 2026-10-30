@@ -67,14 +67,14 @@ export function createCardInsight({ store, provider = null, reserve = async () =
     const record = state().results[metric], saved = record?.byFingerprint?.[record.latest] || null;
     const stale = !!saved && saved.fingerprint !== fingerprint;
     return { metric, fingerprint, status: !saved ? 'empty' : stale ? 'stale' : 'ready',
-      note: stale ? "자료가 바뀌었습니다. 다시 만들려면 '분석 문장 만들기'를 누르세요." : null,
+      note: stale ? "자료가 바뀌었습니다. 다시 만들려면 'AI 분석'를 누르세요." : null,
       result: saved ? { ...displayCardOutput(saved.output, saved.facts),
         modelLabel: modelLabel(saved.model) || 'Claude', createdAt: saved.createdAt } : null,
       enabled: !!provider };
   };
   const view = analysis => viewFingerprint(analysis.metric, cardInput(analysis).fingerprint);
   async function make(analysis) {
-    if (!provider) return { status: 503, error: 'ai_disabled', message: '이 서버에서는 분석 문장 만들기가 꺼져 있습니다.' };
+    if (!provider) return { status: 503, error: 'ai_disabled', message: '이 서버에서는 AI 분석이 꺼져 있습니다.' };
     const built = cardInput(analysis);
     if (busy.has(built.metric)) return { status: 409, error: 'busy', message: '이 카드의 문장을 만드는 중입니다.' };
     busy.add(built.metric);

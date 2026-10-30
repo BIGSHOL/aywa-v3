@@ -44,12 +44,12 @@
         ? `<button type="button" class="button" data-ca-open-case="${esc(linked.id)}">업무 열기</button>`
         : `<button type="button" class="button" data-ca-request="${i}" ${data.insightFactIds && body?.status === 'ready' ? '' : 'disabled'}>업무 만들기</button>`}<button type="button" class="button" data-ca-flow>열린 업무 보기</button></div></li>`;
     }).join('')}</ul></div>` : '';
-    return `<div class="tr-insight"><div class="tr-insight-head"><h3>분석 문장</h3><button type="button" class="button" data-ca-make="${esc(data.metric)}" ${body?.enabled === false || state.status === 'making' ? 'disabled' : ''}>${state.status === 'making' ? '만드는 중…' : '분석 문장 만들기'}</button></div>`
+    return `<div class="tr-insight"><div class="tr-insight-head"><h3>분석 문장</h3><button type="button" class="button" data-ca-make="${esc(data.metric)}" ${body?.enabled === false || state.status === 'making' ? 'disabled' : ''}>${state.status === 'making' ? '만드는 중…' : 'AI 분석'}</button></div>`
       + (body?.note ? `<p class="v3s-note">${esc(body.note)}</p>` : '')
       + (result ? `<small>${esc(result.modelLabel)} · ${esc(at)}</small><p>${esc(result.summary.text)}<small>근거: ${result.summary.evidence.map(esc).join(' · ')}</small></p>${lines(result.watch, '눈여겨볼 점')}${checks}` : '')
       + (state.status === 'loading' ? '<p class="v3s-note">저장된 문장을 확인하는 중…</p>' : '')
       + (state.status === 'error' ? `<p class="v3s-note">${esc(state.error)}</p>` : '')
-      + (body?.enabled === false ? '<p class="v3s-note">이 서버에서는 분석 문장 만들기가 꺼져 있습니다.</p>' : '')
+      + (body?.enabled === false ? '<p class="v3s-note">이 서버에서는 AI 분석이 꺼져 있습니다.</p>' : '')
       + '</div>';
   }
   function analysisBox(entry) {

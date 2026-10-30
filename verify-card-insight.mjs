@@ -50,14 +50,14 @@ try {
     const ready = await (await fetch(`${base}&fp=${built.fingerprint}`)).json();
     assert.equal(ready.status, 'ready'); assert.equal(loads, 1); n++;
     const stale = await (await fetch(`${base}&fp=${'0'.repeat(64)}`)).json();
-    assert.equal(stale.status, 'stale'); assert.equal(stale.note, "자료가 바뀌었습니다. 다시 만들려면 '분석 문장 만들기'를 누르세요."); assert.equal(loads, 1); n++;
+    assert.equal(stale.status, 'stale'); assert.equal(stale.note, "자료가 바뀌었습니다. 다시 만들려면 'AI 분석'를 누르세요."); assert.equal(loads, 1); n++;
   } finally { await new Promise(resolve => http.close(resolve)); }
   assert.equal(made.status, 'ready'); assert.equal(made.httpStatus, 200); assert.equal(calls, 1); assert.equal(reserves, 1); assert.equal(made.result.modelLabel, 'Claude Sonnet 5.5'); n++;
   await store.close();
   const again = await openCardInsightStore({ dir: root, identity });
   const loaded = createCardInsight({ store: again });
   assert.equal(loaded.view(analysis).status, 'ready'); assert.equal(calls, 1); n++;
-  assert.deepEqual(await loaded.make(analysis), { status: 503, error: 'ai_disabled', message: '이 서버에서는 분석 문장 만들기가 꺼져 있습니다.' }); n++;
+  assert.deepEqual(await loaded.make(analysis), { status: 503, error: 'ai_disabled', message: '이 서버에서는 AI 분석이 꺼져 있습니다.' }); n++;
   assert.deepEqual(await createCardInsight({ store: again, provider: { ask: () => { throw Error('한도 초과에서 호출하면 안 됩니다.'); } }, reserve: async () => false }).make(analysis), { status: 429, error: 'hourly_cap', message: '시간당 생성 한도를 넘었습니다. 잠시 뒤 다시 눌러 주세요.' }); n++;
   assert.equal(loaded.view({ ...analysis, facts: [{ ...analysis.facts[0], values: { current: 15 } }, ...analysis.facts.slice(1)] }).status, 'stale'); n++;
   assert.equal(loaded.view(analysis).result.summary.evidence[0], '지금 14명'); n++;
