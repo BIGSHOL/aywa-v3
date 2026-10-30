@@ -7,7 +7,7 @@
   const UUID = /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i, FAMILY = /^[a-z][a-z-]{1,39}$/;
   // 서버 해석기(v2-screen-record-open.mjs resolve)가 처리 화면을 아는 영역 — 여기에 없으면 입구는 종전대로(작업 공간 서랍).
   const FAMILIES = new Set(['approvals', 'enrollment', 'consultations', 'students', 'withdrawals', 'meetings', 'staff', 'classes', 'withdrawal-reports',
-    'attendance', 'makeups', 'lesson-reports', 'billing', 'textbook-requests', 'expense-requests', 'video-homework']);
+    'attendance', 'makeups', 'lesson-reports', 'billing', 'textbook-requests', 'expense-requests', 'video-homework', 'class-review', 'tasks-notifications']);
   const href = (family, id) => `#v2-record-open?family=${encodeURIComponent(family)}&id=${encodeURIComponent(id)}`;
   const supports = (family, id) => FAMILIES.has(family) && UUID.test(String(id || ''));
   let api = null, focusRun = 0;

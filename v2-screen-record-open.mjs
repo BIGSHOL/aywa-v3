@@ -20,8 +20,28 @@ const DETAIL = {
   classes: ['classes', 'classes', id => `/classes/${id}`],
 };
 
+// 2.0 업무(staff_tasks)의 link = 2.0이 그 업무를 처리하는 주소 — 첫 마디가 3.0 화면 id, 나머지 경로는 v2path, 쿼리는 그대로.
+// 영상 제출 현황은 2.0 주소가 둘(관리자 /lesson-reports/video-homework · 강사 /onescreen/video-homework)이라 그 화면이 v2path로 가린다.
+function routeOf(link) {
+  let u; try { u = new URL(String(link || ''), 'http://x'); } catch { return null; }
+  const parts = u.pathname.split('/').filter(Boolean); if (!parts.length || !/^[a-z][a-z-]{1,30}$/.test(parts[0])) return null;
+  const screen = /\/video-homework$/.test(u.pathname) ? 'video-homework' : parts[0];
+  const params = Object.fromEntries(u.searchParams);
+  if (parts.length > 1 || screen !== parts[0]) params.v2path = u.pathname;
+  return at(screen, params);
+}
+
 async function resolve(sql, t, family, id) {
   const one = async rows => (await rows)[0] ?? null;
+  // 업무 기록(결석 확인 전화 · 영상 업로드 확인 · 미배정 영상 …) = 그 업무의 2.0 처리 주소. 원생 업무면 그 원생 줄을 강조.
+  // 미발송 보고서는 2.0 주소가 원스크린 첫 화면뿐이라 보고서 기록으로 넘겨 그날·반·원생까지 연다.
+  const task = await one(sql`select kind, subject_id::text sid, link from public.staff_tasks where tenant_id=${t} and id=${id}`);
+  if (task) {
+    if (task.kind === 'unsent_report' && task.sid) return resolve(sql, t, 'lesson-reports', task.sid);
+    const target = routeOf(task.link); if (!target) return null;
+    const student = task.sid ? await one(sql`select name from public.students where tenant_id=${t} and id::text=${task.sid}`) : null;
+    return { target, focus: student ? [student.name] : [] };
+  }
   if (DETAIL[family]) {
     const [table, screen, route] = DETAIL[family];
     const hit = await one(sql`select 1 from ${sql('public.' + table)} where tenant_id=${t} and id=${id}`);
@@ -55,6 +75,10 @@ async function resolve(sql, t, family, id) {
     case 'textbook-requests': { // 교재 요청 = 수납관리 › 교재(등록·납부·주문을 하는 곳), 그 원생 이름으로 걸러서
       const r = await one(sql`select student_name, book_name from public.textbook_orders where tenant_id=${t} and id=${id}`);
       return r ? { target: at('billing', { tab: 'textbooks', q: r.student_name }), focus: [r.student_name, r.book_name].filter(Boolean) } : null;
+    }
+    case 'class-review': { // 만족도 판정 대기 글 = 직원 평가의 그 글 판정 창(반영·제외 저장)
+      const hit = await one(sql`select 1 from public.teacher_satisfaction_judgments where tenant_id=${t} and id=${id}`);
+      return hit ? { target: at('class-review', { judgment: id }) } : null;
     }
     case 'expense-requests': {
       const hit = await one(sql`select 1 from public.expenses where tenant_id=${t} and id=${id}`);
