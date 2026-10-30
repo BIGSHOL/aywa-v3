@@ -2,6 +2,8 @@
    Wide: one aligned ledger row per option under labeled columns (numbers right, tabular). Narrow (data-stacked):
    the name on its own line, then every value with its own label, wrapping without horizontal scroll. */
 .cpick{display:flex;flex-direction:column;gap:8px;min-width:0}
+/* 숨은 값 칸이 빈 상자로 남아 gap만큼 키를 늘리면 옆 버튼과 높이가 어긋난다(원장 10-30 "높낮이 어색한곳") */
+.cpick-inputs{display:contents}
 .cpick .cpick-label{display:block;font-size:var(--ax-sm,16px);font-weight:500;color:var(--ax-ink,#121212)}
 .cpick .cpick-label em{color:var(--ax-danger,#a12f2f);font-style:normal}
 .cpick .cpick-label span{margin-left:6px;font-size:var(--ax-xs,14px);font-weight:400}
