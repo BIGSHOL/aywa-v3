@@ -23,7 +23,10 @@
 .ws-kpi-title em{font-style:normal;font-size:var(--ax-xs);font-weight:600;white-space:nowrap}
 .ws-kpi-tip{position:fixed;z-index:1000;width:max-content;max-width:min(28rem,calc(100vw - 16px));padding:10px 12px;border:1px solid var(--ax-line);border-radius:9px;background:#fff;color:var(--ax-ink);box-shadow:0 8px 24px rgba(23,33,62,.16);font-size:14px;line-height:1.55;white-space:pre-line;overflow-wrap:anywhere;pointer-events:none}
 .ws-kpi-tip[hidden]{display:none}
-.ws-kpi>strong,.ws-kpi-change{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ws-kpi>strong{font-size:clamp(16px,1.5vw,22px);white-space:normal;overflow:visible;overflow-wrap:anywhere}
+.ws-kpi-change{white-space:normal;overflow:visible;overflow-wrap:anywhere}
+.ws-error[data-hint]{position:relative;display:inline-block;cursor:help}
+.ws-error[data-hint]:is(:hover,:focus-visible)::after{content:attr(data-hint);position:absolute;z-index:30;left:0;top:calc(100% + 6px);width:max-content;max-width:min(28rem,calc(100vw - 24px));padding:8px 10px;border:1px solid var(--ax-line);border-radius:7px;background:#fff;box-shadow:0 8px 24px rgba(23,33,62,.16);color:var(--ax-ink);font:var(--ax-xs)/1.5 sans-serif;white-space:pre-wrap;overflow-wrap:anywhere;pointer-events:none}
 .ws-kpi-change{font-weight:600}.ws-kpi-change.good{color:var(--ax-good)}.ws-kpi-change.bad{color:var(--ax-bad)} /* 좋아짐 = 빨강 · 나빠짐 = 파랑(원장 10-28) */
 .ws-kpi-cleanup{display:block;white-space:normal;color:var(--ax-ink);font-weight:500;line-height:1.4}
 .ws-kpi-spark{display:flex;height:40px;margin-top:2px}.ws-kpi-spark .chart-line{flex:1 1 auto}

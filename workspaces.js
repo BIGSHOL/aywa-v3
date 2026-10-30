@@ -19,6 +19,7 @@ window.createWorkspaces = function createWorkspaces(api) {
   const LOCAL=new Map();
   const pill=(text,tone='')=>`<span class="ax-chip ${tone}">${h(text)}</span>`;
   const btn=(text,action,attrs='',primary=false)=>`<button type="button" class="button ${primary?'primary':''}" data-ws="${action}" ${attrs}>${h(text)}</button>`;
+  const safeError=(error,message)=>{const hint=String(error?.message||'').trim();return {message,html:`<span class="ws-error"${hint?` data-hint="${h(hint)}" tabindex="0"`:''}>${h(message)}</span>`};};
   const norm=t=>String(t??'').toLowerCase().replace(/\s+/g,'');
   // 기록 날짜는 M/D(연월은 yy.mm)로 보인다(원장 10-28). 다른 모양의 값은 그대로.
   const dateText=v=>{const s=String(v??'');return /^\d{4}-\d{2}-\d{2}$/.test(s)?`${Number(s.slice(5,7))}/${Number(s.slice(8,10))}`:/^\d{4}-\d{2}$/.test(s)?api.yymm(s):s;};
@@ -27,7 +28,7 @@ window.createWorkspaces = function createWorkspaces(api) {
   // 기록의 '내용'(detail) 칸 이름 — 영역마다 그 칸이 담는 것. 없으면 '내용'.
   const DETAIL_NAME={calendar:'시각',billing:'청구월',staff:'직책',inventory:'모델명',documents:'분류','expense-requests':'분류',textbooks:'분류',enrollment:'학교·학년',newcomers:'학교·학년',students:'학교·학년',exams:'시험',attendance:'반',makeups:'반','class-review':'반','withdrawal-reports':'구분',shuttle:'노선'};
   // 사람 이름이 아닌 첫 칸은 그 기록의 대상(반·문서·업무 등)으로 부른다.
-  const NAME_HEAD={calendar:'일정',classes:'반',timetable:'반',textbooks:'교재',meetings:'회의',documents:'문서',support:'요청',dashboard:'브리핑',integrations:'연동',slack:'규칙','owner-settings':'항목','class-sheets':'반',onescreen:'첫 원생',inventory:'자산ID',shuttle:'원생','expense-requests':'지출',approvals:'문서'};
+  const NAME_HEAD={calendar:'일정',classes:'반',timetable:'반',textbooks:'교재',meetings:'회의',documents:'문서',support:'요청',dashboard:'브리핑',integrations:'연동',slack:'규칙','owner-settings':'항목','class-sheets':'반',onescreen:'첫 원생',inventory:'자산ID',shuttle:'원생','expense-requests':'지출',approvals:'문서','public-sites':'항목'};
   // 2.0 목록과 같은 열 순서. 자료에 있는 3.0 전용 칸은 이 순서 뒤에 둔다.
   const SUBJECT_FIRST=new Set(['video-homework','timetable','classes','textbooks','lesson-reports','exams','consultations','enrollment','withdrawal-reports']);
   const COLUMN_ORDER={
@@ -139,7 +140,7 @@ window.createWorkspaces = function createWorkspaces(api) {
         await Promise.all(Array.from({length:Math.min(6,count-1)},worker));
         Object.assign(slot,{status:'ready',items:pages.flat(),total});
       }
-    }catch(e){if(ctrl.signal.aborted)return;Object.assign(slot,{status:'error',message:e?.message||'기록을 불러오지 못했습니다.'});ctrl.abort();} // 한 쪽이 실패하면 남은 요청도 멈춘다
+    }catch(e){if(ctrl.signal.aborted)return;Object.assign(slot,{status:'error',...safeError(e,'기록을 불러오지 못했습니다. 다시 시도해 주세요.')});ctrl.abort();} // 한 쪽이 실패하면 남은 요청도 멈춘다
     if(slot.key!==key||fullKey(id)!==key)return;
     if(slot.status==='toomany'&&arranged(id)){delete state.sort[id];delete state.cols[id];toast(tooMany(slot.total));}
     if(api.getPage()===`workspace-${id}`)refreshMain(id);
@@ -157,7 +158,7 @@ window.createWorkspaces = function createWorkspaces(api) {
         if(!res.ok||!Array.isArray(json?.items))throw new Error(typeof json?.message==='string'?json.message:'단계별 기록을 불러오지 못했습니다.');
         return [f.id,json.items];}));
       Object.assign(slot,{status:'ready',cols:new Map(lists)});
-    }catch(e){Object.assign(slot,{status:'error',message:e?.message||'단계별 기록을 불러오지 못했습니다.'});}
+    }catch(e){Object.assign(slot,{status:'error',...safeError(e,'단계별 기록을 불러오지 못했습니다. 다시 시도해 주세요.')});}
     if(api.getPage()===`workspace-${id}`&&boardMode(id))refreshMain(id);
   }
   // 업무 흐름·기록 링크로 연 기록은 목록 맨 위에 둔다 — 쪽이 많은 목록에서도 그 줄이 화면 안에 있다. 걸러보기와 맞지 않거나 검색 중이면 세우지 않는다.
@@ -188,8 +189,8 @@ window.createWorkspaces = function createWorkspaces(api) {
       if(slot.key!==key)return;
       if(response.ok&&json&&Array.isArray(json.items))Object.assign(slot,{status:'ready',data:json});
       else if(!json||[404,405,501].includes(response.status)&&json?.error!=='unknown_family'){Object.assign(slot,{status:'unsupported'});state.unsupported=true;}
-      else Object.assign(slot,{status:'error',message:typeof json.message==='string'?json.message:'기록을 불러오지 못했습니다.'});
-    }catch{if(controller.signal.aborted)return;Object.assign(slot,{status:'error',message:'기록을 불러오지 못했습니다. 다시 시도해 주세요.'});}
+      else Object.assign(slot,{status:'error',...safeError(typeof json?.message==='string'?new Error(json.message):null,'기록을 불러오지 못했습니다. 다시 시도해 주세요.')});
+    }catch(e){if(controller.signal.aborted)return;Object.assign(slot,{status:'error',...safeError(e,'기록을 불러오지 못했습니다. 다시 시도해 주세요.')});}
     if(api.getPage()===`workspace-${id}`)refreshMain(id);
   }
   function visibleRecords(id){
@@ -302,9 +303,9 @@ window.createWorkspaces = function createWorkspaces(api) {
     const search=data(id)&&kind!=='settings'?`<div class="ws-search">${toggle}<input type="search" id="ws-q-${h(id)}" data-ws-q="${h(id)}" value="${h(state.q[id]||'')}" maxlength="100" aria-label="${h(a.label)} 기록 검색" placeholder="이름·내용·상태 검색" autocomplete="off"><span>${counted}</span></div>`:'';
     const retry=btn('다시 시도','reload',`data-id="${h(id)}"`),partial=Number(data(id)?.totalRecords||0)>previews(id).length;
     let note='';
-    if(board)note=bslot?.status==='error'?`<p class="ax-note">${h(bslot.message)} ${retry}</p>`:'';
-    else if(fullMode(id)&&!fullReady(id))note=`<p class="ax-note" role="status">${fslot?.key===fullKey(id)&&fslot.status==='error'?`${h(fslot.message)} ${btn('다시 시도','reload-full',`data-id="${h(id)}"`)}`:'정렬·거르기할 기록을 모두 불러오는 중입니다.'}</p>`;
-    else if(partial&&(state.unsupported||ld.source==='preview'))note=`<p class="ax-note">${slot?.status==='error'?h(slot.message):state.unsupported?'전체 목록을 아직 불러올 수 없어 최근 기록만 보입니다.':'전체 기록을 불러오는 중입니다.'}${slot?.status==='error'?` ${retry}`:''}</p>`;
+    if(board)note=bslot?.status==='error'?`<p class="ax-note">${bslot.html} ${retry}</p>`:'';
+    else if(fullMode(id)&&!fullReady(id))note=`<p class="ax-note" role="status">${fslot?.key===fullKey(id)&&fslot.status==='error'?`${fslot.html} ${btn('다시 시도','reload-full',`data-id="${h(id)}"`)}`:'정렬·거르기할 기록을 모두 불러오는 중입니다.'}</p>`;
+    else if(partial&&(state.unsupported||ld.source==='preview'))note=`<p class="ax-note">${slot?.status==='error'?slot.html:state.unsupported?'전체 목록을 아직 불러올 수 없어 최근 기록만 보입니다.':'전체 기록을 불러오는 중입니다.'}${slot?.status==='error'?` ${retry}`:''}</p>`;
     let body;
     if(!data(id))body=emptyBody({key:'missing'},false);
     else if(board)body=previews(id).length||boardItems(id).length?flowView(a,previews(id)):emptyBody(st,false);
@@ -409,7 +410,7 @@ window.createWorkspaces = function createWorkspaces(api) {
   }
   // menu = 정렬·거르기를 받는 목록(작업 공간 영역 id) — 없으면 머리는 이름만. group = 줄 묶음 띠(날짜순의 달).
   function tableHtml({shape,rows,nameLabel='이름',main,attrs=()=>'',menu='',group=null,head=true,cls='',key='',details=null}){
-    const {cols,name,filler}=shape,subject=cols.find(c=>c.key==='subject'),lead=cols.filter(c=>c.key==='subject'||(menu==='classes'&&c.key==='f:구분')||(menu==='inventory'&&c.key==='f:No')||(menu==='shuttle'&&c.key==='detail')),rest=cols.filter(c=>!lead.includes(c)),sort=menu?sortOf(menu):{col:'',dir:''},on=new Set(menu?colOn(menu).map(([k])=>k):[]),span=cols.length+1+(filler?1:0);
+    const {cols,name,filler}=shape,subject=cols.find(c=>c.key==='subject'),lead=cols.filter(c=>c.key==='subject'||(menu==='classes'&&c.key==='f:구분')||(menu==='inventory'&&c.key==='f:No')||(menu==='shuttle'&&c.key==='detail')),kind=lead.find(c=>c.key==='f:구분'),rest=cols.filter(c=>!lead.includes(c)),sort=menu?sortOf(menu):{col:'',dir:''},on=new Set(menu?colOn(menu).map(([k])=>k):[]),span=cols.length+1+(filler?1:0);
     const th=c=>{const al=c.align||'l';
       if(!menu)return `<th scope="col" class="al-${al}"><span class="ws-cut">${h(c.label)}</span></th>`;
       const dir=sort.col===c.key?sort.dir:'',f=on.has(c.key),open=colMenu.id===menu&&colMenu.col===c.key;
@@ -578,7 +579,7 @@ window.createWorkspaces = function createWorkspaces(api) {
       const params=new URLSearchParams({q:q.slice(0,100),page:'1',pageSize:'50'});
       const res=await fetch(`/api/workspaces/${encodeURIComponent(a.id)}/records?${params}`,{headers:{Accept:'application/json'},signal});
       let json=null;try{json=await res.json();}catch{/* not served here */}
-      if(!res.ok||!json||!Array.isArray(json.items))throw new Error(typeof json?.message==='string'?json.message:'전체 기록을 불러오지 못했습니다. 불러온 목록에서만 찾습니다.');
+      if(!res.ok||!json||!Array.isArray(json.items))throw new Error('전체 기록을 불러오지 못했습니다. 불러온 목록에서만 찾습니다.');
       return {options:toOptions(json.items),filtered:Number(json.filteredTotal)||json.items.length};
     }};
     return {...out,remote,note:total>items.length?`불러온 ${items.length}건 표시 · 전체 ${total.toLocaleString('ko-KR')}건은 검색어로 찾습니다`:`${items.length}건`};
@@ -788,7 +789,7 @@ window.createWorkspaces = function createWorkspaces(api) {
   function colListHtml(){
     const id=colMenu.id,f=fullSlot(id);
     if(cannotArrange(id))return `<p class="ws-colpop-note">${h(tooMany(f?.total??knownCount(id)))}</p>`;
-    if(f?.status==='error'&&!completeBase(id))return `<p class="ws-colpop-note">${h(f.message)}</p>`;
+    if(f?.status==='error'&&!completeBase(id))return `<p class="ws-colpop-note">${f.html}</p>`;
     const vals=colValues();if(vals===null)return '<p class="ws-colpop-note" role="status">값을 불러오는 중입니다.</p>';
     const sel=state.cols[id]?.[colMenu.col],on=v=>!Array.isArray(sel)||sel.includes(v),q=norm(colMenu.q),shown=q?vals.filter(([v])=>norm(v||'빈 칸').includes(q)):vals;
     if(!shown.length)return `<p class="ws-colpop-note">${vals.length?'맞는 값이 없습니다.':'선택할 값이 없습니다.'}</p>`;
@@ -1001,7 +1002,7 @@ window.createWorkspaces = function createWorkspaces(api) {
     const root=attachRoot(scope),st=attachState.get(scope),box=root?.querySelector('.ws-att-results');if(!box||!st)return;
     if(!st.open){box.hidden=true;root.querySelector('[data-attach-q]')?.setAttribute('aria-expanded','false');return;}
     const picked=attachValues(root);
-    box.innerHTML=st.loading&&!st.groups?'<p class="ws-att-note" role="status">찾는 중…</p>':st.error?`<p class="ws-att-note" role="alert">${h(st.error)}</p>`:!st.groups?.length?'<p class="ws-att-note">찾은 기록이 없습니다.</p>':st.groups.map(g=>attachGroup(g.familyId,g.items,{mode:'pick',picked,total:g.total,more:g.total>g.items.length&&Boolean(st.q)})).join('');
+    box.innerHTML=st.loading&&!st.groups?'<p class="ws-att-note" role="status">찾는 중…</p>':st.error?`<p class="ws-att-note" role="alert">${st.error.html}</p>`:!st.groups?.length?'<p class="ws-att-note">찾은 기록이 없습니다.</p>':st.groups.map(g=>attachGroup(g.familyId,g.items,{mode:'pick',picked,total:g.total,more:g.total>g.items.length&&Boolean(st.q)})).join('');
     box.hidden=false;root.querySelector('[data-attach-q]')?.setAttribute('aria-expanded','true');api.attachScroll?.();
   }
   // 빈 칸 = 그 영역 화면에서 연 요청이면 그 영역의 최근 기록, 아니면 안내만. 낱말이 있으면 모든 영역에서 찾는다(잠깐 멈춘 뒤 · 앞 요청은 취소).
@@ -1012,13 +1013,13 @@ window.createWorkspaces = function createWorkspaces(api) {
     st.loading=true;paintAttachResults(scope);
     st.timer=setTimeout(async()=>{const ctrl=new AbortController();st.ctrl=ctrl;const q=st.q,first=root.dataset.attachFirst||'';
       try{const r=await fetch(`/api/workspaces/records/search?q=${encodeURIComponent(q)}${first?`&first=${encodeURIComponent(first)}`:''}`,{signal:ctrl.signal,headers:{Accept:'application/json'}});const b=await r.json().catch(()=>null);if(ctrl.signal.aborted||st.q!==q)return;if(!r.ok)throw new Error(b?.message||'기록을 찾지 못했습니다.');st.groups=(b.groups||[]).filter(g=>has(g.familyId));st.error='';}
-      catch(e){if(ctrl.signal.aborted)return;st.groups=null;st.error=e?.message||'기록을 찾지 못했습니다.';}
+      catch(e){if(ctrl.signal.aborted)return;st.groups=null;st.error=safeError(e,'기록을 찾지 못했습니다. 다시 시도해 주세요.');}
       st.loading=false;paintAttachResults(scope);},200);
   }
   async function attachMore(scope,fam){
     const st=attachState.get(scope);if(!st?.q)return;
     try{const r=await fetch(`/api/workspaces/${encodeURIComponent(fam)}/records?q=${encodeURIComponent(st.q)}&pageSize=50`,{headers:{Accept:'application/json'}});const b=await r.json().catch(()=>null);if(!r.ok)throw new Error(b?.message||'기록을 찾지 못했습니다.');const g=st.groups?.find(x=>x.familyId===fam);if(g)g.items=b.items||[];paintAttachResults(scope);}
-    catch(e){toast(e?.message||'기록을 찾지 못했습니다.');}
+    catch(e){st.error=safeError(e,'기록을 찾지 못했습니다. 다시 시도해 주세요.');paintAttachResults(scope);}
   }
   // 붙인 기록 = 영역별 묶음(고른 순서) · 같은 열 규칙. 숨은 값(name="attach")은 줄 안에 있다.
   function paintAttachPicked(root){
