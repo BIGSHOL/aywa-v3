@@ -2,7 +2,7 @@
 import { ISO_AT, PRIORITY, family, field, latest, metric, monthlyTrend, record, signal } from './domain-snapshot-core.mjs';
 
 // src/features/withdrawals/types.ts REASON_LABEL·REASON_ALIAS와 같은 표(verify-domain-snapshot.mjs가 원본과 대조).
-export const REASON_LABEL = { dissatisfaction: '수업·강사', grades: '성적', motivation: '원생 상태', method: '공부 방법 변경', competitor: '타 학원으로 이동', schedule: '시간/일정', financial: '경제적 이유', career: '진로·진학', peers: '가족·친구', illness: '질병', advised: '권고퇴원', relocation: '이사', graduated: '졸업', other: '기타' };
+export const REASON_LABEL = { dissatisfaction: '수업·강사', grades: '성적', motivation: '학생 상태', method: '공부 방법 변경', competitor: '타 학원으로 이동', schedule: '시간/일정', financial: '경제적 이유', career: '진로·진학', peers: '가족·친구', illness: '질병', advised: '권고퇴원', relocation: '이사', graduated: '졸업', other: '기타' };
 const REASON_ALIAS = { dissatisfied: 'dissatisfaction', unsatisfied: 'dissatisfaction', moved: 'relocation', graduate: 'graduated', cost: 'financial', money: 'financial' };
 export const normalizeReason = raw => !raw ? null : raw in REASON_LABEL ? raw : REASON_ALIAS[raw] ?? 'other';
 // src/features/withdrawals/system-bulk.ts — 수업 기록 없는 장부 정리 퇴원은 어디서도 세지 않는다.

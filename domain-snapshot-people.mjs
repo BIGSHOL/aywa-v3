@@ -3,7 +3,7 @@ import { PRIORITY, family, field, latest, metric, monthlyTrend, record, signal, 
 import { billingName, loadBillingLines, projectBillingLines } from './billing-lines.mjs';
 
 // src/lib/auth/role-hierarchy.ts ROLE_LABEL과 같은 표.
-export const ROLE_LABEL = { master: '원장', admin: '관리자', manager: '매니저', accountant: '회계', counselor: '상담사', teacher: '강사', viewer: '참관', student: '원생' };
+export const ROLE_LABEL = { master: '원장', admin: '관리자', manager: '매니저', accountant: '회계', counselor: '상담사', teacher: '강사', viewer: '참관', student: '학생' };
 // 2.0 청구 상태 원문(src/features/billing/status-color.ts).
 const INVOICE = { paid: '납부완료', partial: '부분납부', unpaid: '미납', void: '무효', refunded: '환불' };
 const BOOK = { requested: '요청', ordered: '주문', delivered: '전달', billed: '청구', paid: '납부 완료' };
