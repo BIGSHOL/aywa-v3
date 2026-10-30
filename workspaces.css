@@ -5,6 +5,9 @@
 .ws-heading h1+p{font-size:var(--ax-sm);margin-top:8px;max-width:72ch}
 .ws-critical{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.2fr);gap:16px;align-items:stretch}
 .ws-critical:not(:has(.ws-trend)){grid-template-columns:minmax(0,1fr)}
+/* 추세 카드가 있으면 카드 줄을 온전히 쓰고 그래프는 그 아래 전체 폭(옆에 두면 카드가 좁아져 제목·값이 잘린다). */
+.ws-critical:has(.ws-kpi){grid-template-columns:minmax(0,1fr)}
+.ws-critical:has(.ws-kpi) .ws-trend .live-chart{display:block;width:100%;max-height:230px}
 .ws-metrics{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,180px),1fr));gap:10px}
 .ws-metric{display:flex;flex-direction:column;gap:4px;min-width:0;padding:14px 16px;border:1px solid var(--ax-line);border-radius:8px}
 .ws-metric span{font-size:var(--ax-xs)}

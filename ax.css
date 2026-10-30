@@ -390,6 +390,18 @@
 .chart-line svg{position:absolute;inset:0;display:block;width:100%;height:100%}
 .chart-line svg line{stroke:var(--ax-line);stroke-width:1}
 .chart-line svg polyline{stroke:var(--ax-primary);stroke-width:2;fill:none}
+/* lineChart(axis) — 그래프에 기간·값을 직접: 왼쪽 세로 눈금 · 아래 시작·중간·끝 기간 · 첫·끝 값. 라벨은 포인터를 받지 않는다(팝오버·키보드 그대로). */
+.chart-axis{display:grid;grid-template-columns:auto minmax(0,1fr);grid-template-rows:minmax(0,1fr) auto;column-gap:6px;row-gap:4px;height:100%;min-height:0;padding-top:16px;font-size:var(--ax-xs);color:var(--ax-ink)}
+.chart-axis-y{position:relative;min-width:2.8em}
+.chart-axis-y span,.chart-axis-x span{position:absolute;white-space:nowrap;opacity:.72;pointer-events:none}
+.chart-axis-y span{right:0;transform:translateY(-50%)}
+.chart-axis-plot{position:relative;min-width:0;min-height:0}
+.chart-axis-plot>.chart-line{height:100%}
+.chart-axis-grid{position:absolute;left:0;right:0;border-top:1px dashed var(--ax-line);pointer-events:none}
+.chart-axis-val{position:absolute;transform:translate(-50%,-150%);font-weight:700;color:var(--ax-primary);white-space:nowrap;pointer-events:none}
+.chart-axis-val[data-side=start]{transform:translate(-4px,-150%)}.chart-axis-val[data-side=end]{transform:translate(calc(-100% + 4px),-150%)}
+.chart-axis-x{position:relative;grid-column:2;height:1.4em}
+.chart-axis-x span{transform:translateX(-50%)}.chart-axis-x span[data-side=start]{transform:none}.chart-axis-x span[data-side=end]{transform:translateX(-100%)}
 .chart-pt{position:absolute;top:0;bottom:0}
 .chart-pt::before{content:'';position:absolute;top:0;bottom:0;left:var(--x);width:1px;background:var(--ax-line);opacity:0}
 .chart-pt i{position:absolute;left:var(--x);top:var(--y);width:9px;height:9px;margin:-4.5px 0 0 -4.5px;border:2px solid #fff;border-radius:50%;background:var(--ax-primary);box-shadow:0 0 0 1px var(--ax-primary);opacity:0}

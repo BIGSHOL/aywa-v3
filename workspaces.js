@@ -244,8 +244,8 @@ window.createWorkspaces = function createWorkspaces(api) {
   document.addEventListener('keydown',e=>{if(e.key==='Escape')hideKpiTip();});
   document.addEventListener('scroll',hideKpiTip,true);addEventListener('resize',hideKpiTip);addEventListener('hashchange',hideKpiTip);
   function critical(a){
-    // KPI 추세 카드가 있으면 6개까지, 누적 건수 막대는 그리지 않는다(원장 10-28 "전체 몇건 … 아무 도움이 안됨"). 공통 설명은 카드 아래 한 번.
-    const all=d0=>d0?.metrics||[],d=data(a.id),isKpi=all(d).some(m=>m.kind==='kpi'),metrics=isKpi?all(d).filter(m=>m.kind==='kpi'):all(d).slice(0,4),trend=isKpi?null:d?.trend;
+    // KPI는 추세 카드(큰 숫자·비교·작은 추세선)를 먼저 — 있으면 숫자 칸은 싣지 않는다(원장 10-28 "전체 몇건 … 아무 도움이 안됨"). 오른쪽 그래프는 기간·값 라벨과 함께 늘 둔다.
+    const all=d0=>d0?.metrics||[],d=data(a.id),isKpi=all(d).some(m=>m.kind==='kpi'),metrics=isKpi?all(d).filter(m=>m.kind==='kpi'):all(d).slice(0,4),trend=d?.trend;
     if(!metrics.length&&!trend?.points?.length)return '';
     const value=m=>m.value===null||m.value===undefined?'기록 없음':`${fmt(m.value)}${m.unit||''}`;
     const points=(trend?.points||[]).map(p=>trend.granularity==='day'?{date:p.date,value:p.value}:{month:p.date,value:p.value});
@@ -253,7 +253,7 @@ window.createWorkspaces = function createWorkspaces(api) {
     const fid=state.facet[a.id]||'',fl=fid?facetsOf(a).find(f=>f.id===fid)?.label||'':'',months=points.map(p=>p.month).filter(Boolean),cur=db.meta.month;
     const active=(/^month:\d{4}-\d{2}$/.test(fid)?[fid.slice(6)]:fid==='this-year'||/올해/.test(fl)?months.filter(m=>m.slice(0,4)===cur.slice(0,4)):/this-month/.test(fid)||/이번 달/.test(fl)?[cur]:[]).filter(m=>months.includes(m));
     const basis=`${active.length?`${active.length>1?`${api.yymm(active[0])}~${api.yymm(active.at(-1))}`:api.yymm(active[0])} 강조 · `:''}전체 기록 · 아래 구분과 무관`;
-    const chartHtml=!points.length?'':trend.granularity==='day'?`<div class="ws-line">${api.lineChart(points,{key:'value',label:trend.label,unit:trend.unit||''})}</div>`:api.chart(points.map(p=>({...p,label:api.yymm(p.month)})),'value',trend.unit==='원'?'만원':trend.unit||'',{label:trend.label,...(active.length?{active}:{})});
+    const chartHtml=!points.length?'':trend.granularity==='day'?`<div class="ws-line">${api.lineChart(points,{key:'value',label:trend.label,unit:trend.unit||'',axis:true})}</div>`:api.chart(points.map(p=>({...p,label:api.yymm(p.month)})),'value',trend.unit==='원'?'만원':trend.unit||'',{label:trend.label,ends:true,...(active.length?{active}:{})});
     return `<section class="ws-critical" aria-label="핵심 지표">${metrics.length?`<div class="ws-metrics"${isKpi?` style="--kpi-n:${metrics.length<=6?metrics.length:Math.ceil(metrics.length/2)};--kpi-half:${metrics.length<=6?Math.ceil(metrics.length/2):3}"`:''}>${metrics.map(m=>m.kind==='kpi'?kpiCard(m):`<div class="ws-metric"><span>${h(m.label)}</span><strong>${h(value(m))}</strong>${m.detail?`<small>${h(m.detail)}</small>`:''}</div>`).join('')}</div>`:''}${chartHtml?`<div class="ws-trend"><h2>${h(trend.label||'추이')}</h2><p class="ax-note ws-trend-basis">${h(basis)}</p>${chartHtml}</div>`:''}</section>`;
   }
   const byPriority=(x,y)=>(PRIORITY_ORDER.indexOf(x.priority)+1||9)-(PRIORITY_ORDER.indexOf(y.priority)+1||9);
