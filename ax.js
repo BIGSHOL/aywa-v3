@@ -4,7 +4,7 @@
    No canned answer is ever shown in its place; failures are reported and can be retried. */
 window.createOwnerWorkspace = function createOwnerWorkspace(api) {
   'use strict';
-  const {db,h,fmt,won,icon,chart,dialog,navigate,render,toast}=api;
+  const {db,h,fmt,won,icon,dialog,navigate,render,toast}=api;
   const $=s=>document.querySelector(s);
   const current=()=>db.trend.find(t=>t.month===db.meta.month);
   const total=(rows,key)=>rows.reduce((n,r)=>n+Number(r[key]||0),0);
@@ -69,6 +69,9 @@ window.createOwnerWorkspace = function createOwnerWorkspace(api) {
   // 짧은 고르기도 공용 선택창 하나로(원장 10-28 "모든 드랍다운에서 이렇게 정렬된 드랍다운 서식이 일치될 수 있도록"). 선택창을 못 그리면 기존 칸 그대로.
   const choicePicker=(c,fallback)=>{const CP=window.ContextPicker;if(!CP)return fallback;try{return CP.html({id:c.id,name:c.name,label:c.label,required:c.required,clearable:false,selected:[c.selected].filter(Boolean),attrs:c.attrs,...CP.lists.choices({items:c.items,columns:c.columns})});}catch{return fallback;}};
   const spark=(rows,key,label,value)=>`<span class="ax-trend">${api.lineChart(rows,{key,label,value,basis:'청구월 기준'})}<span class="ax-trend-months" aria-hidden="true">${rows.map(r=>`<span>${api.yymm(r.month)}</span>`).join('')}</span></span>`;
+  const issueTrend=()=>{const rows=db.trend.filter(t=>db.months.includes(t.month)).slice(-6),last=rows.at(-1),prev=rows.at(-2);if(!last)return '';
+    const delta=prev?last.payingStudents-prev.payingStudents:0;
+    return `<section class="ax-issue-mini" aria-label="최근 청구 대상 원생 추세"><div><strong>청구 대상 ${fmt(last.payingStudents)}명</strong><span>${prev?`지난달 대비 ${delta>0?'+':''}${fmt(delta)}명`:'최근 기록'}</span></div>${spark(rows,'payingStudents','청구 대상 원생',v=>`${fmt(v)}명`)}${button('추세 보기','navigate','finance')}</section>`;};
   function issueSignal(issue){
     return `<button type="button" class="ax-signal" data-ax="focus-issue" data-id="${issue.id}"><span class="ax-signal-kind">${pill(issue.priority,issue.priority==='결정 필요'?'amber':'blue')}<span>${h(issue.signal)}</span></span><strong class="ax-signal-value">${h(issue.value)}</strong><span class="ax-signal-title">${h(issue.note||issue.title)}</span><span class="ax-signal-go">근거 보기 ${icon('down')}</span></button>`;
   }
@@ -113,7 +116,7 @@ window.createOwnerWorkspace = function createOwnerWorkspace(api) {
   }
   function issueSection(issue){
     const related=requestsFor(issue.id);
-    return `<article class="ax-issue" id="ax-issue-${issue.id}" tabindex="-1" aria-labelledby="ax-issue-${issue.id}-title"><header><div class="ax-issue-meta">${pill(issue.category)}${pill(issue.priority,['결정 필요','확인 필요'].includes(issue.priority)?'amber':issue.priority==='변화 감지'?'blue':'')}${pill(issueState(issue.id),issueState(issue.id)==='결과 도착'?'green':'')}</div><h3 id="ax-issue-${issue.id}-title">${h(issue.title)}</h3><p class="ax-summary">${h(issue.summary)}</p><div class="ax-actions">${button('업무 요청','request',issue.id,true)}${button('AI 요청','ask',issue.id)}${button('슬랙 알림 미리보기','slack',issue.id)}</div></header><div class="ax-issue-body single">${issue.id==='enrollment'?`<section class="ax-records">${chart(db.trend.filter(t=>db.months.includes(t.month)),'payingStudents','명',{label:'청구 대상 원생'})}</section>`:recordList(issue)}</div>${related.length?`<section class="ax-linked"><h4>연결된 요청 ${related.length}건</h4>${related.map(requestRow).join('')}</section>`:''}<footer class="ax-issue-footer">${button(ui.read.has(issue.id)?'확인 취소':'확인함','read',issue.id,false,`id="ax-read-${issue.id}"`)}${button('보관','archive',issue.id,false,`id="ax-archive-${issue.id}"`)}</footer></article>`;
+    return `<article class="ax-issue" id="ax-issue-${issue.id}" tabindex="-1" aria-labelledby="ax-issue-${issue.id}-title"><header><div class="ax-issue-meta">${pill(issue.category)}${pill(issue.priority,['결정 필요','확인 필요'].includes(issue.priority)?'amber':issue.priority==='변화 감지'?'blue':'')}${pill(issueState(issue.id),issueState(issue.id)==='결과 도착'?'green':'')}</div><h3 id="ax-issue-${issue.id}-title">${h(issue.title)}</h3><p class="ax-summary">${h(issue.summary)}</p><div class="ax-actions">${button('업무 요청','request',issue.id,true)}${button('AI 요청','ask',issue.id)}${button('슬랙 알림 미리보기','slack',issue.id)}</div></header><div class="ax-issue-body single">${issue.id==='enrollment'?issueTrend():recordList(issue)}</div>${related.length?`<section class="ax-linked"><h4>연결된 요청 ${related.length}건</h4>${related.map(requestRow).join('')}</section>`:''}<footer class="ax-issue-footer">${button(ui.read.has(issue.id)?'확인 취소':'확인함','read',issue.id,false,`id="ax-read-${issue.id}"`)}${button('보관','archive',issue.id,false,`id="ax-archive-${issue.id}"`)}</footer></article>`;
   }
   function issueList(all){
     const available=FILTERS.filter(f=>!f[2]||all.some(i=>i.priority===f[2]));if(!available.some(f=>f[0]===ui.filter))ui.filter='all';
@@ -126,7 +129,7 @@ window.createOwnerWorkspace = function createOwnerWorkspace(api) {
   /* Record-domain coverage: what this prototype reads. It is not the full 2.0 feature list (see the catalog seam below). */
   function coverage(){
     const domains=[['수납',db.invoices.length,'finance'],['원생',db.students.length,'students'],['상담',db.admissions.length,'admissions'],['수업',db.classes.length,'classes'],['학습',db.learning.gradesCount,'learning'],['학부모',db.messages.length,'parents'],['직원',db.staff.length,'staff'],['차량',db.runs.length,'shuttle'],['업무',db.tasks.length,'approvals'],['결재',db.approvals.length,'approvals'],['교재·자산',db.textbooks.length+db.assetCount,'resources'],['일정',db.calendar.length,'calendar']];
-    return `<section class="ax-coverage"><div class="ax-section-head"><h2>영역별 기록 수</h2><span>‘기록 없음’은 문제가 없다는 뜻이 아닙니다.</span></div><div class="ax-domain-grid">${domains.map(([name,count,page])=>`<button type="button" data-ax="navigate" data-id="${page}"><strong>${name}</strong><span>${count?`기록 ${fmt(count)}건`:'기록 없음'}</span>${icon('chevron')}</button>`).join('')}</div></section>`;
+    return `<section class="ax-coverage"><div class="ax-section-head"><h2>업무 영역</h2></div><div class="ax-domain-grid">${domains.map(([name,count,page])=>`<button type="button" data-ax="navigate" data-id="${page}"><strong>${name}</strong><span>${count?`${fmt(count)}건`:'표시할 기록 없음'}</span>${icon('chevron')}</button>`).join('')}</div></section>`;
   }
   function home(){
     if(flowUI?.ready()&&flowRole()!=='owner')return flowUI.fullView();

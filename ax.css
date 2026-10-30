@@ -169,6 +169,11 @@
 .ax-record-list span{max-width:55%;font-size:var(--ax-xs);overflow-wrap:anywhere}
 .ax-record-list .icon{width:16px;flex-shrink:0}
 .ax-records>.ax-text-link{margin-top:8px}
+.ax-issue-mini{display:grid;grid-template-columns:max-content minmax(160px,1fr) max-content;align-items:center;gap:18px;min-height:80px}
+.ax-issue-mini>div:first-child{display:flex;flex-direction:column;gap:4px;font-size:var(--ax-sm)}
+.ax-issue-mini>div:first-child span{font-size:var(--ax-xs);color:#59606b}
+.ax-issue-mini .ax-trend{height:64px;min-height:64px;margin:0}
+@media(max-width:700px){.ax-issue-mini{grid-template-columns:1fr auto}.ax-issue-mini .ax-trend{grid-column:1/-1;grid-row:2}}
 .ax-linked{border-top:1px solid var(--ax-line);padding-top:16px}
 .ax-issue-footer{display:flex;align-items:center;flex-wrap:wrap;gap:10px;border-top:1px solid var(--ax-line);padding-top:16px;font-size:var(--ax-xs)}
 .ax-request-summary,.ax-coverage{border-top:1px solid var(--ax-line);padding-top:22px;margin-top:32px}
