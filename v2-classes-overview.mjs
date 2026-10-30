@@ -66,5 +66,5 @@ export async function classOverview({ sql, tenantId, importV2, R, params, readSe
     purpose: '운영 중인 반과 명단 인원, 담임 배정과 편성을 확인합니다.', path, columns, rows, summary, total, totalSeats,
     config: { courseCapacity: config.courseCapacity ?? {}, classCourse: config.classCourse ?? {}, classCapacity: config.classCapacity ?? {} },
     selected: { program: chosenProgram, course: chosenCourse },
-    note: '반 명단 인원은 2.0 수업목록의 오늘 명단 수입니다. 과정은 원장이 저장하기 전까지 미분류이며, 반 이름의 후보는 검토용입니다. 정규 반 4명 미만은 편성 검토 대상입니다.' };
+    note: '반 명단 인원은 수업목록의 오늘 명단 수입니다. 과정은 원장이 저장하기 전까지 미분류이며, 반 이름의 후보는 검토용입니다. 정규 반 4명 미만은 편성 검토 대상입니다.' };
 }
