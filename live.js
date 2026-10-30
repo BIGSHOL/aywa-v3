@@ -72,7 +72,9 @@
     const monthly=items.every(x=>isMonth(x.month));
     const grid=Array.from({length:ticks+1},(_,i)=>{const val=tick*i;return `<line class="grid-line" x1="${L}" x2="${W-R}" y1="${y(val)}" y2="${y(val)}"/><text x="${L-9}" y="${y(val)+4}" text-anchor="end">${label(val)}</text>`;}).join('')
       // 구간마다 흐린 점선 세로선(원장 10-28 "구간마다 점선 세로선을 그어서 쉽게 위치 파악") — 막대 뒤에.
-      +items.map((_,i)=>`<line class="col-line" x1="${L+step*(i+.5)}" x2="${L+step*(i+.5)}" y1="${T}" y2="${H-B}"/>`).join('');
+      +items.map((_,i)=>`<line class="col-line" x1="${L+step*(i+.5)}" x2="${L+step*(i+.5)}" y1="${T}" y2="${H-B}"/>`).join('')
+      // 세로축 단위(R4C-15) — 눈금 숫자 위에 한 번(만원 단위 축은 '만원').
+      +(unit?`<text class="axis-unit" x="${L-9}" y="${T-12}" text-anchor="end">${h(unit)}</text>`:'');
     // 진한 막대 = 고른 달(options.active: 달 하나 또는 목록) — 고른 달이 없으면 마지막(이번 달). 고른 달은 이름도 굵게.
     const picked=options.active?[].concat(options.active):null,on=(x,i)=>picked?picked.includes(x.month):i===items.length-1;
     const cols=items.map((x,i)=>{
