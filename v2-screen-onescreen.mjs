@@ -1,15 +1,16 @@
-// 2.0 화면 · 선생님 원스크린(수업보고서 작성·발송 포함) — 1단계 보기 동등 (V2-SCREENS.md). For a chosen teacher and day:
+// 2.0 화면 · 선생님 원스크린(수업보고서 작성·발송 포함). For a chosen teacher and day:
 // the classes of that day, the student × class rows, today's saved report (or the working session), the previous lesson,
 // attendance, send status and the parent preview, on the local copy (read-only). Rules follow 2.0's `getTeacherRoster`
 // (src/features/onescreen/server/roster.ts) in SQL; every judgement that 2.0 keeps as a pure function is imported as is
 // (importV2): enrolment filter, report↔row matching, exam parsing, attendance mark, send gate, ClassNote badge, send
-// status, report fields and title, month send calendar. Nothing here writes or sends.
+// status, report fields and title, month send calendar. Writes below use the Docker copy; external delivery is blocked.
 import { readFile } from 'node:fs/promises';
 import { activeBackup } from './full-db-paths.mjs';
 import { scrub } from './domain-snapshot-core.mjs';
 import { V2Error } from './v2-screens.mjs';
 import { loadOnescreenProps } from './v2-onescreen-roster.mjs';
 import { onescreenExtraActions } from './v2-onescreen-save-extra.mjs';
+import { runV2Server } from './v2-server-runner.mjs';
 import { lessonReportsActions } from './v2-lesson-reports-save.mjs';
 import { getTeachingClassIds } from './v2-screen-video-homework.mjs';
 import { loadRules as attendanceRules, readSettings as attendanceSettings } from './v2-screen-attendance.mjs';
@@ -168,6 +169,18 @@ export const screen = {
     // The v2-host server-action boundary (shims/server-action.ts): POST /api/v2/onescreen/<2.0 function> with { module, actor, args } —
     // 2.0's own call, its first argument being 2.0's input. Same checks and writes as above.
     saveLessonReport: { validate: raw => reportInput(hostCall(raw, 'features/onescreen/server/actions.ts')), run: async ({ sql, body, tenantId, importV2 }) => runSave(sql, tenantId, await rules(importV2), body) },
+    recordReportWriteTimings: {
+      validate(raw) {
+        if (!plain(raw) || raw.module !== 'features/onescreen/server/write-timing-actions.ts'
+          || !Array.isArray(raw.args) || raw.args.length !== 1 || !Array.isArray(raw.args[0]) || raw.args[0].length > 200) throw bad();
+        return { actor: uuid(raw.actor), items: raw.args[0] };
+      },
+      async run({ body, tenantId }) {
+        const { results: [result] } = await runV2Server({ tenantId, actorId: body.actor, mode: 'write',
+          steps: [{ module: 'features/onescreen/server/write-timing-actions.ts', fn: 'recordReportWriteTimings', args: [body.items] }] });
+        return result.value ?? null;
+      },
+    },
     saveAndQueueClassnote: { validate: raw => reportInput(hostCall(raw, 'features/onescreen/server/actions.ts')), run: async ({ sql, body, tenantId, importV2 }) => runSend(sql, tenantId, await rules(importV2), body) },
     setAttendanceCell: { validate: raw => attendanceInput(hostCall(raw, 'features/attendance/server/actions.ts')), run: async ({ sql, body, tenantId, importV2 }) => runAttendance(sql, tenantId, await rules(importV2), body, importV2) },
     saveOnescreenSession: { validate: raw => sessionInput(hostCall(raw, 'features/onescreen/server/actions.ts')), run: async ({ sql, body, tenantId, importV2 }) => runSession(sql, tenantId, await rules(importV2), body) },
