@@ -244,8 +244,8 @@ window.createWorkspaces = function createWorkspaces(api) {
   document.addEventListener('keydown',e=>{if(e.key==='Escape')hideKpiTip();});
   document.addEventListener('scroll',hideKpiTip,true);addEventListener('resize',hideKpiTip);addEventListener('hashchange',hideKpiTip);
   function critical(a){
-    // KPI는 추세 카드(큰 숫자·비교·작은 추세선)를 먼저 — 있으면 숫자 칸은 싣지 않는다(원장 10-28 "전체 몇건 … 아무 도움이 안됨"). 오른쪽 그래프는 기간·값 라벨과 함께 늘 둔다.
-    const all=d0=>d0?.metrics||[],d=data(a.id),isKpi=all(d).some(m=>m.kind==='kpi'),metrics=isKpi?all(d).filter(m=>m.kind==='kpi'):all(d).slice(0,4),trend=d?.trend;
+    // KPI는 추세 카드(큰 숫자·비교·작은 추세선)를 먼저 — 서버가 실은 cards(운영실 카드·이번 달 카드)가 있으면 그것, 있으면 숫자 칸은 싣지 않는다(원장 10-28 "전체 몇건 … 아무 도움이 안됨"). 오른쪽 그래프는 기간·값 라벨과 함께 늘 둔다.
+    const all=d0=>d0?.cards?.length?d0.cards:d0?.metrics||[],d=data(a.id),isKpi=all(d).some(m=>m.kind==='kpi'),metrics=isKpi?all(d).filter(m=>m.kind==='kpi'):all(d).slice(0,4),trend=d?.trend;
     if(!metrics.length&&!trend?.points?.length)return '';
     const value=m=>m.value===null||m.value===undefined?'기록 없음':`${fmt(m.value)}${m.unit||''}`;
     const points=(trend?.points||[]).map(p=>trend.granularity==='day'?{date:p.date,value:p.value}:{month:p.date,value:p.value});
