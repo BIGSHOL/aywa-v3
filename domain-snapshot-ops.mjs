@@ -19,6 +19,19 @@ const filled = pairs => pairs.filter(([, v]) => v != null && v !== '').map(([l, 
 const DOC_FORM = { staff_resume: '직원 이력서', refund_request: '환불 요청서', class_review: '수업 평가', class_review_template: '수업 평가 양식', staff_intake_token: '직원 정보 입력 링크' };
 const PROCESS = { completed: 'AI 분석 완료', idle: '기록만', failed: '분석 실패', processing: '분석 중', transcribing: '전사 중' };
 const pre = (p, labels) => Object.fromEntries(Object.entries(labels).map(([k, v]) => [`${p}:${k}`, v]));
+// 2.0 getMeetingById와 같은 두 저장 모양(string[] · {name}[])을 읽는다.
+const meetingAttendees = raw => Array.isArray(raw) ? raw.map(value => typeof value === 'string' ? value : value && typeof value === 'object' ? String(value.name ?? '') : '').map(value => value.trim()).filter(Boolean) : [];
+const meetingActionLines = (report, legacy) => {
+  if (typeof report === 'string' && report.trim()) return report.split(/\r?\n/).map(line => line.trim()).filter(Boolean);
+  const source = Array.isArray(report) && report.length ? report : Array.isArray(legacy) ? legacy : [];
+  return source.map(item => {
+    if (typeof item === 'string') return item.trim();
+    if (!item || typeof item !== 'object') return '';
+    const action = String(item.action ?? '').trim();
+    const meta = [['담당', item.assignee], ['기한', item.due]].filter(([, value]) => value).map(([label, value]) => `${label}: ${String(value).trim()}`);
+    return action ? `${action}${meta.length ? ` (${meta.join(', ')})` : ''}` : '';
+  }).filter(Boolean);
+};
 
 export async function opsFamilies(ctx) {
   const { sql, t, asOf, monthStart } = ctx;
@@ -57,12 +70,15 @@ export async function opsFamilies(ctx) {
   });
 
   // 회의록 — 회의 기록(근거)·녹음·AI 분석. 녹음·전사 처리 상태도 여기서 본다.
-  const meetings = await sql`select id, title, to_char(held_at at time zone 'Asia/Seoul','YYYY-MM-DD') d, processing_status::text ps, audio_path is not null audio, case when jsonb_typeof(attendees)='array' then jsonb_array_length(attendees) end attendees, case when jsonb_typeof(ai_report->'actionItems')='array' then jsonb_array_length(ai_report->'actionItems') else 0 end actions from public.meeting_minutes where tenant_id=${t} and (held_at at time zone 'Asia/Seoul')::date <= ${asOf} order by held_at desc`;
+  const meetings = (await sql`select id, title, to_char(held_at at time zone 'Asia/Seoul','YYYY-MM-DD') d, processing_status::text ps, audio_path is not null audio, attendees, ai_report->'actionItems' action_items, ai_action_items legacy_actions from public.meeting_minutes where tenant_id=${t} and (held_at at time zone 'Asia/Seoul')::date <= ${asOf} order by held_at desc`).map(m => {
+    const attendeeNames = meetingAttendees(m.attendees), actionLines = meetingActionLines(m.action_items, m.legacy_actions);
+    return { ...m, attendeeNames, actionLines, attendees: attendeeNames.length, actions: actionLines.length };
+  });
   out.meetings = family('meetings', '회의록(녹음·AI 분석)', {
     summary: `분석 실패 ${meetings.filter(m => m.ps === 'failed').length}건 · AI가 뽑은 실행 항목 ${meetings.reduce((n, m) => n + m.actions, 0)}개.`,
     metrics: [metric('전체 회의록', meetings.length, '건'), metric('이번 달 회의', meetings.filter(m => m.d >= monthStart).length, '건'), metric('녹음 있는 회의', meetings.filter(m => m.audio).length, '건'), metric('AI 분석 완료', meetings.filter(m => m.ps === 'completed').length, '건'), metric('분석 실패', meetings.filter(m => m.ps === 'failed').length, '건'), metric('AI가 뽑은 실행 항목', meetings.reduce((n, m) => n + m.actions, 0), '개')],
     trend: monthlyTrend('월별 회의록', '건', Object.entries(Object.groupBy(meetings, m => m.d.slice(0, 7))).map(([k, rows]) => ({ month: k, value: rows.length })), asOf),
-    evidence: meetings.map(m => record({ id: m.id, label: m.title || '제목 없음', date: m.d, status: PROCESS[m.ps] || '기타', fields: [field('참석', m.attendees ? `${m.attendees}명` : null), field('실행 항목', m.actions)], facets: [`process:${m.ps}`, m.audio && 'audio', m.d >= monthStart && 'this-month'] })),
+    evidence: meetings.map(m => record({ id: m.id, label: m.title || '제목 없음', date: m.d, status: PROCESS[m.ps] || '기타', fields: [field('참석', m.attendees ? `${m.attendees}명` : null), field('실행 항목', m.actions), ...(m.attendeeNames.length ? [field('참석자', m.attendeeNames.join(', '))] : []), ...(m.actionLines.length ? [field('실행 항목 내용', m.actionLines.join('\n'))] : [])], facets: [`process:${m.ps}`, m.audio && 'audio', m.d >= monthStart && 'this-month'] })),
     facetLabels: { ...pre('process', PROCESS), audio: '녹음 있음', 'this-month': '이번 달' }, recordSource: 'meeting_minutes',
     sourceLabel: '회의록 · 녹음 · AI 분석', coverageNote: '목록은 회의록 전체입니다(최근 순).',
     sources: [{ table: 'meeting_minutes', rows: meetings.length }],
