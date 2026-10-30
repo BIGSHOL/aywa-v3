@@ -267,9 +267,9 @@ window.createWorkspaces = function createWorkspaces(api) {
   function mainHtml(a){
     const id=a.id,kind=viewKind(a),facets=facetsOf(a),board=boardMode(id),ld=board?null:listData(a),slot=state.remote[id],bslot=state.board[id],fslot=state.full[id];
     const st=dataState(id),facet=state.facet[id]||'',filtered=Boolean(facet||state.q[id]||colOn(id).length);
-    // '화면' 줄 = 눌러서 관련 작업을 모아 보는 화면만. 이름만 있는 2.0 탭·단계 이름은 싣지 않는다 — 아래 구분(걸러보기)과 뜻이 겹친다(원장 10-28).
+    // '화면별 할 일' 줄 = 눌러서 관련 작업을 모아 보는 화면만. 이름만 있는 2.0 탭·단계 이름은 싣지 않는다 — 아래 구분(걸러보기)과 뜻이 겹친다(원장 10-28).
     const screens=screensOf(a).filter(sc=>screenActions(a,sc.id).length),screen=state.screen[id]||'';
-    const screenRow=screens.length&&kind!=='settings'?`<div class="ws-screens" role="group" aria-label="화면 구성"><span>화면</span>${screens.map(sc=>`<button type="button" data-ws="screen" data-id="${h(id)}" data-screen="${h(sc.id)}" aria-pressed="${screen===sc.id}">${h(sc.label)}</button>`).join('')}</div>`:'';
+    const screenRow=screens.length&&kind!=='settings'?`<div class="ws-screens" role="group" aria-label="화면별 할 일"><span>화면별 할 일</span>${screens.map(sc=>`<button type="button" data-ws="screen" data-id="${h(id)}" data-screen="${h(sc.id)}" aria-pressed="${screen===sc.id}">${h(sc.label)}</button>`).join('')}</div>`:'';
     const tabs=facets.length?`<div class="ws-facets" role="group" aria-label="기록 구분">${[{id:'',label:'전체',count:Number(data(id)?.totalRecords)||null},...facets].map(f=>`<button type="button" data-ws="facet" data-id="${h(id)}" data-facet="${h(f.id)}" aria-pressed="${facet===f.id}">${h(f.label)}${f.count!==null&&f.count!==undefined?` <b>${fmt(f.count)}</b>`:''}</button>`).join('')}</div>`:'';
     // 업무 단계가 있는 영역 = '단계별'(칸반) · '목록'(공통 리스트 — 정렬·값 거르기) 둘 중 하나로 본다.
     const toggle=kind==='flow'&&stagesOf(a).length&&data(id)?`<div class="ws-viewtoggle" role="group" aria-label="보기">${[['board','단계별'],['list','목록']].map(([v,l])=>`<button type="button" data-ws="as-list" data-id="${h(id)}" data-v="${v}" aria-pressed="${(v==='board')===board}">${l}</button>`).join('')}</div>`:'';
