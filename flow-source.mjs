@@ -56,7 +56,8 @@ export function groupDeskTasks(tasks, absenceDays, entities, day) {
     result.push({ ...first, status: settled ? settled.status : open ? 'open' : effective.status,
       close_reason: settled?.close_reason || (!open ? effective.close_reason : null), closed: settled?.closed || (!open ? effective.closed : null),
       title: rows.length ? `${student} · ${day(date)} 결석 ${slots.length}교시(${slots.join(' · ')}) — 학부모 확인` : first.title,
-      assignees: rows[0]?.teacher_id ? [rows[0].teacher_id] : first.assignees,
+      // 담당 = 2.0 원래 담당(출결 알림을 켠 데스크 직원 — absent-notify.ts) 그대로. 반 담임은 근거 줄에 표시만 한다.
+      assignees: [...new Set(group.flatMap(t => t.assignees || []))],
       recordKeys: rows.map(r => `attendance:${r.id}`), studentKey: `student:${studentId}`,
       groupDate: date, actionTaskId: open?.id || null, settledTaskId: settled?.id || null, mergedTaskIds: group.slice(1).map(t => t.id) });
   }

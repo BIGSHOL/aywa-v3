@@ -61,7 +61,8 @@ const evidenceView = e => { if (!Array.isArray(e.coveredRefs)) return e; const {
 const caseView = (c, inFlight, flags) => { const { pendingDecision, sourceRecords, ...rest } = c; return { ...rest, caseFlags: flags, ...(isFactSignal(c) ? { factSignal: true } : {}), evidence: (c.evidence || []).map(evidenceView), decision: decisionView(c, inFlight), decisionPending: !!pendingDecision }; };
 
 export function buildView(state, source, { aiStatus, tenantName = '', casePage = 1, eventsBefore = null, inFlight = null } = {}) {
-  const all = Object.values(state.cases).sort((a, b) => STATE_ORDER[a.state] - STATE_ORDER[b.state] || PRIORITY_ORDER[a.priority] - PRIORITY_ORDER[b.priority] || (a.dueAt || '9').localeCompare(b.dueAt || '9') || b.updatedAt.localeCompare(a.updatedAt));
+  // 같은 원생·같은 날 결석 업무로 합쳐진 옛 업무(mergedInto)는 따로 보이지도 세지도 않는다 — 대표 업무 하나만(flow-reconcile).
+  const all = Object.values(state.cases).filter(c => !c.mergedInto).sort((a, b) => STATE_ORDER[a.state] - STATE_ORDER[b.state] || PRIORITY_ORDER[a.priority] - PRIORITY_ORDER[b.priority] || (a.dueAt || '9').localeCompare(b.dueAt || '9') || b.updatedAt.localeCompare(a.updatedAt));
   const caseFlags = new Map(all.map(c => [c.id, flowCaseFlags(c, source.identity.asOf)]));
   const cases = all.slice((casePage - 1) * LIMITS.cases, casePage * LIMITS.cases);
   // assignable = may be chosen as an assignee (request.create / case.reassign); viewers and the preview owner may not.

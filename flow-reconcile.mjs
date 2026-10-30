@@ -16,8 +16,7 @@ const reasonOf = t => t.closeReason === 'desk_settled' && t.closeResult ? t.clos
 const lastAt = (t, ev) => t.history.filter(h => h.event === ev).at(-1)?.at || null;
 function taskRoute(source, t) {
   const ids = t.assigneeIds.filter(a => source.actors.some(x => x.id === a));
-  const homeroom = t.kind === 'attendance_absent_desk' && t.groupDate;
-  return routeOf(ids.length ? { assigneeIds: ids, queue: null, rule: homeroom ? '그날 첫 결석 반 담임' : '원래 업무 담당', ruleSource: homeroom ? 'classes.teacher_id' : 'staff_task_assignees.user_id' } : { assigneeIds: [], queue: 'manager', reason: t.assigneeIds.length ? '배정된 사람이 재직 직원 목록에 없어 관리자 대기열' : '배정된 사람이 없어 관리자 대기열' });
+  return routeOf(ids.length ? { assigneeIds: ids, queue: null, rule: '원래 업무 담당', ruleSource: 'staff_task_assignees.user_id' } : { assigneeIds: [], queue: 'manager', reason: t.assigneeIds.length ? '배정된 사람이 재직 직원 목록에 없어 관리자 대기열' : '배정된 사람이 없어 관리자 대기열' });
 }
 const taskFacts = (source, t) => ({ title: t.title || kindOf(t).label, summary: t.detail || kindOf(t).label, dueAt: t.dueAt ?? null, doneRule: kindOf(t).doneRule,
   entityRefs: (t.recordKeys || [`task:${t.id}`, ...(t.subjectKey ? [t.subjectKey] : [])]).map(k => {
@@ -130,6 +129,7 @@ export function reconcileSource(state, source, { at, mode = 'apply' } = {}) {
       if (!duplicate) continue;
       if (!primary.linkedCaseIds.includes(duplicate.id)) primary.linkedCaseIds.push(duplicate.id);
       if ((duplicate.steps.some(s => s.status === 'working') || duplicate.evidence?.length) && primary.steps[0]?.status === 'ready') primary.steps[0].status = 'working';
+      if (duplicate.mergedInto !== primary.id) { const b = JSON.stringify(duplicate); duplicate.mergedInto = primary.id; if (mode !== 'seed') commit(state, duplicate, b, [], when, summary); }
       if (mode === 'seed' || duplicate.factClosed) continue;
       const before = JSON.stringify(duplicate);
       for (const s of duplicate.steps) if (s.status !== 'done') { s.status = 'done'; s.closedBy = 'source'; }
