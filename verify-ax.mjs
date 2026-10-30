@@ -42,7 +42,7 @@ try{
   assert.equal(await page.locator('h1').innerText(),'브리핑');
   assert.equal(await page.locator('#topbar').evaluate(n=>getComputedStyle(n).display),'none','Desktop must not keep an empty header band');
   assert((await rect('main')).top<=1,'Main content starts at the top edge');
-  for(const sel of ['#sidebar [data-action="search"]','#sidebar [data-ax="chat"]','#sidebar [data-ax="digest"]','#sidebar a[href="#inbox"]','#sidebar [data-ax="request"]','#sidebar [data-ax="launcher"]'])assert.equal(await page.locator(sel).count(),1,`${sel} lives in the left sidebar`);
+  for(const sel of ['#sidebar [data-action="search"]','#sidebar [data-ax="chat"]','#sidebar a[href="#inbox"]','#sidebar [data-ax="request"]','#sidebar [data-ax="launcher"]'])assert.equal(await page.locator(sel).count(),1,`${sel} lives in the left sidebar`);
   assert.equal(await page.locator('.nav-scroll a').count(),4,'Primary navigation is the owner workflow');
   assert.deepEqual(await page.locator('.ax-summary').first().evaluate(n=>({font:getComputedStyle(n).fontSize,color:getComputedStyle(n).color})),{font:'16px',color:'rgb(18, 18, 18)'});
   assert.deepEqual(await page.locator('main .button').first().evaluate(n=>({font:getComputedStyle(n).fontSize,radius:getComputedStyle(n).borderRadius})),{font:'18px',radius:'8px'});
@@ -157,19 +157,13 @@ try{
   assert.match(await page.locator('#detail').innerText(),/<검토>/,'Request text is rendered as text');
   assert.match(await page.locator('#detail').innerText(),new RegExp(`${math.name}, ${english.name}`));
 
-  // 5. Slack previews follow the issue and the request; the completed report comes back as a notification.
-  await page.locator('[data-ax="request-slack"]').click();
-  assert.match(await page.locator('#modal').innerText(),/실제 보내지 않았습니다/);
-  assert.match(await page.locator('#modal').innerText(),/연결 이슈: 남은 수납 14건/);
-  await shot('slack-preview',false);
-  await page.locator('#modal [data-ax="request-detail"]').click();
+  // 5. The completed report comes back as a notification (슬랙 미리보기 단추는 지웠다 — 저장·발송 길이 없음, 원장 10-30 §6).
+  assert.equal(await page.locator('[data-ax="request-slack"],[data-ax="report-slack"],[data-ax="slack"],[data-ax="digest"]').count(),0);
   await page.locator('[data-ax="request-start"]').click();
   assert.match(await page.locator('#detail').innerText(),/진행 중/);
   await page.locator('[name=result]').fill('납부 내역 확인 완료. 추가 연락이 필요한 가정을 정리했습니다.');
   await page.locator('[data-ax-form=result] button[type=submit]').click();
   assert.match(await page.locator('#detail').innerText(),/완료 보고/);
-  await page.locator('[data-ax="report-slack"]').click();
-  assert.match(await page.locator('#modal').innerText(),/받는 사람: 원장/);assert.match(await page.locator('#modal').innerText(),/추가 연락이 필요한 가정/);
   await close();await go('home');
   assert.match(await page.locator('.ax-signal.report').innerText(),/완료 보고/,'The report arrives on the first screen');
   assert.match(await page.locator('#sidebar a[href="#inbox"]').innerText(),/\d/);
@@ -272,7 +266,6 @@ try{
   assert.match(await page.locator('main .ax-notifications').innerText(),/결석 3회 이상/);
   await page.locator('main [data-ax=open-issue][data-id=attendance]').click();await waitFocus('ax-issue-attendance');
   await go('automation');await page.locator('[data-ax-setting=slack]').uncheck();
-  await page.locator('main [data-ax=digest]').click();assert.match(await page.locator('#modal').innerText(),/선택되지 않았습니다/);await close();
   await page.locator('#sidebar [data-ax=request]').click();assert(!await page.locator('[name=channel][value=slack]').isChecked());await close();
   await page.setViewportSize({width:390,height:844});await go('home');
   await page.locator('[data-action=menu]').click();assert.equal(await page.locator('#sidebar').evaluate(n=>n.inert),false);

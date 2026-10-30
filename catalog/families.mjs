@@ -1039,7 +1039,7 @@ const SESSION_OPS = {
   approvals: ['approve', 'reject'],
   'tasks-notifications': ['new-task', 'complete-task', 'ax:request', 'ax:request-start', 'ax:request-reopen', 'ax:form:request', 'ax:form:result', 'ax:read', 'ax:archive', 'ax:read-all', 'ax:inbox-tab', 'ax:draft-reset', 'ax:report-slack'],
   'owner-settings': ['save-name'],
-  slack: ['ax:digest', 'ax:slack', 'ax:request-slack'],
+  slack: [], // 슬랙 미리보기 단추는 지웠다(저장·발송 길이 없음 — 원장 10-30 §6).
   'shell-infrastructure': ['ax:launcher', 'ax:chat', 'ax:prompt', 'ax:ask', 'ax:form:chat', 'ax:chat-task', 'ax:chat-retry', 'ax:chat-cancel', 'ax:chat-context-clear'],
 };
 for (const f of families) f.ax.sessionOps = SESSION_OPS[f.id] || [];

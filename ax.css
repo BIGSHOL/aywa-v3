@@ -276,13 +276,6 @@
 .ax-simulation form{display:flex;flex-direction:column;gap:16px}
 .ax-simulation button{align-self:flex-start}
 .ax-simulation>.ax-note{margin-bottom:0}
-.ax-slack{display:flex;align-items:flex-start;gap:12px;padding:20px;border:1px solid var(--ax-line);border-radius:8px}
-.ax-slack-avatar{display:grid;place-items:center;flex-shrink:0;width:36px;height:36px;border-radius:7px;background:var(--ax-primary);color:#fff;font-weight:700}
-.ax-slack>div:last-child{min-width:0}
-.ax-slack header{display:flex;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:14px;font-size:var(--ax-xs)}
-.ax-slack header strong{font-size:var(--ax-sm)}
-.ax-slack p,.ax-slack h3{margin:12px 0;font-size:var(--ax-sm)}
-.ax-slack .ax-actions{margin-top:18px}
 
 /* Assistant drawer: context bar, scrolling log, composer fixed at the bottom */
 .ax-enabled .drawer>.live-detail-body.ax-chat-body{display:flex;flex-direction:column;gap:0;padding:0;overflow:hidden}
@@ -357,8 +350,6 @@
  .ax-issues>.ax-section-head{flex-direction:column;align-items:flex-start}
  .ax-domain-grid{grid-template-columns:1fr 1fr;gap:0 16px}
  .ax-form-pair{gap:12px}
- .ax-slack{gap:10px;padding:16px}
- .ax-slack-avatar{width:28px;height:28px}
  .ax-enabled .modal{width:calc(100vw - 20px)}
  .ax-enabled .live-dialog-header h2{font-size:var(--ax-lg)}
  .ax-enabled .live-detail-body{padding:16px}
