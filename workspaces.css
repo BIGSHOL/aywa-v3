@@ -63,6 +63,11 @@
 .ws-table thead th:first-child,.ws-table.ws-has-subject thead th:nth-child(2){z-index:2}
 .ws-table tbody tr[aria-current=true]>:is(th,td):first-child,.ws-table.ws-has-subject tbody tr[aria-current=true]>th:nth-child(2){background:#f4f7fc}
 .ws-table tbody tr:hover>:is(th,td):first-child,.ws-table.ws-has-subject tbody tr:hover>th:nth-child(2){background:var(--ax-soft)}
+.ws-table.ws-has-subject.ws-has-kind thead th:nth-child(2),.ws-table.ws-has-subject.ws-has-kind tbody tr:not(.ws-band)>td:nth-child(2){position:sticky;left:var(--ws-kind-width,7em);z-index:1;background:#fff}
+.ws-table.ws-has-subject.ws-has-kind thead th:nth-child(3),.ws-table.ws-has-subject.ws-has-kind tbody tr:not(.ws-band)>th:nth-child(3){position:sticky;left:calc(var(--ws-kind-width,7em) + var(--ws-subject-width,7em));z-index:1;background:#fff}
+.ws-table.ws-has-subject.ws-has-kind thead th:nth-child(2),.ws-table.ws-has-subject.ws-has-kind thead th:nth-child(3){z-index:2}
+.ws-table.ws-has-subject.ws-has-kind tbody tr[aria-current=true]>:is(td,th):nth-child(2),.ws-table.ws-has-subject.ws-has-kind tbody tr[aria-current=true]>th:nth-child(3){background:#f4f7fc}
+.ws-table.ws-has-subject.ws-has-kind tbody tr:hover>:is(td,th):nth-child(2),.ws-table.ws-has-subject.ws-has-kind tbody tr:hover>th:nth-child(3){background:var(--ax-soft)}
 .ws-table th,.ws-table td{padding:7px 8px;border-bottom:1px solid var(--ax-line);background:transparent;color:var(--ax-ink);font-size:var(--ax-xs);font-weight:400;text-align:left;vertical-align:middle;overflow:hidden;white-space:nowrap}
 .ws-table thead th{padding:2px 2px;font-weight:650;border-top:1px solid var(--ax-line);border-bottom-color:rgba(29,29,31,.3)}
 .ws-table thead th>.ws-cut{padding:0 6px}
@@ -165,6 +170,12 @@ th:is(.al-c,.al-r) .ws-th-caret{margin-left:0}
 .ws-sheet thead th:first-child,.ws-sheet .ws-has-subject thead th:nth-child(2){z-index:2}
 .ws-sheet thead th:first-child,.ws-sheet .ws-has-subject thead th:nth-child(2){background:#f7f9fc}
 .ws-sheet tbody tr[aria-current=true]>:is(th,td):first-child,.ws-sheet .ws-has-subject tbody tr[aria-current=true]>th:nth-child(2){background:#f4f7fc}
+.ws-sheet .ws-has-kind thead th:first-child,.ws-sheet .ws-has-kind tbody tr>td:first-child{width:7em;min-width:7em;max-width:7em}
+.ws-sheet .ws-has-subject.ws-has-kind .ws-subject-head,.ws-sheet .ws-has-subject.ws-has-kind .ws-subject-cell{width:7em;min-width:7em;max-width:7em}
+.ws-sheet .ws-has-subject.ws-has-kind thead th:nth-child(2),.ws-sheet .ws-has-subject.ws-has-kind tbody tr>td:nth-child(2){position:sticky;left:7em;z-index:1;background:#fff}
+.ws-sheet .ws-has-subject.ws-has-kind thead th:nth-child(3),.ws-sheet .ws-has-subject.ws-has-kind tbody tr>th:nth-child(3){position:sticky;left:14em;z-index:1;background:#fff}
+.ws-sheet .ws-has-subject.ws-has-kind thead th:nth-child(2),.ws-sheet .ws-has-subject.ws-has-kind thead th:nth-child(3){z-index:2;background:#f7f9fc}
+.ws-sheet .ws-has-subject.ws-has-kind tbody tr[aria-current=true]>:is(td,th):nth-child(2),.ws-sheet .ws-has-subject.ws-has-kind tbody tr[aria-current=true]>th:nth-child(3){background:#f4f7fc}
 .ws-sheet th,.ws-sheet td{padding:0;border-bottom:1px solid var(--ax-line);background:#fff;color:var(--ax-ink);font-size:var(--ax-sm);font-weight:400;text-align:left;white-space:nowrap}
 .ws-sheet tbody tr:hover{background:transparent}
 .ws-sheet tr>*+*{border-left:1px solid rgba(29,29,31,.1)}

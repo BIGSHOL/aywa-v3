@@ -35,7 +35,7 @@ window.createWorkspaces = function createWorkspaces(api) {
     'tasks-notifications':['f:종류','f:내용','f:담당','date','status'],onescreen:['f:보낸 선생님','f:대상 수','f:반','date','status'],
     'video-homework':['detail','date','f:선생님','status'],timetable:['f:요일','f:시간','f:선생님','f:강의실'],
     'class-sheets':['date','f:교재','f:범위','status'],attendance:['detail','date','status','f:시간','f:자리','f:메모'],
-    classes:['f:담임','f:수강','f:강의실','status'],makeups:['detail','f:결석일','date','f:보강 시간','status'],
+    classes:['f:구분','subject','f:담임','f:강의실','f:요일','f:학생','status','f:메모'],makeups:['detail','f:결석일','date','f:보강 시간','status'],
     textbooks:['detail','f:차수','f:배정된 반','f:반 이름','status'],'lesson-reports':['f:반','f:작성','date','status','f:읽음'],
     'class-review':['detail','f:담임','date','f:담당 반','f:계산된 항목','status'],students:['detail','status','f:과목','f:담임','f:보호자 연락처','date','f:퇴원일'],
     'student-contribution':['date','f:출처','status'],exams:['date','detail','f:점수','status'],
@@ -408,21 +408,21 @@ window.createWorkspaces = function createWorkspaces(api) {
   }
   // menu = 정렬·거르기를 받는 목록(작업 공간 영역 id) — 없으면 머리는 이름만. group = 줄 묶음 띠(날짜순의 달).
   function tableHtml({shape,rows,nameLabel='이름',main,attrs=()=>'',menu='',group=null,head=true,cls='',key='',details=null}){
-    const {cols,name,filler}=shape,subject=cols.find(c=>c.key==='subject'),rest=cols.filter(c=>c.key!=='subject'),sort=menu?sortOf(menu):{col:'',dir:''},on=new Set(menu?colOn(menu).map(([k])=>k):[]),span=cols.length+1+(filler?1:0);
+    const {cols,name,filler}=shape,subject=cols.find(c=>c.key==='subject'),kind=menu==='classes'?cols.find(c=>c.key==='f:구분'):null,lead=cols.filter(c=>c===subject||c===kind),rest=cols.filter(c=>!lead.includes(c)),sort=menu?sortOf(menu):{col:'',dir:''},on=new Set(menu?colOn(menu).map(([k])=>k):[]),span=cols.length+1+(filler?1:0);
     const th=c=>{const al=c.align||'l';
       if(!menu)return `<th scope="col" class="al-${al}"><span class="ws-cut">${h(c.label)}</span></th>`;
       const dir=sort.col===c.key?sort.dir:'',f=on.has(c.key),open=colMenu.id===menu&&colMenu.col===c.key;
       return `<th scope="col" class="al-${al}" aria-sort="${dir==='asc'?'ascending':dir==='desc'?'descending':'none'}"><button type="button" class="ws-th${dir||f?' on':''}" data-ws="col" data-id="${h(menu)}" data-col="${h(c.key)}" aria-haspopup="dialog" aria-expanded="${open}" aria-label="${h(c.label)} 정렬·거르기${dir?` (${dir==='asc'?'오름차순':'내림차순'})`:''}${f?' (거르는 중)':''}"><span>${h(c.label)}</span>${dir?`<b class="ws-th-mark" aria-hidden="true">${dir==='asc'?'▲':'▼'}</b>`:''}${f?'<b class="ws-th-mark" aria-hidden="true">●</b>':''}<i class="ws-th-caret" aria-hidden="true">${icon('down')}</i></button></th>`;};
     const col=c=>`<col${c.w?` style="width:${c.w}"`:''}>`;
-    const colgroup=`<colgroup>${subject?col(subject):''}<col${name.w?` style="width:${name.w}"`:''}>${rest.map(col).join('')}${filler?'<col>':''}</colgroup>`;
-    const thead=head?`<thead><tr>${subject?th(subject):''}${th({key:'name',label:nameLabel,align:'l'})}${rest.map(th).join('')}${filler?'<th class="ws-fill" aria-hidden="true"></th>':''}</tr></thead>`:'';
+    const colgroup=`<colgroup>${lead.map(col).join('')}<col${name.w?` style="width:${name.w}"`:''}>${rest.map(col).join('')}${filler?'<col>':''}</colgroup>`;
+    const thead=head?`<thead><tr>${lead.map(th).join('')}${th({key:'name',label:nameLabel,align:'l'})}${rest.map(th).join('')}${filler?'<th class="ws-fill" aria-hidden="true"></th>':''}</tr></thead>`:'';
     let last;
     const body=rows.map(r=>{const g=group?group(r):undefined,band=group&&g!==last?`<tr class="ws-band"><th scope="rowgroup" colspan="${span}">${h(g)}</th></tr>`:'';last=g;
       const td=c=>`<td class="al-${c.align}">${c.html?c.html(r):`<span class="ws-cut">${h(c.text(r))}</span>`}</td>`;
       const detail=details?.(r)||'',expanded=Boolean(detail&&state.expanded[menu]?.has(String(r.id)));
       const toggle=detail?`<button type="button" class="ws-expand" id="ws-expand-${h(menu)}-${h(r.id)}" data-ws="expand" data-id="${h(menu)}" data-record="${h(r.id)}" aria-expanded="${expanded}" aria-label="${h(r.label)} 상세 수납 ${expanded?'접기':'펼치기'}">${icon(expanded?'down':'chevron')}</button>`:'';
-      return `${band}<tr${attrs(r)}>${subject?td(subject):''}<th scope="row">${toggle}${main(r)}</th>${rest.map(td).join('')}${filler?'<td class="ws-fill"></td>':''}</tr>${expanded?`<tr class="ws-detail-row"><td colspan="${span}">${detail}</td></tr>`:''}`;}).join('');
-    return `<div class="ws-tablewrap live-scroll"${key?` data-scroll-key="${h(key)}"`:''}><table class="ws-table${subject?' ws-has-subject':''}${cls}"${shape.min?` style="min-width:${shape.min.toFixed(1)}em;--ws-subject-width:${subject?.w||'7em'}"`:''}>${colgroup}${thead}<tbody>${body}</tbody></table></div>`;
+      return `${band}<tr${attrs(r)}>${lead.map(td).join('')}<th scope="row">${toggle}${main(r)}</th>${rest.map(td).join('')}${filler?'<td class="ws-fill"></td>':''}</tr>${expanded?`<tr class="ws-detail-row"><td colspan="${span}">${detail}</td></tr>`:''}`;}).join('');
+    return `<div class="ws-tablewrap live-scroll"${key?` data-scroll-key="${h(key)}"`:''}><table class="ws-table${subject?' ws-has-subject':''}${kind?' ws-has-kind':''}${cls}"${shape.min?` style="min-width:${shape.min.toFixed(1)}em;--ws-subject-width:${subject?.w||'7em'};--ws-kind-width:${kind?.w||'7em'}"`:''}>${colgroup}${thead}<tbody>${body}</tbody></table></div>`;
   }
   const rowMain=(id,r)=>{const n=localCount(id,r.id);return `<span class="ws-namecell"><button type="button" class="ws-rowmain ws-cut" data-ws="record" data-id="${h(id)}" data-record="${h(r.id)}">${h(r.label)}</button>${n?pill(`미리보기 ${n}`,'green'):''}</span>`;};
   const rowAttrs=id=>r=>` data-record="${h(r.id)}"${curAttr(id,r.id)}`;
@@ -490,13 +490,13 @@ window.createWorkspaces = function createWorkspaces(api) {
     return `<div class="ws-flow" aria-label="단계별 흐름">${stages.map(stage).join('')}${loose.length?`<section class="ws-stage"><header><span>·</span><h3>단계 미지정</h3><b>${fmt(looseCount)}</b></header>${rowsOf(loose)}</section>`:''}</div>`;
   }
   function sheetView(a,items){
-    const cols=familyColumns(a,items),subject=cols.find(c=>c.key==='subject'),rest=cols.filter(c=>c.key!=='subject');
+    const cols=familyColumns(a,items),subject=cols.find(c=>c.key==='subject'),lead=cols.filter(c=>c.key==='subject'||(a.id==='classes'&&c.key==='f:구분')),rest=cols.filter(c=>!lead.includes(c));
     const edits=state.edits[a.id]||{},changed=Object.values(edits).reduce((n,row)=>n+Object.keys(row).length,0);
     const cell=(r,c)=>{if(!c.key.startsWith('f:'))return `<td>${c.key==='status'&&r.status?pill(r.status):h(c.text(r)||'—')}</td>`;
       const label=c.label,original=(r.fields||[]).find(f=>f.label===label)?.value??'—',value=edits[r.id]?.[label];
       return `<td><button type="button" class="ws-cell ${value!==undefined?'changed':''}" data-ws="cell" data-id="${h(a.id)}" data-record="${h(r.id)}" data-col="${h(label)}" aria-label="${h(r.label)} ${h(label)} ${h(value??original)} · Enter로 수정">${h(value??original)}</button></td>`;};
     // 바꾼 칸은 저장되지 않는다는 것만 바꾼 뒤에 알린다(고치는 법 안내 줄은 싣지 않는다).
-    return `<div class="ws-sheet live-scroll" data-scroll-key="sheet-${h(a.id)}" tabindex="0"><table class="${subject?'ws-has-subject':''}"><thead><tr>${subject?'<th scope="col" class="ws-subject-head">과목</th>':''}<th scope="col">${h(NAME_HEAD[a.id]||'이름')}</th>${rest.map(c=>`<th scope="col">${h(c.label)}</th>`).join('')}</tr></thead><tbody>${items.map(r=>`<tr${curAttr(a.id,r.id)}>${subject?`<td class="ws-subject-cell">${h(subject.text(r)||'—')}</td>`:''}<th scope="row"><button type="button" class="ws-row-head" data-ws="record" data-id="${h(a.id)}" data-record="${h(r.id)}">${h(r.label)}</button></th>${rest.map(c=>cell(r,c)).join('')}</tr>`).join('')}</tbody></table></div>${changed?`<div class="ws-sheet-bar"><span>바꾼 칸 ${changed}개 · 저장되지 않습니다</span>${btn('되돌리기','sheet-reset',`data-id="${h(a.id)}"`)}${btn('변경분 미리보기 저장','sheet-save',`data-id="${h(a.id)}"`,true)}</div>`:''}`;
+    return `<div class="ws-sheet live-scroll" data-scroll-key="sheet-${h(a.id)}" tabindex="0"><table class="${subject?'ws-has-subject':''}${a.id==='classes'?' ws-has-kind':''}"><thead><tr>${lead.map(c=>`<th scope="col"${c.key==='subject'?' class="ws-subject-head"':''}>${h(c.label)}</th>`).join('')}<th scope="col">${h(NAME_HEAD[a.id]||'이름')}</th>${rest.map(c=>`<th scope="col">${h(c.label)}</th>`).join('')}</tr></thead><tbody>${items.map(r=>`<tr${curAttr(a.id,r.id)}>${lead.map(c=>c.key==='subject'?`<td class="ws-subject-cell">${h(c.text(r)||'—')}</td>`:cell(r,c)).join('')}<th scope="row"><button type="button" class="ws-row-head" data-ws="record" data-id="${h(a.id)}" data-record="${h(r.id)}">${h(r.label)}</button></th>${rest.map(c=>cell(r,c)).join('')}</tr>`).join('')}</tbody></table></div>${changed?`<div class="ws-sheet-bar"><span>바꾼 칸 ${changed}개 · 저장되지 않습니다</span>${btn('되돌리기','sheet-reset',`data-id="${h(a.id)}"`)}${btn('변경분 미리보기 저장','sheet-save',`data-id="${h(a.id)}"`,true)}</div>`:''}`;
   }
   // 기록 한 건의 사실 = 칩(상태 · 걸러보기 구분) + 열 이름·값. 칩·칸이 같은 사실을 두 번 말하지 않는다(원장 10-28 '재원·재원' · '침산초 초5' + 학교/학년 줄).
   function studentClasses(id){
