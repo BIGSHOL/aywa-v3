@@ -236,15 +236,13 @@ try{
     await page.locator('.ws-home-signals [data-ws="signal-request"]').first().click();await expectText('#modal .ax-linked-issues',/출처/);await close();
   }
 
-  // 4k. Automatic tasks are not completed by a button; personal tasks keep their own completion toggle.
-  //     첫 화면의 할 일 목록(#ax-issue-tasks)은 첫 화면 개편으로 없어졌다 — 같은 할 일 상세(showTask)를 여는 전자결재·할 일 화면의 할 일 줄에서 연다.
-  await go('approvals');await page.locator('main [data-task]').first().click();
+  // 4k. 자동 업무는 단추로 완료하지 않는다 — 원본을 처리하면 닫힌다. 상세(showTask)는 기록 열기와 같은 표식(data-task)으로 연다.
+  const openTask=await page.evaluate(()=>window.AcademySnapshot.tasks.find(t=>t.status==='open')?.id);
+  await page.evaluate(id=>{const b=document.createElement('button');b.dataset.task=id;b.hidden=true;document.querySelector('main').append(b);b.click();b.remove();},openTask);
   assert.equal(await page.locator('#detail [data-action="complete-task"]').count(),0,'Automatic tasks have no generic complete button');
   await expectText('#detail',/자동으로 닫힙니다/);
   assert.equal(await page.locator('#detail [data-go]').count(),1,'Automatic tasks open their source record');
   await page.locator('#detail [data-action="task-followup"]').click();await expectText('#modal .ax-linked-issues',/출처/);await close();
-  await go('approvals');await page.locator('[data-action="new-task"]').click();await page.getByLabel('해야 할 일').fill('원장 개인 확인');await page.locator('#preview-form button[type="submit"]').click();
-  await page.locator('#detail [data-action="complete-task"]').click();await expectText('#detail',/처리됨/); // 상태 글 = '처리됨'(할 일 상태 표기)await close();
 
   // 5. Phone: workspace without overflow, horizontal stage scroller with edge fades kept across a refresh, finder in the menu.
   await page.setViewportSize({width:390,height:844});

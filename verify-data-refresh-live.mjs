@@ -99,7 +99,7 @@ try {
     assert.equal(detailUrls.length, 0, '첫 화면과 빈 엿보기는 상세 자료를 받지 않는다');
     assert.equal(await page.evaluate(() => window.AcademySnapshot.meta.detailDeferred), true, '첫 화면은 요약 자료로 시작');
     assert.equal(await page.evaluate(() => window.AcademySnapshot.students[0].lessons), undefined);
-    await page.evaluate(() => { location.hash = '#students'; });
+    await page.evaluate(() => { location.hash = '#inbox'; });
     await page.waitForFunction(() => !window.AcademySnapshot.meta.detailDeferred && Array.isArray(window.AcademySnapshot.students[0].lessons));
     assert.equal(detailUrls.length, 1, `상세 화면 첫 이동에서 한 번만 전체 자료를 읽는다: ${detailUrls.join(', ')}`);
     await page.evaluate(() => { location.hash = '#home'; });

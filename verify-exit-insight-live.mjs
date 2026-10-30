@@ -100,7 +100,6 @@ if (browserOn) {
     await page.screenshot({ path: 'work/owner-concept/exit-insight/dialog-390.png', animations: 'disabled' });
     await page.evaluate(() => document.querySelectorAll('dialog[open]').forEach(d => d.close()));
     const pageWide = await page.evaluate(() => document.documentElement.scrollWidth - innerWidth); assert(pageWide <= 1, 'page has no horizontal overflow at 390px');
-    await page.evaluate(() => { location.hash = 'finance'; }); await page.waitForTimeout(500); log('finance entries', await page.locator('main .xi-entry').count());
     assert.deepEqual(errors, [], 'no page errors'); assert.deepEqual(posts, [], 'no POST/PUT/DELETE');
     log('browser', 'ok');
   } finally { await browser.close(); }
