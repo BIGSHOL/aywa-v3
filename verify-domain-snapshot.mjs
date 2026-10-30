@@ -58,7 +58,6 @@ check('same facts as the base model and the AX issues', () => {
   assert.equal(metric('tasks-notifications', '지난 업무'), snapshot.tasks.filter(t => t.status === 'open' && t.due && t.due < asOf).length);
   assert.equal(metric('textbook-requests', '요청·주문 단계'), snapshot.textbooks.filter(t => ['requested', 'ordered'].includes(t.status)).length);
   assert.equal(metric('approvals', '결재 대기'), snapshot.approvals.filter(a => a.status === 'pending').length);
-  assert.equal(metric('classes', '운영 중인 반'), snapshot.classes.length);
   assert.equal(metric('staff', '현재 재직'), snapshot.staff.length);
   assert.equal(metric('payroll', '급여명세서'), snapshot.finance.payslips.length);
   assert.equal(metric('lesson-reports', '이번 달 보고서'), snapshot.communication.reports);
@@ -69,6 +68,9 @@ const db = await openFullDatabase();
 try {
   await db.begin('isolation level repeatable read read only', async sql => {
     const count = async table => (await sql`select count(*)::int c from ${sql(`public.${table}`)} where tenant_id=${tenantId}`)[0].c;
+    const [{ c: operatingClasses }] = await sql`select count(*)::int c from public.classes where tenant_id=${tenantId} and is_active and closed_at is null and not coalesce(is_makeup_pool,false)`;
+    assert.equal(metric('classes', '운영 중인 반'), operatingClasses, 'classes metric = 2.0 operating list');
+    assert.equal(F.classes.totalRecords, operatingClasses, 'classes evidence = 2.0 operating list');
     // Families whose evidence is the whole tenant table — an independent count must match.
     for (const [id, tables] of Object.entries({ onescreen: ['classnote_notices'], approvals: ['approval_documents'], documents: ['academy_documents'], calendar: ['calendar_events'], 'tasks-notifications': ['staff_tasks'], slack: ['slack_rules'], inventory: ['inventory_assets'], 'withdrawal-reports': ['withdrawal_reports', 'withdrawal_report_archives'], payroll: ['payslips'], 'class-sheets': ['class_sheet_plan_lines'], 'owner-settings': ['notice_popups', 'operating_periods', 'classrooms'] })) {
       let n = 0; for (const table of tables) n += await count(table);

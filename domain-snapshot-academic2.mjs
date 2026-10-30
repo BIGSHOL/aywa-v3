@@ -1,5 +1,7 @@
 // 수업 영역 두 번째 묶음 — 출석부·수업목록·보강·교재·수업보고서·직원 평가.
 import { ISO_AT, PRIORITY, addDays, countOf, family, field, latest, md, metric, monthlyTrend, record, signal, sumOf, yymm } from './domain-snapshot-core.mjs';
+import { importV2 } from './v2-bridge.mjs';
+import { loadRules as loadClassRules, readClassesPage } from './v2-screen-classes.mjs';
 
 const ATT = { present: '출석', late: '지각', absent: '결석', early_leave: '조퇴', makeup: '보강' };
 const SEND = { success: '발송 완료', failed: '발송 실패', recalled: '회수', too_old: '기한 지남', none: '미발송' };
@@ -39,14 +41,19 @@ export async function attendanceFamilies(ctx) {
 
   // 수업목록 — 운영 반(근거)·현재 수강(시작 전·종료·휴원 제외)·담임 변경 예약·오늘 위임.
   const live = sql`(select e.* from public.enrollments e where e.tenant_id=${t} and (e.start_date is null or e.start_date <= ${asOf}) and (e.end_date is null or e.end_date >= ${asOf}) and not coalesce(e.on_hold,false) and e.student_id not in (select id from public.students where tenant_id=${t} and coalesce(is_test,false)))`;
-  const classes = await sql`select c.id, c.class_name, c.subject, coalesce(c.is_special,false) special, c.pending_teacher_id is not null pending, u.display_name teacher, r.name room, count(l.id)::int students from public.classes c left join ${live} l on l.class_id=c.id left join public.users u on u.id=c.teacher_id and u.tenant_id=${t} left join public.classrooms r on r.id=c.classroom_id and r.tenant_id=${t} where c.tenant_id=${t} and c.is_active and not coalesce(c.is_makeup_pool,false) group by c.id, c.class_name, c.subject, c.is_special, c.pending_teacher_id, u.display_name, r.name order by students desc, c.class_name`;
+  const classes = await sql`select c.id, c.pending_teacher_id is not null pending from public.classes c where c.tenant_id=${t} and c.is_active and c.closed_at is null and not coalesce(c.is_makeup_pool,false)`;
+  // 목록의 구분·학생·요일·메모는 2.0 수업목록 조회와 순수 표시 함수를 그대로 쓴다.
+  const [classRules, classI18n] = await Promise.all([loadClassRules(importV2), importV2('features/teacher-view/i18n.ts')]);
+  const classPage = await readClassesPage(sql, t, classRules, { status: 'operating' }, 1, 10000);
+  const classesById = new Map(classes.map(r => [String(r.id), r]));
+  const classDays = rows => rows.map(d => classI18n.sheetTf('ko', 'cls.dayAt', { dow: classI18n.sheetDowLabel(d.day, 'ko'), time: d.start ?? '' })).join(' ');
   const [cl] = await sql`select (select count(*)::int from public.classes where tenant_id=${t}) rows_all, (select count(*)::int from public.enrollments where tenant_id=${t}) enrollments_all, (select count(*)::int from public.classes where tenant_id=${t} and closed_at between ${`${asOf.slice(0, 4)}-01-01`} and ${asOf}) closed, (select count(*)::int from ${live} l) enrollments, (select count(distinct student_id)::int from ${live} l) students, (select count(*)::int from public.classrooms where tenant_id=${t}) rooms, (select count(*)::int from public.class_delegations where tenant_id=${t} and revoked_at is null and from_date <= ${asOf} and to_date >= ${asOf}) delegations`;
   out.classes = family('classes', '수업목록(반·수강·인수인계)', {
     summary: `담임 변경 예약 ${classes.filter(c => c.pending).length}개 반 · 오늘 수업 위임 ${cl.delegations}건 · 올해 종강 ${cl.closed}개 반.`,
-    metrics: [metric('운영 중인 반', classes.length, '개', '보강용 반 제외'), metric('운영 중인 특강 반', classes.filter(c => c.special).length, '개'), metric('현재 수강', cl.enrollments, '건', '시작 전·종료·휴원 제외'), metric('수강 중인 원생', cl.students, '명'), metric('담임 변경 예약', classes.filter(c => c.pending).length, '개 반'), metric('올해 종강한 반', cl.closed, '개'), metric('오늘 수업 위임', cl.delegations, '건'), metric('강의실', cl.rooms, '개')],
-    evidence: classes.map(r => record({ id: r.id, label: r.class_name, subject: subjectLabel(r.subject), status: '운영 중', fields: [field('담임', r.teacher), field('수강', `${r.students}명`), field('강의실', r.room)], facets: [`subject:${r.subject || 'none'}`, r.special && 'special', r.pending && 'pending-teacher'] })),
+    metrics: [metric('운영 중인 반', classPage.total, '개', '보강용 반 제외'), metric('운영 중인 특강 반', classPage.rows.filter(c => classRules.classKindMeta(c).kind === 'special').length, '개'), metric('현재 수강', cl.enrollments, '건', '시작 전·종료·휴원 제외'), metric('수강 중인 원생', cl.students, '명'), metric('담임 변경 예약', classes.filter(c => c.pending).length, '개 반'), metric('올해 종강한 반', cl.closed, '개'), metric('오늘 수업 위임', cl.delegations, '건'), metric('강의실', cl.rooms, '개')],
+    evidence: classPage.rows.map(v => { const r = classesById.get(v.id), kind = classRules.classKindMeta(v); return record({ id: v.id, label: v.className, subject: subjectLabel(v.subject), status: classI18n.sheetT('ko', classRules.classStatusMeta(v).key), fields: [field('구분', classI18n.sheetT('ko', kind.key)), field('담임', v.teacherName), field('강의실', v.classroomName), field('요일', classDays(v.days)), field('학생', `${v.studentCount}명`), field('메모', v.notes)], facets: [`subject:${v.subject || 'none'}`, kind.kind === 'special' && 'special', r?.pending && 'pending-teacher'] }); }),
     facetOrder: [...Object.keys(subjectFacets), 'special', 'pending-teacher'], facetLabels: { ...subjectFacets, special: '특강', 'pending-teacher': '담임 변경 예약' }, recordSource: 'classes',
-    sourceLabel: '반 · 수강 · 강의실 · 수업 위임', coverageNote: '목록은 운영 중인 반입니다(수강 인원 많은 순 · 종강·보강용 반 제외).',
+    sourceLabel: '반 · 수강 · 강의실 · 수업 위임', coverageNote: '목록은 운영 중인 반입니다(반 이름순 · 종강·보강용 반 제외).',
     sources: [{ table: 'classes', rows: cl.rows_all }, { table: 'enrollments', rows: cl.enrollments_all }, { table: 'classrooms', rows: cl.rooms }],
   });
 
