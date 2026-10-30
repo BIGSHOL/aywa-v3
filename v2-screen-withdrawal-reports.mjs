@@ -6,14 +6,15 @@
 //    표·칸·조건을 SQL로, 판정(snapshotMatches · isBookkeepingReport · canReadReport · 미리 채움 문장)은 2.0 순수 함수(importV2) 그대로.
 //  · 보는 사람 = 3.0 띠에서 고른 직원(GET ?actor=) — 2.0 reportViewer와 같은 판정(강사 역할이면 강사뷰 · 과목 범위 · 쓰기 권한).
 //    겸직의 강사뷰 전환·'다른 강사 뷰'·실험실 배정은 3.0에 없어 관리자 보기로 본다.
-//  · 저장 = 2.0 server/actions.ts · archive-actions.ts의 네 함수(같은 이름 · 같은 인자 · 같은 검증 · 같은 DB 함수 · 같은 감사로그).
+//  · 저장 = 기존 요청·결재·원본 연결은 이 화면의 DB 경로, 환불 승인은 2.0 refund-actions.ts를 전용 러너에서 실행한다.
 //    2.0과 다른 점: 슬랙 깨우기(pokeSlack)와 수학 퇴원 시트 기록(recordMathWithdrawalToSheet — Google 시트)은 바깥 전송이라 하지 않는다.
 //    DB 함수가 남기는 알림(notifications)·처리 이력(withdrawal_report_events)은 그대로 복사본에 남는다.
-import { V2Error } from './v2-screens.mjs';
 import { UUID, audit, readPeople, rpcSoft, serverCall } from './v2-proc-people.mjs';
+import { runV2Server } from './v2-server-runner.mjs';
 
 const ID = 'withdrawal-reports', MENU = 'withdrawal_reports';
 const MODULE = 'features/withdrawal-reports/server/actions.ts', ARCHIVE_MODULE = 'features/withdrawal-reports/server/archive-actions.ts';
+const REFUND_MODULE = 'features/withdrawal-reports/server/refund-actions.ts';
 
 let rulesPromise = null;
 function loadRules(importV2) {
@@ -127,7 +128,7 @@ async function withdrawalHref(sql, t, people, u, studentId) {
   return s?.status === 'withdrawn' ? `/withdrawals/${studentId}` : null;
 }
 
-/** getReport — 보고서 · 처리 이력 · 배정 변경 여부 · 작성 중 미리 채움(출결·수납) · 연결할 상담기록. */
+/** getReport — 보고서 · 처리 이력 · 최신 수납 · 수강 이력 · 퇴원 뒤 청구 · 환불 담당자. */
 async function getReport(sql, t, R, people, viewer, u, id) {
   const [row] = await sql`select ${REPORT_ROW(sql)} j from public.withdrawal_reports r where r.tenant_id=${t} and r.id=${id}`;
   const report = row?.j;
@@ -140,9 +141,38 @@ async function getReport(sql, t, R, people, viewer, u, id) {
   ]);
   const assignmentChanged = live && (!current || !R.snapshotMatches(report.snapshot, current));
   const draft = ['requested', 'revision'].includes(report.status) && !assignmentChanged;
-  const [prefill, consultations] = await Promise.all([draft ? loadPrefill(sql, t, R, people, u, report) : { prefill: undefined, prefillWarning: undefined },
+  const submitted = !['requested', 'revision', 'completed', 'canceled'].includes(report.status);
+  const billingOk = viewer.teacherId !== null || viewer.user.systemRole === 'master' || R.isParticipant(report, u.id)
+    || people.level(u, 'billing') !== 'none';
+  const [prefill, consultations] = await Promise.all([draft ? loadPrefill(sql, t, R, people, u, report)
+    : submitted && billingOk ? loadBilling(sql, t, R, report)
+      .then(live => ({ prefill: R.liveBillingForSubmitted({ ...R.EMPTY_BODY, ...report.body }, live), prefillWarning: undefined }))
+      .catch(() => ({ prefill: undefined, prefillWarning: '수납 정보를 지금 장부에서 불러오지 못해 제출 때 값을 보여줍니다.' }))
+    : { prefill: undefined, prefillWarning: undefined },
     reportConsultations(sql, t, R, people, u, viewer, report)]);
-  return { report, events: [...events].reverse(), assignmentChanged, consultations, ...prefill };
+  const finished = ['completed', 'canceled'].includes(report.status);
+  const subjectHistory = finished && Array.isArray(report.snapshot?.subjectHistory)
+    ? report.snapshot.subjectHistory : await loadSubjectHistory(sql, t, R, report).catch(() => []);
+  const laterInvoices = report.status === 'canceled' || !billingOk ? []
+    : await v2RefundRead(t, 'loadLaterInvoices', [report]).catch(() => []);
+  const deskStaff = laterInvoices.length && R.cancelsAsDirector(u.role, !!viewer.teacherId)
+    ? (await v2RefundRead(t, 'loadDeskStaff', [t]).catch(() => [])).filter(s => s.id !== u.id) : [];
+  return { report, events: [...events].reverse(), assignmentChanged, consultations, laterInvoices, deskStaff, subjectHistory, ...prefill };
+}
+async function v2RefundRead(tenantId, fn, args) {
+  const { results: [result] } = await runV2Server({ tenantId, mode: 'read',
+    steps: [{ module: 'features/withdrawal-reports/server/refund.ts', fn, args }] });
+  return result.value;
+}
+async function loadSubjectHistory(sql, t, R, report) {
+  const subjects = [...new Set(R.reportCourses(report).map(c => c.subject))];
+  if (!subjects.length) return [];
+  const rows = await sql`select e.id::text enrollment_id, e.start_date::text start_date, e.end_date::text end_date,
+      c.class_name, c.subject from public.enrollments e join public.classes c on c.id=e.class_id
+    where e.tenant_id=${t} and e.student_id=${report.student_id} and c.subject=any(${subjects})
+      and e.start_date<=${report.effective_date}::date order by e.start_date, e.id limit 200`;
+  return rows.map(r => ({ enrollmentId: r.enrollment_id, subject: r.subject,
+    className: r.class_name?.trim() || '이름 없는 반', startDate: r.start_date, endDate: r.end_date }));
 }
 async function currentSnapshot(sql, t, R, studentId) {
   const [s] = await sql`select name, school, grade, enrolled_at::text enrolled_at, status::text status, withdrawn_at::text withdrawn_at from public.students where tenant_id=${t} and id=${studentId}`;
@@ -150,11 +180,10 @@ async function currentSnapshot(sql, t, R, studentId) {
   const courses = (await coursesOf(sql, t, R, [studentId], false)).get(studentId) ?? [];
   return { name: s.name, school: s.school, grade: s.grade, enrolledAt: s.enrolled_at, status: s.status, withdrawnAt: s.withdrawn_at, courses };
 }
-async function loadBilling(sql, t, R, report) {
-  const month = report.effective_date.slice(0, 7);
-  const rows = await sql`select period, category::text category, status::text status, amount_total, amount_paid, amount_discount from public.invoices
-    where tenant_id=${t} and student_id=${report.student_id} and period <= ${month} order by id`;
-  return R.billingPrefill(rows.map(r => ({ period: r.period, category: r.category, status: r.status, amountTotal: Number(r.amount_total), amountPaid: Number(r.amount_paid), amountDiscount: Number(r.amount_discount) })), month, R.kstToday());
+async function loadBilling(_sql, t, _R, report) {
+  const { results: [result] } = await runV2Server({ tenantId: t, mode: 'read',
+    steps: [{ module: 'features/withdrawal-reports/server/billing.ts', fn: 'loadReportBilling', args: [report] }] });
+  return result.value;
 }
 async function loadPrefill(sql, t, R, people, u, report) {
   const today = R.kstToday(), until = report.effective_date < today ? report.effective_date : today;
@@ -232,6 +261,16 @@ const readBack = async (sql, t, where) => (await sql`select ${REPORT_ROW(sql)} j
 const firstIssue = (parsed, fallback) => parsed.error.issues[0]?.message ?? fallback;
 
 const actions = {
+  approveWithdrawalRefund: {
+    validate: raw => serverCall(raw, [REFUND_MODULE], 3),
+    async run(ctx) {
+      const { R, u, viewer } = await writer(ctx);
+      if (!u || !viewer?.writable || !R.cancelsAsDirector(u.role, !!viewer.teacherId)) return { error: '환불 승인 권한이 없습니다.' };
+      const { results: [result] } = await runV2Server({ tenantId: ctx.tenantId, actorId: u.id, mode: 'write',
+        steps: [{ module: REFUND_MODULE, fn: 'approveWithdrawalRefund', args: ctx.body.args }] });
+      return result.value;
+    },
+  },
   requestWithdrawalReport: {
     validate: raw => serverCall(raw, [MODULE], 1),
     async run(ctx) {
