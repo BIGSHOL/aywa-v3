@@ -535,7 +535,7 @@ export const ACTIONS = {
     }
     return { ok: true };
   }),
-  /** saveMonthPlanCells({ classId, patches, intent }) — EiE 월간 계획서(MP) 칸. 구조 변경(e-book 열·휴강)만 여기서 ecs_month_plan_edit. */
+  /** saveMonthPlanCells({ classId, patches, intent }) — EiE 월간 계획서 칸·그 달 제목. 구조 변경(e-book 열·휴강)만 여기서 감사로그를 남긴다. */
   saveMonthPlanCells: serverFn(MODULE.monthPlan, 1, async ({ sql, t, R, env, user }, raw) => {
     const input = obj(raw), gate = await classAccess(sql, t, R, env, user, str(input.classId), { write: true });
     if (!gate.ok) return { ok: false, error: gate.error };
@@ -543,12 +543,13 @@ export const ACTIONS = {
     const patches = Array.isArray(input.patches) ? input.patches : [];
     if (patches.length === 0) return { ok: true };
     if (patches.length > 160) return { ok: false, error: '한 번에 저장할 칸이 너무 많습니다' };
-    const kinds = new Set([...R.MP_ALL_COLUMNS, 'off', 'footer']);
+    const kinds = new Set([...R.MP_ALL_COLUMNS, 'off', 'footer', 'title']);
     for (const p of patches) {
       if (!R.YMD_RE.test(str(p?.date))) return { ok: false, error: '잘못된 요청입니다(날짜)' };
       if (!kinds.has(p?.colKind)) return { ok: false, error: '잘못된 요청입니다(칸 종류)' };
       if (p.body !== null && typeof p.body !== 'string') return { ok: false, error: '잘못된 요청입니다(내용)' };
       if ((p.body?.length ?? 0) > 2000) return { ok: false, error: '입력이 너무 깁니다(2000자 이내)' };
+      if (p.colKind === 'title' && (p.body?.length ?? 0) > R.MP_TITLE_MAX) return { ok: false, error: `제목은 ${R.MP_TITLE_MAX}자 이내로 입력하세요` };
       if (p.colKind === 'off' && p.body !== null && p.body !== 'off' && p.body !== 'open') return { ok: false, error: '잘못된 요청입니다(휴강 표시)' };
     }
     const c = gate.access.classId, byKind = new Map();

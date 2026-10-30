@@ -291,7 +291,7 @@ export async function monthData(sql, t, R, env, viewer, classId, q) {
   const holidays = Object.fromEntries(Object.entries(env.holidays).filter(([d]) => d >= from && d <= to));
   const hasLines = (d, s) => (linesBySlot[R.slotKey(d, s)]?.length ?? 0) > 0;
   const mpCells = (mpRows ?? []).map(r => ({ planDate: r.plan_date.slice(0, 10), colKind: r.col_kind, body: typeof r.body === 'string' ? r.body : '' }))
-    .filter(c => (c.colKind === 'footer' ? c.planDate === footerDate : c.planDate >= from && c.planDate <= to));
+    .filter(c => (c.colKind === 'footer' || c.colKind === 'title' ? c.planDate === footerDate : c.planDate >= from && c.planDate <= to));
   const data = {
     classId, className: access.className, teacherId: access.teacherId, teacherName: classTeacherName, month, monthLabel: R.monthLabel(month), today,
     period: { mode: periodMode, kind: win.kind, start: from, end: to }, currentMonth, dows: R.activeDowsOf(Object.keys(slotsByDate)), weeks: R.rangeWeeks(from, to),
