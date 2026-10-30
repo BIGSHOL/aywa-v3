@@ -1013,34 +1013,52 @@ window.createFlowUI = function createFlowUI(api) {
   }
 
   /* ---------- 관련 기록 목록(원장 10-28 "[기록보기] 라벨로 바꾸고 마우스 올리면 리스트 깔끔하게 정리해서 보여주는것도 · 혹은 눌렀을때도 오버레이로 깔끔하게") ---------- */
-  // 종류마다 표 하나 — 이름 · 그 종류가 가진 칸(원장 10-28 "원생이면 원생에게서 알아야할 정보들이 있잖아" · "항상 열정렬하는거 잊지마").
-  // 기록 정보 = [칸 이름, 값] 목록이라 같은 종류는 같은 열에 같은 정보가 온다(값이 없으면 빈칸 — 다음 값을 당기지 않는다).
-  // 원생은 스냅숏에서 바로(학교·학년 · 상태 · 반 · 이번 달 결석 · 이번 달 미납 — 원생 상세와 같은 값), 그 밖의 기록은 그 업무 영역의
-  // 기록 한 건(GET …/records?id=, 읽기만)의 내용 · 상태 · 날짜 · 칸. 한 번 읽은 기록은 다시 읽지 않는다. 줄을 누르면 그 기록을 엿보기 창에 연다.
+  // 확인 대상은 기록 종류마다 표 하나다. 이름에는 사람 이름만 두고 업무·날짜·시각·반·과목은 별도 열로 놓는다.
+  // 원생은 스냅숏, 다른 기록은 업무 영역 GET으로 읽으며 같은 기록은 다시 읽지 않는다.
   const STUDENT_STATE={enrolled:'재원',withdrawn:'퇴원',paused:'휴원',on_hold:'휴원',leave:'휴원',pending:'등록 예정',waiting:'대기'};
   const schoolGrade=(school,grade)=>{const s=String(school||''),g=String(grade||''),m=/^([초중고])(\d)$/.exec(g);return m&&s.endsWith(m[1])?`${s}${m[2]}`:[s,g].filter(Boolean).join(' ');};
-  const DETAIL_LABEL={enrollment:'학년·학교',students:'학교·학년',billing:'청구월','textbook-requests':'요청'},DATE_LABEL={approvals:'기안일'};
-  // 열 순서를 정해 둔 종류 — 그 기록을 알아보는 칸이 이름 바로 뒤에 온다(정하지 않은 칸은 기록이 내는 순서로 뒤에).
-  const FACT_ORDER={approvals:['종류','기간','일수','금액','지출일','수입일','분류','상태','결재 차례','결재선','기안','기안일','사유']};
+  const DETAIL_LABEL={enrollment:'학년·학교',students:'학교·학년',billing:'청구월','textbook-requests':'교재'},DATE_LABEL={approvals:'기안일','tasks-notifications':'기한','textbook-requests':'요청일'};
+  // 고정 순서가 있는 종류만 먼저 배치한다. 과목은 모든 종류에서 이름 앞에 놓는다.
+  const FACT_ORDER={approvals:['종류','기간','일수','금액','지출일','수입일','분류','상태','결재 차례','결재선','기안','기안일','사유'],'tasks-notifications':['업무','발생일','시각','상태','기한','담당']};
   const ordered=(fam,list)=>{const o=FACT_ORDER[fam];if(!o)return list;const at=k=>{const i=o.indexOf(k);return i<0?o.length:i;};return list.map((x,i)=>[x,i]).sort((a,b)=>at(a[0][0])-at(b[0][0])||a[1]-b[1]).map(([x])=>x);};
   let studentIndex=null,classIndex=null;
   function studentFacts(id){
     studentIndex??=new Map((db.students||[]).map(s=>[String(s.id),s]));classIndex??=new Map((db.classes||[]).map(k=>[String(k.id),k]));
     const s=studentIndex.get(String(id));if(!s)return null;const cls=(s.classes||[]).map(k=>classIndex.get(String(k))).filter(Boolean),a=s.attendance||{};
-    return [['학교·학년',schoolGrade(s.school,s.grade)],['상태',STUDENT_STATE[s.status]||''],['반',cls.length?`${cls.slice(0,2).map(k=>k.name).join(', ')}${cls.length>2?` 외 ${fmt(cls.length-2)}`:''}`:''],['이번 달 결석',a.absent?`${fmt(a.absent)}회`:''],['이번 달 미납',s.remaining>0?`${fmt(s.remaining)}원`:'']];
+    return [['학교·학년',schoolGrade(s.school,s.grade)],['상태',STUDENT_STATE[s.status]||''],['반',cls.length?cls.map(k=>k.name).join(', '):''],['이번 달 결석',a.absent?`${fmt(a.absent)}회`:''],['이번 달 미납',s.remaining>0?`${fmt(s.remaining)}원`:'']];
   }
-  // 이름 칸은 새로 읽은 기록의 이름 — 업무에 실린 이름은 그 일이 생길 때 적은 것이라 옛 이름일 수 있다(휴가 결재 = 신청자).
+  function currentClassFact(r,it,person,detailLabel,fields){
+    if(detailLabel==='반'||fields.some(([k])=>k==='반')||!person)return [];
+    studentIndex??=new Map((db.students||[]).map(s=>[String(s.id),s]));classIndex??=new Map((db.classes||[]).map(k=>[String(k.id),k]));
+    const id=String(r.recordId||r.id||''),book=r.familyId==='textbook-requests'?(db.textbooks||[]).find(t=>String(t.id)===id):null;
+    const matches=(db.students||[]).filter(s=>s.name===person),student=book?.studentId?studentIndex.get(String(book.studentId)):r.type==='student'?studentIndex.get(id):matches.length===1?matches[0]:null;
+    if(!student)return [];
+    let cls=(student.classes||[]).map(k=>classIndex.get(String(k))).filter(Boolean);
+    const source=fields.find(([k])=>k==='과목')?.[1]||it.subject||'',title=String(book?.name||'');
+    const subject=/영어|english|eie/i.test(source)||!source&&/영어|English|EiE|파닉스/.test(title)?'english':/수학|math/i.test(source)||!source&&/가우스|수학|발전|방정식|다항식/.test(title)?'math':'';
+    if(subject)cls=cls.filter(c=>subject==='math'?/math/i.test(c.subject):/english|eie/i.test(c.subject));
+    if(book?.teacher&&cls.some(c=>c.teacher===book.teacher))cls=cls.filter(c=>c.teacher===book.teacher);
+    const kinds=new Set(cls.map(c=>c.subject)),bookSubject=subject||(kinds.size===1?[...kinds][0]:'');
+    return [...(book&&!fields.some(([k])=>k==='과목')&&bookSubject?[['과목',bookSubject==='math'?'수학':/english|eie/i.test(bookSubject)?'영어':bookSubject]]:[]),['반',cls.length?cls.map(c=>c.name).join(', '):student.classes?.length?'해당 과목의 현재 반 없음':'현재 반 없음']];
+  }
+  // 업무 제목에 끼워 쓴 원생·발생일·시각은 원천 기록을 읽은 뒤 각각의 칸으로 분리한다.
   const recCache=new Map(),recName=new Map(),recItem=new Map();
+  const taskParts=label=>{const m=/^(.+?)\s+—\s+([^·]+?)\s*·\s*(\d{1,2}[-/.]\d{1,2})(?:\s+(\d{1,2}:\d{2}))?\s*(.*)$/.exec(String(label||''));return m?{work:m[1].trim(),name:m[2].trim(),day:m[3],time:m[4]||'',kind:m[5].trim()}:null;};
+  const nonPerson=new Set(['integrations','inventory','settings','calendar']);
   // 칸 이름은 영역이 알려 준 것(detailLabel·dateLabel — 반·수업일 · 청구월·납부 기한 …)을 먼저 쓴다.
   const famMeta=fam=>db.workspaces?.families?.[fam]||{};
   function recordFacts(r){
     const fam=r.familyId||'',id=String(r.recordId||r.id||''),key=`${fam}:${id}`;
     const cacheKey=`${key}:${r.teacherName||''}`;
     if(recCache.has(cacheKey))return recCache.get(cacheKey);
-    const known=r.type==='student'?studentFacts(id):null;
     const clean=v=>{const x=String(v??'').trim();return x==='—'?'':/^\d{4}-\d{2}-\d{2}$/.test(x)?md(x):x;};
-    const factsOf=it=>{if(!it)return r.detail?[['내용',String(r.detail)]]:[];if(it.label)recName.set(key,String(it.label));const label=String(it.label||r.label||''),detail=clean(it.detail);return ordered(fam,[[famMeta(fam).detailLabel||DETAIL_LABEL[fam]||'내용',detail&&!label.includes(detail)?detail:''],['상태',clean(it.status)],[famMeta(fam).dateLabel||DATE_LABEL[fam]||'날짜',it.date?md(String(it.date).slice(0,10)):''],...(r.teacherName?[['담당 선생님',clean(r.teacherName)]]:[]),...(it.fields||[]).filter(f=>f&&f.label).map(f=>[fam==='attendance'&&f.label==='메모'?'사유':String(f.label),clean(f.value)])]);};
-    const p=known?Promise.resolve(known):!fam||!id?Promise.resolve([]):recItem.has(key)?Promise.resolve(factsOf(recItem.get(key))):fetch(`/api/workspaces/${encodeURIComponent(fam)}/records?id=${encodeURIComponent(id)}`,{headers:{Accept:'application/json'}}).then(res=>res.ok?res.json():null).then(b=>factsOf(b?.item)).catch(()=>{recCache.delete(cacheKey);return null;});
+    const factsOf=it=>{if(!it)return r.detail?[['내용',String(r.detail)]]:[];
+      const label=String(it.label||r.label||''),detail=clean(it.detail),parts=fam==='tasks-notifications'?taskParts(label):null;
+      const person=parts?(db.students||[]).some(s=>s.name===parts.name)?parts.name:'':nonPerson.has(fam)?'':label;
+      recName.set(key,person);
+      const detailLabel=famMeta(fam).detailLabel||DETAIL_LABEL[fam]||'내용',fields=(it.fields||[]).filter(f=>f&&f.label).map(f=>[fam==='attendance'&&f.label==='메모'?'사유':String(f.label),clean(f.value)]);
+      return ordered(fam,[...(parts?[['업무',parts.work],['발생일',parts.day],['시각',parts.time],['구분',parts.kind]]:fam==='tasks-notifications'?[['업무',label]]:[]),[detailLabel,detail&&!label.includes(detail)?detail:''],['상태',clean(it.status)],[famMeta(fam).dateLabel||DATE_LABEL[fam]||'날짜',it.date?md(String(it.date).slice(0,10)):''],...currentClassFact(r,it,person,detailLabel,fields),...(r.teacherName?[['담당 선생님',clean(r.teacherName)]]:[]),...fields]);};
+    const p=Promise.resolve(nonPerson.has(fam)?null:api.ensureFull?.()).then(()=>r.type==='student'?studentFacts(id):!fam||!id?[]:recItem.has(key)?factsOf(recItem.get(key)):fetch(`/api/workspaces/${encodeURIComponent(fam)}/records?id=${encodeURIComponent(id)}`,{headers:{Accept:'application/json'}}).then(res=>res.ok?res.json():null).then(b=>factsOf(b?.item))).catch(()=>{recCache.delete(cacheKey);return null;});
     recCache.set(cacheKey,p);return p;
   }
   // 아직 안 읽은 기록은 영역마다 한 번에 읽는다(GET …/records?ids=, 100건씩) — 기록마다 요청 하나씩 나가던 것(검수 10-28 M13).
@@ -1076,13 +1094,14 @@ window.createFlowUI = function createFlowUI(api) {
   function recTable(list,facts,c){
     // 열 = 그 묶음에서 값이 하나라도 있는 칸. 순서는 기록이 칸을 내는 순서 — 새 칸은 그 줄에서 바로 앞 칸 뒤에 끼운다(첫 줄에 없는 칸이 맨 뒤로 밀리지 않게).
     const cols=[];facts.forEach(f=>{const ks=(f||[]).filter(([,v])=>v).map(([k])=>k);ks.forEach((k,j)=>{if(cols.includes(k))return;let at=0;for(let p=j-1;p>=0;p--){const i=cols.indexOf(ks[p]);if(i>=0){at=i+1;break;}}cols.splice(at,0,k);});});
-    // 열 정렬은 값으로 정한다(원장 10-28 "내용에 따라 제목행은 가운데 정렬 왼쪽 정렬 등 적극적으로 활용해서 깔끔하게"):
-    // 금액은 오른쪽, 짧은 값(상태·날짜·일수·이름 하나)은 가운데, 긴 글은 왼쪽 — 제목도 같은 쪽.
+    const subject=cols.includes('과목');if(subject)cols.splice(cols.indexOf('과목'),1);
+    // 금액은 오른쪽, 짧은 값은 가운데, 긴 글은 왼쪽에 맞춘다.
     const align=cols.map(k=>{const vs=facts.map(f=>new Map(f||[]).get(k)).filter(Boolean).map(String);if(!vs.length)return '';if(vs.every(v=>/^-?[\d,]+원$/.test(v)))return 'al-r';return Math.max(...vs.map(v=>v.length))<=8?'al-c':'';});
     const cls=i=>align[i]?` class="${align[i]}"`:'';
     const cell=(v,i)=>`<td${cls(i)}><span class="fl-cut">${h(v||'')}</span></td>`;
-    return `<table class="fl-rectable"><thead><tr><th scope="col">이름</th>${cols.map((k,i)=>`<th scope="col"${cls(i)}>${h(k)}</th>`).join('')}<th scope="col">처리</th></tr></thead><tbody>${list.map((r,i)=>{const fam=r.familyId||'',id=String(r.recordId||r.id||''),can=fam&&api.hasView(`workspace-${fam}`)||api.canOpenRecord?.(id),process=!!c?.signalId&&fam===c.familyId&&r.type!=='task'&&r.type!=='student',f=new Map(facts[i]||[]),at=`data-family="${h(fam)}" data-record="${h(id)}"`,name=recName.get(`${fam}:${id}`)||refLabel(r);
-      return `<tr ${can?`class="can" data-fl="rec-open" ${at}`:''}><th scope="row">${can?`<button type="button" class="fl-cut" data-fl="rec-open" ${at}>${h(name)}</button>`:`<span class="fl-cut">${h(name)}</span>`}</th>${facts[i]===null?`<td colspan="${cols.length||1}" class="fl-dim">정보를 읽지 못했습니다.</td>`:cols.map((k,i)=>cell(f.get(k),i)).join('')}<td class="fl-rec-go">${process?`<button type="button" class="fl-rec-process" data-fl="rec-process" data-case="${h(c.id)}" data-type="${h(r.type)}" aria-label="${h(name)} 처리" ${at}>처리</button>`:can?icon('chevron'):''}</td></tr>`;}).join('')}</tbody></table>`;
+    const heading=list.every(r=>nonPerson.has(r.familyId))?'대상':'이름';
+    return `<table class="fl-rectable"><thead><tr>${subject?'<th scope="col">과목</th>':''}<th scope="col">${heading}</th>${cols.map((k,i)=>`<th scope="col"${cls(i)}>${h(k)}</th>`).join('')}<th scope="col">처리</th></tr></thead><tbody>${list.map((r,i)=>{const fam=r.familyId||'',id=String(r.recordId||r.id||''),can=fam&&api.hasView(`workspace-${fam}`)||api.canOpenRecord?.(id),process=!!c?.signalId&&fam===c.familyId&&r.type!=='task'&&r.type!=='student',f=new Map(facts[i]||[]),at=`data-family="${h(fam)}" data-record="${h(id)}"`,name=recName.has(`${fam}:${id}`)?recName.get(`${fam}:${id}`):refLabel(r),display=nonPerson.has(fam)?recItem.get(`${fam}:${id}`)?.label||refLabel(r):name||'—';
+      return `<tr ${can?`class="can" data-fl="rec-open" ${at}`:''}>${subject?`<td>${h(f.get('과목')||'')}</td>`:''}<th scope="row">${can&&display!=='—'?`<button type="button" class="fl-cut" data-fl="rec-open" ${at}>${h(display)}</button>`:`<span class="fl-cut">${h(display)}</span>`}</th>${facts[i]===null?`<td colspan="${cols.length||1}" class="fl-dim">정보를 읽지 못했습니다.</td>`:cols.map((k,i)=>cell(f.get(k),i)).join('')}<td class="fl-rec-go">${process?`<button type="button" class="fl-rec-process" data-fl="rec-process" data-case="${h(c.id)}" data-type="${h(r.type)}" aria-label="${h(display)} 처리" ${at}>처리</button>`:can?icon('chevron'):''}</td></tr>`;}).join('')}</tbody></table>`;
   }
   function fillFacts(root,refs,c){
     const groups=new Map();for(const r of refs){const t=recType(r);if(!groups.has(t))groups.set(t,[]);groups.get(t).push(r);}
