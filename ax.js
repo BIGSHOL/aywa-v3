@@ -33,7 +33,7 @@ window.createOwnerWorkspace = function createOwnerWorkspace(api) {
   const pill=(text,tone='')=>`<span class="ax-chip ${tone}">${h(text)}</span>`;
   const button=(text,action,id='',primary=false,attrs='')=>`<button type="button" class="button ${primary?'primary':''}" data-ax="${action}" data-id="${h(id)}" ${attrs}>${h(text)}</button>`;
   // AI 업무 지원 답 그리기(ax-chat.js) — 서식·근거 미주·바로 가기·요청안. 없으면 예전처럼 평문으로 그린다.
-  const axChat=window.createAxChat?.({h,pill,button,toast,navigate,workspaces:()=>workspaces})||null;
+  const axChat=window.createAxChat?.({h,pill,button,toast,navigate,workspaces:()=>workspaces,basis:t=>`${t.context?`이슈 ${findIssue(t.context)?.title||'선택한 이슈'}`:'원장실 전체'} · ${db.meta.month} 업무 자료 · 기준일 ${db.meta.asOf}`})||null;
   const caption=`${Number(db.meta.asOf.slice(5,7))}/${Number(db.meta.asOf.slice(8,10))} 기준`;
   const names=ids=>ids.map(id=>staffById.get(id)?.name||'담당자').join(', ');
   const clip=(text,limit)=>String(text??'').slice(0,limit);

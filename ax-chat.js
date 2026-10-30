@@ -15,6 +15,7 @@ window.createAxChat = function createAxChat(api) {
   // 저장된 옛 답의 링크는 새 지표 목록에서 사라져도 남는다. 제공하지 않는 목적지는 버튼을 그리지 않는다.
   const REMOVED_TRENDS = new Set(['report-sent']);
   const availableLink = id => typeof id === 'string' && LINK.test(id) && !(id.startsWith('trend:') && REMOVED_TRENDS.has(id.slice(6)));
+  const uniqueLinks = list => { const seen = new Set(); return list.filter(l => { const key = String(l.label).trim().replace(/\s*→$/, '') || l.id; if (seen.has(l.id) || seen.has(key)) return false; seen.add(l.id); seen.add(key); return true; }); };
 
   /** 서버 답의 정리된 부분 — 모양이 틀린 칸은 버린다(없으면 null → ax.js가 평문 답을 그린다). */
   function validate(p) {
@@ -31,7 +32,7 @@ window.createAxChat = function createAxChat(api) {
       checks: arr(p.checks, 4).map(c => str(c, 200)).filter(Boolean),
       table: p.table && Array.isArray(p.table.columns) && Array.isArray(p.table.rows) ? { columns: arr(p.table.columns, 4).map(c => str(c, 30)), rows: arr(p.table.rows, 8).filter(Array.isArray).map(r => arr(r, 4).map(c => str(c, 40))) } : null,
       notes,
-      links: arr(p.links, 4).filter(l => l && availableLink(l.id) && str(l.label, 60)).map(l => ({ id: l.id, label: str(l.label, 60) })),
+      links: uniqueLinks((Array.isArray(p.links) ? p.links : []).filter(l => l && availableLink(l.id) && str(l.label, 60)).map(l => ({ id: l.id, label: str(l.label, 60) }))).slice(0, 4),
       notice: str(p.notice, 200),
     };
   }
@@ -55,15 +56,18 @@ window.createAxChat = function createAxChat(api) {
     const table = r.table && r.table.columns.length >= 2 && r.table.rows.length ? `<div class="axc-table-wrap"><table class="axc-table"><thead><tr>${r.table.columns.map(c => `<th scope="col">${h(c)}</th>`).join('')}</tr></thead><tbody>${r.table.rows.map(row => `<tr>${r.table.columns.map((_, i) => `<td>${h(row[i] ?? '')}</td>`).join('')}</tr>`).join('')}</tbody></table></div>` : '';
     const checks = r.checks.length ? `<h4 class="axc-h">확인할 업무</h4><ul class="axc-checks">${r.checks.map(c => `<li>${rich(c)}</li>`).join('')}</ul>` : '';
     const notes = r.notes.length ? `<ol class="axc-notes" aria-label="근거 미주">${r.notes.map(n => `<li id="axc-n-${h(tid)}-${n.n}"><span class="axc-n-no">[${n.n}]</span><span class="axc-n-text">${h(n.text)}</span></li>`).join('')}</ol>` : '';
-    const links = r.links.length ? `<div class="axc-links"><span class="ax-note">바로 가기</span>${r.links.map(l => `<button type="button" class="button axc-go" data-axc-go="${h(l.id)}">${h(l.label)} <span aria-hidden="true">→</span></button>`).join('')}</div>` : '';
+    // Stored replies may predate link normalization, so the view also removes repeated destinations.
+    const linksForView = uniqueLinks(r.links);
+    const links = linksForView.length ? `<div class="axc-links"><span class="ax-note">바로 가기</span>${linksForView.map(l => `<button type="button" class="button axc-go" data-axc-go="${h(l.id)}">${h(l.label)} <span aria-hidden="true">→</span></button>`).join('')}</div>` : '';
     const task = t.suggestedTask ? taskCard(t) : '';
     const head = r.headline ? `<p class="axc-headline">${rich(r.headline)}</p>` : '';
     const body = !r.headline && r.body ? `<div class="ax-chat-text">${rich(r.body)}</div>` : '';
-    return `<div class="ax-chat-answer axc"><div class="ax-chat-provider">${pill('AI 답변', 'blue')}<span>학원 기록으로 쓴 초안입니다. 내용을 확인한 뒤 사용하세요.</span></div>${window.AIResultMeta.html({model:t.aiMeta?.modelLabel||'Claude',at:t.aiMeta?.createdAt,basis:t.aiMeta?.basis||'원장실 전체 · 자료 기준 확인 필요'})}${head}${body}${facts}${points}${table}${checks}${r.notice ? `<p class="axc-notice">${h(r.notice)}</p>` : ''}${notes}${links}${issues}${task}</div>`;
+    return `<div class="ax-chat-answer axc"><div class="ax-chat-provider">${pill('AI 답변', 'blue')}<span>학원 기록으로 쓴 초안입니다. 내용을 확인한 뒤 사용하세요.</span></div>${window.AIResultMeta.html({model:t.aiMeta?.modelLabel||'Claude',at:t.aiMeta?.createdAt,basis:t.aiMeta?.basis||api.basis?.(t)||'원장실 전체'})}${head}${body}${facts}${points}${table}${checks}${r.notice ? `<p class="axc-notice">${h(r.notice)}</p>` : ''}${notes}${links}${issues}${task}</div>`;
   }
   function taskCard(t) {
     const x = t.task, task = t.suggestedTask;
-    const where = x?.areaLabel ? `<div class="axc-task-meta"><span class="ax-note">볼 화면</span>${pill(x.areaLabel)}</div>` : '';
+    const record = x?.attach?.length === 1 ? x.attach[0].value.split('|')[1] : '';
+    const where = x?.areaLabel ? `<div class="axc-task-meta"><span class="ax-note">볼 화면</span><button type="button" class="button axc-go" data-axc-go="ws:${h(x.area)}"${record ? ` data-axc-record="${h(record)}"` : ''}>${h(x.areaLabel)} <span aria-hidden="true">→</span></button></div>` : '';
     const recs = x?.attach?.length ? `<div class="axc-task-meta"><span class="ax-note">함께 붙일 기록</span>${x.attach.map(a => pill(a.meta ? `${a.label} · ${a.meta}` : a.label)).join('')}</div>` : '';
     return `<div class="ax-chat-task axc-task"><span class="ax-note">업무 요청안</span><strong>${h(task.title)}</strong><p class="live-pre">${h(task.body)}</p>${where}${recs}<div class="ax-actions">${button('요청 창에서 열기', 'chat-task', t.id, true)}<span class="ax-note">담당자·기한을 정해 등록하기 전에는 전달되지 않습니다.</span></div></div>`;
   }
@@ -79,13 +83,14 @@ window.createAxChat = function createAxChat(api) {
   }
 
   // ── 이동 · 미주 ──────────────────────────────────────────────────────────────────────────────────────────────────────
-  function go(id) {
+  function go(id, record = '') {
     const [kind, key] = [id.slice(0, id.indexOf(':')), id.slice(id.indexOf(':') + 1)];
     if (!availableLink(id)) return;
     if (kind === 'ws') {
       const ws = api.workspaces?.();
       if (ws && !ws.has?.(key)) { api.toast?.('이 화면은 지금 열 수 없습니다.'); return; }
       document.querySelectorAll('dialog[open]').forEach(d => d.close());
+      if (record && ws?.showRecord) { ws.showRecord(key, record); return; }
       if (!ws?.openFamily?.(key)) api.navigate?.(`workspace-${key}`);
       return;
     }
@@ -119,7 +124,7 @@ window.createAxChat = function createAxChat(api) {
   }
   document.addEventListener('click', event => {
     const goBtn = event.target.closest?.('[data-axc-go]');
-    if (goBtn) { go(goBtn.dataset.axcGo); return; }
+    if (goBtn) { go(goBtn.dataset.axcGo, goBtn.dataset.axcRecord || ''); return; }
     const fn = event.target.closest?.('a[data-axc-fn]');
     if (fn) { event.preventDefault(); hidePop(); const n = document.getElementById(fn.getAttribute('href').slice(1)); if (n) { glide(n); n.classList.add('axc-flash'); setTimeout(() => n.classList.remove('axc-flash'), 1400); } return; }
     const x = event.target.closest?.('[data-axc-unattach]');

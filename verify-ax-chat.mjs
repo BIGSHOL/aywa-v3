@@ -13,7 +13,7 @@ const RICH = {
   points: [{ text: '남은 청구는 ⟦14건⟧입니다. 다만 수납액은 누적 금액입니다.', notes: [1, 2] }, { text: '<script>window.__xss=2</script>근거', notes: [9] }],
   notes: [{ n: 1, text: '2026-10 청구 333건: 남은 금액 329,000원.' }, { n: 2, text: '최근 6개월 수납 흐름.' }],
   checks: ['부분납부 ⟦14건⟧ 확인'], table: { columns: ['청구월', '남은 금액'], rows: [['2026-09', '0원'], ['2026-10', '329,000원']] },
-  links: [{ id: 'ws:billing', label: '수납관리' }, { id: 'v2:timetable', label: '시간표' }, { id: 'trend:report-written', label: '수업보고서 작성률 추세' }, { id: 'http://evil.test', label: '나쁜 곳' }],
+  links: [{ id: 'ws:billing', label: '수납관리' }, { id: 'v2:timetable', label: '시간표' }, { id: 'trend:report-written', label: '수업보고서 작성률 추세' }, { id: 'v2:billing', label: '수납관리' }, { id: 'http://evil.test', label: '나쁜 곳' }],
   suggestedTask: { title: '수납 잔액 확인', body: '14건을 확인해 주세요.', area: 'billing', areaLabel: '수납관리', attach: [{ value: 'billing|inv-1', label: '홍길동 · 10월 수강료', meta: '부분납부' }, { value: 'students|x', label: '다른 영역' }, { value: 'billing|<x>', label: '나쁜 값' }] },
 };
 const LEGACY = { answer: '옛 모양 답입니다. **굵게**', issueIds: [], suggestedTask: null, provider: 'claude-cli' };
@@ -48,13 +48,14 @@ try {
   assert.match(await page.locator('.axc-fn-pop').innerText(), /2026-10 청구 333건/);
   await mark.click(); await page.waitForTimeout(100);
   assert.equal(await a.locator('.axc-notes li.axc-flash').count(), 1, 'click lands on the footnote');
-  // ④ 바로 가기 — 서버 목록 모양만, 누르면 그 화면
-  assert.deepEqual(await a.locator('[data-axc-go]').evaluateAll(n => n.map(x => x.dataset.axcGo)), ['ws:billing', 'v2:timetable', 'trend:report-written'], 'a link that is not a known destination is not drawn');
+  // ④ 바로 가기 — 같은 이름의 화면은 한 번, 허용된 목적지만 그린 뒤 해당 화면으로 이동
+  assert.deepEqual(await a.locator('.axc-links [data-axc-go]').evaluateAll(n => n.map(x => x.dataset.axcGo)), ['ws:billing', 'v2:timetable', 'trend:report-written'], 'a link that is not a known destination is not drawn');
+  assert.equal(await a.locator('.axc-task-meta [data-axc-go="ws:billing"]').getAttribute('data-axc-record'), 'inv-1', 'the task screen opens its single attached record');
   await a.locator('[data-axc-go="v2:timetable"]').click(); await page.waitForTimeout(400);
   assert.equal(await page.evaluate(() => location.hash), '#v2-timetable'); assert.equal(await page.locator('#detail[open]').count(), 0, 'the chat closes so the screen is visible');
   await openChat(); await page.locator('.axc [data-axc-go="trend:report-written"]').click(); await page.waitForTimeout(400);
   assert.match(await page.evaluate(() => location.hash), /^#v2-trend\?metric=report-written&grain=week$/);
-  await openChat(); await page.locator('.axc [data-axc-go="ws:billing"]').click(); await page.waitForTimeout(600);
+  await openChat(); await page.locator('.axc-links [data-axc-go="ws:billing"]').click(); await page.waitForTimeout(600);
   assert.match(await page.evaluate(() => location.hash), /billing/);
   // ⑤ 요청 창 — 요청안 + 출처 영역 + 확인된 첨부(다른 영역·모양이 틀린 값은 빠진다), ×로 빼기
   await openChat(); await page.locator('.axc [data-ax="chat-task"]').click(); await page.locator('#modal form[data-ax-form="request"]').waitFor();
@@ -69,7 +70,7 @@ try {
   await openChat(); const before = await page.locator('.axc').count();
   await ask({ ...RICH, links: [{ id: 'trend:report-sent', label: '옛 발송 지표' }, { id: { old: true }, label: '잘못된 링크' }] }, '옛 링크');
   await page.waitForFunction(n => document.querySelectorAll('.axc').length > n, before);
-  assert.equal(await page.locator('.axc').last().locator('[data-axc-go]').count(), 0, '제거한 지표의 저장된 바로 가기는 그리지 않는다');
+  assert.equal(await page.locator('.axc').last().locator('.axc-links [data-axc-go]').count(), 0, '제거한 지표의 저장된 바로 가기는 그리지 않는다');
   assert.deepEqual(errors, []);
   console.log('PASS: AI 업무 지원 — 서식·이스케이프·색·미주·바로 가기·요청 창 채우기·옛 모양(가짜 답, AI 호출 없음).');
 } finally { await browser.close(); }
