@@ -11,6 +11,7 @@ import { AUDIT_ONLY, FAMILY_IDS, workspaceRecords } from './domain-snapshot.mjs'
 import { EVIDENCE } from './domain-snapshot-core.mjs';
 import { REASON_LABEL, SYSTEM_BULK_WITHDRAWAL_DATES } from './domain-snapshot-students2.mjs';
 import { ROLE_LABEL } from './domain-snapshot-people.mjs';
+import { groupAbsenceSessions } from './absence-sessions.mjs';
 import { handleWorkspaceRecords, queryRecords, searchRecords } from './domain-http.mjs';
 import { buildAssistantContext, contextText, ISSUE_FAMILY } from './claude-bridge-context.mjs';
 
@@ -48,7 +49,6 @@ check('same facts as the base model and the AX issues', () => {
   assert.equal(metric('billing', '이번 달 할인 전 금액') - metric('billing', '이번 달 할인') - metric('billing', '이번 달 수납'), 329000, 'unpaid = gross − discount − paid');
   assert.equal(metric('students', '재원'), snapshot.students.filter(s => s.status === 'enrolled').length);
   assert.equal(metric('attendance', '이번 달 출결 칸'), snapshot.attendance.statuses.reduce((n, s) => n + s.count, 0));
-  assert.equal(metric('attendance', '이번 달 결석'), snapshot.attendance.statuses.find(s => s.label === 'absent').count);
   const leads = snapshot.admissions.filter(a => a.date.startsWith(month));
   assert.equal(metric('enrollment', '이번 달 접수'), leads.length);
   const unfinished = leads.filter(a => ['scheduled', 'consulted', 'ai_done'].includes(a.outcome));
@@ -71,6 +71,10 @@ try {
     const [{ c: operatingClasses }] = await sql`select count(*)::int c from public.classes where tenant_id=${tenantId} and is_active and closed_at is null and not coalesce(is_makeup_pool,false)`;
     assert.equal(metric('classes', '운영 중인 반'), operatingClasses, 'classes metric = 2.0 operating list');
     assert.equal(F.classes.totalRecords, operatingClasses, 'classes evidence = 2.0 operating list');
+    const absentIds = F.attendance[EVIDENCE].filter(r => r.facetIds.includes('status:absent')).map(r => r.id);
+    const absentRows = await sql`select student_id::text student_id, class_id::text class_id, session_date::text session_date from public.attendance_records where tenant_id=${tenantId} and id::text = any(${absentIds})`;
+    assert.equal(absentRows.length, snapshot.attendance.statuses.find(s => s.label === 'absent').count, 'absence evidence = base model absent cells');
+    assert.equal(metric('attendance', '이번 달 결석'), groupAbsenceSessions(absentRows).length, 'absence metric = grouped student/class/date sessions');
     // Families whose evidence is the whole tenant table — an independent count must match.
     for (const [id, tables] of Object.entries({ onescreen: ['classnote_notices'], approvals: ['approval_documents'], documents: ['academy_documents'], calendar: ['calendar_events'], 'tasks-notifications': ['staff_tasks'], slack: ['slack_rules'], inventory: ['inventory_assets'], 'withdrawal-reports': ['withdrawal_reports', 'withdrawal_report_archives'], payroll: ['payslips'], 'class-sheets': ['class_sheet_plan_lines'], 'owner-settings': ['notice_popups', 'operating_periods', 'classrooms'] })) {
       let n = 0; for (const table of tables) n += await count(table);
