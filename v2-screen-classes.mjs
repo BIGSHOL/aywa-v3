@@ -10,6 +10,9 @@ import { deepMerge, normalizeSubjects, loadRules as timetableRules, weekSlots } 
 import { buildClassDetail, buildClassEdit, buildClassNew } from './v2-classes-detail.mjs';
 import { classesActions } from './v2-classes-save.mjs';
 import { loadExtra, readEditors, timetableActions } from './v2-timetable-save.mjs';
+import { classOverview, COURSE_KEYS } from './v2-classes-overview.mjs';
+import { overviewSettingsAction } from './v2-classes-overview-save.mjs';
+import { overviewPrograms } from './v2-overview-program.mjs';
 
 const ID = 'classes';
 let rulesPromise = null;
@@ -27,7 +30,7 @@ function loadRules(importV2) {
 
 const plain = v => typeof v === 'object' && v !== null && !Array.isArray(v);
 /** 학원 설정의 운영·모듈 칸 — 2.0 getTenantSettings → resolveSettings와 같은 병합(시간표 화면과 같은 함수). */
-async function readSettings(sql, t, R) {
+export async function readSettings(sql, t, R) {
   const [row] = await sql`select data from public.tenant_settings where tenant_id=${t}`;
   const stored = row?.data ?? null, base = R.baseSettingsFor(R.presetOfStored(stored));
   const operations = deepMerge(base.operations, plain(stored) ? stored.operations : undefined);
@@ -66,7 +69,7 @@ const sortedDaySlots = m => [...(m?.entries() ?? [])].sort((a, b) => DOW_ORDER.i
 const chunk100 = list => { const out = []; for (let i = 0; i < list.length; i += 100) out.push(list.slice(i, i + 100)); return out; };
 
 /** getClassesPage(filters, page, pageSize) — 매칭 전건을 받아 메모리에서 정렬·쪽 나누기(2.0과 같다). */
-async function readClassesPage(sql, t, R, o, page, pageSize) {
+export async function readClassesPage(sql, t, R, o, page, pageSize) {
   const sort = o.sort ?? 'name', days = (o.days ?? []).filter(Boolean);
   let dayClassIds = null;
   if (days.length > 0) {
@@ -91,7 +94,7 @@ async function readClassesPage(sql, t, R, o, page, pageSize) {
         ${slotClassIds.length ? sql`or c.id = any(${slotClassIds}::uuid[])` : sql``})`;
     }
   }
-  const classes = await sql`select c.id::text id, c.class_name, c.subject, c.is_active, c.closed_at::text closed_at, c.is_special, c.notes, c.teacher_id::text teacher_id,
+  const classes = await sql`select c.id::text id, c.class_name, c.subject, c.english_track, c.is_active, c.closed_at::text closed_at, c.is_special, c.notes, c.teacher_id::text teacher_id,
       u.display_name teacher_name, r.name classroom_name, coalesce(c.is_makeup_pool, false) is_makeup_pool
     from public.classes c left join public.users u on u.id = c.teacher_id left join public.classrooms r on r.id = c.classroom_id
     where c.tenant_id=${t}
@@ -121,7 +124,7 @@ async function readClassesPage(sql, t, R, o, page, pageSize) {
     dayView = buildDayView(scheds, today);
   }
   const rows = matched.map(c => ({
-    id: c.id, className: c.class_name, subject: c.subject, teacherId: c.teacher_id, teacherName: c.teacher_name ?? null, classroomName: c.classroom_name ?? null,
+    id: c.id, className: c.class_name, subject: c.subject, englishTrack: c.english_track ?? null, teacherId: c.teacher_id, teacherName: c.teacher_name ?? null, classroomName: c.classroom_name ?? null,
     isActive: c.is_active, closedAt: c.closed_at ?? null, isSpecial: c.is_special ?? false, studentCount: counts.get(c.id) ?? 0,
     days: sortedDaySlots(dayView.live.get(c.id) ?? dayView.any.get(c.id)), daysStale: !dayView.live.get(c.id) && !!dayView.any.get(c.id), notes: c.notes ?? null,
   }));
@@ -178,7 +181,7 @@ async function readMovableEnrollments(sql, t, R, studentId) {
 // ── app/(shell)/classes/page.tsx — 필터 해석(계정 저장값 없음 = 기본값) ────────────────────────────────────────────────────
 
 const PAGE_SIZE = 50;
-export async function buildClassList({ sql, params: sp, tenantId: t, R }) {
+export async function buildClassList({ sql, params: sp, tenantId: t, R, importV2 }) {
   const prefs = R.DEFAULT_CLASS_LIST_PREFS;
   const status = R.parseClassStatus(sp.status), q = sp.q ?? '', page = Math.max(1, Number(sp.page) || 1);
   const kind = R.parseClassKind(sp.kind ?? prefs.kind);
@@ -198,7 +201,18 @@ export async function buildClassList({ sql, params: sp, tenantId: t, R }) {
       if (picked && !R.teacherTeaches(picked.subjects, subject)) { teacherId = 'all'; teacherReset = true; }
     }
   }
-  const { rows, total } = await readClassesPage(sql, t, R, { kind, subject, teacherId, days, q, sort, status }, page, PAGE_SIZE);
+  const narrowed = !!(sp.program || sp.course);
+  const result = await readClassesPage(sql, t, R, { kind, subject, teacherId, days, q, sort, status }, narrowed ? 1 : page, narrowed ? 10000 : PAGE_SIZE);
+  let { rows, total } = result;
+  if (narrowed) {
+    const program = await overviewPrograms(importV2, settings, R);
+    const [stored] = await sql`select coalesce(data->'ownerConceptClassOverview','{}'::jsonb) overview from public.tenant_settings where tenant_id=${t}`;
+    const courses = stored?.overview?.classCourse ?? {};
+    const matched = rows.filter(c => (!sp.program || program.of({ subject: c.subject, english_track: c.englishTrack }) === sp.program)
+      && (!sp.course || (COURSE_KEYS.includes(courses[c.id]) ? courses[c.id] : 'unclassified') === sp.course));
+    total = matched.length;
+    rows = matched.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+  }
   return {
     resolved: { status, q, page, kind, subject, teacherId, teacherReset, days, sortChosen, sort, view },
     rows, total, stats, teachers, pageSize: PAGE_SIZE,
@@ -219,9 +233,11 @@ export const screen = {
     v2path: new RegExp(`^/classes(?:/new|/${UUID_BODY}(?:/edit)?)?$`),
     kind: /^[a-z_]{1,20}$/, subject: /^[a-z0-9_]{1,40}$/, teacher: new RegExp(`^(all|${UUID_BODY})$`), days: /^[a-z,]{0,40}$/,
     q: /^[^\u0000-\u001f]{0,100}$/, view: /^[a-z]{1,10}$/, sort: /^[a-z_]{1,20}$/, status: /^[a-z]{1,10}$/, page: /^\d{1,4}$/,
+    program: /^(eie|injaewon|math)$/, course: /^(elem|middle|high|mixed|unclassified)$/,
   },
   actions: {
     ...classesActions(loadRules, loadExtra, { readSettings }),
+    saveOverviewSettings: overviewSettingsAction(loadRules, loadExtra),
     // 시간표에서 옮긴 2.0 수강 저장 셋(반 이동 · 등원 요일 · 수강 종료) — 반 상세의 배정 창·요일 칸·'수강 종료'가 같은 함수를 부른다.
     ...Object.fromEntries(Object.entries(timetableActions(timetableRules, { weekSlots }))
       .filter(([name]) => ['moveEnrollmentsBatch', 'updateEnrollmentsAttendanceBatch', 'endSingleEnrollment'].includes(name))),
@@ -231,7 +247,8 @@ export const screen = {
     if (params.movable) return readMovableEnrollments(sql, tenantId, R, params.movable);
     // 저장하는 사람(수업 관리 '전체') — 3.0 띠가 이 목록에서 고른다(시간표와 같은 판정 readEditors).
     const editors = await readEditors(sql, tenantId, R, X);
-    if (!sub) return { ...(await buildClassList({ sql, params, tenantId, R })), editors };
+    if (!params.v2path) return { page: 'overview', overview: await classOverview({ sql, tenantId, importV2, R, params, readSettings, readClassesPage }), editors };
+    if (!sub) return { ...(await buildClassList({ sql, params, tenantId, R, importV2 })), editors };
     const io = { sql, tenantId, importV2, readSettings: (s, t) => readSettings(s, t, R), readTeacherOptions: (s, t) => readTeacherOptions(s, t, R) };
     const data = sub[1] ? await buildClassNew(io)
       : sub[3] ? await buildClassEdit({ ...io, id: sub[2] }) : await buildClassDetail({ ...io, id: sub[2], buildSubjectMaps: list => R.buildSubjectMaps(list) });

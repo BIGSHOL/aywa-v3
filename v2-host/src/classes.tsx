@@ -32,7 +32,7 @@ const KEYS = ['kind', 'subject', 'teacher', 'days', 'q', 'view', 'sort', 'status
 
 function List() {
   const search = useSearchParams();
-  const sp = useMemo(() => Object.fromEntries(KEYS.flatMap((k) => (search.has(k) ? [[k, search.get(k) ?? '']] : []))) as Record<string, string | undefined>, [search]);
+  const sp = useMemo(() => Object.fromEntries([...KEYS, 'program', 'course'].flatMap((k) => (search.has(k) ? [[k, search.get(k) ?? '']] : []))) as Record<string, string | undefined>, [search]);
   const key = new URLSearchParams(sp as Record<string, string>).toString();
   const [state, setState] = useState<{ key?: string; data?: ClassListData & { editors?: Editors }; error?: string }>({});
   const [tick, setTick] = useState(0);

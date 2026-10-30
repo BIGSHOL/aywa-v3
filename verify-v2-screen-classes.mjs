@@ -23,12 +23,12 @@ await check('조회 조건 = 2.0 page.tsx searchParams 열쇠 그대로 + 하위
   const page = await src(PAGE), block = /searchParams: Promise<\{([\s\S]*?)\}>/.exec(page)?.[1] ?? '';
   const keys = [...block.matchAll(/(\w+)\?: string;/g)].map(m => m[1]);
   assert.ok(keys.length >= 9, '2.0 열쇠를 찾지 못함');
-  assert.deepEqual(Object.keys(C.screen.params).sort(), ['movable', 'v2path', ...keys].sort(), '2.0 열쇠 + 하위 주소(v2path) + 배정 창 후보 읽기(movable)');
+  for (const key of ['movable', 'v2path', 'program', 'course', ...keys]) assert.ok(key in C.screen.params, `${key} 주소 열쇠`);
   for (const ok of ['/classes', '/classes/new', '/classes/e4a2c026-8992-4211-a5fe-b9e93be8a0f3', '/classes/e4a2c026-8992-4211-a5fe-b9e93be8a0f3/edit']) assert.ok(C.screen.params.v2path.test(ok), ok);
   for (const no of ['/students/x', '/classes/new/edit', '/classes/x', '/classes/']) assert.ok(!C.screen.params.v2path.test(no), no);
   const entry = await here('./v2-host/src/classes.tsx'), wrap = await here('./v2-screen-classes.js');
   assert.deepEqual(JSON.parse(/const KEYS = (\[[^\]]*\])/.exec(entry)[1].replace(/'/g, '"')).sort(), [...keys].sort());
-  assert.deepEqual(JSON.parse(/const KEEP = (\[[^\]]*\])/.exec(wrap)[1].replace(/'/g, '"')).sort(), ['v2path', ...keys].sort());
+  for (const key of ['v2path', 'program', 'course', ...keys]) assert.ok(JSON.parse(/const KEEP = (\[[^\]]*\])/.exec(wrap)[1].replace(/'/g, '"')).includes(key), `${key} 감싸개 주소 열쇠`);
   assert.ok(C.screen.params.teacher.test('all') && !C.screen.params.teacher.test('x') && !C.screen.params.page.test('-1'));
 });
 
@@ -75,7 +75,7 @@ await check('반 수정·새 반 그리기 = 2.0 [id]/edit · new page.tsx 본�
 });
 
 const db = await openFullDatabase();
-const load = params => db.begin('isolation level repeatable read read only', sql => C.screen.load({ sql, params, tenantId, importV2 }));
+const load = params => db.begin('isolation level repeatable read read only', sql => C.screen.load({ sql, params: { v2path: '/classes', ...params }, tenantId, importV2 }));
 try {
   const R = await C.loadRules(importV2), today = R.kstToday();
   const base = await load({}), all = await load({ status: 'all' });

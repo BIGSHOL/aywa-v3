@@ -1,0 +1,18 @@
+.v2o-classes table{table-layout:fixed;min-width:1400px}
+.v2o-classes col[data-col=name]{width:16%}
+.v2o-classes col[data-col=classes]{width:10%}
+.v2o-classes col[data-col=seats]{width:9%}
+.v2o-classes col[data-col=average]{width:14%}
+.v2o-classes col[data-col=teachers]{width:10%}
+.v2o-classes col[data-col=small]{width:9%}
+.v2o-classes col[data-col=capacity]{width:11%}
+.v2o-classes col[data-col=action]{width:21%}
+.v2o-classes td,.v2o-classes thead th:not(:first-child){text-align:right}
+.v2o-classes tbody th a{display:flex;justify-content:space-between;gap:8px;text-align:left}
+.v2o-classes td:last-child:has([data-v2-class-course]){white-space:nowrap}
+.v2o-classes td:last-child:has([data-v2-class-course]) > *{margin-left:3px}
+.v2o-classes td select{max-width:86px}
+.v2o-classes td input{width:80px}
+.v2o-classes td button{white-space:nowrap}
+.v2o-class-default{display:flex;justify-content:flex-end;align-items:center;gap:8px;margin-top:12px}
+.v2o-class-default input{width:90px;margin-left:7px}

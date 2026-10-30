@@ -10,11 +10,51 @@
   'use strict';
   const ID = 'classes', HOST = `/v2-host/${ID}.html`, S = window.V2Screens; if (!S) return;
   // 2.0 page.tsx가 읽는 주소 열쇠 그대로 + v2path(2.0 하위 경로 /classes/<반> …).
-  const KEEP = ['v2path', 'kind', 'subject', 'teacher', 'days', 'q', 'view', 'sort', 'status', 'page'];
-  let api = null, frame = null, requested = null, hostOk = null, wired = false, editors = [], actor = null;
+  const KEEP = ['v2path', 'kind', 'subject', 'teacher', 'days', 'q', 'view', 'sort', 'status', 'page', 'program', 'course'];
+  let api = null, act = null, frame = null, requested = null, hostOk = null, wired = false, editors = [], actor = null;
   const ACTOR_KEY = `v2-host-actor:${ID}`, SEL = `[data-v2-screen="${ID}"]`;
   const esc = s => S.esc(s);
   const queryOf = q => { const o = new URLSearchParams(); for (const k of KEEP) { const v = q.get(k); if (v) o.set(k, v); } return o.toString(); };
+  const COURSES = [['elem', '초등'], ['middle', '중등'], ['high', '고등'], ['mixed', '혼합'], ['unclassified', '미분류']];
+
+  function renderClassOverview(model) {
+    const template = document.createElement('template');
+    template.innerHTML = S.renderOverview(model);
+    const section = template.content.querySelector('.v2o');
+    if (!section) return template.innerHTML;
+    section.classList.add('v2o-classes');
+    const table = section.querySelector('table'), cols = document.createElement('colgroup');
+    for (const column of model.columns) { const col = document.createElement('col'); col.dataset.col = column.key; cols.append(col); }
+    if (model.rows.some(r => r.action)) { const col = document.createElement('col'); col.dataset.col = 'action'; cols.append(col); }
+    table.prepend(cols);
+    table.querySelectorAll('tbody tr:not(.v2o-group)').forEach((tr, i) => {
+      const row = model.rows[i];
+      if (!row.id) return;
+      const action = tr.lastElementChild;
+      const course = document.createElement('select'); course.dataset.v2ClassCourse = row.id; course.setAttribute('aria-label', `${row.cells.name} 과정`);
+      for (const [key, label] of COURSES) course.add(new Option(label, key));
+      course.value = row.course === 'unclassified' ? row.candidate || row.course : row.course;
+      const capacity = document.createElement('input'); capacity.type = 'number'; capacity.min = '1'; capacity.max = '100'; capacity.placeholder = '개별 정원';
+      capacity.value = row.ownCapacity ?? ''; capacity.dataset.v2ClassCapacity = row.id; capacity.setAttribute('aria-label', `${row.cells.name} 개별 정원`);
+      action.prepend(course, capacity);
+      for (const [needed, kind, label] of [[!row.teacherId, 'teacher', '담임 배정 확인'], [!row.isSpecial && row.studentCount < 4, 'small', '편성 검토']]) {
+        if (!needed) continue;
+        const button = document.createElement('button'); button.type = 'button'; button.className = 'button'; button.textContent = label;
+        button.dataset.v2ClassTask = kind; button.dataset.classId = row.id; button.dataset.className = row.cells.name; button.dataset.studentCount = row.studentCount;
+        action.append(button);
+      }
+    });
+    if (model.selected.program && model.selected.course && model.selected.course !== 'unclassified') {
+      const key = `${model.selected.program}:${model.selected.course}`;
+      const box = document.createElement('div'); box.className = 'v2o-class-default';
+      const label = document.createElement('label'); label.textContent = '이 과정의 기본 정원 ';
+      const input = document.createElement('input'); input.type = 'number'; input.min = '1'; input.max = '100'; input.placeholder = '미설정';
+      input.value = model.config.courseCapacity[key] ?? ''; input.dataset.v2DefaultCapacity = key;
+      const button = document.createElement('button'); button.type = 'button'; button.className = 'button'; button.textContent = '기본 정원 저장'; button.dataset.v2SaveDefault = key;
+      label.append(input); box.append(label, button); section.append(box);
+    }
+    return template.innerHTML;
+  }
 
   function ensureFrame(query) {
     if (!frame) {
@@ -79,6 +119,32 @@
       try { localStorage.setItem(ACTOR_KEY, t.value); } catch { /* 이 창에서만 기억 */ }
       tellHost();
     });
+    document.addEventListener('click', async e => {
+      const button = e.target.closest?.(`${SEL} [data-v2-overview-action="settings"], ${SEL} [data-v2-save-default]`);
+      if (!button || !act) return;
+      const owner = currentActor();
+      if (!owner) { api?.toast?.('저장하는 사람을 먼저 골라 주세요.'); return; }
+      const key = button.dataset.v2SaveDefault;
+      const body = key ? { type: 'default', actor: owner, program: key.split(':')[0], course: key.split(':')[1],
+        capacity: document.querySelector(`${SEL} [data-v2-default-capacity="${key}"]`)?.value ?? '' }
+        : { type: 'class', actor: owner, classId: button.dataset.key,
+          course: document.querySelector(`${SEL} [data-v2-class-course="${button.dataset.key}"]`)?.value,
+          capacity: document.querySelector(`${SEL} [data-v2-class-capacity="${button.dataset.key}"]`)?.value ?? '' };
+      button.disabled = true;
+      try { await act('saveOverviewSettings', body); api?.toast?.('설정을 저장했습니다.'); }
+      catch (error) { api?.toast?.(error?.message || '설정을 저장하지 못했습니다.'); }
+      finally { button.disabled = false; }
+    });
+    document.addEventListener('click', e => {
+      const button = e.target.closest?.(`${SEL} [data-v2-class-task]`);
+      if (!button) return;
+      const small = button.dataset.v2ClassTask === 'small', name = button.dataset.className;
+      api?.showCardRequest?.({ title: `${name} ${small ? '편성 검토' : '담임 배정 확인'}`.slice(0, 80),
+        body: small ? `${name} 반의 오늘 명단은 ${button.dataset.studentCount}명입니다. 정규 반의 편성을 검토해 주세요.`
+          : `${name} 반의 기본 담당 강사가 지정되어 있지 않습니다. 담당 강사를 확인해 주세요.`,
+        source: 'direct', draftKey: `class-overview:${button.dataset.v2ClassTask}:${button.dataset.classId}`,
+        context: { family: 'classes', familyLabel: '수업 현황', records: [{ id: button.dataset.classId, label: name }] } });
+    });
     const later = () => requestAnimationFrame(place);
     addEventListener('resize', later); addEventListener('scroll', place, { passive: true }); addEventListener('hashchange', later);
     new MutationObserver(later).observe(document.body, { childList: true, subtree: true });
@@ -87,7 +153,15 @@
   S.register({
     id: ID, label: '수업목록',
     render(ctx) {
-      api = ctx.api; wire();
+      api = ctx.api; act = ctx.act; wire();
+      if (!ctx.query.has('v2path')) {
+        const entry = ctx.load({ program: ctx.query.get('program'), course: ctx.query.get('course') });
+        if (entry.data?.editors && !editors.length) editors = entry.data.editors;
+        const model = entry.data?.overview;
+        requestAnimationFrame(place);
+        return `<div class="v2h-note" role="note"><p><b>연습 화면</b> 운영 반을 프로그램·과정 순서로 볼 수 있습니다. 과정과 정원은 원장이 확인해 이 연습 자료에 저장합니다.</p><span data-v2h-actor-slot>${actorPicker()}</span></div>`
+          + (model ? renderClassOverview(model) : `<p class="v2s-note">${entry.status === 'error' ? esc(entry.error || '수업 현황을 불러오지 못했습니다.') : '수업 현황을 불러오는 중…'}</p>`);
+      }
       const query = queryOf(ctx.query);
       if (hostOk === null) fetch(HOST, { method: 'HEAD' }).then(r => r.ok, () => false).then(ok => { if (hostOk === null) { hostOk = ok; api?.render?.(); } });
       else if (hostOk) requestAnimationFrame(() => { ensureFrame(query); place(); });
