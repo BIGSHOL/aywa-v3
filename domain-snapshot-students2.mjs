@@ -15,7 +15,7 @@ const CAMPAIGN = { pending: '대상', contacted: '연락 완료', enrolled: '재
 const BUCKETS = [['d7', '0~7일', 7], ['d30', '8~30일', 30], ['d60', '31~60일', 60], ['d90', '61~90일', 90]];
 const days = (a, b) => Math.round((Date.parse(`${b}T00:00:00Z`) - Date.parse(`${a}T00:00:00Z`)) / 86400000);
 
-export async function lifecycleFamilies({ sql, t, asOf, month, monthStart, students, subjectLabel }) {
+export async function lifecycleFamilies({ sql, t, asOf, monthStart, students, subjectLabel, schoolGradeLabel }) {
   const out = {};
   // 이탈 방어 — 2.0 화면은 출결·성적·상담·수납에서 위험도를 그 자리에서 계산한다. 저장된 것은 재등록 대상뿐.
   const targets = await sql`select r.id, s.name, r.status, to_char(r.created_at at time zone 'Asia/Seoul','YYYY-MM-DD') d from public.reenrollment_campaign_targets r join public.students s on s.id=r.student_id and s.tenant_id=${t} where r.tenant_id=${t} and not coalesce(s.is_test,false) order by r.created_at desc`;
@@ -37,7 +37,7 @@ export async function lifecycleFamilies({ sql, t, asOf, month, monthStart, stude
   out.newcomers = family('newcomers', '신규생 관리(90일 체크리스트)', {
     summary: `체크리스트 기록 ${checks.reduce((n, c) => n + c.rows_all, 0)}건 중 완료 ${checks.reduce((n, c) => n + c.done, 0)}건.`,
     metrics: [metric('90일 안 신규생', newcomers.length, '명', '재원 · 등록일 기준'), ...BUCKETS.map(([, label, max], i) => metric(`등록 후 ${label}`, newcomers.filter(s => s.elapsed <= max && s.elapsed > (BUCKETS[i - 1]?.[2] ?? -1)).length, '명')), metric('체크 완료 기록', checks.reduce((n, c) => n + c.done, 0), '건', `체크 기록 ${checks.reduce((n, c) => n + c.rows_all, 0)}건`)],
-    evidence: newcomers.sort((a, b) => b.enrolled.localeCompare(a.enrolled)).map(s => record({ id: s.id, label: s.name, date: s.enrolled, detail: [s.school, s.grade].filter(Boolean).join(' '), status: `등록 후 ${s.elapsed}일`, fields: [field('완료한 체크', doneBy.get(s.id) || 0)], facets: [`bucket:${bucketOf(s.elapsed)[0]}`, doneBy.get(s.id) ? 'has-checks' : 'no-checks'] })),
+    evidence: newcomers.sort((a, b) => b.enrolled.localeCompare(a.enrolled)).map(s => record({ id: s.id, label: s.name, date: s.enrolled, detail: schoolGradeLabel(s.school, s.grade), status: `등록 후 ${s.elapsed}일`, fields: [field('완료한 체크', doneBy.get(s.id) || 0)], facets: [`bucket:${bucketOf(s.elapsed)[0]}`, doneBy.get(s.id) ? 'has-checks' : 'no-checks'] })),
     facetOrder: [...BUCKETS.map(([id]) => `bucket:${id}`), 'has-checks', 'no-checks'], facetLabels: { ...Object.fromEntries(BUCKETS.map(([id, label]) => [`bucket:${id}`, `등록 후 ${label}`])), 'has-checks': '완료한 체크 있음', 'no-checks': '완료한 체크 없음' }, recordSource: 'students',
     sourceLabel: '원생 등록일 · 신규생 체크리스트', coverageNote: '목록은 등록 후 90일 안의 재원생입니다(최근 등록 순). 체크 항목은 기한 지남을 따지지 않고 완료만 셉니다.',
     sources: [{ table: 'students', rows: newcomers.length }, { table: 'student_onboarding_checks', rows: checks.reduce((n, c) => n + c.rows_all, 0) }],
