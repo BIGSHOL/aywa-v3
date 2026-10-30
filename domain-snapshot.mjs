@@ -25,7 +25,9 @@ const DASHBOARD_CARDS_FOR = {
   withdrawals: ['exits'], 'withdrawal-reports': ['exits'], attendance: ['recent-absent', 'makeups'], makeups: ['makeups'],
 };
 function monthCard(trend, asOf) {
-  const points = trend.points.slice(-6).map(p => ({ label: yymm(p.date), value: p.value }));
+  // 12달을 다 못 채운 추세의 맨 앞 달 = 자료가 시작된 달(그 달 일부만 담김) — 비교에 쓰면 '▲727건 (72700%)'처럼 부푼다. 빼고 센다.
+  const real = trend.points.length < 12 ? trend.points.slice(1) : trend.points;
+  const points = real.slice(-6).map(p => ({ label: yymm(p.date), value: p.value }));
   // 이번 달은 기준일까지라 전월(한 달 전체)과 견주면 작게 보인다 — 좋고 나쁨 색은 칠하지 않는다(better null).
   const basis = `이번 달은 ${md(asOf)}까지 · 전월은 한 달 전체`;
   return { ...kpi(String(trend.label).replace(/^월별\s*/, ''), trend.unit || '', points, { period: 'month', span: `${md(asOf)}까지`, basis }), detail: basis };
