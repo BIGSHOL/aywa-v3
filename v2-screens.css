@@ -1,6 +1,11 @@
 /* 2.0 화면 (V2-SCREENS.md): shared frame of the 2.0-form pages; each screen adds its own v2-screen-<id>.css. 2.0 typography
    and labels — dense tables and grids are the work surface here, not cards. */
 .v2s{display:flex;flex-direction:column;gap:12px;min-width:0}
+/* 2.0 부품 화면은 바깥 문서의 높이를 화면 안에 맞춘다. 내용 스크롤은 iframe의 .embed-main 하나가 맡는다. */
+.workspace:has(.v2s [data-v2-host-slot]){height:100dvh;min-height:0;display:grid;grid-template-rows:auto minmax(0,1fr) auto;overflow:clip}
+.workspace:has(.v2s [data-v2-host-slot]) #main{width:100%;height:100%;min-height:0;overflow:clip;padding-bottom:12px}
+.workspace:has(.v2s [data-v2-host-slot]) .v2s{height:100%;min-height:0}
+.workspace:has(.v2s [data-v2-host-slot]) [data-v2-host-slot]{flex:1 1 0;min-height:0!important;height:auto!important}
 .v2s-head{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px}
 .v2s-head h1{margin:0;font-size:1.5rem}
 .v2s-note{margin:0;color:var(--muted,#5f6b7a);font-size:.875rem}

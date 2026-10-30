@@ -21,7 +21,29 @@ export function HostFrame({ screen, children }: { screen: string; children: Reac
     };
     document.addEventListener('click', onClick, true);
     window.parent.postMessage({ type: 'v2-host-ready', screen }, window.location.origin);
-    return () => document.removeEventListener('click', onClick, true);
+    const main = document.querySelector<HTMLElement>('.embed-main');
+    if (!main) return () => document.removeEventListener('click', onClick, true);
+    let frame = 0;
+    const update = () => {
+      const top = main.scrollTop > 1, bottom = main.scrollTop + main.clientHeight < main.scrollHeight - 1;
+      if (main.dataset.fadeTop !== String(top)) main.dataset.fadeTop = String(top);
+      if (main.dataset.fadeBottom !== String(bottom)) main.dataset.fadeBottom = String(bottom);
+    };
+    const schedule = () => { cancelAnimationFrame(frame); frame = requestAnimationFrame(update); };
+    const resize = new ResizeObserver(schedule);
+    resize.observe(main);
+    for (const child of main.children) resize.observe(child);
+    const mutation = new MutationObserver(() => { for (const child of main.children) resize.observe(child); schedule(); });
+    mutation.observe(main, { childList: true });
+    main.addEventListener('scroll', schedule, { passive: true });
+    window.addEventListener('resize', schedule);
+    schedule();
+    return () => {
+      document.removeEventListener('click', onClick, true);
+      main.removeEventListener('scroll', schedule);
+      window.removeEventListener('resize', schedule);
+      resize.disconnect(); mutation.disconnect(); cancelAnimationFrame(frame);
+    };
   }, [screen]);
   return <main className="embed-main relative bg-background text-foreground h-screen overflow-auto px-1.5 pt-2 pb-8 lg:pb-10 [scrollbar-gutter:stable]">{children}</main>;
 }

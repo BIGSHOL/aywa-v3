@@ -1,4 +1,4 @@
-/* 2.0 CSS 그대로 — src/app/globals.css를 Tailwind v4로 컴파일한다(소스 스캔 = 저장소 루트, 2.0 next build와 같은 기준).
+/* 2.0 CSS를 Tailwind v4로 컴파일한다. iframe의 스크롤 표시만 공용 호스트에서 맞춘다.
    글꼴은 2.0 next/font(localFont '--font-pretendard')와 같은 파일·같은 굵기 범위. */
 @font-face {
   font-family: "Pretendard";
@@ -8,3 +8,8 @@
   font-display: swap;
 }
 @import "../../../../src/app/globals.css";
+.embed-main{scrollbar-width:none!important;scrollbar-gutter:auto!important}
+.embed-main::-webkit-scrollbar{display:none}
+.embed-main[data-fade-top="true"][data-fade-bottom="true"]{mask-image:linear-gradient(to bottom,transparent,#000 18px,#000 calc(100% - 18px),transparent)}
+.embed-main[data-fade-top="true"][data-fade-bottom="false"]{mask-image:linear-gradient(to bottom,transparent,#000 18px)}
+.embed-main[data-fade-top="false"][data-fade-bottom="true"]{mask-image:linear-gradient(to bottom,#000 calc(100% - 18px),transparent)}
