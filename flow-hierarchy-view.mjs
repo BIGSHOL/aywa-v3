@@ -27,7 +27,7 @@ function state(p, entry, opts, waitingReason) {
   return { shown, ai: { status: prev ? 'stale' : 'not_started', ...base } };
 }
 // Claude text is a draft for a person to check; it carries no numbers (counts and dates are the code facts).
-const meta = r => ({ ...(r.provider === 'claude-cli' ? { draft: true, note: 'AI 초안 — 건수·날짜는 기록 집계를 보세요' } : {}), origin: r.provider, provider: PROVIDER[r.provider] || null, model: r.model, modelLabel: modelLabel(r.model), effort: r.effort ?? null, tier: r.tier || null, partial: !!r.partial, updatedAt: r.at || null });
+const meta = r => ({ ...(r.provider === 'claude-cli' ? { draft: true, note: 'AI 작성 — 건수·날짜는 기록 집계를 보세요' } : {}), origin: r.provider, provider: PROVIDER[r.provider] || null, model: r.model, modelLabel: modelLabel(r.model), effort: r.effort ?? null, tier: r.tier || null, partial: !!r.partial, updatedAt: r.at || null });
 
 export function decorate(p, opts) {
   const { tree, index, alias } = p;

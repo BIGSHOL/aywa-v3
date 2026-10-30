@@ -50,6 +50,7 @@
 .xi-cluster>header{display:flex;justify-content:space-between;align-items:flex-start;gap:10px}
 .xi-cluster>header>div{display:flex;flex-direction:column;align-items:flex-start;gap:4px;min-width:0}
 .xi-cluster>header strong{font-size:var(--ax-xs,14px);white-space:nowrap;font-variant-numeric:tabular-nums}
+.xi-ai-tags{display:flex;flex-wrap:wrap;align-items:center;gap:6px}
 .xi-ai{display:flex;flex-direction:column;align-items:flex-start;gap:6px;padding:10px 12px;border-radius:6px;background:#f4f7fc;line-height:1.7}
 .xi-chain{list-style:decimal}
 .xi-chain small{display:block;font-size:var(--ax-xs,14px)}
@@ -64,7 +65,7 @@
 .xi-fact-text{min-width:0;display:flex;flex-direction:column;gap:4px}
 .xi-fact-src{display:flex;align-items:center;justify-content:flex-end;gap:8px;white-space:nowrap}
 .xi-fact-label{font-weight:650}
-.xi-src{padding:0 6px;border:1px solid var(--ax-line);border-radius:4px;font-size:13px}
+.xi-src{font-size:13px;white-space:nowrap}
 .xi-flash{background:#fff3d6}
 .xi-count{font-size:var(--ax-sm,16px);font-weight:500}
 .xi-filter-line{display:flex;flex-wrap:wrap;align-items:center;gap:8px;font-size:var(--ax-xs,14px);font-weight:600}

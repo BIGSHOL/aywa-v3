@@ -28,7 +28,10 @@ import { DATA_REVISION_PATH, createDataHolder, createDataRefresh, encodeData } f
 const port=Number(process.env.OWNER_CONCEPT_PORT||4310);
 if(!Number.isInteger(port)||port<1024||port>65535)throw new Error('Invalid local dev port');
 const root=new URL('./',import.meta.url);
-const hosts=new Set([`127.0.0.1:${port}`,`localhost:${port}`]);
+// 랜 공개(원장 10-30 "같은 랜 전체·전부 허용") — OWNER_CONCEPT_LAN_IP를 준 실행에서만 모든 주소에 묶고 그 IP 이름을 받는다. 없으면 종전대로 이 PC만.
+const lanIp=(process.env.OWNER_CONCEPT_LAN_IP||'').trim();
+if(lanIp&&!/^(10\.\d{1,3}|172\.(1[6-9]|2\d|3[01])|192\.168)\.\d{1,3}\.\d{1,3}$/.test(lanIp))throw new Error('OWNER_CONCEPT_LAN_IP must be a private LAN IPv4');
+const hosts=new Set([`127.0.0.1:${port}`,`localhost:${port}`,...(lanIp?[`${lanIp}:${port}`]:[])]);
 const origins=new Set([...hosts].map(h=>`http://${h}`));
 const snapshot=await loadSnapshot();
 // 첫 화면 자료(/snapshot.js · /snapshot.json) — 2.0 화면 저장 뒤 data-refresh.mjs가 같은 복사본에서 다시 만들어 바꿔 끼운다(AX-H2).
@@ -167,4 +170,4 @@ const server=createServer(async(req,res)=>{
  }catch{reject(500,'로컬 시안을 불러오지 못했습니다. DB와 파일 준비 상태를 확인해 주세요.');}
 });
 server.on('error',error=>{console.error(error.code||error.message);process.exitCode=1;});
-server.listen(port,'127.0.0.1',()=>console.log(`Owner concept: http://127.0.0.1:${port} (${snapshot.meta.tenant}, verified full local snapshot) · 저장 뒤 자료 갱신 ${refresh?`켜짐(${debounceMs}ms 모음)`:'꺼짐'}`));
+server.listen(port,lanIp?'0.0.0.0':'127.0.0.1',()=>console.log(`Owner concept: http://127.0.0.1:${port}${lanIp?` · 랜 http://${lanIp}:${port}`:''} (${snapshot.meta.tenant}, verified full local snapshot) · 저장 뒤 자료 갱신 ${refresh?`켜짐(${debounceMs}ms 모음)`:'꺼짐'}`));
