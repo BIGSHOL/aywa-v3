@@ -333,7 +333,7 @@ window.createFlowUI = function createFlowUI(api) {
     if(!ready()||!actors().length)return '';
     const me=actor(),count=inboxCount();
     const groups=ROLE_ORDER.map(r=>[r,actors().filter(a=>a.role===r)]).filter(([,list])=>list.length);
-    const flowLink=role()==='owner'?`<a class="nav-item ${page==='flow'?'active':''}" href="#flow" ${page==='flow'?'aria-current="page"':''}>${icon('check')}<span>업무 흐름</span>${count?`<span class="nav-count" aria-label="${count}건">${count}</span>`:''}</a>`:'';
+    const flowLink=role()==='owner'?`<a class="nav-item ${page==='flow'?'active':''}" href="#flow" ${page==='flow'?'aria-current="page"':''}>${window.V2Screens?.sticker?.('flow')||icon('check')}<span>업무 흐름</span>${count?`<span class="nav-count" aria-label="${count}건">${count}</span>`:''}</a>`:'';
     return `<div class="nav-group">보는 사람</div><div class="fl-actor-pick">${actorPicker(groups)}${flowLink}</div>`;
   }
   function inboxCount(){

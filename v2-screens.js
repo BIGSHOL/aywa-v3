@@ -110,6 +110,7 @@ window.V2Screens = (() => {
     'teacher-workspace':'screen','teacher-home':'screen','student-portal':'graduationCap','parent-portal':'messages','public-sites':'screen',
     'auth-session':'key','platform-console':'wrench',integrations:'sync','recording-transcription':'note','shell-infrastructure':'wrench',
     'demo-tenant':'layoutGrid','dev-tools':'wrench',admissions:'userPlus',learning:'exam',finance:'wallet',parents:'messages',resources:'archive',settings:'settings',
+    flow:'check',inbox:'bellRing',requests:'listChecks',automation:'sync',chat:'messages',digest:'note',notes:'note',request:'userPlus',launcher:'layoutGrid',
   });
   const sticker = id => `<img class="nav-sticker" src="/icons/${NAV_STICKER[id] || 'folder'}.png" alt="" aria-hidden="true" width="18" height="18" draggable="false">`;
   /** live.js sidebar hook: the '2.0 화면' group, in the order the server lists. */
