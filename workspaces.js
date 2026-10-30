@@ -750,7 +750,7 @@ window.createWorkspaces = function createWorkspaces(api) {
     el.querySelector('[data-wsc="clear"]').disabled=!Array.isArray(state.cols[id]?.[colMenu.col])&&sort.col!==colMenu.col;
   }
   // 값이 나중에 채워지면 창 높이가 바뀐다 — 그릴 때마다 자리를 다시 잡는다(화면 아래로 넘치지 않게).
-  function paintColMenu(){const list=colMenu.el?.querySelector('.ws-colpop-list');if(!list)return;list.innerHTML=colListHtml();syncColMenu();api.attachScroll?.();placeColMenu();}
+  function paintColMenu(){const list=colMenu.el?.querySelector('.ws-colpop-list');if(!list)return;if(attachTipFor?.closest?.('.ws-colpop'))hideAttachTip();list.innerHTML=colListHtml();syncColMenu();api.attachScroll?.();placeColMenu();}
   function openColMenu(id,col){
     const same=colMenu.el&&colMenu.id===id&&colMenu.col===col;closeColMenu(false);if(same)return;
     const c=(state.lcols[id]||[]).find(x=>x.key===col);if(!c)return;
@@ -990,7 +990,7 @@ window.createWorkspaces = function createWorkspaces(api) {
   // 말줄임된 칸에 마우스를 올리면 전부를 띄운다(브라우저 기본 툴팁 대신 · 클릭·스크롤을 막지 않음). 대화 창 위에 보이게 그 창 안에 둔다.
   let attachTip=null,attachTipFor=null;
   const hideAttachTip=()=>{attachTipFor=null;if(attachTip)attachTip.hidden=true;};
-  // 공통 리스트(.ws-table)의 칸도 같은 팁 — 키보드로 이름 단추에 와도 잘렸으면 전부를 띄운다.
+  // 공통 리스트(.ws-table)의 칸 · 열 머리 메뉴의 값(긴 글 열)도 같은 팁 — 키보드로 이름 단추·값 칸에 와도 잘렸으면 전부를 띄운다.
   function showAttachTip(el){
     if(el===attachTipFor)return;
     if(!el||el.scrollWidth<=el.clientWidth+1){hideAttachTip();return;}
@@ -999,9 +999,10 @@ window.createWorkspaces = function createWorkspaces(api) {
     const r=el.getBoundingClientRect(),w=attachTip.offsetWidth,hh=attachTip.offsetHeight;let top=r.bottom+6;if(top+hh>innerHeight-8)top=Math.max(8,r.top-hh-6);
     attachTip.style.left=`${Math.min(Math.max(8,r.left),innerWidth-w-8)}px`;attachTip.style.top=`${top}px`;
   }
-  document.addEventListener('pointerover',event=>showAttachTip(event.target.closest?.(':is(.ws-attach .ws-att-cell,.ws-table .ws-cut)')||null));
-  document.addEventListener('focusin',event=>{const el=event.target.closest?.('.ws-table .ws-rowmain');if(el)showAttachTip(el);else if(attachTipFor?.closest?.('.ws-table'))hideAttachTip();});
-  document.addEventListener('pointerdown',()=>{if(attachTipFor?.closest?.('.ws-table'))hideAttachTip();},true);
+  document.addEventListener('pointerover',event=>showAttachTip(event.target.closest?.(':is(.ws-attach .ws-att-cell,.ws-table .ws-cut,.ws-colpop-list label>span)')||null));
+  document.addEventListener('focusin',event=>{const el=event.target.closest?.('.ws-table .ws-rowmain')||(event.target.matches?.('.ws-colpop-list input')?event.target.nextElementSibling:null);if(el)showAttachTip(el);else if(attachTipFor?.closest?.('.ws-table,.ws-colpop'))hideAttachTip();});
+  document.addEventListener('pointerdown',()=>{if(attachTipFor?.closest?.('.ws-table,.ws-colpop'))hideAttachTip();},true);
+  document.addEventListener('keydown',event=>{if(event.key==='Escape'&&attachTipFor?.closest?.('.ws-colpop'))hideAttachTip();});
   addEventListener('scroll',hideAttachTip,{passive:true,capture:true});
   // 칸 밖을 누르면 결과만 접는다(고른 목록은 그대로). Esc = 결과 접기(요청 창은 닫지 않는다).
   document.addEventListener('pointerdown',event=>{for(const [scope,st] of attachState){if(!st.open)continue;const root=attachRoot(scope);if(!root){attachState.delete(scope);continue;}if(!root.contains(event.target)){st.open=false;paintAttachResults(scope);}}},true);
