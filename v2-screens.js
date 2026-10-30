@@ -99,11 +99,24 @@ window.V2Screens = (() => {
       catch (error) { console.error(error); return `<div class="v2s"><p class="v2s-note">이 화면을 그리지 못했습니다.</p></div>`; }
     };
   }
+  // 2.0 MENU_ICON과 같은 메뉴는 같은 public/icons 그림을 쓴다. bookText 그림이 없는 교재목록은 목록 그림으로 보충한다.
+  const NAV_STICKER = Object.freeze({
+    home:'layoutGrid',dashboard:'layoutGrid',calendar:'calendar','tasks-notifications':'bellRing',slack:'sync',onescreen:'screen','video-homework':'report',
+    timetable:'weekGrid','class-sheets':'sheetColumns',ecs:'sheetColumns',mcs:'sheetRows',attendance:'clipboardCheck',classes:'book',makeups:'alarm',
+    textbooks:'clipboardList','lesson-reports':'report','class-review':'star',students:'users','student-contribution':'chart',exams:'exam',
+    consultations:'messages',enrollment:'userPlus',retention:'shield',newcomers:'userCheck',withdrawals:'userMinus','withdrawal-reports':'userX',
+    staff:'userSettings',payroll:'wallet',billing:'wallet','textbook-requests':'bookMarked','expense-requests':'receipt',shuttle:'bus',inventory:'archive',
+    meetings:'note',approvals:'scrollText',documents:'folder',support:'mail','owner-settings':'settings',owner:'settings',help:'help',
+    'teacher-workspace':'screen','teacher-home':'screen','student-portal':'graduationCap','parent-portal':'messages','public-sites':'screen',
+    'auth-session':'key','platform-console':'wrench',integrations:'sync','recording-transcription':'note','shell-infrastructure':'wrench',
+    'demo-tenant':'layoutGrid','dev-tools':'wrench',admissions:'userPlus',learning:'exam',finance:'wallet',parents:'messages',resources:'archive',settings:'settings',
+  });
+  const sticker = id => `<img class="nav-sticker" src="/icons/${NAV_STICKER[id] || 'folder'}.png" alt="" aria-hidden="true" width="18" height="18" draggable="false">`;
   /** live.js sidebar hook: the '2.0 화면' group, in the order the server lists. */
   function sidebar(page) {
     const list = (index || []).filter(s => screens.has(s.id) && screens.get(s.id).nav !== false); if (!list.length) return ''; // nav:false = 카드·링크로만 들어오는 화면(확장 추세)
     const active = parse(page)?.id;
-    return `<div class="nav-group">업무 화면</div>${list.map(s => `<a class="nav-item ${active === s.id ? 'active' : ''}" href="#v2-${esc(s.id)}" ${active === s.id ? 'aria-current="page"' : ''}><span>${esc(s.label)}</span></a>`).join('')}`;
+    return `<div class="nav-group">업무 화면</div>${list.map(s => `<a class="nav-item ${active === s.id ? 'active' : ''}" href="#v2-${esc(s.id)}" ${active === s.id ? 'aria-current="page"' : ''}>${sticker(s.id)}<span>${esc(s.label)}</span></a>`).join('')}`;
   }
   function bind(a) {
     api = a;
@@ -121,5 +134,5 @@ window.V2Screens = (() => {
   /** A 3.0 workspace id → its 2.0 screen address when that screen is registered (workspace links open the 2.0 form first). */
   const WORKSPACE_ALIAS = { 'class-sheets': 'ecs' }; // the only workspace whose id differs from its 2.0 screen
   const target = wsId => { const id = WORKSPACE_ALIAS[wsId] || wsId; return screens.has(id) ? `#v2-${id}` : null; };
-  return { register, view, sidebar, bind, esc, target, renderOverview, updateOverviewScroll, dataChanged, practiceCopy: PRACTICE_COPY };
+  return { register, view, sidebar, sticker, bind, esc, target, renderOverview, updateOverviewScroll, dataChanged, practiceCopy: PRACTICE_COPY };
 })();

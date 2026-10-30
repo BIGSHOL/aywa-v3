@@ -19,9 +19,13 @@
 .ax-search-trigger .icon{width:18px;height:18px}
 .ax-search-trigger span{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .ax-search-trigger kbd{font-size:var(--ax-xs);color:var(--ax-ink);border-color:var(--ax-line);line-height:1.3}
-.ax-enabled .nav-item{font-size:var(--ax-sm);font-weight:500;min-height:40px;border-radius:6px;width:100%;text-align:left}
-.ax-enabled .nav-item:hover{background:var(--ax-soft)}
-.ax-enabled .nav-item.active{background:var(--ax-primary);color:#fff}
+.ax-enabled .nav-item{position:relative;min-height:36px;padding:0 13px;gap:10px;border-radius:9px;width:100%;font-size:14px;font-weight:500;text-align:left;background:transparent}
+.ax-enabled .nav-item::before{content:'';position:absolute;inset:0 4px;border-radius:9px;background:transparent;pointer-events:none}
+.ax-enabled .nav-item:hover::before{background:var(--ax-soft)}
+.ax-enabled .nav-item.active{background:transparent;color:#fff}
+.ax-enabled .nav-item.active::before{background:var(--ax-primary);box-shadow:0 4px 14px #153e7526}
+.ax-enabled .nav-item>.nav-sticker,.ax-enabled .nav-item>span{position:relative;z-index:1}
+.ax-enabled .nav-sticker{display:block;width:18px;height:18px;flex:0 0 18px;object-fit:contain}
 .ax-enabled .nav-item>span:not(.nav-count){flex:1;min-width:0}
 .ax-enabled .nav-count{background:var(--ax-soft);color:var(--ax-primary);font-size:var(--ax-xs);margin-left:auto;white-space:nowrap}
 .ax-enabled .nav-count[hidden]{display:none}
