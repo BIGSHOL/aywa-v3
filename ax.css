@@ -182,9 +182,6 @@
 .ax-issue-mini>div:first-child span{font-size:var(--ax-xs);color:#59606b}
 .ax-issue-mini .ax-trend{height:64px;min-height:64px;margin:0}
 @media(max-width:700px){.ax-issue-mini{grid-template-columns:1fr auto}.ax-issue-mini .ax-trend{grid-column:1/-1;grid-row:2}}
-.ax-attendance-table{min-width:1080px}
-.ax-attendance-table th[scope="row"]{vertical-align:top}
-.ax-attendance-table .ax-attendance-total{display:block;margin-top:4px;font-size:var(--ax-xs);font-weight:400;white-space:nowrap}
 .ax-linked{border-top:1px solid var(--ax-line);padding-top:16px}
 .ax-issue-footer{display:flex;align-items:center;flex-wrap:wrap;gap:10px;border-top:1px solid var(--ax-line);padding-top:16px;font-size:var(--ax-xs)}
 .ax-request-summary,.ax-coverage{border-top:1px solid var(--ax-line);padding-top:22px;margin-top:32px}

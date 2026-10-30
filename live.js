@@ -191,7 +191,7 @@
   // 열쇠 이름의 뜻으로 고른다(지표마다 열쇠가 다르다 — math · mathOnly · english.math · both · eie · injaewon · unknown …). 모르면 null.
   const SUBJECT_TONE={math:'#1d4ed8',english:'#c62828',eie:'#ea580c',mixed:'#7c3aed',none:'#9ca3af'};
   const subjectColor=key=>{const k=String(key??'').toLowerCase();if(!k)return null;if(/^(unknown|none|other|otheronly|nothing)$/.test(k))return SUBJECT_TONE.none;const math=k.includes('math'),eie=k.includes('eie'),eng=/english|injaewon/.test(k);if(k==='both'||(math&&(eie||eng)))return SUBJECT_TONE.mixed;if(eie)return SUBJECT_TONE.eie;if(eng)return SUBJECT_TONE.english;if(math)return SUBJECT_TONE.math;return null;};
-  const api={db,h,fmt,yymm,won,icon,chart,lineChart,exact,dialog,navigate,render,attachScroll,scrollToSection,toast,ensureFull,subjectLabel:subject,subjectColor,showStudent,showAbsences,showBill,showApproval,showTask,openRecord,canOpenRecord,getPage:()=>state.page,hasView:id=>Boolean(viewFor(id)),closeMenu};
+  const api={db,h,fmt,yymm,won,icon,chart,lineChart,exact,dialog,navigate,render,attachScroll,scrollToSection,toast,ensureFull,statusLabel:status,subjectLabel:subject,subjectColor,showStudent,showAbsences,showBill,showApproval,showTask,openRecord,canOpenRecord,getPage:()=>state.page,hasView:id=>Boolean(viewFor(id)),closeMenu};
   const ax=window.createOwnerWorkspace(api);
   const ws=typeof window.createWorkspaces==='function'?window.createWorkspaces({...api,ax}):null;
   api.showWorkspaceRecord=(family,id)=>ws?ws.showRecord(family,id):toast('이 기록은 여기서 바로 열 수 없습니다.');
