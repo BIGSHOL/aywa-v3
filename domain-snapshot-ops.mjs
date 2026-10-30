@@ -99,12 +99,14 @@ export async function opsFamilies(ctx) {
     sources: [{ table: 'approval_documents', rows: docs.length }, { table: 'approval_steps', rows: docs.reduce((n, d) => n + d.steps, 0) }],
   });
 
-  // 데이터베이스(서식·문서) — 제목·분류·날짜만. 열람 제한 문서는 표시만 하고 내용은 싣지 않는다.
-  const files = await sql`select d.id, d.title, coalesce(c.label, d.category) category, d.kind, d.form_type, coalesce(d.restricted,false) restricted, coalesce(d.pinned,false) pinned, to_char(d.updated_at at time zone 'Asia/Seoul','YYYY-MM-DD') d from public.academy_documents d left join public.document_categories c on c.key=d.category and c.tenant_id=${t} where d.tenant_id=${t} order by d.pinned desc, d.updated_at desc`;
+  // 데이터베이스(서식·문서) — 제목·폴더 경로·분류·날짜만. 열람 제한 문서는 표시만 하고 내용은 싣지 않는다.
+  const { categoryLabelOf, categoryPathLabel } = await importV2('features/documents/categories.ts');
+  const categories = (await sql`select key, label, parent_key from public.document_categories where tenant_id=${t}`).map(c => ({ key: c.key, label: c.label, parentKey: c.parent_key }));
+  const files = await sql`select d.id, d.title, d.category, d.kind, d.form_type, coalesce(d.restricted,false) restricted, coalesce(d.pinned,false) pinned, to_char(d.updated_at at time zone 'Asia/Seoul','YYYY-MM-DD') d from public.academy_documents d where d.tenant_id=${t} order by d.pinned desc, d.updated_at desc`;
   out.documents = family('documents', '데이터베이스(서식·문서 저장소)', {
     summary: '서식으로 쓴 문서와 올린 파일입니다. 열람 제한 문서는 제목만 보입니다.',
     metrics: [metric('문서', files.length, '건'), metric('서식으로 작성', files.filter(f => f.kind === 'form').length, '건'), metric('파일', files.filter(f => f.kind === 'file').length, '건'), metric('열람 제한', files.filter(f => f.restricted).length, '건'), ...Object.entries(DOC_FORM).map(([k, v]) => metric(v, files.filter(f => f.form_type === k).length, '건'))],
-    evidence: files.map(f => record({ id: f.id, label: f.title, date: f.d, status: f.restricted ? '열람 제한' : '공개', detail: f.category || '', fields: [field('종류', DOC_FORM[f.form_type] || (f.kind === 'file' ? '파일' : '서식'))], facets: [`kind:${f.kind}`, f.form_type && `form:${f.form_type}`, f.restricted && 'restricted', f.pinned && 'pinned'] })),
+    evidence: files.map(f => record({ id: f.id, label: f.title, date: f.d, status: f.restricted ? '열람 제한' : '공개', detail: categoryLabelOf(categories, f.category), fields: [field('폴더', categoryPathLabel(categories, f.category)), field('종류', DOC_FORM[f.form_type] || (f.kind === 'file' ? '파일' : '서식'))], facets: [`kind:${f.kind}`, f.form_type && `form:${f.form_type}`, f.restricted && 'restricted', f.pinned && 'pinned'] })),
     facetLabels: { 'kind:form': '서식', 'kind:file': '파일', restricted: '열람 제한', pinned: '고정', ...pre('form', DOC_FORM) }, recordSource: 'academy_documents',
     sourceLabel: '서식 · 문서 저장소', coverageNote: '목록은 문서 전체입니다(고정 먼저 · 최근 수정 순).',
     sources: [{ table: 'academy_documents', rows: files.length }],

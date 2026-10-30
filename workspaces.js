@@ -47,7 +47,7 @@ window.createWorkspaces = function createWorkspaces(api) {
     'expense-requests':['f:작성','detail','date','f:금액','status'],shuttle:['detail','f:요일','f:시각','f:정류장','f:차량','status'],
     inventory:['f:No','f:분류','f:제조사','detail','f:입고일','status','f:현위치','f:사용자','date','f:폐기일','f:비고','f:대여자','f:대여일','f:반납 기한'],
     meetings:['date','f:참석','f:실행 항목','status'],approvals:['f:신청자','f:종류','f:기간','f:금액','date','status','f:결재 차례','f:결재선'],
-    documents:['detail','date','f:종류','status'],support:['date','status'],
+    documents:['f:폴더','detail','date','f:종류','status'],support:['date','status'],
     'owner-settings':['f:과목','date','f:종료일','f:대상','f:정원','status'],help:[],
     slack:['f:보내는 때','detail','status'],integrations:['date','f:실행 시각','f:실행 방식','status','f:소요','f:실패 영역','f:오류 기록'],
     'teacher-workspace':['status','f:담임 반','f:보고서 이름'],'parent-portal':[],'student-portal':[],'public-sites':['detail','f:지점 표시','f:로고 문구','f:로고 이미지','status'],
