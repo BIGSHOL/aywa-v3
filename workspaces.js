@@ -25,9 +25,33 @@ window.createWorkspaces = function createWorkspaces(api) {
   // 기록의 날짜가 무슨 날인지(원장 10-28 "3/10이 무슨 날짜인지") — 영역마다 그 기록 날짜가 뜻하는 것. 이름이 없는 영역은 날짜를 싣지 않는다.
   const DATE_NAME={dashboard:'브리핑일',calendar:'일정일','tasks-notifications':'기한',onescreen:'발송일','video-homework':'올린 날','class-sheets':'수업일',attendance:'수업일',makeups:'보강일','lesson-reports':'수업일',students:'등록일','student-contribution':'기록일',exams:'시험일',consultations:'상담일',enrollment:'접수일',newcomers:'등록일',withdrawals:'퇴원일','withdrawal-reports':'퇴원일',staff:'입사일',payroll:'발급일',billing:'납부 기한','textbook-requests':'요청일','expense-requests':'지출일',inventory:'실사일',meetings:'회의일',approvals:'기안일',documents:'수정일',support:'요청일','owner-settings':'시작일',integrations:'실행일'};
   // 기록의 '내용'(detail) 칸 이름 — 영역마다 그 칸이 담는 것. 없으면 '내용'.
-  const DETAIL_NAME={calendar:'시각',billing:'청구월',staff:'직책',inventory:'모델',documents:'분류','expense-requests':'분류',textbooks:'분류',enrollment:'학년·학교',newcomers:'학교학년',students:'학교학년',exams:'시험',attendance:'반',makeups:'반','class-review':'반','withdrawal-reports':'구분',shuttle:'노선'};
+  const DETAIL_NAME={calendar:'시각',billing:'청구월',staff:'직책',inventory:'모델',documents:'분류','expense-requests':'분류',textbooks:'분류',enrollment:'학교·학년',newcomers:'학교·학년',students:'학교·학년',exams:'시험',attendance:'반',makeups:'반','class-review':'반','withdrawal-reports':'구분',shuttle:'노선'};
   // 사람 이름이 아닌 첫 칸은 그 기록의 대상(반·문서·업무 등)으로 부른다.
   const NAME_HEAD={calendar:'일정','tasks-notifications':'업무',classes:'반',timetable:'반',textbooks:'교재',meetings:'회의',documents:'문서',support:'요청',dashboard:'브리핑',integrations:'연동',slack:'규칙','owner-settings':'항목','class-sheets':'반',onescreen:'첫 원생',inventory:'자산','expense-requests':'지출',approvals:'문서'};
+  // 2.0 목록과 같은 열 순서. 자료에 있는 3.0 전용 칸은 이 순서 뒤에 둔다.
+  const SUBJECT_FIRST=new Set(['video-homework','timetable','classes','textbooks','lesson-reports','exams','consultations','enrollment','withdrawal-reports']);
+  const COLUMN_ORDER={
+    dashboard:['date','f:요약','f:알림','status'],calendar:['date','detail','f:태그','status'],
+    'tasks-notifications':['f:종류','f:내용','f:담당','date','status'],onescreen:['f:보낸 선생님','f:대상 수','f:반','date','status'],
+    'video-homework':['detail','date','f:선생님','status'],timetable:['f:요일','f:시간','f:선생님','f:강의실'],
+    'class-sheets':['date','f:교재','f:범위','status'],attendance:['detail','date','status','f:시간','f:자리','f:메모'],
+    classes:['f:담임','f:수강','f:강의실','status'],makeups:['detail','f:결석일','date','f:보강 시간','status'],
+    textbooks:['detail','f:차수','f:배정된 반','f:반 이름','status'],'lesson-reports':['f:반','f:작성','date','status','f:읽음'],
+    'class-review':['detail','f:담임','date','f:담당 반','f:계산된 항목','status'],students:['detail','status','f:과목','f:담임','f:보호자 연락처','date','f:퇴원일'],
+    'student-contribution':['date','f:출처','status'],exams:['date','detail','f:점수','status'],
+    consultations:['date','f:상담자','f:후속조치','status'],enrollment:['detail','date','f:상담자','f:경로','f:상담 결과','status'],
+    retention:['date','status'],newcomers:['detail','date','f:완료한 체크','status'],withdrawals:['date','status'],
+    'withdrawal-reports':['f:담임','date','detail','status'],staff:['detail','f:역할','status','f:고용 형태','date'],
+    payroll:['detail','date','status'],billing:['detail','f:수납명','f:청구액','f:수납','f:남은 금액','status','date'],
+    'textbook-requests':['f:교재','date','f:요청 선생님','f:가격','status'],
+    'expense-requests':['f:작성','detail','date','f:금액','status'],shuttle:['detail','f:요일','f:차량','status'],
+    inventory:['detail','date','status','f:위치','f:사용자','f:대여자','f:대여일','f:반납 기한'],
+    meetings:['date','f:참석','f:실행 항목','status'],approvals:['f:신청자','f:종류','f:기간','f:금액','date','status','f:결재 차례','f:결재선'],
+    documents:['detail','date','f:종류','status'],support:['date','status'],
+    'owner-settings':['f:과목','date','f:종료일','f:대상','f:정원','status'],help:[],
+    slack:['f:보내는 때','detail','status'],integrations:['date','f:실행 시각','f:실행 방식','status','f:소요','f:실패 영역','f:오류 기록'],
+    'teacher-workspace':['status','f:담임 반','f:보고서 이름'],'parent-portal':[],'student-portal':[],'public-sites':['detail','f:지점 표시','f:로고 문구','f:로고 이미지','status'],
+  };
   const dateName=id=>String(data(id)?.dateLabel||DATE_NAME[id]||'');
   const detailName=id=>String(data(id)?.detailLabel||DETAIL_NAME[id]||'내용');
   const blank=v=>{const s=String(v??'').trim();return !s||s==='—'||s==='-';};
@@ -355,14 +379,15 @@ window.createWorkspaces = function createWorkspaces(api) {
     return c?sortBy(out,c.sortv,dir):viewKind(a)==='timeline'?sortBy(out,r=>String(r.date||''),'desc'):out;
   }
   const nameColumn=id=>({key:'name',label:NAME_HEAD[id]||'이름',text:r=>String(r.label||''),sortv:r=>String(r.label||''),align:'l'});
-  // 있는 과목은 이름 앞, 날짜는 그 영역의 날짜 이름. 폭이 모자라도 열은 버리지 않고 가로로 넘긴다.
+  // 2.0에서 과목이 이름 앞인 목록만 앞세우고, 다른 목록의 과목은 원래 자리에서 보인다.
   function familyColumns(a,basis){
-    const id=a.id,dn=dateName(id),labels=[],sample=[...previews(id),...basis.slice(0,300)];
-    for(const r of basis)for(const f of r.fields||[])if(f?.label&&f.label!==dn&&f.label!=='과목'&&!labels.includes(f.label))labels.push(f.label);
-    const cols=[...(basis.some(r=>subjectOf(r))?[{key:'subject',label:'과목'}]:[]),{key:'detail',label:detailName(id)},{key:'status',label:'상태',chip:true},...(dn?[{key:'date',label:dn}]:[]),...labels.map(l=>({key:`f:${l}`,label:l}))]
+    const id=a.id,dn=dateName(id),labels=[],sample=[...previews(id),...basis.slice(0,300)],subjectFirst=SUBJECT_FIRST.has(id);
+    for(const r of basis)for(const f of r.fields||[])if(f?.label&&f.label!==dn&&!(subjectFirst&&f.label==='과목')&&!labels.includes(f.label))labels.push(f.label);
+    const cols=[...(subjectFirst&&basis.some(r=>subjectOf(r))?[{key:'subject',label:'과목'}]:[]),{key:'detail',label:detailName(id)},{key:'status',label:'상태',chip:true},...(dn?[{key:'date',label:dn}]:[]),...labels.map(l=>({key:`f:${l}`,label:l}))]
       .filter(c=>basis.some(r=>cellText(r,c.key)))
       .map(c=>{const vs=sample.map(r=>cellText(r,c.key)).filter(Boolean);return {...c,vs,money:vs.length>0&&vs.every(v=>MONEY.test(v)),text:r=>cellText(r,c.key),sortv:r=>sortValue(r,c.key),...(c.chip?{html:r=>r.status?`<span class="ax-chip ws-cut">${h(r.status)}</span>`:''}:{})};});
-    return [...cols.filter(c=>!c.money),...cols.filter(c=>c.money)];
+    const order=COLUMN_ORDER[id]||[],rank=key=>{const n=order.indexOf(key);return n<0?order.length:n;};
+    return cols.sort((x,y)=>rank(x.key)-rank(y.key));
   }
   // 열 모양 = 값으로 정한다: 금액 오른쪽 · 짧은 값(8자 이하) 가운데 · 긴 글 왼쪽. 짧은 열은 가장 긴 값에 맞춰 고정(목록마다 기억 — 쪽을 넘겨도 줄지 않는다),
   // 긴 글 열은 남는 폭을 나눈다. 다 고정이면 남는 폭은 맨 끝 빈 열이 받는다(열이 오른쪽으로 흩어지지 않게). min = 표가 더 줄지 않는 폭(그보다 좁으면 가로로 민다).
@@ -455,7 +480,7 @@ window.createWorkspaces = function createWorkspaces(api) {
     const exclusive=stages.every(f=>dimension(f.id)),total=Number(data(id)?.totalRecords)||0,looseCount=exclusive?Math.max(0,total-stages.reduce((n,f)=>n+(f.count||0),0)):0;
     const looseOf=r=>!stages.some(f=>inStage(r,f)),loose=looseCount?[...(pinned&&looseOf(pinned)?[pinned]:[]),...items.filter(r=>looseOf(r)&&String(r.id)!==String(pid))].slice(0,BOARD_SIZE):[];
     // 칸이 좁아(약 240px) 이름과 내용이 남는 폭을 나누고 날짜만 고정한다 — 내용은 왼쪽, 날짜는 오른쪽 끝.
-    const basis=[...boardItems(id),...items,...(pinned?[pinned]:[])],shape=sizeColumns(`board:${id}`,familyColumns(a,basis).filter(c=>c.key==='detail'||c.key==='date').map(c=>({...c,align:c.key==='date'?'r':'l'})),basis,{head:false,nameFlex:true});
+    const basis=[...boardItems(id),...items,...(pinned?[pinned]:[])],shape=sizeColumns(`board:${id}`,familyColumns(a,basis).filter(c=>c.key==='detail'||c.key==='date').sort((x,y)=>x.key==='detail'?-1:y.key==='detail'?1:0).map(c=>({...c,align:c.key==='date'?'r':'l'})),basis,{head:false,nameFlex:true});
     shape.cols=shape.cols.map(c=>c.key==='detail'?{...c,w:''}:c);shape.min=0;
     const rowsOf=list=>tableHtml({shape,rows:list,main:r=>rowMain(id,r),attrs:rowAttrs(id),head:false,cls:' ws-mini'});
     const stage=(f,i)=>{const list=col(f),n=f.count??list.length;
