@@ -46,12 +46,16 @@
         : `<button type="button" class="button" data-ca-request="${i}" ${data.insightFactIds && body?.status === 'ready' ? '' : 'disabled'}>업무 만들기</button>`}<button type="button" class="button" data-ca-flow>처리할 업무 보기</button></div></li>`;
     }).join('')}</ul></div>` : '';
     const values = data.facts?.find(f => f.item === 1 && f.kind === 'current')?.values || {};
-    const { current, previous, median } = values, unit = data.metricInfo.unit;
-    const change = (base, label) => base == null || current == null ? '' : ` · ${label} ${current === base ? '변화 없음' : `${current > base ? '▲ 증가' : '▼ 감소'} ${shown(Math.abs(current - base), unit === '%' ? '%p' : unit)}`}`;
-    const codeSummary = `${data.metricInfo.name} ${shown(current, unit)}${change(previous, '직전 대비')}${change(median, '평소 가운데값 대비')}`;
+    const { current, previous, median } = values, unit = data.metricInfo.unit, better = data.metricInfo.better;
+    const change = (base, label) => {
+      if (base == null || current == null) return null;
+      const delta = current - base;
+      return { label, text: delta === 0 ? '변화 없음' : `${delta > 0 ? '▲ 증가' : '▼ 감소'} ${shown(Math.abs(delta), unit === '%' ? '%p' : unit)}`, tone: ai.tone(delta, better) };
+    };
+    const codeSummary = `${data.metricInfo.name} ${shown(current, unit)}`;
     return `<div class="tr-insight"><div class="tr-insight-head"><h3>AI 분석</h3><button type="button" class="button" data-ca-make="${esc(data.metric)}" ${body?.enabled === false || state.status === 'making' ? 'disabled' : ''}>${state.status === 'making' ? '만드는 중…' : 'AI 분석'}</button></div>`
       + (body?.note && body.status !== 'empty' && !body.note.includes('이 화면의 버튼으로만') ? `<p class="v3s-note">${esc(body.note)}</p>` : '')
-      + (result ? `${ai.html({ model: result.modelLabel, at: result.createdAt, basis })}${ai.summary(codeSummary, esc)}<p class="air-rich">${ai.rich(result.summary.text, esc)}${ai.evidence(result.summary.evidence, esc)}</p>${lines(result.watch, '눈여겨볼 점')}${checks}` : '')
+      + (result ? `${ai.html({ model: result.modelLabel, at: result.createdAt, basis })}${ai.summary(codeSummary, esc, [change(previous, '직전 대비'), change(median, '평소 가운데값 대비')].filter(Boolean))}<p class="air-rich">${ai.rich(result.summary.text, esc)}${ai.evidence(result.summary.evidence, esc)}</p>${lines(result.watch, '눈여겨볼 점')}${checks}` : '')
       + (state.status === 'loading' ? '<p class="v3s-note">저장된 문장을 확인하는 중…</p>' : '')
       + (state.status === 'error' ? `<p class="v3s-note">${esc(state.error)}</p>` : '')
       + (body?.status === 'empty' ? '<p class="v3s-note">이 선택으로 만든 AI 분석이 없습니다.</p>' : '')

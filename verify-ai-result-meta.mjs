@@ -11,8 +11,14 @@ assert.match(window.AIResultMeta.time('2026-10-27T05:34:06Z'), /2026\. 10\. 27\.
 assert.equal(window.AIResultMeta.html({ model: '<AI>', at: null, basis: '<이슈>' }).includes('<AI>'), false);
 assert.match(window.AIResultMeta.html({ model: '<AI>', at: null, basis: '<이슈>' }), /&lt;AI&gt;.*만든 시각 확인 필요.*&lt;이슈&gt;/);
 const rich = window.AIResultMeta.rich('⟦김소은⟧ 12명 증가 <script>alert(1)</script>');
-assert.match(rich, /<strong>김소은<\/strong>.*<strong>12명<\/strong>.*air-up/);
+assert.match(rich, /<strong>김소은<\/strong>.*<strong>12명<\/strong>.*<strong>증가<\/strong>/);
 assert.ok(!rich.includes('<script>'));
-assert.match(window.AIResultMeta.rich('3건 감소'), /air-down/);
+assert.equal(window.AIResultMeta.rich('3건 감소').includes('class='), false);
+assert.match(window.AIResultMeta.summary('퇴원 3명', undefined, [{ label: '직전 대비', text: '▲ 증가 2명', tone: 'bad' }]), /air-change bad.*▲ 증가 2명/);
+assert.equal(window.AIResultMeta.summary('퇴원 3명', undefined, [{ label: '직전 대비', text: '▲ 증가 2명', tone: 'up' }]).includes('air-change up'), false);
+assert.equal(window.AIResultMeta.tone(2, 'down'), 'bad');
+assert.equal(window.AIResultMeta.tone(-2, 'down'), 'good');
+assert.equal(window.AIResultMeta.tone(2, 'up'), 'good');
+assert.equal(window.AIResultMeta.tone(2, ''), '');
 assert.match(window.AIResultMeta.evidence(['<기록>']), /tabindex="0".*&lt;기록&gt;/);
-console.log('AI 결과 공통 서식 8/8');
+console.log('AI 결과 공통 서식 14/14');

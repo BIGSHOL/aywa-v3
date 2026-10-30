@@ -14,13 +14,16 @@
     for (const match of input.matchAll(token)) {
       out += escape(input.slice(from, match.index));
       const part = escape(match[1] || match[2] || match[3]);
-      out += match[1] || match[2] ? `<strong>${part}</strong>` : `<strong class="${/^(증가|상승|늘|올)/.test(match[3]) ? 'air-up' : 'air-down'}">${part}</strong>`;
+      out += `<strong>${part}</strong>`;
       from = match.index + match[0].length;
     }
     return out + escape(input.slice(from));
   };
   const evidence = (items, escape = safe) => Array.isArray(items) && items.length
     ? `<span class="air-evidence" tabindex="0" aria-label="근거 보기">근거 보기<span class="air-evidence-pop" role="note">${items.map(escape).join('<br>')}</span></span>` : '';
-  const summary = (value, escape = safe) => `<p class="air-summary">${rich(value, escape)}</p>`;
-  window.AIResultMeta = { time, text, rich, evidence, summary, html: (info, escape = safe) => `<small class="ai-result-meta">${escape(text(info))}</small>` };
+  const tone = (delta, better) => !Number.isFinite(delta) || delta === 0 || !['up', 'down'].includes(better) ? ''
+    : (better === 'up' ? delta > 0 : delta < 0) ? 'good' : 'bad';
+  const summary = (value, escape = safe, changes = []) => `<p class="air-summary">${rich(value, escape)}${changes.map(({ label, text, tone }) =>
+    `<span class="air-change${tone === 'good' || tone === 'bad' ? ` ${tone}` : ''}"> · ${escape(label)} <strong>${escape(text)}</strong></span>`).join('')}</p>`;
+  window.AIResultMeta = { time, text, rich, evidence, tone, summary, html: (info, escape = safe) => `<small class="ai-result-meta">${escape(text(info))}</small>` };
 })();

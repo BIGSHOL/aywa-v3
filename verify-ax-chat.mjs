@@ -31,13 +31,13 @@ try {
   const a = page.locator('.axc').last(); await a.waitFor();
 
   // ① 서식 · 이스케이프
-  assert.equal(await a.locator('.axc-headline strong').innerText(), '329,000원');
-  assert.match(await a.locator('.axc-headline').innerText(), /<img src=x/); assert.equal(await page.locator('.ax-chat-log img').count(), 0);
+  assert.equal(await a.locator('.air-summary strong').filter({ hasText: '329,000원' }).innerText(), '329,000원');
+  assert.match(await a.locator('.air-summary').innerText(), /<img src=x/); assert.equal(await page.locator('.ax-chat-log img').count(), 0);
   assert.match(await a.locator('.axc-points').innerText(), /<script>/); assert.equal(await page.evaluate(() => window.__xss), undefined, 'model text never runs');
   assert.equal(await a.locator('.axc-caveat').innerText(), '다만 수납액은 누적 금액입니다.');
   assert.equal(await a.locator('.axc-fact').count(), 2); assert.equal(await a.locator('.axc-table tbody tr').count(), 2); assert.equal(await a.locator('.axc-checks li').count(), 1);
   assert.equal(await a.locator('.axc-points li').nth(1).locator('a[data-axc-fn]').count(), 0, 'unknown footnote numbers are dropped');
-  assert.match(await a.locator('.ax-chat-provider').innerText(), /AI 답변/);
+  assert.match(await a.locator('.ax-chat-provider').innerText(), /AI 분석/);
   assert.match(await a.locator('.ai-result-meta').innerText(), /Claude Sonnet 5\.5.*기준: 이슈 미수납.*기준일 2026-10-27/);
   assert.doesNotMatch(await a.innerText(), /claude-cli|2\.0|로컬/);
   // ② 좋아짐 빨강 · 나빠짐 파랑
