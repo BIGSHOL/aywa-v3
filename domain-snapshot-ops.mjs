@@ -1,10 +1,9 @@
 // 운영 영역 — 셔틀·재고·회의록·전자결재·데이터베이스(+ 두 번째 묶음).
 import { ISO_AT, PRIORITY, family, field, latest, md, metric, monthlyTrend, record, scrub, signal } from './domain-snapshot-core.mjs';
 import { opsFamilies2 } from './domain-snapshot-ops2.mjs';
+import { importV2 } from './v2-bridge.mjs';
 
 const DAY = { mon: '월', tue: '화', wed: '수', thu: '목', fri: '금', sat: '토', sun: '일' };
-// 2.0 자산 상태 값은 유지하고 3.0 표기만 띄어 쓴다. 확인필요·미등록은 복사본에 없어 뺐다.
-const ASSET = { in_use: '사용 중', on_loan: '대여 중', repair: '수리 중', lost: '분실', disposed: '폐기' };
 const APPROVAL = { draft: '작성 중', pending: '결재 대기', approved: '승인 완료', rejected: '반려', canceled: '회수' };
 // 2.0 APPROVAL_FORM_LABEL·LEAVE_KIND_LABEL 원문(src/features/approvals/types.ts · src/features/leave/request-days.ts).
 const FORM = { leave: '휴가신청서', proposal: '품의서', expense: '지출결의서', income: '수입결의서' };
@@ -22,7 +21,8 @@ const PROCESS = { completed: 'AI 분석 완료', idle: '기록만', failed: '분
 const pre = (p, labels) => Object.fromEntries(Object.entries(labels).map(([k, v]) => [`${p}:${k}`, v]));
 
 export async function opsFamilies(ctx) {
-  const { sql, t, asOf, month, monthStart } = ctx;
+  const { sql, t, asOf, monthStart } = ctx;
+  const [{ ASSET_STATUS_LABEL, assetStatusLabel }, { unknownIfEmpty }] = await Promise.all([importV2('features/inventory/status.ts'), importV2('features/inventory/unknown-value.ts')]);
   const out = {};
   // 셔틀 — 정기 탑승 배정(근거)·노선·운행·승하차 기록. 승하차 기록이 없다고 미탑승으로 보지 않는다.
   const riders = await sql`select r.id, s.name, r.io_kind, r.weekdays, run.season, run.label, run.run_no, st.name stop, v.name vehicle from public.shuttle_riders r join public.students s on s.id=r.student_id and s.tenant_id=${t} join public.shuttle_run_stops rs on rs.id=r.run_stop_id and rs.tenant_id=${t} join public.shuttle_runs run on run.id=rs.run_id and run.tenant_id=${t} left join public.shuttle_stops st on st.id=rs.stop_id and st.tenant_id=${t} left join public.shuttle_vehicles v on v.id=run.vehicle_id and v.tenant_id=${t} where r.tenant_id=${t} and not coalesce(s.is_test,false) order by run.season, run.run_no, s.name`;
@@ -38,21 +38,19 @@ export async function opsFamilies(ctx) {
   });
 
   // 재고관리 — 자산(근거)·대여·실사·소모품.
-  const assets = await sql`select a.id, a.asset_code, coalesce(c.label, a.category) category, a.maker, a.model, a.status, a.location, a.holder_name, a.last_audited_on::text audited from public.inventory_assets a left join public.inventory_categories c on c.key=a.category and c.tenant_id=${t} where a.tenant_id=${t} order by a.sort_order nulls last, a.asset_code`;
+  const assets = await sql`select a.id, a.asset_code, coalesce(c.label, a.category) category, a.maker, a.model, a.acquired_on::text acquired, a.status, a.location, a.holder_name, a.last_audited_on::text audited, a.disposed_on::text disposed, a.note from public.inventory_assets a left join public.inventory_categories c on c.key=a.category and c.tenant_id=${t} where a.tenant_id=${t} order by a.sort_order nulls last, a.asset_code`;
   const loans = await sql`select l.id, l.status, l.due_on::text due, l.due_note, l.lent_on::text lent, l.asset_id, coalesce(u.display_name, l.borrower_name) borrower from public.inventory_loans l left join public.users u on u.id=l.borrower_user_id and u.tenant_id=${t} where l.tenant_id=${t}`;
   const [inv] = await sql`select (select count(*)::int from public.inventory_audits where tenant_id=${t}) audits, (select max(audited_on)::text from public.inventory_audits where tenant_id=${t}) last_audit, (select count(*)::int from public.inventory_supplies where tenant_id=${t}) supplies, (select coalesce(sum(qty),0)::int from public.inventory_supplies where tenant_id=${t}) qty`;
   const overdueLoans = loans.filter(l => l.status === 'out' && l.due && l.due < asOf);
   const overdueAssets = new Set(overdueLoans.map(l => l.asset_id));
   // 지금 대여 중인 자산의 대여 — 대여자·대여일·반납 기한(기한 대신 적은 말 '상시' 등은 그대로) 칸. 같은 자산이 둘이면 기한 빠른 쪽.
   const outLoan = new Map(); for (const l of loans.filter(x => x.status === 'out').sort((a, b) => String(a.due || '9999').localeCompare(String(b.due || '9999')))) if (!outLoan.has(l.asset_id)) outLoan.set(l.asset_id, l);
-  // 제조사가 모델명 앞에 이미 있으면('LG' + 'LG 15U56') 한 번만.
-  const makerModel = a => (a.maker && a.model && a.model.toLowerCase().startsWith(a.maker.toLowerCase()) ? a.model : [a.maker, a.model].filter(Boolean).join(' '));
   out.inventory = family('inventory', '재고관리(자산·대여·실사·소모품·업체)', {
     summary: `반납 기한 지난 대여 ${overdueLoans.length}건 · 소모품 ${inv.supplies}종 · 최종 실사 ${inv.last_audit ? md(inv.last_audit) : '기록 없음'}.`,
-    metrics: [metric('전체 자산', assets.length, '대', '폐기·분실 포함'), ...Object.entries(ASSET).map(([k, v]) => metric(`자산 ${v}`, assets.filter(a => a.status === k).length, '대')), metric('반납 전 대여', loans.filter(l => l.status === 'out').length, '건'), metric('반납 기한 지난 대여', overdueLoans.length, '건'), metric('실사 기록', inv.audits, '건', `최종 ${inv.last_audit ? md(inv.last_audit) : '기록 없음'}`), metric('소모품', inv.supplies, '종', `수량 합계 ${inv.qty}개`)],
-    evidence: assets.map(a => { const l = outLoan.get(a.id); return record({ id: a.id, label: [a.category, a.asset_code].filter(Boolean).join(' '), detail: makerModel(a), date: a.audited, status: ASSET[a.status] || '기타', fields: [field('위치', a.location), field('사용자', a.holder_name), ...filled([['대여자', l?.borrower], ['대여일', l?.lent ? md(l.lent) : null], ['반납 기한', l ? (l.due ? md(l.due) : l.due_note || '정하지 않음') : null]])], facets: [`status:${a.status}`, `category:${a.category}`, overdueAssets.has(a.id) && 'loan-overdue'] }); }),
-    detailLabel: '모델', dateLabel: '최종 실사',
-    facetLabels: { ...pre('status', ASSET), 'loan-overdue': '반납 기한 지남', ...Object.fromEntries([...new Set(assets.map(a => a.category))].map(c => [`category:${c}`, c])) }, recordSource: 'inventory_assets',
+    metrics: [metric('전체 자산', assets.length, '대', '폐기·분실 포함'), ...Object.entries(ASSET_STATUS_LABEL).map(([k, v]) => metric(`자산 ${v}`, assets.filter(a => a.status === k).length, '대')), metric('반납 전 대여', loans.filter(l => l.status === 'out').length, '건'), metric('반납 기한 지난 대여', overdueLoans.length, '건'), metric('실사 기록', inv.audits, '건', `최종 ${inv.last_audit ? md(inv.last_audit) : '기록 없음'}`), metric('소모품', inv.supplies, '종', `수량 합계 ${inv.qty}개`)],
+    evidence: assets.map((a, i) => { const l = outLoan.get(a.id); return record({ id: a.id, label: a.asset_code, detail: unknownIfEmpty(a.model), date: a.audited, status: ASSET_STATUS_LABEL[a.status] ? assetStatusLabel(a.status) : '기타', fields: [field('No', i + 1), field('분류', a.category), field('제조사', unknownIfEmpty(a.maker)), field('입고일', unknownIfEmpty(a.acquired)), field('현위치', a.status === 'disposed' ? null : a.location), field('사용자', a.holder_name), field('폐기일', a.disposed), field('비고', a.note), ...filled([['대여자', l?.borrower], ['대여일', l?.lent ? md(l.lent) : null], ['반납 기한', l ? (l.due ? md(l.due) : l.due_note || '정하지 않음') : null]])], facets: [`status:${a.status}`, `category:${a.category}`, overdueAssets.has(a.id) && 'loan-overdue'] }); }),
+    detailLabel: '모델명', dateLabel: '최종실사',
+    facetLabels: { ...pre('status', ASSET_STATUS_LABEL), 'loan-overdue': '반납 기한 지남', ...Object.fromEntries([...new Set(assets.map(a => a.category))].map(c => [`category:${c}`, c])) }, recordSource: 'inventory_assets',
     signals: overdueLoans.length ? [signal({ id: 'inventory-loan-overdue', title: `반납 기한 지난 자산 대여 ${overdueLoans.length}건`, summary: `${overdueLoans.slice(0, 3).map(l => { const a = assets.find(x => x.id === l.asset_id); return `${a ? [a.category, a.asset_code].filter(Boolean).join(' ') : '자산'}(${md(l.due)}까지)`; }).join(', ')}${overdueLoans.length > 3 ? ` 외 ${overdueLoans.length - 3}건` : ''}. 아직 대여 중입니다.`, priority: PRIORITY.check, source: '재고관리 · 대여 기록', recordIds: [...overdueAssets], facet: 'loan-overdue', at: latest(overdueLoans.map(l => l.due)), draft: { title: '자산 반납 확인', body: '반납 예정일이 지난 대여 자산의 위치와 반납 일정을 확인해 주세요.' } })] : [],
     sourceLabel: '자산 · 대여 · 실사 · 소모품', coverageNote: '목록은 자산 전체입니다.',
     sources: [{ table: 'inventory_assets', rows: assets.length }, { table: 'inventory_loans', rows: loans.length }, { table: 'inventory_audits', rows: inv.audits }, { table: 'inventory_supplies', rows: inv.supplies }],

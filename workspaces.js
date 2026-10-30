@@ -23,11 +23,11 @@ window.createWorkspaces = function createWorkspaces(api) {
   // 기록 날짜는 M/D(연월은 yy.mm)로 보인다(원장 10-28). 다른 모양의 값은 그대로.
   const dateText=v=>{const s=String(v??'');return /^\d{4}-\d{2}-\d{2}$/.test(s)?`${Number(s.slice(5,7))}/${Number(s.slice(8,10))}`:/^\d{4}-\d{2}$/.test(s)?api.yymm(s):s;};
   // 기록의 날짜가 무슨 날인지(원장 10-28 "3/10이 무슨 날짜인지") — 영역마다 그 기록 날짜가 뜻하는 것. 이름이 없는 영역은 날짜를 싣지 않는다.
-  const DATE_NAME={dashboard:'브리핑일',calendar:'일정일','tasks-notifications':'기한',onescreen:'발송일','video-homework':'올린 날','class-sheets':'수업일',attendance:'수업일',makeups:'보강일','lesson-reports':'수업일',students:'등록일','student-contribution':'기록일',exams:'시험일',consultations:'상담일',enrollment:'접수일',newcomers:'등록일',withdrawals:'퇴원일','withdrawal-reports':'퇴원일',staff:'입사일',payroll:'발급일',billing:'납부 기한','textbook-requests':'요청일','expense-requests':'지출일',inventory:'실사일',meetings:'회의일',approvals:'기안일',documents:'수정일',support:'요청일','owner-settings':'시작일',integrations:'실행일'};
+  const DATE_NAME={dashboard:'브리핑일',calendar:'일정일','tasks-notifications':'기한',onescreen:'발송일','video-homework':'올린 날','class-sheets':'수업일',attendance:'수업일',makeups:'보강일','lesson-reports':'수업일',students:'등록일','student-contribution':'기록일',exams:'시험일',consultations:'상담일',enrollment:'접수일',newcomers:'등록일',withdrawals:'퇴원일','withdrawal-reports':'퇴원일',staff:'입사일',payroll:'발급일',billing:'납부 기한','textbook-requests':'요청일','expense-requests':'지출일',inventory:'최종실사',meetings:'회의일',approvals:'기안일',documents:'수정일',support:'요청일','owner-settings':'시작일',integrations:'실행일'};
   // 기록의 '내용'(detail) 칸 이름 — 영역마다 그 칸이 담는 것. 없으면 '내용'.
-  const DETAIL_NAME={calendar:'시각',billing:'청구월',staff:'직책',inventory:'모델',documents:'분류','expense-requests':'분류',textbooks:'분류',enrollment:'학교·학년',newcomers:'학교·학년',students:'학교·학년',exams:'시험',attendance:'반',makeups:'반','class-review':'반','withdrawal-reports':'구분',shuttle:'노선'};
+  const DETAIL_NAME={calendar:'시각',billing:'청구월',staff:'직책',inventory:'모델명',documents:'분류','expense-requests':'분류',textbooks:'분류',enrollment:'학교·학년',newcomers:'학교·학년',students:'학교·학년',exams:'시험',attendance:'반',makeups:'반','class-review':'반','withdrawal-reports':'구분',shuttle:'노선'};
   // 사람 이름이 아닌 첫 칸은 그 기록의 대상(반·문서·업무 등)으로 부른다.
-  const NAME_HEAD={calendar:'일정','tasks-notifications':'업무',classes:'반',timetable:'반',textbooks:'교재',meetings:'회의',documents:'문서',support:'요청',dashboard:'브리핑',integrations:'연동',slack:'규칙','owner-settings':'항목','class-sheets':'반',onescreen:'첫 원생',inventory:'자산','expense-requests':'지출',approvals:'문서'};
+  const NAME_HEAD={calendar:'일정','tasks-notifications':'업무',classes:'반',timetable:'반',textbooks:'교재',meetings:'회의',documents:'문서',support:'요청',dashboard:'브리핑',integrations:'연동',slack:'규칙','owner-settings':'항목','class-sheets':'반',onescreen:'첫 원생',inventory:'자산ID','expense-requests':'지출',approvals:'문서'};
   // 2.0 목록과 같은 열 순서. 자료에 있는 3.0 전용 칸은 이 순서 뒤에 둔다.
   const SUBJECT_FIRST=new Set(['video-homework','timetable','classes','textbooks','lesson-reports','exams','consultations','enrollment','withdrawal-reports']);
   const COLUMN_ORDER={
@@ -45,7 +45,7 @@ window.createWorkspaces = function createWorkspaces(api) {
     payroll:['detail','date','status'],billing:['detail','f:수납명','f:청구액','f:수납','f:남은 금액','status','date'],
     'textbook-requests':['f:교재','date','f:요청 선생님','f:가격','status'],
     'expense-requests':['f:작성','detail','date','f:금액','status'],shuttle:['detail','f:요일','f:차량','status'],
-    inventory:['detail','date','status','f:위치','f:사용자','f:대여자','f:대여일','f:반납 기한'],
+    inventory:['f:No','f:분류','f:제조사','detail','f:입고일','status','f:현위치','f:사용자','date','f:폐기일','f:비고','f:대여자','f:대여일','f:반납 기한'],
     meetings:['date','f:참석','f:실행 항목','status'],approvals:['f:신청자','f:종류','f:기간','f:금액','date','status','f:결재 차례','f:결재선'],
     documents:['detail','date','f:종류','status'],support:['date','status'],
     'owner-settings':['f:과목','date','f:종료일','f:대상','f:정원','status'],help:[],
@@ -409,7 +409,7 @@ window.createWorkspaces = function createWorkspaces(api) {
   }
   // menu = 정렬·거르기를 받는 목록(작업 공간 영역 id) — 없으면 머리는 이름만. group = 줄 묶음 띠(날짜순의 달).
   function tableHtml({shape,rows,nameLabel='이름',main,attrs=()=>'',menu='',group=null,head=true,cls='',key='',details=null}){
-    const {cols,name,filler}=shape,subject=cols.find(c=>c.key==='subject'),kind=menu==='classes'?cols.find(c=>c.key==='f:구분'):null,lead=cols.filter(c=>c===subject||c===kind),rest=cols.filter(c=>!lead.includes(c)),sort=menu?sortOf(menu):{col:'',dir:''},on=new Set(menu?colOn(menu).map(([k])=>k):[]),span=cols.length+1+(filler?1:0);
+    const {cols,name,filler}=shape,subject=cols.find(c=>c.key==='subject'),lead=cols.filter(c=>c.key==='subject'||(menu==='classes'&&c.key==='f:구분')||(menu==='inventory'&&c.key==='f:No')),rest=cols.filter(c=>!lead.includes(c)),sort=menu?sortOf(menu):{col:'',dir:''},on=new Set(menu?colOn(menu).map(([k])=>k):[]),span=cols.length+1+(filler?1:0);
     const th=c=>{const al=c.align||'l';
       if(!menu)return `<th scope="col" class="al-${al}"><span class="ws-cut">${h(c.label)}</span></th>`;
       const dir=sort.col===c.key?sort.dir:'',f=on.has(c.key),open=colMenu.id===menu&&colMenu.col===c.key;
@@ -491,7 +491,7 @@ window.createWorkspaces = function createWorkspaces(api) {
     return `<div class="ws-flow" aria-label="단계별 흐름">${stages.map(stage).join('')}${loose.length?`<section class="ws-stage"><header><span>·</span><h3>단계 미지정</h3><b>${fmt(looseCount)}</b></header>${rowsOf(loose)}</section>`:''}</div>`;
   }
   function sheetView(a,items){
-    const cols=familyColumns(a,items),subject=cols.find(c=>c.key==='subject'),lead=cols.filter(c=>c.key==='subject'||(a.id==='classes'&&c.key==='f:구분')),rest=cols.filter(c=>!lead.includes(c));
+    const cols=familyColumns(a,items),subject=cols.find(c=>c.key==='subject'),lead=cols.filter(c=>c.key==='subject'||(a.id==='classes'&&c.key==='f:구분')||(a.id==='inventory'&&c.key==='f:No')),rest=cols.filter(c=>!lead.includes(c));
     const edits=state.edits[a.id]||{},changed=Object.values(edits).reduce((n,row)=>n+Object.keys(row).length,0);
     const cell=(r,c)=>{if(!c.key.startsWith('f:'))return `<td>${c.key==='status'&&r.status?pill(r.status):h(c.text(r)||'—')}</td>`;
       const label=c.label,original=(r.fields||[]).find(f=>f.label===label)?.value??'—',value=edits[r.id]?.[label];
