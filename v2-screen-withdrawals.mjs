@@ -17,6 +17,7 @@ import { loadRules as reportRules } from './v2-screen-withdrawal-reports.mjs';
 import { loadRules as classesRules } from './v2-screen-classes.mjs';
 import { loadExtra, asAuthenticated } from './v2-timetable-save.mjs';
 import { classesActions } from './v2-classes-save.mjs';
+import { paidTuition } from './v2-withdrawal-paid.mjs';
 
 const ID = 'withdrawals', MENU = 'withdrawals';
 const ACTIONS_MODULE = 'features/withdrawals/server/actions.ts', PREFS_MODULE = 'features/withdrawals/server/trend-prefs-actions.ts';
@@ -78,17 +79,6 @@ async function loadEndedEnrollments(sql, t, studentIds) {
   return out;
 }
 const lastClassOf = row => { const k = row ? (one(row.class) ?? undefined) : undefined; return { className: k?.class_name ?? null, subject: k?.subject ?? null, englishTrack: k?.english_track ?? null, reason: row?.withdrawal_reason ?? null }; };
-
-/** 퇴원·과목 수강종료의 기간 판정에 쓰는 납부 청구. 2.0 loadPaidTuition과 같은 지점·상태·금액 조건이다. */
-async function paidTuition(sql, t, studentIds, lastDate) {
-  if (!studentIds.length || !lastDate) return new Map();
-  const rows = await sql`select student_id::text student_id, period::text period, status::text status, category::text category, amount_paid, line_items
-    from public.invoices where tenant_id=${t} and student_id = any(${studentIds}::uuid[]) and category::text='tuition'
-      and status::text not in ('void','refunded') and amount_paid > 0 and period <= ${lastDate.slice(0, 7)} order by id`;
-  const byStudent = new Map();
-  for (const row of rows) byStudent.set(row.student_id, [...(byStudent.get(row.student_id) ?? []), row]);
-  return byStudent;
-}
 
 async function getWithdrawnStudents(sql, t, L) {
   const rows = await sql`select id::text id, name, school, grade, enrolled_at::text enrolled_at, withdrawn_at::text withdrawn_at, withdrawal_metadata, notes

@@ -1,13 +1,16 @@
-// 2.0 운영실 영역(1단계 · 원생) — 재원생 · 강좌수 · 퇴원&수업종료 · 등록 후 3개월 내 퇴원 · 신규문의 · 전일/이달 신규 · 강사별 업무 현황.
+// 2.0 운영실 영역(1단계 · 원생) — 재원생 · 강좌수 · 퇴원&수업종료 · 등록 후 3개월 내 퇴원 · 신규문의 · 전일/이달 신규.
+// 강사별 업무 집계는 직원 평가의 업무 현황 면으로 옮긴 뒤에도 호환 함수로 둔다.
 // 2.0 server.ts의 영역 함수(students · courses · monthWithdrawals · monthEarlyExits · getIntakeOnDay · getEnrolledRecent · loadTeacherWork + withStaffTasks)를
 // 같은 표·같은 조건의 SQL(지점 조건 `tenant_id`)과 2.0 순수 함수(importV2)로. 영역 값 모양 = 2.0 `OverviewData[영역]`.
 // 운영실 조립(v2-dashboard-overview.mjs)이 영역마다 저장점 하나 안에서 `(ctx, sp)`로 부른다. 강사 스코프는 없다(보는 사람 = 원장).
 import { queryGate } from './v2-onescreen-roster.mjs';
 import { loadTeacherWork } from './v2-teacher-work.mjs';
+import { paidTuition } from './v2-withdrawal-paid.mjs';
 
 const MODULES = { comp: 'features/students/enrollment/enrolled-composition.ts', scomp: 'features/dashboard/overview/student-composition.ts',
   course: 'features/students/enrollment/course-count.ts', model: 'features/dashboard/overview/model.ts', win: 'features/withdrawals/window.ts',
   bulk: 'features/withdrawals/system-bulk.ts', merged: 'features/students/status/merged.ts', ended: 'features/withdrawals/subject-ended.ts',
+  exitMonth: 'features/withdrawals/exit-month.ts',
   special: 'features/classes/special-lecture.ts', exits: 'features/dashboard/overview/monthly-exits.ts', early: 'features/withdrawals/early-exit.ts',
   types: 'features/withdrawals/types.ts', school: 'lib/format/school-grade.ts', kst: 'lib/date-kst.ts', bounds: 'features/enrollment/kst-bounds.ts',
   outcome: 'features/dashboard/overview/enrolled-outcome.ts', recent: 'features/dashboard/overview/enrolled-recent.ts', consult: 'features/enrollment/consult-subject.ts',
@@ -87,11 +90,12 @@ export function withdrawalRows(ctx, gate) {
     const students = (await gate`select id::text id, name, school, grade, enrolled_at::text enrolled_at, withdrawn_at::text withdrawn_at, notes, withdrawal_metadata from public.students
       where tenant_id=${ctx.t} and status = 'withdrawn' and withdrawn_at >= ${from} and withdrawn_at <= ${to} order by withdrawn_at desc, id`).filter((s) => !R.merged.isMergedStudent(s.notes));
     if (!students.length) return [];
-    const ended = (await gate`select e.id::text id, e.student_id::text student_id, e.class_id::text class_id, e.start_date::text start_date, e.end_date::text end_date, e.is_transferred,
+    const [endedRows, paid] = await Promise.all([gate`select e.id::text id, e.student_id::text student_id, e.class_id::text class_id, e.start_date::text start_date, e.end_date::text end_date, e.is_transferred,
         e.withdrawal_reason, c.class_name, c.subject, c.english_track
       from public.enrollments e left join public.classes c on c.id = e.class_id and c.tenant_id = ${ctx.t}
-      where e.tenant_id=${ctx.t} and e.student_id = any(${students.map((s) => s.id)}::uuid[]) and e.end_date is not null order by e.id`)
-      .map((e) => ({ ...e, class: { class_name: e.class_name, subject: e.subject, english_track: e.english_track } }));
+      where e.tenant_id=${ctx.t} and e.student_id = any(${students.map((s) => s.id)}::uuid[]) and e.end_date is not null order by e.id`,
+      paidTuition(gate, ctx.t, students.map(s => s.id), to)]);
+    const ended = endedRows.map((e) => ({ ...e, class: { class_name: e.class_name, subject: e.subject, english_track: e.english_track } }));
     const last = R.win.lastEndedByStudent(ended), byStudent = new Map();
     for (const row of ended) byStudent.set(row.student_id, [...(byStudent.get(row.student_id) ?? []), row]);
     return students.flatMap((s) => {
@@ -105,8 +109,9 @@ export function withdrawalRows(ctx, gate) {
           enrollmentId: e.id, classId: e.class_id, startDate: e.start_date, endDate: e.end_date, isTransferred: e.is_transferred === true })) };
       });
       const systemBulk = R.bulk.isSystemBulkWithdrawal({ withdrawnAt: s.withdrawn_at, hasEnrollmentHistory: !!row });
-      if (!R.win.inWithdrawalWindow({ withdrawnAt: s.withdrawn_at, systemBulk }, from, to)) return [];
-      return [{ id: s.id, name: s.name, school: s.school, grade: s.grade, enrolledAt: s.enrolled_at ? s.enrolled_at.slice(0, 10) : null, withdrawnAt: (s.withdrawn_at ?? '').slice(0, 10),
+      const exitDate = R.exitMonth.exitCountDate(s.withdrawn_at, R.exitMonth.paidTuitionMonths(paid.get(s.id) ?? []));
+      if (!R.win.inWithdrawalWindow({ withdrawnAt: exitDate, systemBulk }, from, to)) return [];
+      return [{ id: s.id, name: s.name, school: s.school, grade: s.grade, enrolledAt: s.enrolled_at ? s.enrolled_at.slice(0, 10) : null, withdrawnAt: (s.withdrawn_at ?? '').slice(0, 10), exitDate,
         lastClassName: klass.className, lastClassSubject: klass.subject, lastClassEnglishTrack: klass.englishTrack, exitClasses,
         ...exitReasonOf(R, s.withdrawal_metadata, klass.reason), cleanup: R.bulk.isCleanupExit(s.withdrawal_metadata) }];
     });
@@ -128,16 +133,27 @@ async function subjectEndedStudents(ctx, gate) {
       isTransferred: e.is_transferred ?? undefined, isSpecial: R.special.isSpecialLecture({ isSpecial: e.is_special, className: e.class_name }),
       className: e.class_name ?? null, englishTrack: e.english_track ?? null, reason: e.withdrawal_reason ?? null }]);
   }
-  return students.flatMap((s) => {
+  const out = students.flatMap((s) => {
     const all = bySt.get(s.id) ?? [], enr = all.filter((e) => R.ended.countsForSubjectExit(e, today));
     const lastEndOf = (subject) => all.reduce((m, e) => (e.subject === subject && e.endDate && (!m || e.endDate > m) ? e.endDate : m), null);
     const { ended } = R.ended.getEndedSubjects(enr, today);
     if (!ended.length) return [];
     return [{ id: s.id, name: s.name, school: s.school, grade: s.grade, status: s.status, endedDetail: ended.map((subject) => {
       const best = R.win.pickLastEnded(enr.filter((e) => e.subject === subject).map((e) => ({ ...e, end_date: e.endDate, start_date: e.startDate, is_transferred: e.isTransferred })));
-      return { subject, endedAt: lastEndOf(subject) ?? best?.endDate ?? null, className: best?.className ?? null, englishTrack: best?.englishTrack ?? null, isTransferred: best?.isTransferred === true };
+      const subjectRows = enr.filter(e => e.subject === subject).map(e => ({ ...e, end_date: e.endDate, start_date: e.startDate, is_transferred: e.isTransferred }));
+      const endedAt = lastEndOf(subject) ?? best?.endDate ?? null;
+      return { subject, endedAt, countAt: endedAt,
+        runStart: R.exitMonth.subjectRunStart(all.filter(e => e.subject === subject), best?.startDate ?? null),
+        endedTogether: R.win.endedTogether(subjectRows).map(e => ({ enrollmentId: e.id, classId: e.classId, startDate: e.startDate, endDate: e.endDate, isTransferred: e.isTransferred === true })),
+        className: best?.className ?? null, englishTrack: best?.englishTrack ?? null, isTransferred: best?.isTransferred === true };
     }) }];
   });
+  const paid = await paidTuition(gate, ctx.t, out.map(s => s.id), out.reduce((m, s) => s.endedDetail.reduce((d, e) => e.endedAt > d ? e.endedAt : d, m), ''));
+  for (const s of out) {
+    const bySubject = R.exitMonth.paidSubjectMonths(paid.get(s.id) ?? [], ctx.settings.operations.subjects);
+    for (const d of s.endedDetail) if (d.endedAt) d.countAt = R.exitMonth.subjectExitCountDate(d.endedAt, d.subject, bySubject, ctx.settings.operations.subjects, d.runStart);
+  }
+  return out;
 }
 /** 2.0 monthWithdrawals — 이번 달 1일 ~ min(말일, 오늘)의 퇴원(과목마다 한 줄) + 과목 전체 종료. */
 async function withdrawals(ctx, sp) {
@@ -146,7 +162,7 @@ async function withdrawals(ctx, sp) {
   const [rows, ended] = [await withdrawalRows(ctx, gate), await subjectEndedStudents(ctx, gate)];
   return {
     month,
-    rows: R.exits.includeSubjectEnds(rows.filter((row) => R.win.inWithdrawalWindow({ withdrawnAt: row.withdrawnAt, systemBulk: false }, win.from, win.to))
+    rows: R.exits.includeSubjectEnds(rows.filter((row) => R.win.inWithdrawalWindow({ withdrawnAt: row.exitDate, systemBulk: false }, win.from, win.to))
       .flatMap((row) => (row.exitClasses.length ? row.exitClasses : [{ subject: row.lastClassSubject, englishTrack: row.lastClassEnglishTrack, className: row.lastClassName }]).map((klass) => ({
         id: row.id, eventKey: `${row.id}|${klass.subject ?? 'unknown'}`, name: row.name, schoolGrade: schoolGrade(R, row.school, row.grade), withdrawnAt: row.withdrawnAt,
         className: klass.className ?? undefined, subject: klass.subject,
@@ -159,13 +175,13 @@ async function earlyExits(ctx, sp) {
   const R = await rules(ctx.importV2), gate = queryGate(sp), today = ctx.today, month = today.slice(0, 7), months = R.model.monthKeys(today);
   const win = R.win.withdrawalMonthWindow(month, today), rows = await withdrawalRows(ctx, gate);
   const subjectsOf = (row) => (row.exitClasses.length ? row.exitClasses.map((c) => c.subject) : row.lastClassSubject ? [row.lastClassSubject] : []);
-  const inMonth = (row) => R.win.inWithdrawalWindow({ withdrawnAt: row.withdrawnAt, systemBulk: false }, win.from, win.to);
+  const inMonth = (row) => R.win.inWithdrawalWindow({ withdrawnAt: row.exitDate, systemBulk: false }, win.from, win.to);
   return {
     month, months,
     rows: rows.filter(inMonth).map((row) => ({ id: row.id, name: row.name, schoolGrade: schoolGrade(R, row.school, row.grade), enrolledAt: row.enrolledAt,
       withdrawnAt: row.withdrawnAt, days: R.early.tenureDays(row.enrolledAt, row.withdrawnAt), subjects: subjectsOf(row) })),
-    history: rows.filter((row) => !row.cleanup && row.withdrawnAt < win.from && months.includes(row.withdrawnAt.slice(0, 7)))
-      .map((row) => ({ month: row.withdrawnAt.slice(0, 7), days: R.early.tenureDays(row.enrolledAt, row.withdrawnAt), subjects: subjectsOf(row) })),
+    history: rows.filter((row) => !row.cleanup && row.exitDate < win.from && months.includes(row.exitDate.slice(0, 7)))
+      .map((row) => ({ month: row.exitDate.slice(0, 7), days: R.early.tenureDays(row.enrolledAt, row.withdrawnAt), subjects: subjectsOf(row) })),
   };
 }
 

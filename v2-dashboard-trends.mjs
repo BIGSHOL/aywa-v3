@@ -92,7 +92,7 @@ async function courseTrendArea(ctx, sp) {
 /**
  * 2.0 loadMonthlyChanges(today, scope null, withdrawalRows, withSubjects false, 6, true, coverage) — 최근 6개월 등록·퇴원.
  * 등록 = 상태를 보지 않고 그 기간 등록일(병합 · 수업 기록 없는 장부 정리 제외 · 청구가 덮은 달 이후 등록은 수업을 시작한 등록만) ·
- * 퇴원 = 퇴원 KPI와 같은 행에서 단체 장부 정리를 뺀 것.
+ * 퇴원 = 퇴원 KPI와 같은 행에서 단체 장부 정리를 빼고 수업료를 낸 마지막 달로 센 것.
  */
 async function changes(ctx, sp) {
   const gate = queryGate(sp), R = await kpiRules(ctx.importV2), t = ctx.t, today = ctx.today;
@@ -109,7 +109,7 @@ async function changes(ctx, sp) {
   const isStarted = (id, enrolledAt) => !started || !enrolledAt || enrolledAt.slice(0, 7) < range.billingFrom || started.has(id);
   const joined = counted.filter((r) => !bookkeeping.has(r.id) && isStarted(r.id, r.enrolled_at));
   const startedFrom = started ? range.billingFrom : null;
-  return R.model.monthlyChanges(today, joined.map((r) => r.enrolled_at), withdrawn.filter((r) => !r.cleanup).map((r) => r.withdrawnAt), 6)
+  return R.model.monthlyChanges(today, joined.map((r) => r.enrolled_at), withdrawn.filter((r) => !r.cleanup).map((r) => r.exitDate), 6)
     .map((r) => (startedFrom && r.month >= startedFrom ? { ...r, startedOnly: true } : r));
 }
 
