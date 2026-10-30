@@ -48,13 +48,13 @@ export async function supportFamilies({ sql, t, asOf, monthStart, subjectLabel }
     coverageNote: '질문 게시판 글만 셉니다(화면 설명서 제외).', sources: [{ table: 'help_posts', rows: hp.posts }, { table: 'help_answers', rows: hp.answers }],
   });
 
-  // 강사 작업 공간 — 원장이 관리하는 강사뷰 설정(화면 언어·접근)과 오늘 수업 위임.
-  const teachers = await sql`select u.id, u.display_name, coalesce(u.teacher_view_lang,'ko') lang, coalesce(u.teacher_view_access,false) access, u.report_display_name is not null custom_name, (select count(*)::int from public.classes c where c.tenant_id=${t} and c.teacher_id=u.id and c.is_active and not coalesce(c.is_makeup_pool,false)) classes from public.users u where u.tenant_id=${t} and u.status='active' and u.system_role='teacher' order by u.display_name`;
+  // 강사 작업 공간 — 원장이 관리하는 강사뷰 설정(화면 언어·접근)과 수업 위임 기록.
+  const teachers = await sql`select u.id, u.display_name, coalesce(u.teacher_view_lang,'ko') lang, coalesce(u.teacher_view_access,false) access, u.report_display_name is not null custom_name, (select count(*)::int from public.classes c where c.tenant_id=${t} and c.teacher_id=u.id and c.is_active and not coalesce(c.is_makeup_pool,false)) classes, array(select c.class_name from public.classes c where c.tenant_id=${t} and c.teacher_id=u.id and c.is_active and not coalesce(c.is_makeup_pool,false) order by c.class_name, c.id) class_names from public.users u where u.tenant_id=${t} and u.status='active' and u.system_role='teacher' order by u.display_name`;
   const [tw] = await sql`select (select count(*)::int from public.audit_logs where tenant_id=${t} and action='teacher_view_impersonate' and (created_at at time zone 'Asia/Seoul')::date between ${monthStart} and ${asOf}) views, (select count(*)::int from public.class_delegations where tenant_id=${t}) delegations`;
   out['teacher-workspace'] = family('teacher-workspace', '강사 작업 공간(미니셸·내 정보·뷰 전환)', {
     summary: `수업 위임 기록 ${tw.delegations}건(전체 기간).`,
     metrics: [metric('재직 강사', teachers.length, '명'), metric('영어 화면을 쓰는 강사', teachers.filter(x => x.lang === 'en').length, '명'), metric('보고서 이름을 따로 정한 강사', teachers.filter(x => x.custom_name).length, '명'), metric("이번 달 '다른 강사 뷰' 열람", tw.views, '회'), metric('수업 위임 기록', tw.delegations, '건')],
-    evidence: teachers.map(x => record({ id: x.id, label: x.display_name, status: x.lang === 'en' ? 'English 화면' : '한국어 화면', fields: [field('담임 반', x.classes), field('보고서 이름', x.custom_name ? '지정됨' : '기본')], facets: [`lang:${x.lang}`, x.classes ? 'has-classes' : 'no-classes'] })),
+    evidence: teachers.map(x => record({ id: x.id, label: x.display_name, status: x.lang === 'en' ? 'English 화면' : '한국어 화면', fields: [field('담임 반', x.classes), field('보고서 이름', x.custom_name ? '지정됨' : '기본'), field('담임 반 이름', x.class_names.join(' · '))], facets: [`lang:${x.lang}`, x.classes ? 'has-classes' : 'no-classes'] })),
     facetLabels: { 'lang:ko': '한국어 화면', 'lang:en': 'English 화면', 'has-classes': '담임 반 있음', 'no-classes': '담임 반 없음' }, recordSource: 'users',
     sourceLabel: '강사 계정 설정 · 강사뷰 열람 기록 · 수업 위임', coverageNote: '목록은 재직 강사입니다(이름 순).',
     sources: [{ table: 'users', rows: teachers.length }, { table: 'class_delegations', rows: tw.delegations }],

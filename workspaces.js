@@ -379,7 +379,7 @@ window.createWorkspaces = function createWorkspaces(api) {
     return c?sortBy(out,c.sortv,dir):viewKind(a)==='timeline'?sortBy(out,r=>String(r.date||''),'desc'):out;
   }
   const nameColumn=id=>({key:'name',label:NAME_HEAD[id]||'이름',text:r=>String(r.label||''),sortv:r=>String(r.label||''),align:'l'});
-  const DETAIL_ONLY={classes:new Set(['수강 원생']),integrations:new Set(['실패 영역 상세']),onescreen:new Set(['대상 원생']),'class-review':new Set(['담당 반 이름','계산 항목 이름'])};
+  const DETAIL_ONLY={classes:new Set(['수강 원생']),integrations:new Set(['실패 영역 상세']),onescreen:new Set(['대상 원생']),'class-review':new Set(['담당 반 이름','계산 항목 이름']),'teacher-workspace':new Set(['담임 반 이름'])};
   // 2.0에서 과목이 이름 앞인 목록만 앞세우고, 다른 목록의 과목은 원래 자리에서 보인다.
   function familyColumns(a,basis){
     const id=a.id,dn=dateName(id),labels=[],sample=[...previews(id),...basis.slice(0,300)],subjectFirst=SUBJECT_FIRST.has(id),order=COLUMN_ORDER[id]||[];
