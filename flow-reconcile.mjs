@@ -1,5 +1,5 @@
 // Source reconciliation (FLOW-ENGINE.md · AX-H1·H4·H5). Every load of the source re-judges the stored source cases
-// instead of only adding new ones: a task follows its 2.0 staff_tasks row (status · assignees · wording), a signal
+// instead of only adding new ones: a task follows its 2.0 row, or one student's same-day absence group; a signal
 // follows the signal (present · records · owners). Signals whose fact handling cannot change (FACT_SIGNALS) close
 // when every record is reported handled and reopen only for records nobody handled — the records are never edited.
 // People's decisions stay: a step a manager reassigned (case.reassign) or someone confirmed (ack) keeps its people.
@@ -16,9 +16,15 @@ const reasonOf = t => t.closeReason === 'desk_settled' && t.closeResult ? t.clos
 const lastAt = (t, ev) => t.history.filter(h => h.event === ev).at(-1)?.at || null;
 function taskRoute(source, t) {
   const ids = t.assigneeIds.filter(a => source.actors.some(x => x.id === a));
-  return routeOf(ids.length ? { assigneeIds: ids, queue: null, rule: '원래 업무 담당', ruleSource: 'staff_task_assignees.user_id' } : { assigneeIds: [], queue: 'manager', reason: t.assigneeIds.length ? '배정된 사람이 재직 직원 목록에 없어 관리자 대기열' : '배정된 사람이 없어 관리자 대기열' });
+  const homeroom = t.kind === 'attendance_absent_desk' && t.groupDate;
+  return routeOf(ids.length ? { assigneeIds: ids, queue: null, rule: homeroom ? '그날 첫 결석 반 담임' : '원래 업무 담당', ruleSource: homeroom ? 'classes.teacher_id' : 'staff_task_assignees.user_id' } : { assigneeIds: [], queue: 'manager', reason: t.assigneeIds.length ? '배정된 사람이 재직 직원 목록에 없어 관리자 대기열' : '배정된 사람이 없어 관리자 대기열' });
 }
-const taskFacts = (source, t) => ({ title: t.title || kindOf(t).label, summary: t.detail || kindOf(t).label, dueAt: t.dueAt ?? null, doneRule: kindOf(t).doneRule, entityRefs: [`task:${t.id}`, ...(t.subjectKey ? [t.subjectKey] : [])].map(k => entityRef(source, k)).filter(Boolean) });
+const taskFacts = (source, t) => ({ title: t.title || kindOf(t).label, summary: t.detail || kindOf(t).label, dueAt: t.dueAt ?? null, doneRule: kindOf(t).doneRule,
+  entityRefs: (t.recordKeys || [`task:${t.id}`, ...(t.subjectKey ? [t.subjectKey] : [])]).map(k => {
+    const ref = entityRef(source, k), teacherName = source.entities.get(k)?.teacherName;
+    return ref && teacherName ? { ...ref, teacherName } : ref;
+  }).filter(Boolean),
+  ...(t.kind === 'attendance_absent_desk' ? { studentRef: t.studentKey ? entityRef(source, t.studentKey) : null, groupDate: t.groupDate || null, actionTaskId: t.actionTaskId || null } : {}) });
 const taskPriority = (source, t) => !closedOf(t) && t.dueAt && t.dueAt < source.identity.capturedAt ? 'high' : 'normal';
 
 function createTask(state, source, t, seededAt) {
@@ -114,6 +120,24 @@ export function reconcileSource(state, source, { at, mode = 'apply' } = {}) {
     c.title = sg.signal.title; c.summary = sg.signal.summary; c.doneRule = doneRule; return true;
   };
   for (const t of source.tasks) run(`task:${t.id}`, () => { createTask(state, source, t, seededAt); return `src-task-${t.id}`; }, c => reconcileTask(source, c, t, when));
+  for (const t of source.tasks.filter(x => x.mergedTaskIds?.length)) {
+    const primary = state.cases[state.seededKeys[`task:${t.id}`]];
+    if (!primary) continue;
+    const beforePrimary = JSON.stringify(primary);
+    for (const taskId of t.mergedTaskIds) {
+      const key = `task:${taskId}`; seen.add(key);
+      const duplicate = state.cases[state.seededKeys[key]];
+      if (!duplicate) continue;
+      if (!primary.linkedCaseIds.includes(duplicate.id)) primary.linkedCaseIds.push(duplicate.id);
+      if ((duplicate.steps.some(s => s.status === 'working') || duplicate.evidence?.length) && primary.steps[0]?.status === 'ready') primary.steps[0].status = 'working';
+      if (mode === 'seed' || duplicate.factClosed) continue;
+      const before = JSON.stringify(duplicate);
+      for (const s of duplicate.steps) if (s.status !== 'done') { s.status = 'done'; s.closedBy = 'source'; }
+      Object.assign(duplicate, { factClosed: true, closedReason: '묶음으로 합침', closedAt: when, closedBy: 'source' });
+      commit(state, duplicate, before, [{ type: 'source.task_closed', label: '같은 원생의 같은 날 결석 업무로 합침', at: when, data: { mergedInto: primary.id } }], when, summary);
+    }
+    if (JSON.stringify(primary) !== beforePrimary) commit(state, primary, beforePrimary, mode === 'seed' ? [] : [{ type: 'source.task_changed', label: '같은 날 결석 교시를 한 업무로 합침', at: when }], when, summary);
+  }
   for (const sg of source.signals) run(`signal:${sg.familyId}:${sg.signal.id}`, () => { createSignal(state, source, sg, when); return `src-sig-${sg.familyId}-${sg.signal.id}`.replace(/[^a-z0-9-]/gi, '-'); }, c => reconcileSignal(source, c, sg, when));
   if (mode === 'seed') return summary;
   // Stored source cases whose row / signal is gone. A family that was not read (or an empty task list) closes nothing.

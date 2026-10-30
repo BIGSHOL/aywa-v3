@@ -34,6 +34,35 @@ export function deskCloseResult(cycle, rows, outcomeLabel) {
   return labels.length ? `데스크 확인 기록: ${labels.join(' · ')}` : '데스크 조치 기록으로 처리됨';
 }
 
+export function groupDeskTasks(tasks, absenceDays, entities, day) {
+  const groups = new Map(), result = [];
+  for (const task of tasks) {
+    if (task.kind !== 'attendance_absent_desk') { result.push(task); continue; }
+    const date = String(task.cycle || '').split('|')[0];
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) { result.push(task); continue; }
+    const key = `${task.subject_id}|${date}`;
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(task);
+  }
+  for (const [key, group] of groups) {
+    const bar = key.indexOf('|'), studentId = key.slice(0, bar), date = key.slice(bar + 1);
+    group.sort((a, b) => String(a.opened || '').localeCompare(String(b.opened || '')) || String(a.id).localeCompare(String(b.id)));
+    const rows = absenceDays.get(key) || [], first = group[0];
+    const settled = group.find(t => t.close_reason === 'desk_settled');
+    const open = group.find(t => t.status === 'open');
+    const effective = settled || open || first;
+    const slots = [...new Set(rows.map(r => r.slot || '하루 전체'))];
+    const student = entities.get(`student:${studentId}`)?.label || '원생';
+    result.push({ ...first, status: settled ? settled.status : open ? 'open' : effective.status,
+      close_reason: settled?.close_reason || (!open ? effective.close_reason : null), closed: settled?.closed || (!open ? effective.closed : null),
+      title: rows.length ? `${student} · ${day(date)} 결석 ${slots.length}교시(${slots.join(' · ')}) — 학부모 확인` : first.title,
+      assignees: rows[0]?.teacher_id ? [rows[0].teacher_id] : first.assignees,
+      recordKeys: rows.map(r => `attendance:${r.id}`), studentKey: `student:${studentId}`,
+      groupDate: date, actionTaskId: open?.id || null, settledTaskId: settled?.id || null, mergedTaskIds: group.slice(1).map(t => t.id) });
+  }
+  return result;
+}
+
 export async function loadFlowSource({ workspaces, capturedAt, asOf }) {
   const { OUTCOME_LABEL: attendanceOutcomeLabel } = await importV2('features/attendance/live/queue.ts');
   const db = await openFullDatabase();
@@ -71,9 +100,15 @@ export async function loadFlowSource({ workspaces, capturedAt, asOf }) {
       const enrollments = await sql`select id, student_id, class_id from public.enrollments where tenant_id=${t} and (start_date is null or start_date <= ${asOf}) and (end_date is null or end_date >= ${asOf}) and not coalesce(on_hold,false)`;
       for (const e of enrollments) { if (!studentKey(e.student_id) || !classKey(e.class_id)) continue; const k = put('enrollment', e.id, '수강', 'classes'); link('enrollment_of', k, studentKey(e.student_id), 'enrollments.student_id'); link('enrollment_in', k, classKey(e.class_id), 'enrollments.class_id'); }
 
-      // Absences this month (latest correction only) — scenario candidates and the repeat-absence signal.
-      const absences = await sql`select a.id, a.student_id, a.class_id, a.session_date::text d from public.attendance_records a where a.tenant_id=${t} and a.status='absent' and a.session_date between ${monthStart} and ${asOf} and not exists (select 1 from public.attendance_records b where b.tenant_id=${t} and b.supersedes_id=a.id) order by a.session_date desc, a.id`;
-      for (const a of absences) { if (!studentKey(a.student_id)) continue; const k = put('attendance', a.id, ofStudent(a.student_id, `${day(a.d)} 결석`, `${a.d} 결석`), 'attendance', { date: a.d, studentId: a.student_id, classId: a.class_id }); link('about_student', k, studentKey(a.student_id), 'attendance_records.student_id'); link('in_class', k, classKey(a.class_id), 'attendance_records.class_id'); }
+      // 결석 업무의 원천 행은 업무 회차 날짜까지 읽는다. 이번 달 목록 후보와는 아래에서 따로 구분한다.
+      const absences = await sql`select a.id, a.student_id, a.class_id, a.session_date::text d, to_char(a.slot_start,'HH24:MI') slot, c.teacher_id, u.display_name teacher_name
+        from public.attendance_records a left join public.classes c on c.tenant_id=a.tenant_id and c.id=a.class_id
+        left join public.users u on u.tenant_id=a.tenant_id and u.id=c.teacher_id
+        where a.tenant_id=${t} and a.status='absent' and (a.session_date between ${monthStart} and ${asOf}
+          or exists (select 1 from public.staff_tasks k where k.tenant_id=${t} and k.kind='attendance_absent_desk' and k.subject_id=a.student_id and split_part(k.cycle,'|',1)=a.session_date::text))
+          and not exists (select 1 from public.attendance_records b where b.tenant_id=${t} and b.supersedes_id=a.id)
+        order by a.session_date desc, a.slot_start nulls first, a.class_id, a.id`;
+      for (const a of absences) { if (!studentKey(a.student_id)) continue; const k = put('attendance', a.id, ofStudent(a.student_id, `${day(a.d)} ${a.slot || '하루 전체'} 결석`, `${a.d} 결석`), 'attendance', { date: a.d, studentId: a.student_id, classId: a.class_id, slot: a.slot, teacherName: scrub(a.teacher_name) || null }); link('about_student', k, studentKey(a.student_id), 'attendance_records.student_id'); link('in_class', k, classKey(a.class_id), 'attendance_records.class_id'); }
       const invoices = await sql`select id, student_id, period, amount_total::float8 billed, coalesce(amount_discount,0)::float8 discount, coalesce(amount_paid,0)::float8 paid, greatest(0, amount_total - coalesce(amount_discount,0) - coalesce(amount_paid,0))::float8 remaining, due_date::text due, status::text st from public.invoices where tenant_id=${t} and period=${month} and status::text not in ('void','refunded')`;
       const putInvoice = i => { if (!studentKey(i.student_id)) return; const k = put('invoice', i.id, ofStudent(i.student_id, `${monthOf(i.period)} 청구`, `${i.period} 청구`), 'billing', { remaining: i.remaining, dueDate: i.due, period: i.period, billed: i.billed, discount: i.discount, paid: i.paid, studentId: i.student_id }); link('billed_to', k, studentKey(i.student_id), 'invoices.student_id'); };
       invoices.forEach(putInvoice);
@@ -115,7 +150,7 @@ export async function loadFlowSource({ workspaces, capturedAt, asOf }) {
       for (const r of deskResults) { if (!deskByTask.has(r.task_id)) deskByTask.set(r.task_id, []); deskByTask.get(r.task_id).push(r); }
       const history = await sql`select e.id::text, e.task_id::text task, e.event, e.actor_id::text actor, to_char(e.at at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"') at from public.staff_task_events e where e.tenant_id=${t} order by e.at, e.id`;
       for (const k of tasks) {
-        const key = put('task', k.id, k.title || TASK_KINDS[k.kind]?.label || '업무', TASK_KINDS[k.kind]?.familyId || 'tasks-notifications');
+        const key = put('task', k.id, k.title || TASK_KINDS[k.kind]?.label || '업무', 'tasks-notifications');
         for (const a of k.assignees || []) link('assigned_to', key, staffKey(a), 'staff_task_assignees.user_id');
         const subjectType = TASK_SUBJECT[k.kind];
         if (subjectType && entities.has(`${subjectType}:${k.subject_id}`)) link('about', key, `${subjectType}:${k.subject_id}`, 'staff_tasks.subject_id');
@@ -131,10 +166,14 @@ export async function loadFlowSource({ workspaces, capturedAt, asOf }) {
       for (const w of signalWiring(signals)) if (w.status !== 'ok') console.warn(`flow source wiring: ${w.familyId}/${w.signalId} ${w.status} (records ${w.records}, linked ${w.linked})`);
       // signalFamilies = families whose signals were read (a signal missing there has cleared); loadedAt = when this source was read.
       const signalFamilies = Object.values(workspaces?.families || {}).filter(f => ['available', 'empty'].includes(f.dataState)).map(f => f.id);
+      const absenceDays = new Map();
+      for (const a of absences) { const key = `${a.student_id}|${a.d}`; if (!absenceDays.has(key)) absenceDays.set(key, []); absenceDays.get(key).push(a); }
+      const groupedTasks = groupDeskTasks(tasks, absenceDays, entities, day);
+      const taskCycles = new Map(tasks.map(k => [k.id, k.cycle]));
       return {
         identity: { tenantId: t, tenantSlug: 'cs', capturedAt, asOf }, loadedAt: new Date().toISOString(), signalFamilies, actors, entities, relations, signals,
-        tasks: tasks.map(k => ({ id: k.id, kind: k.kind, status: k.status, closeReason: k.close_reason, ...(k.kind === 'attendance_absent_desk' && k.close_reason === 'desk_settled' ? { closeResult: deskCloseResult(k.cycle, deskByTask.get(k.id) || [], attendanceOutcomeLabel) } : {}), closedAt: k.closed, title: scrub(k.title), detail: taskDetail(k), openedAt: k.opened, dueAt: k.due, assigneeIds: k.assignees || [], subjectKey: TASK_SUBJECT[k.kind] && entities.has(`${TASK_SUBJECT[k.kind]}:${k.subject_id}`) ? `${TASK_SUBJECT[k.kind]}:${k.subject_id}` : null, history: historyBy.get(k.id) || [] })),
-        candidates: { absence: absences.filter(a => studentKey(a.student_id)).map(a => a.id), billing: invoices.filter(i => i.remaining > 0 && studentKey(i.student_id)).map(i => i.id), consultation: consults.filter(c => studentKey(c.student_id)).map(c => c.id) },
+        tasks: groupedTasks.map(k => ({ id: k.id, kind: k.kind, status: k.status, closeReason: k.close_reason, ...(k.kind === 'attendance_absent_desk' && k.close_reason === 'desk_settled' ? { closeResult: deskCloseResult(taskCycles.get(k.settledTaskId || k.id) || k.cycle, deskByTask.get(k.settledTaskId || k.id) || [], attendanceOutcomeLabel) } : {}), closedAt: k.closed, title: scrub(k.title), detail: taskDetail(k), openedAt: k.opened, dueAt: k.due, assigneeIds: k.assignees || [], subjectKey: k.kind === 'attendance_absent_desk' || k.kind === 'video_upload_check' ? null : TASK_SUBJECT[k.kind] && entities.has(`${TASK_SUBJECT[k.kind]}:${k.subject_id}`) ? `${TASK_SUBJECT[k.kind]}:${k.subject_id}` : null, recordKeys: k.recordKeys || null, studentKey: k.studentKey || null, groupDate: k.groupDate || null, actionTaskId: k.actionTaskId || null, mergedTaskIds: k.mergedTaskIds || [], history: historyBy.get(k.id) || [] })),
+        candidates: { absence: absences.filter(a => a.d >= monthStart && a.d <= asOf && studentKey(a.student_id)).map(a => a.id), billing: invoices.filter(i => i.remaining > 0 && studentKey(i.student_id)).map(i => i.id), consultation: consults.filter(c => studentKey(c.student_id)).map(c => c.id) },
       };
     });
   } finally { await db.end(); }

@@ -5,17 +5,22 @@ import { createFlowCardAttendance } from './flow-card-attendance.mjs';
 const ACTOR = '268b797c-d00a-4475-8f6d-68894e47ccac';
 const OTHER = '123e4567-e89b-42d3-a456-426614174000';
 const TASK = 'ad26867d-2568-44ef-848e-77922eb2f892';
+const ACTION_TASK = 'bd26867d-2568-44ef-848e-77922eb2f892';
 const RECORD = '47b42a70-2ee0-4521-b626-e6bd34a39b22';
+const RECORD2 = '57b42a70-2ee0-4521-b626-e6bd34a39b22';
 const STUDENT = 'd2310fa0-9b42-4d53-a4a4-843421001908';
 const CLASS = '347347bd-b925-48cf-a032-17c2b4359880';
 const CASE = 'src-task-' + TASK, STEP = CASE + '-s1';
-const state = { revision: 7, cases: { [CASE]: { id: CASE, taskKind: 'attendance_absent_desk', closure: 'fact', factClosed: false, state: 'open', sourceKey: 'task:' + TASK, steps: [{ id: STEP, status: 'ready', assigneeIds: [ACTOR] }] } } };
+const state = { revision: 7, cases: { [CASE]: { id: CASE, taskKind: 'attendance_absent_desk', closure: 'fact', factClosed: false, state: 'open', sourceKey: 'task:' + TASK, groupDate: '2026-10-29', actionTaskId: ACTION_TASK, entityRefs: [{ type: 'attendance', id: RECORD }, { type: 'attendance', id: RECORD2 }], steps: [{ id: STEP, status: 'ready', assigneeIds: [ACTOR] }] } } };
 const flow = { service: { store: { state }, source: { actors: [{ id: ACTOR, role: 'staff' }, { id: OTHER, role: 'staff' }] } } };
 let dbOpens = 0, writes = 0, changed = false, race = false, lastRaw = null;
-const sql = (parts) => {
+const sql = (parts, ...values) => {
   const query = parts.join('?');
-  if (query.includes('from public.staff_tasks')) return Promise.resolve([{ kind: 'attendance_absent_desk', status: 'open', student_id: STUDENT, cycle: '2026-10-29|15:00' }]);
-  if (query.includes('from public.attendance_records a')) return Promise.resolve(changed ? [] : [{ id: RECORD, student_id: STUDENT, class_id: CLASS, session_date: '2026-10-29', slot_start: '15:00', class_name: '시험반' }]);
+  if (query.includes('from public.staff_tasks')) { assert.equal(values[1], ACTION_TASK); return Promise.resolve([{ kind: 'attendance_absent_desk', status: 'open', student_id: STUDENT, cycle: '2026-10-29|15:00' }]); }
+  if (query.includes('from public.attendance_records a')) return Promise.resolve(changed ? [] : [
+    { id: RECORD, student_id: STUDENT, class_id: CLASS, session_date: '2026-10-29', slot_start: '15:00', class_name: '시험반' },
+    { id: RECORD2, student_id: STUDENT, class_id: CLASS, session_date: '2026-10-29', slot_start: '15:40', class_name: '시험반' },
+  ]);
   throw Error('unexpected SQL');
 };
 const open = async () => { dbOpens++; return { begin: (_mode, fn) => fn(sql), end: async () => {} }; };
@@ -30,7 +35,7 @@ const card = createFlowCardAttendance({ flow, v2ScreenRoute, open });
 const input = { caseId: CASE, stepId: STEP, recordRef: 'attendance:' + RECORD, expectedRevision: 7, actorId: ACTOR, state: 'resolved', outcome: 'no_answer', contactedVia: 'phone', note: '시험장 검증' };
 
 const listed = await card.records(CASE);
-assert.deepEqual(listed.records, [{ recordRef: input.recordRef, className: '시험반', date: '2026-10-29', slotStart: '15:00' }]);
+assert.deepEqual(listed.records, [{ recordRef: input.recordRef, className: '시험반', date: '2026-10-29', slotStart: '15:00' }, { recordRef: `attendance:${RECORD2}`, className: '시험반', date: '2026-10-29', slotStart: '15:40' }]);
 assert.equal((await card.save(input)).saved, true);
 assert.deepEqual(lastRaw.args[0], { studentId: STUDENT, classId: CLASS, sessionDate: '2026-10-29', slotStart: '15:00', signal: 'absent', state: 'resolved', outcome: 'no_answer', contactedVia: 'phone', note: '시험장 검증' });
 assert.equal(writes, 1);
