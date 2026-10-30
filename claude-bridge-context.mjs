@@ -25,7 +25,7 @@ const LABELS = {
   form: { leave: '휴가 신청', expense: '지출', general: '일반' },
   approval: { pending: '결재 대기', approved: '승인 완료', rejected: '반려', draft: '작성 중' },
   taskKind: { report_send_failed: '보고서 발송 실패', followup_due: '상담 후속조치', enrollment_followup: '콜&상담 후속 조치', progress_anomaly: '진도 기록 이상', attendance_absent_desk: '결석 확인 전화', video_upload_check: '영상 업로드 확인', video_unassigned: '미배정 영상', unsent_report: '미발송 수업 보고서', approval_turn: '전자결재 차례', withdrawal_step: '퇴원보고서', help_question: '도움말 질문', owner_review: '원장 개인 업무' },
-  taskStatus: { open: '처리 전', done: '처리됨', cancelled: '취소됨', expired: '지난 업무' },
+  taskStatus: { open: '처리 전', done: '처리됨', cancelled: '취소됨', expired: '만료됨' },
   book: { requested: '요청', ordered: '주문', delivered: '전달', paid: '납부 완료' },
 };
 const REVIEW_OUTCOMES = ['scheduled', 'consulted', 'ai_done'];

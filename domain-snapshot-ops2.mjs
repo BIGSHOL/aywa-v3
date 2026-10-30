@@ -5,8 +5,8 @@ import { importV2 } from './v2-bridge.mjs';
 
 // live.js taskKind와 같은 라벨 = 2.0 staff_tasks 종류 원문(src/features/staff-tasks/kinds.ts). owner_review는 시안의 원장 개인 업무.
 const TASK_KIND = { report_send_failed: '보고서 발송 실패', followup_due: '상담 후속조치', enrollment_followup: '콜&상담 후속 조치', progress_anomaly: '진도 기록 이상', attendance_absent_desk: '결석 확인 전화', video_upload_check: '영상 업로드 확인', video_unassigned: '미배정 영상', unsent_report: '미발송 수업 보고서', approval_turn: '전자결재 차례', withdrawal_step: '퇴원보고서', help_question: '도움말 질문', owner_review: '원장 개인 업무' };
-// 2.0 상태값은 유지하고 3.0 화면에는 지난 업무로 표시한다.
-const TASK_STATUS = { open: '처리 전', done: '처리됨', cancelled: '취소됨', expired: '지난 업무' };
+// 기한 지난 처리 전 = '지난 업무'(원장 10-29 확정 말) · 2.0 expired(기한이 지나 저절로 닫힘) = '만료됨' — 같은 이름 칩이 둘 생기지 않게.
+const TASK_STATUS = { open: '처리 전', done: '처리됨', cancelled: '취소됨', expired: '만료됨' };
 const pre = (p, labels) => Object.fromEntries(Object.entries(labels).map(([k, v]) => [`${p}:${k}`, v]));
 
 export async function opsFamilies2({ sql, t, asOf, month, monthStart }) {

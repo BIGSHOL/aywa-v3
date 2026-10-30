@@ -233,16 +233,17 @@ window.createFlowUI = function createFlowUI(api) {
     const start=t.label&&t.label!==c.title?t.label:c.closure==='fact'?(signalCase(c)?'학원 기록에서 찾은 업무':'자동으로 생긴 업무'):t.label||'시작 기록 없음',why=[c.title,start].reduce((r,x)=>r.startsWith(`${x} · `)?r.slice(x.length+3):r,reason).replace(/^[\d,]+건 · /,'');
     return `<p class="fl-why"><span>${h(start)}</span>${who?`<span>${h(who)}</span>`:''}<span>${h(when(t.at||c.createdAt))}</span>${why?`<span>${h(why)}</span>`:''}</p>`;
   }
-  // 상태 = 처리 상태 하나 + 걸리는 표시(원장 10-28 "원본지난 업무 우선이 뭐지?"). 같은 뜻은 한 번만 — 원본 업무의 '우선'은 서버가
-  // 기한 지난 일에 붙인 것이라 '지난 업무'과 같은 말이다(flow-engine). 표시마다 뜻을 두고, 상태 칸에 마우스를 올리면 보인다.
-  // 원본 기록이 끝난 상태(처리됨·취소됨)만 원본 말을 쓰고, 지난 업무·지난 업무는 '지난 업무' 하나로 모은다.
+  // 상태 = 처리 상태 하나 + 걸리는 표시. 같은 뜻은 한 번만 — 원본 업무의 '우선'은 서버가 기한 지난 업무에 붙인 것이라 '지난 업무'와
+  // 같은 말이다(flow-engine). 표시마다 뜻을 두고, 상태 칸에 마우스를 올리면 보인다. 원본 기록이 끝난 상태(처리됨·취소됨·만료됨)는 원본 말을 쓴다.
   const STATE_HINT={open:'아직 아무도 처리하지 않았습니다.',working:'담당자가 확인하고 처리하는 중입니다.',review:'보고가 들어와 검토를 기다립니다.',done:'완료된 업무입니다.'};
+  // 만료(expired)는 지금 이름으로 — 저장된 사례에는 옛 라벨('지난 업무')이 남아 있다(상태가 바뀔 때만 다시 적힌다).
+  const sourceLabel=c=>c.sourceStatus==='expired'?'만료됨':c.sourceStatusLabel;
   function flags(c){
     const out=[],add=(t,hint,tone='')=>{if(!out.some(f=>f[0]===t))out.push([t,hint,tone]);};
     if(c.kind==='scenario')add('연습 시나리오','연습용으로 만든 업무입니다. 집계에 들지 않습니다.','amber');
-    const src=c.closure==='fact'&&c.sourceStatusLabel&&['done','cancelled'].includes(c.sourceStatus)?c.sourceStatusLabel:'';
-    add(src||STATE[c.state]||'상태 미확인',src?(c.sourceStatus==='cancelled'?'원본 기록에서 취소된 업무입니다.':'원본 기록에서 처리된 업무입니다.'):STATE_HINT[c.state]||'');
-    if(late(c)||c.state!=='done'&&c.sourceStatus==='expired')add('지난 업무',c.dueAt?`${md(kstDate(c.dueAt))}까지였는데 아직 끝나지 않았습니다.`:'기한이 지났는데 아직 끝나지 않았습니다.','amber');
+    const src=c.closure==='fact'&&c.sourceStatusLabel&&['done','cancelled','expired'].includes(c.sourceStatus)?sourceLabel(c):'';
+    add(src||STATE[c.state]||'상태 미확인',src?({cancelled:'원본 기록에서 취소된 업무입니다.',expired:'기한이 지나 원본 기록에서 저절로 닫힌 업무입니다.'}[c.sourceStatus]||'원본 기록에서 처리된 업무입니다.'):STATE_HINT[c.state]||'');
+    if(late(c))add('지난 업무',c.dueAt?`${md(kstDate(c.dueAt))}까지였는데 아직 끝나지 않았습니다.`:'기한이 지났는데 아직 끝나지 않았습니다.','amber');
     if(unassigned(c))add('담당 미지정','맡을 사람이 정해지지 않았습니다.','amber');
     if(c.priority==='high'&&c.state!=='done'&&!(c.closure==='fact'&&c.taskKind))add(...(c.signalId?['결정 필요','원장·관리자가 정해야 하는 업무입니다.']:c.decision?.priority==='high'?['오늘 처리','오늘 안에 처리할 업무로 판정됐습니다.']:['중요','요청할 때 중요로 표시한 업무입니다.']),'amber');
     if(c.flags?.needsReview&&c.state!=='done')add('검토 필요','자동 배정이 확실하지 않아 사람이 확인해야 합니다.','amber');
@@ -765,7 +766,7 @@ window.createFlowUI = function createFlowUI(api) {
     const timeline=(c.history||[]).map(eventById).filter(Boolean),missing=(c.history||[]).length-timeline.length;
     const links=(c.linkedCaseIds||[]).map(caseById).filter(Boolean);
     // 닫히는 조건은 부제(CLOSURE)가 이미 말한다 — 원본 업무의 상태만 한 줄(검수 10-28 M6).
-    const fact=c.closure==='fact'&&!signalCase(c)&&(c.sourceStatusLabel||c.factClosed)?`<section class="ax-evidence"><h3>원본 업무</h3><p>${h(c.sourceStatusLabel?`원본 상태: ${c.sourceStatus==='open'&&late(c)?'지난 업무':c.sourceStatusLabel}`:'원본 기록')}${c.factClosed?` · 원본에서 닫힘${c.closedReason?`(${h(c.closedReason)})`:''}`:''}</p></section>`:'';
+    const fact=c.closure==='fact'&&!signalCase(c)&&(c.sourceStatusLabel||c.factClosed)?`<section class="ax-evidence"><h3>원본 업무</h3><p>${h(c.sourceStatusLabel?`원본 상태: ${c.sourceStatus==='open'&&late(c)?'지난 업무':sourceLabel(c)}`:'원본 기록')}${c.factClosed?` · 원본에서 닫힘${c.closedReason?`(${h(c.closedReason)})`:''}`:''}</p></section>`:'';
     const evid=c.evidence||[];
     const linkList=links.length?`<section class="ax-evidence"><h3>연결된 업무 ${links.length}건</h3><div class="ax-actions">${links.map(x=>btn(x.title,'open',`data-id="${h(x.id)}"`)).join('')}</div></section>`:'';
     const studentLink=c.studentRef?.id?`<div class="ax-actions">${btn('원생 열기','entity',`data-family="students" data-record="${h(c.studentRef.id)}"`)}</div>`:'';

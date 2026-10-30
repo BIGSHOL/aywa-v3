@@ -28,9 +28,9 @@
   const shortDate=d=>d?String(d).slice(5).replace('-','.'):'미입력';
   const subject=s=>({math:'수학',english:'영어',general:'공통'}[s]||s||'공통');
   const status=s=>({enrolled:'재원',on_hold:'휴원',withdrawn:'퇴원',prospect:'예비',present:'출석',late:'지각',absent:'결석',early_leave:'조퇴',makeup:'보강',paid:'납부완료',partial:'부분납부',unpaid:'미납',scheduled:'상담 예약',consulted:'상담 완료',ai_done:'상담 검토',declined:'미등록',no_show:'미방문',pending:'결재 대기',approved:'승인 완료',rejected:'반려',open:'진행 중',done:'완료',cancelled:'취소',expired:'종료',issued:'발급 완료',draft:'작성 중',requested:'요청',ordered:'주문',delivered:'전달',active:'사용 중',in_use:'사용 중',on_loan:'대여 중',available:'보관',repair:'수리 중',lost:'분실',disposed:'폐기',retired:'폐기',boarded:'탑승',reserved:'예약'}[s]||s||'미입력');
-  // 2.0 업무 상태값은 유지하고 3.0 화면에는 지난 업무로 표시한다.
+  // 기한 지난 처리 전 = '지난 업무'(원장 10-29 확정 말) · 2.0 expired(기한이 지나 저절로 닫힘) = '만료됨' — 같은 이름 칩이 둘 생기지 않게.
   // 공용 status()는 보강 등 다른 기록도 쓰므로 업무 라벨을 따로 둔다.
-  const TASK_STATE={open:'처리 전',done:'처리됨',cancelled:'취소됨',expired:'지난 업무'};
+  const TASK_STATE={open:'처리 전',done:'처리됨',cancelled:'취소됨',expired:'만료됨'};
   const taskStatus=t=>t.status==='open'&&t.due&&t.due<db.meta.asOf?'지난 업무':TASK_STATE[t.status]||status(t.status);
   const byId=(collection,id)=>db[collection].find(x=>x.id===id);
   const group=(items,key)=>Object.entries(items.reduce((o,x)=>{const k=typeof key==='function'?key(x):x[key];o[k||'미입력']=(o[k||'미입력']||0)+1;return o;},{})).map(([label,count])=>({label,count})).sort((a,b)=>b.count-a.count);

@@ -20,10 +20,10 @@ export const TASK_KINDS = {
   withdrawal_step: { label: '퇴원보고서', familyId: 'withdrawal-reports', doneRule: '작성 차례는 보고서를 제출하면, 승인 차례는 승인하면 처리됩니다. 보완 요청·취소로 차례가 없어지면 취소됩니다. 작성은 이틀, 승인은 다음 날까지 안 하면 지난 업무로 표시됩니다.' },
   help_question: { label: '도움말 질문', familyId: 'help', doneRule: '질문에 답변이 달리거나 답변 완료·닫힘이 되면 처리됩니다. 질문이 지워지면 취소됩니다. 다음 날까지 답하지 않으면 지난 업무로 표시됩니다.' },
 };
-// src/features/staff-tasks/kinds.ts CLOSE_REASON / TASK_STATE_LABEL.
+// src/features/staff-tasks/kinds.ts CLOSE_REASON / TASK_STATE_LABEL. 상태 이름만 3.0 말: late = '지난 업무'(원장 10-29) · expired = '만료됨'.
 export const CLOSE_REASON = { sent: '학부모에게 발송됨', revoked: '보고서 회수', recalled: '보고서 회수', deleted: '원래 기록이 삭제됨', too_old: '재발송 기한이 지남', deadline: '재발송 기한이 지남', followup_done: '후속조치 완료 체크', rescheduled: '기한을 다른 날로 옮김', cleared: '후속조치 기한을 지움', anomaly_resolved: '이상 없음으로 확인', desk_settled: '데스크 확인 기록으로 처리됨', not_absent: '결석이 아니게 정정됨', stale: '7일이 지나도록 확인하지 않음', video_arrived: '영상이 들어옴', homework_cancelled: '숙제를 취소함', upload_window: '올릴 수 있는 기간이 지남', video_removed: '영상이 지워짐', video_assigned: '숙제에 배정하거나 제외함', unassigned_window: '올린 지 14일이 지남', no_open_homework: '붙일 숙제가 없음', send_requested: '발송을 요청함', not_sendable: '보낼 수 없는 보고서가 됨', approval_decided: '결재함', document_canceled: '문서가 취소됨', turn_skipped: '내 차례가 생략됨', withdrawal_acted: '제출하거나 승인함', withdrawal_canceled: '퇴원보고서가 취소됨', turn_changed: '차례가 바뀜', help_answered: '답변이 달림' };
-export const TASK_STATE_LABEL = { open: '처리 전', late: '지난 업무', done: '처리됨', cancelled: '취소됨', expired: '지난 업무' };
-export const TASK_EVENT_LABEL = { opened: '업무 생김', reopened: '다시 열림', assigned: '담당 지정', retry_requested: '재발송 요청', failed_again: '다시 실패', done: '처리됨', cancelled: '취소됨', expired: '지난 업무' };
+export const TASK_STATE_LABEL = { open: '처리 전', late: '지난 업무', done: '처리됨', cancelled: '취소됨', expired: '만료됨' };
+export const TASK_EVENT_LABEL = { opened: '업무 생김', reopened: '다시 열림', assigned: '담당 지정', retry_requested: '재발송 요청', failed_again: '다시 실패', done: '처리됨', cancelled: '취소됨', expired: '만료됨' };
 
 // Event registry: every event type the engine emits, with whether it is implemented now or
 // only declared for a future template (declared types are rejected by the command layer).
